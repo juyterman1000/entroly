@@ -1,0 +1,11 @@
+{
+  "ambiguous_untyped_call": "pkg/dispatch.py::unknown::function",
+  "global_hub": "pkg/core.py::hub::function",
+  "must_reach_symbol": "pkg/flow.py::choose::function",
+  "query": "where is calibrate quantum flux implemented",
+  "query_symbol": "pkg/rare.py::calibrate_quantum_flux::function",
+  "typed_call": {
+    "callee": "pkg/dispatch.py::Beta.execute::method",
+    "caller": "pkg/dispatch.py::run::function"
+  }
+}

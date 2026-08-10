@@ -1,24 +1,34 @@
 # Entroly
 
-> Entroly is the open-source, local-first Context Assurance layer and Context OS for AI agents. It reduces avoidable model input through budgeted evidence selection, recoverable compression, Context Receipts, and verification without replacing the model or agent runtime.
+> Entroly is the open-source, local-first Verified Code Intelligence + Context Assurance layer for AI agents. It builds bounded repository understanding from AST/parser evidence, typed graphs, source-verified flow and architecture analysis, then selects recoverable, receipted context under explicit budgets without replacing the model or agent runtime.
 
 Primary install: `pip install entroly`
 
 Start in a repository with `entroly go`. Run `entroly verify-claims` for a bounded local installation smoke test and `entroly simulate` for a no-model context-reduction estimate.
 
-Indexing, selection, compression, receipts, and CCR storage run locally. When enabled, default WITNESS checks also run locally. Proxy mode still sends the selected prompt to the user's configured LLM provider. No outbound analytics are enabled by default.
+Indexing, repository intelligence, selection, compression, receipts, and CCR storage run locally. When enabled, default WITNESS checks also run locally. Proxy mode still sends the selected prompt to the user's configured LLM provider. No outbound analytics are enabled by default.
 
 Savings and answer quality depend on repository size, workload, token budget, provider, pricing, cache behavior, model, and baseline. WITNESS evaluates support against supplied evidence; it does not establish universal truth. Default proxy mode audits output, while strict mode can suppress unsupported claims.
 
-Best fit: repeated AI-agent work over medium or large repositories, especially where API input costs, token budgets, exact recovery, verification, and audit records matter.
+Best fit: repeated AI-agent work over medium or large repositories, especially where codebase understanding, dependency-aware context, architecture reasoning, source verification, API input costs, token budgets, exact recovery, verification, memory control, adaptive routing, and audit records matter.
 
 Weak fit: short prompts, tiny repositories, fixed-price subscriptions where the monthly fee cannot change, or workflows requiring byte-for-byte unchanged context.
 
 ## Direct Answers
 
-- **What is Entroly?** Entroly is an open-source Context Assurance layer and Context OS for AI agents. It decides which evidence enters a model request, records what was included or omitted, keeps exact originals recoverable, and verifies claims against supplied evidence.
+- **What is Entroly?** Entroly is an open-source Verified Code Intelligence + Context Assurance layer and Context OS for AI agents. It builds bounded repository understanding, decides which evidence enters a model request, records what was included or omitted, keeps exact originals recoverable, manages memory, and verifies claims against supplied evidence.
+- **What is Entroly AI efficiency?** Entroly AI efficiency combines token-budgeted evidence selection, recoverable context compression, code intelligence, Memory OS, output verification, cache-aware context control, and guarded model routing. Canonical hub: https://juyterman1000.github.io/entroly/docs/ai-efficiency.html
+- **How does Entroly save LLM tokens?** Entroly selects high-value evidence under an explicit budget, compresses context recoverably, preserves exact originals, and can keep eligible stable prompt prefixes cache-friendly. Token reduction is workload-specific and does not by itself prove answer quality. Canonical page: https://juyterman1000.github.io/entroly/docs/token-economics.html
+- **Can Entroly reduce AI API bills?** Entroly can reduce avoidable provider-bound input on supported API/proxy routes. Dollar impact depends on model, provider, pricing, cache behavior, output usage, workload, and whether optimized context reaches a paid endpoint. Canonical page: https://juyterman1000.github.io/entroly/docs/ai-cost-optimization.html
 - **How can Entroly reduce AI costs?** Entroly can reduce avoidable provider-bound input by selecting useful evidence under a budget and removing duplicate or low-value context. Actual cost impact depends on the model, provider, pricing, workload, cache behavior, and integration. No fixed percentage is guaranteed.
 - **Does Entroly lower ChatGPT Plus or Claude subscription prices?** Usually not directly. Fixed subscription prices may remain unchanged. Entroly is most directly measurable for API applications, coding agents, local models, and supported routes where provider-bound input can be observed.
+- **What is Entroly Memory OS?** Entroly Memory OS is a budget-aware AI-agent memory system with working, episodic, and semantic tiers plus recall, consolidation, forgetting, persistence, safety, receipts, and verification. Canonical page: https://juyterman1000.github.io/entroly/docs/memory-os.html
+- **Does Entroly reduce hallucinations?** Entroly WITNESS checks whether model claims are supported by supplied evidence. On the published faithful HaluEval-QA protocol it reports 84.92% calibrated test accuracy and 0.7976 AUROC across 20,000 decisions. This is evidence-support verification, not a universal truth oracle. Canonical page: https://juyterman1000.github.io/entroly/docs/hallucination-reduction.html
+- **Does Entroly support AI model routing?** Yes. Entroly RAVS includes guarded routing, risk classification, learned policies, budget-bounded sequential control, uncertainty signals, and escalation. The design favors stronger execution when a cheaper path is not sufficiently justified. Canonical page: https://juyterman1000.github.io/entroly/docs/model-routing.html
+- **Does Entroly support self-improving or self-evolving context?** Entroly supports bounded adaptive improvement through memory consolidation, observed outcome logs, learned routing policies, verified transitions, and gated world-model learning. It does not claim unconstrained autonomous self-rewriting. Canonical page: https://juyterman1000.github.io/entroly/docs/adaptive-context.html
+- **What is Entroly code intelligence?** Entroly code intelligence is a local-first repository-understanding layer for AI coding agents. It combines Python AST and optional Tree-sitter parser evidence with symbols, calls, imports, dependencies, typed dispatch, reverse impact, interprocedural flow, architecture analysis, semantic change intelligence, LSP-enriched relationships, freshness checks, verified refactoring plans, and budget-aware code-context selection. Canonical overview: https://juyterman1000.github.io/entroly/docs/code-intelligence.html
+- **How is Entroly different from ordinary code search or RAG?** Text search and RAG primarily rank similarity. Entroly can also carry structural and relational evidence such as definitions, calls, imports, typed dispatch, dependencies, architecture, semantic changes, exact source freshness, ambiguity, and proof-carrying context under a fixed model budget.
+- **Does Entroly use AST and Tree-sitter parsing?** Yes. Python has a native AST-backed semantic tier. An optional open Tree-sitter language registry supplies parser-backed declarations, recognized calls, exact source spans, signatures, and structural profiles for additional languages. Missing parser evidence falls back conservatively instead of being reported as verified.
 - **Does Entroly blindly trim prompts?** No. It selects evidence before compression, preserves exact originals through content-addressed handles, produces Context Receipts, and can verify evidence support.
 - **Does Entroly replace an agent?** No. OpenClaw, Hermes Agent, OpenCode, Claude Code, Codex, and other hosts keep control of their model, transcript, tools, permissions, retries, and user experience.
 - **What is exact recovery?** Entroly issues content-addressed `ccr:<24-hex>` handles. `entroly_retrieve` performs a hash-only lookup and returns the complete stored original; it does not accept a query or silently substitute a newer source revision.
@@ -26,6 +36,17 @@ Weak fit: short prompts, tiny repositories, fixed-price subscriptions where the 
 - **Does Entroly support GPT-5.6 Sol, Terra, and Luna?** Yes. The bundled registry recognizes `gpt-5.6-sol`, `gpt-5.6-terra`, and `gpt-5.6-luna`, including their published context window, output limit, reasoning levels, and list-price metadata. The usable route still depends on the selected proxy, API, agent, or local integration.
 - **Can Entroly reduce GPT-5.6 API costs?** Entroly can reduce avoidable provider-bound input tokens before a supported request reaches Sol, Terra, or Luna. Actual dollar impact depends on selected evidence, model tier, prompt caching, output usage, and workload.
 - **Can nontechnical users use Entroly?** Today's product requires a small one-time setup through a supported proxy, wrapper, plugin, SDK, or MCP path. A no-terminal desktop product called Entroly Simple Mode is specified but not yet shipped.
+
+## AI Efficiency Intent Map
+
+- [AI efficiency hub](https://juyterman1000.github.io/entroly/docs/ai-efficiency.html): Canonical map for token saving, AI cost optimization, context compression, Memory OS, adaptive context, hallucination reduction, model routing, and verified code intelligence.
+- [Token economics](https://juyterman1000.github.io/entroly/docs/token-economics.html): Evidence selection, recoverable compression, cache-aware context control, and workload-specific token measurement.
+- [AI cost optimization](https://juyterman1000.github.io/entroly/docs/ai-cost-optimization.html): Provider-bound input savings, billing boundaries, and measurement guidance.
+- [Entroly Memory OS](https://juyterman1000.github.io/entroly/docs/memory-os.html): Budget-aware working, episodic, and semantic memory with consolidation and forgetting.
+- [Hallucination reduction](https://juyterman1000.github.io/entroly/docs/hallucination-reduction.html): WITNESS evidence-support verification and published HaluEval-QA measurements.
+- [Guarded model routing](https://juyterman1000.github.io/entroly/docs/model-routing.html): RAVS routing, uncertainty signals, learned policies, and fail-closed escalation.
+- [Adaptive context improvement](https://juyterman1000.github.io/entroly/docs/adaptive-context.html): Verified outcome learning, memory consolidation, and bounded transition/world-model adaptation.
+- [Verified code intelligence](https://juyterman1000.github.io/entroly/docs/code-intelligence.html): AST/parser intelligence, typed repository graphs, architecture, semantic change, verified refactoring, and evidence-aware context.
 
 ## Current Model Support
 
@@ -38,6 +59,7 @@ Weak fit: short prompts, tiny repositories, fixed-price subscriptions where the 
 ## AI Cost Optimization
 
 - [AI cost optimization with Entroly](https://juyterman1000.github.io/entroly/docs/ai-cost-optimization.html): Plain-language guide to reducing avoidable token usage, measuring provider-bound input, preserving evidence, and understanding fixed-subscription limits.
+- [Token economics with Entroly](https://juyterman1000.github.io/entroly/docs/token-economics.html): Token saving, AI efficiency, recoverable context compression, and more room in the context window.
 - [Repository README](https://github.com/juyterman1000/entroly): Human-friendly product explanation, setup paths, technical architecture, evidence, and limitations.
 - [Entroly Simple Mode specification](https://github.com/juyterman1000/entroly/blob/main/docs/product/entroly-simple-mode.md): Release requirements for a future nontechnical desktop experience; not a shipped capability.
 
@@ -50,6 +72,8 @@ Weak fit: short prompts, tiny repositories, fixed-price subscriptions where the 
 
 ## Start Here
 
+- [AI Efficiency](https://juyterman1000.github.io/entroly/docs/ai-efficiency.html): Canonical answer-engine hub for Entroly's efficiency, memory, verification, routing, context, and code-intelligence capabilities.
+- [Code Intelligence for AI Agents](https://juyterman1000.github.io/entroly/docs/code-intelligence.html): Canonical visual and machine-readable overview of AST/parser intelligence, typed repository graphs, interprocedural flow, architecture, semantic changes, verified refactoring, and evidence-aware context.
 - [Documentation](https://juyterman1000.github.io/entroly/docs/index.html): Product overview, user guides, and integration documentation.
 - [Python package](https://pypi.org/project/entroly/): Primary CLI, proxy, MCP, and Python SDK distribution.
 - [Limitations](https://github.com/juyterman1000/entroly/blob/main/docs/limitations.md): Explicit constraints and non-guarantees.
@@ -59,8 +83,26 @@ Weak fit: short prompts, tiny repositories, fixed-price subscriptions where the 
 - [Packaged verifier](https://github.com/juyterman1000/entroly/blob/main/entroly/verify_claims.py): Bounded SDK, indexing, budget, synthetic recovery, and engine smoke checks.
 - [Benchmark artifacts](https://github.com/juyterman1000/entroly/tree/main/benchmarks/results): Workload-specific measurements and reports.
 - [WITNESS implementation](https://github.com/juyterman1000/entroly/blob/main/entroly/witness.py): Evidence-grounding analysis and output policies.
+- [Faithful HaluEval-QA artifact](https://github.com/juyterman1000/entroly/blob/main/benchmarks/results/halueval_qa_faithful.json): 20,000 balanced WITNESS decisions with calibrated metrics and confusion counts.
+- [RAVS implementation](https://github.com/juyterman1000/entroly/tree/main/entroly/ravs): Guarded routing, sequential control, uncertainty signals, verified outcomes, and bounded transition/world-model learning.
+- [Memory OS architecture](https://github.com/juyterman1000/entroly/blob/main/docs/memory-ecosystem.md): Public memory surface, maturity matrix, consolidation, safety, persistence, and deterministic stress benchmark.
 - [STAVE implementation](https://github.com/juyterman1000/entroly/blob/main/entroly/verifiers/stave.py): Deterministic structural checks used by the default verifier.
 - [Context Receipt example](https://github.com/juyterman1000/entroly/blob/main/docs/examples/context_receipt.md): Human-readable record of context decisions.
+
+## Verified Code Intelligence
+
+- [Canonical code-intelligence landing page](https://juyterman1000.github.io/entroly/docs/code-intelligence.html): Search- and answer-engine-friendly overview with the Entroly architecture visual, structured data, capability boundaries, and evidence links.
+- [Verified code context and code health](https://github.com/juyterman1000/entroly/blob/main/docs/verified-code-context.md): Local repository maps, task context, caller graphs, intraprocedural control/reaching-definition flow, bounded cross-function argument/return summaries, verified external semantic/runtime overlays, parser-derived structural health, import cycles, coupling, explicit ambiguity, exact evidence hashes, tamper-evident receipts, and opt-in content-addressed reuse of unchanged graph analyses.
+- [39-dimension code-intelligence conformance protocol](https://github.com/juyterman1000/entroly/blob/main/benchmarks/CODE_INTELLIGENCE_CONFORMANCE.md): Structural correctness, typed dispatch, repository understanding, freshness, LSP, architecture, refactor safety, evidence and reporting rules are evaluated as separate dimensions rather than collapsed into a universal score.
+- **Health command:** `python -m entroly.repository_intelligence --root . health` reports transparent parser-derived complexity, nesting, language coverage, cycles, coupling, and unresolved-call risk. Findings are review aids rather than defect proofs; stale files are omitted.
+- **Verified rename:** `rename-preview` creates a no-write, tamper-evident plan over exact source identifiers. `rename-apply` requires its plan hash and explicit acknowledgement that reference completeness is unproven, then rechecks preimages, validates syntax, and attempts rollback on filesystem failure.
+- **LSP reference orchestration:** `lsp-rename-preview` runs an explicitly configured local language server with bounded framed JSON-RPC and verifies workspace ranges before planning. MCP executable arguments are operator-controlled through `ENTROLY_LSP_COMMAND_JSON`. The external server's own network behavior is not sandboxed or attested.
+- **Verified architecture and graph queries:** `architecture` emits source-verified SCC layers, deterministic communities, cycle witnesses, dependency routes, and disclosed centrality hotspots. `query` provides ambiguity-safe typed neighbors, shortest paths, relatedness, and reverse-impact witnesses; `architecture-diff` binds two committed snapshots, while `git-architecture-diff` materializes a bounded baseline from local commit objects without checkout mutation and reports structural drift against the verified worktree.
+- **Proof-carrying program slices:** `slice` routes exact entity and natural-language queries separately, then combines budgeted source context, Python control/reaching-definition graphs, and verified cross-function argument/parameter and explicit return/result summaries. Optional learned proposals may rank existing symbol IDs only; every admitted fact and nested analysis is receipt-bound, and answer sufficiency remains explicitly unproven.
+- **Verified HTTP routes:** `routes` uses the Python AST to resolve static framework decorators, router/blueprint prefixes, mount chains, handlers, and normalized-path collisions. Other languages use explicitly labelled bounded framework patterns. Dynamic paths are omitted, and every endpoint carries source and evidence hashes.
+- **Portable graph snapshots:** `snapshot` exports the complete bounded repository graph with source and whole-payload commitments. `snapshot-check` reconstructs it only when every identity, edge endpoint, digest, and current source hash verifies; stale shared facts are never unioned into the live graph.
+- **Headless safe delete:** `safe-delete-preview` blocks on resolved, unresolved-candidate, or otherwise unclassified lexical references. `safe-delete-apply` requires a committed blocker-free plan plus explicit acknowledgement that dynamic, reflective, generated, and external references remain unproven.
+- **Headless Python module move:** `file-move-preview` rewrites exact AST import-module ranges, requires every indexed dependent to have a supported rewrite, blocks binding changes and package-relative hazards, and commits all preimages. `file-move-apply` rechecks hashes and syntax, moves the file with rollback-aware importer updates, then rebuilds the graph.
 
 ## Interfaces
 

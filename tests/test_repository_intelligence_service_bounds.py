@@ -52,11 +52,11 @@ def test_service_caps_direct_sdk_limits(tmp_path: Path, monkeypatch) -> None:
         return []
 
     monkeypatch.setattr(
-        "entroly.repository_intelligence.service.analyze_change_impact",
+        "entroly.repository_intelligence.service_impl.analyze_change_impact",
         fake_impact,
     )
     monkeypatch.setattr(
-        "entroly.repository_intelligence.service.localize_tests",
+        "entroly.repository_intelligence.service_impl.localize_tests",
         fake_tests,
     )
 

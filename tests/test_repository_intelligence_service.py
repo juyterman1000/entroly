@@ -7,13 +7,23 @@ import types
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import entroly.repository_intelligence.service as service_module
+# `service` is a thin facade (`from .service_impl import *`). Names that
+# service_impl imports for its own use never become attributes of the
+# facade, so patching them there is silently inert. Patch the module that
+# actually holds the binding.
+import entroly.repository_intelligence.service_impl as service_impl_module
 from entroly.repository_intelligence import (
     InvalidChangedPaths,
+    InvalidContextQuery,
+    InvalidSymbolQuery,
     RepositoryIntelligenceService,
     build_repository_index,
 )
 from entroly.repository_intelligence.mcp import create_repository_mcp_server
 from entroly.repository_intelligence.service import UnknownChangedPaths
+
+FAKE_LSP_SERVER = Path(__file__).parent / "fixtures" / "fake_lsp_server.py"
 
 
 def _write(root: Path, path: str, text: str) -> None:
@@ -133,6 +143,30 @@ def test_service_counts_input_paths_before_deduplication(tmp_path: Path) -> None
         raise AssertionError("request-size limit must precede path deduplication")
 
 
+def test_service_rejects_empty_context_query_before_indexing(tmp_path: Path) -> None:
+    _project(tmp_path)
+    service = RepositoryIntelligenceService(tmp_path)
+    try:
+        service.context("   ")
+    except InvalidContextQuery as exc:
+        assert exc.to_dict()["error"] == "invalid_context_query"
+    else:
+        raise AssertionError("empty query must fail visibly")
+    assert service._index is None
+
+
+def test_service_rejects_empty_symbol_query_before_indexing(tmp_path: Path) -> None:
+    _project(tmp_path)
+    service = RepositoryIntelligenceService(tmp_path)
+    try:
+        service.symbol_graph("")
+    except InvalidSymbolQuery as exc:
+        assert exc.to_dict()["error"] == "invalid_symbol_query"
+    else:
+        raise AssertionError("empty symbol query must fail visibly")
+    assert service._index is None
+
+
 def test_service_snapshot_is_single_flight_under_concurrency(tmp_path: Path) -> None:
     _project(tmp_path)
     calls = 0
@@ -164,6 +198,32 @@ def test_service_snapshot_is_single_flight_under_concurrency(tmp_path: Path) -> 
     assert calls == 1
     assert len(set(digests)) == 1
     assert service.summary()["generation"] == 1
+
+
+def test_service_reuses_prepared_graph_query_adjacency_until_refresh(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _project(tmp_path)
+    service = RepositoryIntelligenceService(tmp_path)
+    first = service.graph_query("execute", operation="impact")
+    assert first["resolution"] == "resolved"
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError("unchanged service generation should reuse adjacency")
+
+    monkeypatch.setattr(service_impl_module, "prepare_graph_query", unexpected)
+    second = service.graph_query("invoke", operation="neighbors")
+    assert second["resolution"] == "resolved"
+
+    _write(tmp_path, "pkg/new.py", "def added():\n    return True\n")
+    service.refresh()
+    try:
+        service.graph_query("execute", operation="impact")
+    except AssertionError as exc:
+        assert "reuse adjacency" in str(exc)
+    else:
+        raise AssertionError("refresh must invalidate prepared graph adjacency")
 
 
 class FakeFastMCP:
@@ -201,7 +261,30 @@ def test_mcp_exposes_fixed_root_bounded_tools(tmp_path: Path, monkeypatch) -> No
         "refresh_repository_index",
         "repository_change_impact",
         "repository_summary",
+        "repository_program_graph",
+        "repository_program_slice",
+        "repository_interprocedural_flow",
+        "repository_architecture",
+        "repository_architecture_diff",
+        "repository_git_architecture_diff",
+        "repository_graph_query",
+        "repository_file_move_apply",
+        "repository_file_move_preview",
+        "repository_graph_snapshot",
+        "repository_graph_snapshot_check",
+        "repository_http_routes",
+        "repository_code_health",
+        "repository_rename_apply",
+        "repository_rename_preview",
+        "repository_safe_delete_apply",
+        "repository_safe_delete_preview",
+        "repository_lsp_rename_preview",
+        "repository_map",
+        "repository_runtime_overlay",
+        "repository_semantic_overlay",
+        "repository_symbol_graph",
         "repository_tests_for_changes",
+        "repository_verified_context",
     }
     summary = json.loads(mcp.tools["repository_summary"]())
     assert summary["files"] == 3
@@ -215,6 +298,79 @@ def test_mcp_exposes_fixed_root_bounded_tools(tmp_path: Path, monkeypatch) -> No
         mcp.tools["repository_tests_for_changes"](["pkg/source.py"])
     )
     assert tests["candidates"][0]["path"] == "tests/test_api.py"
+    context = json.loads(
+        mcp.tools["repository_verified_context"]("execute", token_budget=512)
+    )
+    assert context["schema_version"] == "entroly.verified-code-context.v1"
+    assert context["fragments"][0]["qualified_name"] == "execute"
+    assert str(tmp_path) not in json.dumps(context)
+    program_slice = json.loads(mcp.tools["repository_program_slice"]("invoke"))
+    assert program_slice["schema_version"] == "entroly.verified-program-slice.v1"
+    assert program_slice["query_route"]["identity_status"] == "unique-exact"
+    assert program_slice["receipt"]["remote_calls"] == 0
+    assert str(tmp_path) not in json.dumps(program_slice)
+    graph = json.loads(mcp.tools["repository_symbol_graph"]("execute"))
+    assert graph["schema_version"] == "entroly.verified-symbol-graph.v1"
+    assert graph["resolution"] == "resolved"
+    assert graph["receipt"]["remote_calls"] == 0
+    assert str(tmp_path) not in json.dumps(graph)
+    graph_query = json.loads(mcp.tools["repository_graph_query"](
+        "pkg/api.py", "path", "execute", "outgoing", 5, 100,
+    ))
+    assert graph_query["schema_version"] == "entroly.verified-graph-query.v1"
+    assert graph_query["results"][0]["kind"] == "shortest-path"
+    assert graph_query["receipt"]["remote_calls"] == 0
+    repository_map = json.loads(mcp.tools["repository_map"]("execute"))
+    assert repository_map["schema_version"] == "entroly.verified-repository-map.v1"
+    assert repository_map["entries"][0]["qualified_name"] == "execute"
+    assert repository_map["receipt"]["remote_calls"] == 0
+    architecture = json.loads(mcp.tools["repository_architecture"]())
+    assert architecture["schema_version"] == "entroly.verified-architecture.v1"
+    assert architecture["receipt"]["remote_calls"] == 0
+    assert architecture["routes"]
+    architecture_diff = json.loads(mcp.tools["repository_architecture_diff"](
+        architecture, architecture,
+    ))
+    assert architecture_diff["schema_version"] == (
+        "entroly.verified-architecture-diff.v1"
+    )
+    assert sum(architecture_diff["counts"].values()) == 0
+    routes = json.loads(mcp.tools["repository_http_routes"]())
+    assert routes["schema_version"] == "entroly.verified-http-routes.v1"
+    assert routes["receipt"]["remote_calls"] == 0
+    snapshot = json.loads(mcp.tools["repository_graph_snapshot"]())
+    assert snapshot["schema_version"] == "entroly.verified-graph-snapshot.v1"
+    checked = json.loads(mcp.tools["repository_graph_snapshot_check"](snapshot))
+    assert checked["snapshot_commitment_valid"] is True
+    assert checked["snapshot_importable"] is True
+    assert checked["in_sync"] is True
+    assert str(tmp_path) not in json.dumps(repository_map)
+    program = json.loads(mcp.tools["repository_program_graph"]("execute"))
+    assert program["schema_version"] == "entroly.verified-program-graph.v1"
+    assert program["resolution"] == "resolved"
+    assert program["receipt"]["remote_calls"] == 0
+    assert str(tmp_path) not in json.dumps(program)
+    flow = json.loads(mcp.tools["repository_interprocedural_flow"]("invoke"))
+    assert flow["schema_version"] == "entroly.verified-interprocedural-flow.v1"
+    assert flow["resolution"] == "resolved"
+    assert flow["receipt"]["remote_calls"] == 0
+    assert str(tmp_path) not in json.dumps(flow)
+    health = json.loads(mcp.tools["repository_code_health"]())
+    assert health["schema_version"] == "entroly.verified-code-health.v1"
+    assert health["receipt"]["remote_calls"] == 0
+    assert str(tmp_path) not in json.dumps(health)
+    rename = json.loads(mcp.tools["repository_rename_preview"]("execute", "perform"))
+    assert rename["schema_version"] == "entroly.verified-refactor-plan.v1"
+    assert rename["resolution"] == "resolved"
+    assert rename["receipt"]["writes_performed"] == 0
+    assert str(tmp_path) not in json.dumps(rename)
+    runtime = json.loads(mcp.tools["repository_runtime_overlay"]([
+        {"path": "pkg/source.py", "line": 1, "event": "call"},
+    ]))
+    assert runtime["schema_version"] == "entroly.verified-runtime-overlay.v1"
+    assert runtime["observations"][0]["symbol_id"].endswith("::execute::function")
+    assert runtime["receipt"]["event_values_collected"] is False
+    assert str(tmp_path) not in json.dumps(runtime)
 
 
 def test_mcp_unknown_path_returns_machine_readable_error(tmp_path: Path, monkeypatch) -> None:
@@ -251,3 +407,101 @@ def test_mcp_refresh_atomically_changes_generation(tmp_path: Path, monkeypatch) 
     assert after["files"] == before["files"] + 1
     assert after["generation"] == before["generation"] + 1
     assert after["root"] == "."
+
+
+def test_mcp_refactor_apply_is_refused_without_operator_write_authority(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Acknowledgement is not authority.
+
+    `RepositoryWriteAuthority` is captured from the process environment when the
+    service is constructed, so a caller cannot grant itself write access through
+    tool arguments. This gate had no test; it was only observable as a confusing
+    `repository_operation_failed` where the suite expected the acknowledgement
+    error, because the authority check runs before the acknowledgement check.
+    """
+    _project(tmp_path)
+    monkeypatch.delenv("ENTROLY_REPOSITORY_WRITES", raising=False)
+    _install_fake_mcp(monkeypatch)
+    mcp = create_repository_mcp_server(tmp_path)
+    plan = json.loads(mcp.tools["repository_rename_preview"]("execute", "perform"))
+
+    refused = json.loads(mcp.tools["repository_rename_apply"](
+        plan,
+        plan["receipt"]["plan_sha256"],
+        True,  # acknowledged, and still refused
+    ))
+    assert refused["error"] == "repository_operation_failed"
+    # The detail is deliberately generic. An unauthorized caller must not be
+    # told which environment variable would grant it access, so the env name is
+    # confined to local logs rather than returned over the tool surface.
+    assert "ENTROLY_REPOSITORY_WRITES" not in json.dumps(refused)
+    # The refusal is what matters: nothing on disk changed.
+    assert "execute" in (tmp_path / "pkg/source.py").read_text(encoding="utf-8")
+    assert "perform" not in (tmp_path / "pkg/source.py").read_text(encoding="utf-8")
+
+
+def test_mcp_refactor_apply_requires_ack_and_refreshes_index(tmp_path: Path, monkeypatch) -> None:
+    _project(tmp_path)
+    # Destructive applies need operator authority from the process environment,
+    # set before the service is constructed. Without it the authority check
+    # short-circuits ahead of the acknowledgement gate this test exercises.
+    monkeypatch.setenv("ENTROLY_REPOSITORY_WRITES", "1")
+    _install_fake_mcp(monkeypatch)
+    mcp = create_repository_mcp_server(tmp_path)
+    plan = json.loads(mcp.tools["repository_rename_preview"]("execute", "perform"))
+    rejected = json.loads(mcp.tools["repository_rename_apply"](
+        plan,
+        plan["receipt"]["plan_sha256"],
+        False,
+    ))
+    assert rejected["error"] == "verified_refactor_failed"
+    assert "acknowledgement" in rejected["detail"]
+    assert "execute" in (tmp_path / "pkg/source.py").read_text(encoding="utf-8")
+
+    applied = json.loads(mcp.tools["repository_rename_apply"](
+        plan,
+        plan["receipt"]["plan_sha256"],
+        True,
+    ))
+    assert applied["apply"]["change_count"] == 3
+    assert applied["refresh"]["status"] == "refreshed"
+    assert "perform" in (tmp_path / "pkg/source.py").read_text(encoding="utf-8")
+    summary = json.loads(mcp.tools["repository_summary"]())
+    assert summary["index_digest"] == applied["refresh"]["index_digest"]
+
+
+def test_mcp_lsp_command_is_operator_configured_not_caller_controlled(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _project(tmp_path)
+    monkeypatch.setenv(
+        "ENTROLY_LSP_COMMAND_JSON",
+        json.dumps([sys.executable, str(FAKE_LSP_SERVER)]),
+    )
+    _install_fake_mcp(monkeypatch)
+    mcp = create_repository_mcp_server(tmp_path)
+    payload = json.loads(mcp.tools["repository_lsp_rename_preview"](
+        "execute", "perform", "python", 5.0, 100,
+    ))
+    assert payload["schema_version"] == "entroly.lsp-rename-preview.v1"
+    assert payload["plan"]["resolution"] == "resolved"
+    assert payload["orchestration"]["process"]["shell"] is False
+    assert payload["receipt"]["external_process_network_control"] == "not-enforced"
+
+
+def test_mcp_lsp_preview_fails_visibly_when_operator_did_not_configure_command(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _project(tmp_path)
+    monkeypatch.delenv("ENTROLY_LSP_COMMAND_JSON", raising=False)
+    _install_fake_mcp(monkeypatch)
+    mcp = create_repository_mcp_server(tmp_path)
+    payload = json.loads(mcp.tools["repository_lsp_rename_preview"](
+        "execute", "perform", "python",
+    ))
+    assert payload["error"] == "verified_refactor_failed"
+    assert "operator must set" in payload["detail"]

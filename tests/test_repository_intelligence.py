@@ -197,6 +197,135 @@ def test_ambiguous_symbol_name_does_not_invent_call_edge(tmp_path: Path) -> None
     index = build_repository_index(tmp_path)
     caller_id = index.symbols_for_path("caller.py")[0].symbol_id
     assert all(edge.caller_id != caller_id for edge in index.call_edges)
+    unresolved = [call for call in index.unresolved_calls if call.caller_id == caller_id]
+    assert len(unresolved) == 1
+    assert unresolved[0].reason == "ambiguous"
+    assert len(unresolved[0].candidates) == 2
+
+
+def test_python_receiver_annotation_resolves_exact_class_member(tmp_path: Path) -> None:
+    _write(
+        tmp_path,
+        "transport.py",
+        "class HttpClient:\n"
+        "    def send(self):\n        return 'http'\n\n"
+        "class MailClient:\n"
+        "    def send(self):\n        return 'mail'\n",
+    )
+    _write(
+        tmp_path,
+        "service.py",
+        "from transport import HttpClient, MailClient\n\n"
+        "def deliver(client: MailClient):\n"
+        "    return client.send()\n",
+    )
+    index = build_repository_index(tmp_path)
+    symbols = {symbol.qualified_name: symbol for symbol in index.symbols.values()}
+    edge = next(edge for edge in index.call_edges if edge.caller_id == symbols["deliver"].symbol_id)
+    assert edge.callee_id == symbols["MailClient.send"].symbol_id
+    assert edge.confidence == "type-inferred"
+    assert edge.resolution == "receiver-type:annotation"
+
+
+def test_python_constructor_assignment_resolves_cross_file_member(tmp_path: Path) -> None:
+    _write(
+        tmp_path,
+        "client.py",
+        "class Client:\n"
+        "    def fetch(self):\n        return 1\n",
+    )
+    _write(
+        tmp_path,
+        "use.py",
+        "from client import Client\n\n"
+        "def run():\n"
+        "    client = Client()\n"
+        "    return client.fetch()\n",
+    )
+    index = build_repository_index(tmp_path)
+    symbols = {symbol.qualified_name: symbol for symbol in index.symbols.values()}
+    edge = next(
+        edge
+        for edge in index.call_edges
+        if edge.caller_id == symbols["run"].symbol_id
+        and edge.callee_id == symbols["Client.fetch"].symbol_id
+    )
+    assert edge.resolution == "receiver-type:constructor-assignment"
+
+
+def test_python_self_call_resolves_only_enclosing_class_member(tmp_path: Path) -> None:
+    _write(
+        tmp_path,
+        "workers.py",
+        "class First:\n"
+        "    def execute(self):\n        return 1\n"
+        "    def run(self):\n        return self.execute()\n\n"
+        "class Second:\n"
+        "    def execute(self):\n        return 2\n",
+    )
+    index = build_repository_index(tmp_path)
+    symbols = {symbol.qualified_name: symbol for symbol in index.symbols.values()}
+    edge = next(edge for edge in index.call_edges if edge.caller_id == symbols["First.run"].symbol_id)
+    assert edge.callee_id == symbols["First.execute"].symbol_id
+    assert edge.resolution == "receiver-type:implicit-self"
+
+
+def test_untyped_member_call_does_not_bind_same_file_method_by_name(
+    tmp_path: Path,
+) -> None:
+    _write(
+        tmp_path,
+        "unsafe.py",
+        "class Unrelated:\n"
+        "    def get(self):\n        return 1\n\n"
+        "def run(client):\n"
+        "    return client.get()\n",
+    )
+    index = build_repository_index(tmp_path)
+    run_id = next(
+        symbol.symbol_id for symbol in index.symbols.values() if symbol.qualified_name == "run"
+    )
+    assert all(edge.caller_id != run_id for edge in index.call_edges)
+    unresolved = [
+        call for call in index.unresolved_calls if call.caller_id == run_id
+    ]
+    assert len(unresolved) == 1
+    assert unresolved[0].reason == "untyped-receiver-member"
+    assert len(unresolved[0].candidates) == 1
+    assert unresolved[0].candidates[0].endswith("::Unrelated.get::method")
+
+
+def test_tree_sitter_call_is_attributed_to_narrowest_rust_symbol(tmp_path: Path) -> None:
+    # Presence is not compatibility. An installed pack below the declared
+    # floor still imports, so `importorskip` lets the test run against a
+    # registry whose symbol extraction differs, and it fails with a confusing
+    # KeyError rather than skipping. Gate on the same compatibility check the
+    # runtime uses so a below-floor environment skips honestly.
+    pytest.importorskip("tree_sitter_language_pack")
+    from entroly.parser_compatibility import language_pack_status
+
+    status = language_pack_status()
+    if not status.compatible:
+        pytest.skip(
+            f"tree-sitter-language-pack {status.version} is below the supported "
+            f">={status.minimum_version} floor ({status.detail})"
+        )
+    _write(
+        tmp_path,
+        "src/lib.rs",
+        "fn helper() {}\n"
+        "struct Worker;\n"
+        "impl Worker {\n"
+        "    fn run(&self) { helper(); }\n"
+        "}\n",
+    )
+    index = build_repository_index(tmp_path)
+    symbols = {symbol.qualified_name: symbol for symbol in index.symbols.values()}
+    edge = next(edge for edge in index.call_edges if edge.callee_id == symbols["helper"].symbol_id)
+    assert edge.caller_id == symbols["Worker.run"].symbol_id
+    assert edge.resolution == "same-file"
+    assert edge.start_byte < edge.end_byte
+    assert len(edge.evidence_sha256) == 64
 
 
 def test_changed_seed_limit_is_enforced(tmp_path: Path) -> None:
@@ -230,7 +359,24 @@ def test_call_edge_limit_is_global_not_per_file(tmp_path: Path) -> None:
     assert len(repository.call_edges) == 2
 
 
+def test_relationship_limit_also_bounds_ambiguous_call_evidence(tmp_path: Path) -> None:
+    _write(tmp_path, "a.py", "def duplicate():\n    return 'a'\n")
+    _write(tmp_path, "b.py", "def duplicate():\n    return 'b'\n")
+    for index in range(10):
+        _write(
+            tmp_path,
+            f"caller_{index}.py",
+            f"def caller_{index}():\n    return duplicate()\n",
+        )
+    repository = build_repository_index(
+        tmp_path,
+        limits=RepositoryLimits(max_edges=3),
+    )
+    assert len(repository.call_edges) + len(repository.unresolved_calls) == 3
+    assert "relationship limit reached; remaining evidence omitted" in repository.diagnostics
+
+
 def test_index_serialization_is_explicitly_versioned(tmp_path: Path) -> None:
     _write(tmp_path, "sample.py", "def sample():\n    return 1\n")
     payload = build_repository_index(tmp_path).to_dict()
-    assert payload["schema_version"] == "entroly.repository-index.v1"
+    assert payload["schema_version"] == "entroly.repository-index.v2"

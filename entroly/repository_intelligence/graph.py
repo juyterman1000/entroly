@@ -14,6 +14,7 @@ from .models import (
     RepositoryLimits,
     Symbol,
     TestCandidate,
+    UnresolvedCall,
     normalize_relative,
 )
 from .parsers import ParsedFile, module_name
@@ -64,14 +65,35 @@ def resolve_calls(
     parsed: Mapping[str, ParsedFile],
     symbols: Mapping[str, Symbol],
     limits: RepositoryLimits,
-) -> tuple[CallEdge, ...]:
+) -> tuple[tuple[CallEdge, ...], tuple[UnresolvedCall, ...]]:
     by_name: dict[str, list[Symbol]] = defaultdict(list)
     by_path_name: dict[tuple[str, str], list[Symbol]] = defaultdict(list)
+    by_parent_name: dict[tuple[str, str], list[Symbol]] = defaultdict(list)
+    members_by_path_name: dict[tuple[str, str], list[Symbol]] = defaultdict(list)
+    class_by_path_name: dict[tuple[str, str], list[Symbol]] = defaultdict(list)
+    class_by_path_qualified: dict[tuple[str, str], list[Symbol]] = defaultdict(list)
+    class_by_name: dict[str, list[Symbol]] = defaultdict(list)
+    class_kinds = {"class", "struct", "interface", "trait"}
     for symbol in symbols.values():
         by_name[symbol.name].append(symbol)
         by_path_name[(symbol.path, symbol.name)].append(symbol)
+        if symbol.parent_id:
+            by_parent_name[(symbol.parent_id, symbol.name)].append(symbol)
+            members_by_path_name[(symbol.path, symbol.name)].append(symbol)
+        if symbol.kind in class_kinds:
+            class_by_path_name[(symbol.path, symbol.name)].append(symbol)
+            class_by_path_qualified[(symbol.path, symbol.qualified_name)].append(symbol)
+            class_by_name[symbol.name].append(symbol)
     modules = _module_paths(parsed)
+    module_names = frozenset(modules)
+    module_prefixes = frozenset(
+        ".".join(parts[:depth])
+        for candidate in module_names
+        for parts in [candidate.split(".")]
+        for depth in range(1, len(parts) + 1)
+    )
     edges: set[CallEdge] = set()
+    unresolved: set[UnresolvedCall] = set()
 
     def imported(item: ParsedFile, owner: str, name: str) -> list[Symbol]:
         target = item.import_aliases.get(owner or name)
@@ -86,29 +108,178 @@ def resolve_calls(
         path = _unique_module(modules, module)
         return list(by_path_name.get((path, symbol_name), ())) if path else []
 
+    def repository_import_target(item: ParsedFile, owner: str, name: str) -> bool:
+        target = item.import_aliases.get(owner or name)
+        if not target:
+            return False
+        module = target if owner else target.rpartition(".")[0]
+        if module in module_prefixes:
+            return True
+        candidate = module
+        while candidate:
+            if candidate in module_names:
+                return True
+            candidate = candidate.rpartition(".")[0]
+        return False
+
+    def typed_members(
+        item: ParsedFile,
+        receiver_type: str,
+        member_name: str,
+    ) -> tuple[list[Symbol], bool]:
+        """Resolve members from a local or imported receiver type.
+
+        The second return value says whether the receiver type itself denotes
+        repository code. That distinction lets unresolved typed members remain
+        visible without flooding the graph with stdlib and dependency calls.
+        """
+        clean = receiver_type.strip().strip("'\"")
+        if not clean:
+            return [], False
+        classes: dict[str, Symbol] = {
+            symbol.symbol_id: symbol
+            for symbol in (
+                *class_by_path_name.get((item.record.path, clean), ()),
+                *class_by_path_qualified.get((item.record.path, clean), ()),
+            )
+        }
+
+        first, dot, remainder = clean.partition(".")
+        imported_type = item.import_aliases.get(first)
+        qualified = f"{imported_type}.{remainder}" if imported_type and dot else imported_type
+        if qualified:
+            module, separator, type_name = qualified.rpartition(".")
+            if separator:
+                target_path = _unique_module(modules, module)
+                if target_path:
+                    for symbol in by_path_name.get((target_path, type_name), ()):
+                        if symbol.kind in class_kinds:
+                            classes[symbol.symbol_id] = symbol
+        elif not dot:
+            for symbol in class_by_name.get(clean, ()):
+                classes[symbol.symbol_id] = symbol
+
+        members = {
+            member.symbol_id: member
+            for class_id in classes
+            for member in by_parent_name.get((class_id, member_name), ())
+        }
+        return list(members.values()), bool(classes)
+
     limit_reached = False
     for path, item in sorted(parsed.items()):
         if limit_reached:
             break
-        for caller_id, target, line in item.calls:
+        for call in item.calls:
+            caller_id, target, line = call.caller_id, call.target, call.line
             owner, dot, name = target.rpartition(".")
             if not dot:
                 owner, name = "", target
-            candidates = list(by_path_name.get((path, name), ()))
-            candidates.extend(imported(item, owner, name))
-            if not candidates and not item.import_aliases.get(owner or name):
-                if len(by_name.get(name, ())) == 1:
-                    candidates.extend(by_name[name])
+            typed_candidates: list[Symbol] = []
+            repository_receiver = False
+            if owner and call.receiver_type:
+                typed_candidates, repository_receiver = typed_members(
+                    item,
+                    call.receiver_type,
+                    name,
+                )
+            candidates = list(typed_candidates)
+            if not candidates and not call.receiver_type:
+                if not owner:
+                    candidates.extend(by_path_name.get((path, name), ()))
+                candidates.extend(imported(item, owner, name))
+            untyped_members = (
+                list(members_by_path_name.get((path, name), ()))
+                if owner and not call.receiver_type and not candidates
+                else []
+            )
+            if (
+                not candidates
+                and not owner
+                and not item.import_aliases.get(name)
+            ):
+                global_candidates = by_name.get(name, ())
+                if global_candidates:
+                    # A unique global definition is a conservative fallback.
+                    # Multiple matches are retained only as negative evidence;
+                    # they must never become an invented edge.
+                    candidates.extend(global_candidates)
             unique = {item.symbol_id: item for item in candidates}
+            if untyped_members:
+                unresolved.add(UnresolvedCall(
+                    caller_id or f"{path}::<module>::module",
+                    target,
+                    path,
+                    line,
+                    "untyped-receiver-member",
+                    tuple(sorted(member.symbol_id for member in untyped_members)[:100]),
+                    call.start_byte,
+                    call.end_byte,
+                    call.evidence_sha256,
+                ))
+                if len(edges) + len(unresolved) >= limits.max_edges:
+                    limit_reached = True
+                    break
+                continue
             if len(unique) != 1:
+                # Do not flood the index with ordinary stdlib, dependency, or
+                # dynamic calls that have no repository candidate. Preserve
+                # the cases where the graph had evidence but could not bind it:
+                # ambiguity, or an explicit import alias whose target is absent.
+                if unique or repository_receiver or repository_import_target(item, owner, name):
+                    unresolved.add(UnresolvedCall(
+                        caller_id or f"{path}::<module>::module",
+                        target,
+                        path,
+                        line,
+                        (
+                            "ambiguous-receiver-member"
+                            if unique and call.receiver_type
+                            else "ambiguous"
+                            if unique
+                            else "unresolved-receiver-member"
+                            if repository_receiver
+                            else "unresolved-import"
+                        ),
+                        tuple(sorted(unique)),
+                        call.start_byte,
+                        call.end_byte,
+                        call.evidence_sha256,
+                    ))
+                    if len(edges) + len(unresolved) >= limits.max_edges:
+                        limit_reached = True
+                        break
                 continue
             callee = next(iter(unique.values()))
             caller = caller_id or f"{path}::<module>::module"
-            edges.add(CallEdge(caller, callee.symbol_id, path, line))
-            if len(edges) >= limits.max_edges:
+            if typed_candidates:
+                resolution = "receiver-type:" + (call.receiver_binding or "inferred")
+                confidence = "type-inferred"
+            elif not owner and by_path_name.get((path, name)):
+                resolution = "same-file"
+                confidence = "resolved"
+            elif item.import_aliases.get(owner or name):
+                resolution = "import-binding"
+                confidence = "resolved"
+            else:
+                resolution = "global-unique"
+                confidence = "resolved"
+            edges.add(CallEdge(
+                caller,
+                callee.symbol_id,
+                path,
+                line,
+                confidence,
+                "calls",
+                resolution,
+                call.start_byte,
+                call.end_byte,
+                call.evidence_sha256,
+            ))
+            if len(edges) + len(unresolved) >= limits.max_edges:
                 limit_reached = True
                 break
-    return tuple(
+    resolved = tuple(
         sorted(
             edges,
             key=lambda edge: (
@@ -116,6 +287,13 @@ def resolve_calls(
             ),
         )
     )
+    unknown = tuple(sorted(
+        unresolved,
+        key=lambda call: (
+            call.path, call.line, call.caller_id, call.target, call.reason
+        ),
+    ))
+    return resolved, unknown
 
 
 def analyze_change_impact(
