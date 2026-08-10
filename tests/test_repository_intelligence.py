@@ -296,7 +296,20 @@ def test_untyped_member_call_does_not_bind_same_file_method_by_name(
 
 
 def test_tree_sitter_call_is_attributed_to_narrowest_rust_symbol(tmp_path: Path) -> None:
+    # Presence is not compatibility. An installed pack below the declared
+    # floor still imports, so `importorskip` lets the test run against a
+    # registry whose symbol extraction differs, and it fails with a confusing
+    # KeyError rather than skipping. Gate on the same compatibility check the
+    # runtime uses so a below-floor environment skips honestly.
     pytest.importorskip("tree_sitter_language_pack")
+    from entroly.parser_compatibility import language_pack_status
+
+    status = language_pack_status()
+    if not status.compatible:
+        pytest.skip(
+            f"tree-sitter-language-pack {status.version} is below the supported "
+            f">={status.minimum_version} floor ({status.detail})"
+        )
     _write(
         tmp_path,
         "src/lib.rs",

@@ -5,9 +5,38 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from entroly.repository_intelligence.cli import run
 
 FAKE_LSP_SERVER = Path(__file__).parent / "fixtures" / "fake_lsp_server.py"
+
+
+@pytest.fixture
+def plan_dir(tmp_path_factory):
+    """A directory for plan JSON that is OUTSIDE the indexed repository root.
+
+    A refactor plan is bound to the index digest it was produced against, and
+    that check is a trust property rather than an inconvenience. Writing the
+    plan inside the root therefore invalidates the plan it just created:
+    measured, the same apply exits 2 with "refactor plan index is stale" when
+    the plan lives in the root and 0 when it lives outside. Tests must use the
+    plan file the way an operator should.
+    """
+    return tmp_path_factory.mktemp("refactor-plans")
+
+
+@pytest.fixture
+def operator_write_authority(monkeypatch):
+    """Grant the process-level authority destructive applies require.
+
+    `RepositoryWriteAuthority` reads ENTROLY_REPOSITORY_WRITES from the process
+    environment when the service is constructed; `--acknowledge-incomplete`
+    acknowledges known incompleteness but deliberately cannot grant write
+    access. Apply tests must therefore supply authority the way an operator
+    does, rather than through tool arguments.
+    """
+    monkeypatch.setenv("ENTROLY_REPOSITORY_WRITES", "1")
 
 
 def _write(root: Path, path: str, text: str) -> None:
@@ -297,7 +326,7 @@ def test_snapshot_round_trip_proves_current_graph_is_importable(tmp_path: Path) 
     assert checked["in_sync"] is True
 
 
-def test_cli_two_phase_rename_requires_ack_and_applies_committed_plan(tmp_path: Path) -> None:
+def test_cli_two_phase_rename_requires_ack_and_applies_committed_plan(tmp_path: Path, plan_dir: Path, operator_write_authority) -> None:
     _project(tmp_path)
     code, plan = run([
         "--root", str(tmp_path), "rename-preview",
@@ -306,7 +335,7 @@ def test_cli_two_phase_rename_requires_ack_and_applies_committed_plan(tmp_path: 
     assert code == 0
     assert plan["command"] == "rename-preview"
     assert plan["receipt"]["writes_performed"] == 0
-    plan_path = tmp_path / "plan.json"
+    plan_path = plan_dir / "plan.json"
     plan_path.write_text(json.dumps(plan), encoding="utf-8")
 
     rejected_code, rejected = run([
@@ -329,7 +358,7 @@ def test_cli_two_phase_rename_requires_ack_and_applies_committed_plan(tmp_path: 
     assert "def perform" in (tmp_path / "pkg/source.py").read_text(encoding="utf-8")
 
 
-def test_cli_safe_delete_preview_and_apply_are_committed(tmp_path: Path) -> None:
+def test_cli_safe_delete_preview_and_apply_are_committed(tmp_path: Path, plan_dir: Path, operator_write_authority) -> None:
     _write(
         tmp_path,
         "module.py",
@@ -341,7 +370,7 @@ def test_cli_safe_delete_preview_and_apply_are_committed(tmp_path: Path) -> None
     ])
     assert code == 0
     assert plan["safe_to_apply"] is True
-    plan_path = tmp_path / "safe-delete.json"
+    plan_path = plan_dir / "safe-delete.json"
     plan_path.write_text(json.dumps(plan), encoding="utf-8")
     code, applied = run([
         "--root", str(tmp_path), "safe-delete-apply",
@@ -354,7 +383,7 @@ def test_cli_safe_delete_preview_and_apply_are_committed(tmp_path: Path) -> None
     assert "unused" not in (tmp_path / "module.py").read_text(encoding="utf-8")
 
 
-def test_cli_file_move_updates_imports_and_refreshes_graph(tmp_path: Path) -> None:
+def test_cli_file_move_updates_imports_and_refreshes_graph(tmp_path: Path, plan_dir: Path, operator_write_authority) -> None:
     _write(tmp_path, "pkg/__init__.py", "")
     _write(tmp_path, "pkg/old.py", "def execute():\n    return 1\n")
     _write(tmp_path, "app.py", "from pkg.old import execute\n")
@@ -364,7 +393,7 @@ def test_cli_file_move_updates_imports_and_refreshes_graph(tmp_path: Path) -> No
     ])
     assert code == 0
     assert plan["safe_to_apply"] is True
-    plan_path = tmp_path / "file-move.json"
+    plan_path = plan_dir / "file-move.json"
     plan_path.write_text(json.dumps(plan), encoding="utf-8")
     code, applied = run([
         "--root", str(tmp_path), "file-move-apply",
@@ -429,3 +458,77 @@ def test_invalid_root_is_machine_readable(tmp_path: Path) -> None:
     code, payload = run(["--root", str(tmp_path / "absent"), "summary"])
     assert code == 2
     assert payload["error"] == "invalid_repository"
+
+
+def test_plan_written_inside_the_root_invalidates_itself(
+    tmp_path: Path,
+    plan_dir: Path,
+    operator_write_authority,
+) -> None:
+    """A plan is bound to the index digest it was produced against.
+
+    Saving the plan inside the indexed root changes that digest, so the plan
+    invalidates itself before it can be applied. This is the staleness check
+    working, not a defect -- but it is a trap an operator will hit, because
+    saving a plan next to the code it describes is the obvious thing to do.
+
+    Pinned here so the behaviour is known rather than rediscovered: the same
+    apply exits 2 from inside the root and 0 from outside it.
+    """
+    _write(tmp_path, "pkg/__init__.py", "")
+    _write(tmp_path, "pkg/old.py", "def execute():\n    return 1\n")
+    _write(tmp_path, "app.py", "from pkg.old import execute\n")
+
+    code, plan = run([
+        "--root", str(tmp_path), "file-move-preview",
+        "--source", "pkg/old.py", "--target", "pkg/new.py",
+    ])
+    assert code == 0
+
+    inside = tmp_path / "plan-inside.json"
+    inside.write_text(json.dumps(plan), encoding="utf-8")
+    stale_code, stale = run([
+        "--root", str(tmp_path), "file-move-apply",
+        "--plan-json", str(inside),
+        "--expected-plan-sha", plan["receipt"]["plan_sha256"],
+        "--acknowledge-incomplete",
+    ])
+    assert stale_code == 2
+    assert stale["detail"] == "refactor plan index is stale"
+    assert (tmp_path / "pkg/old.py").exists(), "a stale plan must not move files"
+
+
+def test_apply_is_refused_without_operator_write_authority(
+    tmp_path: Path,
+    plan_dir: Path,
+    monkeypatch,
+) -> None:
+    """Acknowledgement is not authority.
+
+    `--acknowledge-incomplete` acknowledges known incompleteness; it cannot
+    grant write access. Authority comes from the process environment, read when
+    the service is constructed, so a caller cannot escalate itself.
+    """
+    monkeypatch.delenv("ENTROLY_REPOSITORY_WRITES", raising=False)
+    _write(tmp_path, "pkg/__init__.py", "")
+    _write(tmp_path, "pkg/old.py", "def execute():\n    return 1\n")
+    _write(tmp_path, "app.py", "from pkg.old import execute\n")
+
+    code, plan = run([
+        "--root", str(tmp_path), "file-move-preview",
+        "--source", "pkg/old.py", "--target", "pkg/new.py",
+    ])
+    assert code == 0, "preview is a read operation and stays available"
+
+    plan_path = plan_dir / "unauthorized.json"
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
+    refused_code, refused = run([
+        "--root", str(tmp_path), "file-move-apply",
+        "--plan-json", str(plan_path),
+        "--expected-plan-sha", plan["receipt"]["plan_sha256"],
+        "--acknowledge-incomplete",
+    ])
+
+    assert refused_code == 2
+    assert (tmp_path / "pkg/old.py").exists(), "nothing may be written without authority"
+    assert not (tmp_path / "pkg/new.py").exists()

@@ -8,6 +8,11 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import entroly.repository_intelligence.service as service_module
+# `service` is a thin facade (`from .service_impl import *`). Names that
+# service_impl imports for its own use never become attributes of the
+# facade, so patching them there is silently inert. Patch the module that
+# actually holds the binding.
+import entroly.repository_intelligence.service_impl as service_impl_module
 from entroly.repository_intelligence import (
     InvalidChangedPaths,
     InvalidContextQuery,
@@ -207,7 +212,7 @@ def test_service_reuses_prepared_graph_query_adjacency_until_refresh(
     def unexpected(*args, **kwargs):
         raise AssertionError("unchanged service generation should reuse adjacency")
 
-    monkeypatch.setattr(service_module, "prepare_graph_query", unexpected)
+    monkeypatch.setattr(service_impl_module, "prepare_graph_query", unexpected)
     second = service.graph_query("invoke", operation="neighbors")
     assert second["resolution"] == "resolved"
 
@@ -404,8 +409,45 @@ def test_mcp_refresh_atomically_changes_generation(tmp_path: Path, monkeypatch) 
     assert after["root"] == "."
 
 
+def test_mcp_refactor_apply_is_refused_without_operator_write_authority(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Acknowledgement is not authority.
+
+    `RepositoryWriteAuthority` is captured from the process environment when the
+    service is constructed, so a caller cannot grant itself write access through
+    tool arguments. This gate had no test; it was only observable as a confusing
+    `repository_operation_failed` where the suite expected the acknowledgement
+    error, because the authority check runs before the acknowledgement check.
+    """
+    _project(tmp_path)
+    monkeypatch.delenv("ENTROLY_REPOSITORY_WRITES", raising=False)
+    _install_fake_mcp(monkeypatch)
+    mcp = create_repository_mcp_server(tmp_path)
+    plan = json.loads(mcp.tools["repository_rename_preview"]("execute", "perform"))
+
+    refused = json.loads(mcp.tools["repository_rename_apply"](
+        plan,
+        plan["receipt"]["plan_sha256"],
+        True,  # acknowledged, and still refused
+    ))
+    assert refused["error"] == "repository_operation_failed"
+    # The detail is deliberately generic. An unauthorized caller must not be
+    # told which environment variable would grant it access, so the env name is
+    # confined to local logs rather than returned over the tool surface.
+    assert "ENTROLY_REPOSITORY_WRITES" not in json.dumps(refused)
+    # The refusal is what matters: nothing on disk changed.
+    assert "execute" in (tmp_path / "pkg/source.py").read_text(encoding="utf-8")
+    assert "perform" not in (tmp_path / "pkg/source.py").read_text(encoding="utf-8")
+
+
 def test_mcp_refactor_apply_requires_ack_and_refreshes_index(tmp_path: Path, monkeypatch) -> None:
     _project(tmp_path)
+    # Destructive applies need operator authority from the process environment,
+    # set before the service is constructed. Without it the authority check
+    # short-circuits ahead of the acknowledgement gate this test exercises.
+    monkeypatch.setenv("ENTROLY_REPOSITORY_WRITES", "1")
     _install_fake_mcp(monkeypatch)
     mcp = create_repository_mcp_server(tmp_path)
     plan = json.loads(mcp.tools["repository_rename_preview"]("execute", "perform"))
