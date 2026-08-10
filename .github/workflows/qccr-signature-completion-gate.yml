@@ -3,13 +3,27 @@ name: QCCR Dependency Evidence Gate
 on:
   pull_request:
     branches: [main]
+    # Gate on what changed, not on who changed it. Pinning this job to a single
+    # branch name made it a one-shot check: the branch is deleted on merge, so
+    # no later pull request could ever match and the fix it protects would be
+    # unguarded from that point on. These paths cover the selector, the Rust
+    # crate that carries the dependency anchors, the harnesses the assertions
+    # import, and this file itself.
+    paths:
+      - 'entroly/qccr.py'
+      - 'entroly/semantic_resolution.py'
+      - 'entroly-qccr/**'
+      - 'entroly-core/**'
+      - 'benchmarks/answer_correctness_bridge.py'
+      - 'benchmarks/graph_lane_quality.py'
+      - 'benchmarks/results/graph_lane_tasks.json'
+      - '.github/workflows/qccr-signature-completion-gate.yml'
 
 permissions:
   contents: read
 
 jobs:
   exact-head-regression:
-    if: github.head_ref == 'diagnostic/qccr-rendering-20260809'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
