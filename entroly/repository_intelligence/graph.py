@@ -264,6 +264,13 @@ def resolve_calls(
             else:
                 resolution = "global-unique"
                 confidence = "resolved"
+            # A callee matched by the line-oriented reader is a lexical guess,
+            # not a resolution any parser stands behind. It was reported as
+            # "resolved", which made it indistinguishable from an AST-verified
+            # edge. The resolution label still describes how the name was
+            # matched; only the confidence claim is downgraded.
+            if call.parse_backend == "conservative":
+                confidence = "heuristic-static"
             edges.add(CallEdge(
                 caller,
                 callee.symbol_id,
