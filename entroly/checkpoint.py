@@ -62,14 +62,22 @@ from .checkpoint_relevance import (
     select_relevant_checkpoint,
 )
 
-try:
-    from entroly_core import ContextFragment
-except ImportError:
+from .native_status import usable_core as _usable_core
+
+# Ask the shared gate rather than importing the core directly. A bare
+# `import entroly_core` here took the Rust ContextFragment even when the engine
+# had already refused that same core as below the minimum version, so one
+# module built fragments the other could not accept:
+#   TypeError: ContextFragment.__new__() got an unexpected keyword 'recency_score'
+_core = _usable_core()
+if _core is not None:
+    ContextFragment = _core.ContextFragment
+else:
     from dataclasses import dataclass as _dataclass
 
     @_dataclass
     class ContextFragment:  # type: ignore[no-redef]
-        """Pure-Python fallback when entroly_core (Rust) is not installed."""
+        """Pure-Python fallback when the native engine is absent or unusable."""
         fragment_id: str
         content: str
         token_count: int

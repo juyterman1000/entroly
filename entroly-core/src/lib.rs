@@ -6071,6 +6071,16 @@ fn py_classify_block(role: &str, content: &str, tool_name: Option<String>) -> St
 
 // ─── Extra standalone wrappers for direct test/utility access ────────────────
 
+/// Extract a structural outline using the shared native skeleton engine.
+///
+/// The Python SDK uses this capability probe instead of treating a successful
+/// `import entroly_core` as proof that the installed wheel has the current
+/// read-mode surface.
+#[pyfunction(name = "extract_skeleton")]
+fn py_extract_skeleton(content: &str, source: &str) -> Option<String> {
+    skeleton::extract_skeleton(content, source)
+}
+
 /// Cross-fragment redundancy: how much of `text` is already covered by `others` [0,1].
 #[pyfunction]
 fn py_cross_fragment_redundancy(text: &str, others: Vec<String>) -> f64 {
@@ -6363,6 +6373,7 @@ fn entroly_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_renyi_entropy_2, m)?)?;
     m.add_function(wrap_pyfunction!(py_entropy_divergence, m)?)?;
     m.add_function(wrap_pyfunction!(py_cross_fragment_redundancy, m)?)?;
+    m.add_function(wrap_pyfunction!(py_extract_skeleton, m)?)?;
     m.add_function(wrap_pyfunction!(py_simhash, m)?)?;
     m.add_function(wrap_pyfunction!(py_hamming_distance, m)?)?;
     m.add_function(wrap_pyfunction!(py_information_score, m)?)?;

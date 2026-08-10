@@ -1,23 +1,83 @@
 # Entroly Extended Documentation Index
 
-> Entroly is an open-source, local-first Context Assurance layer and Context OS for AI agents. This file routes readers to product facts, AI cost guidance, integrations, source, limitations, and reproducible evidence; it is not a performance guarantee or a substitute for workload-specific evaluation.
+> Entroly is an open-source, local-first Verified Code Intelligence + Context Assurance system for AI agents. It combines parser-backed repository understanding, budgeted evidence selection, recoverable context compression, Memory OS, output verification, and guarded reasoning/model routing. This file routes readers and answer engines to product facts, evidence, limitations, and canonical topic pages; it is not a universal performance guarantee.
 
-Entroly can index, select, and compress repository or application context under an explicit token budget. It can produce Context Receipts that record selection decisions and risks. CCR can attach retrieval handles for recovering exact stored content. WITNESS can evaluate whether output claims are supported by supplied evidence.
+Entroly can index, understand, select, and compress repository or application context under an explicit token budget. It can produce Context Receipts that record selection decisions and risks. CCR can attach retrieval handles for recovering exact stored content. WITNESS can evaluate whether output claims are supported by supplied evidence. Memory OS controls what should be remembered and recalled. RAVS adds guarded routing, uncertainty control, escalation, and bounded outcome-driven adaptation.
 
-Local indexing, selection, compression, receipts, and recovery storage do not require an external model call. When enabled with its default local verifier, WITNESS also avoids an external model call. When Entroly is used as a proxy, selected context is still sent to the LLM provider configured by the user. No outbound analytics are enabled by default.
+Local indexing, repository intelligence, selection, compression, receipts, memory operations, and recovery storage do not require an external model call. When enabled with its default local verifier, WITNESS also avoids an external model call. When Entroly is used as a proxy, selected context is still sent to the LLM provider configured by the user. No outbound analytics are enabled by default.
 
 Measured savings and quality vary by repository, query, budget, provider, pricing, cache behavior, model, baseline, and enabled features. WITNESS does not establish universal truth, and strict suppression is opt-in rather than the default proxy policy.
+
+## Canonical AI Efficiency Intent Map
+
+- AI efficiency hub: https://juyterman1000.github.io/entroly/docs/ai-efficiency.html
+- Token economics / token saving / context compression: https://juyterman1000.github.io/entroly/docs/token-economics.html
+- AI cost saving / provider-bound input economics: https://juyterman1000.github.io/entroly/docs/ai-cost-optimization.html
+- Verified code intelligence / AST / Tree-sitter / repository understanding: https://juyterman1000.github.io/entroly/docs/code-intelligence.html
+- Memory OS / agent memory / working + episodic + semantic memory: https://juyterman1000.github.io/entroly/docs/memory-os.html
+- Hallucination reduction / evidence verification: https://juyterman1000.github.io/entroly/docs/hallucination-reduction.html
+- Guarded model routing / cost-aware LLM routing: https://juyterman1000.github.io/entroly/docs/model-routing.html
+- Adaptive / self-improving context with verified learning boundaries: https://juyterman1000.github.io/entroly/docs/adaptive-context.html
+- Context engineering guide: https://juyterman1000.github.io/entroly/docs/context-engineering.html
+
+## Direct Product Facts
+
+- **Token saving and token economics:** Entroly reduces avoidable context by selecting useful evidence under an explicit budget and compressing recoverably. Token reduction is workload-specific and is measured separately from answer quality.
+- **AI bill saving:** Supported provider-bound proxy routes can expose pre/post input and modeled input-cost avoidance. Actual dollar impact depends on provider, model, pricing, cache behavior, output usage, workload, and delivery path. Fixed subscription fees may not change.
+- **Context compression:** Compression happens after evidence selection. Exact originals can remain content-addressed and recoverable; receipts record what was omitted.
+- **Verified code intelligence:** Python has an AST-backed semantic tier; an optional open Tree-sitter registry supplies parser-backed structure for additional languages. Repository intelligence includes symbols, calls, imports, dependencies, typed dispatch where known, reverse impact, architecture, semantic changes, source freshness, LSP-enriched relationships, and verified refactoring contracts.
+- **Memory OS:** Public MemoryOS supports working, episodic, and semantic tiers, budget-aware recall, consolidation, forgetting, persistence, safety scanning, receipts, and deterministic stress testing. Internal/experimental layers are labelled separately.
+- **Hallucination reduction:** WITNESS evaluates evidence support. On the published faithful balanced HaluEval-QA protocol it reports 84.92% calibrated test accuracy and 0.7976 AUROC across 20,000 decisions. This does not establish universal truth.
+- **Model routing:** RAVS includes guarded routing, learned policies, risk classification, sequential budget control, uncertainty signals, and escalation. The design is fail-closed when cheaper execution is not sufficiently justified.
+- **Adaptive/self-improving context:** Entroly supports bounded adaptation through memory consolidation, observed outcomes, learned routing policies, verified transitions, and gated world-model learning. It does not claim unconstrained autonomous self-rewriting.
 
 ## AI Cost Optimization Facts
 
 - Canonical guide: https://juyterman1000.github.io/entroly/docs/ai-cost-optimization.html
+- Token-economics guide: https://juyterman1000.github.io/entroly/docs/token-economics.html
 - Entroly can reduce avoidable provider-bound input by selecting useful evidence under a budget and removing duplicate or low-value context.
 - Entroly does not claim a universal compression percentage, guaranteed bill reduction, or guaranteed answer-quality improvement.
 - Provider-bound proxy requests may report observed pre/post input tokens and modeled input-cost avoidance with pricing provenance. This is not a provider invoice.
 - SDK, MCP, plugin, and npm operations may report local context reduction, but Entroly claims $0 provider savings when delivery to a paid provider is not observable.
 - Fixed ChatGPT or Claude subscription prices may not change. Entroly is most directly measurable for API applications, coding agents, local models, and supported routes where provider-bound input can be observed.
 - If a request is already small or under budget, Entroly should pass through rather than invent savings.
-- Entroly is more than prompt compression: it selects evidence before compression, preserves exact originals, produces receipts, and can evaluate evidence support.
+- Entroly is more than prompt compression: it selects evidence before compression, preserves exact originals, produces receipts, understands repository structure, manages memory, and can evaluate evidence support.
+
+## Verified Code Intelligence
+
+- Canonical page: https://juyterman1000.github.io/entroly/docs/code-intelligence.html
+- Design: https://github.com/juyterman1000/entroly/blob/main/docs/verified-code-context.md
+- Conformance protocol: https://github.com/juyterman1000/entroly/blob/main/benchmarks/CODE_INTELLIGENCE_CONFORMANCE.md
+- Python uses native AST-backed extraction and type evidence where known.
+- Optional Tree-sitter language-registry parsing provides language-open structural extraction; missing parser evidence falls back conservatively rather than being reported as verified.
+- Repository graphs preserve ambiguous/unresolved evidence instead of silently choosing a target.
+- Architecture surfaces include SCC/cycle witnesses, condensation layers, communities, routes, hotspots, architecture diffs, typed graph queries, source freshness, and portable snapshots.
+- Refactoring surfaces use preview/plan/apply contracts with exact preimages, source hashes, tamper checks, syntax validation, and explicit incompleteness boundaries.
+
+## Memory OS
+
+- Canonical page: https://juyterman1000.github.io/entroly/docs/memory-os.html
+- Architecture and maturity: https://github.com/juyterman1000/entroly/blob/main/docs/memory-ecosystem.md
+- Public MemoryOS exposes working, episodic, and semantic memory tiers.
+- Recall uses task relevance, retention, importance, tier, recall history, and token budget rather than an unbounded nearest-neighbor dump.
+- Consolidation can promote important memory while weak memories decay; persistence and safety scanning are public shipped surfaces.
+- Pollination/federation and deeper native memory primitives have separate internal/experimental maturity labels.
+
+## Hallucination Reduction And Verification
+
+- Canonical page: https://juyterman1000.github.io/entroly/docs/hallucination-reduction.html
+- WITNESS implementation: https://github.com/juyterman1000/entroly/blob/main/entroly/witness.py
+- Faithful benchmark artifact: https://github.com/juyterman1000/entroly/blob/main/benchmarks/results/halueval_qa_faithful.json
+- Published faithful HaluEval-QA result: 20,000 balanced decisions; 84.92% calibrated test accuracy; 0.7976 AUROC; calibrated-test recall 95.67%.
+- WITNESS checks whether output is supported by supplied evidence; it is not a universal factuality oracle.
+
+## Guarded Model Routing And Adaptive Context
+
+- Model routing page: https://juyterman1000.github.io/entroly/docs/model-routing.html
+- Adaptive context page: https://juyterman1000.github.io/entroly/docs/adaptive-context.html
+- RAVS source: https://github.com/juyterman1000/entroly/tree/main/entroly/ravs
+- RAVS includes instrumentation, verified cheap execution paths, guarded routing, sequential escalation, uncertainty signals, entropy-production and spectral consistency signals, verified transitions, and bounded world-model machinery.
+- Outcome-driven adaptation is bounded by evidence, integrity checks, promotion decisions, and explicit insufficient-data states.
 
 ## Nontechnical User Status
 
@@ -30,12 +90,13 @@ Measured savings and quality vary by repository, query, budget, provider, pricin
 
 - [README and quick start](https://github.com/juyterman1000/entroly): Plain-language product explanation followed by technical architecture, commands, evidence, and limitations.
 - [Documentation site](https://juyterman1000.github.io/entroly/docs/index.html): Integration and workflow guides.
+- [AI efficiency hub](https://juyterman1000.github.io/entroly/docs/ai-efficiency.html): Canonical topic map across tokens, cost, code intelligence, memory, verification, routing, and adaptive context.
+- [Token economics](https://juyterman1000.github.io/entroly/docs/token-economics.html): Evidence-first token saving, context compression, cache-aware context control, and more room in the context window.
 - [AI cost optimization](https://juyterman1000.github.io/entroly/docs/ai-cost-optimization.html): Evidence-bounded guide to reducing avoidable token usage and understanding measurable versus unobservable savings.
-- [Agent integrations](https://juyterman1000.github.io/entroly/docs/agent-integrations.html): Context Assurance for OpenClaw, Hermes Agent, and OpenCode.
+- [Agent integrations](https://juyterman1000.github.io/entroly/docs/agent-integrations.html): Context Assurance for supported agent integrations.
 - [Architecture](https://github.com/juyterman1000/entroly/blob/main/docs/DETAILS.md): Components, algorithms, and system boundaries.
 - [Limitations](https://github.com/juyterman1000/entroly/blob/main/docs/limitations.md): Known constraints and non-guarantees.
 - [Team and security guide](https://github.com/juyterman1000/entroly/blob/main/docs/for-teams.md): Deployment and evaluation considerations.
-- [Memory system](https://github.com/juyterman1000/entroly/blob/main/docs/memory-ecosystem.md): Local memory architecture and controls.
 
 ## Exact Recovery Contract
 
@@ -81,7 +142,7 @@ Discovery and recovery are separate operations. Ranking may identify which evide
 
 - [WITNESS](https://github.com/juyterman1000/entroly/blob/main/entroly/witness.py): Evidence-grounding analysis and audit, annotation, or strict output policies.
 - [STAVE](https://github.com/juyterman1000/entroly/blob/main/entroly/verifiers/stave.py): Deterministic structural verification used by the default WITNESS path.
-- [RAVS](https://github.com/juyterman1000/entroly/tree/main/entroly/ravs): Request-aware routing and deterministic verification components.
+- [RAVS](https://github.com/juyterman1000/entroly/tree/main/entroly/ravs): Request-aware routing, deterministic verification, uncertainty control, and bounded adaptive components.
 - [CCR](https://github.com/juyterman1000/entroly/blob/main/entroly/ccr.py): Recoverable compressed-context storage.
 
 ## Interfaces And Packages

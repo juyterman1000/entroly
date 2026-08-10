@@ -178,6 +178,23 @@ def _generic(text: str) -> str:
         return text
 
 
+def _proxy(text: str) -> str:
+    """What the proxy actually does to a tool result today.
+
+    `proxy_transform` has no codec imports: it runs keyword-pattern compressors
+    first and then an ESC fallback. Tool outputs are exactly the shapes the
+    codecs were built and measured on, so this arm shows what the
+    highest-traffic surface gives up by not reaching the registry.
+    """
+    from entroly.proxy_transform import compress_tool_output
+
+    try:
+        compressed, _kind, _savings = compress_tool_output(text)
+        return compressed
+    except Exception:
+        return text
+
+
 def _specialized(text: str, source_id: str):
     from entroly.codec import RecoveryStore
     from entroly.codecs_builtin import default_registry
@@ -220,6 +237,7 @@ def main(argv: list[str]) -> int:
             "full": (text, False),
             "truncate": (text[:budget_chars], False),
             "generic": (_generic(text), False),
+            "proxy": (_proxy(text), False),
             "specialized": (spec_text, recoverable),
         }
         for arm, (out, rec) in arms.items():
@@ -246,7 +264,7 @@ def main(argv: list[str]) -> int:
               f"{r.required_kept:>7}/{r.required_total:<2}{'yes' if r.recoverable else '-':>8}")
 
     print("\n  Per arm, averaged over fixtures:")
-    for arm in ("full", "truncate", "generic", "specialized"):
+    for arm in ("full", "truncate", "generic", "proxy", "specialized"):
         sel = [r for r in rows if r.arm == arm]
         red = sum(r.reduction_pct for r in sel) / len(sel)
         ret = sum(r.retention for r in sel) / len(sel)

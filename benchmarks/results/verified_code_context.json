@@ -1,0 +1,44 @@
+{
+  "elapsed_seconds": 0.114657,
+  "environment": {
+    "platform": "Windows-10-10.0.26200-SP0",
+    "python": "3.10.0"
+  },
+  "errors": [],
+  "git_commit": "23487a4bf02c457e30ebfa4e99fe4e6ad604259e",
+  "git_dirty": true,
+  "implementation_sha256": "e4d39c64c79488a99f10ccb1e8928fe1284a40be99bbae86bc7060547d582f7c",
+  "index": {
+    "ambiguous_or_unresolved_calls": 1,
+    "files": 8,
+    "resolved_calls": 5,
+    "symbols": 16
+  },
+  "index_digest": "sha256:21e1b4e2f57c19480390c4651532001bf443bf06d28016a8e6a831c6825a5e21",
+  "metrics": {
+    "ambiguous_call_truthfulness": 1,
+    "deterministic_receipt": 1,
+    "edge_evidence_validity": 1.0,
+    "fragment_evidence_validity": 1.0,
+    "gold_edge_recall": 1.0,
+    "query_symbol_recall": 1.0,
+    "stale_source_fail_closed": 1,
+    "symbol_graph_ambiguity_truthfulness": 1,
+    "symbol_graph_evidence_validity": 1,
+    "symbol_graph_stale_source_fail_closed": 1
+  },
+  "schema_version": "entroly.verified-code-context-benchmark.v1",
+  "workload": {
+    "gold_edges": 5,
+    "languages": [
+      "python",
+      "rust",
+      "typescript",
+      "go",
+      "java"
+    ],
+    "max_hops": 2,
+    "queries": 5,
+    "token_budget": 512
+  }
+}

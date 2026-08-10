@@ -265,6 +265,237 @@
       "package_surfaces": [],
       "public_entrypoints": [],
       "limitations": "The measured module is not reachable from a shipped entry point and must not support a production headline."
+    },
+    {
+      "id": "parser_backed_code_intelligence",
+      "status": "beta",
+      "implementation": [
+        "entroly/tree_sitter_support.py",
+        "entroly/semantic_resolution.py",
+        "entroly/repository_intelligence/parsers.py"
+      ],
+      "tests": [
+        "tests/test_tree_sitter_support.py::test_language_map_covers_at_least_twenty_seven_languages",
+        "tests/test_tree_sitter_support.py::test_pack_v1_never_downloads_without_explicit_opt_in"
+      ],
+      "docs": ["docs/code-shell-framework-integrations.md"],
+      "package_surfaces": ["python-sdk", "mcp"],
+      "public_entrypoints": [
+        "entroly.semantic_resolution.extract_blocks",
+        "entroly.repository_intelligence.build_repository_index"
+      ],
+      "limitations": "Parser grammars are optional and local-first; parser-backed call evidence is exact when available, while cross-file and type-directed binding remains conservative."
+    },
+    {
+      "id": "verified_code_context_graph",
+      "status": "beta",
+      "implementation": [
+        "entroly/repository_intelligence/verified_context.py",
+        "entroly/repository_intelligence/graph.py",
+        "entroly/repository_intelligence/graph_query.py",
+        "entroly/repository_intelligence/architecture_diff.py",
+        "entroly/repository_intelligence/verified_git_diff.py",
+        "entroly/repository_intelligence/git_history.py",
+        "entroly/repository_intelligence/incremental.py",
+        "entroly/repository_intelligence/lsp_orchestrator.py",
+        "entroly/repository_intelligence/persistent_analysis.py",
+        "entroly/repository_intelligence/program_graph.py",
+        "entroly/repository_intelligence/interprocedural_flow.py",
+        "entroly/repository_intelligence/verified_slice.py",
+        "entroly/repository_intelligence/repository_map.py",
+        "entroly/repository_intelligence/runtime_overlay.py",
+        "entroly/repository_intelligence/semantic_overlay.py",
+        "entroly/repository_intelligence/verified_architecture.py",
+        "entroly/repository_intelligence/verified_refactor.py",
+        "entroly/repository_intelligence/verified_move.py",
+        "entroly/repository_intelligence/verified_routes.py",
+        "entroly/repository_intelligence/verified_snapshot.py",
+        "entroly/repository_intelligence/verified_health.py",
+        "entroly/repository_intelligence/service.py",
+        "entroly/repository_intelligence/mcp.py"
+      ],
+      "tests": [
+        "tests/test_repository_verified_context.py::test_verified_context_selects_query_seed_and_graph_neighbor",
+        "tests/test_repository_verified_context.py::test_verified_context_fails_closed_when_source_changed_after_index",
+        "tests/test_repository_verified_context.py::test_verified_context_can_include_bounded_local_git_history",
+        "tests/test_repository_verified_context.py::test_symbol_graph_verifies_call_evidence_and_refuses_tampering",
+        "tests/test_repository_verified_context.py::test_symbol_graph_preserves_ambiguous_identity",
+        "tests/test_repository_verified_context.py::test_symbol_graph_fails_closed_when_indexed_source_is_stale",
+        "tests/test_repository_program_graph.py::test_program_graph_verifies_control_and_branching_definitions",
+        "tests/test_repository_interprocedural_flow.py::test_interprocedural_flow_binds_arguments_returns_and_consumer",
+        "tests/test_repository_interprocedural_flow.py::test_interprocedural_flow_traverses_multiple_calls_and_skips_method_self",
+        "tests/test_repository_verified_slice.py::test_program_slice_combines_context_control_and_cross_function_flow",
+        "tests/test_repository_verified_slice.py::test_program_slice_accepts_rank_proposal_but_rejects_invented_identity",
+        "tests/test_repository_map.py::test_global_map_ranks_dependency_and_call_hub",
+        "tests/test_repository_map.py::test_map_evidence_is_exact_budgeted_and_tamper_evident",
+        "tests/test_repository_incremental.py::test_incremental_cache_reuses_unchanged_exact_parse_results",
+        "tests/test_repository_incremental.py::test_content_identical_checkout_reuses_root_independent_graph_snapshot",
+        "tests/test_repository_lsp_orchestrator.py::test_configured_lsp_process_is_bounded_and_ranges_are_source_verified",
+        "tests/test_repository_lsp_orchestrator.py::test_lsp_timeout_kills_hung_process",
+        "tests/test_repository_lsp_orchestrator.py::test_service_builds_committed_lsp_augmented_rename_preview",
+        "tests/test_repository_verified_architecture.py::test_architecture_has_exact_layers_cycles_routes_and_stable_communities",
+        "tests/test_repository_verified_architecture.py::test_architecture_handles_dependency_chains_beyond_python_recursion_limit",
+        "tests/test_repository_verified_architecture.py::test_architecture_bounds_serialized_edges_without_changing_full_graph_counts",
+        "tests/test_repository_graph_query.py::test_graph_query_finds_exact_typed_shortest_path_with_witnesses",
+        "tests/test_repository_graph_query.py::test_graph_query_removes_stale_intermediate_nodes_and_detects_tampering",
+        "tests/test_repository_architecture_diff.py::test_architecture_diff_binds_inputs_and_explains_structural_change",
+        "tests/test_repository_verified_git_diff.py::test_git_diff_materializes_commit_without_checkout_and_reports_semantics",
+        "tests/test_repository_verified_git_diff.py::test_git_diff_receipt_detects_tampering",
+        "tests/test_repository_persistent_analysis.py::test_unchanged_map_health_architecture_and_routes_reuse_verified_analysis",
+        "tests/test_repository_persistent_analysis.py::test_corrupt_analysis_envelope_fails_open_and_is_replaced",
+        "tests/test_repository_runtime_overlay.py::test_runtime_overlay_aggregates_events_and_verifies_source",
+        "tests/test_repository_semantic_overlay.py::test_semantic_overlay_verifies_utf16_locations_and_receipt",
+        "tests/test_repository_verified_health.py::test_health_binds_metrics_cycles_and_ambiguity_to_verified_evidence",
+        "tests/test_repository_verified_health.py::test_health_omits_files_changed_after_the_snapshot",
+        "tests/test_repository_verified_refactor.py::test_preview_is_exact_tamper_evident_and_honest_about_completeness",
+        "tests/test_repository_verified_refactor.py::test_apply_rechecks_preimages_and_performs_two_file_rename",
+        "tests/test_repository_verified_refactor.py::test_filesystem_failure_rolls_back_completed_replacements",
+        "tests/test_repository_verified_refactor.py::test_verified_external_semantic_reference_augments_static_call_plan",
+        "tests/test_repository_verified_refactor.py::test_headless_safe_delete_blocks_known_references",
+        "tests/test_repository_verified_refactor.py::test_headless_safe_delete_is_two_phase_and_source_verified",
+        "tests/test_repository_verified_routes.py::test_python_ast_resolves_router_mounts_handlers_and_collisions",
+        "tests/test_repository_verified_routes.py::test_dynamic_python_paths_are_omitted_and_stale_sources_are_excluded",
+        "tests/test_repository_verified_snapshot.py::test_snapshot_is_root_independent_importable_and_tamper_evident",
+        "tests/test_repository_verified_snapshot.py::test_import_rejects_source_drift_and_check_reports_it",
+        "tests/test_repository_verified_move.py::test_file_move_rewrites_exact_import_and_rebuilds_resolved_graph",
+        "tests/test_repository_verified_move.py::test_file_move_blocks_dotted_unaliased_import",
+        "tests/test_repository_verified_move.py::test_file_move_blocks_relative_import_when_package_changes",
+        "tests/test_code_intelligence_conformance.py::test_shared_code_intelligence_conformance_fixture",
+        "tests/test_verified_code_context_benchmark.py::test_verified_code_context_preregistered_matrix"
+      ],
+      "docs": [
+        "docs/verified-code-context.md",
+        "benchmarks/VERIFIED_CODE_CONTEXT_PREREGISTRATION.md",
+        "benchmarks/CODE_INTELLIGENCE_CONFORMANCE.md"
+      ],
+      "package_surfaces": ["python-sdk", "mcp", "cli"],
+      "public_entrypoints": [
+        "entroly.repository_intelligence.RepositoryIntelligenceService.context",
+        "entroly.repository_intelligence.RepositoryIntelligenceService.symbol_graph",
+        "entroly.repository_intelligence.RepositoryIntelligenceService.program_graph",
+        "entroly.repository_intelligence.RepositoryIntelligenceService.interprocedural_flow",
+        "entroly.repository_intelligence.RepositoryIntelligenceService.program_slice",
+        "entroly.repository_intelligence.RepositoryIntelligenceService.repository_map",
+        "entroly.repository_intelligence.RepositoryIntelligenceService.runtime_overlay",
+        "entroly.repository_intelligence.RepositoryIntelligenceService.semantic_overlay",
+        "entroly.repository_intelligence.RepositoryIntelligenceService.code_health",
+        "entroly.repository_intelligence.RepositoryIntelligenceService.architecture",
+        "entroly.repository_intelligence.RepositoryIntelligenceService.architecture_diff",
+        "entroly.repository_intelligence.RepositoryIntelligenceService.git_architecture_diff",
+        "entroly.repository_intelligence.RepositoryIntelligenceService.routes",
+        "entroly.repository_intelligence.RepositoryIntelligenceService.graph_snapshot",
+        "entroly.repository_intelligence.RepositoryIntelligenceService.graph_snapshot_check",
+        "entroly.repository_intelligence.RepositoryIntelligenceService.graph_query",
+        "entroly.repository_intelligence.RepositoryIntelligenceService.rename_preview",
+        "entroly.repository_intelligence.RepositoryIntelligenceService.rename_apply",
+        "entroly.repository_intelligence.RepositoryIntelligenceService.safe_delete_preview",
+        "entroly.repository_intelligence.RepositoryIntelligenceService.safe_delete_apply",
+        "entroly.repository_intelligence.RepositoryIntelligenceService.file_move_preview",
+        "entroly.repository_intelligence.RepositoryIntelligenceService.file_move_apply",
+        "entroly.repository_intelligence.RepositoryIntelligenceService.lsp_rename_preview",
+        "entroly.repository_intelligence.build_repository_index_incremental",
+        "entroly.repository_intelligence.build_verified_context",
+        "entroly.repository_intelligence.build_symbol_graph",
+        "entroly.repository_intelligence.build_verified_program_graph",
+        "entroly.repository_intelligence.build_verified_interprocedural_flow",
+        "entroly.repository_intelligence.build_verified_program_slice",
+        "entroly.repository_intelligence.build_verified_repository_map",
+        "entroly.repository_intelligence.build_verified_runtime_overlay",
+        "entroly.repository_intelligence.build_verified_semantic_overlay",
+        "entroly.repository_intelligence.build_verified_code_health",
+        "entroly.repository_intelligence.build_verified_architecture",
+        "entroly.repository_intelligence.build_verified_architecture_diff",
+        "entroly.repository_intelligence.build_verified_git_architecture_diff",
+        "entroly.repository_intelligence.build_verified_graph_query",
+        "entroly.repository_intelligence.build_verified_routes",
+        "entroly.repository_intelligence.build_verified_graph_snapshot",
+        "entroly.repository_intelligence.check_verified_graph_snapshot",
+        "entroly.repository_intelligence.load_verified_graph_snapshot",
+        "entroly.repository_intelligence.build_verified_file_move_plan",
+        "entroly.repository_intelligence.apply_verified_file_move_plan",
+        "entroly.repository_intelligence.build_verified_rename_plan",
+        "entroly.repository_intelligence.apply_verified_rename_plan",
+        "entroly.repository_intelligence.collect_lsp_references",
+        "entroly.repository_intelligence.verify_context_commitment",
+        "entroly.repository_intelligence.verify_program_graph_commitment",
+        "entroly.repository_intelligence.verify_interprocedural_flow_commitment",
+        "entroly.repository_intelligence.verify_program_slice_commitment",
+        "entroly.repository_intelligence.verify_repository_map_commitment",
+        "entroly.repository_intelligence.verify_runtime_overlay_commitment",
+        "entroly.repository_intelligence.verify_semantic_overlay_commitment",
+        "entroly.repository_intelligence.verify_code_health_commitment",
+        "entroly.repository_intelligence.verify_architecture_commitment",
+        "entroly.repository_intelligence.verify_architecture_diff_commitment",
+        "entroly.repository_intelligence.verify_git_architecture_diff_commitment",
+        "entroly.repository_intelligence.verify_graph_query_commitment",
+        "entroly.repository_intelligence.verify_refactor_plan_commitment",
+        "entroly.repository_intelligence.verify_refactor_apply_commitment",
+        "entroly.repository_intelligence.verify_lsp_rename_preview_commitment",
+        "entroly.repository_intelligence.verify_symbol_graph_commitment"
+      ],
+      "limitations": "Beta evidence-carrying code intelligence. Caller-supplied learned scores can rank only identities already present in the verified index; they cannot create facts, raise confidence, or prove answer sufficiency. Python has type-informed receiver binding, intraprocedural control/reaching-definition flow, bounded argument-to-parameter and explicit-return-to-result summaries, and AST-backed static HTTP mount resolution; the cross-function layer is not whole-program alias, heap, side-effect, exception, or path-sensitive analysis. Other languages remain parser-structural or explicitly labelled framework-pattern evidence. Architecture communities, structural relatedness, route collisions, health, and hotspot scoring are disclosed heuristics, not semantic-equivalence or defect proofs. Two-phase rename, top-level safe delete, and Python module move are preimage-safe and rollback-aware but not compiler-complete; dynamic, reflective, string, macro, generated, unindexed non-call, runtime-configured, and external references may remain. Portable graph import rejects source drift rather than merging it. LSP orchestration currently requests one symbol's references; the operator controls the executable, and Entroly does not sandbox or attest that process's network, filesystem, telemetry, plugins, or configuration. Any source change rebuilds global relationships and derived analyses. Symbol/member move, non-Python file move, inline refactoring, broader LSP operations, whole-program data flow, fine-grained dynamic graph maintenance, and broad external quality benchmarks remain future work."
+    },
+    {
+      "id": "command_aware_shell_evidence",
+      "status": "beta",
+      "implementation": [
+        "entroly/shell_codec.py",
+        "entroly/codecs_builtin.py"
+      ],
+      "tests": [
+        "tests/test_shell_profiles.py::test_profiles_preserve_outcome_evidence",
+        "tests/test_shell_profiles.py::test_shell_codec_recovery_remains_exact_with_profile"
+      ],
+      "docs": ["docs/code-shell-framework-integrations.md"],
+      "package_surfaces": ["python-sdk", "proxy"],
+      "public_entrypoints": [
+        "entroly.shell_codec.esc_compress",
+        "entroly.codecs_builtin.ShellCodec"
+      ],
+      "limitations": "Profiles recognize bounded command families; unknown commands use generic entropy scoring and exact recovery."
+    },
+    {
+      "id": "framework_request_adapters",
+      "status": "beta",
+      "implementation": [
+        "entroly/integrations/langchain.py",
+        "entroly/integrations/litellm.py",
+        "entroly/integrations/asgi.py",
+        "entroly/integrations/request_adapter.py"
+      ],
+      "tests": [
+        "tests/test_framework_request_adapters.py::test_request_adapter_preserves_controls_and_tool_contracts",
+        "tests/test_langchain_deep_integration.py::test_message_compression_preserves_concrete_type_and_tool_metadata"
+      ],
+      "docs": ["docs/code-shell-framework-integrations.md"],
+      "package_surfaces": ["python-sdk", "proxy"],
+      "public_entrypoints": [
+        "entroly.integrations.EntrolyCompressor",
+        "entroly.integrations.EntrolyDocumentCompressor",
+        "entroly.integrations.EntrolyLiteLLMCallback",
+        "entroly.integrations.EntrolyASGIMiddleware"
+      ],
+      "limitations": "Adapters preserve tool and provider controls but applications still own provider authentication, routing, and budget choice."
+    },
+    {
+      "id": "provider_image_optimization",
+      "status": "beta",
+      "implementation": [
+        "entroly/image_optimizer.py",
+        "entroly/provider_adapters.py",
+        "entroly/proxy.py"
+      ],
+      "tests": [
+        "tests/test_provider_image_optimization.py::test_default_is_byte_for_byte_preservation",
+        "tests/test_provider_image_optimization.py::test_external_image_url_is_never_fetched_or_changed"
+      ],
+      "docs": ["docs/code-shell-framework-integrations.md"],
+      "package_surfaces": ["python-sdk", "proxy"],
+      "public_entrypoints": [
+        "entroly.provider_adapters.optimize_provider_images",
+        "ENTROLY_IMAGE_OPTIMIZATION"
+      ],
+      "limitations": "Optimization is explicit opt-in, requires Pillow, handles embedded supported images only, and reports estimated rather than billed tokens."
     }
   ]
 }

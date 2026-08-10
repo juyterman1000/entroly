@@ -8,6 +8,7 @@ from pathlib import Path
 import tempfile
 from typing import Any, Callable
 
+from .parser_compatibility import language_pack_status
 from .runtime_capabilities import runtime_capabilities
 from .runtime_status import runtime_status
 
@@ -70,6 +71,24 @@ def _secure_recovery_check() -> dict[str, str]:
     return _check("secure_recovery_default", "pass", "hardened_binding")
 
 
+def _parser_registry_check() -> dict[str, str]:
+    status = language_pack_status()
+    if not status.installed:
+        return _check("code_intelligence_registry", "pass", "optional_not_installed")
+    version = status.version or "unknown"
+    if status.compatible:
+        return _check(
+            "code_intelligence_registry",
+            "pass",
+            f"compatible:{version}",
+        )
+    return _check(
+        "code_intelligence_registry",
+        "warning",
+        f"incompatible:{version};requires>={status.minimum_version}",
+    )
+
+
 def runtime_doctor(
     *,
     data_dir: Path,
@@ -85,6 +104,7 @@ def runtime_doctor(
         _check("package", "pass", "importable"),
         _writable_state_check(data_dir),
         _secure_recovery_check(),
+        _parser_registry_check(),
     ]
     checks.extend(_configuration_checks(data_dir))
 

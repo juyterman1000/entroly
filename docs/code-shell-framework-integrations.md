@@ -1,0 +1,63 @@
+# Code, shell, framework, and vision integration boundaries
+
+These surfaces are opt-in or bounded additions to Entroly's evidence-first
+compression. They do not change exact-recovery guarantees or authorize remote
+downloads.
+
+## Parser-backed code structure
+
+Install `entroly[code-intelligence]` to add the parser registry used for
+parser-backed exact source spans across common programming languages. Entroly
+recognizes more than 27 language grammars by extension. The parser is optional:
+missing, malformed, oversized, or unsupported input uses the existing
+deterministic extractor.
+
+Grammar binaries used by the language pack are cached separately and may not be
+present immediately after installing the extra. Entroly does not acquire a
+missing grammar as a side effect of reading code unless the operator explicitly
+sets `ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD=1`. Operators may instead pre-populate
+the language-pack cache using its documented download mechanism. Once a grammar
+is cached, Entroly can reuse it with acquisition disabled. `ENTROLY_AIR_GAP=1`
+always disables acquisition, even if the allow-download variable is also set.
+
+Parser-backed call sites are attributed to the narrowest enclosing symbol and
+carry exact byte evidence. Ambiguous bindings remain explicit instead of being
+invented. Cross-file and type-directed resolution is still conservative and is
+not claimed to match a compiler or language server for every grammar. See
+[Verified code context](verified-code-context.md) for the receipt-backed partial
+graph surface and its limitations.
+
+## Command-aware shell evidence
+
+The Entropic Shell Codec combines its generic entropy scorer with small outcome
+profiles for test runners, Rust and Node builds, Git, containers, Kubernetes,
+Terraform, and general build tools. Profiles preserve the invocation, failure
+evidence, and terminal outcome under tight budgets. Unknown commands stay on
+the generic path. Every compressed representation retains the complete original
+in its content-addressed recovery store.
+
+## Framework request adapters
+
+- `EntrolyCompressor` preserves concrete LangChain message types, tool calls,
+  IDs, and provider metadata. It supports sync, async, batch, and stream use.
+- `EntrolyDocumentCompressor` implements the retriever-compressor protocol and
+  preserves document IDs and metadata.
+- `EntrolyLiteLLMCallback` implements the proxy pre-call hook without making
+  LiteLLM a required dependency.
+- `EntrolyASGIMiddleware` compresses bounded JSON POST/PUT message bodies and
+  replays the original bytes on parse or compression failure.
+
+All request adapters preserve tools and generation controls. Applications remain
+responsible for choosing budgets appropriate for their model and workflow.
+
+## Embedded image optimization
+
+The proxy preserves images by default. Set `ENTROLY_IMAGE_OPTIMIZATION=1` and
+install `entroly[images]` to permit provider-aware resizing of embedded base64
+images. OpenAI-, Anthropic-, and Gemini-shaped payloads are recognized. External
+URLs are never fetched; malformed images, unknown formats, missing Pillow, and
+quality-gate failures keep the original bytes. Audit headers report counts and
+estimated before/after image tokens without exposing image data.
+
+Provider token counts are estimates, not billing records. Provider-reported
+usage remains authoritative.

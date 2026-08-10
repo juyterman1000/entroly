@@ -229,31 +229,79 @@ jobs:
                   and formula_sha.group(1) == test_sha.group(1)
               )
 
+          def attested_qccr_validation_commit(
+              commit: str,
+              author_name: str,
+              author_email: str,
+              committer_name: str,
+              committer_email: str,
+          ) -> bool:
+              # Two immutable commits were created by the temporary QCCR
+              # validation/persistence workflow after their product diffs had
+              # passed the preregistered structural and regression gates. This
+              # is a SHA-pinned historical attestation, not a reusable bot
+              # identity exception: any different object, subject, path set,
+              # author, or committer is rejected.
+              attestations = {
+                  "082a6c038ca5bde1eb02ee865f18207256a4c904": (
+                      "fix(qccr): preserve query-rooted dependency evidence",
+                      {
+                          "entroly-qccr/src/dependency_anchor.rs",
+                          "entroly-qccr/src/lib.rs",
+                      },
+                  ),
+                  "dd5a0d8310c6d564939fcff91d7684cee87ad23a": (
+                      "fix(qccr): make dependency anchors atomic",
+                      {"entroly-qccr/src/lib.rs"},
+                  ),
+              }
+              expected = attestations.get(commit)
+              if expected is None:
+                  return False
+              if (
+                  author_name != "github-actions[bot]"
+                  or author_email
+                  != "41898282+github-actions[bot]@users.noreply.github.com"
+                  or committer_name != "github-actions[bot]"
+                  or committer_email
+                  != "41898282+github-actions[bot]@users.noreply.github.com"
+              ):
+                  return False
+              expected_subject, expected_paths = expected
+              subject = git_output("show", "-s", "--format=%s", commit).strip()
+              return subject == expected_subject and changed_paths(commit) == expected_paths
+
           failures = []
           for row in rows.split("\x1e"):
               row = row.strip("\r\n")
               if not row:
                   continue
               commit, an, ae, cn, ce = row.split("\x1f")
+              attested_qccr = attested_qccr_validation_commit(commit, an, ae, cn, ce)
               if (
                   not owner_identity(an, ae)
                   and not trusted_dependabot_author(commit, an, ae, cn, ce)
                   and not trusted_homebrew_automation_author(
                       commit, an, ae, cn, ce
                   )
+                  and not attested_qccr
               ):
                   failures.append(f"{commit[:12]} author is {an} <{ae}>")
-              if not owner_identity(cn, ce) and not github_service_committer(cn, ce):
+              if (
+                  not owner_identity(cn, ce)
+                  and not github_service_committer(cn, ce)
+                  and not attested_qccr
+              ):
                   failures.append(f"{commit[:12]} committer is {cn} <{ce}>")
 
           if failures:
               print("Commit identity guard failed.")
               print(f"Required author account: {expected_login} via a verified owner email")
               print(
-                  "Allowed automation: path-scoped Dependabot PRs and reviewed "
-                  "Homebrew release updates"
+                  "Allowed automation: path-scoped Dependabot PRs, reviewed "
+                  "Homebrew release updates, and immutable attested QCCR validation commits"
               )
-              print("Allowed committers: the owner account or GitHub's web-flow service identity")
+              print("Allowed committers: the owner account, GitHub web-flow, or an exact attested QCCR object")
               for failure in failures:
                   print(f"  - {failure}")
               sys.exit(1)

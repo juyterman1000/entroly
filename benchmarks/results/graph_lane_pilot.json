@@ -1,0 +1,431 @@
+{
+  "pinned_ref": "16934bf85b3346793ec6664b3b0d1d67cfd02156",
+  "seed": 20260807,
+  "pool_size": 48,
+  "tasks": 6,
+  "budgets": [
+    2000
+  ],
+  "records": [
+    {
+      "caller": "_start_background_services",
+      "callee": "auto_index",
+      "arm": "null",
+      "budget": 2000,
+      "direct_hit": false,
+      "indirect_hit": false,
+      "delivered": 0,
+      "error": ""
+    },
+    {
+      "caller": "_start_background_services",
+      "callee": "auto_index",
+      "arm": "random",
+      "budget": 2000,
+      "direct_hit": false,
+      "indirect_hit": false,
+      "delivered": 5,
+      "error": ""
+    },
+    {
+      "caller": "_start_background_services",
+      "callee": "auto_index",
+      "arm": "raw_truncated",
+      "budget": 2000,
+      "direct_hit": false,
+      "indirect_hit": false,
+      "delivered": 3,
+      "error": ""
+    },
+    {
+      "caller": "_start_background_services",
+      "callee": "auto_index",
+      "arm": "raw_full",
+      "budget": 2000,
+      "direct_hit": true,
+      "indirect_hit": true,
+      "delivered": 48,
+      "error": ""
+    },
+    {
+      "caller": "_start_background_services",
+      "callee": "auto_index",
+      "arm": "bm25",
+      "budget": 2000,
+      "direct_hit": false,
+      "indirect_hit": false,
+      "delivered": 4,
+      "error": ""
+    },
+    {
+      "caller": "_start_background_services",
+      "callee": "auto_index",
+      "arm": "qccr",
+      "budget": 2000,
+      "direct_hit": true,
+      "indirect_hit": true,
+      "delivered": 8,
+      "error": ""
+    },
+    {
+      "caller": "_start_background_services",
+      "callee": "auto_index",
+      "arm": "hcc",
+      "budget": 2000,
+      "direct_hit": false,
+      "indirect_hit": true,
+      "delivered": 2,
+      "error": ""
+    },
+    {
+      "caller": "create_context_commit",
+      "callee": "build_recovery_bundle",
+      "arm": "null",
+      "budget": 2000,
+      "direct_hit": false,
+      "indirect_hit": false,
+      "delivered": 0,
+      "error": ""
+    },
+    {
+      "caller": "create_context_commit",
+      "callee": "build_recovery_bundle",
+      "arm": "random",
+      "budget": 2000,
+      "direct_hit": true,
+      "indirect_hit": false,
+      "delivered": 2,
+      "error": ""
+    },
+    {
+      "caller": "create_context_commit",
+      "callee": "build_recovery_bundle",
+      "arm": "raw_truncated",
+      "budget": 2000,
+      "direct_hit": false,
+      "indirect_hit": false,
+      "delivered": 3,
+      "error": ""
+    },
+    {
+      "caller": "create_context_commit",
+      "callee": "build_recovery_bundle",
+      "arm": "raw_full",
+      "budget": 2000,
+      "direct_hit": true,
+      "indirect_hit": true,
+      "delivered": 48,
+      "error": ""
+    },
+    {
+      "caller": "create_context_commit",
+      "callee": "build_recovery_bundle",
+      "arm": "bm25",
+      "budget": 2000,
+      "direct_hit": true,
+      "indirect_hit": false,
+      "delivered": 2,
+      "error": ""
+    },
+    {
+      "caller": "create_context_commit",
+      "callee": "build_recovery_bundle",
+      "arm": "qccr",
+      "budget": 2000,
+      "direct_hit": true,
+      "indirect_hit": true,
+      "delivered": 8,
+      "error": ""
+    },
+    {
+      "caller": "create_context_commit",
+      "callee": "build_recovery_bundle",
+      "arm": "hcc",
+      "budget": 2000,
+      "direct_hit": false,
+      "indirect_hit": false,
+      "delivered": 4,
+      "error": ""
+    },
+    {
+      "caller": "assess_provider_request",
+      "callee": "render_canonical_request",
+      "arm": "null",
+      "budget": 2000,
+      "direct_hit": false,
+      "indirect_hit": false,
+      "delivered": 0,
+      "error": ""
+    },
+    {
+      "caller": "assess_provider_request",
+      "callee": "render_canonical_request",
+      "arm": "random",
+      "budget": 2000,
+      "direct_hit": false,
+      "indirect_hit": false,
+      "delivered": 5,
+      "error": ""
+    },
+    {
+      "caller": "assess_provider_request",
+      "callee": "render_canonical_request",
+      "arm": "raw_truncated",
+      "budget": 2000,
+      "direct_hit": false,
+      "indirect_hit": false,
+      "delivered": 3,
+      "error": ""
+    },
+    {
+      "caller": "assess_provider_request",
+      "callee": "render_canonical_request",
+      "arm": "raw_full",
+      "budget": 2000,
+      "direct_hit": true,
+      "indirect_hit": true,
+      "delivered": 48,
+      "error": ""
+    },
+    {
+      "caller": "assess_provider_request",
+      "callee": "render_canonical_request",
+      "arm": "bm25",
+      "budget": 2000,
+      "direct_hit": false,
+      "indirect_hit": false,
+      "delivered": 5,
+      "error": ""
+    },
+    {
+      "caller": "assess_provider_request",
+      "callee": "render_canonical_request",
+      "arm": "qccr",
+      "budget": 2000,
+      "direct_hit": true,
+      "indirect_hit": true,
+      "delivered": 8,
+      "error": ""
+    },
+    {
+      "caller": "assess_provider_request",
+      "callee": "render_canonical_request",
+      "arm": "hcc",
+      "budget": 2000,
+      "direct_hit": false,
+      "indirect_hit": false,
+      "delivered": 4,
+      "error": ""
+    },
+    {
+      "caller": "cmd_sync",
+      "callee": "VaultManager",
+      "arm": "null",
+      "budget": 2000,
+      "direct_hit": false,
+      "indirect_hit": false,
+      "delivered": 0,
+      "error": ""
+    },
+    {
+      "caller": "cmd_sync",
+      "callee": "VaultManager",
+      "arm": "random",
+      "budget": 2000,
+      "direct_hit": false,
+      "indirect_hit": false,
+      "delivered": 3,
+      "error": ""
+    },
+    {
+      "caller": "cmd_sync",
+      "callee": "VaultManager",
+      "arm": "raw_truncated",
+      "budget": 2000,
+      "direct_hit": false,
+      "indirect_hit": false,
+      "delivered": 2,
+      "error": ""
+    },
+    {
+      "caller": "cmd_sync",
+      "callee": "VaultManager",
+      "arm": "raw_full",
+      "budget": 2000,
+      "direct_hit": true,
+      "indirect_hit": true,
+      "delivered": 48,
+      "error": ""
+    },
+    {
+      "caller": "cmd_sync",
+      "callee": "VaultManager",
+      "arm": "bm25",
+      "budget": 2000,
+      "direct_hit": false,
+      "indirect_hit": false,
+      "delivered": 1,
+      "error": ""
+    },
+    {
+      "caller": "cmd_sync",
+      "callee": "VaultManager",
+      "arm": "qccr",
+      "budget": 2000,
+      "direct_hit": true,
+      "indirect_hit": true,
+      "delivered": 8,
+      "error": ""
+    },
+    {
+      "caller": "cmd_sync",
+      "callee": "VaultManager",
+      "arm": "hcc",
+      "budget": 2000,
+      "direct_hit": false,
+      "indirect_hit": false,
+      "delivered": 5,
+      "error": ""
+    },
+    {
+      "caller": "assess_context_commit",
+      "callee": "stable_hash",
+      "arm": "null",
+      "budget": 2000,
+      "direct_hit": false,
+      "indirect_hit": false,
+      "delivered": 0,
+      "error": ""
+    },
+    {
+      "caller": "assess_context_commit",
+      "callee": "stable_hash",
+      "arm": "random",
+      "budget": 2000,
+      "direct_hit": false,
+      "indirect_hit": false,
+      "delivered": 2,
+      "error": ""
+    },
+    {
+      "caller": "assess_context_commit",
+      "callee": "stable_hash",
+      "arm": "raw_truncated",
+      "budget": 2000,
+      "direct_hit": false,
+      "indirect_hit": false,
+      "delivered": 2,
+      "error": ""
+    },
+    {
+      "caller": "assess_context_commit",
+      "callee": "stable_hash",
+      "arm": "raw_full",
+      "budget": 2000,
+      "direct_hit": true,
+      "indirect_hit": true,
+      "delivered": 48,
+      "error": ""
+    },
+    {
+      "caller": "assess_context_commit",
+      "callee": "stable_hash",
+      "arm": "bm25",
+      "budget": 2000,
+      "direct_hit": false,
+      "indirect_hit": false,
+      "delivered": 2,
+      "error": ""
+    },
+    {
+      "caller": "assess_context_commit",
+      "callee": "stable_hash",
+      "arm": "qccr",
+      "budget": 2000,
+      "direct_hit": true,
+      "indirect_hit": false,
+      "delivered": 9,
+      "error": ""
+    },
+    {
+      "caller": "assess_context_commit",
+      "callee": "stable_hash",
+      "arm": "hcc",
+      "budget": 2000,
+      "direct_hit": false,
+      "indirect_hit": false,
+      "delivered": 4,
+      "error": ""
+    },
+    {
+      "caller": "create_mcp_server",
+      "callee": "EICVAnalyzer",
+      "arm": "null",
+      "budget": 2000,
+      "direct_hit": false,
+      "indirect_hit": false,
+      "delivered": 0,
+      "error": ""
+    },
+    {
+      "caller": "create_mcp_server",
+      "callee": "EICVAnalyzer",
+      "arm": "random",
+      "budget": 2000,
+      "direct_hit": false,
+      "indirect_hit": false,
+      "delivered": 5,
+      "error": ""
+    },
+    {
+      "caller": "create_mcp_server",
+      "callee": "EICVAnalyzer",
+      "arm": "raw_truncated",
+      "budget": 2000,
+      "direct_hit": false,
+      "indirect_hit": false,
+      "delivered": 3,
+      "error": ""
+    },
+    {
+      "caller": "create_mcp_server",
+      "callee": "EICVAnalyzer",
+      "arm": "raw_full",
+      "budget": 2000,
+      "direct_hit": true,
+      "indirect_hit": true,
+      "delivered": 48,
+      "error": ""
+    },
+    {
+      "caller": "create_mcp_server",
+      "callee": "EICVAnalyzer",
+      "arm": "bm25",
+      "budget": 2000,
+      "direct_hit": false,
+      "indirect_hit": false,
+      "delivered": 3,
+      "error": ""
+    },
+    {
+      "caller": "create_mcp_server",
+      "callee": "EICVAnalyzer",
+      "arm": "qccr",
+      "budget": 2000,
+      "direct_hit": true,
+      "indirect_hit": false,
+      "delivered": 9,
+      "error": ""
+    },
+    {
+      "caller": "create_mcp_server",
+      "callee": "EICVAnalyzer",
+      "arm": "hcc",
+      "budget": 2000,
+      "direct_hit": false,
+      "indirect_hit": false,
+      "delivered": 3,
+      "error": ""
+    }
+  ]
+}

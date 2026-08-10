@@ -1,0 +1,55 @@
+name: Code Intelligence Optional Extra
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  parser-extra:
+    name: Parser Extra (explicit acquisition + offline reuse)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install optional parser surface
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[code-intelligence,test]"
+
+      - name: Warm required grammars with explicit acquisition
+        env:
+          ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD: "1"
+          ENTROLY_AIR_GAP: "0"
+        run: |
+          python -m pytest -q \
+            tests/test_tree_sitter_support.py \
+            tests/test_parser_compatibility.py \
+            tests/test_language_open_registry_contract.py \
+            tests/test_code_intelligence_conformance.py \
+            tests/test_universal_code_intelligence.py
+
+      - name: Re-run parser regressions with acquisition disabled
+        env:
+          ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD: "0"
+          ENTROLY_AIR_GAP: "1"
+        run: |
+          python - <<'PY'
+          import tree_sitter_language_pack as pack
+
+          cached = set(pack.downloaded_languages())
+          print("downloaded grammar cache entries:", ", ".join(sorted(cached)) or "<none>")
+          PY
+          python -m pytest -q \
+            tests/test_tree_sitter_support.py \
+            tests/test_parser_compatibility.py \
+            tests/test_language_open_registry_contract.py \
+            tests/test_code_intelligence_conformance.py \
+            tests/test_universal_code_intelligence.py

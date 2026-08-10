@@ -10,7 +10,7 @@ from typing import Sequence
 from .models import RepositoryLimits
 from .service import RepositoryIntelligenceError, RepositoryIntelligenceService
 
-CLI_SCHEMA_VERSION = "entroly.repository-cli.v1"
+CLI_SCHEMA_VERSION = "entroly.repository-cli.v2"
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -18,13 +18,17 @@ def _parser() -> argparse.ArgumentParser:
         prog="python -m entroly.repository_intelligence",
         description=(
             "Build a bounded local symbol graph, inspect change impact, and "
-            "rank relevant tests. Output is deterministic JSON."
+            "emit receipt-backed task context. Output is deterministic JSON."
         ),
     )
     parser.add_argument("--root", default=".", help="repository root")
     parser.add_argument("--max-files", type=int, default=20_000)
     parser.add_argument("--max-total-mb", type=int, default=256)
     parser.add_argument("--max-file-mb", type=int, default=2)
+    parser.add_argument(
+        "--cache-dir",
+        help="opt-in content-addressed parse cache directory",
+    )
     subcommands = parser.add_subparsers(dest="command", required=True)
 
     subcommands.add_parser("summary", help="report bounded index counts")
@@ -37,6 +41,236 @@ def _parser() -> argparse.ArgumentParser:
     tests = subcommands.add_parser("tests", help="rank tests for changed files")
     tests.add_argument("--changed", action="append", required=True)
     tests.add_argument("--limit", type=int, default=20)
+
+    context = subcommands.add_parser(
+        "context",
+        help="build a verified, budgeted partial graph for a task",
+    )
+    context.add_argument("--query", required=True)
+    context.add_argument("--token-budget", type=int, default=2_000)
+    context.add_argument("--max-hops", type=int, default=2)
+    context.add_argument("--max-fragments", type=int, default=24)
+    context.add_argument("--include-history", action="store_true")
+    context.add_argument("--max-history-commits", type=int, default=20)
+
+    program_slice = subcommands.add_parser(
+        "slice",
+        help="build a proof-carrying partial slice with control and value flow",
+    )
+    program_slice.add_argument("--query", required=True)
+    program_slice.add_argument("--token-budget", type=int, default=4_000)
+    program_slice.add_argument("--max-hops", type=int, default=3)
+    program_slice.add_argument("--max-fragments", type=int, default=32)
+    program_slice.add_argument("--max-entry-points", type=int, default=3)
+    program_slice.add_argument(
+        "--flow-direction",
+        choices=("outgoing", "incoming", "both"),
+        default="outgoing",
+    )
+    program_slice.add_argument("--flow-depth", type=int, default=3)
+    program_slice.add_argument("--proposals-json")
+    program_slice.add_argument("--proposal-provider", default="caller-supplied")
+
+    repository_map = subcommands.add_parser(
+        "map",
+        help="rank a verified whole-repository map under a token budget",
+    )
+    repository_map.add_argument("--query", default="")
+    repository_map.add_argument("--token-budget", type=int, default=2_000)
+    repository_map.add_argument("--max-entries", type=int, default=100)
+
+    graph = subcommands.add_parser(
+        "graph",
+        help="trace freshness-checked static calls for an unambiguous symbol",
+    )
+    graph.add_argument("--symbol", required=True)
+    graph.add_argument(
+        "--direction",
+        choices=("callers", "callees", "both"),
+        default="both",
+    )
+    graph.add_argument("--max-depth", type=int, default=3)
+    graph.add_argument("--limit", type=int, default=200)
+
+    graph_query = subcommands.add_parser(
+        "query",
+        help="query verified file/symbol neighbors, paths, relatedness, or impact",
+    )
+    graph_query.add_argument("--query", required=True)
+    graph_query.add_argument(
+        "--operation",
+        choices=("explain", "neighbors", "path", "related", "impact"),
+        default="neighbors",
+    )
+    graph_query.add_argument("--target")
+    graph_query.add_argument(
+        "--direction",
+        choices=("incoming", "outgoing", "both"),
+        default="both",
+    )
+    graph_query.add_argument("--max-depth", type=int, default=4)
+    graph_query.add_argument("--limit", type=int, default=100)
+    graph_query.add_argument("--max-visited", type=int, default=10_000)
+
+    program = subcommands.add_parser(
+        "program",
+        help="build verified control and reaching-definition flow for a symbol",
+    )
+    program.add_argument("--symbol", required=True)
+    program.add_argument("--limit", type=int, default=1_000)
+
+    flow = subcommands.add_parser(
+        "flow",
+        help="trace verified interprocedural arguments, parameters, and returns",
+    )
+    flow.add_argument("--symbol", required=True)
+    flow.add_argument(
+        "--direction",
+        choices=("outgoing", "incoming", "both"),
+        default="outgoing",
+    )
+    flow.add_argument("--max-depth", type=int, default=3)
+    flow.add_argument("--max-call-edges", type=int, default=1_000)
+    flow.add_argument("--max-flow-edges", type=int, default=10_000)
+    flow.add_argument("--max-nodes", type=int, default=10_000)
+
+    health = subcommands.add_parser(
+        "health",
+        help="audit verified complexity, cycles, coupling, and navigability",
+    )
+    health.add_argument("--max-findings", type=int, default=500)
+    health.add_argument("--max-symbols", type=int, default=2_000)
+
+    architecture = subcommands.add_parser(
+        "architecture",
+        help="build verified layers, communities, cycles, routes, and hotspots",
+    )
+    architecture.add_argument("--max-components", type=int, default=5_000)
+    architecture.add_argument("--max-communities", type=int, default=1_000)
+    architecture.add_argument("--max-cycles", type=int, default=1_000)
+    architecture.add_argument("--max-dependency-edges", type=int, default=100_000)
+    architecture.add_argument("--max-hotspots", type=int, default=100)
+    architecture.add_argument("--max-routes", type=int, default=100)
+
+    architecture_diff = subcommands.add_parser(
+        "architecture-diff",
+        help="compare two committed architecture JSON snapshots",
+    )
+    architecture_diff.add_argument("--before-json", required=True)
+    architecture_diff.add_argument("--after-json", required=True)
+    architecture_diff.add_argument("--limit", type=int, default=5_000)
+
+    git_architecture_diff = subcommands.add_parser(
+        "git-architecture-diff",
+        help="compare a local Git commit graph with the verified current worktree",
+    )
+    git_architecture_diff.add_argument("--ref", default="HEAD")
+    git_architecture_diff.add_argument("--max-changes", type=int, default=10_000)
+    git_architecture_diff.add_argument("--max-components", type=int, default=5_000)
+    git_architecture_diff.add_argument("--max-communities", type=int, default=1_000)
+    git_architecture_diff.add_argument("--max-cycles", type=int, default=1_000)
+    git_architecture_diff.add_argument(
+        "--max-dependency-edges", type=int, default=100_000
+    )
+    git_architecture_diff.add_argument("--max-hotspots", type=int, default=100)
+    git_architecture_diff.add_argument("--max-routes", type=int, default=100)
+
+    routes = subcommands.add_parser(
+        "routes",
+        help="discover verified HTTP routes, mounted prefixes, and collisions",
+    )
+    routes.add_argument("--method")
+    routes.add_argument("--path-prefix")
+    routes.add_argument("--max-routes", type=int, default=10_000)
+    routes.add_argument("--max-conflicts", type=int, default=1_000)
+
+    subcommands.add_parser(
+        "snapshot",
+        help="export a portable commitment to the complete bounded graph",
+    )
+    snapshot_check = subcommands.add_parser(
+        "snapshot-check",
+        help="verify a shared graph snapshot against current source",
+    )
+    snapshot_check.add_argument("--snapshot-json", required=True)
+    snapshot_check.add_argument("--limit", type=int, default=10_000)
+
+    runtime = subcommands.add_parser(
+        "runtime",
+        help="bind bounded trace events to verified source locations",
+    )
+    runtime.add_argument("--events-json", required=True)
+    runtime.add_argument("--producer", default="external-trace")
+    runtime.add_argument("--max-events", type=int, default=100_000)
+
+    semantic = subcommands.add_parser(
+        "semantic",
+        help="verify external LSP/compiler relationship locations",
+    )
+    semantic.add_argument("--relationships-json", required=True)
+    semantic.add_argument("--provider", required=True)
+    semantic.add_argument("--max-relationships", type=int, default=100_000)
+
+    rename_preview = subcommands.add_parser(
+        "rename-preview",
+        help="preview an exact two-phase rename without writing files",
+    )
+    rename_preview.add_argument("--symbol", required=True)
+    rename_preview.add_argument("--new-name", required=True)
+    rename_preview.add_argument("--semantic-json")
+    rename_preview.add_argument("--provider", default="none")
+    rename_preview.add_argument("--max-changes", type=int, default=10_000)
+
+    rename_apply = subcommands.add_parser(
+        "rename-apply",
+        help="apply a committed rename plan after explicit risk acknowledgement",
+    )
+    rename_apply.add_argument("--plan-json", required=True)
+    rename_apply.add_argument("--expected-plan-sha", required=True)
+    rename_apply.add_argument("--acknowledge-incomplete", action="store_true")
+
+    safe_delete_preview = subcommands.add_parser(
+        "safe-delete-preview",
+        help="preview a conservative headless symbol deletion",
+    )
+    safe_delete_preview.add_argument("--symbol", required=True)
+    safe_delete_preview.add_argument("--max-blockers", type=int, default=10_000)
+
+    safe_delete_apply = subcommands.add_parser(
+        "safe-delete-apply",
+        help="apply a committed blocker-free symbol deletion",
+    )
+    safe_delete_apply.add_argument("--plan-json", required=True)
+    safe_delete_apply.add_argument("--expected-plan-sha", required=True)
+    safe_delete_apply.add_argument("--acknowledge-incomplete", action="store_true")
+
+    file_move_preview = subcommands.add_parser(
+        "file-move-preview",
+        help="preview a Python module move and exact import rewrites",
+    )
+    file_move_preview.add_argument("--source", required=True)
+    file_move_preview.add_argument("--target", required=True)
+    file_move_preview.add_argument("--max-changes", type=int, default=10_000)
+    file_move_preview.add_argument("--max-blockers", type=int, default=10_000)
+
+    file_move_apply = subcommands.add_parser(
+        "file-move-apply",
+        help="apply a committed blocker-free Python module move",
+    )
+    file_move_apply.add_argument("--plan-json", required=True)
+    file_move_apply.add_argument("--expected-plan-sha", required=True)
+    file_move_apply.add_argument("--acknowledge-incomplete", action="store_true")
+
+    lsp_preview = subcommands.add_parser(
+        "lsp-rename-preview",
+        help="run an explicitly configured LSP and build a no-write rename plan",
+    )
+    lsp_preview.add_argument("--symbol", required=True)
+    lsp_preview.add_argument("--new-name", required=True)
+    lsp_preview.add_argument("--language-id", required=True)
+    lsp_preview.add_argument("--command-json", required=True)
+    lsp_preview.add_argument("--timeout-seconds", type=float, default=15.0)
+    lsp_preview.add_argument("--max-relationships", type=int, default=10_000)
     return parser
 
 
@@ -52,7 +286,11 @@ def run(argv: Sequence[str] | None = None) -> tuple[int, dict[str, object]]:
     args = _parser().parse_args(argv)
     try:
         root = Path(args.root).expanduser().resolve(strict=True)
-        service = RepositoryIntelligenceService(root, limits=_limits(args))
+        service = RepositoryIntelligenceService(
+            root,
+            limits=_limits(args),
+            cache_dir=args.cache_dir,
+        )
         if args.command == "summary":
             payload = service.summary()
             payload["command"] = "summary"
@@ -66,6 +304,286 @@ def run(argv: Sequence[str] | None = None) -> tuple[int, dict[str, object]]:
             )
             payload["command"] = "impact"
             payload["schema_version"] = CLI_SCHEMA_VERSION
+            return 0, payload
+        if args.command == "context":
+            payload = service.context(
+                args.query,
+                token_budget=args.token_budget,
+                max_hops=args.max_hops,
+                max_fragments=args.max_fragments,
+                include_history=args.include_history,
+                max_history_commits=args.max_history_commits,
+            )
+            payload["command"] = "context"
+            return 0, payload
+        if args.command == "slice":
+            proposals: list[dict[str, object]] = []
+            if args.proposals_json:
+                proposals_path = Path(args.proposals_json).expanduser().resolve(strict=True)
+                if proposals_path.stat().st_size > 16 * 1024 * 1024:
+                    raise ValueError("proposal JSON must be at most 16 MiB")
+                raw_proposals = json.loads(proposals_path.read_text(encoding="utf-8"))
+                if not isinstance(raw_proposals, list) or not all(
+                    isinstance(item, dict) for item in raw_proposals
+                ):
+                    raise ValueError("proposal JSON must contain an array of objects")
+                proposals = raw_proposals
+            payload = service.program_slice(
+                args.query,
+                token_budget=args.token_budget,
+                max_hops=args.max_hops,
+                max_fragments=args.max_fragments,
+                max_entry_points=args.max_entry_points,
+                flow_direction=args.flow_direction,
+                flow_depth=args.flow_depth,
+                proposal_scores=proposals,
+                proposal_provider=args.proposal_provider,
+            )
+            payload["command"] = "slice"
+            return 0, payload
+        if args.command == "graph":
+            payload = service.symbol_graph(
+                args.symbol,
+                direction=args.direction,
+                max_depth=args.max_depth,
+                limit=args.limit,
+            )
+            payload["command"] = "graph"
+            return 0, payload
+        if args.command == "query":
+            payload = service.graph_query(
+                args.query,
+                operation=args.operation,
+                target_query=args.target,
+                direction=args.direction,
+                max_depth=args.max_depth,
+                limit=args.limit,
+                max_visited=args.max_visited,
+            )
+            payload["command"] = "query"
+            return 0, payload
+        if args.command == "map":
+            payload = service.repository_map(
+                args.query,
+                token_budget=args.token_budget,
+                max_entries=args.max_entries,
+            )
+            payload["command"] = "map"
+            return 0, payload
+        if args.command == "program":
+            payload = service.program_graph(args.symbol, limit=args.limit)
+            payload["command"] = "program"
+            return 0, payload
+        if args.command == "flow":
+            payload = service.interprocedural_flow(
+                args.symbol,
+                direction=args.direction,
+                max_depth=args.max_depth,
+                max_call_edges=args.max_call_edges,
+                max_flow_edges=args.max_flow_edges,
+                max_nodes=args.max_nodes,
+            )
+            payload["command"] = "flow"
+            return 0, payload
+        if args.command == "health":
+            payload = service.code_health(
+                max_findings=args.max_findings,
+                max_symbols=args.max_symbols,
+            )
+            payload["command"] = "health"
+            return 0, payload
+        if args.command == "architecture":
+            payload = service.architecture(
+                max_components=args.max_components,
+                max_communities=args.max_communities,
+                max_cycles=args.max_cycles,
+                max_dependency_edges=args.max_dependency_edges,
+                max_hotspots=args.max_hotspots,
+                max_routes=args.max_routes,
+            )
+            payload["command"] = "architecture"
+            return 0, payload
+        if args.command == "architecture-diff":
+            inputs: list[dict[str, object]] = []
+            for raw_path in (args.before_json, args.after_json):
+                input_path = Path(raw_path).expanduser().resolve(strict=True)
+                if input_path.stat().st_size > 64 * 1024 * 1024:
+                    raise ValueError("architecture JSON must be at most 64 MiB")
+                raw_payload = json.loads(input_path.read_text(encoding="utf-8"))
+                if not isinstance(raw_payload, dict):
+                    raise ValueError("architecture JSON must contain an object")
+                inputs.append(raw_payload)
+            payload = service.architecture_diff(
+                inputs[0], inputs[1], limit=args.limit
+            )
+            payload["command"] = "architecture-diff"
+            return 0, payload
+        if args.command == "git-architecture-diff":
+            payload = service.git_architecture_diff(
+                args.ref,
+                max_changes=args.max_changes,
+                max_components=args.max_components,
+                max_communities=args.max_communities,
+                max_cycles=args.max_cycles,
+                max_dependency_edges=args.max_dependency_edges,
+                max_hotspots=args.max_hotspots,
+                max_routes=args.max_routes,
+            )
+            payload["command"] = "git-architecture-diff"
+            return 0, payload
+        if args.command == "routes":
+            payload = service.routes(
+                method=args.method,
+                path_prefix=args.path_prefix,
+                max_routes=args.max_routes,
+                max_conflicts=args.max_conflicts,
+            )
+            payload["command"] = "routes"
+            return 0, payload
+        if args.command == "snapshot":
+            payload = service.graph_snapshot()
+            payload["command"] = "snapshot"
+            return 0, payload
+        if args.command == "snapshot-check":
+            snapshot_path = Path(args.snapshot_json).expanduser().resolve(strict=True)
+            if snapshot_path.stat().st_size > 256 * 1024 * 1024:
+                raise ValueError("graph snapshot must be at most 256 MiB")
+            snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+            if not isinstance(snapshot, dict):
+                raise ValueError("graph snapshot JSON must contain an object")
+            payload = service.graph_snapshot_check(snapshot, limit=args.limit)
+            payload["command"] = "snapshot-check"
+            return 0, payload
+        if args.command == "runtime":
+            events_path = Path(args.events_json).expanduser().resolve(strict=True)
+            if events_path.stat().st_size > 16 * 1024 * 1024:
+                raise ValueError("events JSON must be at most 16 MiB")
+            events = json.loads(events_path.read_text(encoding="utf-8"))
+            if not isinstance(events, list):
+                raise ValueError("events JSON must contain an array")
+            payload = service.runtime_overlay(
+                events,
+                producer=args.producer,
+                max_events=args.max_events,
+            )
+            payload["command"] = "runtime"
+            return 0, payload
+        if args.command == "semantic":
+            relationships_path = Path(args.relationships_json).expanduser().resolve(strict=True)
+            if relationships_path.stat().st_size > 16 * 1024 * 1024:
+                raise ValueError("relationships JSON must be at most 16 MiB")
+            relationships = json.loads(relationships_path.read_text(encoding="utf-8"))
+            if not isinstance(relationships, list):
+                raise ValueError("relationships JSON must contain an array")
+            payload = service.semantic_overlay(
+                relationships,
+                provider=args.provider,
+                max_relationships=args.max_relationships,
+            )
+            payload["command"] = "semantic"
+            return 0, payload
+        if args.command == "rename-preview":
+            relationships: list[dict[str, object]] = []
+            if args.semantic_json:
+                semantic_path = Path(args.semantic_json).expanduser().resolve(strict=True)
+                if semantic_path.stat().st_size > 16 * 1024 * 1024:
+                    raise ValueError("semantic JSON must be at most 16 MiB")
+                raw_relationships = json.loads(semantic_path.read_text(encoding="utf-8"))
+                if not isinstance(raw_relationships, list) or any(
+                    not isinstance(item, dict) for item in raw_relationships
+                ):
+                    raise ValueError("semantic JSON must contain an array of objects")
+                relationships = raw_relationships
+            payload = service.rename_preview(
+                args.symbol,
+                args.new_name,
+                semantic_relationships=relationships,
+                provider=args.provider,
+                max_changes=args.max_changes,
+            )
+            payload["command"] = "rename-preview"
+            return 0, payload
+        if args.command == "rename-apply":
+            plan_path = Path(args.plan_json).expanduser().resolve(strict=True)
+            if plan_path.stat().st_size > 16 * 1024 * 1024:
+                raise ValueError("plan JSON must be at most 16 MiB")
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            if not isinstance(plan, dict):
+                raise ValueError("plan JSON must contain an object")
+            payload = service.rename_apply(
+                plan,
+                expected_plan_sha256=args.expected_plan_sha,
+                acknowledge_incomplete=args.acknowledge_incomplete,
+            )
+            payload["command"] = "rename-apply"
+            return 0, payload
+        if args.command == "safe-delete-preview":
+            payload = service.safe_delete_preview(
+                args.symbol,
+                max_blockers=args.max_blockers,
+            )
+            payload["command"] = "safe-delete-preview"
+            return 0, payload
+        if args.command == "safe-delete-apply":
+            plan_path = Path(args.plan_json).expanduser().resolve(strict=True)
+            if plan_path.stat().st_size > 16 * 1024 * 1024:
+                raise ValueError("plan JSON must be at most 16 MiB")
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            if not isinstance(plan, dict):
+                raise ValueError("plan JSON must contain an object")
+            payload = service.safe_delete_apply(
+                plan,
+                expected_plan_sha256=args.expected_plan_sha,
+                acknowledge_incomplete=args.acknowledge_incomplete,
+            )
+            payload["command"] = "safe-delete-apply"
+            return 0, payload
+        if args.command == "file-move-preview":
+            payload = service.file_move_preview(
+                args.source,
+                args.target,
+                max_changes=args.max_changes,
+                max_blockers=args.max_blockers,
+            )
+            payload["command"] = "file-move-preview"
+            return 0, payload
+        if args.command == "file-move-apply":
+            plan_path = Path(args.plan_json).expanduser().resolve(strict=True)
+            if plan_path.stat().st_size > 16 * 1024 * 1024:
+                raise ValueError("plan JSON must be at most 16 MiB")
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            if not isinstance(plan, dict):
+                raise ValueError("plan JSON must contain an object")
+            payload = service.file_move_apply(
+                plan,
+                expected_plan_sha256=args.expected_plan_sha,
+                acknowledge_incomplete=args.acknowledge_incomplete,
+            )
+            payload["command"] = "file-move-apply"
+            return 0, payload
+        if args.command == "lsp-rename-preview":
+            command_path = Path(args.command_json).expanduser().resolve(strict=True)
+            if command_path.stat().st_size > 64 * 1024:
+                raise ValueError("LSP command JSON must be at most 64 KiB")
+            command = json.loads(command_path.read_text(encoding="utf-8"))
+            if (
+                not isinstance(command, list)
+                or not 1 <= len(command) <= 32
+                or any(
+                    not isinstance(item, str) or not item or len(item) > 4096
+                    for item in command
+                )
+            ):
+                raise ValueError("LSP command JSON must contain 1 to 32 strings")
+            payload = service.lsp_rename_preview(
+                args.symbol,
+                args.new_name,
+                command=command,
+                language_id=args.language_id,
+                timeout_seconds=args.timeout_seconds,
+                max_relationships=args.max_relationships,
+            )
+            payload["command"] = "lsp-rename-preview"
             return 0, payload
         payload = service.tests(args.changed, limit=args.limit)
         payload["command"] = "tests"

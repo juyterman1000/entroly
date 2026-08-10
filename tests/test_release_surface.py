@@ -11,13 +11,13 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RELEASE_VERSION = "1.0.75"
-HOMEBREW_FORMULA_VERSION = "1.0.69"
+RELEASE_VERSION = "1.0.76"
+HOMEBREW_FORMULA_VERSION = "1.0.75"
 HOMEBREW_FORMULA_URL = (
-    "https://files.pythonhosted.org/packages/26/5d/42821ed0da2cb2dd29926ee8a5"
-    "3f5f8b76a57a8fe24384a8969b08174daf/entroly-1.0.69.tar.gz"
+    "https://files.pythonhosted.org/packages/ba/ad/6d3a43e0e095106e4fbef71c63"
+    "ef7e563dceb8b50a2111d8d89c53210dc3/entroly-1.0.75.tar.gz"
 )
-HOMEBREW_FORMULA_SHA256 = "bcd31a72d15a6868165d40d66c26cfa84688fa79409523a7abf64164ef74149c"
+HOMEBREW_FORMULA_SHA256 = "75aa9963269a3f64a74cb1170d26b6f2c999cf0495c90d41574d0fa3adecc8ac"
 CANONICAL_MCP_NAME = "io.github.juyterman1000/entroly"
 CANONICAL_REPOSITORY = "https://github.com/juyterman1000/entroly"
 
@@ -75,7 +75,7 @@ def _read_project_metadata(path: str) -> dict[str, object]:
     return metadata
 
 
-def test_public_package_versions_are_1_0_75() -> None:
+def test_public_package_versions_are_1_0_76() -> None:
     assert _read_project_metadata("pyproject.toml")["version"] == RELEASE_VERSION
     assert _read_project_metadata("entroly/pyproject.toml")["version"] == RELEASE_VERSION
     assert _read_json("entroly/npm/package.json")["version"] == RELEASE_VERSION
@@ -94,6 +94,57 @@ def test_bundled_mcpb_manifest_matches_release_source() -> None:
     assert bundled == source
 
 
+#: Top-level keys ClawHub accepts in openclaw.plugin.json. An unlisted key is
+#: rejected as `manifest-unknown-fields` and blocks publication -- v1.0.75 was
+#: rejected for a top-level `uiHints` object. Presentation metadata belongs in
+#: the JSON Schema's own `title`/`description`, not beside it.
+#:
+#: Widening this set is a deliberate act: confirm the field against the host
+#: version first with
+#:     clawhub package validate integrations/openclaw --openclaw-version <ver>
+OPENCLAW_MANIFEST_TOP_LEVEL_KEYS = frozenset(
+    {"id", "activation", "name", "description", "icon", "configSchema"}
+)
+
+
+def test_openclaw_manifest_has_no_unsupported_top_level_fields() -> None:
+    """Catch a rejected manifest here rather than at upload.
+
+    The failing case is silent locally: the plugin still loads, the tests still
+    pass, and only ClawHub refuses the release. Pinning the key set turns that
+    into a local failure naming the offending field.
+    """
+    manifest = _read_json("integrations/openclaw/openclaw.plugin.json")
+    unexpected = sorted(set(manifest) - OPENCLAW_MANIFEST_TOP_LEVEL_KEYS)
+    assert not unexpected, (
+        f"openclaw.plugin.json has top-level field(s) {unexpected} that ClawHub "
+        "rejects as manifest-unknown-fields. Move presentation metadata into "
+        "configSchema property title/description, or add the field to "
+        "OPENCLAW_MANIFEST_TOP_LEVEL_KEYS once `clawhub package validate` "
+        "accepts it."
+    )
+
+
+def test_openclaw_config_properties_keep_their_labels_and_help() -> None:
+    """Every setting an operator can change must stay self-describing.
+
+    The labels and help text moved out of `uiHints` into the schema; this stops
+    that move from quietly degrading into bare types with no explanation.
+    """
+    manifest = _read_json("integrations/openclaw/openclaw.plugin.json")
+    properties = manifest["configSchema"]["properties"]
+    assert properties, "configSchema declares no properties"
+
+    undocumented = sorted(
+        name
+        for name, spec in properties.items()
+        if not spec.get("title") or not spec.get("description")
+    )
+    assert not undocumented, (
+        f"config properties without a title/description: {undocumented}"
+    )
+
+
 def test_openclaw_install_metadata_identifies_clawhub_target() -> None:
     package = _read_json("integrations/openclaw/package.json")
     manifest = _read_json("integrations/openclaw/openclaw.plugin.json")
@@ -105,11 +156,21 @@ def test_openclaw_install_metadata_identifies_clawhub_target() -> None:
     assert install["npmSpec"] == package["name"]
     assert install["defaultChoice"] == "npm"
     assert install["minHostVersion"] == openclaw["compat"]["pluginApi"]
+    # Labels and help text live in the JSON Schema's own `title`/`description`
+    # keywords. A top-level `uiHints` object is not a supported OpenClaw
+    # manifest field and fails ClawHub validation, so the presentation metadata
+    # moved inside `configSchema`, where renderers already read it.
+    assert "uiHints" not in manifest, (
+        "top-level uiHints is rejected by ClawHub validation "
+        "(manifest-unknown-fields); use per-property title/description"
+    )
+
     discovery = manifest["configSchema"]["properties"]["autoDiscoverContextBudget"]
-    assert discovery == {"type": "boolean", "default": True}
-    assert "No remote discovery is enabled automatically" in manifest["uiHints"][
-        "autoDiscoverContextBudget"
-    ]["help"]
+    assert discovery["type"] == "boolean"
+    assert discovery["default"] is True
+    # The default must stay opt-out-safe and the disclosure must stay visible to
+    # the operator: this setting is the one that could imply remote lookups.
+    assert "No remote discovery is enabled automatically" in discovery["description"]
 
 
 def test_mcp_registry_manifest_points_at_release_package() -> None:

@@ -360,7 +360,11 @@ def _idf(term: str, corpus_texts: Sequence[str]) -> float:
     return math.log(1.0 + (n - df + 0.5) / (df + 0.5))
 
 
-def _idf_map(terms: Iterable[str], corpus_texts: Sequence[str]) -> dict[str, float]:
+def _idf_map(
+    terms: Iterable[str],
+    corpus_texts: Sequence[str],
+    document_terms: Sequence[set[str]] | None = None,
+) -> dict[str, float]:
     """IDF for many terms, tokenising each document exactly once.
 
     `_idf` per term re-tokenised the whole corpus per term. On a 172-document
@@ -371,12 +375,24 @@ def _idf_map(terms: Iterable[str], corpus_texts: Sequence[str]) -> dict[str, flo
 
     Tokenising once and reusing the sets makes the cost O(documents) instead of
     O(terms x documents). The IDF values are identical.
+
+    `document_terms` lets a caller that has *already* tokenised the corpus hand
+    the sets in rather than paying for it twice. `qccr._attach_sufficiency`
+    tokenises every candidate file to compute its anchors and then called this,
+    which tokenised the identical corpus again -- two full passes per selection.
+    Values are unchanged either way; only the second pass disappears.
     """
     terms = list(terms)
     n = len(corpus_texts)
     if n == 0 or not terms:
         return {term: 1.0 for term in terms}
-    document_terms = [_lexical_terms(text) for text in corpus_texts]
+    if document_terms is None:
+        document_terms = [_lexical_terms(text) for text in corpus_texts]
+    elif len(document_terms) != n:
+        raise ValueError(
+            "document_terms must align 1:1 with corpus_texts "
+            f"({len(document_terms)} vs {n})"
+        )
     out: dict[str, float] = {}
     for term in terms:
         df = sum(1 for present in document_terms if term in present)

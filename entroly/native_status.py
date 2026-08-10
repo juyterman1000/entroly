@@ -1,17 +1,23 @@
 """Native engine capability diagnostics."""
 from __future__ import annotations
 
+import functools
 import importlib
+import logging
 from dataclasses import dataclass
 from importlib import metadata
 from types import ModuleType
 
 
-MIN_ENTROLY_CORE_VERSION = "1.0.75"
+MIN_ENTROLY_CORE_VERSION = "1.0.76"
 QCCR_SYMBOLS = (
     "py_qccr_expand_query",
     "py_qccr_rank_files",
     "py_qccr_select",
+)
+RELEASE_NATIVE_SYMBOLS = QCCR_SYMBOLS + (
+    "extract_skeleton",
+    "py_compress_block",
 )
 
 
@@ -130,3 +136,40 @@ def native_status_message(
         f"{feature} found an incompatible Entroly Rust engine{suffix}. "
         f"Install entroly-core>={MIN_ENTROLY_CORE_VERSION},<2."
     )
+
+
+@functools.lru_cache(maxsize=1)
+def usable_core() -> ModuleType | None:
+    """The native engine module, but only when it is safe to use.
+
+    Single source of truth for "may this process call into entroly_core?".
+    Sixteen modules import the native engine; before this existed, each decided
+    on its own with a bare ``try: import entroly_core``, and only two consulted
+    the declared minimum version. A core below that minimum was therefore
+    refused by the engine and used by everything else *in the same process*.
+
+    That is not a theoretical split. With a core one release behind the
+    package, ``server.py`` correctly fell back to Python and passed
+    ``recency_score`` to a ``ContextFragment`` that ``checkpoint.py`` had
+    imported from the stale Rust core, which has no such field:
+
+        TypeError: ContextFragment.__new__() got an unexpected keyword
+                   argument 'recency_score'
+
+    A mixed process is worse than either pure mode, so the decision has to be
+    made once. Returns None when the core is absent, incomplete, or below the
+    minimum, and callers keep their pure-Python fallback.
+
+    Cached: the answer cannot change within a process, and this sits on import
+    paths that run per request.
+    """
+    status = native_status()
+    if status.available and status.version_ok is False:
+        logging.getLogger("entroly").warning(
+            "entroly_core %s is below the %s this release requires; using the "
+            "pure-Python engine. Rebuild with `cd entroly-core && maturin "
+            "develop --release` to restore native acceleration.",
+            status.version,
+            MIN_ENTROLY_CORE_VERSION,
+        )
+    return status.module if status.ok else None

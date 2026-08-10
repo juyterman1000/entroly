@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "entroly"
-version = "1.0.75"
+version = "1.0.76"
 description = "Drop-in Context Assurance for AI agents: reduce avoidable token usage and AI cost with evidence selection, receipts, exact recovery, and verification."
 readme = "PYPI_README.md"
 license = "Apache-2.0"
@@ -57,17 +57,24 @@ proxy = [
     "uvicorn>=0.51.0",
 ]
 native = [
-    "entroly-core>=1.0.75,<2",
+    "entroly-core>=1.0.76,<2",
 ]
 receipt-proof = [
     "cryptography>=42",
 ]
+code-intelligence = [
+    "tree-sitter-language-pack>=1.14.3,<2",
+]
+images = [
+    "Pillow>=10,<13",
+]
 full = [
     "cryptography>=42",
-    "entroly-core>=1.0.75,<2",
+    "entroly-core>=1.0.76,<2",
     "httpx>=0.28.1",
     "starlette>=1.3.1",
     "uvicorn>=0.51.0",
+    "tree-sitter-language-pack>=1.14.3,<2",
 ]
 test = [
     "pytest>=9.0.3,<10",

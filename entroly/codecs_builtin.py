@@ -155,6 +155,71 @@ class JsonCodec:
             # codec could not read.
             return reps
 
+        # Columnar form is computed before anything schema-related, because two
+        # separate early exits below would otherwise skip it on exactly the
+        # payloads it exists to serve:
+        #
+        #   * `len(elided) >= len(text)` -- the schema form is *larger* than the
+        #     original for identifier-dense records, so the codec returned
+        #     nothing at all;
+        #   * `_ProtectionOverflow` -- enumerating every protected value
+        #     exceeds its budget once a payload carries many identifiers, and
+        #     overflow declines every lossy form.
+        #
+        # Measured on 200 records: {"id","name"} compressed while {"id","sku"}
+        # produced 0%, the only difference being a key name that pushed it past
+        # one of these limits. The columnar form depends on neither: it keeps
+        # whole load-bearing *columns* verbatim, checked structurally by
+        # _columnar_preserves_columns. Column identity is a stronger statement
+        # than "each of these substrings appears somewhere", and is O(columns)
+        # rather than O(values).
+        # what happens to identifier-dense records, the payloads most worth
+        # compressing. Measured on 200 records: {"id","name"} compressed while
+        # {"id","sku"} produced nothing, because the second overflowed.
+        #
+        # The columnar form does not need the enumeration. It keeps whole
+        # load-bearing *columns* verbatim, so preservation is structural and is
+        # verified as such by _columnar_preserves_columns. Column identity is a
+        # stronger statement than "each of these 400 substrings appears
+        # somewhere", and it costs nothing to check.
+        # Protection is decided by name *and* by what the data shows, so an
+        # identifier column with an unlisted name is not summarised away.
+        _protects = _identifier_predicate(data, _is_load_bearing_key)
+
+        columnar = _columnar_json(data, _protects)
+        if (
+            columnar is not None
+            and len(columnar) < len(text)
+            and _columnar_preserves_columns(columnar, data, _protects)
+        ):
+            reps.append(
+                Representation(
+                    representation_id=f"{source_id}#json.columnar",
+                    source_id=source_id,
+                    content_type="json",
+                    text=columnar,
+                    token_cost=estimate_tokens(columnar),
+                    codec=self.name,
+                    codec_version=self.version,
+                    source_sha256=content_digest(text),
+                    # A bounded sample for the receipt. The guarantee is the
+                    # structural check above, not this list.
+                    protected_evidence=_columnar_evidence_sample(
+                        data, _protects
+                    ),
+                    distortion_risk=1.0 - (len(columnar) / max(len(text), 1)),
+                    recovery=self.store.put(
+                        text,
+                        item_count=_count_elided_json_records(data),
+                        note=(
+                            "complete original JSON for "
+                            f"{source_id or 'payload'} (columnar form kept "
+                            "load-bearing columns verbatim)"
+                        ),
+                    ),
+                )
+            )
+
         elided = json.dumps(
             _json_to_schema(data, depth=0, max_depth=4),
             indent=2,
@@ -164,7 +229,7 @@ class JsonCodec:
             return reps
 
         try:
-            protected = _protected_json_values(data, _is_load_bearing_key)
+            protected = _protected_json_values(data, _protects)
         except _ProtectionOverflow:
             return reps
         if any(value not in elided for value in protected):
@@ -246,6 +311,504 @@ def _protected_json_values(
     return _unique(out)
 
 
+#: Ceiling on records considered for the columnar form. Above this the verbatim
+#: identifier columns stop being cheaper than the original, and the walk cost
+#: stops being negligible on a request path.
+_JSON_COLUMNAR_MAX_RECORDS = 5000
+
+
+def _record_array(data: Any) -> tuple[str | None, list[dict[str, Any]]] | None:
+    """Find a flat array of records, either bare or under a single key.
+
+    Real payloads are usually ``[{...}, ...]`` or ``{"data": [{...}, ...]}``,
+    so both shapes resolve to the same columnar treatment. Anything else --
+    several sibling arrays, nested records, ragged keys -- is left alone rather
+    than guessed at.
+    """
+    if isinstance(data, list):
+        rows, key = data, None
+    elif isinstance(data, dict):
+        arrays = [
+            (k, v) for k, v in data.items()
+            if isinstance(v, list) and len(v) >= 2
+        ]
+        if len(arrays) != 1:
+            return None
+        key, rows = arrays[0][0], arrays[0][1]
+        # The columnar rendering describes the record array and nothing else,
+        # so any sibling key would be dropped without trace. That is real data
+        # loss -- a top-level `requestId` beside an `items` array vanished --
+        # and it is not worth guessing a representation for. Decline and let
+        # the schema form, which walks the whole document, handle it.
+        if len(data) != 1:
+            return None
+    else:
+        return None
+
+    if not 2 <= len(rows) <= _JSON_COLUMNAR_MAX_RECORDS:
+        return None
+    if not all(isinstance(row, dict) for row in rows):
+        return None
+    # Scalars only: a nested object under a record key has no columnar form
+    # that preserves it without recursing, and recursing here would quietly
+    # reintroduce the summarisation this representation exists to avoid.
+    if any(
+        isinstance(value, (dict, list))
+        for row in rows
+        for value in row.values()
+    ):
+        return None
+
+    first = set(rows[0])
+    if not first or any(set(row) != first for row in rows):
+        return None
+    return key, rows
+
+
+def _column_summary(values: list[Any]) -> dict[str, Any]:
+    """Describe a column that is not load-bearing, without keeping its values."""
+    distinct = {json.dumps(v, sort_keys=True) for v in values}
+    if len(distinct) == 1:
+        return {"const": values[0]}
+    if all(isinstance(v, bool) for v in values):
+        true_count = sum(1 for v in values if v)
+        return {"type": "bool", "true": true_count, "false": len(values) - true_count}
+    if all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in values):
+        return {
+            "type": "number",
+            "n": len(values),
+            "min": min(values),
+            "max": max(values),
+        }
+    return {
+        "type": "string",
+        "n": len(values),
+        "distinct": len(distinct),
+        "example": values[0],
+    }
+
+
+def _columnar_json(
+    data: Any,
+    is_load_bearing_key: Callable[[str], bool],
+) -> str | None:
+    """Columnar rendering that keeps every load-bearing value verbatim.
+
+    The schema form elides whole records, so a payload carrying identifiers --
+    ``sku``, ``order_id``, ``email``, ``price`` -- fails the protected-evidence
+    check and the codec correctly declines to compress it at all. Measured on a
+    200-record array, ``{"id","name"}`` compressed 53% while ``{"id","sku"}``
+    compressed 0%: the single difference was a key name.
+
+    Refusing is the right answer when the only alternative destroys
+    identifiers, but it is not the only alternative. A record array spends most
+    of its bytes repeating key names and non-identifying fields. Emitting each
+    column once, keeping load-bearing columns verbatim and summarising the
+    rest, preserves exactly what the guard protects while removing what it does
+    not.
+
+    Returns None when the payload has no such shape, when nothing is
+    load-bearing (the existing schema form already handles that better), or
+    when the result would not be smaller.
+    """
+    found = _record_array(data)
+    if found is None:
+        return None
+    container_key, rows = found
+
+    keys = list(rows[0])
+    kept = [k for k in keys if is_load_bearing_key(str(k))]
+    if not kept:
+        # Nothing to protect: the schema representation compresses harder.
+        return None
+    elided = [k for k in keys if k not in kept]
+
+    payload: dict[str, Any] = {
+        "_format": "columnar",
+        "_records": len(rows),
+        "_verbatim_columns": kept,
+        "_summarised_columns": elided,
+    }
+    if container_key is not None:
+        payload["_container"] = container_key
+    for key in kept:
+        payload[str(key)] = [row[key] for row in rows]
+    payload["_summaries"] = {
+        str(key): _column_summary([row[key] for row in rows]) for key in elided
+    }
+
+    return json.dumps(payload, indent=2, ensure_ascii=True)
+
+
+#: Minimum group size before a template is worth emitting. Below this the
+#: template line plus its value columns costs more than the raw lines.
+_LOG_MIN_GROUP = 4
+
+#: Runs this treats as varying slots. Digits cover counters, ids, durations and
+#: status codes; hex covers request ids and short digests.
+#:
+#: Deliberately no \b anchors. Identifiers embed their varying part -- in
+#: `test_mod_1` the digit follows an underscore, so both are word characters
+#: and there is no boundary to match. With anchors, 300 lines of pytest output
+#: yielded no slots at all, every line fell through as verbatim, and nothing
+#: grouped. Over-splitting inside a token is harmless here because the values
+#: are kept and checked as a multiset; failing to split is not.
+#: Order matters: a timestamp is one varying slot, not six. Matching its parts
+#: separately cost real compression -- an interleaved-error log fell from 42%
+#: to 24% purely because each line gained five extra value columns.
+_LOG_SLOT = re.compile(
+    r"\d{4}[-/]\d{2}[-/]\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:?\d{2})?"
+    r"|\d{2}:\d{2}:\d{2}(?:[.,]\d+)?"
+    r"|0[xX][0-9a-fA-F]{4,}"
+    r"|[0-9]+(?:\.[0-9]+)?"
+)
+
+
+def _positional_templates(
+    indexed: list[tuple[int, str]],
+    min_group: int,
+) -> dict[str, list[tuple[int, tuple[str, ...]]]]:
+    """Discover templates from positional disagreement, not character class.
+
+    The regex detector below decides what varies by how a token *looks* --
+    digits and hex runs. That misses every identifier that is not shaped like a
+    number, which is most of them. Measured on 300 lines each:
+
+        300 distinct hostnames    29%
+        300 distinct user ids     30%
+        300 distinct request ids   0%
+
+    The request-id case gets nothing: `bcdfab` is not a numeric run, so no slot
+    is found, and no two lines are identical so the duplicate collapser cannot
+    help either.
+
+    Fixed-depth log parsing (He et al., ICWS 2017) resolves this by bucketing on
+    cheap invariants -- token count, then leading token -- and marking a
+    position variable when the tokens there disagree across the bucket.
+    Variability is then a property of the data rather than an assertion about
+    spelling, so an opaque identifier is discovered exactly like a counter.
+
+    This keeps the bucketing but compares positions directly rather than
+    walking a tree; at the sizes a single payload presents, the tree's pruning
+    is not what costs.
+    """
+    buckets: dict[tuple[int, str], list[tuple[int, list[str]]]] = {}
+    for index, line in indexed:
+        tokens = line.split()
+        if not tokens:
+            continue
+        buckets.setdefault((len(tokens), tokens[0]), []).append((index, tokens))
+
+    templates: dict[str, list[tuple[int, tuple[str, ...]]]] = {}
+    for (width, _), entries in buckets.items():
+        if len(entries) < min_group:
+            continue
+        varying = [
+            position
+            for position in range(width)
+            if len({tokens[position] for _, tokens in entries}) > 1
+        ]
+        if not varying:
+            # Every position agrees: these lines are identical, and the
+            # duplicate collapser renders them more cheaply than a template
+            # plus columns would.
+            continue
+        if len(varying) == width:
+            # Nothing invariant to factor out; a template would be all slots.
+            continue
+        first = entries[0][1]
+        template = " ".join(
+            "\x00" if position in set(varying) else first[position]
+            for position in range(width)
+        )
+        templates[template] = [
+            (index, tuple(tokens[position] for position in varying))
+            for index, tokens in entries
+        ]
+    return templates
+
+
+def _log_slots(line: str) -> tuple[str, tuple[str, ...]]:
+    """Split a line into its invariant template and its varying values.
+
+    The existing ``_log_template`` masks only the final numeric run, so two
+    lines differing anywhere earlier never share a template. Measured on 400
+    templated lines that produced 0% reduction, while 400 *identical* lines
+    reduced 100% -- the codec collapses duplicates, and real logs are templated
+    rather than duplicated.
+
+    Masking every numeric run instead makes those lines group, and the values
+    are not discarded: they are returned so the caller can keep them verbatim.
+    That is what separates this from the aggressive collapsing that once merged
+    ``code 402`` with ``code 500`` -- the template is shared, the values are
+    not.
+    """
+    values: list[str] = []
+
+    def take(match: re.Match[str]) -> str:
+        values.append(match.group(0))
+        return "\x00"
+
+    return _LOG_SLOT.sub(take, line), tuple(values)
+
+
+def _template_factored_log(
+    text: str,
+    is_critical: Callable[[str], bool],
+) -> str | None:
+    """Emit each repeated template once, with its values kept verbatim.
+
+    Lines matching the critical pattern are never templated: an error or
+    traceback is the reason someone is reading the log, and it stays exactly as
+    written. Everything else is grouped by template; groups at or above
+    ``_LOG_MIN_GROUP`` collapse to one template line plus per-slot value lists,
+    and smaller groups stay verbatim because collapsing them would cost more
+    than it saves.
+
+    Returns None when nothing groups, so the caller keeps today's behaviour.
+    """
+    lines = text.splitlines()
+    if len(lines) < _LOG_MIN_GROUP:
+        return None
+
+    order: list[str] = []
+    groups: dict[str, list[tuple[int, tuple[str, ...]]]] = {}
+    verbatim: dict[int, str] = {}
+
+    for index, line in enumerate(lines):
+        if not line.strip() or is_critical(line):
+            verbatim[index] = line
+            continue
+        template, values = _log_slots(line)
+        if not values:
+            verbatim[index] = line
+            continue
+        if template not in groups:
+            groups[template] = []
+            order.append(template)
+        groups[template].append((index, values))
+
+    collapsible = {t: g for t, g in groups.items() if len(g) >= _LOG_MIN_GROUP}
+
+    # Whatever the regex detector could not group, retry positionally. It masks
+    # inside a token -- `batch17` and `batch18` share a template -- which is
+    # finer than whole-token comparison, so it stays the first pass. But it can
+    # only see slots that look numeric, and identifiers usually do not.
+    ungrouped: list[tuple[int, str]] = [
+        (index, lines[index])
+        for index, _ in enumerate(lines)
+        if index in verbatim and not is_critical(lines[index]) and lines[index].strip()
+    ]
+    ungrouped += [
+        (index, lines[index])
+        for template, entries in groups.items()
+        if template not in collapsible
+        for index, _ in entries
+    ]
+    claimed: set[int] = set()
+    for template, entries in _positional_templates(ungrouped, _LOG_MIN_GROUP).items():
+        if template in collapsible:
+            continue
+        collapsible[template] = entries
+        groups[template] = entries
+        order.append(template)
+        for index, _ in entries:
+            verbatim.pop(index, None)
+            claimed.add(index)
+
+    if not collapsible:
+        return None
+
+    for template, entries in groups.items():
+        if template in collapsible:
+            continue
+        for index, values in entries:
+            # A line the positional pass claimed must not also be restored
+            # here: it would be emitted twice, once verbatim and once inside a
+            # template, and the rendering would exceed the source it replaces.
+            if index in claimed:
+                continue
+            verbatim[index] = _restore(template, values)
+
+    # Critical lines first, then templates, then the bulk value columns.
+    #
+    # Chronological order is already gone -- this form replaces runs of lines
+    # with a template and its columns -- so ordering by importance costs
+    # nothing and buys graceful degradation. compress() enforces a token
+    # budget, and when this rendering does not fit it is truncated; with
+    # source order a tail truncation silently removed error lines. Measured on
+    # an interleaved-error log at a 30% budget, status code 500 was lost that
+    # way. Front-loading what a reader is looking for means truncation costs
+    # repetition, not evidence.
+    critical: list[str] = []
+    other: list[str] = []
+    for index in sorted(verbatim):
+        (critical if is_critical(verbatim[index]) else other).append(verbatim[index])
+
+    templates: list[str] = []
+    columns: list[str] = []
+    for template in order:
+        entries = collapsible.get(template)
+        if entries is None:
+            continue
+        templates.append(f"[x{len(entries)}] {template.replace(chr(0), '{}')}")
+        slot_count = len(entries[0][1])
+        for slot in range(slot_count):
+            column = [values[slot] for _, values in entries]
+            # Separated by | rather than a comma: `,` is a decimal separator in
+            # European locales, so the timestamp pattern swallowed the
+            # delimiter and the values became unfindable to the preservation
+            # check that gates this representation.
+            columns.append(f"    {{{slot}}}: {'|'.join(column)}")
+
+    rendered = "\n".join(critical + templates + other + columns)
+    return rendered if len(rendered) < len(text) else None
+
+
+def _restore(template: str, values: tuple[str, ...]) -> str:
+    parts = template.split("\x00")
+    rebuilt = parts[0]
+    for value, part in zip(values, parts[1:]):
+        rebuilt += value + part
+    return rebuilt
+
+
+def _log_values_preserved(rendered: str, text: str, is_critical) -> bool:
+    """Every value the source carried must still appear in the rendering.
+
+    A template that dropped a status code would be indistinguishable from one
+    that kept it, if the check only compared templates. Comparing the value
+    multiset is what stops ``code 402`` and ``code 500`` collapsing into one.
+    """
+    source_values = {
+        value
+        for line in text.splitlines()
+        if line.strip() and not is_critical(line)
+        for value in _log_slots(line)[1]
+    }
+    if not source_values:
+        return True
+    # Distinct presence, not occurrence counts. A value that is invariant
+    # across a group is factored into the template and correctly appears once,
+    # with `[xN]` and the column length carrying the multiplicity; requiring N
+    # copies rejected a correct 76% rendering because its timestamp appeared
+    # once instead of 300 times. Distinctness is what the guard is actually
+    # for: it still catches `code 500` disappearing while `code 402` survives,
+    # which is the failure this codec was made conservative to avoid.
+    present = set(_LOG_SLOT.findall(rendered))
+    return source_values.issubset(present)
+
+
+#: A column this close to all-distinct is an identifier whatever it is called.
+#: Below it, values repeat enough to be describable by a summary.
+_IDENTIFIER_UNIQUENESS = 0.9
+
+
+def _identifier_predicate(
+    data: Any,
+    is_load_bearing_key: Callable[[str], bool],
+) -> Callable[[str], bool]:
+    """Widen name-based protection with what the data itself shows.
+
+    Load-bearing keys were decided by name alone. A name list cannot enumerate
+    every identifier in every domain, and the gap is not cosmetic: 200 records
+    carrying a `vin` column compressed 99% with 199 of 200 VINs destroyed,
+    because `vin` is not a listed name, while `tracking_ref` beside it survived.
+    The difference was spelling.
+
+    This is the same lesson fixed-depth log parsing teaches for logs -- decide
+    what varies from the data, not from how it is written. A column whose
+    values are near-unique across records is an identifier regardless of its
+    name; one that repeats is describable by a summary. `vin` has 200 distinct
+    values in 200 rows, `tier` has one.
+
+    The returned predicate only ever *widens* the original, so nothing that was
+    protected by name becomes unprotected.
+    """
+    found = _record_array(data)
+    if found is None:
+        return is_load_bearing_key
+    _, rows = found
+
+    discovered: set[str] = set()
+    total = len(rows)
+    for key in rows[0]:
+        if is_load_bearing_key(str(key)):
+            continue
+        try:
+            distinct = len({json.dumps(row[key], sort_keys=True) for row in rows})
+        except (TypeError, ValueError):
+            continue
+        if distinct / total >= _IDENTIFIER_UNIQUENESS:
+            discovered.add(str(key))
+
+    if not discovered:
+        return is_load_bearing_key
+
+    def predicate(key: str) -> bool:
+        return is_load_bearing_key(key) or key in discovered
+
+    return predicate
+
+
+def _columnar_preserves_columns(
+    columnar: str,
+    data: Any,
+    is_load_bearing_key: Callable[[str], bool],
+) -> bool:
+    """Verify every load-bearing column survived value-for-value, in order.
+
+    Structural, not substring-based. Re-reading the rendered text and comparing
+    the reconstructed column against the source catches a truncated, reordered
+    or coerced column, none of which a substring scan would notice -- and it
+    does so without enumerating every value, which is what overflows on the
+    payloads this form exists to serve.
+    """
+    found = _record_array(data)
+    if found is None:
+        return False
+    _, rows = found
+
+    try:
+        rendered = json.loads(columnar)
+    except ValueError:
+        return False
+
+    for key in rows[0]:
+        if not is_load_bearing_key(str(key)):
+            continue
+        if rendered.get(str(key)) != [row[key] for row in rows]:
+            return False
+    return True
+
+
+def _columnar_evidence_sample(
+    data: Any,
+    is_load_bearing_key: Callable[[str], bool],
+    limit: int = 8,
+) -> tuple[str, ...]:
+    """A bounded, serialized sample of preserved values, for the receipt.
+
+    Deliberately small. The preservation guarantee is
+    :func:`_columnar_preserves_columns`; this exists so a reader can spot-check
+    it without the receipt carrying thousands of identifiers.
+    """
+    found = _record_array(data)
+    if found is None:
+        return ()
+    _, rows = found
+
+    out: list[str] = []
+    for key in rows[0]:
+        if not is_load_bearing_key(str(key)):
+            continue
+        for row in rows[: max(1, limit // 2)]:
+            out.append(json.dumps(row[key], sort_keys=True))
+            if len(out) >= limit:
+                return tuple(out)
+    return tuple(out)
+
+
 def _count_elided_json_records(obj: Any) -> int:
     count = 0
 
@@ -269,11 +832,28 @@ class LogCodec:
     name = "log"
     version = "4"
     _LOG_SHAPE = re.compile(
+        # Timestamped or level-prefixed lines, plus test-runner and build-tool
+        # output. The latter was claimed by no codec at all, so it reached the
+        # content-blind generic path: 300 lines of pytest output compressed 74%
+        # while keeping only 2 of 8 FAILED lines. Silently discarding failures
+        # is worse than not compressing, and the only reason anyone reads this
+        # output is to find them.
         r"^\d{4}[-/]\d{2}|^\[?\d{2}:\d{2}|^(DEBUG|INFO|WARN|ERROR|TRACE|FATAL)",
         re.MULTILINE,
     )
+    #: Test-runner and build-tool lines. Scored below ShellCodec's 0.7 so a
+    #: shell session containing test output still routes to the shell codec;
+    #: this only wins when nothing shell-shaped is present.
+    _TOOL_SHAPE = re.compile(
+        r"^\S+::\S+\s+(PASSED|FAILED|ERROR|SKIPPED|XFAIL)"
+        r"|^\s{2,}(Compiling|Finished|Running|Downloaded)\s+\S"
+        r"|^(added|removed|changed)\s+\S+@",
+        re.MULTILINE,
+    )
     _CRITICAL = re.compile(
-        r"\b(ERROR|FATAL|Traceback|Exception|panic|exit_code|exit status|"
+        # Anything naming a failure. FAILED was absent, so pytest failures were
+        # templated away with the passes.
+        r"\b(ERROR|FATAL|FAILED|Traceback|Exception|panic|exit_code|exit status|"
         r"status(?:_code)?\s*[:=]\s*[45]\d\d)\b",
         re.IGNORECASE,
     )
@@ -286,6 +866,8 @@ class LogCodec:
             return SupportDecision(True, 1.0, "declared content type")
         if self._LOG_SHAPE.search(text[:2000]):
             return SupportDecision(True, 0.8, "timestamped or levelled lines")
+        if self._TOOL_SHAPE.search(text[:2000]):
+            return SupportDecision(True, 0.6, "test-runner or build-tool lines")
         return SupportDecision(False, 0.0, "no log line shape found")
 
     def representations(
@@ -305,6 +887,48 @@ class LogCodec:
             version=self.version,
         )
         reps = [full]
+
+        # Template-factored form, offered before the duplicate collapse below,
+        # which returns early when it cannot shrink the text. That happens on
+        # ordinary logs: _log_template masks only the final numeric run, so two
+        # lines differing anywhere earlier never share a template. Measured on
+        # 400 templated lines it produced 0%, while 400 *identical* lines
+        # produced 100% -- it collapses duplicates, and real logs are templated
+        # rather than duplicated.
+        #
+        # Masking every numeric run makes those lines group, and the values are
+        # kept verbatim in per-slot columns rather than discarded, so `code 402`
+        # and `code 500` remain distinct. _log_values_preserved checks that as a
+        # multiset before the representation is offered.
+        factored = _template_factored_log(text, lambda ln: bool(self._CRITICAL.search(ln)))
+        if factored is not None and _log_values_preserved(
+            factored, text, lambda ln: bool(self._CRITICAL.search(ln))
+        ):
+            reps.append(
+                Representation(
+                    representation_id=f"{source_id}#log.templated",
+                    source_id=source_id,
+                    content_type="log",
+                    text=factored,
+                    token_cost=estimate_tokens(factored),
+                    codec=self.name,
+                    codec_version=self.version,
+                    source_sha256=content_digest(text),
+                    protected_evidence=_protected_log_lines(
+                        text, _log_template, _strip_log_prefix, self._CRITICAL
+                    ),
+                    distortion_risk=1.0 - (len(factored) / max(len(text), 1)),
+                    recovery=self.store.put(
+                        text,
+                        item_count=len(text.splitlines()),
+                        note=(
+                            f"complete original log for {source_id or 'log'} "
+                            "(templated form kept every value verbatim)"
+                        ),
+                    ),
+                )
+            )
+
         collapsed = _compress_log_universal(text)
         if not collapsed or len(collapsed) >= len(text):
             return reps
@@ -377,7 +1001,7 @@ def _log_omitted_count(
 
 class ShellCodec:
     name = "shell"
-    version = "2"
+    version = "3"
     _SHELL_SHAPE = re.compile(
         r"^\s*[$>]\s+\S|^(?:PASS|FAIL|ok|error|warning|Error|Warning)\b"
         r"|\b(?:exit(?:ed)? (?:code|status)|Traceback|npm ERR!|error\[E\d+\])"
@@ -420,7 +1044,11 @@ class ShellCodec:
         reps = [full]
         budget = int(options.get("budget", 1000))
         try:
-            compressed = esc_compress(text, budget=budget).compressed
+            compressed = esc_compress(
+                text,
+                budget=budget,
+                tool_name=str(options.get("tool_name") or source_id or ""),
+            ).compressed
         except Exception:
             return reps
         if not compressed or len(compressed) >= len(text):

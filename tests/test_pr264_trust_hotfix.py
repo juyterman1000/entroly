@@ -36,10 +36,17 @@ def test_json_recovery_is_complete_original_byte_stream(tmp_path):
     path = tmp_path / "secure-recovery.json"
     store = RecoveryStore(path, scope_id="test-json")
     representations = JsonCodec(store).representations(original, source_id="payload.json")
-    assert len(representations) == 2, "safe late evidence should remain compressible"
-    representation = representations[-1]
-    assert representation.recovery is not None
-    assert store.recover(representation.recovery) == original
+    # What matters is that a compressible form is still offered beside the
+    # verbatim one, not how many exist. Pinning the exact count made this fail
+    # when the codec gained a third representation -- a widening of choice, not
+    # a regression. Every recoverable form is now checked rather than one.
+    assert len(representations) >= 2, "safe late evidence should remain compressible"
+    recoverable = [rep for rep in representations if rep.recovery is not None]
+    assert recoverable, "no recoverable representation was offered"
+    for candidate in recoverable:
+        assert store.recover(candidate.recovery) == original
+
+    representation = recoverable[-1]
 
     restarted = RecoveryStore(path, scope_id="test-json")
     assert restarted.recover(representation.recovery) == original

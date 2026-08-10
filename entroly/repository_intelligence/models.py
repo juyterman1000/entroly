@@ -32,6 +32,11 @@ class Symbol:
     line_end: int
     language: str
     parent_id: str | None = None
+    signature: str = ""
+    start_byte: int = 0
+    end_byte: int = 0
+    parse_backend: str = "conservative"
+    evidence_sha256: str = ""
 
     def to_dict(self) -> dict[str, object]:
         return vars(self).copy()
@@ -44,9 +49,34 @@ class CallEdge:
     path: str
     line: int
     confidence: str = "resolved"
+    kind: str = "calls"
+    resolution: str = "unique-static"
+    start_byte: int = 0
+    end_byte: int = 0
+    evidence_sha256: str = ""
 
     def to_dict(self) -> dict[str, object]:
         return vars(self).copy()
+
+
+@dataclass(frozen=True)
+class UnresolvedCall:
+    """A call site that could not be bound without inventing certainty."""
+
+    caller_id: str
+    target: str
+    path: str
+    line: int
+    reason: str
+    candidates: tuple[str, ...] = ()
+    start_byte: int = 0
+    end_byte: int = 0
+    evidence_sha256: str = ""
+
+    def to_dict(self) -> dict[str, object]:
+        payload = vars(self).copy()
+        payload["candidates"] = list(self.candidates)
+        return payload
 
 
 @dataclass(frozen=True)
@@ -111,6 +141,7 @@ class RepositoryIndex:
     files: dict[str, FileRecord] = field(default_factory=dict)
     symbols: dict[str, Symbol] = field(default_factory=dict)
     call_edges: tuple[CallEdge, ...] = ()
+    unresolved_calls: tuple[UnresolvedCall, ...] = ()
     file_dependencies: dict[str, tuple[str, ...]] = field(default_factory=dict)
     diagnostics: tuple[str, ...] = ()
 
@@ -159,7 +190,7 @@ class RepositoryIndex:
 
     def to_dict(self) -> dict[str, object]:
         return {
-            "schema_version": "entroly.repository-index.v1",
+            "schema_version": "entroly.repository-index.v2",
             "root": self.root,
             "files": [self.files[path].to_dict() for path in sorted(self.files)],
             "symbols": [
@@ -167,6 +198,9 @@ class RepositoryIndex:
                 for symbol_id in sorted(self.symbols)
             ],
             "call_edges": [edge.to_dict() for edge in self.call_edges],
+            "unresolved_calls": [
+                call.to_dict() for call in self.unresolved_calls
+            ],
             "file_dependencies": {
                 path: list(self.file_dependencies[path])
                 for path in sorted(self.file_dependencies)

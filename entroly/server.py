@@ -29,6 +29,7 @@ from __future__ import annotations
 import copy
 import gc
 import gzip
+import hashlib
 import inspect
 import json
 import logging
@@ -36,9 +37,15 @@ import os
 import re
 import sys
 import threading
+import uuid
 from functools import wraps
 from pathlib import Path
 from typing import Any, Callable
+
+try:
+    from mcp.server.fastmcp import Context as MCPContext
+except ImportError:  # pragma: no cover - create_mcp_server reports the install error
+    MCPContext = Any  # type: ignore[misc,assignment]
 
 from .adaptive_pruner import EntrolyPruner, FragmentGuard
 from .autotune import ComponentFeedbackBus, DreamingLoop, FeedbackJournal, TaskProfileOptimizer
@@ -63,6 +70,7 @@ from .prefetch import PrefetchEngine
 from .provenance import build_provenance, compact_optimize_result_for_wire
 from .proxy_transform import calibrated_token_count as _calibrated_token_count
 from .query_refiner import QueryRefiner
+from .read_delivery_cache import ReadDeliveryCache
 from .repo_map import build_repo_map, render_repo_map_markdown
 from .skill_engine import SkillEngine, promoted_skill_execution_enabled
 from .value_tracker import ValueTracker, get_tracker
@@ -75,9 +83,9 @@ from .verification_engine import VerificationEngine
 
 # ── Rust engine import (preferred, 50-100× faster) ─────────────────
 # Importing is not sufficient. A core below MIN_ENTROLY_CORE_VERSION can select
-# differently: measured on the same query and fragment set, entroly_core 1.0.73
-# returned three fragments where 1.0.74 returned one, and a stale core silently
-# reported 0.0% savings where a matched core reports a real reduction
+# differently: measured on the same query and fragment set, a core one release
+# behind returned three fragments where the matched core returned one, and it
+# silently reported 0.0% savings where a matched core reports a real reduction
 # (tests/test_simulate_small_project.py). qccr.py already refuses such a core
 # via native_status().ok, so before this gate the same library in the same
 # process was rejected by one component and trusted by the other -- and the one
@@ -85,24 +93,16 @@ from .verification_engine import VerificationEngine
 # path instead of producing selections under a version nobody declared
 # compatible.
 try:
-    from entroly_core import EntrolyEngine as RustEngine
-    from entroly_core import py_analyze_query, py_refine_heuristic
+    from .native_status import usable_core as _usable_core
 
-    from .native_status import native_status as _native_status
-
-    _core_status = _native_status()
-    if _core_status.version_ok is False:
-        # `logger` is not bound until later in this module.
-        logging.getLogger("entroly").warning(
-            "entroly_core %s is below the minimum this release requires; "
-            "using the pure-Python engine instead. Rebuild with "
-            "`cd entroly-core && maturin develop --release` to restore "
-            "native acceleration.",
-            _core_status.version,
-        )
-        raise ImportError("entroly_core below minimum supported version")
+    _core = _usable_core()
+    if _core is None:
+        raise ImportError("entroly_core unavailable or below minimum version")
+    RustEngine = _core.EntrolyEngine
+    py_analyze_query = _core.py_analyze_query
+    py_refine_heuristic = _core.py_refine_heuristic
     _RUST_AVAILABLE = True
-except ImportError:
+except (ImportError, AttributeError):
     _RUST_AVAILABLE = False
     RustEngine = None  # type: ignore[assignment,misc]
 
@@ -6038,45 +6038,169 @@ def create_mcp_server(
 
     # ── SRP: Semantic Resolution Protocol ──
     # Budget-driven file reads with automatic per-block resolution.
+    _smart_read_cache = ReadDeliveryCache()
+    # Keep a bounded strong reference while a session token is live. This
+    # prevents Python object-id reuse from ever mapping a new MCP session onto
+    # an older session's delivery cache.
+    _smart_read_session_tokens: dict[int, tuple[Any, str]] = {}
+
     @mcp.tool()
     def smart_read(
         file_path: str,
+        ctx: MCPContext,
         query: str = "",
         budget: int = 1000,
+        resolution: str = "",
+        previous_source: str = "",
+        line_start: int = 0,
+        line_end: int = 0,
+        fresh: bool = False,
+        read_scope: str = "",
     ) -> str:
-        """Read a file with automatic resolution optimization.
+        """Read a file at an automatic or caller-chosen resolution.
 
-        Instead of choosing between full/map/signatures mode, SRP
-        automatically selects the optimal resolution for each code block
-        based on query relevance and token budget:
+        By default SRP selects the optimal resolution per code block from
+        query relevance and token budget:
           - Blocks matching the query → FULL (complete source)
           - Related blocks → MEDIUM (signature + docstring)
           - Peripheral blocks → LOW (name only)
           - Irrelevant blocks → SKIP (omitted)
 
-        This saves 40-70% tokens vs full-file reads while preserving
-        all query-relevant detail.
+        This reduces output by prioritizing query-relevant blocks. Use
+        ``resolution="full"`` whenever exact source text is required.
+
+        Automatic selection is the right default and cannot be right for every
+        question. Measured on this repository, a signature-level view answered
+        12/12 questions whose evidence lives in a signature and 0/20 whose
+        evidence lives in a function body. Pass `resolution` when you already
+        know which kind of question you are asking.
 
         Args:
             file_path: Path to the file to read
             query: What you're looking for (improves relevance scoring)
             budget: Target token budget for the output (default: 1000)
+            resolution: Choose "full", "medium", "diff", "structure", or
+                "low"; empty means automatic. "full" returns the complete
+                original text.
+                "diff" requires `previous_source` and returns a whole-file
+                unified diff. "structure" returns declarations, signatures,
+                and imports while eliding implementation bodies when a useful
+                native outline is available; otherwise it returns full source
+                and reports `structure_backend="full-fallback"`. Pinned output
+                is not demoted to fit the budget; the response reports
+                `over_budget` instead.
+            previous_source: Required baseline when resolution is "diff".
+            line_start: First line of an exact inclusive range (1-indexed).
+                Must be supplied together with `line_end` and cannot be
+                combined with `resolution`.
+            line_end: Last line of an exact inclusive range (1-indexed).
+            fresh: Bypass same-session re-read suppression and return the
+                rendered output in full.
+            read_scope: Optional caller scope for isolating parallel agents
+                that intentionally share one MCP connection.
+
+        An exact repeated delivery returns only an opaque ``~NNN`` handle.
+        That handle means the rendered output is byte-identical to content
+        already delivered in this MCP session. Pass ``fresh=true`` to expand
+        it. Caller-selected FULL and line ranges return raw text on cache miss;
+        they are not wrapped in JSON, so their text remains exact.
         """
         try:
             from .semantic_resolution import resolve
             safe_path = resolve_file_within(_project_root, file_path)
             if safe_path is None:
                 return _project_path_error(file_path)
-            with safe_path.open("r", encoding="utf-8", errors="replace") as f:
+            # ``newline=""`` preserves CRLF/LF boundaries for exact FULL and
+            # line-range reads. Invalid UTF-8 is still replaced visibly rather
+            # than crashing the tool.
+            with safe_path.open(
+                "r", encoding="utf-8", errors="replace", newline=""
+            ) as f:
                 source = f.read()
-            result = resolve(source, query=query, budget=budget, file_path=str(safe_path))
+            requested_line_start = line_start or None
+            requested_line_end = line_end or None
+            result = resolve(
+                source,
+                query=query,
+                budget=budget,
+                file_path=str(safe_path),
+                previous_source=(
+                    previous_source
+                    if resolution == "diff" and previous_source != ""
+                    else None
+                ),
+                resolution=resolution or None,
+                line_start=requested_line_start,
+                line_end=requested_line_end,
+            )
+            previous_digest = (
+                hashlib.sha256(previous_source.encode("utf-8")).hexdigest()
+                if resolution == "diff" and previous_source != ""
+                else ""
+            )
+            session = getattr(ctx, "session", None)
+            client_id = getattr(ctx, "client_id", None) or ""
+            # FastMCP normally supplies a session object. Custom embeddings may
+            # omit it; isolate those calls by their Context object instead of
+            # collapsing every ``session=None`` caller into one cache scope.
+            session_identity = session if session is not None else ctx
+            session_object_id = id(session_identity)
+            session_record = _smart_read_session_tokens.get(session_object_id)
+            if session_record is None or session_record[0] is not session_identity:
+                session_record = (session_identity, uuid.uuid4().hex)
+                _smart_read_session_tokens[session_object_id] = session_record
+                while len(_smart_read_session_tokens) > 64:
+                    _smart_read_session_tokens.pop(next(iter(_smart_read_session_tokens)))
+            session_id = f"{session_record[1]}:{client_id}:{read_scope}"
+            relative_path = str(safe_path)
+            try:
+                relative_path = str(safe_path.relative_to(_project_root))
+            except ValueError:
+                pass
+            cache_decision = _smart_read_cache.deliver(
+                session_id=session_id,
+                path=relative_path,
+                mode=resolution or (
+                    f"lines:{line_start}-{line_end}"
+                    if requested_line_start is not None
+                    else "auto"
+                ),
+                contract={
+                    "path": str(safe_path),
+                    "query": query,
+                    "budget": budget,
+                    "resolution": resolution or "auto",
+                    "previous_source_sha256": previous_digest,
+                    "line_start": requested_line_start,
+                    "line_end": requested_line_end,
+                },
+                source=source,
+                output=result.output,
+                fresh=fresh,
+            )
+            if cache_decision.cache_hit:
+                return cache_decision.reference
+            if resolution == "full" or requested_line_start is not None:
+                return cache_decision.text
             return json.dumps({
-                "output": result.output,
+                "output": cache_decision.text,
                 "file_path": result.file_path,
                 "total_blocks": result.total_blocks,
                 "resolution_counts": result.resolution_counts,
                 "total_tokens": result.total_tokens,
+                "delivered_tokens": cache_decision.delivered_tokens,
                 "budget": result.budget,
+                "forced_resolution": result.forced_resolution,
+                "over_budget": result.over_budget,
+                "line_range": result.line_range,
+                "structure_backend": result.structure_backend,
+                "cache_hit": cache_decision.cache_hit,
+                "cache_ref": cache_decision.reference,
+                "source_sha256": cache_decision.source_sha256,
+                "output_sha256": cache_decision.output_sha256,
+                "cache_tokens_saved": cache_decision.tokens_saved,
+                "cache_scope": "mcp-session",
+                "recovery": "call again with fresh=true" if cache_decision.cache_hit else None,
             }, indent=2)
         except FileNotFoundError:
             return json.dumps({"error": f"File not found: {file_path}"})
@@ -6299,7 +6423,7 @@ def main():
     try:
         from entroly import __version__ as _version
     except Exception:
-        _version = "1.0.75"
+        _version = "1.0.76"
     logger.info(f"Starting Entroly MCP server v{_version} ({engine_type} engine)")
     mcp, engine = create_mcp_server()
 
