@@ -99,3 +99,34 @@ def test_root_independent_analysis_reuse_preserves_checkout_local_generation(
     monkeypatch.setattr(service_module, "build_verified_repository_map", unexpected)
     second = RepositoryIntelligenceService(second_root, cache_dir=cache).repository_map("source")
     assert second == first
+
+
+def test_index_digest_ignores_cache_telemetry(tmp_path: Path) -> None:
+    """An identical tree must hash identically whether the cache is cold or warm.
+
+    The digest is the repository's identity, so it may only depend on content.
+    Cache and snapshot diagnostics describe how a run was served, and the
+    retention counters in particular differ between a cold and a warm cache
+    (files=2 bytes=2195 against files=3 bytes=4804 on the same unchanged tree).
+
+    They leaked in once already: the filter matched "incremental-parse-cache "
+    with a trailing space, which excluded "incremental-parse-cache-retention"
+    because the following character is a hyphen. One identical checkout then
+    produced two digests depending only on cache warmth, which defeats the
+    reuse this module exists to provide. Asserted here so a future prefix edit
+    cannot quietly reintroduce it.
+    """
+    root = tmp_path / "repo"
+    _project(root)
+
+    cold_a = RepositoryIntelligenceService(root, cache_dir=tmp_path / "cache-a")
+    cold_b = RepositoryIntelligenceService(root, cache_dir=tmp_path / "cache-b")
+    assert cold_a._snapshot()[1] == cold_b._snapshot()[1], "two cold caches must agree"
+
+    shared = tmp_path / "cache-shared"
+    first = RepositoryIntelligenceService(root, cache_dir=shared)
+    cold_digest = first._snapshot()[1]
+    first.repository_map("source")  # warms the incremental parse cache
+
+    warm = RepositoryIntelligenceService(root, cache_dir=shared)
+    assert warm._snapshot()[1] == cold_digest, "a warm cache must not change identity"

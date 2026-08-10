@@ -369,7 +369,18 @@ def _parse_conservative(path: str, text: str, raw: bytes, language: str) -> Pars
     imports: set[str] = set()
     calls: list[ParsedCall] = []
     js_family = language in {"javascript", "typescript", "tsx"}
-    for line_number, line in enumerate(text.splitlines(), 1):
+    # Keeping the terminators lets us advance an exact byte cursor alongside the
+    # line loop. `text` came from raw.decode("utf-8", "surrogateescape"), so
+    # re-encoding a prefix the same way reproduces the original byte length --
+    # including for astral characters and undecodable bytes. Splitting `raw` on
+    # b"\n" instead would desync here, because str.splitlines() also breaks on
+    # \r, \x0b, \x0c, \x1c-\x1e and U+2028/U+2029.
+    byte_cursor = 0
+    for line_number, terminated in enumerate(text.splitlines(keepends=True), 1):
+        stripped = terminated.splitlines()
+        line = stripped[0] if stripped else ""
+        line_start = byte_cursor
+        byte_cursor += len(terminated.encode("utf-8", "surrogateescape"))
         current: Symbol | None = None
         if language == "rust":
             match = RUST_DEF.match(line)
@@ -397,13 +408,26 @@ def _parse_conservative(path: str, text: str, raw: bytes, language: str) -> Pars
                 symbols.append(current)
             imports.update(JS_IMPORT.findall(line))
         if language == "rust" or js_family:
-            for name in CALL.findall(line):
-                if name not in CALL_KEYWORDS:
-                    calls.append(ParsedCall(
-                        current.symbol_id if current else None,
-                        name,
-                        line_number,
-                    ))
+            for call_match in CALL.finditer(line):
+                name = call_match.group(1)
+                if name in CALL_KEYWORDS:
+                    continue
+                # Every emitted edge must carry evidence a caller can recover
+                # and re-hash. Leaving these at the ParsedCall defaults shipped
+                # a (0, 0) span with an empty digest, so the edge asserted a
+                # call while validating against zero bytes.
+                prefix = line[:call_match.start(1)].encode("utf-8", "surrogateescape")
+                token = name.encode("utf-8", "surrogateescape")
+                start_byte = line_start + len(prefix)
+                end_byte = start_byte + len(token)
+                calls.append(ParsedCall(
+                    current.symbol_id if current else None,
+                    name,
+                    line_number,
+                    start_byte,
+                    end_byte,
+                    hashlib.sha256(raw[start_byte:end_byte]).hexdigest(),
+                ))
     return ParsedFile(
         _record(path, language, raw, text, is_test=_is_test_path(path), imports=imports),
         symbols, imports, {}, calls,

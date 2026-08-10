@@ -218,14 +218,26 @@ class RepositoryIntelligenceService:
         # content. Canonicalize it so identical trees have identical digests
         # across machines and workspaces.
         payload["root"] = "."
+        # Cache and snapshot telemetry describes how this run was served, not
+        # what the repository contains, so it must not reach the digest.
+        #
+        # These prefixes previously carried a trailing space, which matched
+        # "incremental-parse-cache hits=..." but not
+        # "incremental-parse-cache-retention files=...", because the next
+        # character there is a hyphen. The retention counters change between a
+        # cold and a warm cache (files=2 bytes=2195 against files=3 bytes=4804
+        # on the same unchanged tree), so an identical checkout produced two
+        # different digests depending only on whether the cache was warm --
+        # which defeats the reuse the persistence layer exists to provide.
+        # Matching the family prefix covers every current and future variant.
         diagnostics = payload.get("diagnostics", [])
         if isinstance(diagnostics, list):
             payload["diagnostics"] = [
                 item
                 for item in diagnostics
                 if not str(item).startswith((
-                    "incremental-parse-cache ",
-                    "persistent-index-snapshot ",
+                    "incremental-parse-cache",
+                    "persistent-index-snapshot",
                 ))
             ]
         canonical = json.dumps(
