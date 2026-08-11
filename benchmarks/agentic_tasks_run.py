@@ -39,6 +39,30 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from entroly.native_status import native_status
+
+
+def _engine_provenance() -> dict[str, Any]:
+    """Which selector actually ran this comparison.
+
+    A stale entroly_core in the interpreter's site-packages downgrades
+    silently to the pure-Python fallback -- a WARNING-level log line easy to
+    lose among a long run's other output, or filtered out entirely by a
+    caller piping through `grep -v` to cut noise, which is exactly how this
+    ran unnoticed for most of a session: every artifact from that stretch
+    compared the fallback selector, not the one users get by default. Fixed
+    on the same real inputs, the native engine compressed harder (1,063 vs
+    1,613 tokens) and kept a task the fallback dropped, so which one ran is
+    not a footnote. Recorded here so it is asserted from the artifact
+    itself, not reconstructed from logs after the fact.
+    """
+    status = native_status()
+    return {
+        "native_engine_active": status.ok,
+        "entroly_core_version": status.version,
+        "entroly_core_version_ok": status.version_ok,
+    }
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -563,6 +587,7 @@ def main() -> int:
             "simulated": False,
             "token_source": "ollama prompt_eval_count / eval_count",
             "oracle": "pytest exit code",
+            "engine": _engine_provenance(),
         },
         "summary": summary,
         "paired": {

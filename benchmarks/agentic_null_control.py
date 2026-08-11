@@ -31,6 +31,7 @@ from benchmarks.agentic_tasks_run import (  # noqa: E402
     DEFAULT_BASE_URL,
     PROMPT,
     Task,
+    _engine_provenance,
     build_dependency_tasks,
     build_tasks,
     call_model,
@@ -138,6 +139,7 @@ def main() -> int:
             "arm": NULL_ARM,
             "token_source": "provider prompt_eval_count / eval_count",
             "oracle": "pytest exit code",
+            "engine": _engine_provenance(),
         },
         "summary": {
             "tasks": len(rows),
