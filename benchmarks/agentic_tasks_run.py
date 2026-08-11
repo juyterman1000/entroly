@@ -68,13 +68,25 @@ class Task:
     test_file: str
     test_source: str
     distractors: dict[str, str] = field(default_factory=dict)
+    # Set only for dependency-bearing tasks. The fix cannot be written without
+    # reading this file, so dropping it is the failure this benchmark exists to
+    # detect. Empty for the self-contained set, where no such file exists.
+    dependency_file: str = ""
+    dependency_source: str = ""
+    hidden_shape: str = ""
 
     def fragments(self) -> list[Fragment]:
         """Everything a naive agent would put in context, in a fixed order."""
         items = [Fragment(source=self.target_file, content=self.broken_source)]
+        # The dependency is ordered among the distractors rather than placed
+        # directly after the target. Privileging its position would let a
+        # selector score well by accident of ordering instead of by relevance.
+        pool = dict(self.distractors)
+        if self.dependency_file:
+            pool[self.dependency_file] = self.dependency_source
         items.extend(
             Fragment(source=name, content=body)
-            for name, body in sorted(self.distractors.items())
+            for name, body in sorted(pool.items())
         )
         return items
 
@@ -147,8 +159,44 @@ def _distractors(count: int) -> dict[str, str]:
     return {name: bodies[name] for name in names[:count]}
 
 
+def build_dependency_tasks(distractor_count: int) -> list[Task]:
+    """Tasks whose fix cannot be written without reading another file.
+
+    The self-contained set below cannot measure context selection: its null
+    control passes 4/4, because each bug is decidable from the query and the
+    broken function alone. Parity between arms on those tasks is guaranteed no
+    matter what the selector delivers, so it is not evidence about compression.
+
+    These come from ``agentic_task_set``, which was written for exactly this
+    and had no consumer. Each carries a ``hidden_shape`` -- a fact that appears
+    only in the dependency file -- so an arm that drops the dependency should
+    fail the oracle, which is what makes a difference between arms detectable.
+    """
+    from benchmarks.agentic_task_set import build_dependent_tasks
+
+    return [
+        Task(
+            task_id=item.task_id,
+            query=item.query,
+            target_file=item.target_file,
+            broken_source=item.broken_source,
+            test_file=item.test_file,
+            test_source=item.test_source,
+            distractors=dict(item.distractors),
+            dependency_file=item.dependency_file,
+            dependency_source=item.dependency_source,
+            hidden_shape=item.hidden_shape,
+        )
+        for item in build_dependent_tasks(distractor_count)
+    ]
+
+
 def build_tasks(distractor_count: int) -> list[Task]:
-    """Small, deterministic bugs whose tests are unambiguous oracles."""
+    """Small, deterministic bugs whose tests are unambiguous oracles.
+
+    Retained as a harness-validation set only. Its null control passes 4/4, so
+    it must not be used for context-quality claims -- see build_dependency_tasks.
+    """
     shared = _distractors(distractor_count)
     return [
         Task(
@@ -357,7 +405,14 @@ def run_oracle(task: Task, patched_source: str) -> tuple[bool, str]:
                 break
             (parent / "__init__.py").write_text("", encoding="utf-8")
 
-        for name, body in task.distractors.items():
+        written = dict(task.distractors)
+        if task.dependency_file:
+            # Always written, regardless of whether the arm put it in context.
+            # The oracle measures whether the model's patch is correct, and the
+            # patch can only be correct if the dependency was read -- so the
+            # dependency must exist at test time even when context omitted it.
+            written[task.dependency_file] = task.dependency_source
+        for name, body in written.items():
             path = root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(body, encoding="utf-8")
@@ -424,6 +479,17 @@ def main() -> int:
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
     parser.add_argument("--budget", type=int, default=220)
     parser.add_argument("--distractors", type=int, default=6)
+    parser.add_argument(
+        "--task-set",
+        choices=("dependency", "self-contained"),
+        default="dependency",
+        help=(
+            "dependency (default): the fix requires reading another file, so "
+            "dropping it is detectable. self-contained: harness validation "
+            "only -- its null control passes 4/4 and it cannot support a "
+            "context-quality claim."
+        ),
+    )
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--timeout", type=float, default=300.0)
     parser.add_argument("--out", type=Path,
@@ -431,7 +497,11 @@ def main() -> int:
                         / "agentic_tasks_pilot.json")
     args = parser.parse_args()
 
-    tasks = build_tasks(args.distractors)
+    tasks = (
+        build_dependency_tasks(args.distractors)
+        if args.task_set == "dependency"
+        else build_tasks(args.distractors)
+    )
     arms = [Arm.RAW, Arm.COMPRESS]
     rows: list[dict[str, Any]] = []
 
@@ -489,6 +559,7 @@ def main() -> int:
             "seed": args.seed,
             "budget": args.budget,
             "distractors": args.distractors,
+            "task_set": args.task_set,
             "simulated": False,
             "token_source": "ollama prompt_eval_count / eval_count",
             "oracle": "pytest exit code",
