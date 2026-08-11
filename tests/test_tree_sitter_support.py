@@ -27,6 +27,23 @@ def test_language_map_covers_at_least_twenty_seven_languages() -> None:
         ("sample.rs", "pub struct Cart { n: u32 }\nimpl Cart { pub fn total(&self) -> u32 { self.n } }\n", {"Cart", "total"}),
         ("sample.ts", "export class Cart { total(): number { return 1; } }\n", {"Cart", "total"}),
         ("sample.c", "int total(int price) { return price; }\n", {"total"}),
+        # Kotlin's grammar names declarations positionally, with no `name`
+        # field, and the pack's structure processing returns the class alone.
+        # Both the top-level function and the class's own methods must appear.
+        (
+            "sample.kt",
+            "fun total(price: Int): Int { return price }\n"
+            "class Cart {\n    fun add() {}\n    fun clear() {}\n}\n",
+            {"total", "Cart", "add", "clear"},
+        ),
+        # Perl's sub is `subroutine_declaration_statement`, which the suffix
+        # heuristic skips; Haskell names a definition with a bare `function`.
+        ("sample.pl", "sub total { return 1 }\nsub add { }\n", {"total", "add"}),
+        (
+            "sample.hs",
+            "total :: Int -> Int\ntotal x = x\n\ndata Cart = Empty\n",
+            {"total", "Cart"},
+        ),
     ],
 )
 def test_parser_backed_spans_are_exact(path: str, source: str, names: set[str]) -> None:
@@ -38,6 +55,21 @@ def test_parser_backed_spans_are_exact(path: str, source: str, names: set[str]) 
         assert span.source in source
         assert source.splitlines()[span.start_line - 1].strip()
         assert span.start_line <= span.end_line
+
+
+def test_kotlin_function_name_is_not_the_return_type_or_a_parameter() -> None:
+    """Guards the exact defect: the name resolved to the return type.
+
+    `fun helper(x: Int): Int` has no `name` field, so the generic resolver
+    descended into the return type and returned `Int`, and a naive fix then
+    pulled in the parameter `x`. The Kotlin-scoped resolver takes the first
+    direct `simple_identifier`, which is the name and cannot be either.
+    """
+    pytest.importorskip("tree_sitter_language_pack")
+    spans = extract_structural_spans("fun helper(x: Int): Int { return x }\n", "a.kt")
+    assert spans is not None
+    names = {span.name for span in spans}
+    assert names == {"helper"}, names
 
 
 def test_semantic_resolution_uses_parser_spans_when_available() -> None:
