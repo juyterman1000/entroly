@@ -54,6 +54,7 @@ from benchmarks.graph_lane_quality import (
     _tokens,
     _tracked_python_files,
 )
+from entroly.native_status import native_status
 
 
 def index_of(text: str, rel: str) -> str:
@@ -136,8 +137,19 @@ def run(limit: int, budget: int, seed: int) -> dict[str, Any]:
             "raw_carries": carries(raw_text),
         })
 
+    # qccr delegates span selection to the Rust core, so the selector that ran
+    # is part of the result, not a footnote. A stale artifact once recorded
+    # qccr at 9/12 here; the native engine scores 12/12 on the same budget,
+    # corpus and pairs, and without this field there was no way to tell from
+    # the JSON which selector produced the number.
+    status = native_status()
+    engine = {
+        "native_engine_active": status.ok,
+        "entroly_core_version": status.version,
+        "entroly_core_version_ok": status.version_ok,
+    }
     return {"pinned_ref": payload["pinned_ref"], "budget": budget,
-            "probes": len(rows), "rows": rows}
+            "probes": len(rows), "engine": engine, "rows": rows}
 
 
 def main() -> int:
