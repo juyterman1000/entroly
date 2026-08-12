@@ -35,6 +35,7 @@ from pathlib import Path
 import pytest
 
 import entroly.auto_index as auto_index_module
+import entroly.server as server_module
 from entroly.auto_index import auto_index
 from entroly.config import EntrolyConfig
 from entroly.server import EntrolyEngine
@@ -214,7 +215,10 @@ def test_persistent_engine_loads_index_file(tmp_path: Path):
 # ── 2. auto_index unified return shape ───────────────────────────────
 
 
-def test_python_warm_start_preserves_feedback_and_counters(tmp_path: Path):
+def test_python_warm_start_preserves_feedback_and_counters(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(server_module, "_RUST_AVAILABLE", False)
     ckpt = tmp_path / "ckpt"
     first = EntrolyEngine(EntrolyConfig(
         use_persistent_index=True,
@@ -241,7 +245,10 @@ def test_python_warm_start_preserves_feedback_and_counters(tmp_path: Path):
     assert restored.get_stats()["savings"]["total_fragments_ingested"] == 1
 
 
-def test_corrupt_python_warm_start_fails_closed(tmp_path: Path):
+def test_corrupt_python_warm_start_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(server_module, "_RUST_AVAILABLE", False)
     ckpt = tmp_path / "ckpt"
     ckpt.mkdir()
     (ckpt / "index.json.gz").write_bytes(b"not a valid index")
