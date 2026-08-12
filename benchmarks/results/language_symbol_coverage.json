@@ -675,6 +675,8 @@
       "strict_cases_passed": 24
     }
   },
+  "benchmark_module": "benchmarks/language_symbol_coverage.py",
+  "claim_scope": "Exact symbol extraction for one valid representative sample per mapped language under tree-sitter-language-pack 1.14.3",
   "comparison": {
     "coverage_delta": 12,
     "lost_declaration_language_coverage": [],
@@ -1383,7 +1385,7 @@
         "syntax_valid": true
       }
     ],
-    "extractor_sha256": "5c7d38390884d4c45fa4dff7410ce6261748686c6f47529274a72d8b3749c089",
+    "extractor_sha256": "7ab642179ea4c77c71d502f9abde064a8c5850dd9e7130b53038838c395a5cd2",
     "label": "worktree",
     "summary": {
       "declaration_bearing_languages": 37,
@@ -1398,11 +1400,28 @@
   "environment": {
     "tree_sitter_language_pack": "1.14.3"
   },
+  "harness_sha256": "c8ce2c18c622c2d5be086d9e664e098f6400f8cc3fc4d715eb6d86a6e8138fa6",
+  "headline_eligible": true,
+  "implementation": {
+    "commit": "4fecb039c579c7d3e7f534d41bef3c0ede2c5d8a"
+  },
+  "limitations": [
+    "One representative sample per language is not complete grammar coverage.",
+    "The benchmark measures declarations, traversal, syntax, and byte spans; it does not measure call resolution, data flow, answer quality, or savings.",
+    "Results depend on tree-sitter-language-pack 1.14.3 and must be regenerated and reviewed for a different grammar pack.",
+    "C3, F#, Groovy, Nim, and OCaml remain measured declaration gaps."
+  ],
   "method": {
     "case_contract": "exact symbol set, complete traversal, byte-exact spans",
     "case_manifest_sha256": "7df07e34f77fef3cd3af6fb928358594df82384ce3661297c22233ed325f625d",
     "economic_or_answer_quality_claim": false,
     "scope": "one representative sample for every language in LANGUAGE_BY_SUFFIX"
+  },
+  "reproduction_command": "python benchmarks/language_symbol_coverage.py --baseline-ref 2eeecb8733103fe7234133f48b105f271662b219 --output benchmarks/results/language_symbol_coverage.json --check",
+  "sample_size": {
+    "declaration_bearing_languages": 37,
+    "mapped_languages": 41,
+    "non_declarative_languages": 4
   },
   "schema": "entroly.language-symbol-coverage.v1"
 }

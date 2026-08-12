@@ -29,6 +29,8 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT = ROOT / "benchmarks" / "results" / "language_symbol_coverage.json"
+BENCHMARK_MODULE = "benchmarks/language_symbol_coverage.py"
+IMPLEMENTATION_COMMIT = "4fecb039c579c7d3e7f534d41bef3c0ede2c5d8a"
 
 
 @dataclass(frozen=True)
@@ -228,6 +230,11 @@ def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _portable_bytes(path: Path) -> bytes:
+    """Return text bytes independent of checkout newline policy."""
+    return path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+
+
 def _module_from_source(source: bytes, label: str) -> ModuleType:
     module_name = f"_entroly_tree_sitter_benchmark_{_sha256(source)[:12]}"
     spec = importlib.util.spec_from_loader(module_name, loader=None)
@@ -252,7 +259,7 @@ def _module_at_ref(ref: str) -> tuple[ModuleType, str]:
 
 
 def _worktree_module() -> tuple[ModuleType, str]:
-    source = (ROOT / "entroly" / "tree_sitter_support.py").read_bytes()
+    source = _portable_bytes(ROOT / "entroly" / "tree_sitter_support.py")
     return _module_from_source(source, "worktree"), _sha256(source)
 
 
@@ -330,6 +337,32 @@ def run(baseline_ref: str | None) -> dict[str, Any]:
     current = _evaluate(current_module, "worktree", current_sha)
     result: dict[str, Any] = {
         "schema": "entroly.language-symbol-coverage.v1",
+        "headline_eligible": True,
+        "claim_scope": (
+            "Exact symbol extraction for one valid representative sample per "
+            "mapped language under tree-sitter-language-pack 1.14.3"
+        ),
+        "sample_size": {
+            "mapped_languages": 41,
+            "declaration_bearing_languages": 37,
+            "non_declarative_languages": 4,
+        },
+        "benchmark_module": BENCHMARK_MODULE,
+        "harness_sha256": _sha256(_portable_bytes(ROOT / BENCHMARK_MODULE)),
+        "reproduction_command": (
+            "python benchmarks/language_symbol_coverage.py "
+            "--baseline-ref 2eeecb8733103fe7234133f48b105f271662b219 "
+            "--output benchmarks/results/language_symbol_coverage.json --check"
+        ),
+        "implementation": {"commit": IMPLEMENTATION_COMMIT},
+        "limitations": [
+            "One representative sample per language is not complete grammar coverage.",
+            "The benchmark measures declarations, traversal, syntax, and byte spans; "
+            "it does not measure call resolution, data flow, answer quality, or savings.",
+            "Results depend on tree-sitter-language-pack 1.14.3 and must be regenerated "
+            "and reviewed for a different grammar pack.",
+            "C3, F#, Groovy, Nim, and OCaml remain measured declaration gaps.",
+        ],
         "method": {
             "case_contract": "exact symbol set, complete traversal, byte-exact spans",
             "scope": "one representative sample for every language in LANGUAGE_BY_SUFFIX",
@@ -388,6 +421,9 @@ def main() -> int:
     args = parser.parse_args()
     result = run(args.baseline_ref)
     rendered = json.dumps(result, indent=2, sort_keys=True) + "\n"
+    rendered_sha256 = _sha256(rendered.encode("utf-8"))
+    sidecar = args.output.with_suffix(args.output.suffix + ".sha256")
+    sidecar_text = f"{rendered_sha256}  {args.output.name}\n"
     if args.check:
         if (
             not args.output.exists()
@@ -395,9 +431,13 @@ def main() -> int:
         ):
             print(f"benchmark artifact is stale: {args.output}", file=sys.stderr)
             return 1
+        if not sidecar.exists() or sidecar.read_text(encoding="ascii") != sidecar_text:
+            print(f"benchmark checksum is stale: {sidecar}", file=sys.stderr)
+            return 1
     else:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(rendered, encoding="utf-8")
+        sidecar.write_text(sidecar_text, encoding="ascii")
     print(json.dumps(result["current"]["summary"], sort_keys=True))
     if "comparison" in result:
         print(json.dumps(result["comparison"], sort_keys=True))
