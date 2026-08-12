@@ -132,7 +132,7 @@ Core protections include:
 
 ## Observability and cost
 
-The dashboard and receipts can show source tokens, selected tokens, cache signals, model identity, and modeled cost. A modeled dollar value depends on the configured price table and is not a provider invoice.
+The dashboard and receipts can show source tokens, selected tokens, cache signals, model identity, and modeled cost. Its Context Health panel separately reports measured net tokens after re-expansion, recovery tax, receipt integrity, omission recoverability, and observed unsupported-claim suppressions. The privacy-safe share text contains aggregate counters only. A modeled dollar value depends on the configured price table and is not a provider invoice; unmeasured source freshness remains `unavailable`.
 
 No-provider-call paths still use local CPU, memory, storage, and operator time. Public copy should say “no additional provider call” rather than “free.”
 
