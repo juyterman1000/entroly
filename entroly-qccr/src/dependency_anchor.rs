@@ -7,6 +7,10 @@ const MAX_QUERY_ROOTS: usize = 4;
 // remaining slots may carry one protected signature from each directly reached
 // dependency file.
 const MAX_DIRECT_DEPENDENCY_SOURCES: usize = MAX_FILES_CONSIDERED - 1;
+// After source breadth is protected, retain a bounded set of additional call
+// signatures so multiple relevant callees in the same dependency file remain
+// structurally complete.
+const MAX_DIRECT_DEPENDENCY_ANCHORS: usize = 16;
 
 #[derive(Clone, Debug)]
 pub(crate) struct DependencyAnchor {
@@ -364,6 +368,7 @@ pub(crate) fn query_dependency_anchors(
             .then_with(|| a.2.cmp(&b.2))
             .then_with(|| a.3.cmp(&b.3))
     });
+    let mut seen = HashSet::new();
     let mut covered_sources = HashSet::new();
     let mut out = Vec::new();
     // A hub callable can invoke several imported symbols from one module before
@@ -372,17 +377,30 @@ pub(crate) fn query_dependency_anchors(
     // Cover distinct dependency sources first. One protected signature per file
     // preserves broad call-graph reach without allowing a hub module's repeated
     // calls to consume the caller's entire evidence budget.
-    for (_, _, source, _symbol, signature) in &candidates {
+    for (_, _, source, symbol, signature) in &candidates {
         if covered_sources.contains(source) {
             continue;
         }
+        seen.insert((source.clone(), symbol.clone()));
         covered_sources.insert(source.clone());
         out.push(DependencyAnchor {
             source: source.clone(),
             signature: signature.clone(),
         });
         if out.len() >= MAX_DIRECT_DEPENDENCY_SOURCES {
-            return out;
+            break;
+        }
+    }
+    // Complete additional signatures only after the distinct-file frontier is
+    // secured. This keeps same-module calls from starving later dependency
+    // files while preserving multi-callee structural evidence when budgeted.
+    for (_, _, source, symbol, signature) in candidates {
+        if !covered_sources.contains(&source) || !seen.insert((source.clone(), symbol)) {
+            continue;
+        }
+        out.push(DependencyAnchor { source, signature });
+        if out.len() >= MAX_DIRECT_DEPENDENCY_ANCHORS {
+            break;
         }
     }
     out
@@ -561,7 +579,9 @@ mod tests {
 
         let anchors = query_dependency_anchors(&sources, &texts, "caller explain behavior");
 
-        assert_eq!(anchors.len(), 2);
+        assert!(anchors.len() <= MAX_DIRECT_DEPENDENCY_ANCHORS);
+        assert_eq!(anchors[0].source, "file:pkg/early.py");
+        assert_eq!(anchors[1].source, "file:pkg/later.py");
         assert!(
             anchors
                 .iter()
