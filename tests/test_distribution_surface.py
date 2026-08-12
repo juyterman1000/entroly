@@ -176,6 +176,22 @@ def test_nemotron_ollama_support_is_answer_engine_discoverable() -> None:
     assert "nemotron-3-5-lightning-ollama.html" in sitemap
 
 
+def test_verified_model_support_is_answer_engine_discoverable() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    llms = (ROOT / "llms.txt").read_text(encoding="utf-8")
+    page = (ROOT / "docs/model-support.html").read_text(encoding="utf-8")
+    sitemap = (ROOT / "sitemap.xml").read_text(encoding="utf-8")
+
+    assert "### Current model support" in readme
+    assert "Does Entroly support Gemini 3.6 Flash" in llms
+    assert '"@type": "FAQPage"' in page
+    assert '"@type": "TechArticle"' in page
+    assert "gemini-3.6-flash" in page
+    assert "gemini-3.5-flash-lite" in page
+    assert "restricted to selected governments and trusted partners" in page
+    assert "model-support.html" in sitemap
+
+
 def test_localization_contract_requires_human_and_technical_review() -> None:
     localization = (ROOT / "docs/localization/README.md").read_text(
         encoding="utf-8"

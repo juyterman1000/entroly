@@ -1,9 +1,12 @@
 use std::collections::{HashMap, HashSet};
 
-use super::{approx_tokens, ident_re};
+use super::{approx_tokens, ident_re, MAX_FILES_CONSIDERED};
 
 const MAX_QUERY_ROOTS: usize = 4;
-const MAX_DIRECT_DEPENDENCY_ANCHORS: usize = 8;
+// Reserve one of the selector's file slots for the query-rooted caller. The
+// remaining slots may carry one protected signature from each directly reached
+// dependency file.
+const MAX_DIRECT_DEPENDENCY_SOURCES: usize = MAX_FILES_CONSIDERED - 1;
 
 #[derive(Clone, Debug)]
 pub(crate) struct DependencyAnchor {
@@ -361,15 +364,25 @@ pub(crate) fn query_dependency_anchors(
             .then_with(|| a.2.cmp(&b.2))
             .then_with(|| a.3.cmp(&b.3))
     });
-    let mut seen = HashSet::new();
+    let mut covered_sources = HashSet::new();
     let mut out = Vec::new();
-    for (_, _, source, symbol, signature) in candidates {
-        if !seen.insert((source.clone(), symbol)) {
+    // A hub callable can invoke several imported symbols from one module before
+    // it reaches dependencies in other files.  Filling the cap strictly by call
+    // position lets that first module crowd out the rest of the direct graph.
+    // Cover distinct dependency sources first. One protected signature per file
+    // preserves broad call-graph reach without allowing a hub module's repeated
+    // calls to consume the caller's entire evidence budget.
+    for (_, _, source, _symbol, signature) in &candidates {
+        if covered_sources.contains(source) {
             continue;
         }
-        out.push(DependencyAnchor { source, signature });
-        if out.len() >= MAX_DIRECT_DEPENDENCY_ANCHORS {
-            break;
+        covered_sources.insert(source.clone());
+        out.push(DependencyAnchor {
+            source: source.clone(),
+            signature: signature.clone(),
+        });
+        if out.len() >= MAX_DIRECT_DEPENDENCY_SOURCES {
+            return out;
         }
     }
     out
@@ -517,6 +530,44 @@ mod tests {
         assert_eq!(anchors.len(), 1, "{anchors:?}");
         assert!(anchors[0].signature.contains("def __init__("));
         assert!(anchors[0].signature.contains("max_clients: int = 100"));
+    }
+
+    #[test]
+    fn covers_distinct_dependency_sources_before_extra_same_file_symbols() {
+        let sources = vec![
+            "file:pkg/api.py".to_string(),
+            "file:pkg/early.py".to_string(),
+            "file:pkg/later.py".to_string(),
+        ];
+        let imports = (0..MAX_DIRECT_DEPENDENCY_SOURCES)
+            .map(|index| format!("early_{index}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let calls = (0..MAX_DIRECT_DEPENDENCY_SOURCES)
+            .map(|index| format!("    early_{index}()"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let early_defs = (0..MAX_DIRECT_DEPENDENCY_SOURCES)
+            .map(|index| format!("def early_{index}():\n    pass\n"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let texts = vec![
+            format!(
+                "from .early import {imports}\nfrom .later import Later\n\ndef caller():\n{calls}\n    return Later()\n"
+            ),
+            early_defs,
+            "class Later:\n    def __init__(self, value: int = 1):\n        pass\n".to_string(),
+        ];
+
+        let anchors = query_dependency_anchors(&sources, &texts, "caller explain behavior");
+
+        assert_eq!(anchors.len(), 2);
+        assert!(
+            anchors
+                .iter()
+                .any(|anchor| anchor.source == "file:pkg/later.py"),
+            "a repeated early source must not crowd out a later direct dependency: {anchors:?}"
+        );
     }
 
     #[test]
