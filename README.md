@@ -255,6 +255,19 @@ Runs as a **CLI**, **Python/TypeScript SDK**, **MCP server**, **HTTP proxy**, or
 
 ## Works with your stack
 
+### NVIDIA Nemotron 3.5 Lightning with Ollama
+
+Entroly supports `nemotron-3.5-lightning` through its existing local Ollama discovery and OpenAI-compatible proxy path. This is a model-neutral integration: Entroly manages evidence selection, budgets, recovery handles, Context Receipts, and optional verification around the request; Ollama runs the model.
+
+```bash
+ollama pull nemotron-3.5-lightning
+python -m entroly.models discover ollama --inspect-ollama-context
+# Set ENTROLY_OPENAI_BASE=http://127.0.0.1:11434 in your shell, then:
+entroly proxy
+```
+
+Ollama lists the standard `nemotron-3.5-lightning` tag as a 30B mixture-of-experts model with 3B active parameters and a 1M context window. Its Apple-silicon `30b-mlx` tag is listed separately with a 256K window, so Entroly discovers the installed tag's metadata instead of assuming that every build has the same limit. Local Ollama inference can keep model prompts on the device; agent tools, configured remote providers, and other applications retain their own network and privacy boundaries. [Compatibility, setup, and official sources](docs/nemotron-3-5-lightning-ollama.html).
+
 | Agent / platform | Path | Status |
 |---|---|---|
 | Claude Code | Scoped MCP attachment; API-key proxy | Native |
