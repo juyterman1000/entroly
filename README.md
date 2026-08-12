@@ -42,53 +42,9 @@ Select the highest-value evidence first, compress it, keep originals recoverable
 
 ---
 
-## Integration & Documentation Hub
 
-Entroly keeps integration depth evidence-labelled. The README distinguishes verified/native paths from compatible or guided paths instead of treating every generic endpoint as a native adapter.
 
-### Verified / native paths
 
-- [Vercel AI SDK](https://docs.headroomlabs.ai/docs/vercel-ai-sdk)
-- [OpenAI SDK](https://docs.headroomlabs.ai/docs/openai-sdk)
-- [Anthropic SDK](https://docs.headroomlabs.ai/docs/anthropic-sdk)
-- [LangChain](https://docs.headroomlabs.ai/docs/langchain)
-- [LiteLLM](https://docs.headroomlabs.ai/docs/litellm)
-- [MCP Tools](https://docs.headroomlabs.ai/docs/mcp)
-- [OpenClaw](https://docs.headroomlabs.ai/docs/openclaw)
-- [OpenCode](https://docs.headroomlabs.ai/docs/opencode)
-
-### Compatible / guided paths
-
-- [Agno](https://docs.headroomlabs.ai/docs/agno)
-- [Strands](https://docs.headroomlabs.ai/docs/strands)
-- [CrewAI](https://docs.headroomlabs.ai/docs/crewai)
-- [AutoGen](https://docs.headroomlabs.ai/docs/autogen)
-- [Claude Code on Vertex AI](https://docs.headroomlabs.ai/docs/claude-code-vertex)
-- [Claude Code on Azure AI Foundry](https://docs.headroomlabs.ai/docs/claude-code-azure-foundry)
-- [Use Headroom with Claude Code in VS Code](https://docs.headroomlabs.ai/docs/vscode-claude-code)
-- [VS Code Copilot Integration](https://docs.headroomlabs.ai/docs/vscode-copilot)
-- [OpenCode + DeepSeek](https://docs.headroomlabs.ai/docs/opencode-deepseek)
-- [Grok Build Integration](https://docs.headroomlabs.ai/docs/grok-build)
-
-### Configuration, observability, API & architecture
-
-- [Configuration](https://docs.headroomlabs.ai/docs/configuration)
-- [Recover Codex State](https://docs.headroomlabs.ai/docs/codex-recovery)
-- [Pipeline Extensions](https://docs.headroomlabs.ai/docs/pipeline-extensions)
-- [Filesystem Contract](https://docs.headroomlabs.ai/docs/filesystem-contract)
-- [Savings Tracking](https://docs.headroomlabs.ai/docs/savings)
-- [Metrics & Monitoring](https://docs.headroomlabs.ai/docs/metrics)
-- [Simulation](https://docs.headroomlabs.ai/docs/simulation)
-- [API Reference](https://docs.headroomlabs.ai/docs/api-reference)
-- [Architecture](https://docs.headroomlabs.ai/docs/architecture)
-- [CI/CD Flow Diagrams](https://docs.headroomlabs.ai/docs/ci-cd-flows)
-- [Releases & CI/CD](https://docs.headroomlabs.ai/docs/releases)
-- [Benchmarks](https://docs.headroomlabs.ai/docs/benchmarks)
-- [Limitations](https://docs.headroomlabs.ai/docs/limitations)
-- [Error Handling](https://docs.headroomlabs.ai/docs/errors)
-- [Troubleshooting](https://docs.headroomlabs.ai/docs/troubleshooting)
-
-> The linked Headroom pages are upstream/reference documentation. They are not presented as Entroly-owned documentation; Entroly's own support status is defined by its repository and compatibility matrix.
 
 <p align="center">
   <b><a href="#what-is-entroly-in-plain-english">What is it?</a> · <a href="#integration--documentation-hub">Integrations</a> · <a href="#live-tokenomics">Tokenomics</a> · <a href="#install">Install</a> · <a href="#quickstart--by-how-you-work">Quickstart</a> · <a href="#see-it-work-in-30-seconds">See it work</a> · <a href="#benchmarks">Benchmarks</a> · <a href="#common-questions">Questions</a></b>
