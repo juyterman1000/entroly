@@ -46,7 +46,8 @@ def test_committed_report_is_self_verifying_and_checksum_bound():
 
     sidecar = DEFAULT_OUTPUT.with_suffix(DEFAULT_OUTPUT.suffix + ".sha256")
     assert (
-        sidecar.read_text(encoding="ascii").strip() == hashlib.sha256(raw).hexdigest()
+        sidecar.read_text(encoding="ascii").strip()
+        == hashlib.sha256(raw.replace(b"\r\n", b"\n")).hexdigest()
     )
     assert report["matrix"]["cases"] == 47862
     assert report["rank_order_atomic_control"]["suboptimal_cases"] == 378

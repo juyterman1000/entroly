@@ -136,10 +136,10 @@ def test_rust_engine_accepts_threaded_config():
     """If the native engine is present, an autotuned config must construct it
     without error (proves the extended kwargs are wired to the real core)."""
     pytest = __import__("pytest")
-    try:
-        import entroly_core  # noqa: F401
-    except ImportError:
-        pytest.skip("native engine not installed")
+    from entroly.native_status import usable_core
+
+    if usable_core() is None:
+        pytest.skip("compatible native engine not installed")
     from entroly.server import _build_rust_engine
     cfg = {
         "weights": {"recency": 0.4, "frequency": 0.3, "semantic_sim": 0.2, "entropy": 0.1},

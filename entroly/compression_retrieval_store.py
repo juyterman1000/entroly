@@ -204,10 +204,10 @@ class CompressionRetrievalStore:
             return
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         with lock_path.open("a+b") as handle:
-            handle.seek(0, os.SEEK_END)
-            if handle.tell() == 0:
-                handle.write(b"\0")
-                handle.flush()
+            # Locking a byte past EOF is supported by both msvcrt and flock.
+            # Do not initialize a sentinel byte before acquiring the lock: on
+            # Windows another process can lock that byte between our write and
+            # flush, turning normal startup contention into PermissionError.
             handle.seek(0)
             if os.name == "nt":
                 import msvcrt

@@ -91,7 +91,7 @@ def test_non_python_symbol_remains_useful_without_invented_semantic_flow(
     path = "src/main.zig"
     target = tmp_path / path
     target.parent.mkdir(parents=True)
-    target.write_text(source, encoding="utf-8")
+    target.write_bytes(source.encode("utf-8"))
     symbol = Symbol(
         symbol_id="src/main.zig::launch::function",
         path=path,
@@ -148,7 +148,7 @@ def test_verified_python_adapter_is_attached_without_changing_universal_schema(
 ) -> None:
     source = "def run(value):\n    return value\n"
     path = "run.py"
-    (tmp_path / path).write_text(source, encoding="utf-8")
+    (tmp_path / path).write_bytes(source.encode("utf-8"))
     symbol = Symbol(
         symbol_id="run.py::run::function",
         path=path,
@@ -214,7 +214,7 @@ def test_adaptive_pipeline_calls_each_frontend_once_per_selected_file(
 ) -> None:
     source = "fn launch() { return; }\n"
     path = "main.zig"
-    (tmp_path / path).write_text(source, encoding="utf-8")
+    (tmp_path / path).write_bytes(source.encode("utf-8"))
     index = RepositoryIndex(
         root=str(tmp_path),
         files={path: _record(path, source, "zig")},
@@ -298,7 +298,7 @@ def test_stale_source_is_reported_and_never_materialized(
     path = "main.future"
     original = "fn original() { return 1; }\n"
     current = "fn changed() { return 2; }\n"
-    (tmp_path / path).write_text(current, encoding="utf-8")
+    (tmp_path / path).write_bytes(current.encode("utf-8"))
     index = RepositoryIndex(
         root=str(tmp_path),
         files={path: _record(path, original, "unknown")},
@@ -324,7 +324,7 @@ def test_top_level_commitment_detects_tampering(
 ) -> None:
     path = "main.future"
     source = "thing { nested { value } }\n"
-    (tmp_path / path).write_text(source, encoding="utf-8")
+    (tmp_path / path).write_bytes(source.encode("utf-8"))
     index = RepositoryIndex(
         root=str(tmp_path),
         files={path: _record(path, source, "unknown")},

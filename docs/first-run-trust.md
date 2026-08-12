@@ -91,6 +91,12 @@ Modeled cost avoidance is not a provider invoice. For negotiated rates, point
 
 Entroly should not pretend every workload benefits.
 
+CLI startup performs no background version lookup by default. Users who want a
+once-daily PyPI update notice can opt in with
+`ENTROLY_ENABLE_UPDATE_CHECK=1`; `ENTROLY_DISABLE_UPDATE_CHECK=1` always wins.
+Configuration dry runs show only Entroly's proposed merge or removal and never
+echo unrelated editor preferences or account metadata.
+
 Expected behavior:
 
 - Large repos, noisy logs, repeated tool outputs, and multi-turn coding sessions should show savings.

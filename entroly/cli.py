@@ -40,6 +40,7 @@ Commands:
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import logging
 import os
@@ -76,14 +77,17 @@ if sys.platform == "win32":
 
 
 # ── ANSI colors ──
+_COLOR_ENABLED = "NO_COLOR" not in os.environ
+
+
 class C:
-    BOLD = "\033[1m"
-    GREEN = "\033[38;5;82m"
-    CYAN = "\033[38;5;45m"
-    YELLOW = "\033[38;5;220m"
-    RED = "\033[38;5;196m"
-    GRAY = "\033[38;5;240m"
-    RESET = "\033[0m"
+    BOLD = "\033[1m" if _COLOR_ENABLED else ""
+    GREEN = "\033[38;5;82m" if _COLOR_ENABLED else ""
+    CYAN = "\033[38;5;45m" if _COLOR_ENABLED else ""
+    YELLOW = "\033[38;5;220m" if _COLOR_ENABLED else ""
+    RED = "\033[38;5;196m" if _COLOR_ENABLED else ""
+    GRAY = "\033[38;5;240m" if _COLOR_ENABLED else ""
+    RESET = "\033[0m" if _COLOR_ENABLED else ""
 
 
 def _resolve_entroly_dir() -> Path:
@@ -217,12 +221,15 @@ def _version_is_newer(candidate: str, current: str) -> bool:
 
 
 def _check_for_update() -> None:
-    """Check PyPI for a newer version (non-blocking, cached for 24h).
+    """Check PyPI for a newer version when the user explicitly opts in.
 
     Prints a one-line notice if a newer version exists. Fails silently
     on network errors — never blocks CLI startup.
     """
-    if os.environ.get("ENTROLY_DISABLE_UPDATE_CHECK", "0") == "1":
+    if (
+        os.environ.get("ENTROLY_ENABLE_UPDATE_CHECK", "0") != "1"
+        or os.environ.get("ENTROLY_DISABLE_UPDATE_CHECK", "0") == "1"
+    ):
         return
 
     cache_file = _ENTROLY_DIR / ".update_check"
@@ -522,6 +529,7 @@ def _write_config(tool: dict, dry_run: bool = False) -> str:
     config_path = tool["config_path"]
     config_key = tool["config_key"]
     existing = _load_config_object(config_path)
+    original = copy.deepcopy(existing)
 
     servers = existing.get(config_key)
     if servers is None:
@@ -532,9 +540,22 @@ def _write_config(tool: dict, dry_run: bool = False) -> str:
     servers.update(_generate_mcp_config())
 
     if dry_run:
-        return json.dumps(existing, indent=2, ensure_ascii=False)
+        # Never echo unrelated editor preferences, account identifiers, or
+        # other MCP server configuration into terminals and CI logs.
+        return json.dumps(
+            {
+                "operation": "merge",
+                "config_key": config_key,
+                "entry": _generate_mcp_config(),
+                "preserves_unrelated_configuration": True,
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
 
     path = Path(config_path)
+    if existing == original:
+        return str(path)
     if path.exists():
         _backup_config_file(path, ".entroly-backup")
     _atomic_write_config(config_path, existing)
@@ -560,7 +581,16 @@ def _remove_entroly_config(tool: dict, dry_run: bool = False) -> tuple[str, str 
 
     del servers["entroly"]
     if dry_run:
-        return json.dumps(existing, indent=2, ensure_ascii=False), None
+        return json.dumps(
+            {
+                "operation": "remove",
+                "config_key": config_key,
+                "entry": "entroly",
+                "preserves_unrelated_configuration": True,
+            },
+            indent=2,
+            ensure_ascii=False,
+        ), None
 
     backup = _backup_config_file(path, ".entroly-unwrapped-backup")
     _atomic_write_config(config_path, existing)
@@ -600,7 +630,7 @@ def cmd_init(args):
     for tool in tools["tools"]:
         if args.dry_run:
             config = _write_config(tool, dry_run=True)
-            print(f"  {C.GRAY}Would write to {tool['config_path']}:{C.RESET}")
+            print(f"  {C.GRAY}Would merge into {tool['config_path']}:{C.RESET}")
             print(f"  {config}")
         else:
             path = _write_config(tool)
@@ -2007,7 +2037,7 @@ def _wrap_via_mcp(spec: dict, port: int, dry_run: bool = False) -> bool:
         except (OSError, PermissionError, ValueError) as e:
             print(f"  {C.RED}Could not read {config_path}: {e}{C.RESET}")
             return False
-        print(f"  {C.YELLOW}[dry-run]{C.RESET} would write {config_path}:")
+        print(f"  {C.YELLOW}[dry-run]{C.RESET} would merge into {config_path}:")
         for ln in preview.splitlines():
             print(f"    {ln}")
         print()

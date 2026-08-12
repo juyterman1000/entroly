@@ -21,15 +21,17 @@ from __future__ import annotations
 
 import pytest
 
+
 def _native_has_split() -> bool:
     """The split lives in the native engine; skip only if it is genuinely absent.
 
     An earlier version of this guard probed a class name that does not exist, so
     every test silently skipped and proved nothing. Probe the field itself.
     """
-    try:
-        import entroly_core
-    except ImportError:  # pragma: no cover - pure-Python install
+    from entroly.native_status import usable_core
+
+    entroly_core = usable_core()
+    if entroly_core is None:  # pragma: no cover - pure-Python/incompatible install
         return False
     engine = entroly_core.EntrolyEngine()
     engine.ingest("probe", "file:probe.py", 4, False)

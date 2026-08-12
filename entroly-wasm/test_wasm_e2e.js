@@ -1,5 +1,7 @@
 // Comprehensive E2E test for wasm engine methods
 const { WasmEntrolyEngine } = require('./pkg/entroly_wasm');
+const { spawnSync } = require('child_process');
+const path = require('path');
 
 let pass = 0, fail = 0;
 function test(name, fn) {
@@ -12,6 +14,20 @@ function assert(cond, msg) { if (!cond) throw new Error(msg || 'assertion failed
 console.log('Entroly Wasm - Full E2E Test\n');
 
 const engine = new WasmEntrolyEngine();
+
+test('CLI honors NO_COLOR', () => {
+  const result = spawnSync(
+    process.execPath,
+    [path.join(__dirname, 'js', 'cli.js'), '--help'],
+    {
+      encoding: 'utf8',
+      env: { ...process.env, NO_COLOR: '1' },
+    },
+  );
+  assert(result.status === 0, result.stderr || `CLI exited ${result.status}`);
+  assert(!result.stdout.includes('\x1b['), 'stdout contains ANSI escapes');
+  assert(!result.stderr.includes('\x1b['), 'stderr contains ANSI escapes');
+});
 
 // 1. new() - constructor
 test('new()', () => { assert(engine !== null); });

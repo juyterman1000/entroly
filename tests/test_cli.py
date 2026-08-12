@@ -244,7 +244,19 @@ def test_wrap_never_retries_user_arguments_through_a_shell(tmp_path, monkeypatch
     assert "Launch Aider manually" in capsys.readouterr().out
 
 
-def test_update_check_can_be_disabled(monkeypatch):
+def test_update_check_is_disabled_by_default(monkeypatch):
+    monkeypatch.delenv("ENTROLY_ENABLE_UPDATE_CHECK", raising=False)
+    monkeypatch.delenv("ENTROLY_DISABLE_UPDATE_CHECK", raising=False)
+
+    def fail_if_started(*args, **kwargs):
+        raise AssertionError("default CLI startup must not start a network thread")
+
+    monkeypatch.setattr(threading, "Thread", fail_if_started)
+    cli._check_for_update()
+
+
+def test_update_check_explicit_disable_overrides_opt_in(monkeypatch):
+    monkeypatch.setenv("ENTROLY_ENABLE_UPDATE_CHECK", "1")
     monkeypatch.setenv("ENTROLY_DISABLE_UPDATE_CHECK", "1")
 
     def fail_if_started(*args, **kwargs):
@@ -252,6 +264,26 @@ def test_update_check_can_be_disabled(monkeypatch):
 
     monkeypatch.setattr(threading, "Thread", fail_if_started)
     cli._check_for_update()
+
+
+def test_update_check_can_be_explicitly_enabled(monkeypatch):
+    monkeypatch.setenv("ENTROLY_ENABLE_UPDATE_CHECK", "1")
+    monkeypatch.delenv("ENTROLY_DISABLE_UPDATE_CHECK", raising=False)
+    monkeypatch.setattr(cli, "_ENTROLY_DIR", Path("missing-update-cache"))
+    started = []
+
+    class FakeThread:
+        def __init__(self, *, target, daemon):
+            assert callable(target)
+            assert daemon is True
+
+        def start(self):
+            started.append(True)
+
+    monkeypatch.setattr(threading, "Thread", FakeThread)
+    cli._check_for_update()
+
+    assert started == [True]
 
 
 def test_upstream_probe_is_opt_in(monkeypatch):

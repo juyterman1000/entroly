@@ -71,7 +71,7 @@ def test_query_semantics_reuses_existing_tree_without_extra_parse(
 ) -> None:
     source = "fn launch() { return; }\n"
     path = "main.zig"
-    (tmp_path / path).write_text(source, encoding="utf-8")
+    (tmp_path / path).write_bytes(source.encode("utf-8"))
     source_sha = hashlib.sha256(source.encode("utf-8")).hexdigest()
     index = RepositoryIndex(
         root=str(tmp_path),

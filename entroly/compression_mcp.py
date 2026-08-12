@@ -120,6 +120,12 @@ def create_compression_mcp_server(store_path: str | None = None):
             "Recovery is restricted to this MCP process's store/workspace/session scope."
         ),
     )
+    try:
+        from . import __version__ as package_version
+
+        mcp._mcp_server.version = package_version
+    except (AttributeError, ImportError):
+        pass
 
     def _store(path_override: str = "") -> CompressionRetrievalStore:
         path = _safe_store_path(path_override, store_path)

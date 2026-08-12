@@ -101,6 +101,12 @@ def create_repository_mcp_server(
             "explicit acknowledgement that reference completeness is unproven."
         ),
     )
+    try:
+        from entroly import __version__ as package_version
+
+        mcp._mcp_server.version = package_version
+    except (AttributeError, ImportError):
+        pass
 
     @mcp.tool()
     def repository_summary(refresh: bool = False) -> str:

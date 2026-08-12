@@ -40,6 +40,12 @@ from entroly.config import EntrolyConfig
 from entroly.server import EntrolyEngine
 
 
+def _fragment_count(engine: EntrolyEngine) -> int:
+    if engine._use_rust:
+        return int(engine._rust.fragment_count())
+    return len(engine._fragments)
+
+
 # ── 1. Engine isolation (use_persistent_index=False) ─────────────────
 
 
@@ -55,7 +61,7 @@ def ephemeral_engine(tmp_path: Path) -> EntrolyEngine:
 def test_ephemeral_engine_starts_empty(ephemeral_engine: EntrolyEngine):
     """An engine with use_persistent_index=False must start with zero
     fragments regardless of what's in the user-home warm-start index."""
-    assert ephemeral_engine._rust.fragment_count() == 0
+    assert _fragment_count(ephemeral_engine) == 0
 
 
 def test_ephemeral_engine_does_not_create_index_file(tmp_path: Path):
@@ -108,7 +114,7 @@ def test_two_ephemeral_engines_are_isolated(tmp_path: Path):
         use_persistent_index=False,
         checkpoint_dir=shared_ckpt,
     ))
-    assert b._rust.fragment_count() == 0, (
+    assert _fragment_count(b) == 0, (
         "Engine B should not see Engine A's fragments — both opted out "
         "of the shared index."
     )
@@ -190,7 +196,7 @@ def test_persistent_engine_loads_index_file(tmp_path: Path):
         token_count=15,
     )
     a.checkpoint()
-    expected_count = a._rust.fragment_count()
+    expected_count = _fragment_count(a)
     assert expected_count > 0  # sanity
 
     b = EntrolyEngine(EntrolyConfig(
@@ -200,12 +206,53 @@ def test_persistent_engine_loads_index_file(tmp_path: Path):
     # Warm-start is now lazy (loaded on first use) so construction / the MCP
     # handshake stays instant; trigger the one-time load before asserting.
     b.wait_until_warm()
-    assert b._rust.fragment_count() == expected_count, (
+    assert _fragment_count(b) == expected_count, (
         "Engine B should warm-start from Engine A's persisted index."
     )
 
 
 # ── 2. auto_index unified return shape ───────────────────────────────
+
+
+def test_python_warm_start_preserves_feedback_and_counters(tmp_path: Path):
+    ckpt = tmp_path / "ckpt"
+    first = EntrolyEngine(EntrolyConfig(
+        use_persistent_index=True,
+        checkpoint_dir=ckpt,
+    ))
+    stored = first.ingest_fragment(
+        content="def useful_context(): return 'kept'",
+        source="test://useful.py",
+        token_count=10,
+    )
+    for _ in range(3):
+        first.record_success([stored["fragment_id"]])
+    first.checkpoint()
+
+    restored = EntrolyEngine(EntrolyConfig(
+        use_persistent_index=True,
+        checkpoint_dir=ckpt,
+    ))
+    restored.wait_until_warm()
+
+    assert restored._wilson.learned_value(stored["fragment_id"]) == pytest.approx(
+        first._wilson.learned_value(stored["fragment_id"])
+    )
+    assert restored.get_stats()["savings"]["total_fragments_ingested"] == 1
+
+
+def test_corrupt_python_warm_start_fails_closed(tmp_path: Path):
+    ckpt = tmp_path / "ckpt"
+    ckpt.mkdir()
+    (ckpt / "index.json.gz").write_bytes(b"not a valid index")
+
+    engine = EntrolyEngine(EntrolyConfig(
+        use_persistent_index=True,
+        checkpoint_dir=ckpt,
+    ))
+
+    assert engine.wait_until_warm() is True
+    assert _fragment_count(engine) == 0
 
 
 REQUIRED_KEYS = {
@@ -252,7 +299,7 @@ def test_auto_index_skip_path_returns_required_keys(tmp_path: Path):
         source="test://existing.py",
         token_count=10,
     )
-    assert engine._rust.fragment_count() > 0
+    assert _fragment_count(engine) > 0
 
     result = auto_index(engine, project_dir=str(tmp_path))
     missing = REQUIRED_KEYS - set(result.keys())
@@ -326,6 +373,8 @@ def test_auto_index_excludes_virtualenv_paths_from_first_run():
         ".venv/lib/python3.12/site-packages/requests/api.py",
         "venv/Lib/site-packages/pkg_resources/__init__.py",
         "node_modules/typescript/lib/typescript.js",
+        ".entroly/archetype_strategy.json",
+        ".entroly_verification.json",
     ]
     accepted = [
         "src/app.py",

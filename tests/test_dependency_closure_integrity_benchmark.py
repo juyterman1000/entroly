@@ -42,7 +42,8 @@ def test_committed_report_is_self_verifying_and_checksum_bound():
 
     sidecar = DEFAULT_OUTPUT.with_suffix(DEFAULT_OUTPUT.suffix + ".sha256")
     assert (
-        sidecar.read_text(encoding="ascii").strip() == hashlib.sha256(raw).hexdigest()
+        sidecar.read_text(encoding="ascii").strip()
+        == hashlib.sha256(raw.replace(b"\r\n", b"\n")).hexdigest()
     )
     assert report["matrix"]["cases"] == 47862
     assert report["legacy_partial_add_control"]["partial_closure_cases"] == 41954
