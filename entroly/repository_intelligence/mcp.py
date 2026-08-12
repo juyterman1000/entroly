@@ -571,7 +571,26 @@ def create_repository_mcp_server(
 
 
 def main() -> None:
-    create_repository_mcp_server().run()
+    try:
+        from entroly.product_telemetry import capture_surface_started, flush_async
+
+        if capture_surface_started("repository_mcp"):
+            flush_async()
+    except Exception:
+        pass
+    try:
+        create_repository_mcp_server().run()
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except BaseException as exc:
+        try:
+            from entroly.product_telemetry import capture_surface_error, flush
+
+            capture_surface_error("repository_mcp", exc)
+            flush()
+        except Exception:
+            pass
+        raise
 
 
 if __name__ == "__main__":

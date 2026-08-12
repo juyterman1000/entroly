@@ -539,13 +539,22 @@ def test_audit_command_reports_formatting_failure(tmp_path, monkeypatch, capsys)
     assert "Could not format audit report" in capsys.readouterr().err
 
 
-def test_telemetry_command_describes_local_preference(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr(cli, "_ENTROLY_DIR", tmp_path)
-    cli.cmd_telemetry(SimpleNamespace(action="on"))
+def test_telemetry_command_requires_consent_and_discloses_schema(
+    tmp_path, monkeypatch, capsys,
+):
+    monkeypatch.setenv("ENTROLY_DIR", str(tmp_path))
+    monkeypatch.setenv("ENTROLY_TELEMETRY_TESTING", "1")
+    cli.cmd_telemetry(SimpleNamespace(
+        action="on",
+        endpoint=None,
+        no_error_events=False,
+        json_output=False,
+    ))
 
     output = capsys.readouterr().out
-    assert "Local telemetry preference enabled." in output
-    assert "No outbound telemetry uploader is included in this release." in output
+    assert "enabled by explicit consent" in output
+    assert "Never collected: prompts, code, paths" in output
+    assert "nothing is uploaded" in output
 
 
 @pytest.fixture

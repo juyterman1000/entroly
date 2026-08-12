@@ -1291,40 +1291,91 @@ def cmd_config(args):
 
 
 def cmd_telemetry(args):
-    """entroly telemetry — manage the local telemetry preference."""
-    telemetry_file = _ENTROLY_DIR / "telemetry.json"
+    """Manage explicit-consent, content-blind product health telemetry."""
+    from entroly.product_telemetry import (
+        disable_and_purge,
+        enable,
+        flush,
+        preview,
+        status,
+    )
 
-    if args.action == "on":
-        _ENTROLY_DIR.mkdir(parents=True, exist_ok=True)
-        telemetry_file.write_text(json.dumps({"enabled": True, "opted_in_at": __import__("time").time()}))
-        print(f"  {C.GREEN}Local telemetry preference enabled.{C.RESET}")
-        print(f"  {C.GRAY}No outbound telemetry uploader is included in this release.{C.RESET}")
-        print(f"  {C.GRAY}To disable: entroly telemetry off{C.RESET}")
-    elif args.action == "off":
-        if telemetry_file.exists():
-            telemetry_file.write_text(json.dumps({"enabled": False}))
-        print(f"  {C.GREEN}Local telemetry preference disabled.{C.RESET}")
-    elif args.action == "status":
-        enabled = False
-        if telemetry_file.exists():
-            try:
-                data = json.loads(telemetry_file.read_text())
-                enabled = data.get("enabled", False)
-            except (json.JSONDecodeError, OSError):
-                pass
-        status = f"{C.GREEN}enabled{C.RESET}" if enabled else f"{C.GRAY}disabled (default){C.RESET}"
-        print(f"  Local telemetry preference: {status}")
-        print(f"  {C.GRAY}No outbound telemetry uploader is included in this release.{C.RESET}")
+    action = getattr(args, "action", "status")
+    json_output = bool(getattr(args, "json_output", False))
+    if action == "on":
+        report = enable(
+            endpoint=getattr(args, "endpoint", None),
+            error_events=not bool(getattr(args, "no_error_events", False)),
+        )
+        if json_output:
+            print(json.dumps({"status": report, "schema": preview()}, sort_keys=True))
+            return 0
+        print(f"  {C.GREEN}Pseudonymous product-health telemetry enabled by explicit consent.{C.RESET}")
+        print(
+            f"  {C.GRAY}Collected: coarse surface/command outcomes, duration and token-"
+            f"reduction buckets, release, OS family, and Python major.minor.{C.RESET}"
+        )
+        print(
+            f"  {C.GRAY}Never collected: prompts, code, paths, filenames, model data, "
+            f"exact token/cost amounts, error messages, tracebacks, hostnames, usernames, "
+            f"credentials, or IPs.{C.RESET}"
+        )
+        if report["upload_configured"]:
+            print(f"  {C.GRAY}Collector: {report['endpoint_origin']}{C.RESET}")
+        else:
+            print(
+                f"  {C.YELLOW}No collector endpoint is configured; events remain in the "
+                f"bounded local queue and nothing is uploaded.{C.RESET}"
+            )
+        print(f"  {C.GRAY}Withdraw consent and delete local telemetry: entroly telemetry off{C.RESET}")
+        return 0
+    if action == "off":
+        report = disable_and_purge()
+        if json_output:
+            print(json.dumps(report, sort_keys=True))
+            return 0
+        print(f"  {C.GREEN}Telemetry disabled; local queue and pseudonymous identity purged.{C.RESET}")
+        if report["remote_deletion"] == "deleted":
+            print(f"  {C.GREEN}Previously uploaded events for recent monthly pseudonyms were deleted.{C.RESET}")
+        elif report["remote_deletion"] in {"error", "blocked"}:
+            print(
+                f"  {C.YELLOW}Remote deletion could not be confirmed; collector retention "
+                f"will expire uploaded aggregates automatically.{C.RESET}"
+            )
+        return 0
+    if action == "preview":
+        print(json.dumps(preview(), indent=2, sort_keys=True))
+        return 0
+    if action == "flush":
+        report = flush(force=True)
+        if json_output:
+            print(json.dumps(report, sort_keys=True))
+        else:
+            print(f"  Telemetry flush: {report['status']} ({report.get('sent', 0)} sent)")
+        return 0 if report["status"] not in {"error", "batch_too_large"} else 1
+
+    report = status()
+    if json_output:
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return 0
+    label = f"{C.GREEN}enabled{C.RESET}" if report["enabled"] else f"{C.GRAY}disabled (default){C.RESET}"
+    print(f"  Pseudonymous product-health telemetry: {label}")
+    print(f"  Upload configured: {report['upload_configured']}")
+    print(f"  Queued events: {report['queued_events']}")
+    print(f"  Local retention: {report['local_retention_days']} days")
+    if report.get("endpoint_origin"):
+        print(f"  Collector: {report['endpoint_origin']}")
+    print(f"  {C.GRAY}Inspect the complete schema: entroly telemetry preview{C.RESET}")
+    return 0
 
 
 def is_telemetry_enabled() -> bool:
     """Check if opt-in telemetry is enabled. Always False by default."""
-    telemetry_file = _ENTROLY_DIR / "telemetry.json"
-    if not telemetry_file.exists():
-        return False
     try:
-        return json.loads(telemetry_file.read_text()).get("enabled", False)
-    except (json.JSONDecodeError, OSError):
+        from entroly.product_telemetry import is_enabled
+
+        return is_enabled()
+    except Exception:
         return False
 
 
@@ -1404,8 +1455,6 @@ def cmd_export(args):
 
     print(f"\n{C.CYAN}{C.BOLD}  Entroly Export{C.RESET}\n")
 
-    entroly_dir = Path.home() / ".entroly"
-
     export_data = {
         "exported_at": _time.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "version": __version__,
@@ -1418,13 +1467,8 @@ def cmd_export(args):
         export_data["tuning_config"] = tuning_config
         print(f"  {C.GREEN}[+]{C.RESET} {tuning_path.name}")
 
-    # Include telemetry prefs
-    telem_file = entroly_dir / "telemetry.json"
-    if telem_file.exists():
-        try:
-            export_data["telemetry"] = json.loads(telem_file.read_text())
-        except (json.JSONDecodeError, OSError):
-            pass
+    # Telemetry consent and its pseudonym seed are deliberately machine-local.
+    # Team exports must never transfer one person's consent or identity material.
 
     # Write export file. Positional `output_path` takes precedence over -o/--output.
     chosen = getattr(args, "output_path", None) or args.output
@@ -6124,11 +6168,26 @@ def main():
     # entroly telemetry
     telem_parser = subparsers.add_parser(
         "telemetry",
-        help="Manage the local telemetry preference (no outbound uploader)",
+        help="Manage explicit-consent pseudonymous product-health telemetry",
     )
     telem_parser.add_argument(
-        "action", choices=["on", "off", "status"], nargs="?", default="status",
-        help="Manage the local telemetry preference (default: status)",
+        "action", choices=["on", "off", "status", "preview", "flush"],
+        nargs="?", default="status",
+        help="Manage product-health telemetry (default: status)",
+    )
+    telem_parser.add_argument(
+        "--endpoint",
+        default=None,
+        help="HTTPS collector URL stored only after `telemetry on`",
+    )
+    telem_parser.add_argument(
+        "--no-error-events",
+        action="store_true",
+        help="Collect adoption events but not coarse error categories",
+    )
+    telem_parser.add_argument(
+        "--json", dest="json_output", action="store_true",
+        help="Emit machine-readable status or flush output",
     )
 
     # entroly clean
@@ -6660,6 +6719,9 @@ def main():
     }
 
     handler = _dispatch.get(args.command)
+    telemetry_started = __import__("time").monotonic()
+    telemetry_error: BaseException | None = None
+    telemetry_result = "success"
     rc = 0
     if handler:
         try:
@@ -6673,11 +6735,31 @@ def main():
         except KeyboardInterrupt:
             print(f"\n  {C.GRAY}Interrupted.{C.RESET}")
             rc = 130
+            telemetry_result = "interrupted"
         except Exception as e:
             print(f"\n  {C.RED}Error:{C.RESET} {e}", file=sys.stderr)
             rc = 1
+            telemetry_result = "error"
+            telemetry_error = e
     else:
         parser.print_help()
+
+    if rc not in {0, 130}:
+        telemetry_result = "error"
+    if handler:
+        try:
+            from entroly.product_telemetry import capture_cli_result, flush
+
+            capture_cli_result(
+                args.command,
+                result=telemetry_result,
+                elapsed_seconds=__import__("time").monotonic() - telemetry_started,
+                error=telemetry_error,
+            )
+            flush()
+        except Exception:
+            # Product-health telemetry can never change a command result.
+            pass
 
     # Flush and terminate immediately.
     #

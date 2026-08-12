@@ -212,7 +212,26 @@ def create_compression_mcp_server(store_path: str | None = None):
 
 
 def main() -> None:
-    create_compression_mcp_server().run()
+    try:
+        from .product_telemetry import capture_surface_started, flush_async
+
+        if capture_surface_started("compression_mcp"):
+            flush_async()
+    except Exception:
+        pass
+    try:
+        create_compression_mcp_server().run()
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except BaseException as exc:
+        try:
+            from .product_telemetry import capture_surface_error, flush
+
+            capture_surface_error("compression_mcp", exc)
+            flush()
+        except Exception:
+            pass
+        raise
 
 
 if __name__ == "__main__":

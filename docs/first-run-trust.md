@@ -97,6 +97,12 @@ once-daily PyPI update notice can opt in with
 Configuration dry runs show only Entroly's proposed merge or removal and never
 echo unrelated editor preferences or account metadata.
 
+Pseudonymous product-health telemetry is off by default. Operators can inspect the
+complete allowlist with `entroly telemetry preview` before consenting. It never
+contains prompts, code, paths, model data, exact token/cost amounts, or exception
+details; `entroly telemetry off` withdraws consent and purges local telemetry
+state. See [Privacy-Safe Product Health Telemetry](telemetry-privacy.md).
+
 Expected behavior:
 
 - Large repos, noisy logs, repeated tool outputs, and multi-turn coding sessions should show savings.

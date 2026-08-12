@@ -6601,22 +6601,42 @@ def main():
     # the pure-Python fallback's initial project indexing pass.
     _start_background_services(engine)
 
+    try:
+        from .product_telemetry import capture_surface_started, flush_async
+
+        if capture_surface_started("mcp"):
+            flush_async()
+    except Exception:
+        pass
+
     # Multi-client support: SSE transport enables multiple IDE connections
     transport = os.environ.get("ENTROLY_MCP_TRANSPORT", "stdio")
-    if "--sse" in sys.argv or transport == "sse":
-        sse_port = int(os.environ.get("ENTROLY_MCP_PORT", "9379"))
-        logger.info(f"MCP server running on SSE transport at port {sse_port}")
-        logger.info("Multiple clients can connect simultaneously")
-        # Set port on the FastMCP settings before running
-        mcp.settings.port = sse_port
-        try:
-            mcp.run(transport="sse")
-        except TypeError:
-            # Older MCP SDK may not support transport kwarg
-            logger.warning("SSE transport not supported by this MCP SDK version, falling back to stdio")
+    try:
+        if "--sse" in sys.argv or transport == "sse":
+            sse_port = int(os.environ.get("ENTROLY_MCP_PORT", "9379"))
+            logger.info(f"MCP server running on SSE transport at port {sse_port}")
+            logger.info("Multiple clients can connect simultaneously")
+            # Set port on the FastMCP settings before running
+            mcp.settings.port = sse_port
+            try:
+                mcp.run(transport="sse")
+            except TypeError:
+                # Older MCP SDK may not support transport kwarg
+                logger.warning("SSE transport not supported by this MCP SDK version, falling back to stdio")
+                mcp.run()
+        else:
             mcp.run()
-    else:
-        mcp.run()
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except BaseException as exc:
+        try:
+            from .product_telemetry import capture_surface_error, flush
+
+            capture_surface_error("mcp", exc)
+            flush()
+        except Exception:
+            pass
+        raise
 
 
 if __name__ == "__main__":

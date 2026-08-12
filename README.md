@@ -311,10 +311,14 @@ No. Entroly's context-selection and analysis paths do not silently edit your pro
 <summary><b>Does my code get uploaded anywhere?</b></summary>
 <br>
 
-No. All the selecting, compressing, and checking happens on your own machine.
-Entroly makes no outbound calls of its own — the only thing that leaves your
-computer is the request you were already sending to your AI provider, just
-smaller. There are no analytics on by default. Optional external tools such as an operator-configured language server keep their own network boundary, which Entroly reports rather than hiding.
+By default, all selecting, compressing, and checking happens on your own
+machine. The only request that leaves your computer is the one you were already
+sending to your AI provider, just smaller. Product-health telemetry is off by
+default and requires explicit consent; its closed schema excludes prompts,
+code, paths, model data, exact token/cost amounts, and exception details. See
+[Privacy-Safe Product Health Telemetry](docs/telemetry-privacy.md). Optional
+external tools such as an operator-configured language server keep their own
+network boundary, which Entroly reports rather than hiding.
 </details>
 
 <details>

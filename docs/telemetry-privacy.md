@@ -1,0 +1,110 @@
+# Privacy-Safe Product Health Telemetry
+
+Entroly product-health telemetry is **off by default**. It starts only after an
+operator gives explicit consent:
+
+```bash
+entroly telemetry preview
+entroly telemetry on --endpoint https://telemetry.example/v1/events
+entroly telemetry status
+```
+
+Without an endpoint, consent creates only a bounded local queue and uploads
+nothing. `ENTROLY_DISABLE_TELEMETRY=1` and `ENTROLY_AIR_GAP=1` always override
+stored consent. CI and test processes are excluded unless separately enabled.
+
+## What is collected
+
+The wire format is a closed allowlist. A consenting installation can report:
+
+- Entroly version, operating-system family, and Python major/minor version
+- a monthly rotating random pseudonym and UTC calendar day
+- coarse surface starts: CLI, SDK, MCP, repository MCP, compression MCP, or proxy
+- allowlisted CLI command, success/error/interrupted result, and duration bucket
+- broad exception class such as `ValueError` or `OSError`, if error events remain enabled
+- coarse token-reduction and reduction-percentage buckets
+- whether the reduction was a local estimate or a provider-bound estimate
+- whether a provider-bound reduction had a configured price and therefore a
+  positive **modeled** cost signal
+
+Command, surface, error, and value categories are deduplicated per UTC day.
+Exact workload volume is not reported and event counts must not be interpreted
+as command frequency.
+
+## What is never collected
+
+Entroly does not put any of the following into product-health events:
+
+- prompts, source code, repository contents, or model inputs/outputs
+- filenames, paths, repository names, project names, hostnames, or usernames
+- exception messages, tracebacks, logs, request/response bodies, or environment values
+- API keys, credentials, provider tokens, or telemetry tokens
+- model identifiers, exact token counts, exact dollar amounts, or negotiated prices
+- IP addresses, HTTP headers, or user-agent strings in the collector database
+
+The network endpoint or reverse proxy necessarily sees a connection source IP
+while accepting a request. The bundled collector does not read or store it and
+runs with access logging disabled. Operators must also disable upstream access
+logs or apply an appropriate short retention policy.
+
+## Evidence boundaries
+
+A positive token-reduction bucket means Entroly measured fewer estimated tokens
+after its transformation. SDK and MCP-style local operations remain
+`local_estimate`: Entroly cannot prove that their output reached a paid model.
+Proxy transformations can be `provider_bound_estimate`; a positive modeled cost
+signal additionally requires a configured rate for the provider-bound model.
+
+Neither signal is a provider invoice, a billed-usage comparison, or a promise
+that response quality improved. Reports keep these claims separate:
+
+- registry downloads are package fetches, not people
+- activation pseudonyms are explicitly consenting installations, not a census
+- benefited pseudonyms observed a positive coarse token-reduction bucket
+- modeled cost reduction is not verified money saved
+
+## Storage, transport, and deletion
+
+- Local queue: at most 200 events and 14 days, with owner-only permissions when supported
+- Collector database: 90 days by default, configurable from 1 to 365 days
+- Transport: HTTPS only, except explicit loopback HTTP for local development
+- Ambient proxy variables: ignored unless `ENTROLY_TELEMETRY_TRUST_PROXY_ENV=1`
+- Upload batch: at most 20 events and 64 KiB with a short fail-open timeout;
+  automatic attempts occur at most once per UTC day
+- Withdrawal: `entroly telemetry off` removes local consent, queue, status,
+  markers, and random seed, and requests deletion of the four recent monthly
+  pseudonyms from a configured collector
+
+## Self-host the aggregate collector
+
+The collector binds to loopback and should sit behind an authenticated HTTPS
+reverse proxy. In PowerShell:
+
+```powershell
+$env:ENTROLY_TELEMETRY_INGEST_TOKEN = "replace-me"
+$env:ENTROLY_TELEMETRY_ADMIN_TOKEN = "replace-me-too"
+python -m entroly.telemetry_collector --db C:\entroly-data\product-health.db
+```
+
+On macOS or Linux, use `export NAME=value`. Keep the admin summary endpoint
+private. If ingest is intentionally tokenless for public clients, enforce
+request-size limits and rate limiting at the reverse proxy.
+
+The collector exposes only aggregate summaries: active monthly pseudonym counts,
+activation counts, coarse errors, command reliability, platform-family health,
+and coarse benefit evidence. It never returns raw events or pseudonyms.
+
+Telemetry cannot observe a package installation that fails before Entroly first
+starts. Registry downloads, release CI, and user-submitted diagnostics must cover
+that blind spot; the report must not misclassify a download as a working install.
+
+To combine those aggregate observations with registry downloads without
+pretending downloads are users:
+
+```bash
+python scripts/adoption_report.py \
+  --collector-summary-url https://telemetry.example/v1/summary?days=30
+```
+
+The report labels the resulting ratios as observed opt-in diagnostics, never as
+an actual unique-user adoption rate.
