@@ -74,9 +74,18 @@ The dashboard is an evidence viewer rather than another chat UI. It provides:
 - a selected-versus-omitted context ring;
 - receipt and chain-integrity status;
 - bounded evidence excerpts and an omitted-evidence explorer;
-- model, context, output, and cost information when the receipt contains enough data.
+- model, context, output, and cost information when the receipt contains enough data;
+- a content-blind Context Health summary for measured net tokens after
+  re-expansion, recovery tax, receipt integrity, omission recoverability, and
+  observed WITNESS suppressions.
 
 Unknown values stay `Unknown`; Entroly does not invent usage or cost. Cost estimates identify their basis and exclude cache discounts, long-context tiers, provider routing, and negotiated pricing.
+
+The Context Health share text contains aggregate counters only—never prompts,
+code, paths, queries, model names, receipt identifiers, or pseudonyms. A zero
+counter means no event was observed, not that Entroly eliminated the risk.
+Receipt-chain integrity does not imply source freshness; that dimension remains
+explicitly unavailable until a source check supplies direct evidence.
 
 The scanner is read-only and bounded by file count, file size, directory depth, and excerpt size. Corrupt, conflicting, oversized, or incomplete artifacts appear as diagnostics.
 
