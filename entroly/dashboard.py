@@ -488,6 +488,91 @@ def _fetch_witness_snapshot() -> dict[str, Any]:
     return {"available": False, "count": 0, "items": [], "feedback": {}}
 
 
+def _fetch_context_economics_snapshot() -> dict[str, Any]:
+    """Fetch only content-blind cache/accounting aggregates from localhost."""
+    import os
+    import urllib.error
+    import urllib.request
+
+    ports = [os.environ.get("ENTROLY_PROXY_PORT", "9377"), "9399"]
+    seen: set[str] = set()
+    for port in ports:
+        if port in seen:
+            continue
+        seen.add(port)
+        try:
+            with urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/stats",
+                timeout=0.25,
+            ) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            if not isinstance(payload, dict):
+                continue
+            provider_cache = payload.get("provider_cache", {})
+            if not isinstance(provider_cache, dict):
+                provider_cache = {}
+            accounting = payload.get("usage_accounting", {})
+            if not isinstance(accounting, dict):
+                accounting = {}
+            ledger = accounting.get("ledger", {})
+            if not isinstance(ledger, dict):
+                ledger = {}
+            live = accounting.get("live", {})
+            if not isinstance(live, dict):
+                live = {}
+            interference = payload.get("optimizer_interference", {})
+            if not isinstance(interference, dict):
+                interference = {}
+            return {
+                "provider_cache": {
+                    key: provider_cache.get(key)
+                    for key in ("observed_hits", "observed_misses")
+                },
+                "usage_accounting": {
+                    "enabled": accounting.get("enabled") is True,
+                    "live": {
+                        key: live.get(key)
+                        for key in (
+                            "scope",
+                            "requests",
+                            "uncached_input_tokens",
+                            "cache_read_tokens",
+                            "cache_write_tokens",
+                            "output_tokens",
+                        )
+                    },
+                    "ledger": {
+                        key: ledger.get(key)
+                        for key in (
+                            "requests",
+                            "uncached_input_tokens",
+                            "cache_read_tokens",
+                            "cache_write_tokens",
+                            "output_tokens",
+                            "cost_micro_usd",
+                            "unpriced_requests",
+                        )
+                    },
+                },
+                "optimizer_interference": {
+                    key: interference.get(key)
+                    for key in (
+                        "measurement",
+                        "comparable_transitions",
+                        "prefix_preserved",
+                        "prefix_degraded",
+                        "prefix_improved",
+                        "estimated_optimizer_interference_tokens",
+                        "guard_interventions",
+                        "estimated_prefix_tokens_preserved",
+                    )
+                },
+            }
+        except (OSError, urllib.error.URLError, json.JSONDecodeError, ValueError):
+            continue
+    return {}
+
+
 # ── HTML Dashboard ────────────────────────────────────────────────────────────
 
 DASHBOARD_HTML = r"""<!DOCTYPE html>
@@ -711,8 +796,12 @@ tr:hover td{background:rgba(255,255,255,0.015);}
 .evidence-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}.evidence-item{padding:11px;border:1px solid var(--border);border-radius:10px;background:var(--glass);min-width:0;}
 .evidence-path{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--blue);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.evidence-reason{font-size:10px;color:var(--dim);margin-top:5px;}.evidence-excerpt{font-size:11px;color:#aab2c0;margin-top:8px;line-height:1.45;white-space:pre-wrap;max-height:90px;overflow:auto;}
 .context-diagnostic{padding:10px 12px;margin:10px;border:1px solid rgba(251,191,36,.3);background:var(--amber-glow);color:var(--amber);border-radius:9px;font-size:11px;}
+.context-health-panel{margin-bottom:20px;padding:20px;border:1px solid rgba(34,211,238,.22);border-radius:14px;background:linear-gradient(145deg,rgba(34,211,238,.055),rgba(139,92,246,.035));}
+.context-health-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:16px}.context-health-head h2{margin:0 0 5px;font-size:18px}.context-health-head p{margin:0;color:var(--dim);font-size:11px;line-height:1.45;max-width:760px}
+.context-health-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.context-health-card{padding:14px;border:1px solid var(--border);border-radius:11px;background:var(--glass)}.context-health-card label{display:block;color:var(--dim);font-size:9px;text-transform:uppercase;letter-spacing:1px}.context-health-card strong{display:block;margin-top:7px;font-size:21px}.context-health-card small{display:block;margin-top:6px;color:var(--dim2);font-size:9px;line-height:1.4}
+.context-protections{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:10px}.context-protection{padding:13px;border:1px solid var(--border);border-radius:11px;background:rgba(7,11,20,.42)}.context-protection b{display:block;font-size:12px}.context-protection span{display:block;margin-top:6px;color:var(--dim);font-size:10px;line-height:1.45}.context-share{border:1px solid rgba(52,211,153,.35);background:rgba(52,211,153,.09);color:var(--emerald);padding:8px 12px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap}.context-share:hover{background:rgba(52,211,153,.15)}
 @media(max-width:1100px){.hero-metrics{grid-template-columns:1fr 1fr;}.grid3{grid-template-columns:1fr 1fr;}.ba-panel{grid-template-columns:1fr;}.cache-kpis{grid-template-columns:1fr 1fr;}.cache-split{grid-template-columns:1fr;}}
-@media(max-width:900px){.context-grid{grid-template-columns:1fr}.context-list{border-right:0;border-bottom:1px solid var(--border);max-height:240px}.context-overview{grid-template-columns:1fr}.context-ring{margin:auto}.context-kpis{grid-template-columns:1fr 1fr}}
+@media(max-width:900px){.context-grid{grid-template-columns:1fr}.context-list{border-right:0;border-bottom:1px solid var(--border);max-height:240px}.context-overview{grid-template-columns:1fr}.context-ring{margin:auto}.context-kpis{grid-template-columns:1fr 1fr}.context-health-grid{grid-template-columns:1fr 1fr}.context-protections{grid-template-columns:1fr}}
 @media(max-width:768px){.hero-metrics,.grid2,.grid3,.cache-kpis{grid-template-columns:1fr;}.main{padding:16px;}.hero-big{font-size:48px;}.context-head{align-items:flex-start;flex-direction:column}.context-search{width:100%}.evidence-grid{grid-template-columns:1fr}.topbar{padding:12px 16px;gap:8px}.brand{gap:8px}.brand h1{font-size:20px}.brand .btag{font-size:9px;padding:3px 7px}.topbar>div:last-child{gap:8px;flex-wrap:wrap;justify-content:flex-end}.live{display:none}.whisper{display:block;line-height:1.55;overflow-wrap:anywhere}.whisper code{display:inline;white-space:normal;overflow-wrap:anywhere}.whisper .dismiss{float:right;margin-left:8px}}
 </style>
 </head>
@@ -738,6 +827,7 @@ tr:hover td{background:rgba(255,255,255,0.015);}
     </div>
     <div class="context-grid"><div id="contextList" class="context-list"><div class="empty">Loading context receipts…</div></div><div id="contextDetail" class="context-detail"><div class="empty">Select a session to inspect its context proof.</div></div></div>
   </section>
+  <section id="contextHealth" class="context-health-panel" aria-live="polite"><div class="empty">Loading aggregate context health…</div></section>
   <div class="hero" id="hero"></div>
   <div id="valueTrends"></div>
   <div id="ba"></div>
@@ -1061,6 +1151,52 @@ function renderContextSession(data){
   const issues=(integrity.issues||[]).map(x=>escHtml(x)).join(' · ');
   document.getElementById('contextDetail').innerHTML='<div class="context-overview"><div class="context-ring" style="--ring:'+ratio+'%"><div class="context-ring-value">'+ratio+'%<small>CONTEXT KEPT</small></div></div><div><div style="font-size:18px;font-weight:800;margin-bottom:4px">'+escHtml(summary.query||summary.session_id)+'</div><div style="font-size:11px;color:'+(integrity.valid?'var(--emerald)':'var(--rose)')+'">'+(integrity.valid?'Chain and receipt integrity verified':'Integrity requires attention: '+issues)+'</div><div class="context-kpis" style="margin-top:13px"><div class="context-kpi"><label>Model</label><strong title="'+escHtml(model.model||'Unknown')+'">'+escHtml(model.model||'Unknown')+'</strong>'+(model.model?'':'<small>'+escHtml(model.warning||'No model provenance was recorded.')+'</small>')+'</div><div class="context-kpi"><label>Selected / budget</label><strong>'+fmt(latest.selected_tokens||0)+' / '+fmt(latest.token_budget||0)+'</strong></div><div class="context-kpi"><label>Omitted evidence</label><strong>'+fmt(latest.omitted_count||0)+' items · '+fmt(latest.omitted_tokens||0)+'</strong></div><div class="context-kpi"><label>Cost</label><strong title="'+escHtml(model.pricing_note||'')+'">'+cost+'</strong>'+(cost==='Unknown'&&model.pricing_note?'<small>'+escHtml(model.pricing_note)+'</small>':'')+'</div></div></div></div><div class="context-section"><h3>Receipt timeline</h3><div class="receipt-turns">'+(turns||'<span class="empty">No receipt links</span>')+'</div></div><div class="context-section"><h3>Selected evidence</h3><div class="evidence-grid">'+(selected||'<div class="empty">No selected evidence body stored.</div>')+'</div></div><div class="context-section"><h3>Omitted-evidence explorer</h3><div class="evidence-grid">'+(omitted||'<div class="empty">No omitted evidence recorded.</div>')+'</div></div>';
 }
+let contextHealthShare='';
+function healthValue(value,suffix=''){
+  return value==null?'Not measured':String(value)+suffix;
+}
+async function copyContextHealth(){
+  if(!contextHealthShare)return;
+  try{await navigator.clipboard.writeText(contextHealthShare);const b=document.getElementById('contextShare');if(b){b.textContent='Copied aggregate proof';setTimeout(()=>b.textContent='Copy privacy-safe proof',1800);}}
+  catch(error){console.error('Copy context health:',error);}
+}
+function renderContextHealth(data){
+  const el=document.getElementById('contextHealth');if(!el)return;
+  const value=data.value||{},evidence=data.evidence||{},protections=data.protections||{},cache=data.cache_economics||{},continuity=cache.prefix_continuity||{};
+  const confusion=protections.confusion||{},rot=protections.rot||{},drift=protections.drift||{};
+  const measured=value.ledger_status==='measured';contextHealthShare=((data.share||{}).text)||'';
+  const retrievalNet=measured?fmt(value.retrieval_adjusted_net_tokens||0):'Not measured';
+  const netClass=measured&&Number(value.retrieval_adjusted_net_tokens||0)<0?'hv-rose':'hv-green';
+  const recovery=value.recovery_tax_pct==null?'Not measured':Number(value.recovery_tax_pct).toFixed(1)+'%';
+  const integrity=evidence.integrity_pct==null?'No receipts':Number(evidence.integrity_pct).toFixed(1)+'%';
+  const recoverable=evidence.recoverability_pct==null?'Not measured':Number(evidence.recoverability_pct).toFixed(1)+'%';
+  const requestHit=cache.request_hit_rate_pct==null?'Not observed':Number(cache.request_hit_rate_pct).toFixed(1)+'%';
+  const tokenHit=cache.cache_read_token_ratio_pct==null?'Not recorded':Number(cache.cache_read_token_ratio_pct).toFixed(1)+'%';
+  const continuityRate=continuity.continuity_rate_pct==null?'Not measured':Number(continuity.continuity_rate_pct).toFixed(1)+'%';
+  const economicNet=cache.economically_net_positive==null?'Baseline required':(cache.economically_net_positive?'Net positive':'Net negative');
+  const economicClass=cache.economically_net_positive==null?'hv-amber':(cache.economically_net_positive?'hv-green':'hv-rose');
+  el.innerHTML='<div class="context-health-head"><div><h2>Context Health</h2><p>Aggregate evidence only. Retrieval-adjusted savings and provider cache economics are separate. Zero means no event observed, not that a risk was eliminated.</p></div><button id="contextShare" class="context-share" onclick="copyContextHealth()" '+(contextHealthShare?'':'disabled')+'>Copy privacy-safe proof</button></div>'+
+    '<div class="context-health-grid">'+
+      '<div class="context-health-card"><label>Retrieval-adjusted net</label><strong class="'+netClass+'">'+retrievalNet+'</strong><small>'+(measured?fmt(value.measured_gross_tokens||0)+' gross minus '+fmt(value.measured_reexpanded_tokens||0)+' re-expanded; cache effects excluded':'Enable the optimization ledger for recovery accounting')+'</small></div>'+
+      '<div class="context-health-card"><label>Recovery tax</label><strong class="hv-amber">'+recovery+'</strong><small>Re-expanded tokens ÷ measured gross reduction</small></div>'+
+      '<div class="context-health-card"><label>Receipt integrity</label><strong class="hv-blue">'+integrity+'</strong><small>'+fmt(evidence.valid_sessions||0)+' valid / '+fmt(evidence.sessions_sampled||0)+' sampled sessions</small></div>'+
+      '<div class="context-health-card"><label>Omission recoverability</label><strong class="hv-violet">'+recoverable+'</strong><small>'+fmt(evidence.recoverable_omitted_items||0)+' recoverable / '+fmt(evidence.omitted_items||0)+' omitted items</small></div>'+
+      '<div class="context-health-card"><label>Provider request cache hits</label><strong class="hv-blue">'+requestHit+'</strong><small>'+fmt(cache.provider_observed_hits||0)+' hits / '+fmt(cache.provider_observed_requests||0)+' bounded live observations</small></div>'+
+      '<div class="context-health-card"><label>Cached input-token ratio</label><strong class="hv-violet">'+tokenHit+'</strong><small>'+fmt(cache.cache_read_tokens||0)+' cache-read / '+fmt(cache.cache_write_tokens||0)+' cache-write / '+fmt(cache.uncached_input_tokens||0)+' uncached</small></div>'+
+      '<div class="context-health-card"><label>Prefix continuity</label><strong class="hv-green">'+continuityRate+'</strong><small>'+fmt(continuity.prefix_degraded||0)+' degraded transitions / '+fmt(continuity.guard_interventions||0)+' warm-prefix rewrites prevented</small></div>'+
+      '<div class="context-health-card"><label>Economic net</label><strong class="'+economicClass+'">'+economicNet+'</strong><small>Requires a paired baseline; correlation is not savings attribution</small></div>'+
+    '</div><div class="context-protections">'+
+      '<div class="context-protection"><b>Optimizer interference guard</b><span>'+fmt(continuity.estimated_prefix_tokens_preserved||0)+' estimated warm-prefix tokens preserved. Hash-only local measurement; no prompt content retained.</span></div>'+
+      '<div class="context-protection"><b>Confusion protection</b><span>'+fmt(confusion.unsupported_claims_blocked||0)+' unsupported claims blocked. '+escHtml(confusion.scope||'')+'</span></div>'+
+      '<div class="context-protection"><b>Rot resilience</b><span>Status: '+escHtml(rot.status||'unavailable')+'. '+escHtml(rot.scope||'')+'</span></div>'+
+      '<div class="context-protection"><b>Drift protection</b><span>Status: '+escHtml(drift.status||'unavailable')+'; source freshness '+escHtml(drift.source_freshness||'unavailable')+'. '+escHtml(drift.scope||'')+'</span></div>'+
+    '</div>';
+}
+async function refreshContextHealth(){
+  const el=document.getElementById('contextHealth');
+  try{const response=await fetch('/api/context/health');if(!response.ok)throw new Error('Context health returned '+response.status);renderContextHealth(await response.json());}
+  catch(error){if(el)el.innerHTML='<div class="context-diagnostic">Context health unavailable: '+escHtml(error.message||error)+'</div>';}
+}
 function renderWitness(d){
   const w=d.witness||{},el=document.getElementById('witness'),b=document.getElementById('wb');
   if(!el||!b)return;
@@ -1239,7 +1375,7 @@ async function refresh(){
     renderErrors([{section:'fetch',type:e.name||'Error',message:e.message||String(e)}]);
   }
 }
-refresh();setInterval(refresh,3000);refreshContextSessions();setInterval(()=>refreshContextSessions(),15000);
+refresh();setInterval(refresh,3000);refreshContextSessions();setInterval(()=>refreshContextSessions(),15000);refreshContextHealth();setInterval(refreshContextHealth,15000);
 </script>
 </body>
 </html>
@@ -1297,6 +1433,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(200, self._safe_tracker_call("get_confidence"))
         elif path == "/api/context/sessions":
             self._handle_context_sessions(parse_qs(parsed.query))
+        elif path == "/api/context/health":
+            self._handle_context_health()
         elif path.startswith("/api/context/sessions/"):
             self._handle_context_session(path.removeprefix("/api/context/sessions/"))
         elif path == "/health":
@@ -1337,6 +1475,25 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(404, {"error": "context session not found"})
             return
         self._send_json(200, session)
+
+    def _handle_context_health(self) -> None:
+        try:
+            from entroly.context_health import build_context_health
+
+            self._send_json(
+                200,
+                build_context_health(
+                    provider_economics=_fetch_context_economics_snapshot()
+                ),
+            )
+        except Exception as error:
+            self._send_json(
+                503,
+                {
+                    "error": "context health is temporarily unavailable",
+                    "type": type(error).__name__,
+                },
+            )
 
     @staticmethod
     def _safe_tracker_call(method: str) -> dict:

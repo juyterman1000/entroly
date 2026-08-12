@@ -55,7 +55,12 @@ from .cache_aligner import CacheAligner
 from .belief_compiler import BeliefCompiler
 from .change_listener import WorkspaceChangeListener
 from .change_pipeline import ChangePipeline
-from .checkpoint import CheckpointManager, ContextFragment
+from .checkpoint import (
+    CheckpointManager,
+    ContextFragment,
+    _dict_to_fragment,
+    _fragment_to_dict,
+)
 from .config import EntrolyConfig, load_active_tuning_config, resolve_tuning_kwargs
 from .epistemic_router import (
     EpistemicRouter,
@@ -816,8 +821,8 @@ class EntrolyEngine:
         # background watcher; an RLock permits auto_index's warm-cache path to
         # invoke reconciliation without deadlocking itself.
         self._index_mutation_lock = threading.RLock()
-        self._index_loaded = not (self._use_rust and self.config.use_persistent_index)
-        if self._use_rust and not self.config.use_persistent_index:
+        self._index_loaded = not self.config.use_persistent_index
+        if not self.config.use_persistent_index:
             logger.debug("Persistent index disabled by config (isolated/ephemeral engine)")
 
         # GC freeze at startup: Python's cyclic GC causes ~500ms stalls on large
@@ -843,6 +848,17 @@ class EntrolyEngine:
             if self._index_loaded:
                 return
             try:
+                if not self._use_rust:
+                    loaded = self._load_index_compat(self._index_path)
+                    if loaded:
+                        logger.info(
+                            "Warm-start: restored %d Python index fragments from %s",
+                            loaded,
+                            self._index_path,
+                        )
+                    else:
+                        logger.info("No persistent index found, starting fresh session")
+                    return
                 try:
                     loaded = self._rust.load_index(self._index_path)
                     if loaded:
@@ -1994,14 +2010,20 @@ class EntrolyEngine:
         self._ensure_index_loaded()
         if not self.config.use_persistent_index:
             return {"status": "disabled", "reason": "persistent_index_disabled"}
-        if not self._use_rust:
-            return {"status": "disabled", "reason": "python_fallback_has_no_repo_index"}
-        state = self._rust.export_state()
+        state = (
+            self._rust.export_state()
+            if self._use_rust
+            else self._python_index_state()
+        )
         self._write_gzip_index(self._index_path, state)
         return {
             "status": "persisted",
             "path": self._index_path,
-            "fragment_count": int(self._rust.fragment_count()),
+            "fragment_count": (
+                int(self._rust.fragment_count())
+                if self._use_rust
+                else len(self._fragments)
+            ),
         }
 
     def resume(self, query: str = "", project: str = "") -> dict[str, Any]:
@@ -2215,7 +2237,7 @@ class EntrolyEngine:
                 k: dict(v)
                 for k, v in self._prefetch._co_access.items()
             }
-            return self._checkpoint_mgr.save(
+            checkpoint_path = self._checkpoint_mgr.save(
                 fragments=list(self._fragments.values()),
                 dedup_fingerprints=dict(self._dedup._fingerprints),
                 co_access_data=co_access,
@@ -2223,6 +2245,15 @@ class EntrolyEngine:
                 metadata=metadata,
                 stats=self.get_stats(),
             )
+            if self.config.use_persistent_index:
+                try:
+                    self._write_gzip_index(
+                        self._index_path,
+                        self._python_index_state(),
+                    )
+                except Exception as exc:
+                    logger.debug("Failed to persist Python index: %s", exc)
+            return checkpoint_path
 
     def _validate_checkpoint_dir(self) -> None:
         """Fix #5: Validate checkpoint directory is writable at startup."""
@@ -2293,10 +2324,109 @@ class EntrolyEngine:
 
     # ── Python fallback implementations ──────────────────────────────
 
+    def _python_index_state(self) -> dict[str, Any]:
+        """Return a portable warm-start snapshot for the Python engine."""
+        return {
+            "schema_version": "entroly.python-index.v1",
+            "current_turn": self._current_turn,
+            "fragments": [
+                _fragment_to_dict(fragment)
+                for fragment in self._fragments.values()
+            ],
+            "co_access_data": {
+                source: dict(targets)
+                for source, targets in self._prefetch._co_access.items()
+            },
+            "feedback": {
+                "success": dict(self._wilson._success),
+                "failure": dict(self._wilson._failure),
+            },
+            "counters": {
+                "fragments_ingested": self._total_fragments_ingested,
+                "duplicates_caught": self._total_duplicates_caught,
+                "optimizations": self._total_optimizations,
+                "tokens_saved": self._total_tokens_saved,
+            },
+        }
+
+    def _load_python_index(self, path: str) -> int:
+        """Restore a Python-engine warm-start snapshot, failing closed."""
+        p = Path(path)
+        if not p.exists():
+            return 0
+        try:
+            raw = p.read_bytes()
+            if len(raw) >= 2 and raw[:2] == b"\x1f\x8b":
+                raw = gzip.decompress(raw)
+            state = json.loads(raw.decode("utf-8"))
+            if (
+                not isinstance(state, dict)
+                or state.get("schema_version") != "entroly.python-index.v1"
+                or not isinstance(state.get("fragments"), list)
+            ):
+                return 0
+            fragments = [_dict_to_fragment(item) for item in state["fragments"]]
+            co_access = state.get("co_access_data", {})
+            if not isinstance(co_access, dict):
+                co_access = {}
+            feedback = state.get("feedback", {})
+            if not isinstance(feedback, dict):
+                feedback = {}
+            counters = state.get("counters", {})
+            if not isinstance(counters, dict):
+                counters = {}
+        except (EOFError, gzip.BadGzipFile, json.JSONDecodeError, OSError, TypeError, ValueError, KeyError):
+            return 0
+
+        self._fragments = {fragment.fragment_id: fragment for fragment in fragments}
+        self._dedup = _PyDedupIndex(
+            hamming_threshold=getattr(self.config, "dedup_hamming_threshold", 3)
+        )
+        from collections import Counter, defaultdict
+
+        self._global_token_counts = Counter()
+        self._total_token_count = 0
+        for fragment in fragments:
+            self._dedup.insert(fragment.fragment_id, fragment.content)
+            tokens = fragment.content.lower().split()
+            self._global_token_counts.update(tokens)
+            self._total_token_count += len(tokens)
+        def _nonnegative_int(value: object, default: int = 0) -> int:
+            try:
+                return max(0, int(value))
+            except (TypeError, ValueError, OverflowError):
+                return default
+
+        self._total_fragments_ingested = _nonnegative_int(
+            counters.get("fragments_ingested"), len(fragments)
+        )
+        self._total_duplicates_caught = _nonnegative_int(
+            counters.get("duplicates_caught")
+        )
+        self._total_optimizations = _nonnegative_int(counters.get("optimizations"))
+        self._total_tokens_saved = _nonnegative_int(counters.get("tokens_saved"))
+        self._current_turn = _nonnegative_int(state.get("current_turn"))
+        for field, target in (
+            ("success", self._wilson._success),
+            ("failure", self._wilson._failure),
+        ):
+            raw_counts = feedback.get(field, {})
+            if isinstance(raw_counts, dict):
+                target.update({
+                    str(fragment_id): _nonnegative_int(count)
+                    for fragment_id, count in raw_counts.items()
+                })
+        restored_co_access: defaultdict[str, Counter] = defaultdict(Counter)
+        for source, targets in co_access.items():
+            if isinstance(targets, dict):
+                restored_co_access[str(source)] = Counter(targets)
+        self._prefetch._co_access = restored_co_access
+        return len(fragments)
+
     def _load_index_compat(self, path: str) -> int:
         """Load a persisted index without relying on native gzip support."""
         if not self._use_rust:
-            return 0
+            return self._load_python_index(path)
         p = Path(path)
         if not p.exists():
             return 0
@@ -2509,6 +2639,7 @@ class EntrolyEngine:
                 self.config.weight_semantic_sim,
                 self.config.weight_entropy,
             )
+            relevance *= self._wilson.learned_value(frag.fragment_id)
             scored.append((frag, relevance))
 
         scored.sort(key=lambda x: x[1], reverse=True)
@@ -2555,6 +2686,17 @@ class EntrolyEngine:
                 "duplicates_caught": self._total_duplicates_caught,
                 "optimize_calls": self._total_optimizations,
                 "fragments_ingested": self._total_fragments_ingested,
+            },
+            "savings": {
+                "dedup_tokens_avoided": self._total_tokens_saved,
+                "total_duplicates_caught": self._total_duplicates_caught,
+                "total_optimizations": self._total_optimizations,
+                "total_fragments_ingested": self._total_fragments_ingested,
+                "baseline": (
+                    "dedup/selection telemetry only; counts candidates not "
+                    "selected. Not a provider bill delta and not a dollar-"
+                    "savings claim."
+                ),
             },
             "dedup": self._dedup.stats(),
             "prefetch": self._prefetch.stats(),
@@ -2805,6 +2947,14 @@ def create_mcp_server(
             "SimHash deduplication, predictive pre-fetch, and checkpoint/resume."
         ),
     )
+    # MCP SDK 1.x does not expose `version` on FastMCP's constructor. Without
+    # this, initialize reports the SDK version rather than the Entroly version.
+    try:
+        from . import __version__ as package_version
+
+        mcp._mcp_server.version = package_version
+    except (AttributeError, ImportError):
+        pass
 
     # Shared engine instance — apply autotuned weights if available.
     # autotune writes the nested schema (weights.recency, decay.half_life_turns,
@@ -5116,6 +5266,8 @@ def create_mcp_server(
         value_tracker=_value_tracker,
         feedback_journal=_feedback_journal,
         rust_engine=engine._rust if engine._use_rust else None,
+        project_root=_source_dir,
+        data_dir=_checkpoint_dir,
     )
     _evolution_daemon.start()  # non-blocking background thread
     logger.info("EvolutionDaemon: autonomous self-improvement started")
@@ -6423,7 +6575,7 @@ def main():
     try:
         from entroly import __version__ as _version
     except Exception:
-        _version = "1.0.76"
+        _version = "1.0.77"
     logger.info(f"Starting Entroly MCP server v{_version} ({engine_type} engine)")
     mcp, engine = create_mcp_server()
 
@@ -6449,22 +6601,42 @@ def main():
     # the pure-Python fallback's initial project indexing pass.
     _start_background_services(engine)
 
+    try:
+        from .product_telemetry import capture_surface_started, flush_async
+
+        if capture_surface_started("mcp"):
+            flush_async()
+    except Exception:
+        pass
+
     # Multi-client support: SSE transport enables multiple IDE connections
     transport = os.environ.get("ENTROLY_MCP_TRANSPORT", "stdio")
-    if "--sse" in sys.argv or transport == "sse":
-        sse_port = int(os.environ.get("ENTROLY_MCP_PORT", "9379"))
-        logger.info(f"MCP server running on SSE transport at port {sse_port}")
-        logger.info("Multiple clients can connect simultaneously")
-        # Set port on the FastMCP settings before running
-        mcp.settings.port = sse_port
-        try:
-            mcp.run(transport="sse")
-        except TypeError:
-            # Older MCP SDK may not support transport kwarg
-            logger.warning("SSE transport not supported by this MCP SDK version, falling back to stdio")
+    try:
+        if "--sse" in sys.argv or transport == "sse":
+            sse_port = int(os.environ.get("ENTROLY_MCP_PORT", "9379"))
+            logger.info(f"MCP server running on SSE transport at port {sse_port}")
+            logger.info("Multiple clients can connect simultaneously")
+            # Set port on the FastMCP settings before running
+            mcp.settings.port = sse_port
+            try:
+                mcp.run(transport="sse")
+            except TypeError:
+                # Older MCP SDK may not support transport kwarg
+                logger.warning("SSE transport not supported by this MCP SDK version, falling back to stdio")
+                mcp.run()
+        else:
             mcp.run()
-    else:
-        mcp.run()
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except BaseException as exc:
+        try:
+            from .product_telemetry import capture_surface_error, flush
+
+            capture_surface_error("mcp", exc)
+            flush()
+        except Exception:
+            pass
+        raise
 
 
 if __name__ == "__main__":

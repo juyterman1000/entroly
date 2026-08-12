@@ -35,6 +35,17 @@ from .universal_compress import (
 )
 
 
+def _track_product_surface(surface: str) -> None:
+    """Record only a daily coarse SDK surface event after explicit consent."""
+    try:
+        from .product_telemetry import capture_surface_started, flush_async
+
+        if capture_surface_started(surface):
+            flush_async()
+    except Exception:  # noqa: BLE001 — optional telemetry is fail-open
+        pass
+
+
 def _track_savings(before_tokens: int, after_tokens: int, label: str) -> None:
     """Record SDK compression value to the shared telemetry sink so the
     dashboard reflects SDK-only users (previously a hard blank). Strictly
@@ -44,10 +55,31 @@ def _track_savings(before_tokens: int, after_tokens: int, label: str) -> None:
     compressed result was sent to a paid provider, so no dollar savings are
     claimed for this path."""
     try:
-        saved = int(before_tokens) - int(after_tokens)
-        if saved <= 0:
-            return
+        before = max(0, int(before_tokens))
+        after = max(0, int(after_tokens))
+        saved = max(0, before - after)
+    except (TypeError, ValueError, OverflowError):
+        return
+
+    try:
+        from .product_telemetry import capture_optimization_outcome, flush_async
+
+        if before > 0 and capture_optimization_outcome(
+            f"sdk_{label}" if label in {"compress", "messages"} else "sdk_compress",
+            before_tokens=before,
+            after_tokens=after,
+            measurement_scope="local_estimate",
+            cost_evidence="not_available",
+        ):
+            flush_async()
+    except Exception:  # noqa: BLE001 — optional telemetry is fail-open
+        pass
+
+    if saved <= 0:
+        return
+    try:
         from .value_tracker import get_tracker
+
         tracker = get_tracker()
         tracker.record(
             tokens_saved=saved,
@@ -412,6 +444,7 @@ def compress(
     """
     if not content:
         return content
+    _track_product_surface("sdk_compress")
 
     if profile:
         prof_cfg = get_profile(profile)
@@ -762,6 +795,7 @@ def compress_messages(
     """
     if not messages:
         return messages
+    _track_product_surface("sdk_messages")
 
     # Validate public controls even when the input is already in budget so a
     # bad configuration is visible instead of silently becoming a no-op.
@@ -791,6 +825,7 @@ def compress_messages(
     # A relative target below 1 lowers ``budget`` above, so explicitly
     # requested compression still proceeds.
     if source_tokens <= budget:
+        _track_savings(source_tokens, source_tokens, "messages")
         return messages
 
     # Pre-pass: collapse aged tool outputs to one-line digests. This is
@@ -808,6 +843,7 @@ def compress_messages(
     # Estimate total tokens
     total_tokens = _message_tokens(messages)
     if total_tokens <= budget:
+        _track_savings(source_tokens, total_tokens, "messages")
         return messages  # Already within budget
 
     query = _infer_compression_query(messages)
@@ -829,21 +865,25 @@ def compress_messages(
     # If recent alone busts budget, compress even recent messages
     # (except the very last user message)
     if recent_tokens > budget:
-        return _compress_all_messages(
+        compressed_all = _compress_all_messages(
             messages,
             budget,
             query=query,
             profile=profile,
         )
+        _track_savings(source_tokens, _message_tokens(compressed_all), "messages")
+        return compressed_all
 
     if not older:
         # All messages are "recent" — compress all except the last
-        return _compress_all_messages(
+        compressed_all = _compress_all_messages(
             messages,
             budget,
             query=query,
             profile=profile,
         )
+        _track_savings(source_tokens, _message_tokens(compressed_all), "messages")
+        return compressed_all
 
     # Compute per-message compression ratio
     older_tokens = sum(
@@ -930,6 +970,7 @@ def compress_messages(
         result[index] = message
 
     result.extend(recent)
+    _track_savings(source_tokens, _message_tokens(result), "messages")
     return result
 
 

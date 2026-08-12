@@ -24,6 +24,7 @@ Commands:
     entroly config      Show current configuration
     entroly clean       Clear cached state (checkpoints, index, pull cache)
     entroly telemetry   Manage the local telemetry preference
+    entroly uninstall   Guided uninstall with optional structured exit feedback
     entroly demo        Before/after demo showing token savings
     entroly doctor      Diagnose common issues
     entroly digest      Weekly summary of value delivered
@@ -40,6 +41,7 @@ Commands:
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import logging
 import os
@@ -54,7 +56,7 @@ from pathlib import Path
 try:
     from entroly import __version__
 except ImportError:
-    __version__ = "1.0.76"
+    __version__ = "1.0.77"
 
 from entroly.config import (
     load_active_tuning_config as _load_active_tuning_config,
@@ -76,14 +78,17 @@ if sys.platform == "win32":
 
 
 # ── ANSI colors ──
+_COLOR_ENABLED = "NO_COLOR" not in os.environ
+
+
 class C:
-    BOLD = "\033[1m"
-    GREEN = "\033[38;5;82m"
-    CYAN = "\033[38;5;45m"
-    YELLOW = "\033[38;5;220m"
-    RED = "\033[38;5;196m"
-    GRAY = "\033[38;5;240m"
-    RESET = "\033[0m"
+    BOLD = "\033[1m" if _COLOR_ENABLED else ""
+    GREEN = "\033[38;5;82m" if _COLOR_ENABLED else ""
+    CYAN = "\033[38;5;45m" if _COLOR_ENABLED else ""
+    YELLOW = "\033[38;5;220m" if _COLOR_ENABLED else ""
+    RED = "\033[38;5;196m" if _COLOR_ENABLED else ""
+    GRAY = "\033[38;5;240m" if _COLOR_ENABLED else ""
+    RESET = "\033[0m" if _COLOR_ENABLED else ""
 
 
 def _resolve_entroly_dir() -> Path:
@@ -217,12 +222,15 @@ def _version_is_newer(candidate: str, current: str) -> bool:
 
 
 def _check_for_update() -> None:
-    """Check PyPI for a newer version (non-blocking, cached for 24h).
+    """Check PyPI for a newer version when the user explicitly opts in.
 
     Prints a one-line notice if a newer version exists. Fails silently
     on network errors — never blocks CLI startup.
     """
-    if os.environ.get("ENTROLY_DISABLE_UPDATE_CHECK", "0") == "1":
+    if (
+        os.environ.get("ENTROLY_ENABLE_UPDATE_CHECK", "0") != "1"
+        or os.environ.get("ENTROLY_DISABLE_UPDATE_CHECK", "0") == "1"
+    ):
         return
 
     cache_file = _ENTROLY_DIR / ".update_check"
@@ -522,6 +530,7 @@ def _write_config(tool: dict, dry_run: bool = False) -> str:
     config_path = tool["config_path"]
     config_key = tool["config_key"]
     existing = _load_config_object(config_path)
+    original = copy.deepcopy(existing)
 
     servers = existing.get(config_key)
     if servers is None:
@@ -532,9 +541,22 @@ def _write_config(tool: dict, dry_run: bool = False) -> str:
     servers.update(_generate_mcp_config())
 
     if dry_run:
-        return json.dumps(existing, indent=2, ensure_ascii=False)
+        # Never echo unrelated editor preferences, account identifiers, or
+        # other MCP server configuration into terminals and CI logs.
+        return json.dumps(
+            {
+                "operation": "merge",
+                "config_key": config_key,
+                "entry": _generate_mcp_config(),
+                "preserves_unrelated_configuration": True,
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
 
     path = Path(config_path)
+    if existing == original:
+        return str(path)
     if path.exists():
         _backup_config_file(path, ".entroly-backup")
     _atomic_write_config(config_path, existing)
@@ -560,7 +582,16 @@ def _remove_entroly_config(tool: dict, dry_run: bool = False) -> tuple[str, str 
 
     del servers["entroly"]
     if dry_run:
-        return json.dumps(existing, indent=2, ensure_ascii=False), None
+        return json.dumps(
+            {
+                "operation": "remove",
+                "config_key": config_key,
+                "entry": "entroly",
+                "preserves_unrelated_configuration": True,
+            },
+            indent=2,
+            ensure_ascii=False,
+        ), None
 
     backup = _backup_config_file(path, ".entroly-unwrapped-backup")
     _atomic_write_config(config_path, existing)
@@ -600,7 +631,7 @@ def cmd_init(args):
     for tool in tools["tools"]:
         if args.dry_run:
             config = _write_config(tool, dry_run=True)
-            print(f"  {C.GRAY}Would write to {tool['config_path']}:{C.RESET}")
+            print(f"  {C.GRAY}Would merge into {tool['config_path']}:{C.RESET}")
             print(f"  {config}")
         else:
             path = _write_config(tool)
@@ -1261,40 +1292,91 @@ def cmd_config(args):
 
 
 def cmd_telemetry(args):
-    """entroly telemetry — manage the local telemetry preference."""
-    telemetry_file = _ENTROLY_DIR / "telemetry.json"
+    """Manage explicit-consent, content-blind product health telemetry."""
+    from entroly.product_telemetry import (
+        disable_and_purge,
+        enable,
+        flush,
+        preview,
+        status,
+    )
 
-    if args.action == "on":
-        _ENTROLY_DIR.mkdir(parents=True, exist_ok=True)
-        telemetry_file.write_text(json.dumps({"enabled": True, "opted_in_at": __import__("time").time()}))
-        print(f"  {C.GREEN}Local telemetry preference enabled.{C.RESET}")
-        print(f"  {C.GRAY}No outbound telemetry uploader is included in this release.{C.RESET}")
-        print(f"  {C.GRAY}To disable: entroly telemetry off{C.RESET}")
-    elif args.action == "off":
-        if telemetry_file.exists():
-            telemetry_file.write_text(json.dumps({"enabled": False}))
-        print(f"  {C.GREEN}Local telemetry preference disabled.{C.RESET}")
-    elif args.action == "status":
-        enabled = False
-        if telemetry_file.exists():
-            try:
-                data = json.loads(telemetry_file.read_text())
-                enabled = data.get("enabled", False)
-            except (json.JSONDecodeError, OSError):
-                pass
-        status = f"{C.GREEN}enabled{C.RESET}" if enabled else f"{C.GRAY}disabled (default){C.RESET}"
-        print(f"  Local telemetry preference: {status}")
-        print(f"  {C.GRAY}No outbound telemetry uploader is included in this release.{C.RESET}")
+    action = getattr(args, "action", "status")
+    json_output = bool(getattr(args, "json_output", False))
+    if action == "on":
+        report = enable(
+            endpoint=getattr(args, "endpoint", None),
+            error_events=not bool(getattr(args, "no_error_events", False)),
+        )
+        if json_output:
+            print(json.dumps({"status": report, "schema": preview()}, sort_keys=True))
+            return 0
+        print(f"  {C.GREEN}Pseudonymous product-health telemetry enabled by explicit consent.{C.RESET}")
+        print(
+            f"  {C.GRAY}Collected: coarse surface/command outcomes, duration and token-"
+            f"reduction buckets, release, OS family, and Python major.minor.{C.RESET}"
+        )
+        print(
+            f"  {C.GRAY}Never collected: prompts, code, paths, filenames, model data, "
+            f"exact token/cost amounts, error messages, tracebacks, hostnames, usernames, "
+            f"credentials, or IPs.{C.RESET}"
+        )
+        if report["upload_configured"]:
+            print(f"  {C.GRAY}Collector: {report['endpoint_origin']}{C.RESET}")
+        else:
+            print(
+                f"  {C.YELLOW}No collector endpoint is configured; events remain in the "
+                f"bounded local queue and nothing is uploaded.{C.RESET}"
+            )
+        print(f"  {C.GRAY}Withdraw consent and delete local telemetry: entroly telemetry off{C.RESET}")
+        return 0
+    if action == "off":
+        report = disable_and_purge()
+        if json_output:
+            print(json.dumps(report, sort_keys=True))
+            return 0
+        print(f"  {C.GREEN}Telemetry disabled; local queue and pseudonymous identity purged.{C.RESET}")
+        if report["remote_deletion"] == "deleted":
+            print(f"  {C.GREEN}Previously uploaded events for recent monthly pseudonyms were deleted.{C.RESET}")
+        elif report["remote_deletion"] in {"error", "blocked"}:
+            print(
+                f"  {C.YELLOW}Remote deletion could not be confirmed; collector retention "
+                f"will expire uploaded aggregates automatically.{C.RESET}"
+            )
+        return 0
+    if action == "preview":
+        print(json.dumps(preview(), indent=2, sort_keys=True))
+        return 0
+    if action == "flush":
+        report = flush(force=True)
+        if json_output:
+            print(json.dumps(report, sort_keys=True))
+        else:
+            print(f"  Telemetry flush: {report['status']} ({report.get('sent', 0)} sent)")
+        return 0 if report["status"] not in {"error", "batch_too_large"} else 1
+
+    report = status()
+    if json_output:
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return 0
+    label = f"{C.GREEN}enabled{C.RESET}" if report["enabled"] else f"{C.GRAY}disabled (default){C.RESET}"
+    print(f"  Pseudonymous product-health telemetry: {label}")
+    print(f"  Upload configured: {report['upload_configured']}")
+    print(f"  Queued events: {report['queued_events']}")
+    print(f"  Local retention: {report['local_retention_days']} days")
+    if report.get("endpoint_origin"):
+        print(f"  Collector: {report['endpoint_origin']}")
+    print(f"  {C.GRAY}Inspect the complete schema: entroly telemetry preview{C.RESET}")
+    return 0
 
 
 def is_telemetry_enabled() -> bool:
     """Check if opt-in telemetry is enabled. Always False by default."""
-    telemetry_file = _ENTROLY_DIR / "telemetry.json"
-    if not telemetry_file.exists():
-        return False
     try:
-        return json.loads(telemetry_file.read_text()).get("enabled", False)
-    except (json.JSONDecodeError, OSError):
+        from entroly.product_telemetry import is_enabled
+
+        return is_enabled()
+    except Exception:
         return False
 
 
@@ -1374,8 +1456,6 @@ def cmd_export(args):
 
     print(f"\n{C.CYAN}{C.BOLD}  Entroly Export{C.RESET}\n")
 
-    entroly_dir = Path.home() / ".entroly"
-
     export_data = {
         "exported_at": _time.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "version": __version__,
@@ -1388,13 +1468,8 @@ def cmd_export(args):
         export_data["tuning_config"] = tuning_config
         print(f"  {C.GREEN}[+]{C.RESET} {tuning_path.name}")
 
-    # Include telemetry prefs
-    telem_file = entroly_dir / "telemetry.json"
-    if telem_file.exists():
-        try:
-            export_data["telemetry"] = json.loads(telem_file.read_text())
-        except (json.JSONDecodeError, OSError):
-            pass
+    # Telemetry consent and its pseudonym seed are deliberately machine-local.
+    # Team exports must never transfer one person's consent or identity material.
 
     # Write export file. Positional `output_path` takes precedence over -o/--output.
     chosen = getattr(args, "output_path", None) or args.output
@@ -2007,7 +2082,7 @@ def _wrap_via_mcp(spec: dict, port: int, dry_run: bool = False) -> bool:
         except (OSError, PermissionError, ValueError) as e:
             print(f"  {C.RED}Could not read {config_path}: {e}{C.RESET}")
             return False
-        print(f"  {C.YELLOW}[dry-run]{C.RESET} would write {config_path}:")
+        print(f"  {C.YELLOW}[dry-run]{C.RESET} would merge into {config_path}:")
         for ln in preview.splitlines():
             print(f"    {ln}")
         print()
@@ -3569,7 +3644,7 @@ def cmd_doctor(args):
         # to compiling an ancient sdist. Bust the cache + upgrade pip
         # first — that fixes it without any compile.
         print(f"    {C.GRAY}Fix:  python -m pip install --no-cache-dir -U pip && "
-              f"python -m pip install --no-cache-dir -U \"entroly-core>=1.0.76\"{C.RESET}")
+              f"python -m pip install --no-cache-dir -U \"entroly-core>=1.0.77\"{C.RESET}")
         print(f"    {C.GRAY}(If pip still compiles from source and fails on "
               f"a new Python, your pip is too old to{C.RESET}")
         print(f"    {C.GRAY} match the abi3 wheel — upgrading pip is the "
@@ -4987,6 +5062,223 @@ def cmd_feedback(args):
     print(f"  {C.GRAY}Entroly will adjust future context selections based on this signal.{C.RESET}\n")
 
 
+_EXIT_REASON_OPTIONS = (
+    ("no_observed_benefit", "I did not observe enough benefit"),
+    ("install_problem", "Installation or upgrade problem"),
+    ("runtime_error", "Runtime errors or crashes"),
+    ("performance_problem", "Too slow or resource intensive"),
+    ("quality_problem", "Output quality or missing context"),
+    ("hard_to_use", "Setup or workflow was too difficult"),
+    ("integration_missing", "My tool or integration was missing"),
+    ("privacy_concern", "Privacy or security concern"),
+    ("cost_concern", "Cost concern"),
+    ("switched_tool", "Switched to another approach"),
+    ("temporary_trial", "Trial complete or temporary removal"),
+    ("other", "Another structured reason"),
+    ("prefer_not_to_say", "Prefer not to say"),
+)
+_EXIT_BENEFIT_OPTIONS = (
+    ("yes", "Yes, I observed useful token reduction"),
+    ("no", "No, I did not observe useful token reduction"),
+    ("unsure", "Unsure"),
+    ("not_measured", "I did not measure it"),
+)
+_EXIT_SURFACE_OPTIONS = (
+    ("cli", "CLI"),
+    ("mcp", "MCP server"),
+    ("compression_mcp", "Compression MCP"),
+    ("repository_mcp", "Repository intelligence MCP"),
+    ("proxy", "Provider proxy"),
+    ("sdk_compress", "Python SDK compression"),
+    ("sdk_messages", "Python SDK message compression"),
+    ("other", "Other or not started"),
+)
+_EXIT_DURATION_OPTIONS = (
+    ("not_started", "I could not get started"),
+    ("lt_1d", "Less than one day"),
+    ("1_7d", "1 to 7 days"),
+    ("8_30d", "8 to 30 days"),
+    ("31_90d", "31 to 90 days"),
+    ("gt_90d", "More than 90 days"),
+    ("unknown", "Unsure"),
+)
+
+
+def _prompt_exit_option(
+    title: str,
+    options: tuple[tuple[str, str], ...],
+    *,
+    default: str,
+) -> str:
+    print(f"\n  {C.BOLD}{title}{C.RESET}")
+    for index, (_value, label) in enumerate(options, 1):
+        print(f"    {index:>2}. {label}")
+    while True:
+        try:
+            raw = input(f"  Select 1-{len(options)} (Enter to skip): ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return default
+        if not raw:
+            return default
+        try:
+            selected = int(raw)
+        except ValueError:
+            selected = 0
+        if 1 <= selected <= len(options):
+            return options[selected - 1][0]
+        print(f"  {C.YELLOW}Please enter a number from 1 to {len(options)}.{C.RESET}")
+
+
+def _confirm_exit_feedback(destination: str) -> bool:
+    try:
+        answer = input(
+            f"\n  Send this one-time structured response to {destination}? [y/N]: "
+        ).strip().casefold()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
+    return answer in {"y", "yes"}
+
+
+def cmd_uninstall(args):
+    """Guided Python uninstall with an optional content-blind exit survey."""
+    from urllib.parse import urlsplit
+
+    from entroly.product_telemetry import (
+        disable_and_purge,
+        resolve_exit_feedback_endpoint,
+        submit_exit_feedback,
+        validate_endpoint,
+    )
+
+    explicit_endpoint = getattr(args, "endpoint", None)
+    if explicit_endpoint:
+        try:
+            explicit_endpoint = validate_endpoint(explicit_endpoint)
+        except ValueError as error:
+            print(f"  {C.RED}Invalid feedback endpoint:{C.RESET} {error}", file=sys.stderr)
+            return 2
+
+    dry_run = bool(getattr(args, "dry_run", False))
+    feedback_only = bool(getattr(args, "feedback_only", False))
+    skip_feedback = bool(getattr(args, "skip_feedback", False))
+    interactive = bool(getattr(sys.stdin, "isatty", lambda: False)())
+    reason = getattr(args, "reason", None)
+    benefit = getattr(args, "benefit", None)
+    surface = getattr(args, "surface", None)
+    duration = getattr(args, "duration", None)
+
+    if not skip_feedback:
+        print(f"\n{C.CYAN}{C.BOLD}  Entroly exit survey (optional){C.RESET}")
+        print(
+            f"  {C.GRAY}No free text is requested. The response contains only four "
+            f"choices plus release, OS family, Python major.minor, UTC day, and a "
+            f"rotating or one-event pseudonym.{C.RESET}"
+        )
+        if interactive:
+            reason = reason or _prompt_exit_option(
+                "Why are you uninstalling?",
+                _EXIT_REASON_OPTIONS,
+                default="prefer_not_to_say",
+            )
+            benefit = benefit or _prompt_exit_option(
+                "Did Entroly provide useful token reduction?",
+                _EXIT_BENEFIT_OPTIONS,
+                default="not_measured",
+            )
+            surface = surface or _prompt_exit_option(
+                "What was your primary Entroly surface?",
+                _EXIT_SURFACE_OPTIONS,
+                default="other",
+            )
+            duration = duration or _prompt_exit_option(
+                "How long did you use Entroly?",
+                _EXIT_DURATION_OPTIONS,
+                default="unknown",
+            )
+        elif not all((reason, benefit, surface, duration)):
+            print(
+                f"  {C.GRAY}Non-interactive session: no survey response collected. "
+                f"Supply all structured flags or use --skip-feedback.{C.RESET}"
+            )
+
+    complete_feedback = bool(
+        not skip_feedback and all((reason, benefit, surface, duration))
+    )
+    endpoint = resolve_exit_feedback_endpoint(explicit_endpoint)
+    send_feedback = bool(getattr(args, "send_feedback", False))
+    destination = "no collector configured"
+    if endpoint:
+        parsed = urlsplit(endpoint)
+        destination = f"{parsed.scheme}://{parsed.netloc}"
+
+    if complete_feedback:
+        fields = {
+            "reason": reason,
+            "benefit_outcome": benefit,
+            "primary_surface": surface,
+            "use_duration_bucket": duration,
+        }
+        print(f"\n  Structured response: {json.dumps(fields, sort_keys=True)}")
+        print(f"  Destination: {destination}")
+        if interactive and not send_feedback and endpoint and not dry_run:
+            send_feedback = _confirm_exit_feedback(destination)
+
+    uninstall_command = [sys.executable, "-m", "pip", "uninstall", "entroly"]
+    if bool(getattr(args, "yes", False)):
+        uninstall_command.append("-y")
+    if feedback_only:
+        print("\n  Feedback-only mode: the package will not be uninstalled.")
+    else:
+        print(f"\n  Uninstall command: {subprocess.list2cmdline(uninstall_command)}")
+    if dry_run:
+        print(f"  {C.GRAY}Dry run: feedback was not sent and nothing was uninstalled.{C.RESET}")
+        return 0
+
+    delete_remote = bool(getattr(args, "delete_remote_telemetry", False))
+    if delete_remote:
+        deletion = disable_and_purge(delete_remote=True)
+        if deletion.get("remote_deletion") not in {"deleted", "not_configured"}:
+            print(
+                f"  {C.YELLOW}Previously uploaded telemetry deletion could not be "
+                f"confirmed; collector retention still applies.{C.RESET}"
+            )
+
+    if send_feedback and complete_feedback:
+        report = submit_exit_feedback(
+            reason=str(reason),
+            benefit_outcome=str(benefit),
+            primary_surface=str(surface),
+            use_duration_bucket=str(duration),
+            endpoint=endpoint,
+        )
+        if report["status"] == "sent":
+            print(f"  {C.GREEN}One structured exit response sent.{C.RESET}")
+        elif report["status"] == "not_configured":
+            print(f"  {C.YELLOW}Feedback not sent: no collector is configured.{C.RESET}")
+        else:
+            print(
+                f"  {C.YELLOW}Feedback not sent ({report['status']}); uninstall will "
+                f"continue and no response was queued locally.{C.RESET}"
+            )
+    elif send_feedback and not complete_feedback:
+        print(f"  {C.YELLOW}Feedback not sent: all structured fields are required.{C.RESET}")
+    else:
+        print(f"  {C.GRAY}No exit feedback was sent.{C.RESET}")
+
+    if not delete_remote:
+        # Reinstallation must require fresh consent. Historical aggregates age
+        # out under collector retention unless the user requested deletion.
+        disable_and_purge(delete_remote=False)
+
+    if feedback_only:
+        return 0
+
+    completed = subprocess.run(uninstall_command, check=False)
+    return int(completed.returncode)
+
+
 def cmd_compile(args):
     """entroly compile -- compile source code into persistent belief artifacts.
 
@@ -5257,7 +5549,7 @@ def cmd_docs(args):
         result = engine.compile_docs(target, max_files)
     except ImportError:
         print(f"  {C.RED}entroly_core not installed — docs compilation requires the Rust engine.{C.RESET}")
-        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.76\"{C.RESET}\n")
+        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.77\"{C.RESET}\n")
         return
 
     print(f"  {C.GREEN}Docs found:{C.RESET}      {result.get('docs_found', 0)}")
@@ -5300,7 +5592,7 @@ def cmd_finetune(args):
         result = engine.export_training_data(output, "jsonl")
     except ImportError:
         print(f"  {C.RED}entroly_core not installed — training export requires the Rust engine.{C.RESET}")
-        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.76\"{C.RESET}\n")
+        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.77\"{C.RESET}\n")
         return
 
     print(f"  {C.GREEN}Beliefs used:{C.RESET}     {result.get('beliefs_used', 0)}")
@@ -5970,6 +6262,71 @@ def main():
         help="Optional task description for audit logs (metadata only).",
     )
 
+    # entroly uninstall
+    uninstall_parser = subparsers.add_parser(
+        "uninstall",
+        help="Guided Python uninstall with optional structured exit feedback",
+    )
+    uninstall_parser.add_argument(
+        "--reason",
+        choices=[value for value, _label in _EXIT_REASON_OPTIONS],
+        default=None,
+        help="Structured reason for uninstalling (no free text)",
+    )
+    uninstall_parser.add_argument(
+        "--benefit",
+        choices=[value for value, _label in _EXIT_BENEFIT_OPTIONS],
+        default=None,
+        help="Whether useful token reduction was observed",
+    )
+    uninstall_parser.add_argument(
+        "--surface",
+        choices=[value for value, _label in _EXIT_SURFACE_OPTIONS],
+        default=None,
+        help="Primary Entroly surface used",
+    )
+    uninstall_parser.add_argument(
+        "--duration",
+        choices=[value for value, _label in _EXIT_DURATION_OPTIONS],
+        default=None,
+        help="Coarse use-duration bucket",
+    )
+    uninstall_parser.add_argument(
+        "--send-feedback",
+        action="store_true",
+        help="Explicitly send the structured response without an interactive prompt",
+    )
+    uninstall_parser.add_argument(
+        "--endpoint",
+        default=None,
+        help="HTTPS feedback collector for this one-time response",
+    )
+    uninstall_parser.add_argument(
+        "--skip-feedback",
+        action="store_true",
+        help="Uninstall without collecting or sending an exit response",
+    )
+    uninstall_parser.add_argument(
+        "--delete-remote-telemetry",
+        action="store_true",
+        help="Request deletion of recent linked telemetry before the one-time survey",
+    )
+    uninstall_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show the survey payload, destination, and pip command without changing anything",
+    )
+    uninstall_parser.add_argument(
+        "--feedback-only",
+        action="store_true",
+        help="Collect/send feedback and revoke local telemetry without invoking pip",
+    )
+    uninstall_parser.add_argument(
+        "-y", "--yes",
+        action="store_true",
+        help="Pass --yes to pip uninstall",
+    )
+
     # entroly benchmark
     benchmark_parser = subparsers.add_parser(
         "benchmark",
@@ -6094,11 +6451,26 @@ def main():
     # entroly telemetry
     telem_parser = subparsers.add_parser(
         "telemetry",
-        help="Manage the local telemetry preference (no outbound uploader)",
+        help="Manage explicit-consent pseudonymous product-health telemetry",
     )
     telem_parser.add_argument(
-        "action", choices=["on", "off", "status"], nargs="?", default="status",
-        help="Manage the local telemetry preference (default: status)",
+        "action", choices=["on", "off", "status", "preview", "flush"],
+        nargs="?", default="status",
+        help="Manage product-health telemetry (default: status)",
+    )
+    telem_parser.add_argument(
+        "--endpoint",
+        default=None,
+        help="HTTPS collector URL stored only after `telemetry on`",
+    )
+    telem_parser.add_argument(
+        "--no-error-events",
+        action="store_true",
+        help="Collect adoption events but not coarse error categories",
+    )
+    telem_parser.add_argument(
+        "--json", dest="json_output", action="store_true",
+        help="Emit machine-readable status or flush output",
     )
 
     # entroly clean
@@ -6566,7 +6938,8 @@ def main():
         (args.command == "value" and getattr(args, "json_output", False))
         or args.command == "proof"
     )
-    if not internal_attach_serve and not machine_readable:
+    lifecycle_exit = args.command == "uninstall"
+    if not internal_attach_serve and not machine_readable and not lifecycle_exit:
         _check_first_run()
         if args.command not in (None, "completions"):
             _check_for_update()
@@ -6574,6 +6947,7 @@ def main():
     _dispatch = {
         "optimize": cmd_optimize,
         "feedback": cmd_feedback,
+        "uninstall": cmd_uninstall,
         "init": cmd_init,
         "serve": cmd_serve,
         "attach": cmd_attach,
@@ -6630,6 +7004,9 @@ def main():
     }
 
     handler = _dispatch.get(args.command)
+    telemetry_started = __import__("time").monotonic()
+    telemetry_error: BaseException | None = None
+    telemetry_result = "success"
     rc = 0
     if handler:
         try:
@@ -6643,11 +7020,31 @@ def main():
         except KeyboardInterrupt:
             print(f"\n  {C.GRAY}Interrupted.{C.RESET}")
             rc = 130
+            telemetry_result = "interrupted"
         except Exception as e:
             print(f"\n  {C.RED}Error:{C.RESET} {e}", file=sys.stderr)
             rc = 1
+            telemetry_result = "error"
+            telemetry_error = e
     else:
         parser.print_help()
+
+    if rc not in {0, 130}:
+        telemetry_result = "error"
+    if handler:
+        try:
+            from entroly.product_telemetry import capture_cli_result, flush
+
+            capture_cli_result(
+                args.command,
+                result=telemetry_result,
+                elapsed_seconds=__import__("time").monotonic() - telemetry_started,
+                error=telemetry_error,
+            )
+            flush()
+        except Exception:
+            # Product-health telemetry can never change a command result.
+            pass
 
     # Flush and terminate immediately.
     #

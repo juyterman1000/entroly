@@ -244,7 +244,19 @@ def test_wrap_never_retries_user_arguments_through_a_shell(tmp_path, monkeypatch
     assert "Launch Aider manually" in capsys.readouterr().out
 
 
-def test_update_check_can_be_disabled(monkeypatch):
+def test_update_check_is_disabled_by_default(monkeypatch):
+    monkeypatch.delenv("ENTROLY_ENABLE_UPDATE_CHECK", raising=False)
+    monkeypatch.delenv("ENTROLY_DISABLE_UPDATE_CHECK", raising=False)
+
+    def fail_if_started(*args, **kwargs):
+        raise AssertionError("default CLI startup must not start a network thread")
+
+    monkeypatch.setattr(threading, "Thread", fail_if_started)
+    cli._check_for_update()
+
+
+def test_update_check_explicit_disable_overrides_opt_in(monkeypatch):
+    monkeypatch.setenv("ENTROLY_ENABLE_UPDATE_CHECK", "1")
     monkeypatch.setenv("ENTROLY_DISABLE_UPDATE_CHECK", "1")
 
     def fail_if_started(*args, **kwargs):
@@ -252,6 +264,26 @@ def test_update_check_can_be_disabled(monkeypatch):
 
     monkeypatch.setattr(threading, "Thread", fail_if_started)
     cli._check_for_update()
+
+
+def test_update_check_can_be_explicitly_enabled(monkeypatch):
+    monkeypatch.setenv("ENTROLY_ENABLE_UPDATE_CHECK", "1")
+    monkeypatch.delenv("ENTROLY_DISABLE_UPDATE_CHECK", raising=False)
+    monkeypatch.setattr(cli, "_ENTROLY_DIR", Path("missing-update-cache"))
+    started = []
+
+    class FakeThread:
+        def __init__(self, *, target, daemon):
+            assert callable(target)
+            assert daemon is True
+
+        def start(self):
+            started.append(True)
+
+    monkeypatch.setattr(threading, "Thread", FakeThread)
+    cli._check_for_update()
+
+    assert started == [True]
 
 
 def test_upstream_probe_is_opt_in(monkeypatch):
@@ -507,13 +539,146 @@ def test_audit_command_reports_formatting_failure(tmp_path, monkeypatch, capsys)
     assert "Could not format audit report" in capsys.readouterr().err
 
 
-def test_telemetry_command_describes_local_preference(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr(cli, "_ENTROLY_DIR", tmp_path)
-    cli.cmd_telemetry(SimpleNamespace(action="on"))
+def test_telemetry_command_requires_consent_and_discloses_schema(
+    tmp_path, monkeypatch, capsys,
+):
+    monkeypatch.setenv("ENTROLY_DIR", str(tmp_path))
+    monkeypatch.setenv("ENTROLY_TELEMETRY_TESTING", "1")
+    monkeypatch.delenv("CI", raising=False)
+    cli.cmd_telemetry(SimpleNamespace(
+        action="on",
+        endpoint=None,
+        no_error_events=False,
+        json_output=False,
+    ))
 
     output = capsys.readouterr().out
-    assert "Local telemetry preference enabled." in output
-    assert "No outbound telemetry uploader is included in this release." in output
+    assert "enabled by explicit consent" in output
+    assert "Never collected: prompts, code, paths" in output
+    assert "nothing is uploaded" in output
+
+
+def _uninstall_args(**overrides):
+    values = {
+        "reason": "runtime_error",
+        "benefit": "no",
+        "surface": "mcp",
+        "duration": "1_7d",
+        "send_feedback": False,
+        "endpoint": "https://telemetry.example/v1/events",
+        "skip_feedback": False,
+        "delete_remote_telemetry": False,
+        "dry_run": False,
+        "feedback_only": False,
+        "yes": True,
+    }
+    values.update(overrides)
+    return SimpleNamespace(**values)
+
+
+def test_uninstall_dry_run_never_sends_purges_or_executes(monkeypatch, capsys):
+    import entroly.product_telemetry as product_telemetry
+
+    monkeypatch.setattr(
+        product_telemetry,
+        "submit_exit_feedback",
+        lambda **_kwargs: pytest.fail("dry run must not send feedback"),
+    )
+    monkeypatch.setattr(
+        product_telemetry,
+        "disable_and_purge",
+        lambda **_kwargs: pytest.fail("dry run must not purge telemetry"),
+    )
+    monkeypatch.setattr(
+        cli.subprocess,
+        "run",
+        lambda *_args, **_kwargs: pytest.fail("dry run must not invoke pip"),
+    )
+
+    rc = cli.cmd_uninstall(_uninstall_args(dry_run=True, send_feedback=True))
+
+    output = capsys.readouterr().out
+    assert rc == 0
+    assert '"reason": "runtime_error"' in output
+    assert "Dry run: feedback was not sent" in output
+
+
+def test_uninstall_sends_one_structured_response_then_revokes_local_consent(
+    monkeypatch, capsys,
+):
+    import entroly.product_telemetry as product_telemetry
+
+    sent = []
+    purged = []
+    commands = []
+    monkeypatch.setattr(
+        product_telemetry,
+        "submit_exit_feedback",
+        lambda **kwargs: sent.append(kwargs) or {"status": "sent", "sent": 1},
+    )
+    monkeypatch.setattr(
+        product_telemetry,
+        "disable_and_purge",
+        lambda **kwargs: purged.append(kwargs)
+        or {"remote_deletion": "not_requested"},
+    )
+    monkeypatch.setattr(
+        cli.subprocess,
+        "run",
+        lambda command, check: commands.append((command, check))
+        or SimpleNamespace(returncode=0),
+    )
+
+    rc = cli.cmd_uninstall(_uninstall_args(send_feedback=True))
+
+    assert rc == 0
+    assert sent == [{
+        "reason": "runtime_error",
+        "benefit_outcome": "no",
+        "primary_surface": "mcp",
+        "use_duration_bucket": "1_7d",
+        "endpoint": "https://telemetry.example/v1/events",
+    }]
+    assert purged == [{"delete_remote": False}]
+    assert commands[0][0][-3:] == ["uninstall", "entroly", "-y"]
+    assert "One structured exit response sent" in capsys.readouterr().out
+
+
+def test_interactive_uninstall_feedback_sending_defaults_to_no(monkeypatch, capsys):
+    import builtins
+
+    import entroly.product_telemetry as product_telemetry
+
+    answers = iter(["1", "1", "1", "1", ""])
+    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(builtins, "input", lambda _prompt="": next(answers))
+    monkeypatch.setattr(
+        product_telemetry,
+        "submit_exit_feedback",
+        lambda **_kwargs: pytest.fail("default-No consent must not send"),
+    )
+    purged = []
+    monkeypatch.setattr(
+        product_telemetry,
+        "disable_and_purge",
+        lambda **kwargs: purged.append(kwargs)
+        or {"remote_deletion": "not_requested"},
+    )
+
+    rc = cli.cmd_uninstall(_uninstall_args(
+        reason=None,
+        benefit=None,
+        surface=None,
+        duration=None,
+        feedback_only=True,
+        yes=False,
+    ))
+
+    assert rc == 0
+    assert purged == [{"delete_remote": False}]
+    output = capsys.readouterr().out
+    assert "No exit feedback was sent" in output
+    assert "Feedback-only mode" in output
 
 
 @pytest.fixture

@@ -50,6 +50,33 @@ def test_gpt_5_6_uses_verified_context_pricing_and_reasoning_metadata():
     assert result.capability.supports_reasoning is True
 
 
+@pytest.mark.parametrize(
+    ("model_id", "input_price", "output_price"),
+    [
+        ("gemini-3.6-flash", 1.5, 7.5),
+        ("gemini-3.5-flash-lite", 0.3, 2.5),
+    ],
+)
+def test_latest_gemini_models_use_verified_public_metadata(
+    model_id: str,
+    input_price: float,
+    output_price: float,
+):
+    result = get_model_registry().resolve(model_id)
+
+    assert result.capability is not None
+    assert result.capability.id == f"google/{model_id}"
+    assert result.trust is RegistryTrust.VERIFIED
+    assert result.context_window == 1_048_576
+    assert result.warning is None
+    assert result.capability.max_output_tokens == 65_536
+    assert result.capability.input_price_per_million == input_price
+    assert result.capability.output_price_per_million == output_price
+    assert result.capability.supports_tools is True
+    assert result.capability.supports_vision is True
+    assert result.capability.supports_reasoning is True
+
+
 def test_unknown_model_fails_visibly_with_conservative_fallback():
     result = get_model_registry().resolve("private-lab/model-x")
 
@@ -191,10 +218,10 @@ def test_ollama_discovery_can_inspect_context_without_external_dependencies(monk
         assert timeout == 0.1
         assert max_bytes > 0
         if url.endswith("/api/tags"):
-            return {"models": [{"name": "llama3.2:latest"}]}
+            return {"models": [{"name": "nemotron-3.5-lightning:latest"}]}
         assert url.endswith("/api/show")
-        assert payload == {"model": "llama3.2:latest"}
-        return {"model_info": {"llama.context_length": 131072}}
+        assert payload == {"model": "nemotron-3.5-lightning:latest"}
+        return {"model_info": {"nemotron_h.context_length": 1_048_576}}
 
     monkeypatch.setattr(registry_module, "_json_request", fake_request)
     report = discover_ollama_models(timeout=0.1, inspect_context=True)
@@ -202,8 +229,8 @@ def test_ollama_discovery_can_inspect_context_without_external_dependencies(monk
     assert report.warnings == ()
     assert len(report.models) == 1
     capability = report.models[0]
-    assert capability.id == "ollama/llama3.2:latest"
-    assert capability.context_window == 131_072
+    assert capability.id == "ollama/nemotron-3.5-lightning:latest"
+    assert capability.context_window == 1_048_576
     assert capability.trust is RegistryTrust.DISCOVERED
     assert capability.supports_tools is None
     assert capability.supports_vision is None

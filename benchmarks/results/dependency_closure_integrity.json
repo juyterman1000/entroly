@@ -10,7 +10,7 @@
   "claim_scope": "exhaustive small-graph dependency-closure integrity only; not answer quality, retrieval recall, model cost, or competitor superiority",
   "harness": {
     "path": "benchmarks/dependency_closure_integrity.py",
-    "sha256": "26d6e627ff6e2847488ffa2c2c7519941b986400beccad86717ff18c6d79d66a"
+    "sha256": "ee603975a9e097f0fb31c93beec780dcb4c2cf72276cd2e42652e469e229cefd"
   },
   "implementation_commit": "3b9a9a00e283878893d0be0b7931690a581cb61d",
   "legacy_partial_add_control": {

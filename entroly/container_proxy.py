@@ -151,13 +151,32 @@ def main() -> None:
         config.host,
         config.port,
     )
-    uvicorn.run(
-        app,
-        host=config.host,
-        port=config.port,
-        log_level="info",
-        access_log=False,
-    )
+    try:
+        from .product_telemetry import capture_surface_started, flush_async
+
+        if capture_surface_started("proxy"):
+            flush_async()
+    except Exception:
+        pass
+    try:
+        uvicorn.run(
+            app,
+            host=config.host,
+            port=config.port,
+            log_level="info",
+            access_log=False,
+        )
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except BaseException as exc:
+        try:
+            from .product_telemetry import capture_surface_error, flush
+
+            capture_surface_error("proxy", exc)
+            flush()
+        except Exception:
+            pass
+        raise
 
 
 if __name__ == "__main__":

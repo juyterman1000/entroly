@@ -297,6 +297,36 @@
       "verified_at": null
     },
     {
+      "id": "google/gemini-3.6-flash",
+      "provider": "gemini",
+      "aliases": ["gemini-3.6-flash", "gemini-3.6-flash-"],
+      "context_window": 1048576,
+      "max_output_tokens": 65536,
+      "input_price_per_million": 1.5,
+      "output_price_per_million": 7.5,
+      "supports_tools": true,
+      "supports_vision": true,
+      "supports_reasoning": true,
+      "trust": "verified",
+      "source": "https://ai.google.dev/gemini-api/docs/latest-model",
+      "verified_at": "2026-08-11"
+    },
+    {
+      "id": "google/gemini-3.5-flash-lite",
+      "provider": "gemini",
+      "aliases": ["gemini-3.5-flash-lite", "gemini-3.5-flash-lite-"],
+      "context_window": 1048576,
+      "max_output_tokens": 65536,
+      "input_price_per_million": 0.3,
+      "output_price_per_million": 2.5,
+      "supports_tools": true,
+      "supports_vision": true,
+      "supports_reasoning": true,
+      "trust": "verified",
+      "source": "https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite",
+      "verified_at": "2026-08-11"
+    },
+    {
       "id": "google/gemini-2.5-pro",
       "provider": "gemini",
       "aliases": ["gemini-2.5-pro", "gemini-2.5-pro-"],

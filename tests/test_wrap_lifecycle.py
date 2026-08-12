@@ -33,7 +33,7 @@ def test_write_config_is_atomic_and_preserves_unrelated_entries(tmp_path: Path) 
     assert not list(tmp_path.glob(".mcp.json.entroly-*.tmp"))
 
 
-def test_repeated_wrap_keeps_every_backup_instead_of_overwriting(tmp_path: Path) -> None:
+def test_repeated_identical_wrap_is_a_noop_without_redundant_backup(tmp_path: Path) -> None:
     config = tmp_path / "mcp.json"
     # write_bytes, not write_text: on Windows the text path translates "\n" to
     # "\r\n", so this fixture wrote CRLF and then asserted LF on the next line.
@@ -46,7 +46,31 @@ def test_repeated_wrap_keeps_every_backup_instead_of_overwriting(tmp_path: Path)
     cli._write_config(_tool(config))
 
     assert Path(f"{config}.entroly-backup").read_bytes() == b'{"mcpServers": {}}\n'
-    assert Path(f"{config}.entroly-backup.1").read_bytes() == first_result
+    assert config.read_bytes() == first_result
+    assert not Path(f"{config}.entroly-backup.1").exists()
+
+
+def test_write_config_dry_run_never_discloses_unrelated_config(tmp_path: Path) -> None:
+    config = tmp_path / "mcp.json"
+    config.write_text(
+        json.dumps({
+            "mcpServers": {"private-server": {"token": "secret"}},
+            "account_id": "private-account",
+            "preferences": {"private_path": "C:/private"},
+        }),
+        encoding="utf-8",
+    )
+
+    preview = cli._write_config(_tool(config), dry_run=True)
+
+    payload = json.loads(preview)
+    assert payload["operation"] == "merge"
+    assert payload["entry"]["entroly"]["command"] == cli.sys.executable
+    assert payload["preserves_unrelated_configuration"] is True
+    assert "private-server" not in preview
+    assert "private-account" not in preview
+    assert "C:/private" not in preview
+    assert not list(tmp_path.glob("mcp.json.entroly-backup*"))
 
 
 def test_write_config_rejects_malformed_json_without_mutation(tmp_path: Path) -> None:
@@ -112,7 +136,13 @@ def test_remove_entroly_dry_run_does_not_touch_disk(tmp_path: Path) -> None:
     preview, backup = cli._remove_entroly_config(_tool(config), dry_run=True)
 
     assert backup is None
-    assert "entroly" not in json.loads(preview)["mcpServers"]
+    payload = json.loads(preview)
+    assert payload == {
+        "operation": "remove",
+        "config_key": "mcpServers",
+        "entry": "entroly",
+        "preserves_unrelated_configuration": True,
+    }
     assert config.read_bytes() == original
     assert not list(tmp_path.glob("mcp.json.entroly-unwrapped-backup*"))
 

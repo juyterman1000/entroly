@@ -13,6 +13,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -36,6 +38,15 @@ jobs:
             tests/test_code_intelligence_conformance.py \
             tests/test_universal_code_intelligence.py
 
+      - name: Verify published language-symbol coverage
+        env:
+          ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD: "1"
+          ENTROLY_AIR_GAP: "0"
+        run: |
+          python benchmarks/language_symbol_coverage.py \
+            --baseline-ref 2eeecb8733103fe7234133f48b105f271662b219 \
+            --check
+
       - name: Re-run parser regressions with acquisition disabled
         env:
           ENTROLY_TREE_SITTER_ALLOW_DOWNLOAD: "0"
@@ -53,3 +64,6 @@ jobs:
             tests/test_language_open_registry_contract.py \
             tests/test_code_intelligence_conformance.py \
             tests/test_universal_code_intelligence.py
+          python benchmarks/language_symbol_coverage.py \
+            --baseline-ref 2eeecb8733103fe7234133f48b105f271662b219 \
+            --check

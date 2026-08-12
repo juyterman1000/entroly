@@ -315,10 +315,10 @@ class ValueTracker:
         """Serialize mutations without allowing telemetry to block forever."""
         self._process_lock_path.parent.mkdir(parents=True, exist_ok=True)
         with self._process_lock_path.open("a+b") as handle:
-            handle.seek(0, os.SEEK_END)
-            if handle.tell() == 0:
-                handle.write(b"\0")
-                handle.flush()
+            # Both Windows byte-range locks and POSIX flock can lock an empty
+            # file. Initializing a sentinel here is unsafe: another Windows
+            # process can acquire the byte between write() and flush(), making
+            # ordinary contention surface as PermissionError.
             handle.seek(0)
             deadline = time.monotonic() + self._lock_timeout_seconds()
             delay = 0.001

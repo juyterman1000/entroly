@@ -2,6 +2,11 @@
   "pinned_ref": "16934bf85b3346793ec6664b3b0d1d67cfd02156",
   "budget": 6157,
   "probes": 12,
+  "engine": {
+    "native_engine_active": true,
+    "entroly_core_version": "1.0.76",
+    "entroly_core_version_ok": true
+  },
   "rows": [
     {
       "caller": "_start_background_services",
@@ -11,9 +16,9 @@
         "project_dir",
         "force"
       ],
-      "index_tokens": 5903,
-      "qccr_tokens": 5592,
-      "raw_tokens": 261206,
+      "index_tokens": 6063,
+      "qccr_tokens": 4637,
+      "raw_tokens": 250267,
       "index_carries": true,
       "qccr_carries": true,
       "raw_carries": true
@@ -25,9 +30,9 @@
         "request",
         "target"
       ],
-      "index_tokens": 6157,
-      "qccr_tokens": 5967,
-      "raw_tokens": 182303,
+      "index_tokens": 6293,
+      "qccr_tokens": 6014,
+      "raw_tokens": 204114,
       "index_carries": true,
       "qccr_carries": true,
       "raw_carries": true
@@ -39,9 +44,9 @@
         "similarity_threshold",
         "max_clients"
       ],
-      "index_tokens": 6339,
-      "qccr_tokens": 5626,
-      "raw_tokens": 194405,
+      "index_tokens": 6680,
+      "qccr_tokens": 5307,
+      "raw_tokens": 278960,
       "index_carries": true,
       "qccr_carries": true,
       "raw_carries": true
@@ -54,9 +59,9 @@
         "symbols",
         "limits"
       ],
-      "index_tokens": 5759,
-      "qccr_tokens": 4949,
-      "raw_tokens": 186299,
+      "index_tokens": 6083,
+      "qccr_tokens": 5466,
+      "raw_tokens": 208191,
       "index_carries": true,
       "qccr_carries": true,
       "raw_carries": true
@@ -69,11 +74,11 @@
         "project_dir",
         "force"
       ],
-      "index_tokens": 7025,
-      "qccr_tokens": 5623,
-      "raw_tokens": 321984,
+      "index_tokens": 5799,
+      "qccr_tokens": 5436,
+      "raw_tokens": 243742,
       "index_carries": true,
-      "qccr_carries": false,
+      "qccr_carries": true,
       "raw_carries": true
     },
     {
@@ -83,11 +88,11 @@
         "root",
         "candidate"
       ],
-      "index_tokens": 6763,
-      "qccr_tokens": 4581,
-      "raw_tokens": 249709,
+      "index_tokens": 5852,
+      "qccr_tokens": 4078,
+      "raw_tokens": 235778,
       "index_carries": true,
-      "qccr_carries": false,
+      "qccr_carries": true,
       "raw_carries": true
     },
     {
@@ -98,9 +103,9 @@
         "query",
         "token_budget"
       ],
-      "index_tokens": 5668,
-      "qccr_tokens": 5923,
-      "raw_tokens": 239099,
+      "index_tokens": 6414,
+      "qccr_tokens": 5887,
+      "raw_tokens": 215195,
       "index_carries": true,
       "qccr_carries": true,
       "raw_carries": true
@@ -112,9 +117,9 @@
         "claim",
         "evidence"
       ],
-      "index_tokens": 7495,
-      "qccr_tokens": 6036,
-      "raw_tokens": 277474,
+      "index_tokens": 6241,
+      "qccr_tokens": 5870,
+      "raw_tokens": 248422,
       "index_carries": true,
       "qccr_carries": true,
       "raw_carries": true
@@ -128,11 +133,11 @@
         "hallucination_cost",
         "r_floor"
       ],
-      "index_tokens": 6167,
-      "qccr_tokens": 4229,
-      "raw_tokens": 234351,
+      "index_tokens": 5376,
+      "qccr_tokens": 3969,
+      "raw_tokens": 169744,
       "index_carries": true,
-      "qccr_carries": false,
+      "qccr_carries": true,
       "raw_carries": true
     },
     {
@@ -142,9 +147,9 @@
         "claim_text",
         "evidence_text"
       ],
-      "index_tokens": 5920,
-      "qccr_tokens": 5863,
-      "raw_tokens": 194114,
+      "index_tokens": 6374,
+      "qccr_tokens": 5355,
+      "raw_tokens": 271490,
       "index_carries": true,
       "qccr_carries": true,
       "raw_carries": true
@@ -156,9 +161,9 @@
         "root",
         "candidate"
       ],
-      "index_tokens": 5372,
-      "qccr_tokens": 4984,
-      "raw_tokens": 171868,
+      "index_tokens": 5285,
+      "qccr_tokens": 5133,
+      "raw_tokens": 230615,
       "index_carries": true,
       "qccr_carries": true,
       "raw_carries": true
@@ -170,9 +175,9 @@
         "claim",
         "context"
       ],
-      "index_tokens": 5703,
-      "qccr_tokens": 5918,
-      "raw_tokens": 211739,
+      "index_tokens": 6383,
+      "qccr_tokens": 5927,
+      "raw_tokens": 247706,
       "index_carries": true,
       "qccr_carries": true,
       "raw_carries": true

@@ -120,6 +120,12 @@ def create_compression_mcp_server(store_path: str | None = None):
             "Recovery is restricted to this MCP process's store/workspace/session scope."
         ),
     )
+    try:
+        from . import __version__ as package_version
+
+        mcp._mcp_server.version = package_version
+    except (AttributeError, ImportError):
+        pass
 
     def _store(path_override: str = "") -> CompressionRetrievalStore:
         path = _safe_store_path(path_override, store_path)
@@ -206,7 +212,26 @@ def create_compression_mcp_server(store_path: str | None = None):
 
 
 def main() -> None:
-    create_compression_mcp_server().run()
+    try:
+        from .product_telemetry import capture_surface_started, flush_async
+
+        if capture_surface_started("compression_mcp"):
+            flush_async()
+    except Exception:
+        pass
+    try:
+        create_compression_mcp_server().run()
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except BaseException as exc:
+        try:
+            from .product_telemetry import capture_surface_error, flush
+
+            capture_surface_error("compression_mcp", exc)
+            flush()
+        except Exception:
+            pass
+        raise
 
 
 if __name__ == "__main__":

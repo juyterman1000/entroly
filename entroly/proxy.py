@@ -63,6 +63,7 @@ from .proxy_transform import (
 from .behavioral_waste import BehavioralWasteDetector, observe_canonical_messages
 from .cache_aligner import CacheAligner
 from .cache_routing import CacheAwareRouter, CachePrice, ModelCandidate
+from .prefix_continuity import PrefixContinuityGuard
 from .compression_proxy import compress_proxy_payload
 from .compression_retrieval_store_secure import CompressionRetrievalStore
 from .control_plane import (
@@ -1102,6 +1103,7 @@ class PromptCompilerProxy:
         # Provider-reported cache and spend accounting. A ledger is opt-in;
         # cache observations remain available in-memory for routing decisions.
         self._cache_router = CacheAwareRouter()
+        self._prefix_continuity = PrefixContinuityGuard()
         ledger_path = os.environ.get("ENTROLY_USAGE_LEDGER", "").strip()
         catalog_path = os.environ.get("ENTROLY_PRICING_CATALOG", "").strip()
         self._usage_ledger = UsageLedger(ledger_path) if ledger_path else None
@@ -1114,6 +1116,11 @@ class PromptCompilerProxy:
         self._usage_recorded = 0
         self._usage_unpriced = 0
         self._usage_failures = 0
+        self._live_usage_requests = 0
+        self._live_uncached_input_tokens = 0
+        self._live_cache_read_tokens = 0
+        self._live_cache_write_tokens = 0
+        self._live_output_tokens = 0
         self._trust_usage_headers = (
             os.environ.get("ENTROLY_TRUST_USAGE_HEADERS", "0").lower()
             in {"1", "true", "yes", "on"}
@@ -1620,6 +1627,68 @@ class PromptCompilerProxy:
         }
         return redacted, headers
 
+    def _prefix_cache_is_warm(self, conversation_id: str) -> bool:
+        if not conversation_id:
+            return False
+        lease = self._cache_router.lease_snapshot(conversation_id)
+        return bool(lease is not None and lease.cached_prefix_tokens > 0)
+
+    def _guard_optional_prefix_mutation(
+        self,
+        *,
+        conversation_id: str,
+        provider: str,
+        baseline_body: dict[str, Any],
+        candidate_body: dict[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, str]]:
+        """Protect a provider-observed warm prefix from optional rewrites."""
+        if not conversation_id:
+            return candidate_body, {}
+        try:
+            guarded, decision = self._prefix_continuity.choose(
+                conversation_id,
+                provider=provider,
+                baseline_body=baseline_body,
+                candidate_body=candidate_body,
+                cache_warm=self._prefix_cache_is_warm(conversation_id),
+            )
+        except Exception as exc:
+            logger.debug("Prefix-continuity guard skipped: %s", exc)
+            return candidate_body, {"X-Entroly-Prefix-Guard": "unavailable"}
+        return guarded, {
+            "X-Entroly-Prefix-Guard": decision.action,
+            "X-Entroly-Prefix-Tokens-At-Risk": str(
+                decision.estimated_tokens_at_risk
+            ),
+        }
+
+    def _observe_prefix_continuity(
+        self,
+        *,
+        conversation_id: str,
+        provider: str,
+        raw_body: dict[str, Any],
+        outbound_body: dict[str, Any],
+    ) -> dict[str, str]:
+        if not conversation_id:
+            return {}
+        try:
+            observation = self._prefix_continuity.observe(
+                conversation_id,
+                provider=provider,
+                raw_body=raw_body,
+                outbound_body=outbound_body,
+            )
+        except Exception as exc:
+            logger.debug("Prefix-continuity observation skipped: %s", exc)
+            return {"X-Entroly-Prefix-Continuity": "unavailable"}
+        return {
+            "X-Entroly-Prefix-Continuity": observation.status,
+            "X-Entroly-Prefix-Interference-Tokens": str(
+                observation.estimated_optimizer_interference_tokens
+            ),
+        }
+
     def _usage_dimensions(
         self,
         headers: dict[str, str],
@@ -1895,6 +1964,13 @@ class PromptCompilerProxy:
         if not inserted:
             return
 
+        with self._stats_lock:
+            self._live_usage_requests += 1
+            self._live_uncached_input_tokens += usage.uncached_input_tokens
+            self._live_cache_read_tokens += usage.cache_read_tokens
+            self._live_cache_write_tokens += usage.cache_write_tokens
+            self._live_output_tokens += usage.output_tokens
+
         cached_prefix_tokens = max(
             usage.cache_read_tokens,
             usage.cache_write_tokens,
@@ -2100,6 +2176,12 @@ class PromptCompilerProxy:
         except Exception as e:
             logger.debug("Control-plane planning skipped: %s", e)
 
+        # Start from the original provider request so every optional mutation
+        # (including image optimization) is eligible for warm-prefix review.
+        # Required redaction is applied after the guard, and emergency rescue
+        # replaces this baseline below, so neither can be undone.
+        cache_guard_baseline = control_before
+
         # Embedded vision optimization is explicit opt-in and fail-open.  URL
         # images and unknown shapes are untouched; each decision is summarized
         # without exposing image bytes in headers or logs.
@@ -2226,6 +2308,8 @@ class PromptCompilerProxy:
                     else:
                         body[sequence_key] = rescue.messages
                     session_rescue_result = rescue
+                    if rescue.tokens_saved > 0:
+                        cache_guard_baseline = copy.deepcopy(body)
                     control_headers.update(rescue.headers())
                     self._session_rescue_last = {
                         "action": rescue.action,
@@ -2318,6 +2402,14 @@ class PromptCompilerProxy:
         if self._bypass:
             body, redaction_headers = self._apply_outbound_redaction(body)
             control_headers.update(redaction_headers)
+            control_headers.update(
+                self._observe_prefix_continuity(
+                    conversation_id=conversation_id,
+                    provider=provider,
+                    raw_body=control_before,
+                    outbound_body=body,
+                )
+            )
             with self._stats_lock:
                 self._requests_bypassed += 1
             target_url = self._resolve_target(provider, path)
@@ -2618,6 +2710,24 @@ class PromptCompilerProxy:
                             confidence=_confidence,
                             source="proxy",
                         )
+                        from .product_telemetry import (
+                            capture_optimization_outcome,
+                            flush_async,
+                        )
+                        from .value_tracker import _has_priced_model
+
+                        if capture_optimization_outcome(
+                            "proxy",
+                            before_tokens=original_tokens,
+                            after_tokens=optimized_tokens,
+                            measurement_scope="provider_bound_estimate",
+                            cost_evidence=(
+                                "modeled_positive"
+                                if _saved > 0 and _has_priced_model(_model)
+                                else "not_available"
+                            ),
+                        ):
+                            flush_async()
                     except Exception:
                         pass  # Never block a request for tracking
 
@@ -2680,6 +2790,14 @@ class PromptCompilerProxy:
             # Cardinal rule: never block a request due to entroly errors
             logger.warning("Pipeline error (forwarding unmodified): %s: %s",
                           type(e).__name__, str(e)[:200])
+
+        body, prefix_guard_headers = self._guard_optional_prefix_mutation(
+            conversation_id=conversation_id,
+            provider=provider,
+            baseline_body=cache_guard_baseline,
+            candidate_body=body,
+        )
+        control_headers.update(prefix_guard_headers)
 
         # Await warmup (usually completes during pipeline, essentially free)
         await warmup_task
@@ -2865,6 +2983,14 @@ class PromptCompilerProxy:
 
         body, redaction_headers = self._apply_outbound_redaction(body)
         control_headers.update(redaction_headers)
+        control_headers.update(
+            self._observe_prefix_continuity(
+                conversation_id=conversation_id,
+                provider=provider,
+                raw_body=control_before,
+                outbound_body=body,
+            )
+        )
 
         try:
             control_audit = audit_request_transform(
@@ -5737,6 +5863,7 @@ async def _proxy_stats(request: Request) -> JSONResponse:
         "blocked_unpriced": proxy._cache_route_blocked_unpriced,
         "last_decision": proxy._cache_route_last,
     }
+    stats["optimizer_interference"] = proxy._prefix_continuity.stats()
     stats["behavioral_waste"] = {
         "findings": proxy._behavior_findings,
         "failures": proxy._behavior_failures,
@@ -5764,6 +5891,14 @@ async def _proxy_stats(request: Request) -> JSONResponse:
         "recorded": proxy._usage_recorded,
         "unpriced": proxy._usage_unpriced,
         "failures": proxy._usage_failures,
+        "live": {
+            "scope": "process_local_content_blind",
+            "requests": proxy._live_usage_requests,
+            "uncached_input_tokens": proxy._live_uncached_input_tokens,
+            "cache_read_tokens": proxy._live_cache_read_tokens,
+            "cache_write_tokens": proxy._live_cache_write_tokens,
+            "output_tokens": proxy._live_output_tokens,
+        },
     }
     if proxy._usage_ledger is not None:
         try:

@@ -9,6 +9,7 @@ import time
 
 import pytest
 
+from entroly import __version__
 from entroly.compression_mcp import create_compression_mcp_server
 from entroly.compression_proxy import compress_proxy_payload, compress_proxy_payload_from_env
 from entroly.compression_retrieval_store import (
@@ -585,6 +586,7 @@ def test_exact_excerpt_json_field_projection_falls_back_for_minified_json() -> N
 
 def test_mcp_search_schema_adds_bounded_excerpt_without_new_required_args() -> None:
     server = create_compression_mcp_server()
+    assert server._mcp_server.version == __version__
     tools = asyncio.run(server.list_tools())
     search = next(tool for tool in tools if tool.name == "search_compressed_spans")
 

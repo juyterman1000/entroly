@@ -11,13 +11,13 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RELEASE_VERSION = "1.0.76"
-HOMEBREW_FORMULA_VERSION = "1.0.75"
+RELEASE_VERSION = "1.0.77"
+HOMEBREW_FORMULA_VERSION = "1.0.77"
 HOMEBREW_FORMULA_URL = (
-    "https://files.pythonhosted.org/packages/ba/ad/6d3a43e0e095106e4fbef71c63"
-    "ef7e563dceb8b50a2111d8d89c53210dc3/entroly-1.0.75.tar.gz"
+    "https://files.pythonhosted.org/packages/70/c8/a729f9a1d0a195d96001d32b32"
+    "cbd3e33a1a601412a166d11bdffc89d309/entroly-1.0.77.tar.gz"
 )
-HOMEBREW_FORMULA_SHA256 = "75aa9963269a3f64a74cb1170d26b6f2c999cf0495c90d41574d0fa3adecc8ac"
+HOMEBREW_FORMULA_SHA256 = "adf665b77d49c1bdf750eda0c1a59976d55b7e7d581e54378281c362457364ed"
 CANONICAL_MCP_NAME = "io.github.juyterman1000/entroly"
 CANONICAL_REPOSITORY = "https://github.com/juyterman1000/entroly"
 
@@ -75,7 +75,7 @@ def _read_project_metadata(path: str) -> dict[str, object]:
     return metadata
 
 
-def test_public_package_versions_are_1_0_76() -> None:
+def test_public_package_versions_are_1_0_77() -> None:
     assert _read_project_metadata("pyproject.toml")["version"] == RELEASE_VERSION
     assert _read_project_metadata("entroly/pyproject.toml")["version"] == RELEASE_VERSION
     assert _read_json("entroly/npm/package.json")["version"] == RELEASE_VERSION

@@ -34,6 +34,9 @@ Weak fit: short prompts, tiny repositories, fixed-price subscriptions where the 
 - **What is exact recovery?** Entroly issues content-addressed `ccr:<24-hex>` handles. `entroly_retrieve` performs a hash-only lookup and returns the complete stored original; it does not accept a query or silently substitute a newer source revision.
 - **Does Entroly guarantee lower cost or better answers?** No universal guarantee is claimed. Entroly provides workload-specific measurements, provider-bound evidence where observable, receipts, recovery, and verification.
 - **Does Entroly support GPT-5.6 Sol, Terra, and Luna?** Yes. The bundled registry recognizes `gpt-5.6-sol`, `gpt-5.6-terra`, and `gpt-5.6-luna`, including their published context window, output limit, reasoning levels, and list-price metadata. The usable route still depends on the selected proxy, API, agent, or local integration.
+- **Does Entroly support NVIDIA Nemotron 3.5 Lightning?** Yes, through Entroly's loopback-only Ollama model discovery and OpenAI-compatible proxy path. Use the Ollama model ID `nemotron-3.5-lightning`. Entroly discovers the installed tag's context metadata rather than assuming the standard 1M and Apple-silicon MLX 256K variants are interchangeable. Canonical page: https://juyterman1000.github.io/entroly/docs/nemotron-3-5-lightning-ollama.html
+- **Does Entroly support Gemini 3.6 Flash and Gemini 3.5 Flash-Lite?** Yes. The bundled registry recognizes the public GA model IDs `gemini-3.6-flash` and `gemini-3.5-flash-lite`, their 1,048,576-token input limits, 65,536-token output limits, tool/reasoning capabilities, and official list-price metadata. Requests must traverse Entroly's Gemini proxy path. Canonical page: https://juyterman1000.github.io/entroly/docs/model-support.html
+- **Does Entroly claim support for every newly announced model?** No. Entroly requires an official usable model ID or inspectable local tag before publishing exact support metadata. Restricted products such as Gemini 3.5 Flash Cyber and private-preview products such as Meta Muse Spark are identified as gated, not advertised as generally supported APIs.
 - **Can Entroly reduce GPT-5.6 API costs?** Entroly can reduce avoidable provider-bound input tokens before a supported request reaches Sol, Terra, or Luna. Actual dollar impact depends on selected evidence, model tier, prompt caching, output usage, and workload.
 - **Can nontechnical users use Entroly?** Today's product requires a small one-time setup through a supported proxy, wrapper, plugin, SDK, or MCP path. A no-terminal desktop product called Entroly Simple Mode is specified but not yet shipped.
 
@@ -50,6 +53,8 @@ Weak fit: short prompts, tiny repositories, fixed-price subscriptions where the 
 
 ## Current Model Support
 
+- [Verified Entroly model support](https://juyterman1000.github.io/entroly/docs/model-support.html): GPT-5.6, Gemini 3.6 Flash, Gemini 3.5 Flash-Lite, Nemotron/Ollama, transport boundaries, and fail-closed handling of gated announcements.
+- [Entroly for NVIDIA Nemotron 3.5 Lightning on Ollama](https://juyterman1000.github.io/entroly/docs/nemotron-3-5-lightning-ollama.html): Local model discovery, OpenAI-compatible proxy setup, tag-specific context limits, privacy boundaries, and official sources.
 - [Entroly for GPT-5.6 Sol, Terra, and Luna](https://juyterman1000.github.io/entroly/docs/gpt-5-6-sol-terra-luna.html): Verified model IDs, 1.05M-token context windows, 128K output limits, reasoning modes, pricing provenance, and Entroly integration guidance.
 - **GPT-5.6 Sol:** `gpt-5.6-sol`; the unsuffixed `gpt-5.6` alias resolves to Sol. Use for frontier capability.
 - **GPT-5.6 Terra:** `gpt-5.6-terra`. Use to balance intelligence and cost.

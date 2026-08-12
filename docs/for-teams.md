@@ -45,7 +45,7 @@ monthly_savings ≈ monthly_input_token_spend × input_token_reduction
 
 - **Local-first.** Indexing, ranking, selection, dedup, and deterministic verification run on the developer's machine. No embeddings API, no cloud service required for the core.
 - **Your code is not sent anywhere for analysis.** *(When you proxy a cloud LLM, the **compressed** prompt still goes to that provider — exactly as it would without Entroly. Entroly reduces what's sent; it doesn't add a new destination.)*
-- **No outbound analytics by default.** Local usage metrics are stored for the dashboard. Optional federation and cloud-backed features must be enabled separately.
+- **No outbound analytics by default.** Local usage metrics are stored for the dashboard. Optional product-health telemetry requires explicit consent, uses a content-blind closed schema, and can be self-hosted; see [telemetry privacy](telemetry-privacy.md). Federation and cloud-backed features must be enabled separately.
 - **Auditable local core.** Core selection and deterministic verification paths are testable. Evaluate stateful learning, exploration, routing, and optional cloud-backed modes separately.
 - **Apache-2.0** licensed. **Air-gap-capable** when used with local/offline endpoints.
 - The Rust binary does not require a Python runtime. Validate operating-system libraries, architecture, and artifact integrity for your deployment target.

@@ -31,6 +31,8 @@ from benchmarks.agentic_tasks_run import (  # noqa: E402
     DEFAULT_BASE_URL,
     PROMPT,
     Task,
+    _engine_provenance,
+    build_dependency_tasks,
     build_tasks,
     call_model,
     extract_source,
@@ -93,6 +95,9 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--timeout", type=float, default=300.0)
     parser.add_argument(
+        "--task-set", choices=("dependency", "self-contained"), default="dependency"
+    )
+    parser.add_argument(
         "--out",
         type=Path,
         default=REPO_ROOT / "benchmarks" / "results"
@@ -100,7 +105,12 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    tasks = build_tasks(args.distractors)
+    # Must validate the same set the comparison runs, or it certifies nothing.
+    tasks = (
+        build_dependency_tasks(args.distractors)
+        if args.task_set == "dependency"
+        else build_tasks(args.distractors)
+    )
     rows: list[dict[str, Any]] = []
     for task in tasks:
         print(f"  {task.task_id:22} {NULL_ARM:22} ...", end="", flush=True)
@@ -129,6 +139,7 @@ def main() -> int:
             "arm": NULL_ARM,
             "token_source": "provider prompt_eval_count / eval_count",
             "oracle": "pytest exit code",
+            "engine": _engine_provenance(),
         },
         "summary": {
             "tasks": len(rows),

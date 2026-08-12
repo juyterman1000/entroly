@@ -130,6 +130,29 @@ def test_entroly_help_runs():
     assert "entroly" in proc.stdout.lower()
 
 
+def test_no_color_disables_ansi_sequences(tmp_path: Path):
+    env = os.environ.copy()
+    env["NO_COLOR"] = "1"
+    env["ENTROLY_DIR"] = str(tmp_path / "state")
+    env["ENTROLY_DISABLE_UPDATE_CHECK"] = "1"
+    env["PYTHONPATH"] = str(ROOT) + os.pathsep + env.get("PYTHONPATH", "")
+
+    proc = subprocess.run(
+        [sys.executable, "-m", "entroly.cli", "doctor"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        cwd=str(tmp_path),
+        env=env,
+        encoding="utf-8",
+        errors="replace",
+    )
+
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    assert "\x1b[" not in proc.stdout
+    assert "\x1b[" not in proc.stderr
+
+
 def test_batch_json_emits_machine_readable_stdout(tmp_path: Path):
     """`entroly batch --json` is a CI surface, so stdout must be JSON only."""
     project = tmp_path / "project"

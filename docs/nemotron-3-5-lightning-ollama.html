@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Entroly Support for NVIDIA Nemotron 3.5 Lightning on Ollama</title>
+  <meta name="description" content="Use NVIDIA Nemotron 3.5 Lightning locally through Ollama with Entroly context selection, exact recovery, Context Receipts, verification, and tag-aware context limits.">
+  <meta name="keywords" content="NVIDIA Nemotron 3.5 Lightning, Ollama, local AI agent, 1M context window, context compression, Context Assurance, Entroly">
+  <meta name="robots" content="index,follow,max-snippet:-1,max-image-preview:large,max-video-preview:-1">
+  <link rel="canonical" href="https://juyterman1000.github.io/entroly/docs/nemotron-3-5-lightning-ollama.html">
+  <meta property="og:site_name" content="Entroly">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Entroly for NVIDIA Nemotron 3.5 Lightning on Ollama">
+  <meta property="og:description" content="Local, recoverable Context Assurance for long-running agents using Nemotron 3.5 Lightning through Ollama.">
+  <meta property="og:url" content="https://juyterman1000.github.io/entroly/docs/nemotron-3-5-lightning-ollama.html">
+  <meta property="og:image" content="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/logo.png">
+  <meta name="twitter:card" content="summary">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "SoftwareApplication",
+        "name": "Entroly",
+        "applicationCategory": "DeveloperApplication",
+        "applicationSubCategory": "Local AI Agent Context Assurance",
+        "operatingSystem": "Windows, macOS, Linux",
+        "url": "https://juyterman1000.github.io/entroly/docs/nemotron-3-5-lightning-ollama.html",
+        "codeRepository": "https://github.com/juyterman1000/entroly",
+        "downloadUrl": "https://pypi.org/project/entroly/",
+        "license": "https://opensource.org/licenses/Apache-2.0",
+        "description": "Local-first context selection, recoverable compression, Context Receipts, and verification for AI agents, including NVIDIA Nemotron 3.5 Lightning served by Ollama."
+      },
+      {
+        "@type": "TechArticle",
+        "headline": "Entroly support for NVIDIA Nemotron 3.5 Lightning on Ollama",
+        "description": "How Entroly discovers and manages context for the local Ollama model nemotron-3.5-lightning.",
+        "url": "https://juyterman1000.github.io/entroly/docs/nemotron-3-5-lightning-ollama.html",
+        "dateModified": "2026-08-11",
+        "author": {"@type": "Organization", "name": "Entroly", "url": "https://github.com/juyterman1000/entroly"}
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "Does Entroly support NVIDIA Nemotron 3.5 Lightning?",
+            "acceptedAnswer": {"@type": "Answer", "text": "Yes. Entroly supports nemotron-3.5-lightning through loopback-only Ollama model discovery and its OpenAI-compatible proxy path. Ollama runs the model; Entroly manages the request context, receipts, recovery, and optional verification."}
+          },
+          {
+            "@type": "Question",
+            "name": "Does Nemotron 3.5 Lightning keep data on my device?",
+            "acceptedAnswer": {"@type": "Answer", "text": "Model prompts can remain on the device when both Ollama and Entroly are configured locally. Agent tools, remote providers, and other applications keep their own network and privacy boundaries, so local inference does not prove the entire agent workflow is offline."}
+          },
+          {
+            "@type": "Question",
+            "name": "What context window does Nemotron 3.5 Lightning use in Ollama?",
+            "acceptedAnswer": {"@type": "Answer", "text": "Ollama lists the standard latest and 30b tags with a 1M context window and the Apple-silicon 30b-mlx tag with a 256K context window. Entroly can inspect the locally installed tag rather than assuming one limit for every build."}
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+  <style>:root{color-scheme:dark;--bg:#07090c;--panel:#11161a;--text:#f7faf8;--muted:#a8b3ac;--green:#76b900;--line:#2b3430}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% 0,#182316,var(--bg) 38%);color:var(--text);font:17px/1.7 system-ui,sans-serif}main{max-width:940px;margin:auto;padding:54px 24px 90px}a{color:#b8e986}h1{font-size:clamp(2.5rem,6vw,4.5rem);line-height:1.04;letter-spacing:-.045em}.lead{font-size:1.2rem;color:#d4ddd7}.answer,.note{background:rgba(17,22,26,.94);border:1px solid var(--line);border-radius:16px;padding:24px;margin:28px 0}.answer{border-color:#547f20}table{width:100%;border-collapse:collapse;background:var(--panel)}th,td{border:1px solid var(--line);padding:14px;text-align:left;vertical-align:top}pre{background:#020302;border:1px solid var(--line);border-radius:14px;padding:20px;overflow:auto}code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}footer{margin-top:64px;border-top:1px solid var(--line);padding-top:24px;color:var(--muted)}</style>
+</head>
+<body><main>
+  <nav><a href="index.html">Entroly</a> / Nemotron 3.5 Lightning on Ollama</nav>
+  <h1>NVIDIA Nemotron 3.5 Lightning context management with Entroly and Ollama</h1>
+  <p class="lead">Run the model locally with Ollama while Entroly selects evidence under a budget, keeps omitted originals recoverable, emits Context Receipts, and optionally checks the response against supplied evidence.</p>
+
+  <div class="answer"><strong>Direct answer:</strong> Entroly supports the Ollama model ID <code>nemotron-3.5-lightning</code> through its existing local-model discovery and OpenAI-compatible proxy path. This is real model-neutral compatibility, not a claim that Entroly modifies NVIDIA's model or Ollama runtime.</div>
+
+  <h2>Verified model and integration boundary</h2>
+  <table><thead><tr><th>Surface</th><th>Verified behavior</th></tr></thead><tbody>
+    <tr><td>Ollama model</td><td><code>nemotron-3.5-lightning</code>; Ollama describes it as a 30B mixture-of-experts model with 3B active parameters and tool support.</td></tr>
+    <tr><td>Context</td><td>Ollama lists <code>latest</code>/<code>30b</code> at 1M and <code>30b-mlx</code> at 256K. Entroly can inspect the local tag's reported context length.</td></tr>
+    <tr><td>Entroly path</td><td>Loopback-only Ollama discovery plus an OpenAI-compatible upstream at <code>http://127.0.0.1:11434</code>.</td></tr>
+    <tr><td>Privacy</td><td>Entroly sends no analytics by default. Local Ollama inference can keep prompts on-device; tool calls and separately configured services may still use the network.</td></tr>
+  </tbody></table>
+
+  <h2>Setup</h2>
+  <pre>ollama pull nemotron-3.5-lightning
+pip install -U entroly
+python -m entroly.models discover ollama --inspect-ollama-context
+
+# Configure this environment variable in your shell:
+ENTROLY_OPENAI_BASE=http://127.0.0.1:11434
+entroly proxy</pre>
+  <p>Point an OpenAI-compatible client at Entroly's local endpoint, normally <code>http://127.0.0.1:9377/v1</code>, and select <code>nemotron-3.5-lightning</code>. Client-specific environment-variable syntax differs across PowerShell, Command Prompt, Bash, and application settings.</p>
+
+  <h2>Why context control still matters with a long window</h2>
+  <p>A large advertised window is capacity, not a requirement to resend every file, log, conversation, and retrieval result. Entroly can select answer-relevant evidence, preserve exact omitted content through local recovery handles, keep stable prefix bytes cache-friendly, and record the decision without claiming that fewer tokens automatically produce a better answer.</p>
+
+  <div class="note"><strong>Limitations:</strong> context capacity depends on the installed Ollama tag, runtime settings, memory, and hardware. Entroly does not guarantee that a machine can load or serve the maximum advertised window, that every agent tool remains offline, or that context reduction improves every workload.</div>
+
+  <h2>Official sources</h2>
+  <ul>
+    <li><a href="https://ollama.com/library/nemotron-3.5-lightning">Ollama model page and tags</a></li>
+    <li><a href="https://www.nvidia.com/en-us/ai-data-science/foundation-models/nemotron/">NVIDIA Nemotron foundation-model page</a></li>
+    <li><a href="context-engineering.html">Entroly context engineering</a></li>
+    <li><a href="https://github.com/juyterman1000/entroly/blob/main/PRIVACY.md">Entroly privacy contract</a></li>
+  </ul>
+  <footer><a href="https://github.com/juyterman1000/entroly">GitHub</a> · <a href="https://pypi.org/project/entroly/">PyPI</a> · Apache-2.0</footer>
+</main></body></html>
