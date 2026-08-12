@@ -227,12 +227,6 @@ def _run_without_native(script: str, *args: Path) -> subprocess.CompletedProcess
     )
 
 
-def _assert_probe_passed(completed: subprocess.CompletedProcess[str]) -> None:
-    assert completed.returncode == 0, (
-        f"pure-Python probe failed:\n{completed.stdout}\n{completed.stderr}"
-    )
-
-
 def test_python_warm_start_preserves_feedback_and_counters(tmp_path: Path):
     completed = _run_without_native(
         """
@@ -267,7 +261,9 @@ def test_python_warm_start_preserves_feedback_and_counters(tmp_path: Path):
         """,
         tmp_path / "ckpt",
     )
-    _assert_probe_passed(completed)
+    assert completed.returncode == 0, (
+        f"pure-Python probe failed:\n{completed.stdout}\n{completed.stderr}"
+    )
 
 
 def test_corrupt_python_warm_start_fails_closed(tmp_path: Path):
@@ -290,7 +286,9 @@ def test_corrupt_python_warm_start_fails_closed(tmp_path: Path):
         """,
         tmp_path / "ckpt",
     )
-    _assert_probe_passed(completed)
+    assert completed.returncode == 0, (
+        f"pure-Python probe failed:\n{completed.stdout}\n{completed.stderr}"
+    )
 
 
 REQUIRED_KEYS = {
