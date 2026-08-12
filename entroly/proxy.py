@@ -2618,6 +2618,24 @@ class PromptCompilerProxy:
                             confidence=_confidence,
                             source="proxy",
                         )
+                        from .product_telemetry import (
+                            capture_optimization_outcome,
+                            flush_async,
+                        )
+                        from .value_tracker import _has_priced_model
+
+                        if capture_optimization_outcome(
+                            "proxy",
+                            before_tokens=original_tokens,
+                            after_tokens=optimized_tokens,
+                            measurement_scope="provider_bound_estimate",
+                            cost_evidence=(
+                                "modeled_positive"
+                                if _saved > 0 and _has_priced_model(_model)
+                                else "not_available"
+                            ),
+                        ):
+                            flush_async()
                     except Exception:
                         pass  # Never block a request for tracking
 

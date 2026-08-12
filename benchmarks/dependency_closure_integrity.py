@@ -41,6 +41,11 @@ def _sha256_bytes(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
+def _sha256_source(path: Path) -> str:
+    """Hash tracked source canonically across Git checkout line endings."""
+    return _sha256_bytes(path.read_bytes().replace(b"\r\n", b"\n"))
+
+
 def _git_head() -> str:
     completed = subprocess.run(
         ["git", "rev-parse", "HEAD"],
@@ -251,7 +256,7 @@ def run_matrix(*, max_nodes: int = 6) -> dict[str, Any]:
         "implementation_commit": _git_head(),
         "harness": {
             "path": "benchmarks/dependency_closure_integrity.py",
-            "sha256": _sha256_bytes(Path(__file__).read_bytes()),
+            "sha256": _sha256_source(Path(__file__)),
         },
         "matrix": {
             "graph_families": list(GRAPH_FAMILIES),
@@ -345,7 +350,7 @@ def verify_report(report: dict[str, Any]) -> None:
     harness_path = ROOT / str(harness.get("path", ""))
     if not harness_path.is_file():
         raise ValueError("harness path is missing")
-    if harness.get("sha256") != _sha256_bytes(harness_path.read_bytes()):
+    if harness.get("sha256") != _sha256_source(harness_path):
         raise ValueError("harness sha256 mismatch")
     limitations = report.get("limitations")
     if not isinstance(limitations, list) or not limitations:

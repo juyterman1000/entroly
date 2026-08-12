@@ -28,17 +28,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _native_engine_available() -> bool:
-    """True when entroly_core (the Rust engine) is importable.
+    """True when the installed native engine passes Entroly's shared gate.
 
     The resolution ladder -- full / skeleton / reference -- lives in the native
     engine only. Behaviour that depends on it has to be asserted per surface,
     or the pure-Python CI job fails for a feature it does not ship.
     """
-    try:
-        import entroly_core  # noqa: F401
-    except ImportError:
-        return False
-    return True
+    from entroly.native_status import usable_core
+
+    return usable_core() is not None
 
 
 @pytest.fixture

@@ -21,6 +21,8 @@ from pathlib import Path
 
 import pytest
 
+from entroly import __version__
+
 
 def _write_request(
     proc: subprocess.Popen[str],
@@ -213,6 +215,7 @@ def installed_mcp() -> subprocess.Popen[str]:
         initialized = _read_response(proc, 1)
         assert "result" in initialized, initialized
         assert initialized["result"].get("serverInfo"), initialized
+        setattr(proc, "_entroly_initialized", initialized)
         _write_request(proc, "notifications/initialized", {}, request_id=None)
 
         yield proc
@@ -229,6 +232,8 @@ def installed_mcp() -> subprocess.Popen[str]:
 def test_documented_entrypoint_lists_required_tools(
     installed_mcp: subprocess.Popen[str],
 ) -> None:
+    initialized = getattr(installed_mcp, "_entroly_initialized")
+    assert initialized["result"]["serverInfo"]["version"] == __version__
     _write_request(installed_mcp, "tools/list", {}, request_id=2)
     response = _read_response(installed_mcp, 2)
     assert "result" in response, response

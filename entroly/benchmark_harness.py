@@ -115,10 +115,15 @@ def run_benchmark(engine: Any, budget_seconds: float = 10.0) -> dict[str, Any]:
     # source for "money saved" is value_tracker, which is decoupled from
     # benchmark runs.
     sv = stats.get("savings", {}) or stats.get("engine", {})
+    selected = result.get("selected_fragments")
+    if not isinstance(selected, list):
+        selected = result.get("selected", [])
+    if not isinstance(selected, list):
+        selected = []
     return {
         "context_efficiency": ctx_eff,
         "dedup_tokens_avoided": sv.get("total_tokens_saved", sv.get("dedup_tokens_avoided", 0)),
-        "num_fragments_selected": len(result.get("selected", [])),
+        "num_fragments_selected": len(selected),
         "wall_seconds": round(wall, 3),
         "timed_out": timed_out,
     }

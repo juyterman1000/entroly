@@ -27,10 +27,13 @@ const os = require('os');
 const VERSION = require('../package.json').version;
 
 // ANSI colors
+const colorEnabled = !Object.prototype.hasOwnProperty.call(process.env, 'NO_COLOR');
+const ansi = (code) => colorEnabled ? code : '';
 const C = {
-  BOLD:   '\x1b[1m', GREEN:  '\x1b[38;5;82m', CYAN:   '\x1b[38;5;45m',
-  YELLOW: '\x1b[38;5;220m', RED: '\x1b[38;5;196m', GRAY: '\x1b[38;5;240m',
-  RESET:  '\x1b[0m',
+  BOLD:   ansi('\x1b[1m'), GREEN: ansi('\x1b[38;5;82m'),
+  CYAN:   ansi('\x1b[38;5;45m'), YELLOW: ansi('\x1b[38;5;220m'),
+  RED:    ansi('\x1b[38;5;196m'), GRAY: ansi('\x1b[38;5;240m'),
+  RESET:  ansi('\x1b[0m'),
 };
 
 function banner() {

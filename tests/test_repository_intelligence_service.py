@@ -13,6 +13,7 @@ import entroly.repository_intelligence.service as service_module
 # facade, so patching them there is silently inert. Patch the module that
 # actually holds the binding.
 import entroly.repository_intelligence.service_impl as service_impl_module
+from entroly import __version__
 from entroly.repository_intelligence import (
     InvalidChangedPaths,
     InvalidContextQuery,
@@ -231,6 +232,7 @@ class FakeFastMCP:
         self.name = name
         self.instructions = instructions
         self.tools: dict[str, object] = {}
+        self._mcp_server = types.SimpleNamespace(version=None)
 
     def tool(self):
         def decorate(function):
@@ -257,6 +259,7 @@ def test_mcp_exposes_fixed_root_bounded_tools(tmp_path: Path, monkeypatch) -> No
     _project(tmp_path)
     _install_fake_mcp(monkeypatch)
     mcp = create_repository_mcp_server(tmp_path)
+    assert mcp._mcp_server.version == __version__
     assert set(mcp.tools) == {
         "refresh_repository_index",
         "repository_change_impact",
