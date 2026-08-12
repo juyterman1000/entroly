@@ -75,11 +75,23 @@ The dashboard is an evidence viewer rather than another chat UI. It provides:
 - receipt and chain-integrity status;
 - bounded evidence excerpts and an omitted-evidence explorer;
 - model, context, output, and cost information when the receipt contains enough data;
-- a content-blind Context Health summary for measured net tokens after
-  re-expansion, recovery tax, receipt integrity, omission recoverability, and
-  observed WITNESS suppressions.
+- a content-blind Context Health summary for retrieval-adjusted net tokens,
+  provider-observed cache categories, hash-only prefix continuity, recovery
+  tax, receipt integrity, omission recoverability, and observed WITNESS
+  suppressions.
 
 Unknown values stay `Unknown`; Entroly does not invent usage or cost. Cost estimates identify their basis and exclude cache discounts, long-context tiers, provider routing, and negotiated pricing.
+
+## Optimizer interference
+
+Context Health separates retrieval-adjusted reduction from provider cache
+economics. The proxy uses a hash-only prefix-continuity guard to detect when an
+optional transform would shorten an append-only agent's reusable prompt prefix.
+For a provider-observed warm cache, the safer baseline wins; required recovery,
+redaction, and emergency context rescue remain authoritative. See
+[`optimizer-interference-guard.md`](optimizer-interference-guard.md).
+Content-blind provider token categories are available process-locally by
+default; durable history and priced accounting remain explicit local opt-ins.
 
 The Context Health share text contains aggregate counters only—never prompts,
 code, paths, queries, model names, receipt identifiers, or pseudonyms. A zero

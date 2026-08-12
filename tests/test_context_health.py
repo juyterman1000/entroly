@@ -86,10 +86,11 @@ def test_context_health_reports_net_evidence_without_user_content(tmp_path):
         },
     )
 
-    assert report["schema_version"] == "entroly.context-health.v1"
+    assert report["schema_version"] == "entroly.context-health.v2"
     assert report["value"]["measured_gross_tokens"] == 1_000
     assert report["value"]["measured_reexpanded_tokens"] == 250
     assert report["value"]["measured_net_tokens"] == 750
+    assert report["value"]["retrieval_adjusted_net_tokens"] == 750
     assert report["value"]["measured_net_usd"] == 0.0035
     assert report["value"]["recovery_tax_pct"] == 25.0
     assert report["evidence"]["integrity_pct"] == 50.0
@@ -156,6 +157,101 @@ def test_context_health_preserves_token_negative_recovery_outcomes(tmp_path):
     assert report["value"]["measured_net_tokens"] == -50
     assert report["value"]["measured_net_usd"] == -0.0001
     assert report["value"]["recovery_tax_pct"] == 150.0
+
+
+def test_context_health_separates_provider_cache_economics_from_retrieval_net(
+    tmp_path,
+):
+    report = build_context_health(
+        index=_IndexWithoutSessions(),
+        ledger_path=tmp_path / "missing.sqlite3",
+        value_confidence={"lifetime": {}},
+        provider_economics={
+            "provider_cache": {
+                "observed_hits": 6,
+                "observed_misses": 4,
+                "observed_hit_rate": 0.6,
+            },
+            "usage_accounting": {
+                "enabled": True,
+                "ledger": {
+                    "requests": 10,
+                    "uncached_input_tokens": 4_000,
+                    "cache_read_tokens": 6_000,
+                    "cache_write_tokens": 500,
+                    "output_tokens": 700,
+                    "cost_micro_usd": 12_345,
+                    "unpriced_requests": 0,
+                },
+            },
+            "optimizer_interference": {
+                "measurement": "local_hash_only_prefix_estimate",
+                "comparable_transitions": 9,
+                "prefix_preserved": 7,
+                "prefix_improved": 1,
+                "prefix_degraded": 1,
+                "estimated_optimizer_interference_tokens": 900,
+                "guard_interventions": 2,
+                "estimated_prefix_tokens_preserved": 1_500,
+            },
+        },
+    )
+
+    cache = report["cache_economics"]
+    assert cache["status"] == "provider_observed"
+    assert cache["request_hit_rate_pct"] == 60.0
+    assert cache["cache_read_token_ratio_pct"] == 57.1
+    assert cache["cache_write_tokens"] == 500
+    assert cache["accounted_provider_cost_usd"] == 0.012345
+    assert cache["prefix_continuity"]["continuity_rate_pct"] == 88.9
+    assert cache["prefix_continuity"]["guard_interventions"] == 2
+    assert cache["economically_net_positive"] is None
+    assert cache["economic_net_status"] == "unavailable_without_paired_baseline"
+
+
+def test_context_health_cache_snapshot_cannot_leak_content(tmp_path):
+    private = "PRIVATE_CACHE_PROMPT_SHOULD_NOT_LEAK"
+    report = build_context_health(
+        index=_IndexWithoutSessions(),
+        ledger_path=tmp_path / "missing.sqlite3",
+        value_confidence={"lifetime": {}},
+        provider_economics={
+            "provider_cache": {"observed_hits": 1, "private": private},
+            "usage_accounting": {"ledger": {"requests": 1, "private": private}},
+            "optimizer_interference": {"private": private},
+            "private": private,
+        },
+    )
+
+    assert private not in json.dumps(report, sort_keys=True)
+
+
+def test_context_health_uses_content_blind_live_usage_without_persistence(tmp_path):
+    report = build_context_health(
+        index=_IndexWithoutSessions(),
+        ledger_path=tmp_path / "missing.sqlite3",
+        value_confidence={"lifetime": {}},
+        provider_economics={
+            "usage_accounting": {
+                "enabled": False,
+                "live": {
+                    "scope": "process_local_content_blind",
+                    "requests": 2,
+                    "uncached_input_tokens": 200,
+                    "cache_read_tokens": 800,
+                    "cache_write_tokens": 0,
+                    "output_tokens": 50,
+                },
+            },
+        },
+    )
+
+    cache = report["cache_economics"]
+    assert cache["provider_usage_status"] == "live_provider_observed"
+    assert cache["provider_usage_requests"] == 2
+    assert cache["cache_read_token_ratio_pct"] == 80.0
+    assert cache["accounted_provider_cost_usd"] is None
+    assert cache["pricing_basis"] == "unavailable"
 
 
 class _IndexWithoutSessions:
