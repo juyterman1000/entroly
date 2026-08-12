@@ -57,6 +57,19 @@ def test_language_map_covers_at_least_twenty_seven_languages() -> None:
         ("sample.zig", "pub fn total() void {}\nfn add() void {}\n", {"total", "add"}),
         # Protobuf `message` names via `message_name`, no `name` field.
         ("sample.proto", "message Cart {\n    string id = 1;\n}\n", {"Cart"}),
+        # R binds a function by assignment; the name is left of the arrow, and
+        # the anonymous `function_definition` must not surface as `function`.
+        ("sample.R", "total <- function(x) x + 1\nrunner <- function() total(1)\n", {"total", "runner"}),
+        # SQL names a created object in `object_reference`.
+        (
+            "sample.sql",
+            "CREATE FUNCTION add_tax(p int) RETURNS int AS $$ SELECT 1 $$ LANGUAGE SQL;\n",
+            {"add_tax"},
+        ),
+        # Svelte/Vue keep the script as opaque text; it is re-parsed as JS and
+        # the spans are shifted back to file coordinates.
+        ("sample.svelte", "<script>\nfunction total(){}\nclass Cart{}\n</script>\n<div/>\n", {"total", "Cart"}),
+        ("sample.vue", "<script>\nfunction total(){}\n</script>\n<template><div/></template>\n", {"total"}),
     ],
 )
 def test_parser_backed_spans_are_exact(path: str, source: str, names: set[str]) -> None:
@@ -68,6 +81,36 @@ def test_parser_backed_spans_are_exact(path: str, source: str, names: set[str]) 
         assert span.source in source
         assert source.splitlines()[span.start_line - 1].strip()
         assert span.start_line <= span.end_line
+
+
+def test_r_function_binding_does_not_leak_the_keyword() -> None:
+    """R's anonymous `function_definition` must not surface as `function`.
+
+    A function acquires a name only through assignment, so the binding is the
+    declaration; the bare definition node carries the keyword `function` and
+    was emitted as a symbol before the binding predicate and suppression.
+    """
+    pytest.importorskip("tree_sitter_language_pack")
+    spans = extract_structural_spans("helper <- function(x) x + 1\nx <- 5\n", "a.R")
+    assert spans is not None
+    names = {span.name for span in spans}
+    assert names == {"helper"}, names
+
+
+def test_embedded_script_spans_recover_exact_file_bytes() -> None:
+    """A Svelte span's byte range must address the real bytes in the file.
+
+    The script is parsed in isolation and its spans are shifted by the script
+    block's offset; an off-by-one there would still name the symbol but point
+    at the wrong bytes, which the byte-fidelity contract forbids.
+    """
+    pytest.importorskip("tree_sitter_language_pack")
+    source = "<p>hi</p>\n<script>\nfunction total(x){ return x }\n</script>\n"
+    spans = extract_structural_spans(source, "a.svelte")
+    assert spans is not None and spans
+    raw = source.encode("utf-8")
+    for span in spans:
+        assert raw[span.start_byte:span.end_byte].decode("utf-8") == span.source
 
 
 def test_kotlin_function_name_is_not_the_return_type_or_a_parameter() -> None:

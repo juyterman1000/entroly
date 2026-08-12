@@ -83,6 +83,38 @@ _LANGUAGE_DECLARATION_TYPES: dict[str, frozenset[str]] = {
     "zig": frozenset({"FnProto"}),
     # Protobuf `message` names via a `message_name` child, no `name` field.
     "proto": frozenset({"message", "enum"}),
+    # SQL names a created object in an `object_reference` child, no `name` field.
+    "sql": frozenset({"create_function", "create_procedure", "create_table", "create_view"}),
+}
+
+# Node types to NOT treat as declarations for a language, overriding the generic
+# rule. R has no standalone function declaration: a function is an anonymous
+# value bound by assignment, so the `function_definition` node itself carries no
+# name and the generic rule emitted the keyword `function`. The binding is
+# matched by predicate below instead.
+_LANGUAGE_SUPPRESS_TYPES: dict[str, frozenset[str]] = {
+    "r": frozenset({"function_definition"}),
+}
+
+
+def _r_binds_function(node: Any) -> bool:
+    """An R assignment whose right-hand side is a function definition.
+
+    `helper <- function(x) x + 1` parses as a `binary_operator` with the name
+    on the left, an assignment operator, and the function on the right. This is
+    the only place an R function acquires a name, so it is the declaration.
+    """
+    if str(getattr(node, "type", "")) != "binary_operator":
+        return False
+    children = list(getattr(node, "children", ()))
+    if not any(str(getattr(c, "type", "")) in {"<-", "=", "<<-"} for c in children):
+        return False
+    return any(str(getattr(c, "type", "")) == "function_definition" for c in children)
+
+
+# Node-level predicates for declarations the type name alone cannot identify.
+_LANGUAGE_DECLARATION_PREDICATE: dict[str, Any] = {
+    "r": _r_binds_function,
 }
 
 _KIND_HINTS = (
@@ -317,6 +349,9 @@ _LANGUAGE_NAME_CHILD_TYPE: dict[str, str] = {
     "kotlin": "simple_identifier",
     "zig": "IDENTIFIER",
     "proto": "message_name",
+    "sql": "object_reference",
+    # An R function binding names itself with the identifier left of the arrow.
+    "r": "identifier",
 }
 
 # Grammars whose pack structure processing returns partial declarations (a named
@@ -324,7 +359,7 @@ _LANGUAGE_NAME_CHILD_TYPE: dict[str, str] = {
 # tree walk is more complete. Add a language only after verifying the walk does
 # strictly better for it, since the walk's own per-grammar coverage varies.
 _PACK_STRUCTURE_UNRELIABLE: frozenset[str] = frozenset(
-    {"kotlin", "dart", "go", "solidity"}
+    {"kotlin", "dart", "go", "solidity", "r"}
 )
 
 
@@ -517,9 +552,16 @@ def _spans_from_tree(
     spans: list[StructuralSpan] = []
     seen: set[tuple[int, int, str]] = set()
     state = _TraversalState()
+    suppressed = _LANGUAGE_SUPPRESS_TYPES.get(language, frozenset())
+    predicate = _LANGUAGE_DECLARATION_PREDICATE.get(language)
     for node in _walk(tree.root_node, max_nodes, state):
         node_type = str(getattr(node, "type", ""))
-        if not _is_declaration_type(node_type, language) or bool(getattr(node, "is_error", False)):
+        if bool(getattr(node, "is_error", False)):
+            continue
+        is_declaration = (
+            node_type not in suppressed and _is_declaration_type(node_type, language)
+        ) or (predicate is not None and predicate(node))
+        if not is_declaration:
             continue
         if not _language_scoped_node_ok(node, node_type, language):
             continue
@@ -579,6 +621,69 @@ def _spans_from_tree(
         max_nodes=max_nodes,
         backend="tree-sitter-raw",
     )
+
+
+# Single-file-component languages whose script is embedded as opaque text, and
+# the language to parse that text as. Svelte and Vue keep the script inside a
+# `script_element` whose only child is a `raw_text` node -- the grammar does not
+# descend into it, so the component's functions are invisible until that text is
+# re-parsed as JavaScript and its spans are shifted back to file coordinates.
+_EMBEDDED_SCRIPT_LANGUAGES: dict[str, str] = {
+    "svelte": "javascript",
+    "vue": "javascript",
+}
+
+
+def _embedded_script_spans(
+    raw: bytes, tree: Any, language: str, max_nodes: int
+) -> list[StructuralSpan]:
+    """Extract declarations from the `<script>` block of a component file."""
+    inner_language = _EMBEDDED_SCRIPT_LANGUAGES.get(language)
+    if inner_language is None:
+        return []
+    parser = _get_local_parser(inner_language)
+    if parser is None:
+        return []
+    spans: list[StructuralSpan] = []
+    stack = [tree.root_node]
+    while stack:
+        node = stack.pop()
+        parent = getattr(node, "parent", None)
+        if (
+            str(getattr(node, "type", "")) == "raw_text"
+            and parent is not None
+            and str(getattr(parent, "type", "")) == "script_element"
+        ):
+            offset = int(getattr(node, "start_byte", 0))
+            line_offset = int(node.start_point[0])
+            inner_raw = raw[offset:int(getattr(node, "end_byte", 0))]
+            inner_source = inner_raw.decode("utf-8", errors="surrogateescape")
+            # Prefer the pack's structure, which is clean for JavaScript; the
+            # raw tree walk is only the fallback, matching the main path so the
+            # embedded script is analysed exactly as a standalone file would be.
+            inner_items = _pack_structure_spans(
+                inner_source, "embedded.js", inner_raw, inner_language
+            )
+            if not inner_items:
+                inner_items = list(
+                    _spans_from_tree(
+                        inner_raw, parser.parse(inner_raw), inner_language, max_nodes
+                    ).items
+                )
+            for item in inner_items:
+                spans.append(StructuralSpan(
+                    name=item.name,
+                    kind=item.kind,
+                    start_line=item.start_line + line_offset,
+                    end_line=item.end_line + line_offset,
+                    source=item.source,
+                    signature=item.signature,
+                    indent=item.indent,
+                    start_byte=item.start_byte + offset,
+                    end_byte=item.end_byte + offset,
+                ))
+        stack.extend(getattr(node, "children", ()))
+    return spans
 
 
 _CONTROL_TYPES = frozenset({
@@ -791,6 +896,21 @@ def extract_structural_spans_report(
     if parsed is None:
         return None
     raw, tree, language = parsed
+    if language in _EMBEDDED_SCRIPT_LANGUAGES:
+        # The component's own markup has no declarations; its script does, and
+        # the grammar leaves that as opaque text. Re-parse the script block.
+        embedded = _embedded_script_spans(raw, tree, language, max_nodes)
+        metrics_state = _TraversalState()
+        for _node in _walk(tree.root_node, max_nodes, metrics_state):
+            pass
+        return StructuralExtraction(
+            items=tuple(embedded),
+            language=language,
+            complete=metrics_state.complete,
+            nodes_visited=metrics_state.visited,
+            max_nodes=max_nodes,
+            backend="embedded-script",
+        )
     # The pack's structure processing under-resolves some grammars: for Kotlin
     # it returns the top-level `fun` with a null name (dropped for lack of a
     # name) and omits a class's own methods entirely, yielding just the class.
