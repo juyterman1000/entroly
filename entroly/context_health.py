@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 
-SCHEMA_VERSION = "entroly.context-health.v1"
+SCHEMA_VERSION = "entroly.context-health.v2"
 
 
 def _nonnegative_int(value: object) -> int:
@@ -120,11 +120,128 @@ def _session_summary(index: Any) -> dict[str, Any]:
     return result
 
 
+def _cache_economics(snapshot: Mapping[str, Any] | None) -> dict[str, Any]:
+    snapshot = snapshot if isinstance(snapshot, Mapping) else {}
+    provider_cache = snapshot.get("provider_cache", {})
+    if not isinstance(provider_cache, Mapping):
+        provider_cache = {}
+    accounting = snapshot.get("usage_accounting", {})
+    if not isinstance(accounting, Mapping):
+        accounting = {}
+    usage = accounting.get("ledger", {})
+    if not isinstance(usage, Mapping):
+        usage = {}
+    live_usage = accounting.get("live", {})
+    if not isinstance(live_usage, Mapping):
+        live_usage = {}
+    continuity = snapshot.get("optimizer_interference", {})
+    if not isinstance(continuity, Mapping):
+        continuity = {}
+
+    observed_hits = _nonnegative_int(provider_cache.get("observed_hits"))
+    observed_misses = _nonnegative_int(provider_cache.get("observed_misses"))
+    observed_requests = observed_hits + observed_misses
+    ledger_requests = _nonnegative_int(usage.get("requests"))
+    live_requests = _nonnegative_int(live_usage.get("requests"))
+    token_usage = usage if ledger_requests else live_usage
+    usage_requests = ledger_requests or live_requests
+    unpriced_requests = _nonnegative_int(usage.get("unpriced_requests"))
+    priced_requests = max(0, ledger_requests - unpriced_requests)
+    cache_read = _nonnegative_int(token_usage.get("cache_read_tokens"))
+    cache_write = _nonnegative_int(token_usage.get("cache_write_tokens"))
+    uncached = _nonnegative_int(token_usage.get("uncached_input_tokens"))
+    input_tokens = cache_read + cache_write + uncached
+    comparable = _nonnegative_int(continuity.get("comparable_transitions"))
+    degraded = _nonnegative_int(continuity.get("prefix_degraded"))
+
+    return {
+        "status": (
+            "provider_observed"
+            if observed_requests or usage_requests
+            else "unavailable"
+        ),
+        "provider_observed_requests": observed_requests,
+        "provider_observed_hits": observed_hits,
+        "provider_observed_misses": observed_misses,
+        "provider_observation_window": "bounded_live_proxy",
+        "request_hit_rate_pct": (
+            round(observed_hits * 100.0 / observed_requests, 1)
+            if observed_requests
+            else None
+        ),
+        "usage_ledger_status": (
+            "provider_observed" if ledger_requests else
+            "enabled_no_events" if accounting.get("enabled") else
+            "disabled"
+        ),
+        "provider_usage_status": (
+            "durable_provider_observed" if ledger_requests else
+            "live_provider_observed" if live_requests else
+            "unavailable"
+        ),
+        "provider_usage_requests": usage_requests,
+        "uncached_input_tokens": uncached,
+        "cache_read_tokens": cache_read,
+        "cache_write_tokens": cache_write,
+        "output_tokens": _nonnegative_int(token_usage.get("output_tokens")),
+        "cache_read_token_ratio_pct": (
+            round(cache_read * 100.0 / input_tokens, 1) if input_tokens else None
+        ),
+        "accounted_provider_cost_usd": (
+            round(
+                _nonnegative_int(usage.get("cost_micro_usd")) / 1_000_000.0,
+                6,
+            )
+            if priced_requests else None
+        ),
+        "priced_requests": priced_requests,
+        "unpriced_requests": unpriced_requests,
+        "pricing_basis": (
+            "configured catalog applied to priced provider-reported usage; not an invoice"
+            if priced_requests else
+            "unavailable"
+        ),
+        "prefix_continuity": {
+            "measurement": str(
+                continuity.get("measurement", "local_hash_only_prefix_estimate")
+            ),
+            "content_retained": False,
+            "comparable_transitions": comparable,
+            "prefix_preserved": _nonnegative_int(
+                continuity.get("prefix_preserved")
+            ),
+            "prefix_degraded": degraded,
+            "continuity_rate_pct": (
+                round((comparable - degraded) * 100.0 / comparable, 1)
+                if comparable
+                else None
+            ),
+            "estimated_optimizer_interference_tokens": _nonnegative_int(
+                continuity.get("estimated_optimizer_interference_tokens")
+            ),
+            "guard_interventions": _nonnegative_int(
+                continuity.get("guard_interventions")
+            ),
+            "estimated_prefix_tokens_preserved": _nonnegative_int(
+                continuity.get("estimated_prefix_tokens_preserved")
+            ),
+        },
+        "economic_net_status": "unavailable_without_paired_baseline",
+        "economically_net_positive": None,
+        "scope": (
+            "cache fields and token categories are bounded live provider observations; "
+            "durability and priced totals require the opt-in local usage ledger; "
+            "prefix continuity is a local hash-only estimate; causality requires a paired baseline"
+        ),
+    }
+
+
 def build_context_health(
     *,
     index: Any | None = None,
     ledger_path: str | Path | None = None,
     value_confidence: Mapping[str, Any] | None = None,
+    provider_economics: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a content-blind, locally derived context-health snapshot."""
     if index is None:
@@ -141,6 +258,7 @@ def build_context_health(
     sessions = _session_summary(index)
     path = Path(ledger_path).expanduser() if ledger_path else default_ledger_path()
     ledger, ledger_available = _ledger_summary(path)
+    cache = _cache_economics(provider_economics)
 
     lifetime = value_confidence.get("lifetime", {})
     if not isinstance(lifetime, Mapping):
@@ -174,6 +292,15 @@ def build_context_health(
         )
     if recovery_tax_pct is not None:
         share_parts.append(f"{recovery_tax_pct:.1f}% measured recovery tax")
+    if cache["request_hit_rate_pct"] is not None:
+        share_parts.append(
+            f"{cache['request_hit_rate_pct']:.1f}% live provider-observed request cache hit rate"
+        )
+    guard_interventions = cache["prefix_continuity"]["guard_interventions"]
+    if guard_interventions:
+        share_parts.append(
+            f"{guard_interventions} warm-prefix rewrites prevented"
+        )
     if unsupported_blocked:
         share_parts.append(f"{unsupported_blocked} unsupported claims blocked")
     share_parts.append("local aggregate only; no prompts, code, paths, or queries")
@@ -195,9 +322,14 @@ def build_context_health(
             "measured_gross_tokens": gross,
             "measured_reexpanded_tokens": reexpanded,
             "measured_net_tokens": net,
+            "retrieval_adjusted_net_tokens": net,
+            "retrieval_adjusted_net_label": (
+                "gross reduction minus measured re-expansion; excludes provider cache effects"
+            ),
             "measured_net_usd": round(net_micro_usd / 1_000_000.0, 6),
             "recovery_tax_pct": recovery_tax_pct,
         },
+        "cache_economics": cache,
         "evidence": sessions,
         "protections": {
             "confusion": {
@@ -228,6 +360,8 @@ def build_context_health(
         },
         "limitations": [
             "Provider cost is modeled from configured rates and is not an invoice.",
+            "Retrieval-adjusted net tokens exclude provider cache-write and cache-miss effects.",
+            "Economic net value requires a paired baseline; cache correlation alone is not attribution.",
             "A zero counter means no event was observed, not that the risk was eliminated.",
             "Source freshness and counterfactual answer quality are not inferred.",
             "Receipt aggregates are bounded to the newest 100 locally discoverable sessions.",

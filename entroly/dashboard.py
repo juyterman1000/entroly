@@ -488,6 +488,91 @@ def _fetch_witness_snapshot() -> dict[str, Any]:
     return {"available": False, "count": 0, "items": [], "feedback": {}}
 
 
+def _fetch_context_economics_snapshot() -> dict[str, Any]:
+    """Fetch only content-blind cache/accounting aggregates from localhost."""
+    import os
+    import urllib.error
+    import urllib.request
+
+    ports = [os.environ.get("ENTROLY_PROXY_PORT", "9377"), "9399"]
+    seen: set[str] = set()
+    for port in ports:
+        if port in seen:
+            continue
+        seen.add(port)
+        try:
+            with urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/stats",
+                timeout=0.25,
+            ) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            if not isinstance(payload, dict):
+                continue
+            provider_cache = payload.get("provider_cache", {})
+            if not isinstance(provider_cache, dict):
+                provider_cache = {}
+            accounting = payload.get("usage_accounting", {})
+            if not isinstance(accounting, dict):
+                accounting = {}
+            ledger = accounting.get("ledger", {})
+            if not isinstance(ledger, dict):
+                ledger = {}
+            live = accounting.get("live", {})
+            if not isinstance(live, dict):
+                live = {}
+            interference = payload.get("optimizer_interference", {})
+            if not isinstance(interference, dict):
+                interference = {}
+            return {
+                "provider_cache": {
+                    key: provider_cache.get(key)
+                    for key in ("observed_hits", "observed_misses")
+                },
+                "usage_accounting": {
+                    "enabled": accounting.get("enabled") is True,
+                    "live": {
+                        key: live.get(key)
+                        for key in (
+                            "scope",
+                            "requests",
+                            "uncached_input_tokens",
+                            "cache_read_tokens",
+                            "cache_write_tokens",
+                            "output_tokens",
+                        )
+                    },
+                    "ledger": {
+                        key: ledger.get(key)
+                        for key in (
+                            "requests",
+                            "uncached_input_tokens",
+                            "cache_read_tokens",
+                            "cache_write_tokens",
+                            "output_tokens",
+                            "cost_micro_usd",
+                            "unpriced_requests",
+                        )
+                    },
+                },
+                "optimizer_interference": {
+                    key: interference.get(key)
+                    for key in (
+                        "measurement",
+                        "comparable_transitions",
+                        "prefix_preserved",
+                        "prefix_degraded",
+                        "prefix_improved",
+                        "estimated_optimizer_interference_tokens",
+                        "guard_interventions",
+                        "estimated_prefix_tokens_preserved",
+                    )
+                },
+            }
+        except (OSError, urllib.error.URLError, json.JSONDecodeError, ValueError):
+            continue
+    return {}
+
+
 # ── HTML Dashboard ────────────────────────────────────────────────────────────
 
 DASHBOARD_HTML = r"""<!DOCTYPE html>
@@ -1077,21 +1162,31 @@ async function copyContextHealth(){
 }
 function renderContextHealth(data){
   const el=document.getElementById('contextHealth');if(!el)return;
-  const value=data.value||{},evidence=data.evidence||{},protections=data.protections||{};
+  const value=data.value||{},evidence=data.evidence||{},protections=data.protections||{},cache=data.cache_economics||{},continuity=cache.prefix_continuity||{};
   const confusion=protections.confusion||{},rot=protections.rot||{},drift=protections.drift||{};
   const measured=value.ledger_status==='measured';contextHealthShare=((data.share||{}).text)||'';
-  const net=measured?fmt(value.measured_net_tokens||0):'Not measured';
-  const netClass=measured&&Number(value.measured_net_tokens||0)<0?'hv-rose':'hv-green';
+  const retrievalNet=measured?fmt(value.retrieval_adjusted_net_tokens||0):'Not measured';
+  const netClass=measured&&Number(value.retrieval_adjusted_net_tokens||0)<0?'hv-rose':'hv-green';
   const recovery=value.recovery_tax_pct==null?'Not measured':Number(value.recovery_tax_pct).toFixed(1)+'%';
   const integrity=evidence.integrity_pct==null?'No receipts':Number(evidence.integrity_pct).toFixed(1)+'%';
   const recoverable=evidence.recoverability_pct==null?'Not measured':Number(evidence.recoverability_pct).toFixed(1)+'%';
-  el.innerHTML='<div class="context-health-head"><div><h2>Context Health</h2><p>Aggregate evidence only. Zero means no event observed—not that a risk was eliminated. Dollar values are modeled; source freshness stays unavailable until directly checked.</p></div><button id="contextShare" class="context-share" onclick="copyContextHealth()" '+(contextHealthShare?'':'disabled')+'>Copy privacy-safe proof</button></div>'+
+  const requestHit=cache.request_hit_rate_pct==null?'Not observed':Number(cache.request_hit_rate_pct).toFixed(1)+'%';
+  const tokenHit=cache.cache_read_token_ratio_pct==null?'Not recorded':Number(cache.cache_read_token_ratio_pct).toFixed(1)+'%';
+  const continuityRate=continuity.continuity_rate_pct==null?'Not measured':Number(continuity.continuity_rate_pct).toFixed(1)+'%';
+  const economicNet=cache.economically_net_positive==null?'Baseline required':(cache.economically_net_positive?'Net positive':'Net negative');
+  const economicClass=cache.economically_net_positive==null?'hv-amber':(cache.economically_net_positive?'hv-green':'hv-rose');
+  el.innerHTML='<div class="context-health-head"><div><h2>Context Health</h2><p>Aggregate evidence only. Retrieval-adjusted savings and provider cache economics are separate. Zero means no event observed, not that a risk was eliminated.</p></div><button id="contextShare" class="context-share" onclick="copyContextHealth()" '+(contextHealthShare?'':'disabled')+'>Copy privacy-safe proof</button></div>'+
     '<div class="context-health-grid">'+
-      '<div class="context-health-card"><label>Measured net tokens</label><strong class="'+netClass+'">'+net+'</strong><small>'+(measured?fmt(value.measured_gross_tokens||0)+' gross − '+fmt(value.measured_reexpanded_tokens||0)+' re-expanded':'Enable the optimization ledger for net accounting')+'</small></div>'+
+      '<div class="context-health-card"><label>Retrieval-adjusted net</label><strong class="'+netClass+'">'+retrievalNet+'</strong><small>'+(measured?fmt(value.measured_gross_tokens||0)+' gross minus '+fmt(value.measured_reexpanded_tokens||0)+' re-expanded; cache effects excluded':'Enable the optimization ledger for recovery accounting')+'</small></div>'+
       '<div class="context-health-card"><label>Recovery tax</label><strong class="hv-amber">'+recovery+'</strong><small>Re-expanded tokens ÷ measured gross reduction</small></div>'+
       '<div class="context-health-card"><label>Receipt integrity</label><strong class="hv-blue">'+integrity+'</strong><small>'+fmt(evidence.valid_sessions||0)+' valid / '+fmt(evidence.sessions_sampled||0)+' sampled sessions</small></div>'+
       '<div class="context-health-card"><label>Omission recoverability</label><strong class="hv-violet">'+recoverable+'</strong><small>'+fmt(evidence.recoverable_omitted_items||0)+' recoverable / '+fmt(evidence.omitted_items||0)+' omitted items</small></div>'+
+      '<div class="context-health-card"><label>Provider request cache hits</label><strong class="hv-blue">'+requestHit+'</strong><small>'+fmt(cache.provider_observed_hits||0)+' hits / '+fmt(cache.provider_observed_requests||0)+' bounded live observations</small></div>'+
+      '<div class="context-health-card"><label>Cached input-token ratio</label><strong class="hv-violet">'+tokenHit+'</strong><small>'+fmt(cache.cache_read_tokens||0)+' cache-read / '+fmt(cache.cache_write_tokens||0)+' cache-write / '+fmt(cache.uncached_input_tokens||0)+' uncached</small></div>'+
+      '<div class="context-health-card"><label>Prefix continuity</label><strong class="hv-green">'+continuityRate+'</strong><small>'+fmt(continuity.prefix_degraded||0)+' degraded transitions / '+fmt(continuity.guard_interventions||0)+' warm-prefix rewrites prevented</small></div>'+
+      '<div class="context-health-card"><label>Economic net</label><strong class="'+economicClass+'">'+economicNet+'</strong><small>Requires a paired baseline; correlation is not savings attribution</small></div>'+
     '</div><div class="context-protections">'+
+      '<div class="context-protection"><b>Optimizer interference guard</b><span>'+fmt(continuity.estimated_prefix_tokens_preserved||0)+' estimated warm-prefix tokens preserved. Hash-only local measurement; no prompt content retained.</span></div>'+
       '<div class="context-protection"><b>Confusion protection</b><span>'+fmt(confusion.unsupported_claims_blocked||0)+' unsupported claims blocked. '+escHtml(confusion.scope||'')+'</span></div>'+
       '<div class="context-protection"><b>Rot resilience</b><span>Status: '+escHtml(rot.status||'unavailable')+'. '+escHtml(rot.scope||'')+'</span></div>'+
       '<div class="context-protection"><b>Drift protection</b><span>Status: '+escHtml(drift.status||'unavailable')+'; source freshness '+escHtml(drift.source_freshness||'unavailable')+'. '+escHtml(drift.scope||'')+'</span></div>'+
@@ -1385,7 +1480,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         try:
             from entroly.context_health import build_context_health
 
-            self._send_json(200, build_context_health())
+            self._send_json(
+                200,
+                build_context_health(
+                    provider_economics=_fetch_context_economics_snapshot()
+                ),
+            )
         except Exception as error:
             self._send_json(
                 503,
