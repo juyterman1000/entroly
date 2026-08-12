@@ -191,10 +191,10 @@ def test_ollama_discovery_can_inspect_context_without_external_dependencies(monk
         assert timeout == 0.1
         assert max_bytes > 0
         if url.endswith("/api/tags"):
-            return {"models": [{"name": "llama3.2:latest"}]}
+            return {"models": [{"name": "nemotron-3.5-lightning:latest"}]}
         assert url.endswith("/api/show")
-        assert payload == {"model": "llama3.2:latest"}
-        return {"model_info": {"llama.context_length": 131072}}
+        assert payload == {"model": "nemotron-3.5-lightning:latest"}
+        return {"model_info": {"nemotron_h.context_length": 1_048_576}}
 
     monkeypatch.setattr(registry_module, "_json_request", fake_request)
     report = discover_ollama_models(timeout=0.1, inspect_context=True)
@@ -202,8 +202,8 @@ def test_ollama_discovery_can_inspect_context_without_external_dependencies(monk
     assert report.warnings == ()
     assert len(report.models) == 1
     capability = report.models[0]
-    assert capability.id == "ollama/llama3.2:latest"
-    assert capability.context_window == 131_072
+    assert capability.id == "ollama/nemotron-3.5-lightning:latest"
+    assert capability.context_window == 1_048_576
     assert capability.trust is RegistryTrust.DISCOVERED
     assert capability.supports_tools is None
     assert capability.supports_vision is None

@@ -27,6 +27,49 @@ def test_language_map_covers_at_least_twenty_seven_languages() -> None:
         ("sample.rs", "pub struct Cart { n: u32 }\nimpl Cart { pub fn total(&self) -> u32 { self.n } }\n", {"Cart", "total"}),
         ("sample.ts", "export class Cart { total(): number { return 1; } }\n", {"Cart", "total"}),
         ("sample.c", "int total(int price) { return price; }\n", {"total"}),
+        # Kotlin's grammar names declarations positionally, with no `name`
+        # field, and the pack's structure processing returns the class alone.
+        # Both the top-level function and the class's own methods must appear.
+        (
+            "sample.kt",
+            "fun total(price: Int): Int { return price }\n"
+            "class Cart {\n    fun add() {}\n    fun clear() {}\n}\n",
+            {"total", "Cart", "add", "clear"},
+        ),
+        # Perl's sub is `subroutine_declaration_statement`, which the suffix
+        # heuristic skips; Haskell names a definition with a bare `function`.
+        ("sample.pl", "sub total { return 1 }\nsub add { }\n", {"total", "add"}),
+        (
+            "sample.hs",
+            "total :: Int -> Int\ntotal x = x\n\ndata Cart = Empty\n",
+            {"total", "Cart"},
+        ),
+        # Go dropped every `type` -- its name lives in `type_spec`, and the
+        # pack structure omitted it. Both the func and the type must appear.
+        ("sample.go", "package m\nfunc total() {}\ntype Cart struct{}\n", {"total", "Cart"}),
+        # Dart's pack structure returned the class alone, no functions.
+        ("sample.dart", "int total(int x){return x;}\nclass Cart{ void add(){} }\n", {"total", "Cart", "add"}),
+        # Erlang defines a function as `function_clause`s.
+        ("sample.erl", "total(X) -> X.\nadd() -> total(1).\n", {"total", "add"}),
+        # Solidity's contract is `contract_declaration`, outside the hint set.
+        ("sample.sol", "contract Cart {\n    function total() public {}\n}\n", {"Cart", "total"}),
+        # Zig names a function positionally in `FnProto` (a bare IDENTIFIER).
+        ("sample.zig", "pub fn total() void {}\nfn add() void {}\n", {"total", "add"}),
+        # Protobuf `message` names via `message_name`, no `name` field.
+        ("sample.proto", "message Cart {\n    string id = 1;\n}\n", {"Cart"}),
+        # R binds a function by assignment; the name is left of the arrow, and
+        # the anonymous `function_definition` must not surface as `function`.
+        ("sample.R", "total <- function(x) x + 1\nrunner <- function() total(1)\n", {"total", "runner"}),
+        # SQL names a created object in `object_reference`.
+        (
+            "sample.sql",
+            "CREATE FUNCTION add_tax(p int) RETURNS int AS $$ SELECT 1 $$ LANGUAGE SQL;\n",
+            {"add_tax"},
+        ),
+        # Svelte/Vue keep the script as opaque text; it is re-parsed as JS and
+        # the spans are shifted back to file coordinates.
+        ("sample.svelte", "<script>\nfunction total(){}\nclass Cart{}\n</script>\n<div/>\n", {"total", "Cart"}),
+        ("sample.vue", "<script>\nfunction total(){}\n</script>\n<template><div/></template>\n", {"total"}),
     ],
 )
 def test_parser_backed_spans_are_exact(path: str, source: str, names: set[str]) -> None:
@@ -38,6 +81,63 @@ def test_parser_backed_spans_are_exact(path: str, source: str, names: set[str]) 
         assert span.source in source
         assert source.splitlines()[span.start_line - 1].strip()
         assert span.start_line <= span.end_line
+
+
+def test_r_function_binding_does_not_leak_the_keyword() -> None:
+    """R's anonymous `function_definition` must not surface as `function`.
+
+    A function acquires a name only through assignment, so the binding is the
+    declaration; the bare definition node carries the keyword `function` and
+    was emitted as a symbol before the binding predicate and suppression.
+    """
+    pytest.importorskip("tree_sitter_language_pack")
+    spans = extract_structural_spans("helper <- function(x) x + 1\nx <- 5\n", "a.R")
+    assert spans is not None
+    names = {span.name for span in spans}
+    assert names == {"helper"}, names
+
+
+def test_embedded_script_spans_recover_exact_file_bytes() -> None:
+    """A Svelte span's byte range must address the real bytes in the file.
+
+    The script is parsed in isolation and its spans are shifted by the script
+    block's offset; an off-by-one there would still name the symbol but point
+    at the wrong bytes, which the byte-fidelity contract forbids.
+    """
+    pytest.importorskip("tree_sitter_language_pack")
+    source = "<p>hi</p>\n<script>\nfunction total(x){ return x }\n</script>\n"
+    spans = extract_structural_spans(source, "a.svelte")
+    assert spans is not None and spans
+    raw = source.encode("utf-8")
+    for span in spans:
+        assert raw[span.start_byte:span.end_byte].decode("utf-8") == span.source
+
+
+def test_kotlin_function_name_is_not_the_return_type_or_a_parameter() -> None:
+    """Guards the exact defect: the name resolved to the return type.
+
+    `fun helper(x: Int): Int` has no `name` field, so the generic resolver
+    descended into the return type and returned `Int`, and a naive fix then
+    pulled in the parameter `x`. The Kotlin-scoped resolver takes the first
+    direct `simple_identifier`, which is the name and cannot be either.
+    """
+    pytest.importorskip("tree_sitter_language_pack")
+    spans = extract_structural_spans("fun helper(x: Int): Int { return x }\n", "a.kt")
+    assert spans is not None
+    names = {span.name for span in spans}
+    assert names == {"helper"}, names
+
+
+def test_dart_function_body_does_not_invent_a_returned_identifier() -> None:
+    """A function body is not a declaration even when its type contains that word."""
+    pytest.importorskip("tree_sitter_language_pack")
+    spans = extract_structural_spans(
+        "int total(int x) { return x; }\nclass Cart { void add() {} }\n",
+        "a.dart",
+    )
+    assert spans is not None
+    names = {span.name for span in spans}
+    assert names == {"total", "Cart", "add"}, names
 
 
 def test_semantic_resolution_uses_parser_spans_when_available() -> None:

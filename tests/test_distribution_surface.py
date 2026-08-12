@@ -160,6 +160,22 @@ def test_release_announcement_template_is_fail_closed() -> None:
     assert "Version is synchronized in citation metadata" in template
 
 
+def test_nemotron_ollama_support_is_answer_engine_discoverable() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    llms = (ROOT / "llms.txt").read_text(encoding="utf-8")
+    page = (ROOT / "docs/nemotron-3-5-lightning-ollama.html").read_text(
+        encoding="utf-8"
+    )
+    sitemap = (ROOT / "sitemap.xml").read_text(encoding="utf-8")
+
+    assert "### NVIDIA Nemotron 3.5 Lightning with Ollama" in readme
+    assert "Does Entroly support NVIDIA Nemotron 3.5 Lightning?" in llms
+    assert '"@type": "FAQPage"' in page
+    assert '"@type": "TechArticle"' in page
+    assert "nemotron-3.5-lightning" in page
+    assert "nemotron-3-5-lightning-ollama.html" in sitemap
+
+
 def test_localization_contract_requires_human_and_technical_review() -> None:
     localization = (ROOT / "docs/localization/README.md").read_text(
         encoding="utf-8"

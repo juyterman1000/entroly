@@ -57,6 +57,66 @@ _DECLARATION_HINTS = frozenset({
     "macro", "procedure", "subroutine", "routine", "type_alias",
 })
 
+# Grammars whose declaration nodes the generic heuristic cannot match, keyed by
+# language so the names cannot leak across grammars. These were read from the
+# real parse trees, not guessed: Haskell names a definition `function` (bare,
+# with a `name` field), Perl a sub `subroutine_declaration_statement` (ends in
+# `_statement`, so the suffix rule skips it). Both carry a `name` field, so the
+# existing name/kind extraction handles them unchanged. The names are
+# deliberately NOT added to the global set: JavaScript and TypeScript both emit
+# a bare `function` node for function expressions, and matching those globally
+# would invent named declarations from anonymous expressions.
+_LANGUAGE_DECLARATION_TYPES: dict[str, frozenset[str]] = {
+    "haskell": frozenset({"function", "data_type"}),
+    "perl": frozenset({"subroutine_declaration_statement"}),
+    # Go names a type in `type_spec` under `type_declaration`; the suffix rule
+    # sees only the wrapper and dropped every `type` in the file.
+    "go": frozenset({"type_spec"}),
+    # Solidity's contract/library/interface are `*_declaration` but the suffix
+    # rule's hint list has no "contract"; its functions already matched.
+    "solidity": frozenset({"contract_declaration", "library_declaration", "interface_declaration"}),
+    # Erlang defines a function as one or more `function_clause`s, each naming
+    # the function; nothing in the generic set matched them.
+    "erlang": frozenset({"function_clause"}),
+    # Zig names a function in `FnProto` positionally (a bare IDENTIFIER child);
+    # the suffix rule matches none of its PascalCase node types.
+    "zig": frozenset({"FnProto"}),
+    # Protobuf `message` names via a `message_name` child, no `name` field.
+    "proto": frozenset({"message", "enum"}),
+    # SQL names a created object in an `object_reference` child, no `name` field.
+    "sql": frozenset({"create_function", "create_procedure", "create_table", "create_view"}),
+}
+
+# Node types to NOT treat as declarations for a language, overriding the generic
+# rule. R has no standalone function declaration: a function is an anonymous
+# value bound by assignment, so the `function_definition` node itself carries no
+# name and the generic rule emitted the keyword `function`. The binding is
+# matched by predicate below instead.
+_LANGUAGE_SUPPRESS_TYPES: dict[str, frozenset[str]] = {
+    "r": frozenset({"function_definition"}),
+}
+
+
+def _r_binds_function(node: Any) -> bool:
+    """An R assignment whose right-hand side is a function definition.
+
+    `helper <- function(x) x + 1` parses as a `binary_operator` with the name
+    on the left, an assignment operator, and the function on the right. This is
+    the only place an R function acquires a name, so it is the declaration.
+    """
+    if str(getattr(node, "type", "")) != "binary_operator":
+        return False
+    children = list(getattr(node, "children", ()))
+    if not any(str(getattr(c, "type", "")) in {"<-", "=", "<<-"} for c in children):
+        return False
+    return any(str(getattr(c, "type", "")) == "function_definition" for c in children)
+
+
+# Node-level predicates for declarations the type name alone cannot identify.
+_LANGUAGE_DECLARATION_PREDICATE: dict[str, Any] = {
+    "r": _r_binds_function,
+}
+
 _KIND_HINTS = (
     ("method", "method"), ("function", "function"), ("constructor", "constructor"),
     ("class", "class"), ("struct", "struct"), ("enum", "enum"),
@@ -257,6 +317,14 @@ def _first_identifier(node: Any) -> Any | None:
     stack = [node]
     while stack:
         current = stack.pop()
+        # Error-recovery subtrees hold fragments in the wrong place: a dense
+        # one-line `class W{ fun run(){} }` mis-parses, and descending into the
+        # ERROR node returns an inner function name as the class name. Skipping
+        # them keeps resolution on the real, well-formed structure.
+        if str(getattr(current, "type", "")) == "ERROR" or bool(
+            getattr(current, "is_error", False)
+        ):
+            continue
         if getattr(current, "type", "") in {
             "identifier", "type_identifier", "field_identifier", "property_identifier",
             "constant", "operator_name", "name",
@@ -266,7 +334,41 @@ def _first_identifier(node: Any) -> Any | None:
     return None
 
 
-def _name_node(node: Any) -> Any | None:
+# Grammars that name a declaration with a bare positional child and expose no
+# `name` field for it. The value is the child node type that holds the name, and
+# only a DIRECT child is taken: Kotlin's `function_declaration` lists
+# `simple_identifier` (the name), `function_value_parameters`, `user_type` (the
+# return type) and `function_body` as siblings with no fields, so the generic
+# `_first_identifier` descends into the return type and returns `Int` for
+# `fun helper(): Int`, and finds nothing for a body-less nested `fun run()`.
+# Taking the first direct `simple_identifier` returns the real name and cannot
+# reach a parameter (nested in function_value_parameters) or a return type
+# (nested in user_type). A class uses `type_identifier`, not `simple_identifier`,
+# so this does not fire for it and the existing resolution still applies.
+_LANGUAGE_NAME_CHILD_TYPE: dict[str, str] = {
+    "kotlin": "simple_identifier",
+    "zig": "IDENTIFIER",
+    "proto": "message_name",
+    "sql": "object_reference",
+    # An R function binding names itself with the identifier left of the arrow.
+    "r": "identifier",
+}
+
+# Grammars whose pack structure processing returns partial declarations (a named
+# class but null-named functions, no method descent), where the name-resolving
+# tree walk is more complete. Add a language only after verifying the walk does
+# strictly better for it, since the walk's own per-grammar coverage varies.
+_PACK_STRUCTURE_UNRELIABLE: frozenset[str] = frozenset(
+    {"kotlin", "dart", "go", "solidity", "r"}
+)
+
+
+def _name_node(node: Any, language: str = "") -> Any | None:
+    preferred = _LANGUAGE_NAME_CHILD_TYPE.get(language) if language else None
+    if preferred:
+        for child in getattr(node, "children", ()):
+            if str(getattr(child, "type", "")) == preferred:
+                return child
     field = getattr(node, "child_by_field_name", None)
     if callable(field):
         named = field("name")
@@ -289,14 +391,42 @@ def _kind(node_type: str) -> str:
     return "declaration"
 
 
-def _is_declaration_type(node_type: str) -> bool:
+def _language_scoped_node_ok(node: Any, node_type: str, language: str) -> bool:
+    """A language-scoped declaration must carry a resolvable name.
+
+    The scoped node names are broad on purpose, and some are overloaded within
+    their own grammar: Haskell's `function` denotes both a definition
+    (`helper x = x + 1`, which has a `name`) and a function TYPE (`Int -> Int`,
+    which has none). A name is resolvable when the node has an explicit `name`
+    field, or -- for the positional grammars that expose none -- a direct child
+    of the type this language uses for names (Zig's `IDENTIFIER` under
+    `FnProto`). The Haskell function type has neither, so it is still rejected
+    and the walk does not emit `Int` as a function.
+    """
+    if node_type not in _LANGUAGE_DECLARATION_TYPES.get(language, ()):
+        return True
+    field = getattr(node, "child_by_field_name", None)
+    if callable(field) and field("name") is not None:
+        return True
+    preferred = _LANGUAGE_NAME_CHILD_TYPE.get(language)
+    if preferred:
+        return any(
+            str(getattr(child, "type", "")) == preferred
+            for child in getattr(node, "children", ())
+        )
+    return False
+
+
+def _is_declaration_type(node_type: str, language: str = "") -> bool:
+    if language and node_type in _LANGUAGE_DECLARATION_TYPES.get(language, ()):
+        return True
     lowered = node_type.lower()
     if lowered in _DECLARATION_TYPES:
         return True
     if not any(hint in lowered for hint in _DECLARATION_HINTS):
         return False
     return lowered.endswith((
-        "_definition", "_declaration", "_item", "_specifier", "_body",
+        "_definition", "_declaration", "_item", "_specifier",
     )) or lowered in {"method", "module", "subroutine"}
 
 
@@ -422,15 +552,31 @@ def _spans_from_tree(
     spans: list[StructuralSpan] = []
     seen: set[tuple[int, int, str]] = set()
     state = _TraversalState()
+    suppressed = _LANGUAGE_SUPPRESS_TYPES.get(language, frozenset())
+    predicate = _LANGUAGE_DECLARATION_PREDICATE.get(language)
     for node in _walk(tree.root_node, max_nodes, state):
         node_type = str(getattr(node, "type", ""))
-        if not _is_declaration_type(node_type) or bool(getattr(node, "is_error", False)):
+        if bool(getattr(node, "is_error", False)):
+            continue
+        is_declaration = (
+            node_type not in suppressed and _is_declaration_type(node_type, language)
+        ) or (predicate is not None and predicate(node))
+        if not is_declaration:
+            continue
+        if not _language_scoped_node_ok(node, node_type, language):
+            continue
+        # A declaration with a direct ERROR child was recovered from a syntax
+        # error, so its own structure is unreliable -- a dense `class W{ ... }`
+        # can otherwise take an inner method name as the class name. Skipping it
+        # keeps a malformed span out rather than emitting a mislabelled one; the
+        # well-formed declarations in the same file are unaffected.
+        if any(str(getattr(c, "type", "")) == "ERROR" for c in getattr(node, "children", ())):
             continue
         start = int(getattr(node, "start_byte", 0))
         end = int(getattr(node, "end_byte", 0))
         if end <= start or end > len(raw):
             continue
-        name_node = _name_node(node)
+        name_node = _name_node(node, language)
         if name_node is None:
             continue
         name = raw[int(name_node.start_byte):int(name_node.end_byte)].decode(
@@ -475,6 +621,69 @@ def _spans_from_tree(
         max_nodes=max_nodes,
         backend="tree-sitter-raw",
     )
+
+
+# Single-file-component languages whose script is embedded as opaque text, and
+# the language to parse that text as. Svelte and Vue keep the script inside a
+# `script_element` whose only child is a `raw_text` node -- the grammar does not
+# descend into it, so the component's functions are invisible until that text is
+# re-parsed as JavaScript and its spans are shifted back to file coordinates.
+_EMBEDDED_SCRIPT_LANGUAGES: dict[str, str] = {
+    "svelte": "javascript",
+    "vue": "javascript",
+}
+
+
+def _embedded_script_spans(
+    raw: bytes, tree: Any, language: str, max_nodes: int
+) -> list[StructuralSpan]:
+    """Extract declarations from the `<script>` block of a component file."""
+    inner_language = _EMBEDDED_SCRIPT_LANGUAGES.get(language)
+    if inner_language is None:
+        return []
+    parser = _get_local_parser(inner_language)
+    if parser is None:
+        return []
+    spans: list[StructuralSpan] = []
+    stack = [tree.root_node]
+    while stack:
+        node = stack.pop()
+        parent = getattr(node, "parent", None)
+        if (
+            str(getattr(node, "type", "")) == "raw_text"
+            and parent is not None
+            and str(getattr(parent, "type", "")) == "script_element"
+        ):
+            offset = int(getattr(node, "start_byte", 0))
+            line_offset = int(node.start_point[0])
+            inner_raw = raw[offset:int(getattr(node, "end_byte", 0))]
+            inner_source = inner_raw.decode("utf-8", errors="surrogateescape")
+            # Prefer the pack's structure, which is clean for JavaScript; the
+            # raw tree walk is only the fallback, matching the main path so the
+            # embedded script is analysed exactly as a standalone file would be.
+            inner_items = _pack_structure_spans(
+                inner_source, "embedded.js", inner_raw, inner_language
+            )
+            if not inner_items:
+                inner_items = list(
+                    _spans_from_tree(
+                        inner_raw, parser.parse(inner_raw), inner_language, max_nodes
+                    ).items
+                )
+            for item in inner_items:
+                spans.append(StructuralSpan(
+                    name=item.name,
+                    kind=item.kind,
+                    start_line=item.start_line + line_offset,
+                    end_line=item.end_line + line_offset,
+                    source=item.source,
+                    signature=item.signature,
+                    indent=item.indent,
+                    start_byte=item.start_byte + offset,
+                    end_byte=item.end_byte + offset,
+                ))
+        stack.extend(getattr(node, "children", ()))
+    return spans
 
 
 _CONTROL_TYPES = frozenset({
@@ -561,7 +770,9 @@ def extract_structural_profiles_report(
     state = _TraversalState()
     for node in _walk(tree.root_node, max_nodes, state):
         node_type = str(getattr(node, "type", ""))
-        if not _is_declaration_type(node_type) or bool(getattr(node, "is_error", False)):
+        if not _is_declaration_type(node_type, language) or bool(getattr(node, "is_error", False)):
+            continue
+        if not _language_scoped_node_ok(node, node_type, language):
             continue
         if not any(hint in node_type.lower() for hint in (
             "function", "method", "constructor", "procedure", "subroutine",
@@ -685,7 +896,34 @@ def extract_structural_spans_report(
     if parsed is None:
         return None
     raw, tree, language = parsed
-    normalized = _pack_structure_spans(source, file_path, raw, language)
+    if language in _EMBEDDED_SCRIPT_LANGUAGES:
+        # The component's own markup has no declarations; its script does, and
+        # the grammar leaves that as opaque text. Re-parse the script block.
+        embedded = _embedded_script_spans(raw, tree, language, max_nodes)
+        metrics_state = _TraversalState()
+        for _node in _walk(tree.root_node, max_nodes, metrics_state):
+            pass
+        return StructuralExtraction(
+            items=tuple(embedded),
+            language=language,
+            complete=metrics_state.complete,
+            nodes_visited=metrics_state.visited,
+            max_nodes=max_nodes,
+            backend="embedded-script",
+        )
+    # The pack's structure processing under-resolves some grammars: for Kotlin
+    # it returns the top-level `fun` with a null name (dropped for lack of a
+    # name) and omits a class's own methods entirely, yielding just the class.
+    # For these the name-resolving tree walk below is strictly more complete, so
+    # the pack path is skipped rather than trusted for its partial output. Kept
+    # to an explicit set: forcing the fallback generally regressed JavaScript,
+    # whose anonymous arrow is legitimately nameless and whose pack result is
+    # already correct.
+    normalized = (
+        None
+        if language in _PACK_STRUCTURE_UNRELIABLE
+        else _pack_structure_spans(source, file_path, raw, language)
+    )
     if normalized:
         # Registry processing owns its traversal and provides exact spans. Keep
         # the raw parser's node count only as a bounded completeness check.
