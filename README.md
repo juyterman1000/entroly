@@ -205,7 +205,7 @@ Runs as a **CLI**, **Python/TypeScript SDK**, **MCP server**, **HTTP proxy**, or
 | Cortex Code | SDK/library boundary only | Not validated as a wrap target |
 | Aider, OpenCode, and 30+ more | Session-scoped OpenAI-compatible proxy | One command |
 
-Status describes integration depth, not a savings guarantee — provider-observed savings require requests to actually traverse an Entroly proxy route. Full compatibility matrix: **[docs/agent-compatibility.md](docs/agent-compatibility.md)**.
+Status describes integration depth, not a savings guarantee — provider-observed savings require requests to actually traverse an Entroly proxy route. Entroly does not claim interception of GitHub-hosted subscription inference on Copilot's native path. Full compatibility matrix: **[docs/agent-compatibility.md](docs/agent-compatibility.md)**.
 
 ---
 ## When to use it · when to skip it
