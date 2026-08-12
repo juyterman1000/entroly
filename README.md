@@ -22,6 +22,7 @@ AST and Tree-sitter structure, dependency and call graphs, interprocedural flow,
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-green" alt="Apache-2.0 license"></a>
   <a href="benchmarks/results/receipt_fragment_fidelity_default.json"><img src="https://img.shields.io/badge/Source_spans-5%2C117%2F5%2C117_verified-0A7B83" alt="5,117 of 5,117 native source fragments independently verified"></a>
   <a href="benchmarks/results/receipt_public_integrity.json"><img src="https://img.shields.io/badge/SDK_recovery-13%2F13_exact-blueviolet" alt="13 of 13 public SDK recovery probes exactly matched their source spans"></a>
+  <a href="benchmarks/results/language_symbol_coverage.json"><img src="https://img.shields.io/badge/Symbol_extraction-32%2F37_exact-7C3AED" alt="32 of 37 declaration-bearing language samples passed strict symbol extraction"></a>
   <a href="https://github.com/juyterman1000/entroly"><img src="https://img.shields.io/github/stars/juyterman1000/entroly?style=social" alt="Entroly GitHub stars"></a>
 </p>
 
@@ -104,6 +105,8 @@ Most retrieval systems answer **“which text looks similar?”** Entroly can al
 That combination is why Entroly is more than a context compressor. It is a **code-intelligence control plane for AI agents**: understand the repository, select evidence, verify freshness, preserve provenance, then compress only after the right context has been chosen.
 
 **Evidence, not slogans:** the repository includes a [39-dimension code-intelligence conformance protocol](benchmarks/CODE_INTELLIGENCE_CONFORMANCE.md) covering structural correctness, typed dispatch, call/dependency graphs, value flow, LSP ranges, cache invalidation, architecture reasoning, refactoring safety, stale-source rejection, and tamper evidence. The design and limitations are documented in [Verified Code Context](docs/verified-code-context.md) and [Universal Code Intelligence](docs/research/universal-code-intelligence.md).
+
+**Measured multi-language symbol extraction:** with `tree-sitter-language-pack==1.14.3`, Entroly passes **32/37 declaration-bearing language samples (86.5%)** under a strict contract: valid syntax, complete traversal, the exact expected symbol set, and byte-exact source spans. All **41 mapped languages** were audited; assembly, CSS, HTML, and SCSS are four verified non-declarative samples. Against pre-change `main` (`2eeecb87`), the same harness moves from **20/37 to 32/37**, with 12 newly covered languages and zero losses. The five measured gaps are C3, F#, Groovy, Nim, and OCaml. [Protocol and limitations](docs/benchmarks/language-symbol-coverage.md) · [machine-readable results](benchmarks/results/language_symbol_coverage.json) · reproduce offline after grammar acquisition with `python benchmarks/language_symbol_coverage.py --baseline-ref 2eeecb87 --check`.
 
 ---
 

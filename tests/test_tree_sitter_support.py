@@ -128,6 +128,18 @@ def test_kotlin_function_name_is_not_the_return_type_or_a_parameter() -> None:
     assert names == {"helper"}, names
 
 
+def test_dart_function_body_does_not_invent_a_returned_identifier() -> None:
+    """A function body is not a declaration even when its type contains that word."""
+    pytest.importorskip("tree_sitter_language_pack")
+    spans = extract_structural_spans(
+        "int total(int x) { return x; }\nclass Cart { void add() {} }\n",
+        "a.dart",
+    )
+    assert spans is not None
+    names = {span.name for span in spans}
+    assert names == {"total", "Cart", "add"}, names
+
+
 def test_semantic_resolution_uses_parser_spans_when_available() -> None:
     pytest.importorskip("tree_sitter_language_pack")
     source = "export class Cart {\n  total(): number { return 1; }\n}\n"

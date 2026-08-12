@@ -426,7 +426,7 @@ def _is_declaration_type(node_type: str, language: str = "") -> bool:
     if not any(hint in lowered for hint in _DECLARATION_HINTS):
         return False
     return lowered.endswith((
-        "_definition", "_declaration", "_item", "_specifier", "_body",
+        "_definition", "_declaration", "_item", "_specifier",
     )) or lowered in {"method", "module", "subroutine"}
 
 

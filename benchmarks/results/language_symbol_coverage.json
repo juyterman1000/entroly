@@ -1,0 +1,1408 @@
+{
+  "baseline": {
+    "cases": [
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Total"
+        ],
+        "language": "ada",
+        "observed_symbols": [
+          "Total"
+        ],
+        "path": "sample.adb",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": false,
+        "expected_symbols": [],
+        "language": "asm",
+        "observed_symbols": [],
+        "path": "sample.asm",
+        "status": "non_declarative_verified",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "total"
+        ],
+        "language": "bash",
+        "observed_symbols": [
+          "total"
+        ],
+        "path": "sample.sh",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "total"
+        ],
+        "language": "c",
+        "observed_symbols": [
+          "total"
+        ],
+        "path": "sample.c",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "total"
+        ],
+        "language": "c3",
+        "observed_symbols": [],
+        "path": "sample.c3",
+        "status": "gap",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "Total"
+        ],
+        "language": "c_sharp",
+        "observed_symbols": [
+          "Cart",
+          "Total"
+        ],
+        "path": "sample.cs",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "cpp",
+        "observed_symbols": [
+          "Cart",
+          "total"
+        ],
+        "path": "sample.cpp",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": false,
+        "expected_symbols": [],
+        "language": "css",
+        "observed_symbols": [],
+        "path": "sample.css",
+        "status": "non_declarative_verified",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "add",
+          "total"
+        ],
+        "language": "dart",
+        "observed_symbols": [
+          "Cart"
+        ],
+        "path": "sample.dart",
+        "status": "gap",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "elixir",
+        "observed_symbols": [
+          "Cart",
+          "total"
+        ],
+        "path": "sample.ex",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "add",
+          "total"
+        ],
+        "language": "erlang",
+        "observed_symbols": [],
+        "path": "sample.erl",
+        "status": "gap",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "total"
+        ],
+        "language": "fish",
+        "observed_symbols": [
+          "total"
+        ],
+        "path": "sample.fish",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "total"
+        ],
+        "language": "fsharp",
+        "observed_symbols": [],
+        "path": "sample.fs",
+        "status": "gap",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "go",
+        "observed_symbols": [
+          "total"
+        ],
+        "path": "sample.go",
+        "status": "gap",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "groovy",
+        "observed_symbols": [],
+        "path": "sample.groovy",
+        "status": "gap",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "haskell",
+        "observed_symbols": [],
+        "path": "sample.hs",
+        "status": "gap",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": false,
+        "expected_symbols": [],
+        "language": "html",
+        "observed_symbols": [],
+        "path": "sample.html",
+        "status": "non_declarative_verified",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "java",
+        "observed_symbols": [
+          "Cart",
+          "total"
+        ],
+        "path": "sample.java",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "javascript",
+        "observed_symbols": [
+          "Cart",
+          "total"
+        ],
+        "path": "sample.js",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "julia",
+        "observed_symbols": [
+          "Cart",
+          "total"
+        ],
+        "path": "sample.jl",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "add",
+          "clear",
+          "total"
+        ],
+        "language": "kotlin",
+        "observed_symbols": [
+          "Cart"
+        ],
+        "path": "sample.kt",
+        "status": "gap",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "total"
+        ],
+        "language": "lua",
+        "observed_symbols": [
+          "total"
+        ],
+        "path": "sample.lua",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "total"
+        ],
+        "language": "nim",
+        "observed_symbols": [],
+        "path": "sample.nim",
+        "status": "gap",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "total"
+        ],
+        "language": "ocaml",
+        "observed_symbols": [],
+        "path": "sample.ml",
+        "status": "gap",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "php",
+        "observed_symbols": [
+          "Cart",
+          "total"
+        ],
+        "path": "sample.php",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart"
+        ],
+        "language": "proto",
+        "observed_symbols": [],
+        "path": "sample.proto",
+        "status": "gap",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "add",
+          "total"
+        ],
+        "language": "python",
+        "observed_symbols": [
+          "Cart",
+          "add",
+          "total"
+        ],
+        "path": "sample.py",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "runner",
+          "total"
+        ],
+        "language": "r",
+        "observed_symbols": [
+          "function"
+        ],
+        "path": "sample.R",
+        "status": "gap",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "ruby",
+        "observed_symbols": [
+          "Cart",
+          "total"
+        ],
+        "path": "sample.rb",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "rust",
+        "observed_symbols": [
+          "Cart",
+          "total"
+        ],
+        "path": "sample.rs",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "scala",
+        "observed_symbols": [
+          "Cart",
+          "total"
+        ],
+        "path": "sample.scala",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": false,
+        "expected_symbols": [],
+        "language": "scss",
+        "observed_symbols": [],
+        "path": "sample.scss",
+        "status": "non_declarative_verified",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "solidity",
+        "observed_symbols": [
+          "total"
+        ],
+        "path": "sample.sol",
+        "status": "gap",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "add_tax"
+        ],
+        "language": "sql",
+        "observed_symbols": [],
+        "path": "sample.sql",
+        "status": "gap",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "svelte",
+        "observed_symbols": [],
+        "path": "sample.svelte",
+        "status": "gap",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "swift",
+        "observed_symbols": [
+          "Cart",
+          "total"
+        ],
+        "path": "sample.swift",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "tsx",
+        "observed_symbols": [
+          "Cart",
+          "total"
+        ],
+        "path": "sample.tsx",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "typescript",
+        "observed_symbols": [
+          "Cart",
+          "total"
+        ],
+        "path": "sample.ts",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "v",
+        "observed_symbols": [
+          "Cart",
+          "total"
+        ],
+        "path": "sample.v",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "total"
+        ],
+        "language": "vue",
+        "observed_symbols": [],
+        "path": "sample.vue",
+        "status": "gap",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "add",
+          "total"
+        ],
+        "language": "zig",
+        "observed_symbols": [],
+        "path": "sample.zig",
+        "status": "gap",
+        "syntax_valid": true
+      }
+    ],
+    "extractor_sha256": "061775c48ce7c79384dec8f7539f972cb88dae6e94817f880d694131cd389ae0",
+    "label": "2eeecb8733103fe7234133f48b105f271662b219",
+    "summary": {
+      "declaration_bearing_languages": 37,
+      "declaration_coverage_pct": 54.1,
+      "declaration_languages_covered": 20,
+      "mapped_languages_audited": 41,
+      "non_declarative_languages": 4,
+      "non_declarative_languages_verified": 4,
+      "strict_cases_passed": 24
+    }
+  },
+  "comparison": {
+    "coverage_delta": 12,
+    "lost_declaration_language_coverage": [],
+    "newly_covered_declaration_languages": [
+      "dart",
+      "erlang",
+      "go",
+      "haskell",
+      "kotlin",
+      "proto",
+      "r",
+      "solidity",
+      "sql",
+      "svelte",
+      "vue",
+      "zig"
+    ]
+  },
+  "current": {
+    "cases": [
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Total"
+        ],
+        "language": "ada",
+        "observed_symbols": [
+          "Total"
+        ],
+        "path": "sample.adb",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": false,
+        "expected_symbols": [],
+        "language": "asm",
+        "observed_symbols": [],
+        "path": "sample.asm",
+        "status": "non_declarative_verified",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "total"
+        ],
+        "language": "bash",
+        "observed_symbols": [
+          "total"
+        ],
+        "path": "sample.sh",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "total"
+        ],
+        "language": "c",
+        "observed_symbols": [
+          "total"
+        ],
+        "path": "sample.c",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "total"
+        ],
+        "language": "c3",
+        "observed_symbols": [],
+        "path": "sample.c3",
+        "status": "gap",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "Total"
+        ],
+        "language": "c_sharp",
+        "observed_symbols": [
+          "Cart",
+          "Total"
+        ],
+        "path": "sample.cs",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "cpp",
+        "observed_symbols": [
+          "Cart",
+          "total"
+        ],
+        "path": "sample.cpp",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": false,
+        "expected_symbols": [],
+        "language": "css",
+        "observed_symbols": [],
+        "path": "sample.css",
+        "status": "non_declarative_verified",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "add",
+          "total"
+        ],
+        "language": "dart",
+        "observed_symbols": [
+          "Cart",
+          "add",
+          "total"
+        ],
+        "path": "sample.dart",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "elixir",
+        "observed_symbols": [
+          "Cart",
+          "total"
+        ],
+        "path": "sample.ex",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "add",
+          "total"
+        ],
+        "language": "erlang",
+        "observed_symbols": [
+          "add",
+          "total"
+        ],
+        "path": "sample.erl",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "total"
+        ],
+        "language": "fish",
+        "observed_symbols": [
+          "total"
+        ],
+        "path": "sample.fish",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "total"
+        ],
+        "language": "fsharp",
+        "observed_symbols": [],
+        "path": "sample.fs",
+        "status": "gap",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "go",
+        "observed_symbols": [
+          "Cart",
+          "total"
+        ],
+        "path": "sample.go",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "groovy",
+        "observed_symbols": [],
+        "path": "sample.groovy",
+        "status": "gap",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "haskell",
+        "observed_symbols": [
+          "Cart",
+          "total"
+        ],
+        "path": "sample.hs",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": false,
+        "expected_symbols": [],
+        "language": "html",
+        "observed_symbols": [],
+        "path": "sample.html",
+        "status": "non_declarative_verified",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "java",
+        "observed_symbols": [
+          "Cart",
+          "total"
+        ],
+        "path": "sample.java",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "javascript",
+        "observed_symbols": [
+          "Cart",
+          "total"
+        ],
+        "path": "sample.js",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "julia",
+        "observed_symbols": [
+          "Cart",
+          "total"
+        ],
+        "path": "sample.jl",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "add",
+          "clear",
+          "total"
+        ],
+        "language": "kotlin",
+        "observed_symbols": [
+          "Cart",
+          "add",
+          "clear",
+          "total"
+        ],
+        "path": "sample.kt",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "total"
+        ],
+        "language": "lua",
+        "observed_symbols": [
+          "total"
+        ],
+        "path": "sample.lua",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "total"
+        ],
+        "language": "nim",
+        "observed_symbols": [],
+        "path": "sample.nim",
+        "status": "gap",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "total"
+        ],
+        "language": "ocaml",
+        "observed_symbols": [],
+        "path": "sample.ml",
+        "status": "gap",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "php",
+        "observed_symbols": [
+          "Cart",
+          "total"
+        ],
+        "path": "sample.php",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart"
+        ],
+        "language": "proto",
+        "observed_symbols": [
+          "Cart"
+        ],
+        "path": "sample.proto",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "add",
+          "total"
+        ],
+        "language": "python",
+        "observed_symbols": [
+          "Cart",
+          "add",
+          "total"
+        ],
+        "path": "sample.py",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "runner",
+          "total"
+        ],
+        "language": "r",
+        "observed_symbols": [
+          "runner",
+          "total"
+        ],
+        "path": "sample.R",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "ruby",
+        "observed_symbols": [
+          "Cart",
+          "total"
+        ],
+        "path": "sample.rb",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "rust",
+        "observed_symbols": [
+          "Cart",
+          "total"
+        ],
+        "path": "sample.rs",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "scala",
+        "observed_symbols": [
+          "Cart",
+          "total"
+        ],
+        "path": "sample.scala",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": false,
+        "expected_symbols": [],
+        "language": "scss",
+        "observed_symbols": [],
+        "path": "sample.scss",
+        "status": "non_declarative_verified",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "solidity",
+        "observed_symbols": [
+          "Cart",
+          "total"
+        ],
+        "path": "sample.sol",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "add_tax"
+        ],
+        "language": "sql",
+        "observed_symbols": [
+          "add_tax"
+        ],
+        "path": "sample.sql",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "embedded-script",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "svelte",
+        "observed_symbols": [
+          "Cart",
+          "total"
+        ],
+        "path": "sample.svelte",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "swift",
+        "observed_symbols": [
+          "Cart",
+          "total"
+        ],
+        "path": "sample.swift",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "tsx",
+        "observed_symbols": [
+          "Cart",
+          "total"
+        ],
+        "path": "sample.tsx",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "typescript",
+        "observed_symbols": [
+          "Cart",
+          "total"
+        ],
+        "path": "sample.ts",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "language-pack-process",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "Cart",
+          "total"
+        ],
+        "language": "v",
+        "observed_symbols": [
+          "Cart",
+          "total"
+        ],
+        "path": "sample.v",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "embedded-script",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "total"
+        ],
+        "language": "vue",
+        "observed_symbols": [
+          "total"
+        ],
+        "path": "sample.vue",
+        "status": "covered",
+        "syntax_valid": true
+      },
+      {
+        "backend": "tree-sitter-raw",
+        "byte_exact": true,
+        "complete": true,
+        "declaration_bearing": true,
+        "expected_symbols": [
+          "add",
+          "total"
+        ],
+        "language": "zig",
+        "observed_symbols": [
+          "add",
+          "total"
+        ],
+        "path": "sample.zig",
+        "status": "covered",
+        "syntax_valid": true
+      }
+    ],
+    "extractor_sha256": "5c7d38390884d4c45fa4dff7410ce6261748686c6f47529274a72d8b3749c089",
+    "label": "worktree",
+    "summary": {
+      "declaration_bearing_languages": 37,
+      "declaration_coverage_pct": 86.5,
+      "declaration_languages_covered": 32,
+      "mapped_languages_audited": 41,
+      "non_declarative_languages": 4,
+      "non_declarative_languages_verified": 4,
+      "strict_cases_passed": 36
+    }
+  },
+  "environment": {
+    "tree_sitter_language_pack": "1.14.3"
+  },
+  "method": {
+    "case_contract": "exact symbol set, complete traversal, byte-exact spans",
+    "case_manifest_sha256": "7df07e34f77fef3cd3af6fb928358594df82384ce3661297c22233ed325f625d",
+    "economic_or_answer_quality_claim": false,
+    "scope": "one representative sample for every language in LANGUAGE_BY_SUFFIX"
+  },
+  "schema": "entroly.language-symbol-coverage.v1"
+}
