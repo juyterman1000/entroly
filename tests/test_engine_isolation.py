@@ -29,13 +29,15 @@ from __future__ import annotations
 
 import gzip
 import os
+import subprocess
+import sys
 import tempfile
+import textwrap
 from pathlib import Path
 
 import pytest
 
 import entroly.auto_index as auto_index_module
-import entroly.server as server_module
 from entroly.auto_index import auto_index
 from entroly.config import EntrolyConfig
 from entroly.server import EntrolyEngine
@@ -215,51 +217,80 @@ def test_persistent_engine_loads_index_file(tmp_path: Path):
 # ── 2. auto_index unified return shape ───────────────────────────────
 
 
-def test_python_warm_start_preserves_feedback_and_counters(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-):
-    monkeypatch.setattr(server_module, "_RUST_AVAILABLE", False)
-    ckpt = tmp_path / "ckpt"
-    first = EntrolyEngine(EntrolyConfig(
-        use_persistent_index=True,
-        checkpoint_dir=ckpt,
-    ))
-    stored = first.ingest_fragment(
-        content="def useful_context(): return 'kept'",
-        source="test://useful.py",
-        token_count=10,
+def _run_without_native(script: str, *args: Path) -> subprocess.CompletedProcess[str]:
+    probe = "import sys\nsys.modules['entroly_core'] = None\n" + textwrap.dedent(script)
+    return subprocess.run(
+        [sys.executable, "-c", probe, *(str(arg) for arg in args)],
+        capture_output=True,
+        text=True,
+        timeout=60,
     )
-    for _ in range(3):
-        first.record_success([stored["fragment_id"]])
-    first.checkpoint()
 
-    restored = EntrolyEngine(EntrolyConfig(
-        use_persistent_index=True,
-        checkpoint_dir=ckpt,
-    ))
-    restored.wait_until_warm()
 
-    assert restored._wilson.learned_value(stored["fragment_id"]) == pytest.approx(
-        first._wilson.learned_value(stored["fragment_id"])
+def _assert_probe_passed(completed: subprocess.CompletedProcess[str]) -> None:
+    assert completed.returncode == 0, (
+        f"pure-Python probe failed:\n{completed.stdout}\n{completed.stderr}"
     )
-    assert restored.get_stats()["savings"]["total_fragments_ingested"] == 1
 
 
-def test_corrupt_python_warm_start_fails_closed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-):
-    monkeypatch.setattr(server_module, "_RUST_AVAILABLE", False)
-    ckpt = tmp_path / "ckpt"
-    ckpt.mkdir()
-    (ckpt / "index.json.gz").write_bytes(b"not a valid index")
+def test_python_warm_start_preserves_feedback_and_counters(tmp_path: Path):
+    completed = _run_without_native(
+        """
+        from pathlib import Path
+        from entroly.config import EntrolyConfig
+        from entroly.server import EntrolyEngine
 
-    engine = EntrolyEngine(EntrolyConfig(
-        use_persistent_index=True,
-        checkpoint_dir=ckpt,
-    ))
+        ckpt = Path(sys.argv[1])
+        first = EntrolyEngine(EntrolyConfig(
+            use_persistent_index=True,
+            checkpoint_dir=ckpt,
+        ))
+        assert first._use_rust is False
+        stored = first.ingest_fragment(
+            content="def useful_context(): return 'kept'",
+            source="test://useful.py",
+            token_count=10,
+        )
+        for _ in range(3):
+            first.record_success([stored["fragment_id"]])
+        first.checkpoint()
 
-    assert engine.wait_until_warm() is True
-    assert _fragment_count(engine) == 0
+        restored = EntrolyEngine(EntrolyConfig(
+            use_persistent_index=True,
+            checkpoint_dir=ckpt,
+        ))
+        restored.wait_until_warm()
+        assert restored._wilson.learned_value(stored["fragment_id"]) == (
+            first._wilson.learned_value(stored["fragment_id"])
+        )
+        assert restored.get_stats()["savings"]["total_fragments_ingested"] == 1
+        """,
+        tmp_path / "ckpt",
+    )
+    _assert_probe_passed(completed)
+
+
+def test_corrupt_python_warm_start_fails_closed(tmp_path: Path):
+    completed = _run_without_native(
+        """
+        from pathlib import Path
+        from entroly.config import EntrolyConfig
+        from entroly.server import EntrolyEngine
+
+        ckpt = Path(sys.argv[1])
+        ckpt.mkdir()
+        (ckpt / "index.json.gz").write_bytes(b"not a valid index")
+        engine = EntrolyEngine(EntrolyConfig(
+            use_persistent_index=True,
+            checkpoint_dir=ckpt,
+        ))
+        assert engine._use_rust is False
+        assert engine.wait_until_warm() is True
+        assert len(engine._fragments) == 0
+        """,
+        tmp_path / "ckpt",
+    )
+    _assert_probe_passed(completed)
 
 
 REQUIRED_KEYS = {
