@@ -44,6 +44,19 @@ def test_language_map_covers_at_least_twenty_seven_languages() -> None:
             "total :: Int -> Int\ntotal x = x\n\ndata Cart = Empty\n",
             {"total", "Cart"},
         ),
+        # Go dropped every `type` -- its name lives in `type_spec`, and the
+        # pack structure omitted it. Both the func and the type must appear.
+        ("sample.go", "package m\nfunc total() {}\ntype Cart struct{}\n", {"total", "Cart"}),
+        # Dart's pack structure returned the class alone, no functions.
+        ("sample.dart", "int total(int x){return x;}\nclass Cart{ void add(){} }\n", {"total", "Cart", "add"}),
+        # Erlang defines a function as `function_clause`s.
+        ("sample.erl", "total(X) -> X.\nadd() -> total(1).\n", {"total", "add"}),
+        # Solidity's contract is `contract_declaration`, outside the hint set.
+        ("sample.sol", "contract Cart {\n    function total() public {}\n}\n", {"Cart", "total"}),
+        # Zig names a function positionally in `FnProto` (a bare IDENTIFIER).
+        ("sample.zig", "pub fn total() void {}\nfn add() void {}\n", {"total", "add"}),
+        # Protobuf `message` names via `message_name`, no `name` field.
+        ("sample.proto", "message Cart {\n    string id = 1;\n}\n", {"Cart"}),
     ],
 )
 def test_parser_backed_spans_are_exact(path: str, source: str, names: set[str]) -> None:
