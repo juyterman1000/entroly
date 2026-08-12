@@ -35,8 +35,8 @@ from pathlib import Path
 from typing import Any, Iterator
 
 
-SCHEMA_VERSION = "entroly.product-telemetry.v1"
-BATCH_SCHEMA_VERSION = "entroly.product-telemetry-batch.v1"
+SCHEMA_VERSION = "entroly.product-telemetry.v2"
+BATCH_SCHEMA_VERSION = "entroly.product-telemetry-batch.v2"
 DELETE_SCHEMA_VERSION = "entroly.product-telemetry-delete.v1"
 CONSENT_VERSION = 1
 DEFAULT_RETENTION_DAYS = 14
@@ -52,11 +52,11 @@ _CLI_COMMANDS = frozenset({
     "health", "import", "ingest", "init", "learn", "migrate", "optimize",
     "perf", "profile", "proof", "proxy", "ravs", "receipt", "recover",
     "role", "search", "select", "serve", "share", "simulate", "status",
-    "sync", "telemetry", "unwrap", "value", "verify", "verify-claims",
+    "sync", "telemetry", "uninstall", "unwrap", "value", "verify", "verify-claims",
     "verify-code", "witness", "wrap",
 })
 _SURFACES = frozenset({
-    "cli", "compression_mcp", "mcp", "proxy", "repository_mcp",
+    "cli", "compression_mcp", "mcp", "other", "proxy", "repository_mcp",
     "sdk_compress", "sdk_messages",
 })
 _RESULTS = frozenset({"success", "error", "interrupted"})
@@ -69,6 +69,16 @@ _REDUCTION_PERCENT_BUCKETS = frozenset({
 })
 _MEASUREMENT_SCOPES = frozenset({"local_estimate", "provider_bound_estimate"})
 _COST_EVIDENCE = frozenset({"not_available", "modeled_positive"})
+_EXIT_REASONS = frozenset({
+    "cost_concern", "hard_to_use", "install_problem", "integration_missing",
+    "no_observed_benefit", "performance_problem", "privacy_concern",
+    "quality_problem", "runtime_error", "switched_tool", "temporary_trial",
+    "other", "prefer_not_to_say",
+})
+_BENEFIT_OUTCOMES = frozenset({"yes", "no", "unsure", "not_measured"})
+_USE_DURATION_BUCKETS = frozenset({
+    "not_started", "lt_1d", "1_7d", "8_30d", "31_90d", "gt_90d", "unknown",
+})
 _ERROR_TYPES = frozenset({
     "AssertionError", "ConnectionError", "ImportError", "LookupError",
     "MemoryError", "OSError", "PermissionError", "RuntimeError",
@@ -77,6 +87,9 @@ _ERROR_TYPES = frozenset({
 _EVENT_PROPERTIES = {
     "activation": frozenset({"surface"}),
     "command": frozenset({"command", "result", "duration_bucket", "error_type"}),
+    "exit_feedback": frozenset({
+        "reason", "benefit_outcome", "primary_surface", "use_duration_bucket",
+    }),
     "optimization_outcome": frozenset({
         "surface", "measurement_scope", "tokens_saved_bucket",
         "reduction_percent_bucket", "cost_evidence",
@@ -87,6 +100,7 @@ _EVENT_PROPERTIES = {
 _REQUIRED_EVENT_PROPERTIES = {
     "activation": frozenset({"surface"}),
     "command": frozenset({"command", "result", "duration_bucket"}),
+    "exit_feedback": _EVENT_PROPERTIES["exit_feedback"],
     "optimization_outcome": _EVENT_PROPERTIES["optimization_outcome"],
     "surface_started": frozenset({"surface"}),
     "surface_error": frozenset({"surface", "error_type"}),
@@ -275,10 +289,15 @@ def enable(*, endpoint: str | None = None, error_events: bool = True) -> dict[st
     return status()
 
 
-def disable_and_purge() -> dict[str, Any]:
+def disable_and_purge(*, delete_remote: bool = True) -> dict[str, Any]:
     """Withdraw consent and delete the local queue and pseudonymous identity."""
     config = _load_config()
-    remote_deletion = _request_remote_deletion(config) if config else "not_configured"
+    if not delete_remote:
+        remote_deletion = "not_requested"
+    elif config:
+        remote_deletion = _request_remote_deletion(config)
+    else:
+        remote_deletion = "not_configured"
     removed: list[str] = []
     for path in (_queue_path(), _markers_path(), _status_path(), _config_path()):
         try:
@@ -415,7 +434,7 @@ def _sanitize_properties(event_name: str, raw: dict[str, Any]) -> dict[str, str]
         if key == "command":
             result[key] = str(value) if value in _CLI_COMMANDS else "other"
         elif key == "surface":
-            result[key] = str(value) if value in _SURFACES else "cli"
+            result[key] = str(value) if value in _SURFACES else "other"
         elif key == "result":
             result[key] = str(value) if value in _RESULTS else "error"
         elif key == "duration_bucket":
@@ -430,6 +449,14 @@ def _sanitize_properties(event_name: str, raw: dict[str, Any]) -> dict[str, str]
             result[key] = str(value) if value in _MEASUREMENT_SCOPES else "local_estimate"
         elif key == "cost_evidence":
             result[key] = str(value) if value in _COST_EVIDENCE else "not_available"
+        elif key == "reason":
+            result[key] = str(value) if value in _EXIT_REASONS else "other"
+        elif key == "benefit_outcome":
+            result[key] = str(value) if value in _BENEFIT_OUTCOMES else "not_measured"
+        elif key == "primary_surface":
+            result[key] = str(value) if value in _SURFACES else "other"
+        elif key == "use_duration_bucket":
+            result[key] = str(value) if value in _USE_DURATION_BUCKETS else "unknown"
     return result
 
 
@@ -646,6 +673,105 @@ def capture_optimization_outcome(
     )
 
 
+def exit_feedback_choices() -> dict[str, list[str]]:
+    """Return the complete structured exit-survey vocabulary."""
+    return {
+        "reason": sorted(_EXIT_REASONS),
+        "benefit_outcome": sorted(_BENEFIT_OUTCOMES),
+        "primary_surface": sorted(_SURFACES),
+        "use_duration_bucket": sorted(_USE_DURATION_BUCKETS),
+    }
+
+
+def _feedback_endpoint(explicit_endpoint: str | None) -> str | None:
+    raw = (explicit_endpoint or "").strip()
+    if not raw:
+        raw = os.environ.get("ENTROLY_FEEDBACK_ENDPOINT", "").strip()
+    if not raw:
+        raw = str(_load_config().get("endpoint", "")).strip()
+    if not raw:
+        return None
+    try:
+        return validate_endpoint(raw)
+    except ValueError:
+        return None
+
+
+def resolve_exit_feedback_endpoint(explicit_endpoint: str | None = None) -> str | None:
+    """Resolve the destination shown before a one-time exit submission."""
+    return _feedback_endpoint(explicit_endpoint)
+
+
+def submit_exit_feedback(
+    *,
+    reason: str,
+    benefit_outcome: str,
+    primary_surface: str,
+    use_duration_bucket: str,
+    endpoint: str | None = None,
+) -> dict[str, Any]:
+    """Submit one explicitly confirmed, structured exit response.
+
+    This is separate from ongoing telemetry consent. If ongoing telemetry is
+    enabled, the current monthly pseudonym is reused so aggregate reporting can
+    compare observed benefit with exit reasons. Otherwise a one-event random
+    pseudonym is used and never persisted. No response is queued on failure.
+    """
+    if _hard_disabled():
+        return {"status": "blocked", "sent": 0}
+    resolved_endpoint = _feedback_endpoint(endpoint)
+    if resolved_endpoint is None:
+        return {"status": "not_configured", "sent": 0}
+    config = _load_config()
+    day = _today()
+    linked_destination = _configured_endpoint(config) if config else None
+    installation_id = (
+        _installation_id(config, day)
+        if config and linked_destination == resolved_endpoint
+        else uuid.uuid4().hex[:24]
+    )
+    event = sanitize_public_event(
+        {
+            "schema_version": SCHEMA_VERSION,
+            "event_id": uuid.uuid4().hex,
+            "occurred_on": day,
+            "installation_id": installation_id,
+            "event_name": "exit_feedback",
+            "version": _package_version(),
+            "platform": _platform_family(),
+            "python": f"{sys.version_info.major}.{sys.version_info.minor}",
+            "properties": {
+                "reason": reason,
+                "benefit_outcome": benefit_outcome,
+                "primary_surface": primary_surface,
+                "use_duration_bucket": use_duration_bucket,
+            },
+        },
+        strict=True,
+    )
+    if event is None:
+        return {"status": "invalid", "sent": 0}
+    body = json.dumps(
+        {"schema_version": BATCH_SCHEMA_VERSION, "events": [event]},
+        ensure_ascii=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        resolved_endpoint,
+        data=body,
+        headers=_request_headers(),
+        method="POST",
+    )
+    try:
+        with _opener().open(request, _request_timeout()) as response:
+            status_code = int(getattr(response, "status", 0) or response.getcode())
+            if not 200 <= status_code < 300:
+                return {"status": "error", "sent": 0, "error_type": "OtherError"}
+        return {"status": "sent", "sent": 1}
+    except Exception as error:
+        return {"status": "error", "sent": 0, "error_type": safe_error_type(error)}
+
+
 def _opener() -> urllib.request.OpenerDirector:
     trust_proxy = os.environ.get(
         "ENTROLY_TELEMETRY_TRUST_PROXY_ENV", "0"
@@ -785,10 +911,14 @@ def preview() -> dict[str, Any]:
             "model_outputs", "exception_messages", "tracebacks", "hostnames",
             "usernames", "environment_values", "credentials", "ip_addresses",
             "exact_token_counts", "exact_costs", "model_identifiers",
+            "free_text_feedback",
         ],
         "identifier": "random monthly-rotating pseudonym; local seed never uploaded",
         "frequency_protection": (
             "command, surface, error, and value categories are deduplicated per UTC day"
+        ),
+        "exit_feedback": (
+            "structured fields only; sent once only after separate confirmation"
         ),
         "retention_days_local_queue": DEFAULT_RETENTION_DAYS,
         "enabled_by_default": False,
@@ -838,14 +968,17 @@ __all__ = [
     "disable_and_purge",
     "duration_bucket",
     "enable",
+    "exit_feedback_choices",
     "flush",
     "flush_async",
     "is_enabled",
     "preview",
     "reduction_percent_bucket",
+    "resolve_exit_feedback_endpoint",
     "safe_error_type",
     "sanitize_public_event",
     "status",
+    "submit_exit_feedback",
     "tokens_saved_bucket",
     "validate_endpoint",
 ]

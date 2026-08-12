@@ -108,3 +108,64 @@ python scripts/adoption_report.py \
 
 The report labels the resulting ratios as observed opt-in diagnostics, never as
 an actual unique-user adoption rate.
+
+## Structured exit feedback
+
+Python and modern npm package managers do not provide a dependable Entroly
+uninstall callback. Pip documents package removal as a package-manager action,
+and npm explicitly states that uninstall lifecycle scripts are not implemented:
+
+- [pip uninstall reference](https://pip.pypa.io/en/stable/cli/pip_uninstall/)
+- [npm lifecycle scripts](https://docs.npmjs.com/cli/using-npm/scripts/#a-note-on-a-lack-of-npm-uninstall-scripts)
+
+Entroly therefore provides an honest guided path instead of pretending every
+removal can be observed:
+
+```bash
+# Python installation: optional survey, then pip uninstall
+entroly uninstall
+
+# Inspect the exact response and command without sending or changing anything
+entroly uninstall --dry-run \
+  --reason runtime_error --benefit no --surface mcp --duration 1_7d
+
+# npm, Docker, or another removal path: survey only, then use that manager
+entroly uninstall --feedback-only
+npm uninstall -g entroly
+```
+
+The survey has no free-text field. It contains only:
+
+- one reason from a fixed list
+- self-reported token-reduction benefit: yes, no, unsure, or not measured
+- one primary product surface
+- one coarse use-duration bucket
+- the same release, OS-family, Python major/minor, UTC-day, and pseudonym rules
+  described above
+
+Interactive sending defaults to **No** and shows the collector origin first.
+For non-interactive use, all four fields and `--send-feedback` are required.
+`ENTROLY_FEEDBACK_ENDPOINT` or `--endpoint` selects the HTTPS collector, but
+neither causes a submission without the interactive confirmation or explicit
+flag. Air-gap and hard-disable policies still win.
+
+The response is sent synchronously once and is never queued on failure. When
+ongoing telemetry is enabled and the destination is the same configured
+collector, it uses the current monthly pseudonym so the private aggregate report
+can count how many exiting installations previously observed a benefit or error.
+A different or one-time collector receives a random one-event pseudonym that is
+never persisted. The guided flow revokes local telemetry consent before the
+package is removed, so a later reinstall requires fresh consent.
+
+`--delete-remote-telemetry` requests deletion of recent linked telemetry before
+sending any separately confirmed one-time response. Collector retention still
+applies to that new response. Users who do not want a retained exit response
+should decline the survey; no uninstall behavior is affected.
+
+The private aggregate summary exposes exit-response counts, fixed reasons,
+self-reported benefit, primary surfaces, duration buckets, OS-family counts,
+and counts with prior benefit/error observations. It never exposes response
+rows, pseudonyms, or cross-tabs containing machine-identifying data. Direct
+`pip uninstall`, `npm uninstall`, deleted containers, and failed installations
+remain invisible; registry downloads must never be used to fabricate an exit or
+retention rate.

@@ -66,6 +66,7 @@ def build_report(
     )
     observed_benefited = None
     observed_benefit_rate = None
+    observed_exit_responses = None
     if health is not None:
         benefit = health.get("benefit") or {}
         observed_benefited = int(
@@ -73,6 +74,9 @@ def build_report(
         )
         observed_benefit_rate = benefit.get(
             "observed_benefit_rate_among_active_pseudonyms"
+        )
+        observed_exit_responses = int(
+            (health.get("exit_feedback") or {}).get("responses", 0) or 0
         )
     denominator = downloads["combined_last_month"]
     per_thousand = None
@@ -89,10 +93,12 @@ def build_report(
         "observed_activations_per_1000_downloads": per_thousand,
         "observed_benefited_pseudonyms_per_1000_downloads": benefited_per_thousand,
         "observed_benefit_rate_among_active_pseudonyms": observed_benefit_rate,
+        "observed_structured_exit_feedback_responses": observed_exit_responses,
         "interpretation": {
             "actual_unique_user_adoption_rate_known": False,
             "downloads_are_unique_users": False,
             "telemetry_is_a_census": False,
+            "direct_uninstalls_are_observable": False,
             "money_savings_are_provider_verified": False,
             "reason": (
                 "Registry counts include repeat, CI, and automated downloads; "

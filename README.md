@@ -319,6 +319,13 @@ code, paths, model data, exact token/cost amounts, and exception details. See
 [Privacy-Safe Product Health Telemetry](docs/telemetry-privacy.md). Optional
 external tools such as an operator-configured language server keep their own
 network boundary, which Entroly reports rather than hiding.
+
+If you decide to remove Entroly, `entroly uninstall` offers an optional,
+structured exit survey before handing off to pip. It asks for no free text,
+shows the exact fields and destination, defaults sending to No, and never blocks
+uninstall when feedback is declined or delivery fails. Direct package-manager
+removals cannot be intercepted; see the [privacy and exit-feedback
+contract](docs/telemetry-privacy.md#structured-exit-feedback).
 </details>
 
 <details>

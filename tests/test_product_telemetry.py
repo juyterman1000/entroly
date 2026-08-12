@@ -126,6 +126,84 @@ def test_value_signal_uses_only_coarse_buckets():
     }
 
 
+def test_one_time_exit_feedback_is_structured_unlinked_and_not_persisted(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+):
+    opener = _Opener()
+    monkeypatch.setattr(telemetry, "_opener", lambda: opener)
+
+    report = telemetry.submit_exit_feedback(
+        reason="runtime_error",
+        benefit_outcome="no",
+        primary_surface="mcp",
+        use_duration_bucket="1_7d",
+        endpoint="https://telemetry.example/v1/events",
+    )
+
+    assert report == {"status": "sent", "sent": 1}
+    assert not telemetry._config_path().exists()
+    assert not telemetry._queue_path().exists()
+    request, _timeout = opener.requests[0]
+    payload = json.loads(request.data)
+    events = validate_batch_payload(payload)
+    assert events[0]["event_name"] == "exit_feedback"
+    assert events[0]["properties"] == {
+        "benefit_outcome": "no",
+        "primary_surface": "mcp",
+        "reason": "runtime_error",
+        "use_duration_bucket": "1_7d",
+    }
+    rendered = request.data.decode()
+    assert "traceback" not in rendered
+    assert "message" not in rendered
+    store = TelemetryStore(tmp_path / "exit-only.db")
+    assert store.ingest(events) == 1
+    summary = store.summary(days=30)
+    assert summary["active_monthly_pseudonyms"] == 0
+    assert summary["exit_feedback"]["responses"] == 1
+
+
+def test_exit_feedback_respects_air_gap(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("ENTROLY_AIR_GAP", "1")
+
+    assert telemetry.submit_exit_feedback(
+        reason="privacy_concern",
+        benefit_outcome="unsure",
+        primary_surface="other",
+        use_duration_bucket="unknown",
+        endpoint="https://telemetry.example/v1/events",
+    ) == {"status": "blocked", "sent": 0}
+
+
+def test_exit_pseudonym_is_linked_only_to_the_consented_collector(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    opener = _Opener()
+    monkeypatch.setattr(telemetry, "_opener", lambda: opener)
+    telemetry.enable(endpoint="https://consented.example/v1/events")
+    active_id = _queue()[0]["installation_id"]
+
+    assert telemetry.submit_exit_feedback(
+        reason="temporary_trial",
+        benefit_outcome="yes",
+        primary_surface="cli",
+        use_duration_bucket="1_7d",
+        endpoint="https://consented.example/v1/events",
+    )["status"] == "sent"
+    linked = json.loads(opener.requests[-1][0].data)["events"][0]
+    assert linked["installation_id"] == active_id
+
+    assert telemetry.submit_exit_feedback(
+        reason="temporary_trial",
+        benefit_outcome="yes",
+        primary_surface="cli",
+        use_duration_bucket="1_7d",
+        endpoint="https://different.example/v1/events",
+    )["status"] == "sent"
+    unlinked = json.loads(opener.requests[-1][0].data)["events"][0]
+    assert unlinked["installation_id"] != active_id
+
+
 @pytest.mark.parametrize(
     ("before", "after", "expected"),
     [
@@ -331,6 +409,16 @@ def test_collector_rejects_extra_properties_and_summarizes_without_raw_ids(
         measurement_scope="provider_bound_estimate",
         cost_evidence="modeled_positive",
     )
+    telemetry.capture_surface_error("proxy", ValueError("never serialized"))
+    telemetry.capture(
+        "exit_feedback",
+        {
+            "reason": "runtime_error",
+            "benefit_outcome": "yes",
+            "primary_surface": "proxy",
+            "use_duration_bucket": "8_30d",
+        },
+    )
     events = _queue()
     payload = {
         "schema_version": telemetry.BATCH_SCHEMA_VERSION,
@@ -354,7 +442,7 @@ def test_collector_rejects_extra_properties_and_summarizes_without_raw_ids(
         validate_batch_payload(future)
 
     store = TelemetryStore(tmp_path / "collector" / "events.db")
-    assert store.ingest(events) == 3
+    assert store.ingest(events) == 5
     assert store.ingest(events) == 0
     summary = store.summary(days=30)
     rendered = json.dumps(summary)
@@ -365,13 +453,26 @@ def test_collector_rejects_extra_properties_and_summarizes_without_raw_ids(
     assert summary["benefit"]["monthly_pseudonyms_with_positive_reduction"] == 1
     assert summary["benefit"]["money_savings_verified"] is False
     assert summary["benefit"]["cost_evidence"] == {"modeled_positive": 1}
+    assert summary["exit_feedback"]["responses"] == 1
+    assert summary["exit_feedback"]["reasons"] == {"runtime_error": 1}
+    assert (
+        summary["exit_feedback"][
+            "monthly_pseudonyms_with_prior_positive_reduction"
+        ]
+        == 1
+    )
+    assert (
+        summary["exit_feedback"]["monthly_pseudonyms_with_prior_error_observation"]
+        == 1
+    )
     assert summary["platforms"]["windows"]["benefited_monthly_pseudonyms"] == 1
+    assert summary["platforms"]["windows"]["exit_feedback_responses"] == 1
     assert summary["privacy"]["exact_tokens_or_costs_stored"] is False
     assert summary["privacy"]["usage_volume_claim_allowed"] is False
     assert events[0]["installation_id"] not in rendered
     assert summary["privacy"]["unique_user_claim_allowed"] is False
 
-    assert store.delete_installations([events[0]["installation_id"]]) == 3
+    assert store.delete_installations([events[0]["installation_id"]]) == 5
     assert store.summary(days=30)["active_monthly_pseudonyms"] == 0
 
 
@@ -437,3 +538,4 @@ def test_cli_telemetry_preview_is_complete_and_content_blind(capsys):
     assert "exception_messages" in output["never_collected"]
     assert "exact_token_counts" in output["never_collected"]
     assert "model_identifiers" in output["never_collected"]
+    assert "free_text_feedback" in output["never_collected"]

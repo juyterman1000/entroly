@@ -181,6 +181,8 @@ class TelemetryStore:
         benefited_ids: set[str] = set()
         provider_bound_benefited_ids: set[str] = set()
         modeled_cost_ids: set[str] = set()
+        error_ids: set[str] = set()
+        exit_ids: set[str] = set()
         event_counts: Counter[str] = Counter()
         command_counts: Counter[str] = Counter()
         command_errors: Counter[str] = Counter()
@@ -191,11 +193,16 @@ class TelemetryStore:
         reduction_percent_buckets: Counter[str] = Counter()
         measurement_scopes: Counter[str] = Counter()
         cost_evidence: Counter[str] = Counter()
+        exit_reasons: Counter[str] = Counter()
+        exit_benefit_outcomes: Counter[str] = Counter()
+        exit_surfaces: Counter[str] = Counter()
+        exit_use_durations: Counter[str] = Counter()
         platform_active_ids: dict[str, set[str]] = defaultdict(set)
         platform_benefited_ids: dict[str, set[str]] = defaultdict(set)
         platform_events: Counter[str] = Counter()
         platform_command_attempts: Counter[str] = Counter()
         platform_command_failures: Counter[str] = Counter()
+        platform_exit_responses: Counter[str] = Counter()
         command_successes = 0
         command_failures = 0
         optimization_observations = 0
@@ -204,8 +211,9 @@ class TelemetryStore:
         for _day, installation_id, event_name, version, platform_name, _python, raw in rows:
             installation = str(installation_id)
             platform_key = str(platform_name)
-            active_ids.add(installation)
-            platform_active_ids[platform_key].add(installation)
+            if event_name != "exit_feedback":
+                active_ids.add(installation)
+                platform_active_ids[platform_key].add(installation)
             platform_events[platform_key] += 1
             event_counts[str(event_name)] += 1
             versions[str(version)] += 1
@@ -218,6 +226,7 @@ class TelemetryStore:
             if event_name in {"surface_started", "surface_error"}:
                 surfaces[str(properties.get("surface", "other"))] += 1
             if event_name == "surface_error":
+                error_ids.add(installation)
                 error_types[str(properties.get("error_type", "OtherError"))] += 1
             if event_name == "command":
                 command = str(properties.get("command", "other"))
@@ -227,6 +236,7 @@ class TelemetryStore:
                 if result == "success":
                     command_successes += 1
                 elif result == "error":
+                    error_ids.add(installation)
                     command_failures += 1
                     platform_command_failures[platform_key] += 1
                     command_errors[command] += 1
@@ -251,6 +261,17 @@ class TelemetryStore:
                         provider_bound_benefited_ids.add(installation)
                     if cost_signal == "modeled_positive":
                         modeled_cost_ids.add(installation)
+            if event_name == "exit_feedback":
+                exit_ids.add(installation)
+                platform_exit_responses[platform_key] += 1
+                exit_reasons[str(properties.get("reason", "other"))] += 1
+                exit_benefit_outcomes[
+                    str(properties.get("benefit_outcome", "not_measured"))
+                ] += 1
+                exit_surfaces[str(properties.get("primary_surface", "cli"))] += 1
+                exit_use_durations[
+                    str(properties.get("use_duration_bucket", "unknown"))
+                ] += 1
 
         attempted = command_successes + command_failures
         error_rate = round(command_failures / attempted, 6) if attempted else None
@@ -258,7 +279,8 @@ class TelemetryStore:
             round(len(benefited_ids) / len(active_ids), 6) if active_ids else None
         )
         platforms: dict[str, dict[str, Any]] = {}
-        for platform_name in sorted(platform_active_ids):
+        platform_names = set(platform_active_ids) | set(platform_exit_responses)
+        for platform_name in sorted(platform_names):
             platform_attempted = platform_command_attempts[platform_name]
             platform_failed = platform_command_failures[platform_name]
             platforms[platform_name] = {
@@ -274,9 +296,10 @@ class TelemetryStore:
                 "benefited_monthly_pseudonyms": len(
                     platform_benefited_ids[platform_name]
                 ),
+                "exit_feedback_responses": platform_exit_responses[platform_name],
             }
         return {
-            "schema_version": "entroly.product-telemetry-summary.v1",
+            "schema_version": "entroly.product-telemetry-summary.v2",
             "window_days": bounded_days,
             "since": since,
             "privacy": {
@@ -287,6 +310,7 @@ class TelemetryStore:
                 "exact_tokens_or_costs_stored": False,
                 "model_identifiers_stored": False,
                 "usage_volume_claim_allowed": False,
+                "free_text_feedback_stored": False,
             },
             "active_monthly_pseudonyms": len(active_ids),
             "activation_monthly_pseudonyms": len(activated_ids),
@@ -321,6 +345,24 @@ class TelemetryStore:
                 "note": (
                     "Modeled cost reduction is derived from provider-bound token "
                     "reduction and configured rates; it is not a provider invoice."
+                ),
+            },
+            "exit_feedback": {
+                "responses": sum(exit_reasons.values()),
+                "monthly_or_one_event_pseudonyms": len(exit_ids),
+                "reasons": dict(sorted(exit_reasons.items())),
+                "self_reported_benefit": dict(sorted(exit_benefit_outcomes.items())),
+                "primary_surfaces": dict(sorted(exit_surfaces.items())),
+                "use_duration_buckets": dict(sorted(exit_use_durations.items())),
+                "monthly_pseudonyms_with_prior_positive_reduction": len(
+                    exit_ids & benefited_ids
+                ),
+                "monthly_pseudonyms_with_prior_error_observation": len(
+                    exit_ids & error_ids
+                ),
+                "note": (
+                    "Structured opt-in responses only; direct package-manager "
+                    "uninstalls are not observable."
                 ),
             },
             "error_types": dict(sorted(error_types.items())),

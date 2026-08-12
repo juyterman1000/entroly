@@ -557,6 +557,129 @@ def test_telemetry_command_requires_consent_and_discloses_schema(
     assert "nothing is uploaded" in output
 
 
+def _uninstall_args(**overrides):
+    values = {
+        "reason": "runtime_error",
+        "benefit": "no",
+        "surface": "mcp",
+        "duration": "1_7d",
+        "send_feedback": False,
+        "endpoint": "https://telemetry.example/v1/events",
+        "skip_feedback": False,
+        "delete_remote_telemetry": False,
+        "dry_run": False,
+        "feedback_only": False,
+        "yes": True,
+    }
+    values.update(overrides)
+    return SimpleNamespace(**values)
+
+
+def test_uninstall_dry_run_never_sends_purges_or_executes(monkeypatch, capsys):
+    import entroly.product_telemetry as product_telemetry
+
+    monkeypatch.setattr(
+        product_telemetry,
+        "submit_exit_feedback",
+        lambda **_kwargs: pytest.fail("dry run must not send feedback"),
+    )
+    monkeypatch.setattr(
+        product_telemetry,
+        "disable_and_purge",
+        lambda **_kwargs: pytest.fail("dry run must not purge telemetry"),
+    )
+    monkeypatch.setattr(
+        cli.subprocess,
+        "run",
+        lambda *_args, **_kwargs: pytest.fail("dry run must not invoke pip"),
+    )
+
+    rc = cli.cmd_uninstall(_uninstall_args(dry_run=True, send_feedback=True))
+
+    output = capsys.readouterr().out
+    assert rc == 0
+    assert '"reason": "runtime_error"' in output
+    assert "Dry run: feedback was not sent" in output
+
+
+def test_uninstall_sends_one_structured_response_then_revokes_local_consent(
+    monkeypatch, capsys,
+):
+    import entroly.product_telemetry as product_telemetry
+
+    sent = []
+    purged = []
+    commands = []
+    monkeypatch.setattr(
+        product_telemetry,
+        "submit_exit_feedback",
+        lambda **kwargs: sent.append(kwargs) or {"status": "sent", "sent": 1},
+    )
+    monkeypatch.setattr(
+        product_telemetry,
+        "disable_and_purge",
+        lambda **kwargs: purged.append(kwargs)
+        or {"remote_deletion": "not_requested"},
+    )
+    monkeypatch.setattr(
+        cli.subprocess,
+        "run",
+        lambda command, check: commands.append((command, check))
+        or SimpleNamespace(returncode=0),
+    )
+
+    rc = cli.cmd_uninstall(_uninstall_args(send_feedback=True))
+
+    assert rc == 0
+    assert sent == [{
+        "reason": "runtime_error",
+        "benefit_outcome": "no",
+        "primary_surface": "mcp",
+        "use_duration_bucket": "1_7d",
+        "endpoint": "https://telemetry.example/v1/events",
+    }]
+    assert purged == [{"delete_remote": False}]
+    assert commands[0][0][-3:] == ["uninstall", "entroly", "-y"]
+    assert "One structured exit response sent" in capsys.readouterr().out
+
+
+def test_interactive_uninstall_feedback_sending_defaults_to_no(monkeypatch, capsys):
+    import builtins
+
+    import entroly.product_telemetry as product_telemetry
+
+    answers = iter(["1", "1", "1", "1", ""])
+    monkeypatch.setattr(cli.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(builtins, "input", lambda _prompt="": next(answers))
+    monkeypatch.setattr(
+        product_telemetry,
+        "submit_exit_feedback",
+        lambda **_kwargs: pytest.fail("default-No consent must not send"),
+    )
+    purged = []
+    monkeypatch.setattr(
+        product_telemetry,
+        "disable_and_purge",
+        lambda **kwargs: purged.append(kwargs)
+        or {"remote_deletion": "not_requested"},
+    )
+
+    rc = cli.cmd_uninstall(_uninstall_args(
+        reason=None,
+        benefit=None,
+        surface=None,
+        duration=None,
+        feedback_only=True,
+        yes=False,
+    ))
+
+    assert rc == 0
+    assert purged == [{"delete_remote": False}]
+    output = capsys.readouterr().out
+    assert "No exit feedback was sent" in output
+    assert "Feedback-only mode" in output
+
+
 @pytest.fixture
 def chdir_tmp(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)

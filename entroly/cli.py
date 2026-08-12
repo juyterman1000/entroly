@@ -24,6 +24,7 @@ Commands:
     entroly config      Show current configuration
     entroly clean       Clear cached state (checkpoints, index, pull cache)
     entroly telemetry   Manage the local telemetry preference
+    entroly uninstall   Guided uninstall with optional structured exit feedback
     entroly demo        Before/after demo showing token savings
     entroly doctor      Diagnose common issues
     entroly digest      Weekly summary of value delivered
@@ -5061,6 +5062,223 @@ def cmd_feedback(args):
     print(f"  {C.GRAY}Entroly will adjust future context selections based on this signal.{C.RESET}\n")
 
 
+_EXIT_REASON_OPTIONS = (
+    ("no_observed_benefit", "I did not observe enough benefit"),
+    ("install_problem", "Installation or upgrade problem"),
+    ("runtime_error", "Runtime errors or crashes"),
+    ("performance_problem", "Too slow or resource intensive"),
+    ("quality_problem", "Output quality or missing context"),
+    ("hard_to_use", "Setup or workflow was too difficult"),
+    ("integration_missing", "My tool or integration was missing"),
+    ("privacy_concern", "Privacy or security concern"),
+    ("cost_concern", "Cost concern"),
+    ("switched_tool", "Switched to another approach"),
+    ("temporary_trial", "Trial complete or temporary removal"),
+    ("other", "Another structured reason"),
+    ("prefer_not_to_say", "Prefer not to say"),
+)
+_EXIT_BENEFIT_OPTIONS = (
+    ("yes", "Yes, I observed useful token reduction"),
+    ("no", "No, I did not observe useful token reduction"),
+    ("unsure", "Unsure"),
+    ("not_measured", "I did not measure it"),
+)
+_EXIT_SURFACE_OPTIONS = (
+    ("cli", "CLI"),
+    ("mcp", "MCP server"),
+    ("compression_mcp", "Compression MCP"),
+    ("repository_mcp", "Repository intelligence MCP"),
+    ("proxy", "Provider proxy"),
+    ("sdk_compress", "Python SDK compression"),
+    ("sdk_messages", "Python SDK message compression"),
+    ("other", "Other or not started"),
+)
+_EXIT_DURATION_OPTIONS = (
+    ("not_started", "I could not get started"),
+    ("lt_1d", "Less than one day"),
+    ("1_7d", "1 to 7 days"),
+    ("8_30d", "8 to 30 days"),
+    ("31_90d", "31 to 90 days"),
+    ("gt_90d", "More than 90 days"),
+    ("unknown", "Unsure"),
+)
+
+
+def _prompt_exit_option(
+    title: str,
+    options: tuple[tuple[str, str], ...],
+    *,
+    default: str,
+) -> str:
+    print(f"\n  {C.BOLD}{title}{C.RESET}")
+    for index, (_value, label) in enumerate(options, 1):
+        print(f"    {index:>2}. {label}")
+    while True:
+        try:
+            raw = input(f"  Select 1-{len(options)} (Enter to skip): ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return default
+        if not raw:
+            return default
+        try:
+            selected = int(raw)
+        except ValueError:
+            selected = 0
+        if 1 <= selected <= len(options):
+            return options[selected - 1][0]
+        print(f"  {C.YELLOW}Please enter a number from 1 to {len(options)}.{C.RESET}")
+
+
+def _confirm_exit_feedback(destination: str) -> bool:
+    try:
+        answer = input(
+            f"\n  Send this one-time structured response to {destination}? [y/N]: "
+        ).strip().casefold()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
+    return answer in {"y", "yes"}
+
+
+def cmd_uninstall(args):
+    """Guided Python uninstall with an optional content-blind exit survey."""
+    from urllib.parse import urlsplit
+
+    from entroly.product_telemetry import (
+        disable_and_purge,
+        resolve_exit_feedback_endpoint,
+        submit_exit_feedback,
+        validate_endpoint,
+    )
+
+    explicit_endpoint = getattr(args, "endpoint", None)
+    if explicit_endpoint:
+        try:
+            explicit_endpoint = validate_endpoint(explicit_endpoint)
+        except ValueError as error:
+            print(f"  {C.RED}Invalid feedback endpoint:{C.RESET} {error}", file=sys.stderr)
+            return 2
+
+    dry_run = bool(getattr(args, "dry_run", False))
+    feedback_only = bool(getattr(args, "feedback_only", False))
+    skip_feedback = bool(getattr(args, "skip_feedback", False))
+    interactive = bool(getattr(sys.stdin, "isatty", lambda: False)())
+    reason = getattr(args, "reason", None)
+    benefit = getattr(args, "benefit", None)
+    surface = getattr(args, "surface", None)
+    duration = getattr(args, "duration", None)
+
+    if not skip_feedback:
+        print(f"\n{C.CYAN}{C.BOLD}  Entroly exit survey (optional){C.RESET}")
+        print(
+            f"  {C.GRAY}No free text is requested. The response contains only four "
+            f"choices plus release, OS family, Python major.minor, UTC day, and a "
+            f"rotating or one-event pseudonym.{C.RESET}"
+        )
+        if interactive:
+            reason = reason or _prompt_exit_option(
+                "Why are you uninstalling?",
+                _EXIT_REASON_OPTIONS,
+                default="prefer_not_to_say",
+            )
+            benefit = benefit or _prompt_exit_option(
+                "Did Entroly provide useful token reduction?",
+                _EXIT_BENEFIT_OPTIONS,
+                default="not_measured",
+            )
+            surface = surface or _prompt_exit_option(
+                "What was your primary Entroly surface?",
+                _EXIT_SURFACE_OPTIONS,
+                default="other",
+            )
+            duration = duration or _prompt_exit_option(
+                "How long did you use Entroly?",
+                _EXIT_DURATION_OPTIONS,
+                default="unknown",
+            )
+        elif not all((reason, benefit, surface, duration)):
+            print(
+                f"  {C.GRAY}Non-interactive session: no survey response collected. "
+                f"Supply all structured flags or use --skip-feedback.{C.RESET}"
+            )
+
+    complete_feedback = bool(
+        not skip_feedback and all((reason, benefit, surface, duration))
+    )
+    endpoint = resolve_exit_feedback_endpoint(explicit_endpoint)
+    send_feedback = bool(getattr(args, "send_feedback", False))
+    destination = "no collector configured"
+    if endpoint:
+        parsed = urlsplit(endpoint)
+        destination = f"{parsed.scheme}://{parsed.netloc}"
+
+    if complete_feedback:
+        fields = {
+            "reason": reason,
+            "benefit_outcome": benefit,
+            "primary_surface": surface,
+            "use_duration_bucket": duration,
+        }
+        print(f"\n  Structured response: {json.dumps(fields, sort_keys=True)}")
+        print(f"  Destination: {destination}")
+        if interactive and not send_feedback and endpoint and not dry_run:
+            send_feedback = _confirm_exit_feedback(destination)
+
+    uninstall_command = [sys.executable, "-m", "pip", "uninstall", "entroly"]
+    if bool(getattr(args, "yes", False)):
+        uninstall_command.append("-y")
+    if feedback_only:
+        print("\n  Feedback-only mode: the package will not be uninstalled.")
+    else:
+        print(f"\n  Uninstall command: {subprocess.list2cmdline(uninstall_command)}")
+    if dry_run:
+        print(f"  {C.GRAY}Dry run: feedback was not sent and nothing was uninstalled.{C.RESET}")
+        return 0
+
+    delete_remote = bool(getattr(args, "delete_remote_telemetry", False))
+    if delete_remote:
+        deletion = disable_and_purge(delete_remote=True)
+        if deletion.get("remote_deletion") not in {"deleted", "not_configured"}:
+            print(
+                f"  {C.YELLOW}Previously uploaded telemetry deletion could not be "
+                f"confirmed; collector retention still applies.{C.RESET}"
+            )
+
+    if send_feedback and complete_feedback:
+        report = submit_exit_feedback(
+            reason=str(reason),
+            benefit_outcome=str(benefit),
+            primary_surface=str(surface),
+            use_duration_bucket=str(duration),
+            endpoint=endpoint,
+        )
+        if report["status"] == "sent":
+            print(f"  {C.GREEN}One structured exit response sent.{C.RESET}")
+        elif report["status"] == "not_configured":
+            print(f"  {C.YELLOW}Feedback not sent: no collector is configured.{C.RESET}")
+        else:
+            print(
+                f"  {C.YELLOW}Feedback not sent ({report['status']}); uninstall will "
+                f"continue and no response was queued locally.{C.RESET}"
+            )
+    elif send_feedback and not complete_feedback:
+        print(f"  {C.YELLOW}Feedback not sent: all structured fields are required.{C.RESET}")
+    else:
+        print(f"  {C.GRAY}No exit feedback was sent.{C.RESET}")
+
+    if not delete_remote:
+        # Reinstallation must require fresh consent. Historical aggregates age
+        # out under collector retention unless the user requested deletion.
+        disable_and_purge(delete_remote=False)
+
+    if feedback_only:
+        return 0
+
+    completed = subprocess.run(uninstall_command, check=False)
+    return int(completed.returncode)
+
+
 def cmd_compile(args):
     """entroly compile -- compile source code into persistent belief artifacts.
 
@@ -6044,6 +6262,71 @@ def main():
         help="Optional task description for audit logs (metadata only).",
     )
 
+    # entroly uninstall
+    uninstall_parser = subparsers.add_parser(
+        "uninstall",
+        help="Guided Python uninstall with optional structured exit feedback",
+    )
+    uninstall_parser.add_argument(
+        "--reason",
+        choices=[value for value, _label in _EXIT_REASON_OPTIONS],
+        default=None,
+        help="Structured reason for uninstalling (no free text)",
+    )
+    uninstall_parser.add_argument(
+        "--benefit",
+        choices=[value for value, _label in _EXIT_BENEFIT_OPTIONS],
+        default=None,
+        help="Whether useful token reduction was observed",
+    )
+    uninstall_parser.add_argument(
+        "--surface",
+        choices=[value for value, _label in _EXIT_SURFACE_OPTIONS],
+        default=None,
+        help="Primary Entroly surface used",
+    )
+    uninstall_parser.add_argument(
+        "--duration",
+        choices=[value for value, _label in _EXIT_DURATION_OPTIONS],
+        default=None,
+        help="Coarse use-duration bucket",
+    )
+    uninstall_parser.add_argument(
+        "--send-feedback",
+        action="store_true",
+        help="Explicitly send the structured response without an interactive prompt",
+    )
+    uninstall_parser.add_argument(
+        "--endpoint",
+        default=None,
+        help="HTTPS feedback collector for this one-time response",
+    )
+    uninstall_parser.add_argument(
+        "--skip-feedback",
+        action="store_true",
+        help="Uninstall without collecting or sending an exit response",
+    )
+    uninstall_parser.add_argument(
+        "--delete-remote-telemetry",
+        action="store_true",
+        help="Request deletion of recent linked telemetry before the one-time survey",
+    )
+    uninstall_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show the survey payload, destination, and pip command without changing anything",
+    )
+    uninstall_parser.add_argument(
+        "--feedback-only",
+        action="store_true",
+        help="Collect/send feedback and revoke local telemetry without invoking pip",
+    )
+    uninstall_parser.add_argument(
+        "-y", "--yes",
+        action="store_true",
+        help="Pass --yes to pip uninstall",
+    )
+
     # entroly benchmark
     benchmark_parser = subparsers.add_parser(
         "benchmark",
@@ -6655,7 +6938,8 @@ def main():
         (args.command == "value" and getattr(args, "json_output", False))
         or args.command == "proof"
     )
-    if not internal_attach_serve and not machine_readable:
+    lifecycle_exit = args.command == "uninstall"
+    if not internal_attach_serve and not machine_readable and not lifecycle_exit:
         _check_first_run()
         if args.command not in (None, "completions"):
             _check_for_update()
@@ -6663,6 +6947,7 @@ def main():
     _dispatch = {
         "optimize": cmd_optimize,
         "feedback": cmd_feedback,
+        "uninstall": cmd_uninstall,
         "init": cmd_init,
         "serve": cmd_serve,
         "attach": cmd_attach,

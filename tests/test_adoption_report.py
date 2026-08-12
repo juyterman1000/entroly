@@ -22,6 +22,7 @@ def test_adoption_report_keeps_downloads_and_opt_in_observations_distinct(monkey
                 "observed_benefit_rate_among_active_pseudonyms": 0.75,
                 "money_savings_verified": False,
             },
+            "exit_feedback": {"responses": 7, "reasons": {"runtime_error": 3}},
         }
 
     monkeypatch.setattr(adoption_report, "_fetch_json", fake_fetch)
@@ -35,6 +36,7 @@ def test_adoption_report_keeps_downloads_and_opt_in_observations_distinct(monkey
     assert report["observed_activations_per_1000_downloads"] == 50.0
     assert report["observed_benefited_pseudonyms_per_1000_downloads"] == 60.0
     assert report["observed_benefit_rate_among_active_pseudonyms"] == 0.75
+    assert report["observed_structured_exit_feedback_responses"] == 7
     assert report["interpretation"]["actual_unique_user_adoption_rate_known"] is False
     assert report["interpretation"]["money_savings_are_provider_verified"] is False
     assert (
@@ -60,3 +62,4 @@ def test_adoption_report_works_before_collector_is_deployed(monkeypatch):
     assert report["consented_product_health"] is None
     assert report["observed_activations_per_1000_downloads"] is None
     assert report["observed_benefited_pseudonyms_per_1000_downloads"] is None
+    assert report["observed_structured_exit_feedback_responses"] is None
