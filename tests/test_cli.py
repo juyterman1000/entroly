@@ -544,6 +544,7 @@ def test_telemetry_command_requires_consent_and_discloses_schema(
 ):
     monkeypatch.setenv("ENTROLY_DIR", str(tmp_path))
     monkeypatch.setenv("ENTROLY_TELEMETRY_TESTING", "1")
+    monkeypatch.delenv("CI", raising=False)
     cli.cmd_telemetry(SimpleNamespace(
         action="on",
         endpoint=None,
