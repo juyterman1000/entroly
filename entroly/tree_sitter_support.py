@@ -69,6 +69,20 @@ _DECLARATION_HINTS = frozenset({
 _LANGUAGE_DECLARATION_TYPES: dict[str, frozenset[str]] = {
     "haskell": frozenset({"function", "data_type"}),
     "perl": frozenset({"subroutine_declaration_statement"}),
+    # Go names a type in `type_spec` under `type_declaration`; the suffix rule
+    # sees only the wrapper and dropped every `type` in the file.
+    "go": frozenset({"type_spec"}),
+    # Solidity's contract/library/interface are `*_declaration` but the suffix
+    # rule's hint list has no "contract"; its functions already matched.
+    "solidity": frozenset({"contract_declaration", "library_declaration", "interface_declaration"}),
+    # Erlang defines a function as one or more `function_clause`s, each naming
+    # the function; nothing in the generic set matched them.
+    "erlang": frozenset({"function_clause"}),
+    # Zig names a function in `FnProto` positionally (a bare IDENTIFIER child);
+    # the suffix rule matches none of its PascalCase node types.
+    "zig": frozenset({"FnProto"}),
+    # Protobuf `message` names via a `message_name` child, no `name` field.
+    "proto": frozenset({"message", "enum"}),
 }
 
 _KIND_HINTS = (
@@ -301,13 +315,17 @@ def _first_identifier(node: Any) -> Any | None:
 # so this does not fire for it and the existing resolution still applies.
 _LANGUAGE_NAME_CHILD_TYPE: dict[str, str] = {
     "kotlin": "simple_identifier",
+    "zig": "IDENTIFIER",
+    "proto": "message_name",
 }
 
 # Grammars whose pack structure processing returns partial declarations (a named
 # class but null-named functions, no method descent), where the name-resolving
 # tree walk is more complete. Add a language only after verifying the walk does
 # strictly better for it, since the walk's own per-grammar coverage varies.
-_PACK_STRUCTURE_UNRELIABLE: frozenset[str] = frozenset({"kotlin"})
+_PACK_STRUCTURE_UNRELIABLE: frozenset[str] = frozenset(
+    {"kotlin", "dart", "go", "solidity"}
+)
 
 
 def _name_node(node: Any, language: str = "") -> Any | None:
@@ -339,18 +357,29 @@ def _kind(node_type: str) -> str:
 
 
 def _language_scoped_node_ok(node: Any, node_type: str, language: str) -> bool:
-    """A language-scoped declaration must carry an explicit `name` field.
+    """A language-scoped declaration must carry a resolvable name.
 
     The scoped node names are broad on purpose, and some are overloaded within
     their own grammar: Haskell's `function` denotes both a definition
     (`helper x = x + 1`, which has a `name`) and a function TYPE (`Int -> Int`,
-    which has none). Requiring the field keeps the definition and rejects the
-    type, without which the walk would emit `Int` as a function.
+    which has none). A name is resolvable when the node has an explicit `name`
+    field, or -- for the positional grammars that expose none -- a direct child
+    of the type this language uses for names (Zig's `IDENTIFIER` under
+    `FnProto`). The Haskell function type has neither, so it is still rejected
+    and the walk does not emit `Int` as a function.
     """
     if node_type not in _LANGUAGE_DECLARATION_TYPES.get(language, ()):
         return True
     field = getattr(node, "child_by_field_name", None)
-    return callable(field) and field("name") is not None
+    if callable(field) and field("name") is not None:
+        return True
+    preferred = _LANGUAGE_NAME_CHILD_TYPE.get(language)
+    if preferred:
+        return any(
+            str(getattr(child, "type", "")) == preferred
+            for child in getattr(node, "children", ())
+        )
+    return False
 
 
 def _is_declaration_type(node_type: str, language: str = "") -> bool:
