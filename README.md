@@ -42,12 +42,8 @@ Select the highest-value evidence first, compress it, keep originals recoverable
 
 ---
 
-
-
-
-
 <p align="center">
-  <b><a href="#what-is-entroly-in-plain-english">What is it?</a> · <a href="#integration--documentation-hub">Integrations</a> · <a href="#live-tokenomics">Tokenomics</a> · <a href="#install">Install</a> · <a href="#quickstart--by-how-you-work">Quickstart</a> · <a href="#see-it-work-in-30-seconds">See it work</a> · <a href="#benchmarks">Benchmarks</a> · <a href="#common-questions">Questions</a></b>
+  <b><a href="#what-is-entroly-in-plain-english">What is it?</a> · <a href="#live-tokenomics">Tokenomics</a> · <a href="#install">Install</a> · <a href="#quickstart--by-how-you-work">Quickstart</a> · <a href="#see-it-work-in-30-seconds">See it work</a> · <a href="#benchmarks">Benchmarks</a> · <a href="#common-questions">Questions</a></b>
 </p>
 
 ---
