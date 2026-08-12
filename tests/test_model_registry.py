@@ -50,6 +50,33 @@ def test_gpt_5_6_uses_verified_context_pricing_and_reasoning_metadata():
     assert result.capability.supports_reasoning is True
 
 
+@pytest.mark.parametrize(
+    ("model_id", "input_price", "output_price"),
+    [
+        ("gemini-3.6-flash", 1.5, 7.5),
+        ("gemini-3.5-flash-lite", 0.3, 2.5),
+    ],
+)
+def test_latest_gemini_models_use_verified_public_metadata(
+    model_id: str,
+    input_price: float,
+    output_price: float,
+):
+    result = get_model_registry().resolve(model_id)
+
+    assert result.capability is not None
+    assert result.capability.id == f"google/{model_id}"
+    assert result.trust is RegistryTrust.VERIFIED
+    assert result.context_window == 1_048_576
+    assert result.warning is None
+    assert result.capability.max_output_tokens == 65_536
+    assert result.capability.input_price_per_million == input_price
+    assert result.capability.output_price_per_million == output_price
+    assert result.capability.supports_tools is True
+    assert result.capability.supports_vision is True
+    assert result.capability.supports_reasoning is True
+
+
 def test_unknown_model_fails_visibly_with_conservative_fallback():
     result = get_model_registry().resolve("private-lab/model-x")
 

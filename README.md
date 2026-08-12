@@ -255,6 +255,19 @@ Runs as a **CLI**, **Python/TypeScript SDK**, **MCP server**, **HTTP proxy**, or
 
 ## Works with your stack
 
+### Current model support
+
+Entroly's context contract is model-neutral, but its published compatibility claims are not: a model is listed as **verified** only when an official public model ID and limits can be pinned. The bundled registry currently carries verified metadata for GPT-5.6 Sol/Terra/Luna, Gemini 3.6 Flash, Gemini 3.5 Flash-Lite, and locally discovered NVIDIA Nemotron 3.5 Lightning. Requests still need to traverse the matching OpenAI, Anthropic, Gemini, Ollama, or OpenAI-compatible route for Entroly to optimize provider-bound context.
+
+| Model | Entroly path | Published metadata status |
+|---|---|---|
+| GPT-5.6 Sol / Terra / Luna | OpenAI API proxy or supported agent path | Verified public IDs, 1.05M context, 128K output |
+| Gemini 3.6 Flash | Gemini API proxy | Verified public ID, 1,048,576 input, 65,536 output |
+| Gemini 3.5 Flash-Lite | Gemini API proxy | Verified public ID, 1,048,576 input, 65,536 output |
+| NVIDIA Nemotron 3.5 Lightning | Local Ollama discovery + OpenAI-compatible proxy | Installed tag is discovered; tag-specific limits retained |
+
+Special-access announcements are not treated as ordinary API support. Gemini 3.5 Flash Cyber is restricted to selected governments and trusted partners; Meta Muse Spark is in private API preview. Entroly will not invent model IDs or context limits for gated or unverified announcements. See the [verified model-support matrix and availability boundaries](docs/model-support.html).
+
 ### NVIDIA Nemotron 3.5 Lightning with Ollama
 
 Entroly supports `nemotron-3.5-lightning` through its existing local Ollama discovery and OpenAI-compatible proxy path. This is a model-neutral integration: Entroly manages evidence selection, budgets, recovery handles, Context Receipts, and optional verification around the request; Ollama runs the model.
