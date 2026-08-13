@@ -1,7 +1,7 @@
 """Live, content-blind AI traffic receipts for the Entroly proxy.
 
 This module turns the proxy's existing context, cache, routing, usage and
-verification signals into one bounded per-request product surface.  It does not
+verification signals into one bounded per-request product surface. It does not
 introduce another router, retry loop, optimizer or pricing model.
 
 The design is deliberately evidence conservative:
@@ -14,7 +14,7 @@ The design is deliberately evidence conservative:
   linked, rather than presenting modeled compression savings as invoice truth;
 * the receipt is SHA-256 self-verifying.
 
-The installer wraps the already-hardened live proxy seams.  The request wrapper
+The installer wraps the already-hardened live proxy seams. The request wrapper
 is placed *inside* the bounded transport admission path, so reading the cached
 request body here cannot bypass the proxy's request-size limit.
 """
@@ -231,15 +231,20 @@ def _money_for_request(
     )
 
 
-def _coverage(proxy: Any) -> tuple[float | None, str]:
+def _coverage_snapshot(proxy: Any) -> tuple[float | None, str, str]:
     raw = getattr(proxy, "_last_coverage", None)
     try:
         value = float(raw)
     except (TypeError, ValueError, OverflowError):
-        return None, "unavailable"
-    if not 0.0 <= value <= 1.0:
-        return None, "unavailable"
-    return round(value * 100.0, 2), "context_coverage_estimate"
+        value = -1.0
+    if 0.0 <= value <= 1.0:
+        percent: float | None = round(value * 100.0, 2)
+        source = "context_coverage_estimate"
+    else:
+        percent = None
+        source = "unavailable"
+    risk = _bounded(getattr(proxy, "_last_coverage_risk", "unknown"), limit=48)
+    return percent, source, (risk.upper() if risk else "UNKNOWN")
 
 
 def _verification(response: Response) -> str:
@@ -256,7 +261,6 @@ def _verification(response: Response) -> str:
 
 
 def _recovery_state(
-    proxy: Any,
     request_headers: Mapping[str, str],
     response: Response,
 ) -> tuple[bool, int]:
@@ -303,12 +307,6 @@ def _routing_decision(
     if requested_model and executed_model and requested_model != executed_model:
         return "SWITCH", "authorized model rewrite"
     return "STAY", "requested model preserved"
-
-
-def _cache_hit_from_usage(usage: TokenUsage | None) -> bool | None:
-    if usage is None:
-        return None
-    return usage.cache_read_tokens > 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -407,6 +405,7 @@ class TrafficReceiptLedger:
 @dataclass(slots=True)
 class _TrafficRequestContext:
     proxy: Any
+    request_id: str
     request_correlation: str
     client: str
     provider: str
@@ -414,10 +413,15 @@ class _TrafficRequestContext:
     headers: Mapping[str, str]
     requested_model: str
     original_context_tokens: int
-    original_body: Mapping[str, Any]
     started_at: float = field(default_factory=time.perf_counter)
+    conversation_id: str = ""
+    cache_hits_before: int = 0
+    cache_misses_before: int = 0
     executed_model: str = ""
     entroly_context_tokens: int = 0
+    evidence_retained_pct: float | None = None
+    evidence_retained_source: str = "unavailable"
+    context_risk: str = "UNKNOWN"
     outbound_headers: dict[str, str] = field(default_factory=dict)
     streaming: bool = False
     completed: bool = False
@@ -440,12 +444,78 @@ def _ledger_for_proxy(proxy: Any) -> TrafficReceiptLedger:
     return ledger
 
 
+def _usage_for_context(
+    context: _TrafficRequestContext,
+    response: Response,
+) -> TokenUsage | None:
+    usage = _provider_usage(response, context.provider)
+    if usage is not None:
+        return usage
+    ledger = getattr(context.proxy, "_usage_ledger", None)
+    if ledger is not None and context.request_id:
+        try:
+            event = ledger.get(context.request_id)
+        except Exception:
+            event = None
+        if event is not None:
+            return event.usage
+    return None
+
+
+def _cache_observation(
+    context: _TrafficRequestContext,
+    usage: TokenUsage | None,
+) -> tuple[bool | None, int]:
+    if usage is not None:
+        return usage.cache_read_tokens > 0, usage.cache_read_tokens
+    if not context.conversation_id:
+        return None, 0
+    router = getattr(context.proxy, "_cache_router", None)
+    if router is None:
+        return None, 0
+    try:
+        lease = router.lease_snapshot(context.conversation_id)
+    except Exception:
+        return None, 0
+    if lease is None:
+        return None, 0
+    if int(lease.hits) > context.cache_hits_before:
+        return True, max(0, int(lease.cached_prefix_tokens))
+    if int(lease.misses) > context.cache_misses_before:
+        return False, 0
+    return None, 0
+
+
+def _capture_outbound_state(
+    context: _TrafficRequestContext,
+    body: Mapping[str, Any],
+    *,
+    extra_headers: Mapping[str, Any] | None,
+    streaming: bool,
+) -> None:
+    context.executed_model = _bounded(
+        str(body.get("model") or context.requested_model), limit=128
+    )
+    context.entroly_context_tokens = _estimate_context_tokens(
+        context.provider,
+        body,
+        headers=context.headers,
+        path=context.path,
+    )
+    context.outbound_headers.update(_lower_headers(extra_headers))
+    context.streaming = streaming
+    (
+        context.evidence_retained_pct,
+        context.evidence_retained_source,
+        context.context_risk,
+    ) = _coverage_snapshot(context.proxy)
+
+
 def _build_receipt(
     context: _TrafficRequestContext,
     response: Response,
 ) -> TrafficReceipt:
-    proxy = context.proxy
-    usage = _provider_usage(response, context.provider)
+    usage = _usage_for_context(context, response)
     executed_model = context.executed_model or context.requested_model
     response_headers = _lower_headers(getattr(response, "headers", {}))
     escalated_to = _bounded(response_headers.get("x-entroly-escalated-to", ""), limit=128)
@@ -453,14 +523,12 @@ def _build_receipt(
         executed_model = escalated_to
 
     input_cost, cache_benefit, money_source = _money_for_request(
-        proxy,
+        context.proxy,
         provider=context.provider,
         model=executed_model,
         usage=usage,
     )
-    evidence_pct, evidence_source = _coverage(proxy)
     recoverable, recovery_receipts = _recovery_state(
-        proxy,
         context.outbound_headers,
         response,
     )
@@ -472,7 +540,7 @@ def _build_receipt(
     )
     optimized = context.entroly_context_tokens or context.original_context_tokens
     tokens_avoided = max(0, context.original_context_tokens - optimized)
-    risk = _bounded(getattr(proxy, "_last_coverage_risk", "unknown"), limit=48)
+    cache_hit, cache_read_tokens = _cache_observation(context, usage)
     unsigned: dict[str, Any] = {
         "schema_version": _SCHEMA_VERSION,
         "receipt_id": f"tr_{uuid.uuid4().hex[:16]}",
@@ -484,23 +552,20 @@ def _build_receipt(
         "original_context_tokens": max(0, context.original_context_tokens),
         "entroly_context_tokens": max(0, optimized),
         "tokens_avoided": tokens_avoided,
-        "evidence_retained_pct": evidence_pct,
-        "evidence_retained_source": evidence_source,
+        "evidence_retained_pct": context.evidence_retained_pct,
+        "evidence_retained_source": context.evidence_retained_source,
         "recoverable": recoverable,
         "recovery_receipts": recovery_receipts,
         "warm_prefix_protected_tokens": protected_tokens,
-        "cache_hit": _cache_hit_from_usage(usage),
-        "cache_read_tokens": 0 if usage is None else usage.cache_read_tokens,
+        "cache_hit": cache_hit,
+        "cache_read_tokens": cache_read_tokens,
         "routing_decision": routing_decision,
         "routing_reason": routing_reason,
         "input_cost_micro_usd": input_cost,
         "cache_benefit_micro_usd": cache_benefit,
-        # Deliberately unavailable until a request-correlated measured
-        # counterfactual exists. Do not relabel modeled token reduction as
-        # realized invoice savings.
         "net_measured_saving_micro_usd": None,
         "money_source": money_source,
-        "context_risk": risk.upper() if risk else "UNKNOWN",
+        "context_risk": context.context_risk,
         "verification": _verification(response),
         "response_status": int(getattr(response, "status_code", 0) or 0) or None,
         "streaming": context.streaming,
@@ -564,8 +629,26 @@ async def _run_traffic_handle_proxy(
         except Exception:
             requested_model = str(body.get("model") or "")
     request_id = headers.get("x-request-id") or uuid.uuid4().hex[:16]
+    conversation_id = ""
+    cache_hits_before = 0
+    cache_misses_before = 0
+    if body:
+        try:
+            conversation_id = proxy._routing_conversation_id(dict(body), provider)
+        except Exception:
+            conversation_id = ""
+    if conversation_id:
+        try:
+            lease = proxy._cache_router.lease_snapshot(conversation_id)
+        except Exception:
+            lease = None
+        if lease is not None:
+            cache_hits_before = int(lease.hits)
+            cache_misses_before = int(lease.misses)
+
     context = _TrafficRequestContext(
         proxy=proxy,
+        request_id=request_id,
         request_correlation=_correlation_digest(request_id),
         client=_classify_client(headers),
         provider=provider,
@@ -577,16 +660,22 @@ async def _run_traffic_handle_proxy(
             if body
             else 0
         ),
-        original_body=body,
+        conversation_id=conversation_id,
+        cache_hits_before=cache_hits_before,
+        cache_misses_before=cache_misses_before,
     )
     _ledger_for_proxy(proxy).register_request()
     token = _CURRENT_CONTEXT.set(context)
     response: Response | None = None
     try:
         response = await original(proxy, request)
-        # Normal non-forwarding paths (policy refusal, malformed request, etc.)
-        # do not pass through _forward_response/_stream_response. Record them.
         if not context.completed and not isinstance(response, StreamingResponse):
+            if context.evidence_retained_source == "unavailable":
+                (
+                    context.evidence_retained_pct,
+                    context.evidence_retained_source,
+                    context.context_risk,
+                ) = _coverage_snapshot(proxy)
             _complete_context(context, response)
         return response
     except Exception:
@@ -606,15 +695,12 @@ async def _traffic_forward_response(
 ) -> Response:
     context = _CURRENT_CONTEXT.get()
     if context is not None:
-        context.executed_model = _bounded(str(body.get("model") or context.requested_model), limit=128)
-        context.entroly_context_tokens = _estimate_context_tokens(
-            context.provider,
+        _capture_outbound_state(
+            context,
             body,
-            headers=context.headers,
-            path=context.path,
+            extra_headers=kwargs.get("extra_headers"),
+            streaming=False,
         )
-        context.outbound_headers.update(_lower_headers(kwargs.get("extra_headers") or {}))
-        context.streaming = False
     response = await _ORIGINAL_FORWARD_RESPONSE(self, url, headers, body, *args, **kwargs)
     if context is not None:
         _complete_context(context, response)
@@ -631,15 +717,12 @@ async def _traffic_stream_response(
 ) -> Response:
     context = _CURRENT_CONTEXT.get()
     if context is not None:
-        context.executed_model = _bounded(str(body.get("model") or context.requested_model), limit=128)
-        context.entroly_context_tokens = _estimate_context_tokens(
-            context.provider,
+        _capture_outbound_state(
+            context,
             body,
-            headers=context.headers,
-            path=context.path,
+            extra_headers=kwargs.get("extra_headers"),
+            streaming=True,
         )
-        context.outbound_headers.update(_lower_headers(kwargs.get("extra_headers") or {}))
-        context.streaming = True
     response = await _ORIGINAL_STREAM_RESPONSE(self, url, headers, body, *args, **kwargs)
     if context is None:
         return response
@@ -800,11 +883,17 @@ def install_traffic_receipts() -> None:
         _proxy.PromptCompilerProxy._stream_response = _traffic_stream_response
 
 
-_ORIGINAL_FORWARD_RESPONSE: Callable[..., Awaitable[Response]] = (
-    _proxy.PromptCompilerProxy._forward_response
+_current_forward = _proxy.PromptCompilerProxy._forward_response
+_current_stream = _proxy.PromptCompilerProxy._stream_response
+_ORIGINAL_FORWARD_RESPONSE: Callable[..., Awaitable[Response]] = getattr(
+    _current_forward,
+    "__entroly_traffic_receipt_original__",
+    _current_forward,
 )
-_ORIGINAL_STREAM_RESPONSE: Callable[..., Awaitable[Response]] = (
-    _proxy.PromptCompilerProxy._stream_response
+_ORIGINAL_STREAM_RESPONSE: Callable[..., Awaitable[Response]] = getattr(
+    _current_stream,
+    "__entroly_traffic_receipt_original__",
+    _current_stream,
 )
 
 install_traffic_receipts()
@@ -813,7 +902,12 @@ install_traffic_receipts()
 __all__ = [
     "TrafficReceipt",
     "TrafficReceiptLedger",
+    "_TRAFFIC_HTML",
+    "_canonical_json",
     "_classify_client",
     "_install_route",
+    "_prefix_protection",
+    "_routing_decision",
+    "_verification",
     "install_traffic_receipts",
 ]
