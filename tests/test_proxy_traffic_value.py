@@ -4,9 +4,12 @@ import datetime as dt
 from contextlib import contextmanager
 from types import SimpleNamespace
 
+import pytest
+
 from entroly.proxy_traffic_value import (
     _TRAFFIC_VALUE_HTML,
     _default_window,
+    _reset_session_state_for_tests,
     build_traffic_value_snapshot,
     record_traffic_value_receipt,
 )
@@ -29,6 +32,8 @@ def _metrics(**overrides):
         "warm_cache_protected_tokens": 0,
         "cache_observed": 0,
         "cache_hits": 0,
+        "estimated_priced_requests": 0,
+        "cache_benefit_priced_requests": 0,
         "provider_priced_requests": 0,
     }
     row.update(overrides)
@@ -58,6 +63,13 @@ class _FakeTracker:
 
     def _save(self) -> None:
         self.saved += 1
+
+
+@pytest.fixture(autouse=True)
+def _clean_process_session():
+    _reset_session_state_for_tests()
+    yield
+    _reset_session_state_for_tests()
 
 
 def _utc_ts(day: dt.date) -> float:
@@ -98,6 +110,8 @@ def test_traffic_value_rolls_up_full_30_day_executive_surface(monkeypatch) -> No
             warm_cache_protected_tokens=300_000,
             cache_observed=400,
             cache_hits=320,
+            estimated_priced_requests=420,
+            cache_benefit_priced_requests=400,
             provider_priced_requests=400,
         ),
         "daily": {
@@ -117,6 +131,8 @@ def test_traffic_value_rolls_up_full_30_day_executive_surface(monkeypatch) -> No
                 warm_cache_protected_tokens=200,
                 cache_observed=80,
                 cache_hits=60,
+                estimated_priced_requests=90,
+                cache_benefit_priced_requests=80,
                 provider_priced_requests=80,
             ),
             "2026-07-20": _metrics(
@@ -135,9 +151,10 @@ def test_traffic_value_rolls_up_full_30_day_executive_surface(monkeypatch) -> No
                 warm_cache_protected_tokens=100,
                 cache_observed=40,
                 cache_hits=30,
+                estimated_priced_requests=40,
+                cache_benefit_priced_requests=40,
                 provider_priced_requests=40,
             ),
-            # Outside the rolling 30-day window.
             "2026-07-01": _metrics(
                 requests_observed=999,
                 requests_optimized=999,
@@ -155,16 +172,13 @@ def test_traffic_value_rolls_up_full_30_day_executive_surface(monkeypatch) -> No
         lambda: {"as_of": "2026-08", "source": "test-catalog"},
     )
 
-    snapshot = build_traffic_value_snapshot(
-        tracker,
-        today=today,
-        now=now,
-    )
+    snapshot = build_traffic_value_snapshot(tracker, today=today, now=now)
     thirty = snapshot["windows"]["30d"]
 
     assert snapshot["default_window"] == "30d"
     assert snapshot["always_show_lifetime"] is True
     assert snapshot["window_order"] == [
+        "session",
         "today",
         "7d",
         "30d",
@@ -172,6 +186,7 @@ def test_traffic_value_rolls_up_full_30_day_executive_surface(monkeypatch) -> No
         "90d",
         "lifetime",
     ]
+    assert snapshot["windows"]["session"]["requests_observed"] == 0
     assert thirty["requests_optimized"] == 130
     assert thirty["tokens_received"] == 1500
     assert thirty["tokens_sent"] == 600
@@ -194,7 +209,9 @@ def test_traffic_value_rolls_up_full_30_day_executive_surface(monkeypatch) -> No
     assert snapshot["pricing"]["source"] == "test-catalog"
 
 
-def test_receipt_persistence_is_idempotent_and_evidence_classified(monkeypatch) -> None:
+def test_receipt_persistence_and_session_are_idempotent_and_evidence_classified(
+    monkeypatch,
+) -> None:
     tracker = _FakeTracker()
     monkeypatch.setattr(
         "entroly.proxy_traffic_value._has_priced_model",
@@ -234,6 +251,9 @@ def test_receipt_persistence_is_idempotent_and_evidence_classified(monkeypatch) 
     assert lifetime["estimated_value_avoided_usd"] == 2.5
     assert lifetime["measured_cache_benefit_usd"] == 0.3
     assert lifetime["provider_input_spend_usd"] == 1.25
+    assert lifetime["estimated_priced_requests"] == 1
+    assert lifetime["cache_benefit_priced_requests"] == 1
+    assert lifetime["provider_priced_requests"] == 1
     assert lifetime["verified_requests"] == 1
     assert lifetime["verification_passed"] == 1
     assert lifetime["recovery_invoked"] == 1
@@ -244,26 +264,31 @@ def test_receipt_persistence_is_idempotent_and_evidence_classified(monkeypatch) 
     assert state["seen_receipts"] == ["tr_same"]
     assert tracker.saved == 1
 
+    session = build_traffic_value_snapshot(tracker)["windows"]["session"]
+    assert session["requests_observed"] == 1
+    assert session["tokens_avoided"] == 600
 
-def test_traffic_value_ui_has_requested_exec_metrics_without_fake_values() -> None:
-    # Product surface renders live API values, never the illustrative PM mockup.
+
+def test_traffic_value_ui_has_immediate_proof_without_fake_or_fake_zero_values() -> None:
     for fake in ("84,291", "2.41B", "$4,812", "$11,487", "$14,705"):
         assert fake not in _TRAFFIC_VALUE_HTML
 
     for label in (
         "Requests optimized",
-        "Tokens received",
-        "Tokens sent",
+        "Tokens received by Entroly",
+        "Tokens sent to provider",
         "Tokens avoided",
         "Context reduction",
         "Estimated value avoided",
         "Measured cache benefit",
-        "Provider input spend",
+        "Provider input spend observed",
         "Requests verified",
-        "Recovery invoked",
-        "Recovery succeeded",
+        "Recovery evidence observed",
         "Warm cache protected",
         "Total AI value protected",
         "ALL TIME",
+        "Session duration",
+        "resets on proxy restart",
+        "not measured",
     ):
         assert label in _TRAFFIC_VALUE_HTML
