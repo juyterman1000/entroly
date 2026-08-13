@@ -79,7 +79,7 @@ paid.
 | Platform | Install | What you get |
 |---|---|---|
 | 🐍 **Python** (pip) — *recommended* | `pip install -U entroly` | Everything: the command-line tool, the server your AI editor talks to, and the code library |
-| 📦 **Node / npm** | `npm install -g entroly` | The same engine, if you'd rather not install Python |
+| 📦 **Node / npm** | `npm install -g entroly` | The same engine, nothing Python required |
 | 🦀 **Rust** (source build) | `cd entroly-core && cargo build --release --bin entroly-rs --features proxy` | One self-contained program, no Python or Node needed |
 | 🍺 **Homebrew** | `brew install juyterman1000/entroly/entroly` | The command-line tool on macOS/Linux |
 | 🐳 **Docker** | `docker pull ghcr.io/juyterman1000/entroly:latest` | Runs in a container, nothing installed on your machine |
@@ -206,6 +206,23 @@ Runs as a **CLI**, **Python/TypeScript SDK**, **MCP server**, **HTTP proxy**, or
 | Aider, OpenCode, and 30+ more | Session-scoped OpenAI-compatible proxy | One command |
 
 Status describes integration depth, not a savings guarantee — provider-observed savings require requests to actually traverse an Entroly proxy route. Entroly does not claim interception of GitHub-hosted subscription inference on Copilot's native path. Full compatibility matrix: **[docs/agent-compatibility.md](docs/agent-compatibility.md)**.
+
+### Current model support
+
+Entroly carries verified public metadata for GPT-5.6 Sol, Terra, and Luna; Gemini 3.6 Flash; and Gemini 3.5 Flash-Lite, and it can discover installed NVIDIA Nemotron 3.5 Lightning Ollama tags. Gated or private-preview announcements are not promoted into the verified matrix without a usable public model ID and limits. For example, Gemini 3.5 Flash Cyber remains outside the generally available matrix because its documented CodeMender access is restricted to selected governments and trusted partners. See **[Verified model support](docs/model-support.html)** for model IDs, transport paths, limits, and availability boundaries.
+
+### NVIDIA Nemotron 3.5 Lightning with Ollama
+
+Entroly supports `nemotron-3.5-lightning` through its existing local Ollama discovery and OpenAI-compatible proxy path. This is a model-neutral integration: Entroly manages evidence selection, budgets, recovery handles, Context Receipts, and optional verification around the request; Ollama runs the model.
+
+```bash
+ollama pull nemotron-3.5-lightning
+python -m entroly.models discover ollama --inspect-ollama-context
+# Set ENTROLY_OPENAI_BASE=http://127.0.0.1:11434 in your shell, then:
+entroly proxy
+```
+
+Ollama lists the standard `nemotron-3.5-lightning` tag as a 30B mixture-of-experts model with 3B active parameters and a 1M context window. Its Apple-silicon `30b-mlx` tag is listed separately with a 256K window, so Entroly discovers the installed tag's metadata instead of assuming that every build has the same limit. Local Ollama inference can keep model prompts on the device; agent tools, configured remote providers, and other applications retain their own network and privacy boundaries. [Compatibility, setup, and official sources](docs/nemotron-3-5-lightning-ollama.html).
 
 ---
 ## When to use it · when to skip it
