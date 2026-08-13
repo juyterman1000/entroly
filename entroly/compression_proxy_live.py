@@ -22,8 +22,8 @@ from typing import Any
 # Import order is a security and observability contract:
 #   bounded transport -> final transport -> control-plane audit -> access guard
 #   -> gateway shadow -> routing authority -> routing deployment safety
-#   -> official API execution guard -> traffic receipt observer -> value view
-#   -> immediate session value overlay.
+#   -> official API execution guard -> traffic receipt observer
+#   -> final receipt correctness guard -> value view -> session value overlay.
 from . import proxy as _proxy
 from . import proxy_transport_safe as _proxy_transport_safe  # noqa: F401
 from . import proxy_transport_final as _proxy_transport_final  # noqa: F401
@@ -34,6 +34,7 @@ from . import proxy_routing_authority as _proxy_routing_authority
 from . import proxy_routing_official_guard as _proxy_routing_official_guard
 from . import proxy_routing_safety as _proxy_routing_safety
 from . import proxy_traffic_receipt as _proxy_traffic_receipt
+from . import proxy_traffic_receipt_final as _proxy_traffic_receipt_final  # noqa: F401
 from . import proxy_traffic_value as _proxy_traffic_value
 from . import proxy_traffic_session as _proxy_traffic_session  # noqa: F401
 from .compression_proxy import compress_proxy_payload_from_env
