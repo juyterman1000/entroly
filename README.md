@@ -270,6 +270,8 @@ Run `entroly doctor`. If that doesn't sort it, [open an issue](https://github.co
 - **[Adaptive context](docs/adaptive-context.html)** — bounded self-improving context.
 - **[Verified Code Context](docs/verified-code-context.md)** — parser-backed repository intelligence, typed graphs, architecture, value flow, LSP enrichment, source verification, and refactoring contracts.
 - **[Full benchmark evidence](docs/BENCHMARKS.md)** — every number, protocol, artifact, and caveat.
+- **[Model-triggered recovery holdout](docs/benchmarks/model-triggered-recovery.md)** — frozen recovery protocol, evidence boundary, and reproduction details.
+- **[Context Commit conformance artifact](benchmarks/results/context_commit_conformance.json)** — checked-in conformance evidence for Context Commit contracts.
 - **[Product surface map](docs/product-surface.md)** — CLI, SDK, MCP, proxy, verification, memory, security.
 - **[Architecture & full spec](docs/DETAILS.md)** — Rust modules, compression, provenance, command reference.
 - **[Agent compatibility](docs/agent-compatibility.md)** — every supported client and its exact authentication boundary.
