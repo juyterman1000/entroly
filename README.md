@@ -277,7 +277,7 @@ Run `entroly doctor`. If that doesn't sort it, [open an issue](https://github.co
 - **[Guarded model routing](docs/model-routing.html)** — RAVS routing, uncertainty control, and fail-closed escalation.
 - **[Adaptive context](docs/adaptive-context.html)** — bounded self-improving context.
 - **[Verified Code Context](docs/verified-code-context.md)** — parser-backed repository intelligence, typed graphs, architecture, value flow, LSP enrichment, source verification, and refactoring contracts.
-- **[Full benchmark evidence](docs/BENCHMARKS.md)** — every number, protocol, artifact, and caveat.
+- **[Full benchmark evidence](docs/BENCHMARKS.md)** — every number, protocol, artifact, and caveat, including [Model-triggered recovery](docs/benchmarks/model-triggered-recovery.md) and [Context Commit conformance](benchmarks/results/context_commit_conformance.json).
 - **[Product surface map](docs/product-surface.md)** — CLI, SDK, MCP, proxy, verification, memory, security.
 - **[Architecture & full spec](docs/DETAILS.md)** — Rust modules, compression, provenance, command reference.
 - **[Agent compatibility](docs/agent-compatibility.md)** — every supported client and its exact authentication boundary.
