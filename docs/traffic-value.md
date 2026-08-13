@@ -20,11 +20,15 @@ The page is designed to answer three questions immediately:
 
 ## This session
 
-`This session` is an in-process rollup built from the same verified Traffic Receipt stream as the durable dashboard. It is intended for the first-use wow moment: after a handful of requests, a user can immediately see requests optimized, tokens received/sent/avoided, context reduction, estimated value avoided, measured cache benefit when available, warm-cache protection, verification, recovery, and Total AI value protected.
+`This session` is a process-local, in-memory rollup built natively in the same Traffic Value accounting path as the durable dashboard. It consumes the same verified Traffic Receipt stream; there is no session monkey patch, second savings ledger, or second database.
+
+After a handful of requests, a user can immediately see requests optimized, tokens received/sent/avoided, context reduction, estimated value avoided when model pricing is available, measured cache benefit when provider evidence is available, warm-cache protection, verification/recovery evidence, and Total AI value protected when its dollar components are sufficiently evidenced.
 
 The session view is deliberately non-durable and resets when the proxy process restarts. It is **not** added again to All Time, so showing the immediate number cannot double-count durable value.
 
 During the first day of Traffic Value collection, once the current process has observed traffic, `This session` becomes the default view. After that, the durable age-adaptive default below takes over while the session tab remains available.
+
+The dashboard reports **Session duration**, not "working time": it measures wall-clock time since the current proxy process session began and does not pretend to infer human activity.
 
 ## Rolling executive view
 
@@ -36,12 +40,12 @@ The selected durable period can be Today, 7 days, 30 days, 60 days, or 90 days. 
 - tokens avoided and context-reduction percentage;
 - estimated input value avoided;
 - measured cache benefit when provider usage and auditable pricing exist;
-- provider input spend when provider usage and auditable pricing exist;
+- provider input spend observed when provider usage and auditable pricing exist;
 - requests with explicit verification evidence and verification pass rate;
-- recovery invocation and success rates;
+- recovery evidence and final PASS rates;
 - warm-cache tokens protected;
 - observed cache-hit request rate;
-- total AI value protected.
+- total AI value protected when the required dollar evidence is available.
 
 The rolling windows do not reset at calendar week/month boundaries.
 
@@ -77,15 +81,15 @@ All Time persists in the existing `ValueTracker` file across proxy restarts and 
 
 The dashboard intentionally keeps evidence classes visible instead of turning every number into a generic "savings" claim.
 
-**Estimated value avoided** uses the locally observed token difference on a provider-bound request multiplied by the configured input price for the executed model. It is modeled economic value, not an invoice counterfactual.
+**Estimated value avoided** uses the locally observed token difference on a provider-bound request multiplied by the configured input price for the executed model. It is modeled economic value, not an invoice counterfactual. If the executed model has no auditable configured price, the UI shows the dollar value as unavailable rather than pretending that an unknown value is `$0.00`.
 
-**Measured cache benefit** appears only when the Traffic Receipt has provider-reported cache usage plus auditable pricing.
+**Measured cache benefit** appears only when the Traffic Receipt has provider-reported cache usage plus auditable pricing. Missing provider/pricing evidence is displayed as unavailable, not as a measured zero.
 
-**Provider input spend** prices the provider-reported input/cache token categories currently carried by Traffic Receipt v1. It is intentionally not labeled full provider invoice spend because output cost is not yet part of that receipt field.
+**Provider input spend observed** prices the provider-reported input/cache token categories currently carried by Traffic Receipt v1. It is intentionally not labeled full provider invoice spend because output cost is not yet part of that receipt field.
 
-**Total AI value protected** is the sum of avoided-input value and measured cache benefit. The two components remain visible separately so an operator can distinguish modeled optimization value from provider-observed cache economics.
+**Total AI value protected** is the sum of avoided-input value and measured cache benefit when the required evidence for those components is available. The two components remain visible separately so an operator can distinguish modeled optimization value from provider-observed cache economics.
 
-Verification percentages count only explicit PASS/FAIL evidence. Recovery success requires recovery evidence plus a final explicit PASS signal; an attempted recovery is never counted as successful merely because it ran.
+Verification percentages count only explicit PASS/FAIL evidence. Traffic Receipt v1 currently exposes recovery evidence rather than a dedicated recovery-invocation event, so the dashboard labels that evidence conservatively; final PASS is additionally required for the corresponding successful-recovery evidence metric.
 
 Traffic Receipt coverage that is only available through shared mutable proxy state is withheld from per-request receipts rather than risk cross-request attribution. The receipt UI labels observed recovery state as **Recovery evidence**, and its SHA-256 check as **Receipt integrity**, not as a cryptographic signature.
 
