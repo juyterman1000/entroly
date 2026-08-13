@@ -868,6 +868,13 @@ def install_traffic_receipts() -> None:
             return await _run_traffic_handle_proxy(self, request, original_core)
 
         traffic_core_handle.__entroly_traffic_receipt_original__ = original_core
+        # Forward the gateway-shadow marker so the shadow boundary contract
+        # remains visible after this module wraps _ORIGINAL_HANDLE_PROXY.
+        shadow_original = getattr(
+            original_core, "__entroly_gateway_shadow_original__", None
+        )
+        if shadow_original is not None:
+            traffic_core_handle.__entroly_gateway_shadow_original__ = shadow_original
         _transport._ORIGINAL_HANDLE_PROXY = traffic_core_handle
 
     current_forward = _proxy.PromptCompilerProxy._forward_response
