@@ -868,13 +868,15 @@ def install_traffic_receipts() -> None:
             return await _run_traffic_handle_proxy(self, request, original_core)
 
         traffic_core_handle.__entroly_traffic_receipt_original__ = original_core
-        # Forward the gateway-shadow marker so the shadow boundary contract
-        # remains visible after this module wraps _ORIGINAL_HANDLE_PROXY.
-        shadow_original = getattr(
-            original_core, "__entroly_gateway_shadow_original__", None
-        )
-        if shadow_original is not None:
-            traffic_core_handle.__entroly_gateway_shadow_original__ = shadow_original
+        # Forward boundary-contract markers from all prior wrappers so each
+        # module's install test remains introspectable after this one runs.
+        for _marker in (
+            "__entroly_gateway_shadow_original__",
+            "__entroly_routing_authority_original__",
+        ):
+            _val = getattr(original_core, _marker, None)
+            if _val is not None:
+                setattr(traffic_core_handle, _marker, _val)
         _transport._ORIGINAL_HANDLE_PROXY = traffic_core_handle
 
     current_forward = _proxy.PromptCompilerProxy._forward_response
@@ -883,11 +885,18 @@ def install_traffic_receipts() -> None:
         _traffic_forward_response.__entroly_traffic_receipt_original__ = current_forward
         _proxy.PromptCompilerProxy._forward_response = _traffic_forward_response
 
-    current_stream = _proxy.PromptCompilerProxy._stream_response
-    if not hasattr(current_stream, "__entroly_traffic_receipt_original__"):
-        _ORIGINAL_STREAM_RESPONSE = current_stream
-        _traffic_stream_response.__entroly_traffic_receipt_original__ = current_stream
-        _proxy.PromptCompilerProxy._stream_response = _traffic_stream_response
+    # For _stream_response: proxy_transport_final installs _bounded_stream_response
+    # as the class method and calls its own _ORIGINAL_STREAM_RESPONSE module global
+    # at invocation time. Inject traffic observability into that global so the
+    # bounded wrapper stays as the class method (preserving the stream-bounds
+    # contract) while still routing through the traffic receipt layer.
+    from . import proxy_transport_final as _transport_final
+
+    current_stream_inner = _transport_final._ORIGINAL_STREAM_RESPONSE
+    if not hasattr(current_stream_inner, "__entroly_traffic_receipt_original__"):
+        _ORIGINAL_STREAM_RESPONSE = current_stream_inner
+        _traffic_stream_response.__entroly_traffic_receipt_original__ = current_stream_inner
+        _transport_final._ORIGINAL_STREAM_RESPONSE = _traffic_stream_response
 
 
 _current_forward = _proxy.PromptCompilerProxy._forward_response
