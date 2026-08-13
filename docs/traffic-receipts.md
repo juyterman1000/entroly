@@ -26,8 +26,8 @@ Entroly context         18,206 tokens
 ──────────────────────────────────
 Tokens avoided          55,234
 
-Evidence retained       100%   (when the context coverage estimator reports it)
-Recoverable             YES    (only when recovery evidence is present)
+Evidence retained       —      (withheld unless request-local evidence exists)
+Recovery evidence       YES    (only when recovery evidence is present)
 Warm prefix protected   14,820 tokens
 Cache hit               YES    (provider-reported cache usage)
 
@@ -40,10 +40,10 @@ Input cost              $...   (provider usage + explicit pricing required)
 Cache benefit           $...   (provider cache usage + explicit pricing required)
 Net measured saving     —      (requires a linked measured counterfactual)
 
-Context risk            LOW
+Context risk            UNKNOWN
 Verification            PASS
 
-Traffic Receipt         ✓
+Receipt integrity       ✓ SHA-256 OK
 ```
 
 The numbers above are an illustrative shape, not bundled benchmark or savings
@@ -57,10 +57,12 @@ Traffic Receipts intentionally distinguish measurement from modeling:
   the provider canonicalization layer.
 - **Tokens avoided** is the difference between the admitted request estimate and
   the final outbound request estimate.
-- **Evidence retained** uses the existing context-coverage estimate when that
-  signal is available; the receipt includes its source label.
-- **Recoverable** becomes true only when per-request recovery evidence is
-  present in the proxy's recovery headers.
+- **Evidence retained** is emitted only when a request-local evidence source is
+  available. Shared mutable proxy `last_*` coverage state is deliberately
+  withheld to prevent cross-request attribution under concurrency.
+- **Recovery evidence** becomes true only when per-request recovery evidence is
+  present in the proxy's recovery headers. It does not claim that exact recovery
+  was available before an intervention.
 - **Warm prefix protected** comes from the existing hash-only
   `PrefixContinuityGuard` intervention for that request.
 - **Cache hit** prefers provider-reported cache-read usage. For streaming calls,
@@ -72,6 +74,18 @@ Traffic Receipts intentionally distinguish measurement from modeling:
   request-correlated measured counterfactual. Modeled token reduction is not
   relabeled as realized invoice savings.
 - **Verification** comes from WITNESS/EICV response evidence when reported.
+- **Receipt integrity** is a SHA-256 canonical-payload consistency check. It is
+  not presented as a cryptographic signature.
+
+## Correlation and recovery ownership
+
+When the client does not provide `X-Request-ID`, Entroly establishes one bounded
+request identifier before the core proxy handles the request. The receipt and
+provider usage accounting therefore observe the same request id.
+
+Recursive exact-recovery attempts contribute to the final outer response but do
+not finalize a separate buyer-visible receipt. Depth zero owns the Traffic
+Receipt lifecycle.
 
 ## Privacy contract
 
@@ -87,8 +101,8 @@ The raw request ID is reduced to a salted correlation digest. The user-agent is
 used only to classify a product label such as `Claude Code` or `Codex` and is not
 stored.
 
-Every receipt has a SHA-256 digest over a canonical JSON payload and is verified
-before it is admitted to the in-memory receipt ledger.
+Every receipt has a SHA-256 digest over a canonical JSON payload and that digest
+is checked before the receipt is admitted to the in-memory ledger.
 
 ## Scope
 
