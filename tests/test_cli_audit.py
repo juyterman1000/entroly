@@ -112,7 +112,7 @@ def test_no_orphaned_registered_commands():
         "clean", "export", "import", "drift", "profile", "doctor",
         "migrate", "role", "completions", "compile", "sync", "search",
         "docs", "share", "finetune", "learn", "verify", "verify-code",
-        "autotune", "digest", "health", "witness", "audit",
+        "autotune", "digest", "health", "witness", "audit", "uninstall",
     }
     orphaned = registered - readme_claimed - INTERNAL_ONLY
     assert not orphaned, (
@@ -361,7 +361,7 @@ def test_write_config_round_trips_utf8_existing_json(tmp_path: Path):
     config_path = tmp_path / "mcp.json"
     config_path.write_text(
         json.dumps(
-            {"mcpServers": {"existing": {"label": "caf\u00e9"}}},
+            {"mcpServers": {"existing": {"label": "café"}}},
             ensure_ascii=False,
         ),
         encoding="utf-8",
@@ -375,7 +375,7 @@ def test_write_config_round_trips_utf8_existing_json(tmp_path: Path):
     )
 
     data = json.loads(config_path.read_text(encoding="utf-8"))
-    assert data["mcpServers"]["existing"]["label"] == "caf\u00e9"
+    assert data["mcpServers"]["existing"]["label"] == "café"
     assert data["mcpServers"]["entroly"]["env"]["PYTHONIOENCODING"] == "utf-8"
 
 
