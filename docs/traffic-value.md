@@ -12,14 +12,23 @@ The machine-readable surface is:
 GET /traffic-value.json
 ```
 
-The page is designed to answer two questions immediately:
+The page is designed to answer three questions immediately:
 
-1. **What did Entroly do to my AI traffic in this period?**
-2. **How much value has Entroly accumulated for me overall?**
+1. **Is Entroly helping me in the work session I am in right now?**
+2. **What did Entroly do to my AI traffic in this recent period?**
+3. **How much value has Entroly accumulated for me overall?**
+
+## This session
+
+`This session` is an in-process rollup built from the same verified Traffic Receipt stream as the durable dashboard. It is intended for the first-use wow moment: after a handful of requests, a user can immediately see requests optimized, tokens received/sent/avoided, context reduction, estimated value avoided, measured cache benefit when available, warm-cache protection, verification, recovery, and Total AI value protected.
+
+The session view is deliberately non-durable and resets when the proxy process restarts. It is **not** added again to All Time, so showing the immediate number cannot double-count durable value.
+
+During the first day of Traffic Value collection, once the current process has observed traffic, `This session` becomes the default view. After that, the durable age-adaptive default below takes over while the session tab remains available.
 
 ## Rolling executive view
 
-The selected period can be Today, 7 days, 30 days, 60 days, or 90 days. The period card can show:
+The selected durable period can be Today, 7 days, 30 days, 60 days, or 90 days. The period card can show:
 
 - requests optimized;
 - tokens received by Entroly before its context optimization;
@@ -38,7 +47,7 @@ The rolling windows do not reset at calendar week/month boundaries.
 
 ## Adaptive default
 
-Entroly selects a useful recent window based on how long Traffic Value has actually been collecting receipts:
+After the first day, Entroly selects a useful recent window based on how long Traffic Value has actually been collecting receipts:
 
 ```text
 < 30 days collecting     -> 7D
@@ -47,11 +56,11 @@ Entroly selects a useful recent window based on how long Traffic Value has actua
 100+ days collecting     -> 90D
 ```
 
-So an install with 3 days of history opens on 7D, one with 45 days opens on 30D, and one with 100+ days opens on 90D.
+So an install with 3 days of history opens on 7D, one with 45 days opens on 30D, and one with 100+ days opens on 90D. `This session` remains available in every case.
 
 ## All Time never disappears
 
-The selected rolling period is always accompanied by a separate **ALL TIME** card. It highlights:
+The selected session/recent period is always accompanied by a separate **ALL TIME** card. It highlights:
 
 ```text
 Estimated value avoided
@@ -77,5 +86,7 @@ The dashboard intentionally keeps evidence classes visible instead of turning ev
 **Total AI value protected** is the sum of avoided-input value and measured cache benefit. The two components remain visible separately so an operator can distinguish modeled optimization value from provider-observed cache economics.
 
 Verification percentages count only explicit PASS/FAIL evidence. Recovery success requires recovery evidence plus a final explicit PASS signal; an attempted recovery is never counted as successful merely because it ran.
+
+Traffic Receipt coverage that is only available through shared mutable proxy state is withheld from per-request receipts rather than risk cross-request attribution. The receipt UI labels observed recovery state as **Recovery evidence**, and its SHA-256 check as **Receipt integrity**, not as a cryptographic signature.
 
 The dashboard persists only aggregate counters and bounded receipt identifiers in the existing value-tracker file. It does not add prompt, tool-output, code, API-key, or raw user-agent content to the executive rollups.
