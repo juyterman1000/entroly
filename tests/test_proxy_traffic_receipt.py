@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from dataclasses import asdict
 
 from starlette.responses import Response
 
@@ -71,7 +72,9 @@ def test_traffic_receipt_verifies_and_ledger_is_content_blind() -> None:
 
 def test_traffic_receipt_rejects_bad_digest() -> None:
     receipt = _receipt()
-    broken = TrafficReceipt(**{**receipt.__dict__, "receipt_digest": "0" * 64})
+    broken_payload = asdict(receipt)
+    broken_payload["receipt_digest"] = "0" * 64
+    broken = TrafficReceipt(**broken_payload)
     ledger = TrafficReceiptLedger()
     try:
         ledger.append(broken)
