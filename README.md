@@ -207,6 +207,14 @@ Runs as a **CLI**, **Python/TypeScript SDK**, **MCP server**, **HTTP proxy**, or
 
 Status describes integration depth, not a savings guarantee — provider-observed savings require requests to actually traverse an Entroly proxy route. Entroly does not claim interception of GitHub-hosted subscription inference on Copilot's native path. Full compatibility matrix: **[docs/agent-compatibility.md](docs/agent-compatibility.md)**.
 
+### NVIDIA Nemotron 3.5 Lightning with Ollama
+
+Entroly supports the Ollama model ID `nemotron-3.5-lightning` through loopback-only local-model discovery and its OpenAI-compatible proxy path. Ollama runs the model; Entroly manages request context, exact recovery handles, Context Receipts, and optional verification. Context capacity is discovered from the installed Ollama tag rather than assumed universally. See [Nemotron 3.5 Lightning with Ollama](docs/nemotron-3-5-lightning-ollama.html).
+
+### Current model support
+
+Entroly's verified model matrix includes GPT-5.6 Sol/Terra/Luna, Gemini 3.6 Flash, Gemini 3.5 Flash-Lite, and runtime-discovered NVIDIA Nemotron 3.5 Lightning through Ollama. A listing means Entroly has a verified public model ID/limit contract or an inspectable local tag; it is not a universal savings claim. Announced or restricted models stay gated until their usable model IDs and limits can be verified. See [current verified model support](docs/model-support.html).
+
 ---
 ## When to use it · when to skip it
 
