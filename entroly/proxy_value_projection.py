@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any, Iterable, Mapping
 
+from starlette.responses import JSONResponse
+
+from . import proxy as _proxy
 from . import proxy_traffic_session as _state
 from . import proxy_traffic_value as _value
+from .value_tracker import ValueTracker
 
 _INSTALLED = False
 
@@ -46,6 +51,60 @@ def _merge_rows(target: dict[str, Any], incoming: Any) -> None:
             current[key][field] = int(current[key].get(field, 0) or 0) + int(
                 row.get(field, 0) or 0
             )
+
+
+def _install_cli_and_stats() -> None:
+    current_receipt = ValueTracker.get_value_receipt
+    if not hasattr(current_receipt, "__entroly_value_projection_original__"):
+        original_receipt = current_receipt
+
+        def value_receipt(self: Any, *args: Any, **kwargs: Any):
+            out = original_receipt(self, *args, **kwargs)
+            if isinstance(out, dict):
+                lifetime = _value.build_traffic_value_snapshot(self).get(
+                    "windows", {}
+                ).get("lifetime", {})
+                out["value_by_source"] = lifetime.get("value_by_source", [])
+                out["extra_provider_cost_usd"] = lifetime.get(
+                    "extra_provider_cost_usd", 0.0
+                )
+                out["net_value_after_observed_extra_provider_cost_usd"] = lifetime.get(
+                    "net_value_after_observed_extra_provider_cost_usd", 0.0
+                )
+            return out
+
+        value_receipt.__entroly_value_projection_original__ = original_receipt
+        ValueTracker.get_value_receipt = value_receipt
+
+    current_stats = _proxy._proxy_stats
+    if not hasattr(current_stats, "__entroly_value_projection_original__"):
+        original_stats = current_stats
+
+        async def stats(request: Any):
+            response = await original_stats(request)
+            body = getattr(response, "body", None)
+            if not isinstance(body, (bytes, bytearray)):
+                return response
+            try:
+                payload = json.loads(bytes(body))
+            except Exception:
+                return response
+            if not isinstance(payload, dict):
+                return response
+            lifetime = _value.build_traffic_value_snapshot().get(
+                "windows", {}
+            ).get("lifetime", {})
+            payload["value_attribution"] = {
+                "schema_version": _state.ATTRIBUTION_SCHEMA,
+                "by_source": lifetime.get("value_by_source", []),
+                "extra_provider_cost_usd": lifetime.get(
+                    "extra_provider_cost_usd", 0.0
+                ),
+            }
+            return JSONResponse(payload, status_code=response.status_code)
+
+        stats.__entroly_value_projection_original__ = original_stats
+        _proxy._proxy_stats = stats
 
 
 def install_value_projection() -> None:
@@ -139,6 +198,7 @@ def install_value_projection() -> None:
         snapshot.__entroly_value_projection_original__ = original_snapshot
         _value.build_traffic_value_snapshot = snapshot
 
+    _install_cli_and_stats()
     _INSTALLED = True
 
 
