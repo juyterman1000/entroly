@@ -233,6 +233,9 @@ def launch() -> None:
     """Launch local commands, native proxy mode, or version-pinned Docker MCP."""
     argv = sys.argv[1:]
     try:
+        from .runtime_assurance import install_runtime_assurance
+
+        install_runtime_assurance(argv)
         if argv and argv[0] == "routing":
             _run_routing_command(argv[1:])
             return
