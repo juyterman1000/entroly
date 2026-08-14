@@ -13,6 +13,24 @@ from . import proxy_traffic_value as _value
 from .value_tracker import ValueTracker
 
 _INSTALLED = False
+_METRIC_SOURCES = frozenset(
+    {
+        "context_optimization",
+        "tool_output_compression",
+        "conversation_compression",
+        "session_rescue",
+        "provider_cache",
+        "warm_prefix_protection",
+        "recovery_evidence",
+        "recovery_adjustment",
+        "extra_provider_call",
+    }
+)
+
+
+def _metric_source(value: object) -> str:
+    source = str(value or "other")[:64]
+    return source if source in _METRIC_SOURCES else "other"
 
 
 def _row_key(row: Mapping[str, Any]) -> str:
@@ -107,6 +125,56 @@ def _install_cli_and_stats() -> None:
         _proxy._proxy_stats = stats
 
 
+def _prometheus_rows() -> str:
+    lifetime = _value.build_traffic_value_snapshot().get("windows", {}).get("lifetime", {})
+    lines: list[str] = []
+    for row in lifetime.get("value_by_source", []) or []:
+        labels = (
+            f'source="{_metric_source(row.get("source"))}",'
+            f'tier="{str(row.get("tier") or "estimated")[:24]}",'
+            f'role="{str(row.get("role") or "explanatory")[:24]}",'
+            f'evidence_source="{str(row.get("evidence_source") or "local_observation")[:32]}"'
+        )
+        lines.append(
+            f"entroly_value_attribution_events_total{{{labels}}} {int(row.get('events', 0) or 0)}"
+        )
+        lines.append(
+            f"entroly_value_attributed_tokens{{{labels}}} {int(row.get('tokens', 0) or 0)}"
+        )
+        if int(row.get("priced_events", 0) or 0):
+            lines.append(
+                f"entroly_value_attributed_usd{{{labels}}} {int(row.get('micro_usd', 0) or 0) / 1_000_000.0:.6f}"
+            )
+    lines.append(
+        f"entroly_value_extra_provider_cost_usd {float(lifetime.get('extra_provider_cost_usd', 0.0) or 0.0):.6f}"
+    )
+    return "\n".join(lines) + "\n"
+
+
+def _install_prometheus() -> None:
+    current = _proxy._metrics_prometheus
+    if hasattr(current, "__entroly_value_projection_original__"):
+        return
+    original = current
+
+    async def metrics(request: Any):
+        response = await original(request)
+        iterator = getattr(response, "body_iterator", None)
+        if iterator is None:
+            return response
+
+        async def combined():
+            async for chunk in iterator:
+                yield chunk
+            yield _prometheus_rows()
+
+        response.body_iterator = combined()
+        return response
+
+    metrics.__entroly_value_projection_original__ = original
+    _proxy._metrics_prometheus = metrics
+
+
 def install_value_projection() -> None:
     """Install one accounting projection without changing the headline math."""
     global _INSTALLED
@@ -199,6 +267,7 @@ def install_value_projection() -> None:
         _value.build_traffic_value_snapshot = snapshot
 
     _install_cli_and_stats()
+    _install_prometheus()
     _INSTALLED = True
 
 
