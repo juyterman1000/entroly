@@ -26,8 +26,10 @@ from . import compression_retrieval_store_resilient as _recovery_resilient  # no
 from . import proxy_transport_safe as _proxy_transport_safe  # noqa: F401
 from . import proxy_transport_final as _proxy_transport_final  # noqa: F401
 from . import proxy_control_plane_safe as _proxy_control_plane_safe  # noqa: F401
+from .anthropic_state_contract import install_active_tool_state_proof
 from .semantic_assurance import install_proxy_semantic_assurance
 
+install_active_tool_state_proof()
 install_proxy_semantic_assurance()
 
 from . import proxy_generation_routes as _proxy_generation_routes  # noqa: F401,E402
