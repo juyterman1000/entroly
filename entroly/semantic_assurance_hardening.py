@@ -14,7 +14,6 @@ from __future__ import annotations
 import copy
 import re
 from collections.abc import Mapping
-from typing import Any
 
 from . import semantic_assurance as _semantic
 
@@ -45,6 +44,13 @@ def _harness_only(text: str) -> bool:
     return matched
 
 
+def _line_isolated_prefix(prefix: str) -> bool:
+    if not prefix:
+        return True
+    line_tail = prefix.rsplit("\n", 1)[-1]
+    return not line_tail.strip()
+
+
 def conservative_purify_block(text: str) -> tuple[str, int]:
     """Strip only structurally isolated trailing/whole reminder regions."""
     if _harness_only(text):
@@ -56,8 +62,8 @@ def conservative_purify_block(text: str) -> tuple[str, int]:
         end = len(current.rstrip())
         candidate = current[:end]
         # Find only the last non-nested reminder region and require it to reach
-        # the end. Text before it is preserved byte-for-byte except trailing
-        # whitespace introduced solely as a separator.
+        # the end. Text before it is preserved byte-for-byte except whitespace
+        # on the reminder's own line.
         matches = list(_REMINDER_REGION.finditer(candidate))
         if not matches:
             break
@@ -65,22 +71,12 @@ def conservative_purify_block(text: str) -> tuple[str, int]:
         if last.end() != len(candidate):
             break
         prefix = candidate[: last.start()]
-        # A reminder embedded mid-sentence is user text, not harness metadata.
-        if prefix and not prefix[-1].isspace():
+        # A closed reminder literal inside a user sentence is still user text.
+        if not _line_isolated_prefix(prefix):
             break
         current = prefix.rstrip()
         removed += 1
     return current, removed
-
-
-def _safe_historical_tool_result(block: Mapping[str, Any]):
-    original = _semantic._historical_tool_result
-    content = block.get("content", "")
-    if isinstance(content, Mapping):
-        copied = copy.deepcopy(dict(block))
-        copied["content"] = [copy.deepcopy(dict(content))]
-        return original(copied)
-    return original(block)
 
 
 def install_semantic_assurance_hardening() -> None:
@@ -91,7 +87,7 @@ def install_semantic_assurance_hardening() -> None:
 
     result_repair = _semantic._historical_tool_result
     if not hasattr(result_repair, "__entroly_shape_safe_original__"):
-        def shape_safe(block: Mapping[str, Any]):
+        def shape_safe(block: Mapping[str, object]):
             content = block.get("content", "")
             if isinstance(content, Mapping):
                 copied = copy.deepcopy(dict(block))
