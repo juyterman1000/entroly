@@ -31,8 +31,13 @@ def test_adjacent_harness_only_regions_are_fully_removed():
     assert conservative_purify_block(text) == ("", 2)
 
 
-def test_inline_literal_is_preserved():
-    text = "Explain <system-reminder> as a literal parser token"
+def test_inline_closed_literal_is_preserved():
+    text = "Explain <system-reminder>literal</system-reminder> as parser syntax"
+    assert conservative_purify_block(text) == (text, 0)
+
+
+def test_inline_trailing_closed_literal_is_preserved():
+    text = "Explain this literal <system-reminder>example</system-reminder>"
     assert conservative_purify_block(text) == (text, 0)
 
 
