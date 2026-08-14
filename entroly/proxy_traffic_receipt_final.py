@@ -63,6 +63,16 @@ def _tighten_receipt_html() -> None:
         '<div class="label">Traffic Receipt</div><div class="value good">✓ VERIFIED</div>',
         '<div class="label">Receipt integrity</div><div class="value good">✓ SHA-256 OK</div>',
     )
+    if "Value attribution" not in html:
+        html = html.replace(
+            "function render(r){",
+            "function attribution(r){const rows=(r.value_contributions||[]).filter(x=>Number(x.tokens||0)!==0||Number(x.micro_usd||0)!==0);if(!rows.length)return '—';return rows.slice(0,6).map(x=>esc(x.source).replaceAll('_',' ')+' · '+esc(String(x.tier||'').toUpperCase())+(x.tokens?' · '+(x.tokens<0?'-':'')+fmt(Math.abs(x.tokens))+' tok':'')).join('<br>');}\nfunction render(r){",
+        )
+        marker = '<div class="row sep"><div class="label">Tokens avoided</div><div class="value big good">${fmt(r.tokens_avoided)}</div></div>'
+        html = html.replace(
+            marker,
+            marker + '<div class="row"><div class="label">Value attribution</div><div class="value reason">${attribution(r)}</div></div>',
+        )
     _receipt._TRAFFIC_HTML = html
 
 
@@ -72,6 +82,38 @@ def _state_for(context: Any) -> _value_state.AttributionState | None:
     )
 
 
+def _add_receipt_evidence(state: _value_state.AttributionState, built: Any) -> None:
+    cache_benefit = getattr(built, "cache_benefit_micro_usd", None)
+    if cache_benefit is not None and int(cache_benefit) > 0:
+        _value_state.record_internal(
+            "provider_cache",
+            tier=_value_state.ValueTier.MEASURED,
+            role=_value_state.AccountingRole.PROTECTED,
+            tokens=max(0, int(getattr(built, "cache_read_tokens", 0) or 0)),
+            micro_usd=int(cache_benefit),
+            evidence_source=_value_state.EvidenceSource.PROVIDER_USAGE,
+            state=state,
+        )
+    warm = max(0, int(getattr(built, "warm_prefix_protected_tokens", 0) or 0))
+    if warm:
+        _value_state.record_internal(
+            "warm_prefix_protection",
+            tier=_value_state.ValueTier.MEASURED,
+            role=_value_state.AccountingRole.PROTECTED,
+            tokens=warm,
+            state=state,
+        )
+    recovered = max(0, int(getattr(built, "recovery_receipts", 0) or 0))
+    if recovered:
+        _value_state.record_internal(
+            "recovery_evidence",
+            tier=_value_state.ValueTier.MEASURED,
+            role=_value_state.AccountingRole.EXPLANATORY,
+            details={"receipts": recovered},
+            state=state,
+        )
+
+
 def _install_value_lifecycle() -> None:
     current_payload = _receipt.TrafficReceipt.payload
     if not hasattr(current_payload, "__entroly_value_state_original__"):
@@ -79,13 +121,26 @@ def _install_value_lifecycle() -> None:
 
         def payload_with_value(self: Any) -> dict[str, Any]:
             value = original_payload(self)
-            value.update(
-                _value_state.receipt_meta(str(getattr(self, "receipt_id", "")))
-            )
+            value.update(_value_state.receipt_meta(str(getattr(self, "receipt_id", ""))))
             return value
 
         payload_with_value.__entroly_value_state_original__ = original_payload
         _receipt.TrafficReceipt.payload = payload_with_value
+
+    current_snapshot = _receipt.TrafficReceiptLedger.snapshot
+    if not hasattr(current_snapshot, "__entroly_value_state_original__"):
+        original_snapshot = current_snapshot
+
+        def snapshot_with_value(self: Any, *, limit: int | None = None) -> dict[str, Any]:
+            snapshot = original_snapshot(self, limit=limit)
+            for row in [snapshot.get("latest"), *(snapshot.get("recent") or [])]:
+                if isinstance(row, dict):
+                    row.update(_value_state.receipt_meta(str(row.get("receipt_id") or "")))
+            snapshot["attribution_schema_version"] = _value_state.ATTRIBUTION_SCHEMA
+            return snapshot
+
+        snapshot_with_value.__entroly_value_state_original__ = original_snapshot
+        _receipt.TrafficReceiptLedger.snapshot = snapshot_with_value
 
     current_build = _receipt._build_receipt
     if not hasattr(current_build, "__entroly_value_state_original__"):
@@ -103,9 +158,9 @@ def _install_value_lifecycle() -> None:
             if state is None:
                 return built
             _value_state.set_canonical_context_delta(
-                state,
-                int(getattr(built, "tokens_avoided", 0) or 0),
+                state, int(getattr(built, "tokens_avoided", 0) or 0)
             )
+            _add_receipt_evidence(state, built)
             rows = _value_state.aggregate_contributions(state.contributions)
             headline = sum(
                 int(row.get("tokens", 0) or 0)
