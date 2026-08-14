@@ -85,6 +85,9 @@ def validate_active_tool_state(body: Mapping[str, Any]) -> None:
 
 
 def install_active_tool_state_proof() -> None:
+    from .semantic_assurance_hardening import install_semantic_assurance_hardening
+
+    install_semantic_assurance_hardening()
     current = _semantic.assure_provider_request
     if hasattr(current, "__entroly_active_tool_state_original__"):
         return
