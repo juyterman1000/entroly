@@ -10,6 +10,7 @@ from starlette.responses import JSONResponse
 from . import proxy as _proxy
 from . import proxy_traffic_session as _state
 from . import proxy_traffic_value as _value
+from .proxy_value_otel import emit_value_otel
 from .value_tracker import ValueTracker
 
 _INSTALLED = False
@@ -196,8 +197,10 @@ def install_value_projection() -> None:
     if not hasattr(original_delta, "__entroly_value_projection_original__"):
         def receipt_delta(receipt: Any) -> dict[str, Any]:
             out = original_delta(receipt)
-            meta = _state.receipt_meta(str(getattr(receipt, "receipt_id", "")))
+            receipt_id = str(getattr(receipt, "receipt_id", ""))
+            meta = _state.receipt_meta(receipt_id)
             rows = meta.get("value_contributions", [])
+            emit_value_otel(receipt_id, rows)
             out["attribution_events"] = sum(
                 int(row.get("events", 0) or 0) for row in rows
             )
