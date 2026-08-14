@@ -272,5 +272,9 @@ def install_value_projection() -> None:
 
 
 install_value_projection()
+try:
+    from . import proxy_value_dashboard as _proxy_value_dashboard  # noqa: F401
+except ImportError:
+    pass
 
 __all__ = ["install_value_projection"]
