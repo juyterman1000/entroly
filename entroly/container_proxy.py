@@ -18,23 +18,31 @@ import sys
 import threading
 from typing import Any
 
-# Import order is part of the security contract. Each layer wraps the factory
-# produced by the previous layer; remote access authentication must be outermost.
+# Import order is part of the security contract. Recovery binds before proxy.py;
+# transport/control wrappers bind next; semantic assurance sees their final
+# methods; HTTP generation aliases wrap the completed factory; remote access
+# authentication remains outermost.
+from . import compression_retrieval_store_resilient as _recovery_resilient  # noqa: F401
 from . import proxy_transport_safe as _proxy_transport_safe  # noqa: F401
 from . import proxy_transport_final as _proxy_transport_final  # noqa: F401
 from . import proxy_control_plane_safe as _proxy_control_plane_safe  # noqa: F401
-from . import proxy_access_security as _proxy_access_security  # noqa: F401
-from .proxy import create_proxy_app
-from .proxy_config import ProxyConfig
-from .proxy_routing_official_guard import (
+from .semantic_assurance import install_proxy_semantic_assurance
+
+install_proxy_semantic_assurance()
+
+from . import proxy_generation_routes as _proxy_generation_routes  # noqa: F401,E402
+from . import proxy_access_security as _proxy_access_security  # noqa: F401,E402
+from .proxy import create_proxy_app  # noqa: E402
+from .proxy_config import ProxyConfig  # noqa: E402
+from .proxy_routing_official_guard import (  # noqa: E402
     install_official_routing_guard,
     validate_official_routing_boundary,
 )
-from .proxy_routing_safety import (
+from .proxy_routing_safety import (  # noqa: E402
     configure_proxy_routing_safety,
     validate_routing_environment,
 )
-from .server import EntrolyEngine, _start_background_services
+from .server import EntrolyEngine, _start_background_services  # noqa: E402
 
 logger = logging.getLogger("entroly.container_proxy")
 
@@ -102,8 +110,6 @@ def main() -> None:
     config.port = _validated_port(os.environ.get("ENTROLY_PROXY_PORT", config.port))
     dashboard_enabled = _env_flag("ENTROLY_PROXY_DASHBOARD", default=False)
 
-    # Validate the entire routing deployment contract before constructing the
-    # engine, indexing the repository, or starting any background thread.
     routing_safety = validate_routing_environment(
         proxy_config=config,
         host=config.host,
@@ -122,9 +128,6 @@ def main() -> None:
     except (AttributeError, OSError, ValueError):
         pass
 
-    # Build and validate the complete security boundary before indexing, watcher,
-    # or learning threads can create side effects. Remote-bind policy failures are
-    # therefore clean startup failures, not partially initialized services.
     app = create_proxy_app(
         engine,
         config,
