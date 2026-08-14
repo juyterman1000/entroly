@@ -1741,10 +1741,40 @@ def _auto_index(
                 total_tokens = 0
                 beliefs_attached = 0
 
+    # batch_ingest.total_tokens is an intake counter. It is not guaranteed
+    # to equal the live fragments that survive deduplication and are persisted.
+    # The warm path reports live fragments, so compute the same quantity here.
+    ingest_tokens_processed = total_tokens
+    live_files_indexed = indexed
+    live_total_tokens = total_tokens
+    try:
+        if engine._use_rust:
+            live_frags = [dict(fragment) for fragment in engine._rust.export_fragments()]
+        else:
+            live_frags = [
+                {
+                    'source': fragment.source,
+                    'token_count': fragment.token_count,
+                }
+                for fragment in engine._fragments.values()
+            ]
+        live_files_indexed = len({
+            fragment.get('source', '')
+            for fragment in live_frags
+            if fragment.get('source')
+        })
+        live_total_tokens = sum(
+            max(0, int(fragment.get('token_count', 0) or 0))
+            for fragment in live_frags
+        )
+    except Exception as exc:
+        logger.warning('Could not summarize live auto-index fragments: %s', exc)
+
     return {
-        "status": "error" if persistence.get("status") == "error" else "indexed",
-        "files_indexed": indexed,
-        "total_tokens": total_tokens,
+        'status': 'error' if persistence.get('status') == 'error' else 'indexed',
+        'files_indexed': live_files_indexed,
+        'total_tokens': live_total_tokens,
+        'ingest_tokens_processed': ingest_tokens_processed,
         "beliefs_attached": beliefs_attached,
         "duration_s": round(elapsed, 2),
         "read_s": round(read_s, 2),
