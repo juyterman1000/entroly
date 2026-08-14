@@ -389,6 +389,10 @@ def install_session_value() -> None:
 
 
 _install_observers()
+try:
+    from . import proxy_value_projection as _proxy_value_projection  # noqa: F401
+except ImportError:
+    pass
 
 
 __all__ = [
