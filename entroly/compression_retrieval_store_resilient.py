@@ -9,13 +9,13 @@ invalid raw record is retained locally in a bounded forensic quarantine.
 from __future__ import annotations
 
 import copy
+import errno
 import hashlib
 import json
 import os
 import sys
 import threading
 import time
-from pathlib import Path
 from typing import Any
 
 from . import compression_retrieval_store as _legacy
@@ -67,6 +67,9 @@ def _decode_span(raw: Any, receipt_id: str) -> StoredSpan:
     retrieved_tokens = int(raw.get("retrieved_tokens", 0))
     if retrieval_count < 0 or retrieved_tokens < 0:
         raise ValueError("span_counters_invalid")
+    retrieval_ids = raw.get("retrieval_ids", [])
+    if not isinstance(retrieval_ids, list):
+        raise ValueError("retrieval_ids_not_array")
     return StoredSpan(
         span_id=span_id,
         receipt_id=receipt_id,
@@ -82,7 +85,7 @@ def _decode_span(raw: Any, receipt_id: str) -> StoredSpan:
         retrieval_count=retrieval_count,
         retrieved_tokens=retrieved_tokens,
         last_retrieved_ns=int(raw.get("last_retrieved_ns") or 0),
-        retrieval_ids=[str(value) for value in raw.get("retrieval_ids", [])],
+        retrieval_ids=[str(value) for value in retrieval_ids],
     )
 
 
@@ -192,7 +195,7 @@ class CompressionRetrievalStore(_secure.CompressionRetrievalStore):
         serialized_bytes = len(serialized.encode("utf-8"))
         if self.max_bytes is not None and serialized_bytes > self.max_bytes:
             raise OSError(
-                28,
+                errno.ENOSPC,
                 f"recovery store write would exceed its configured {self.max_bytes}-byte limit",
                 str(self.path),
             )
