@@ -15,7 +15,13 @@ ADOPTION = json.loads(
 
 
 def test_live_tokenomics_is_front_loaded_and_uses_real_commands() -> None:
-    assert README.index("## ⚡ Live Tokenomics") < README.index(
+    # The section is named "Live Token Savings" in the README. "Tokenomics" is a
+    # crypto-dominated search term, so it stays an internal name rather than a
+    # public heading; `index` raises rather than returning -1, so asserting the
+    # old literal turned a rename into a ValueError instead of a clear failure.
+    heading = "## ⚡ Live Token Savings"
+    assert heading in README, f"README is missing the {heading!r} section"
+    assert README.index(heading) < README.index(
         "## What is Entroly? (in plain English)"
     )
     assert "entroly value --json" in README
