@@ -1,0 +1,16 @@
+{
+  "name": "entroly-community-savings-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "check": "wrangler deploy --dry-run",
+    "db:local": "wrangler d1 execute entroly-community-savings --local --file=schema.sql",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "4.123.0"
+  }
+}

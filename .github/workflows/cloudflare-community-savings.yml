@@ -1,0 +1,33 @@
+name: Cloudflare community savings
+
+on:
+  pull_request:
+    paths:
+      - "deploy/cloudflare-community-savings/**"
+      - ".github/workflows/cloudflare-community-savings.yml"
+  push:
+    branches: [main]
+    paths:
+      - "deploy/cloudflare-community-savings/**"
+      - ".github/workflows/cloudflare-community-savings.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: deploy/cloudflare-community-savings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: deploy/cloudflare-community-savings/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run db:local
+      - run: npm run check

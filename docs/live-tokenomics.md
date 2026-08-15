@@ -75,3 +75,11 @@ user's exact trustworthy total remains the local Context Value Receipt. See
 [Privacy-Safe Product Health Telemetry](telemetry-privacy.md) for the complete
 event allowlist, quantization, retention, anonymized archival, and deletion
 boundaries.
+
+The production deployment target is the source-controlled
+[Cloudflare Workers + D1 collector](../deploy/cloudflare-community-savings/README.md).
+It keeps Worker observability disabled, stores no request headers or IP
+addresses in application tables, rate-limits uploads, and exposes the same
+identifier-free public response as the local Python collector. The public site
+must keep using its checked-in proof until that Worker is deployed, initialized,
+and verified from the GitHub Pages origin.
