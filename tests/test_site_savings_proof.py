@@ -49,7 +49,12 @@ def test_site_does_not_present_the_proof_as_worldwide_savings() -> None:
 
 
 def test_site_live_counter_is_configurable_polled_and_fails_closed() -> None:
-    assert 'name="entroly-community-savings-endpoint" content=""' in HTML
+    assert (
+        'name="entroly-community-savings-endpoint" '
+        'content="https://entroly-community-savings.'
+        'entroly-community-savings-worker.workers.dev/v1/public-savings"'
+        in HTML
+    )
     assert "entroly.community-savings.v1" in HTML
     assert "reported_provider_tokens_saved" in HTML
     assert "reported_modeled_input_cost_avoided_usd" in HTML

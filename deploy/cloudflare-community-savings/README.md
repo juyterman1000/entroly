@@ -62,8 +62,10 @@ After deployment:
 1. Verify `/health` and `/v1/public-savings`.
 2. Set `ENTROLY_TELEMETRY_ENDPOINT` only through the user's explicit consent
    flow; an environment variable alone cannot turn consent into upload.
-3. Put the deployed `/v1/public-savings` URL in the
-   `entroly-community-savings-endpoint` meta tag in `docs/index.html`.
+3. The production aggregate endpoint is
+   `https://entroly-community-savings.entroly-community-savings-worker.workers.dev/v1/public-savings`.
+   Keep that URL in the `entroly-community-savings-endpoint` meta tag in
+   `docs/index.html`.
 4. Run the website tests and verify the cross-origin response from
    `https://juyterman1000.github.io` before publication.
 
