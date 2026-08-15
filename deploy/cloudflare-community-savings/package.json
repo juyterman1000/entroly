@@ -5,7 +5,6 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "types:check": "wrangler types --check",
     "check": "wrangler deploy --dry-run",
     "db:local": "wrangler d1 execute entroly-community-savings --local --file=schema.sql",
     "dev": "wrangler dev",
