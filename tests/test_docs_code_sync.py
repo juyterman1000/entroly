@@ -45,6 +45,8 @@ _IMPORT_RE = re.compile(
 # never from prose, which would false-match ("the entroly server ...").
 _INLINE_CODE_RE = re.compile(r"`([^`]+)`")
 _CMD_RE = re.compile(r"\bentroly ([a-z][a-z-]{2,})\b")
+_ENV_VAR_RE = re.compile(r"\bENTROLY_[A-Z0-9_]+\b")
+_MARKDOWN_LINK_TARGET_RE = re.compile(r"\]\([^\n)]*\)")
 
 
 def _doc_texts() -> list[tuple[str, str]]:
@@ -87,6 +89,12 @@ def _code_spans(text: str) -> list[str]:
         if in_fence:
             buffer.append(line)
     return spans
+
+
+def _documented_env_vars(text: str) -> set[str]:
+    """Return advertised env vars, excluding Markdown link destinations."""
+    visible_text = _MARKDOWN_LINK_TARGET_RE.sub("]()", text)
+    return set(_ENV_VAR_RE.findall(visible_text))
 
 
 def _real_cli_subcommands() -> set[str]:
@@ -134,20 +142,19 @@ def test_documented_env_vars_are_wired() -> None:
     Guards against advertising configuration knobs that nothing consumes.
     """
     documented: dict[str, str] = {}
-    var_re = re.compile(r"\bENTROLY_[A-Z0-9_]+\b")
     for name, text in _doc_texts():
-        for variable in var_re.findall(text):
+        for variable in _documented_env_vars(text):
             documented.setdefault(variable, name)
     assert documented, "expected documented ENTROLY_* variables"
 
     wired: set[str] = set()
     for py_file in (ROOT / "entroly").rglob("*.py"):
         wired.update(
-            var_re.findall(py_file.read_text(encoding="utf-8", errors="replace"))
+            _ENV_VAR_RE.findall(py_file.read_text(encoding="utf-8", errors="replace"))
         )
     for rust_file in (ROOT / "entroly-core" / "src").rglob("*.rs"):
         wired.update(
-            var_re.findall(rust_file.read_text(encoding="utf-8", errors="replace"))
+            _ENV_VAR_RE.findall(rust_file.read_text(encoding="utf-8", errors="replace"))
         )
 
     unwired = {value: source for value, source in documented.items() if value not in wired}
@@ -158,6 +165,14 @@ def test_documented_env_vars_are_wired() -> None:
             for variable, source in sorted(unwired.items())
         )
     )
+
+
+def test_env_var_scanner_ignores_markdown_link_destinations() -> None:
+    text = (
+        "Use `ENTROLY_PORT` with the "
+        "[verified map](architecture/ENTROLY_VERIFIED_MAP.md)."
+    )
+    assert _documented_env_vars(text) == {"ENTROLY_PORT"}
 
 
 def test_documented_cli_subcommands_exist() -> None:
