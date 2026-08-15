@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  fetchHandler,
   handle,
   publicSavingsPayload,
   summarizeRows,
@@ -120,4 +121,30 @@ test("health route is storage-specific and does not require D1", async () => {
   const response = await handle(new Request("https://example.com/health"), {});
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { status: "ok", storage: "cloudflare-d1" });
+});
+
+test("runtime failures return a content-blind structured error", async () => {
+  const response = await fetchHandler(
+    new Request("https://example.com/v1/public-savings"),
+    {},
+  );
+  assert.equal(response.status, 500);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.deepEqual(await response.json(), { error: "internal_error" });
+});
+
+test("bounded reader rejects an oversized streaming body before JSON parsing", async () => {
+  const body = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new Uint8Array(40 * 1024));
+      controller.enqueue(new Uint8Array(40 * 1024));
+      controller.close();
+    },
+  });
+  const response = await handle(
+    new Request("https://example.com/v1/events", { method: "POST", body, duplex: "half" }),
+    {},
+  );
+  assert.equal(response.status, 413);
+  assert.deepEqual(await response.json(), { error: "payload_too_large" });
 });

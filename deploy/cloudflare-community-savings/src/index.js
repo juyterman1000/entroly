@@ -180,17 +180,41 @@ function json(body, status = 200, headers = {}) {
   });
 }
 
-function authorized(request, token) {
+async function authorized(request, token) {
   if (!token) return true;
-  return request.headers.get("Authorization") === `Bearer ${token}`;
+  const encoder = new TextEncoder();
+  const [providedHash, expectedHash] = await Promise.all([
+    crypto.subtle.digest("SHA-256", encoder.encode(request.headers.get("Authorization") || "")),
+    crypto.subtle.digest("SHA-256", encoder.encode(`Bearer ${token}`)),
+  ]);
+  return crypto.subtle.timingSafeEqual(providedHash, expectedHash);
 }
 
 async function readJson(request, maxBytes) {
   const declared = Number.parseInt(request.headers.get("Content-Length") || "0", 10);
   if (Number.isFinite(declared) && declared > maxBytes) return { error: "payload_too_large" };
-  const text = await request.text();
-  if (new TextEncoder().encode(text).byteLength > maxBytes) return { error: "payload_too_large" };
+  if (!request.body) return { error: "invalid_schema" };
+  const reader = request.body.getReader();
+  const chunks = [];
+  let totalBytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    totalBytes += value.byteLength;
+    if (totalBytes > maxBytes) {
+      await reader.cancel();
+      return { error: "payload_too_large" };
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
   try {
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
     return { value: JSON.parse(text) };
   } catch {
     return { error: "invalid_schema" };
@@ -521,12 +545,12 @@ async function handle(request, env) {
     return json(await publicSavings(env, now), 200, corsHeaders(request, env));
   }
   if (request.method === "GET" && url.pathname === "/v1/summary") {
-    if (!env.ADMIN_TOKEN || !authorized(request, env.ADMIN_TOKEN)) return json({ error: "not_found" }, 404);
+    if (!env.ADMIN_TOKEN || !await authorized(request, env.ADMIN_TOKEN)) return json({ error: "not_found" }, 404);
     const report = await summary(env, now, url.searchParams.get("days"));
     return report ? json(report) : json({ error: "invalid_days" }, 400);
   }
   if (request.method === "POST" && url.pathname === "/v1/events") {
-    if (!authorized(request, env.INGEST_TOKEN)) return json({ error: "unauthorized" }, 401);
+    if (!await authorized(request, env.INGEST_TOKEN)) return json({ error: "unauthorized" }, 401);
     const body = await readJson(request, MAX_BATCH_BYTES);
     if (body.error) return json({ error: body.error }, body.error === "payload_too_large" ? 413 : 400);
     const events = validateBatch(body.value, now, boundedRetention(env));
@@ -539,7 +563,7 @@ async function handle(request, env) {
     return json({ accepted: events.length, inserted });
   }
   if (request.method === "DELETE" && url.pathname === "/v1/events") {
-    if (!authorized(request, env.INGEST_TOKEN)) return json({ error: "unauthorized" }, 401);
+    if (!await authorized(request, env.INGEST_TOKEN)) return json({ error: "unauthorized" }, 401);
     const body = await readJson(request, 4096);
     if (body.error) return json({ error: body.error }, body.error === "payload_too_large" ? 413 : 400);
     const installationIds = validateDeletion(body.value);
@@ -554,5 +578,17 @@ async function handle(request, env) {
   return json({ error: "not_found" }, 404);
 }
 
-export default { fetch: handle };
-export { handle };
+async function fetchHandler(request, env) {
+  try {
+    return await handle(request, env);
+  } catch {
+    return json(
+      { error: "internal_error" },
+      500,
+      { "Cache-Control": "no-store" },
+    );
+  }
+}
+
+export default { fetch: fetchHandler };
+export { fetchHandler, handle };

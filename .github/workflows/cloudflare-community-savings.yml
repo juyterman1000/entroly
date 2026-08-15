@@ -29,5 +29,6 @@ jobs:
           cache-dependency-path: deploy/cloudflare-community-savings/package-lock.json
       - run: npm ci
       - run: npm test
+      - run: npm run types:check
       - run: npm run db:local
       - run: npm run check

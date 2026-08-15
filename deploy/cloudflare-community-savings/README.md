@@ -44,8 +44,8 @@ npx wrangler login
 npx wrangler d1 create entroly-community-savings
 ```
 
-Copy the returned `database_id` into `wrangler.jsonc`, then initialize and
-deploy:
+Copy the returned `database_id` into `wrangler.jsonc` (the Entroly production
+database ID is already checked in), then initialize and deploy:
 
 ```powershell
 npx wrangler d1 execute entroly-community-savings --remote --file=schema.sql

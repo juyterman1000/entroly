@@ -3,6 +3,7 @@
   "name": "entroly-community-savings",
   "main": "src/index.js",
   "compatibility_date": "2026-08-14",
+  "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
   "observability": {
     "enabled": false
@@ -15,7 +16,7 @@
     {
       "binding": "DB",
       "database_name": "entroly-community-savings",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID"
+      "database_id": "8dd8d61c-239e-460c-986a-f2ad30ae3f33"
     }
   ],
   "ratelimits": [
