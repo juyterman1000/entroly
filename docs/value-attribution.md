@@ -12,7 +12,13 @@ The public `record_value_contribution(...)` seam cannot self-promote a caller to
 
 ## Automatic observations
 
-When existing runtime components already expose exact evidence, Entroly records request-local explanations for tool-output compression, conversation compression, session rescue, OptimizationLedger events, retrieval/re-expansion adjustments, provider-cache benefit, warm-prefix protection, and recovery evidence.
+When existing runtime components already expose exact evidence, Entroly records request-local explanations for tool-output compression, conversation compression, explicit tool-schema deferral, session rescue, OptimizationLedger events, retrieval/re-expansion adjustments, provider-cache benefit, warm-prefix protection, and recovery evidence.
+
+Tool-schema deferral is fail-closed and caller-directed. A request may provide a
+bounded `X-Entroly-Active-Tools` allowlist; the final outbound seam removes only
+inactive named function schemas, retains any forced tool choice and unnamed
+provider tools, and leaves the request unchanged when no named schema matches.
+Only scalar before/after counts and the measured token delta enter attribution.
 
 ## Additional provider work
 
@@ -29,6 +35,11 @@ Attribution observes already-hardened proxy seams; it is not a router, retry loo
 The canonical rows are projected into Traffic Receipts, `/traffic-receipts`, Traffic Value JSON/window rollups, the Traffic Value dashboard, `/stats`, ValueTracker receipts used by `entroly value --json`, the existing Prometheus stream, and optional OTEL metrics. No product surface independently recalculates attribution.
 
 Prometheus/OTEL source labels use a finite allowlist; custom sources collapse to `other` to bound cardinality.
+
+The proxy savings aggregate is emitted as `entroly.proxy.tokens.saved` in OTEL
+and `entroly_proxy_tokens_saved_total` in Prometheus. Compression and
+tool-schema component counters partition that canonical total, so explanatory
+rows cannot inflate the headline through double counting.
 
 ## Money truth
 

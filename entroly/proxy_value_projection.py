@@ -18,6 +18,7 @@ _METRIC_SOURCES = frozenset(
     {
         "context_optimization",
         "tool_output_compression",
+        "tool_schema_deferral",
         "conversation_compression",
         "session_rescue",
         "provider_cache",
@@ -148,6 +149,33 @@ def _prometheus_rows() -> str:
             )
     lines.append(
         f"entroly_value_extra_provider_cost_usd {float(lifetime.get('extra_provider_cost_usd', 0.0) or 0.0):.6f}"
+    )
+    headline_tokens = sum(
+        max(0, int(row.get("tokens", 0) or 0))
+        for row in lifetime.get("value_by_source", []) or []
+        if bool(row.get("headline_included"))
+        and str(row.get("tier") or "") == "measured"
+    )
+    raw_schema_tokens = sum(
+        max(0, int(row.get("tokens", 0) or 0))
+        for row in lifetime.get("value_by_source", []) or []
+        if str(row.get("source") or "") == "tool_schema_deferral"
+        and str(row.get("tier") or "") == "measured"
+    )
+    schema_tokens = min(headline_tokens, raw_schema_tokens)
+    compression_tokens = max(0, headline_tokens - schema_tokens)
+    lines.extend(
+        (
+            "# HELP entroly_proxy_tokens_saved_total Canonical whole-request input tokens removed by Entroly",
+            "# TYPE entroly_proxy_tokens_saved_total counter",
+            f"entroly_proxy_tokens_saved_total {headline_tokens}",
+            "# HELP entroly_proxy_compression_tokens_saved_total Canonical saved-token total excluding measured tool-schema deferral",
+            "# TYPE entroly_proxy_compression_tokens_saved_total counter",
+            f"entroly_proxy_compression_tokens_saved_total {compression_tokens}",
+            "# HELP entroly_proxy_tool_schema_tokens_saved_total Input tokens removed by explicit tool-schema deferral",
+            "# TYPE entroly_proxy_tool_schema_tokens_saved_total counter",
+            f"entroly_proxy_tool_schema_tokens_saved_total {schema_tokens}",
+        )
     )
     return "\n".join(lines) + "\n"
 

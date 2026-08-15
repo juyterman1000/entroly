@@ -6,11 +6,12 @@ from collections import OrderedDict
 from typing import Any, Mapping
 
 _SEEN: OrderedDict[str, None] = OrderedDict()
-_INSTRUMENTS: tuple[Any, Any, Any] | None | bool = None
+_INSTRUMENTS: tuple[Any, ...] | None | bool = None
 _SOURCES = frozenset(
     {
         "context_optimization",
         "tool_output_compression",
+        "tool_schema_deferral",
         "conversation_compression",
         "session_rescue",
         "provider_cache",
@@ -46,10 +47,21 @@ def emit_value_otel(receipt_id: str, rows: list[Mapping[str, Any]]) -> None:
                 meter.create_counter("entroly.value.attribution.events", unit="1"),
                 meter.create_up_down_counter("entroly.value.attribution.tokens", unit="1"),
                 meter.create_up_down_counter("entroly.value.attribution.usd", unit="USD"),
+                meter.create_counter("entroly.proxy.tokens.saved", unit="1"),
+                meter.create_counter(
+                    "entroly.proxy.tokens.compression_saved", unit="1"
+                ),
+                meter.create_counter(
+                    "entroly.proxy.tokens.tool_schema_saved", unit="1"
+                ),
             )
         if _INSTRUMENTS is False:
             return
-        events, tokens, usd = _INSTRUMENTS
+        events, tokens, usd, proxy_saved, compression_saved, tool_schema_saved = (
+            _INSTRUMENTS
+        )
+        headline_tokens = 0
+        raw_tool_schema_tokens = 0
         for row in rows:
             attrs = {
                 "source": _source(row.get("source")),
@@ -61,6 +73,18 @@ def emit_value_otel(receipt_id: str, rows: list[Mapping[str, Any]]) -> None:
             }
             events.add(int(row.get("events", 0) or 0), attrs)
             signed_tokens = int(row.get("tokens", 0) or 0)
+            if (
+                bool(row.get("headline_included"))
+                and str(row.get("tier") or "") == "measured"
+                and signed_tokens > 0
+            ):
+                headline_tokens += signed_tokens
+            if (
+                str(row.get("source") or "") == "tool_schema_deferral"
+                and str(row.get("tier") or "") == "measured"
+                and signed_tokens > 0
+            ):
+                raw_tool_schema_tokens += signed_tokens
             if signed_tokens:
                 tokens.add(signed_tokens, attrs)
             if int(row.get("priced_events", 0) or 0):
@@ -68,6 +92,16 @@ def emit_value_otel(receipt_id: str, rows: list[Mapping[str, Any]]) -> None:
                     int(row.get("micro_usd", 0) or 0) / 1_000_000.0,
                     attrs,
                 )
+        # The canonical headline already measures the whole outbound request.
+        # Components partition that total; they are never added on top of it.
+        schema_tokens = min(headline_tokens, raw_tool_schema_tokens)
+        compression_tokens = max(0, headline_tokens - schema_tokens)
+        if headline_tokens:
+            proxy_saved.add(headline_tokens)
+        if compression_tokens:
+            compression_saved.add(compression_tokens)
+        if schema_tokens:
+            tool_schema_saved.add(schema_tokens)
     except Exception:
         _INSTRUMENTS = False
 

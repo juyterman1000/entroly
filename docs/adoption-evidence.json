@@ -1,0 +1,53 @@
+{
+  "schema_version": "entroly.adoption-evidence.v1",
+  "observed_at": "2026-08-14",
+  "headline": {
+    "label": "observed_distribution_events",
+    "events": 100438,
+    "unique_users": false,
+    "successful_activations": false,
+    "source_overlap_possible": true
+  },
+  "components": {
+    "pypi_without_known_mirrors": {
+      "events": 41102,
+      "packages": {
+        "entroly": 18359,
+        "entroly-core": 22743
+      },
+      "window": "package publication through 2026-08-14"
+    },
+    "npm": {
+      "events": 38023,
+      "packages": {
+        "entroly": 9864,
+        "entroly-mcp": 12877,
+        "entroly-wasm": 11469,
+        "entroly-openclaw": 3813
+      },
+      "window": "package publication through 2026-08-14"
+    },
+    "github_full_clones": {
+      "events": 20971,
+      "unique_cloners": 1061,
+      "window": "2026-07-31 through 2026-08-13 UTC",
+      "retention_note": "GitHub exposes only the latest 14 days and counts full clones, not fetches."
+    },
+    "github_release_binaries": {
+      "events": 342,
+      "window": "all release assets visible through 2026-08-14"
+    }
+  },
+  "excluded": {
+    "pypi_known_mirror_downloads": "Excluded from the headline because automated mirror syncs are not end-user package retrievals.",
+    "github_release_checksum_downloads": 462,
+    "github_source_archives": "GitHub does not expose a separate source zip or tar archive download count.",
+    "mcp_registry": "Discovery metadata only; its PyPI and npm package fetches are already counted above.",
+    "sdk_downloads": "SDK code ships inside the counted Python, native-core, JavaScript and MCP packages; no second SDK total is added.",
+    "python_and_node_cli_proxy": "The CLI and proxy are commands inside the counted entroly, entroly-core and entroly-mcp distributions; command usage is not a second download.",
+    "rust_proxy": "Prebuilt entroly-rs archives are included in github_release_binaries; source builds begin with a GitHub clone already represented by clone traffic.",
+    "homebrew": "The formula installs the PyPI entroly source distribution, so the package retrieval is already counted. The tap had 18 recent clone events, excluded to avoid counting the same install twice.",
+    "ghcr": "The container image is published, but no auditable official pull total was available to this snapshot; zero is added.",
+    "crates_io": "entroly-core, entroly-engine, entroly-qccr and entroly-wasm were not published crates at observation time."
+  }
+}

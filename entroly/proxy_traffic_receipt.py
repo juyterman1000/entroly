@@ -511,6 +511,51 @@ def _capture_outbound_state(
     ) = _coverage_snapshot(context.proxy)
 
 
+def _apply_tool_schema_deferral(
+    context: _TrafficRequestContext,
+    body: dict[str, Any],
+    kwargs: dict[str, Any],
+) -> dict[str, Any]:
+    """Apply an explicit active-tool allowlist at the final outbound seam."""
+
+    from .tool_schema_deferral import defer_tool_schemas
+
+    decision = defer_tool_schemas(
+        body,
+        context.headers.get("x-entroly-active-tools", ""),
+    )
+    if not decision.changed:
+        return body
+
+    # Import lazily: the attribution layer wraps this receipt module during
+    # package initialization, while this function only runs on live traffic.
+    try:
+        from .proxy_traffic_session import record_tool_schema_deferral
+
+        record_tool_schema_deferral(
+            decision.tokens_deferred,
+            schemas_before=decision.schemas_before,
+            schemas_after=decision.schemas_after,
+        )
+    except Exception:
+        # Observability must never block or undo a caller-requested transform.
+        pass
+
+    extra_headers = dict(kwargs.get("extra_headers") or {})
+    extra_headers.update(
+        {
+            "X-Entroly-Tool-Schema-Deferral": decision.reason,
+            "X-Entroly-Tool-Schema-Tokens-Deferred": str(
+                decision.tokens_deferred
+            ),
+            "X-Entroly-Tool-Schemas-Before": str(decision.schemas_before),
+            "X-Entroly-Tool-Schemas-After": str(decision.schemas_after),
+        }
+    )
+    kwargs["extra_headers"] = extra_headers
+    return decision.body
+
+
 def _build_receipt(
     context: _TrafficRequestContext,
     response: Response,
@@ -695,6 +740,7 @@ async def _traffic_forward_response(
 ) -> Response:
     context = _CURRENT_CONTEXT.get()
     if context is not None:
+        body = _apply_tool_schema_deferral(context, body, kwargs)
         _capture_outbound_state(
             context,
             body,
@@ -717,6 +763,7 @@ async def _traffic_stream_response(
 ) -> Response:
     context = _CURRENT_CONTEXT.get()
     if context is not None:
+        body = _apply_tool_schema_deferral(context, body, kwargs)
         _capture_outbound_state(
             context,
             body,

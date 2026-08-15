@@ -20,7 +20,8 @@ Select the highest-value evidence first, compress it, keep originals recoverable
   <a href="https://github.com/juyterman1000/entroly"><img src="https://img.shields.io/github/stars/juyterman1000/entroly?style=social" alt="Entroly GitHub stars"></a>
 </p>
 
-<p align="center"><b>100K+ downloads</b> across verified package distribution channels.</p>
+<p align="center"><b>100,438 downloads</b><br>
+<sub>Measured across different distribution sources. <a href="docs/adoption-evidence.md">Evidence and exclusions</a>.</sub></p>
 
 <p align="center"><b>⭐ If Entroly is useful to you, please star the repository on GitHub.</b><br>
 <a href="https://github.com/juyterman1000/entroly">⭐ Star Entroly on GitHub</a> — it helps the project grow and reach more developers.</p>
@@ -31,20 +32,43 @@ Select the highest-value evidence first, compress it, keep originals recoverable
 
 | Live metric | Meaning | Source of truth |
 |---|---|---|
-| **Tokens saved** | Cumulative tokens reduced by the active Entroly workload | Local value ledger / proxy metrics |
+| **Tokens saved** | Cumulative tokens reduced by the active Entroly workload | Local value ledger plus `entroly.proxy.tokens.saved` / `entroly_proxy_tokens_saved_total` |
 | **Estimated cost avoided** | Modeled USD value of provider-bound input reduction using configured pricing | Local value ledger; provider invoice remains billing truth |
-| **Compression tokens saved** | Savings produced by the compression pipeline | OTEL / Prometheus metrics |
-| **Tool-schema tokens deferred** | Savings from deferring tool schemas until they are needed | OTEL / Prometheus metrics |
+| **Compression tokens saved** | Canonical whole-request savings excluding measured tool-schema deferral | `entroly.proxy.tokens.compression_saved` / `entroly_proxy_compression_tokens_saved_total` |
+| **Tool-schema tokens deferred** | Savings from a caller explicitly limiting the active tool set with `X-Entroly-Active-Tools` | `entroly.proxy.tokens.tool_schema_saved` / `entroly_proxy_tool_schema_tokens_saved_total` |
 
-> **Live means measured by Entroly, not a fabricated global number.** Exact token and dollar totals stay local; privacy-safe product-health telemetry uses coarse buckets rather than exact global savings. Run `entroly value` or open `entroly dashboard` for live cumulative totals on your installation. For proxy observability, scrape `/metrics` and see [Metrics & Monitoring](docs/grafana/README.md).
+> **Live means measured by Entroly, not a fabricated global number.** Exact token and dollar totals stay local; privacy-safe product-health telemetry uses coarse buckets rather than exact global savings. Run `entroly value`, `entroly value --json`, or open `entroly dashboard` for live cumulative totals on your installation. For proxy observability, scrape `/metrics` and see [Metrics & Monitoring](docs/grafana/README.md).
 
-<p align="center"><a href="docs/ai-efficiency.html">AI efficiency hub</a> · <a href="docs/ai-cost-optimization.html">Cost methodology</a> · <a href="docs/grafana/README.md">Metrics & monitoring</a> · <a href="docs/telemetry-privacy.md">Privacy-safe telemetry</a></p>
+Tool schemas are never hidden by a relevance guess. To opt in for a request,
+send a comma-separated active set such as
+`X-Entroly-Active-Tools: search_files,read_file`. Forced tool choices and
+unnamed provider tools remain available; an invalid or non-matching set leaves
+the request unchanged.
+
+<p align="center"><a href="docs/live-tokenomics.md">Measurement contract</a> · <a href="docs/ai-efficiency.html">AI efficiency hub</a> · <a href="docs/ai-cost-optimization.html">Cost methodology</a> · <a href="docs/grafana/README.md">Metrics & monitoring</a> · <a href="docs/telemetry-privacy.md">Privacy-safe telemetry</a></p>
 
 ---
 
 <p align="center">
-  <b><a href="#what-is-entroly-in-plain-english">What is it?</a> · <a href="#live-tokenomics">Tokenomics</a> · <a href="#install">Install</a> · <a href="#quickstart--by-how-you-work">Quickstart</a> · <a href="#see-it-work-in-30-seconds">See it work</a> · <a href="#benchmarks">Benchmarks</a> · <a href="#common-questions">Questions</a></b>
+  <b><a href="#live-tokenomics">Tokenomics</a> · <a href="#integration-hub">Integrations</a> · <a href="#what-is-entroly-in-plain-english">What is it?</a> · <a href="#install">Install</a> · <a href="#quickstart--by-how-you-work">Quickstart</a> · <a href="#see-it-work-in-30-seconds">See it work</a> · <a href="#benchmarks">Benchmarks</a> · <a href="#common-questions">Questions</a></b>
 </p>
+
+---
+
+## Integration hub
+
+Use Entroly at the SDK, framework, proxy, MCP, plugin or agent boundary. A
+listed name is not automatically a claim that hosted subscription inference is
+intercepted; provider-bound savings exist only when the request traverses an
+Entroly-controlled route.
+
+| Direct, tested paths | Guided or bounded paths |
+|---|---|
+| [Vercel AI SDK middleware](docs/integration-hub.md#vercel-ai-sdk) · [OpenAI SDK](docs/integration-hub.md#openai-sdk) · [Anthropic SDK](docs/integration-hub.md#anthropic-sdk) | [Agno](docs/integration-hub.md#agno) · [Strands Agents](docs/integration-hub.md#strands-agents) · [CrewAI](docs/integration-hub.md#crewai) · [AutoGen](docs/integration-hub.md#autogen) |
+| [LangChain](docs/integration-hub.md#langchain) · [LiteLLM](docs/integration-hub.md#litellm) · [MCP](docs/integration-hub.md#mcp) | [Claude Code on Vertex AI](docs/integration-hub.md#claude-code-on-vertex-ai) · [Claude Code on Azure AI Foundry](docs/integration-hub.md#claude-code-on-azure-ai-foundry) |
+| [OpenClaw](docs/integration-hub.md#openclaw) · [OpenCode](docs/integration-hub.md#opencode) | [Claude Code in VS Code](docs/integration-hub.md#claude-code-in-vs-code) · [VS Code Copilot](docs/integration-hub.md#vs-code-copilot) · [Grok](docs/integration-hub.md#grok) |
+
+**[Open the complete verified integration and operations hub →](docs/integration-hub.md)**
 
 ---
 ## What is Entroly? (in plain English)

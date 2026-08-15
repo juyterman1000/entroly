@@ -245,6 +245,32 @@ def _measured(source: str, tokens: int, **details: Any) -> None:
         )
 
 
+def record_tool_schema_deferral(
+    tokens: int,
+    *,
+    schemas_before: int,
+    schemas_after: int,
+) -> bool:
+    """Record an outbound, explicitly requested schema reduction.
+
+    This row explains part of the canonical whole-request token delta. It is
+    deliberately non-headline so projection layers cannot add it twice.
+    """
+
+    if int(tokens or 0) <= 0:
+        return False
+    return record_internal(
+        "tool_schema_deferral",
+        tier=ValueTier.MEASURED,
+        role=AccountingRole.EXPLANATORY,
+        tokens=max(0, int(tokens)),
+        details={
+            "schemas_before": max(0, int(schemas_before)),
+            "schemas_after": max(0, int(schemas_after)),
+        },
+    )
+
+
 def _install_observers() -> None:
     """Observe existing optimizer/provider accounting without changing policy."""
     try:
@@ -399,8 +425,9 @@ __all__ = [
     "ATTRIBUTION_SCHEMA", "AccountingRole", "AttributionState",
     "CURRENT_ATTRIBUTION", "EvidenceSource", "ValueContribution", "ValueTier",
     "active_state", "aggregate_contributions", "clear_attribution_state",
-    "forget_active", "receipt_meta", "record_internal", "record_value_contribution",
-    "remember_active", "remember_receipt_meta", "set_canonical_context_delta",
+    "forget_active", "receipt_meta", "record_internal", "record_tool_schema_deferral",
+    "record_value_contribution", "remember_active", "remember_receipt_meta",
+    "set_canonical_context_delta",
     "_record_session_receipt", "_record_with_session", "_reset_session_state_for_tests",
     "_session_rollup", "_snapshot_with_session", "install_session_value",
 ]

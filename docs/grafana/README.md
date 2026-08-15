@@ -34,6 +34,9 @@ your Prometheus datasource when prompted.
 | `entroly_requests_subscription_blocked` | counter | OAuth-bearer requests blocked from the public API |
 | `entroly_tokens_original_total` | counter | input tokens before optimization |
 | `entroly_tokens_optimized_total` | counter | input tokens actually sent |
+| `entroly_proxy_tokens_saved_total` | counter | canonical whole-request input reduction |
+| `entroly_proxy_compression_tokens_saved_total` | counter | canonical reduction excluding measured tool-schema deferral |
+| `entroly_proxy_tool_schema_tokens_saved_total` | counter | measured explicit `X-Entroly-Active-Tools` deferral |
 | `entroly_pipeline_latency_ms` | gauge | mean optimization latency |
 | `entroly_circuit_breaker` | gauge | 0 = closed (healthy), 1 = open |
 | `entroly_outcome_success` / `entroly_outcome_failure` | counter | recorded downstream outcomes |
@@ -41,3 +44,9 @@ your Prometheus datasource when prompted.
 Honest-measurement note: token counters measure **input-side reduction at the
 proxy**. Provider invoices remain the billing source of truth — see
 [docs/limitations.md](../limitations.md).
+
+The compression and tool-schema component counters partition
+`entroly_proxy_tokens_saved_total`; do not add either component on top of the
+canonical total. Equivalent OTEL instruments are
+`entroly.proxy.tokens.saved`, `entroly.proxy.tokens.compression_saved`, and
+`entroly.proxy.tokens.tool_schema_saved`.
