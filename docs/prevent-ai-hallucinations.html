@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>How to Prevent AI Hallucinations in Code — Free Open-Source Tool (2026)</title>
-<meta name="description" content="Stop AI hallucinations before they reach your codebase. WITNESS by Entroly checks every LLM response against source evidence locally — 0.7976 AUROC, $0 cost, 3ms latency. Works with Claude, GPT-4, Gemini, Cursor, and Cline.">
+<meta name="description" content="Stop AI hallucinations before they reach your codebase. WITNESS by Entroly checks LLM responses against source evidence locally — 0.7976 AUROC on the held-out HaluEval-QA split, $0 marginal cost, ~3ms. Works with Claude, GPT-4, Gemini, Cursor, and Cline.">
 <meta name="keywords" content="prevent AI hallucination, AI hallucination detection, stop LLM hallucination, hallucination guard, verify AI output, check AI accuracy, LLM output verification, AI code hallucination, Claude hallucination fix, GPT hallucination prevention, hallucination free AI coding, NLI verification, AI fact checking tool, WITNESS hallucination guard, detect AI mistakes">
 <meta property="og:title" content="How to Prevent AI Hallucinations in Code (2026)">
-<meta property="og:description" content="WITNESS checks every LLM response against source evidence. 0.7976 AUROC, $0, 3ms. Free, open-source.">
+<meta property="og:description" content="WITNESS checks LLM responses against source evidence locally. 0.7976 AUROC held-out, $0 marginal cost, ~3ms. Free, open-source.">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://juyterman1000.github.io/entroly/docs/prevent-ai-hallucinations.html">
 <link rel="canonical" href="https://juyterman1000.github.io/entroly/docs/prevent-ai-hallucinations.html">
@@ -23,7 +23,7 @@
     {"@type": "Question", "name": "Can I detect AI hallucinations without paying for another API?",
      "acceptedAnswer": {"@type": "Answer", "text": "Yes. Entroly's WITNESS hallucination guard runs entirely locally — no API calls, no internet required, $0 cost. It uses a lightweight NLI model (optionally DeBERTa) to verify outputs against evidence. This is unlike approaches that use a second LLM as a judge, which doubles your API costs."}},
     {"@type": "Question", "name": "Does context compression increase hallucinations?",
-     "acceptedAnswer": {"@type": "Answer", "text": "Well-implemented context compression actually reduces hallucinations. LLMs suffer from 'lost in the middle' attention degradation — they perform worse when context windows are filled with irrelevant information. By selecting only the most relevant code fragments (using entropy scoring and knapsack optimization), Entroly improves the signal-to-noise ratio, making the model more accurate. Plus, WITNESS verifies every output as an additional safety layer."}}
+     "acceptedAnswer": {"@type": "Answer", "text": "Well-implemented context compression actually reduces hallucinations. LLMs suffer from 'lost in the middle' attention degradation — they perform worse when context windows are filled with irrelevant information. By selecting only the most relevant code fragments (using entropy scoring and knapsack optimization), Entroly improves the signal-to-noise ratio. Plus, WITNESS checks responses against the supplied evidence as an additional layer, with measured false positives and false negatives."}}
   ]
 }
 </script>
@@ -90,7 +90,7 @@ td{color:var(--muted)}
 
 <p>AI coding tools like <strong>Cursor</strong>, <strong>Claude Code</strong>, and <strong>Cline</strong> are incredibly productive — until they hallucinate. They invent APIs that don't exist, reference functions with wrong signatures, and fabricate file paths. A single hallucinated import can cost hours of debugging.</p>
 
-<p><strong>WITNESS</strong>, built into Entroly, checks every LLM response against the actual source code before it reaches your editor. It runs locally, costs nothing, and catches hallucinations in 3 milliseconds.</p>
+<p><strong>WITNESS</strong>, built into Entroly, checks LLM responses against the actual source code before they reach your editor, on the routes where it is enabled. It runs locally, costs nothing, and catches hallucinations in 3 milliseconds.</p>
 
 <div class="stat-grid">
   <div class="stat-card">

@@ -106,6 +106,32 @@ Legacy savings, prompt-compression, hallucination, projected-dashboard, and stal
 
 Archived translated READMEs must be regenerated from the canonical README, including trust links and caveats, before they return to primary navigation.
 
+## Retired and republished public pages
+
+A set of topic pages was reduced to `noindex` tombstones redirecting here,
+because their claims could not be sourced: a universal 70–95% range, a 0.844
+AUROC that a later tie-correction retired, equivalence conclusions drawn against
+an API judge, and verifier coverage described as "every response".
+
+Retirement removed those claims by removing the pages. It also removed every
+entry point to the topics, and left the repository with no indexable answer to
+questions Entroly can answer honestly.
+
+Those pages were republished on 2026-08-15 under a stricter condition than the
+one they failed: **every figure on a republished page must resolve to a
+committed artifact under `benchmarks/results/`, and the page must state the
+workload that produced it.** Where a benchmark set contains a loss case, the
+page states it next to the wins rather than omitting it — the SQuAD 2.0 row
+(43.8% savings, 90% retention on 233-token inputs) appears alongside the
+long-context results it is worse than.
+
+Retirement is no longer what keeps these pages honest. `STALE_PUBLIC_CLAIMS` in
+`scripts/verify_context_assurance_public.py` is, and every republished page is
+listed in `CLAIM_SENSITIVE_PUBLIC_FILES` so that scan applies to it. A page must
+not be republished by deleting its retirement entry without adding it there.
+
+`docs/dashboard.html` remains retired: it is an application view, not content.
+
 ## Maintainer rules
 
 Before adding or strengthening a public claim:
