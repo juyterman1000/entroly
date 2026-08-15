@@ -2978,10 +2978,10 @@ def _load_local_simulation_engine(max_files: int | None = None):
                 total_tokens = stats.get("session", {}).get("total_tokens_tracked", 0)
             else:
                 total_tokens = getattr(engine, "_total_token_count", 0)
-            # Keep user-facing savings arithmetic in the same token unit on
-            # cold and warm paths. _total_token_count is a lexical retrieval
-            # statistic in the pure-Python engine, not context-budget tokens.
-            total_tokens = index.get("total_tokens", total_tokens)
+                # Keep user-facing savings arithmetic in the same token unit on
+                # cold and warm paths. _total_token_count is a lexical retrieval
+                # statistic in the pure-Python engine, not context-budget tokens.
+                total_tokens = index.get("total_tokens", total_tokens)
             return engine, files_indexed, int(total_tokens or 0), index["status"]
         return engine, 0, 0, index["status"]
     finally:

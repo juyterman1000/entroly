@@ -85,9 +85,30 @@ def _validate_local_report(report: dict[str, Any], *, label: str) -> None:
         "baseline_tokens_per_query",
         "total_tokens_saved",
         "average_reduction_pct",
-        "latency_ms",
     ):
         _nonnegative(report[field], label=f"{label}.{field}")
+
+    latency = report["latency_ms"]
+    if not isinstance(latency, dict):
+        raise AssertionError(f"{label}.latency_ms must be an object")
+    required_latency = {"min", "p95", "max"}
+    missing_latency = sorted(required_latency.difference(latency))
+    if missing_latency:
+        raise AssertionError(
+            f"{label}.latency_ms missing required fields: {missing_latency}"
+        )
+    latency_values = {
+        field: _nonnegative(latency[field], label=f"{label}.latency_ms.{field}")
+        for field in sorted(required_latency)
+    }
+    if not (
+        latency_values["min"]
+        <= latency_values["p95"]
+        <= latency_values["max"]
+    ):
+        raise AssertionError(
+            f"{label}.latency_ms must satisfy min <= p95 <= max, got {latency!r}"
+        )
 
     if int(report["files_indexed"]) <= 0 or int(report["repo_tokens_indexed"]) <= 0:
         raise AssertionError(f"{label} did not produce a usable repository index")
