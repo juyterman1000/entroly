@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -26,6 +27,24 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 logger = logging.getLogger("entroly.dashboard")
+
+DEFAULT_BANKED_USD_PER_MILLION = 1.0
+
+
+def _modeled_banked_value_usd(
+    tokens_reduced: int,
+    usd_per_million: float = DEFAULT_BANKED_USD_PER_MILLION,
+) -> float:
+    """Model future input value without claiming provider-bound savings."""
+
+    try:
+        tokens = max(0, int(tokens_reduced))
+        rate = float(usd_per_million)
+    except (TypeError, ValueError, OverflowError):
+        return 0.0
+    if not math.isfinite(rate) or rate < 0:
+        return 0.0
+    return round(tokens * rate / 1_000_000, 6)
 
 # ── Engine reference (set by start_dashboard) ─────────────────────────────────
 _engine: Any | None = None
@@ -149,6 +168,14 @@ def _get_full_snapshot() -> dict:
         tracker.reload_if_changed()
         snap["value_trends"] = tracker.get_trends()
         snap["value_confidence"] = tracker.get_confidence()
+        lifetime = snap["value_trends"].get("lifetime", {})
+        banked_tokens = int(lifetime.get("local_tokens_reduced", 0) or 0)
+        snap["banked_value"] = {
+            "tokens_reduced": banked_tokens,
+            "default_usd_per_million": DEFAULT_BANKED_USD_PER_MILLION,
+            "modeled_future_value_usd": _modeled_banked_value_usd(banked_tokens),
+            "classification": "modeled_future_value_not_realized_savings",
+        }
         # Pricing provenance so the Cost Intelligence panel can cite where its
         # dollar figures come from (rates as-of + bundled/override source).
         from entroly.value_tracker import pricing_provenance
@@ -194,6 +221,7 @@ def _get_full_snapshot() -> dict:
     except Exception as e:
         snap["value_trends"] = None
         snap["value_confidence"] = None
+        snap["banked_value"] = None
         snap["activity"] = []
         _record_section_error(snap, "value_tracker", e)
 
@@ -762,6 +790,9 @@ tr:hover td{background:rgba(255,255,255,0.015);}
 .trends-kpi-label{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:1.1px;margin-bottom:6px;}
 .trends-kpi-val{font-size:24px;font-weight:800;font-feature-settings:'tnum';}
 .trends-kpi-sub{font-size:11px;color:var(--dim);margin-top:4px;}
+.banked-rate{display:flex;align-items:center;gap:7px;margin-top:8px;font-size:10px;color:var(--dim);}
+.banked-rate input{width:76px;padding:5px 7px;border:1px solid var(--border2);border-radius:7px;background:var(--glass);color:var(--text);font:inherit;font-feature-settings:'tnum';outline:none;}
+.banked-rate input:focus{border-color:var(--cyan);box-shadow:0 0 0 2px var(--cyan-glow);}
 .trends-chart{height:80px;display:flex;align-items:flex-end;gap:3px;padding:8px 0;}
 .trends-chart .tbar{flex:1;border-radius:3px 3px 0 0;min-width:6px;transition:height 0.4s cubic-bezier(0.16,1,0.3,1);position:relative;}
 .trends-chart .tbar:hover::after{content:attr(data-tip);position:absolute;bottom:100%;left:50%;transform:translateX(-50%);
@@ -869,6 +900,20 @@ const money=n=>'$'+(n||0).toFixed(2);
 const pct=n=>Math.round((n||0)*100)+'%';
 const ago=ts=>{const s=Math.floor(Date.now()/1000-ts);return s<60?s+'s ago':s<3600?Math.floor(s/60)+'m ago':Math.floor(s/3600)+'h ago';};
 let hasRequests=false;
+let lastDashboardData=null;
+const BANKED_RATE_KEY='entroly.banked-usd-per-million';
+const loadBankedRate=()=>{try{const raw=localStorage.getItem(BANKED_RATE_KEY);if(raw===null)return 1;const n=Number(raw);return Number.isFinite(n)&&n>=0?n:1;}catch(_e){return 1;}};
+let bankedUsdPerMillion=loadBankedRate();
+const bankedUsd=tokens=>(Math.max(0,Number(tokens)||0)*bankedUsdPerMillion/1e6);
+function updateBankedUsdRate(raw){
+  const n=Number(raw);if(!Number.isFinite(n)||n<0)return;
+  bankedUsdPerMillion=n;
+  try{localStorage.setItem(BANKED_RATE_KEY,String(n));}catch(_e){}
+  const banked=((lastDashboardData||{}).banked_value)||{};
+  const value=document.getElementById('bankedUsdValue');if(value)value.textContent='$'+bankedUsd(banked.tokens_reduced||0).toFixed(2);
+  const rate=document.getElementById('bankedUsdRateText');if(rate)rate.textContent='$'+n.toFixed(2)+'/M';
+  if(lastDashboardData)renderHero(lastDashboardData);
+}
 
 let heroSparkData=[];
 function renderHero(d){
@@ -886,6 +931,8 @@ function renderHero(d){
   const realTokens=lt.provider_tokens_saved||0;
   const realReqs=lt.provider_requests_optimized||0;
   const localTokens=lt.local_tokens_reduced||0;
+  const hasRealizedValue=realTokens>0||realCost>0;
+  const hasBankedValue=localTokens>0;
   const dedupCount=dd.duplicates_detected||eng.duplicates_caught||eng.total_duplicates_caught||0;
   const optCalls=eng.optimize_calls||eng.total_optimizations||0;
   const reqs=d.recent_requests||[];
@@ -911,13 +958,15 @@ function renderHero(d){
   const sparkBars=heroSparkData.map(v=>'<div class="hbar" style="height:'+Math.max(3,v/mx*44)+'px;"></div>').join('');
   const sparkHTML=heroSparkData.length>0?'<div class="hero-spark">'+sparkBars+'</div>':'';
 
-  // Headline = modeled cost avoidance from provider-bound token reduction.
-  // Pre-traffic state shows what's ready, not a projected dollar amount.
-  const bigNum=realReqs>0?'$'+realCost.toFixed(2):fmt(frags);
-  const bigLabel=realReqs>0?'MODELED API COST AVOIDED':'FRAGMENTS READY';
-  const subtitle=realReqs>0
+  // Prefer realized provider value. When only local reductions exist, show
+  // their user-priced future value without adding it to provider savings.
+  const bigNum=hasRealizedValue?'$'+realCost.toFixed(2):(hasBankedValue?'$'+bankedUsd(localTokens).toFixed(2):fmt(frags));
+  const bigLabel=hasRealizedValue?'MODELED API COST AVOIDED':(hasBankedValue?'BANKED FUTURE VALUE':'FRAGMENTS READY');
+  const subtitle=hasRealizedValue
     ?`<b>${fmt(realTokens)}</b> input tokens reduced across <b>${realReqs}</b> provider-bound request${realReqs!==1?'s':''}`
-    :`Indexed and ready · <span style="opacity:.7">point your AI tool to <code>http://localhost:9377/v1</code> to start saving on real requests</span>`;
+    :(hasBankedValue
+      ?`<b>${fmt(localTokens)}</b> local tokens banked at <b>$${bankedUsdPerMillion.toFixed(2)}/M</b> · modeled future value, not realized savings`
+      :`Indexed and ready · <span style="opacity:.7">point your AI tool to <code>http://localhost:9377/v1</code> to start saving on real requests</span>`);
 
   document.getElementById('hero').innerHTML=`
     <div class="hero-impact">
@@ -1272,6 +1321,8 @@ function renderValueTrends(d){
     return;
   }
   const lt=vt.lifetime||{},sess=vc.session||{},today=vc.today||{};
+  const banked=d.banked_value||{};
+  const bankedTokens=banked.tokens_reduced||lt.local_tokens_reduced||0;
   const status=vc.status||'idle';
   const statusColor=status==='active'?'var(--emerald)':'var(--dim)';
   const providerDays=(vt.daily||[]).filter(x=>(x.provider_requests||0)>0).length;
@@ -1288,9 +1339,9 @@ function renderValueTrends(d){
   }).join('');
 
   // ── Cost Intelligence — honest per-lever attribution ──
-  // Dollars are shown ONLY for classified provider token reduction
-  // (provider_cost_avoided_usd) and model routing. Every other lever
-  // is shown as a volume/quality signal — never an invented dollar figure.
+  // Realized dollars are shown only for classified provider reduction and
+  // routing. Local reductions get a separately labeled, user-priced future
+  // value calculator; they never enter ciTotal or provider savings.
   const ciComp=lt.provider_cost_avoided_usd||0, ciRoute=lt.routing_saved_usd||0, ciTotal=ciComp+ciRoute;
   const ciPct=v=>ciTotal>0?Math.round(v/ciTotal*100):0;
   const ciW=v=>ciTotal>0?Math.max(2,v/ciTotal*100):0;
@@ -1305,14 +1356,18 @@ function renderValueTrends(d){
   const ciPanel='<div class="trends-panel" style="margin-top:20px;"><div class="trends-header"><h2>Cost Intelligence</h2>'+
     '<span class="badge" style="background:rgba(52,211,153,0.1);color:var(--emerald);">$'+ciTotal.toFixed(2)+' modeled</span></div>'+
     '<div class="trends-body">'+
-    '<div style="font-size:11px;color:var(--dim);margin-bottom:14px;">Dollar values are modeled from measured provider-bound reductions and configured rates; local-only operations are never priced.</div>'+
+    '<div style="font-size:11px;color:var(--dim);margin-bottom:14px;">Realized values are modeled from measured provider-bound reductions. Banked future value is a separate calculator and is not included in the realized total.</div>'+
     ciRow('Provider-bound context reduction',ciComp,fmt(lt.provider_tokens_saved||0)+' input tokens reduced · '+(lt.provider_requests_optimized||0)+' requests','#34d399')+
     ciRow('Model routing (RAVS)',ciRoute,(lt.routing_decisions||0)+' routing decisions to cheaper capable models','#a78bfa')+
-    '<div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:1px;margin:14px 0 8px;">Value signals (not yet dollar-priced)</div>'+
+    '<div class="trends-kpi" style="margin:14px 0;border-color:rgba(34,211,238,.25);">'+
+    '<div class="trends-kpi-label">Banked Future Value</div><div class="trends-kpi-val hv-cyan" id="bankedUsdValue">$'+bankedUsd(bankedTokens).toFixed(2)+'</div>'+
+    '<div class="trends-kpi-sub">'+fmt(bankedTokens)+' local tokens · modeled at <span id="bankedUsdRateText">$'+bankedUsdPerMillion.toFixed(2)+'/M</span> · not realized savings</div>'+
+    '<label class="banked-rate" for="bankedUsdRate">USD per 1M input tokens <input id="bankedUsdRate" type="number" min="0" step="0.01" value="'+bankedUsdPerMillion.toFixed(2)+'" inputmode="decimal" oninput="updateBankedUsdRate(this.value)"></label></div>'+
+    '<div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:1px;margin:14px 0 8px;">Additional value signals</div>'+
     '<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;">'+
     ciSig('Hallucinations blocked',fmt(lt.hallucinations_blocked||0),'$0 WITNESS guard')+
     ciSig('Beliefs conditioned',fmt(lt.beliefs_conditioned_fragments||0),(lt.belief_conditioning_passes||0)+' passes')+
-    ciSig('Local-only reduction',fmt(lt.local_tokens_reduced||0),(lt.local_operations||0)+' operations · $0 claimed')+
+    ciSig('Local-only reduction',fmt(lt.local_tokens_reduced||0),(lt.local_operations||0)+' operations · banked, not realized')+
     '</div>'+
     '<div style="font-size:10px;color:var(--dim);margin-top:12px;border-top:1px solid var(--border);padding-top:8px;">Rates as of '+((d.pricing||{}).as_of||'—')+' · '+(((d.pricing||{}).source||'bundled')==='bundled'?'bundled defaults':'local override')+' · set ENTROLY_PRICING_FILE for your negotiated rates</div>'+
     '</div></div>';
@@ -1368,6 +1423,7 @@ async function refresh(){
     const r=await fetch('/api/metrics');
     if(!r.ok){renderErrors([{section:'http',type:'HTTPError',message:'/api/metrics returned '+r.status}]);return;}
     const d=await r.json();
+    lastDashboardData=d;
     renderErrors(d.errors||[]);
     renderHero(d);renderValueTrends(d);renderBA(d);renderPrism(d);renderHealth(d);renderCache(d);renderCogops(d);renderWitness(d);renderSecAndKnapsack(d);renderRequests(d);
   }catch(e){
