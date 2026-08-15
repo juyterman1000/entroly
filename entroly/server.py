@@ -476,6 +476,22 @@ logging.basicConfig(
 logger = logging.getLogger("entroly")
 
 
+def _mcp_passive_mode() -> bool:
+    """Return whether MCP startup must avoid autonomous background work.
+
+    Passive mode keeps explicitly invoked MCP tools available while suppressing
+    repository watchers, autonomous evolution, indexing, and benchmark tuning.
+    It is intended for clients that start an Entroly server for every task.
+    """
+
+    return os.environ.get("ENTROLY_MCP_PASSIVE", "0").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 class _WilsonFeedbackTracker:
     """
     Python-exact port of the Rust FeedbackTracker in guardrails.rs.
@@ -2944,7 +2960,10 @@ def create_mcp_server(
         instructions=(
             "Information-theoretic context optimization for AI coding agents. "
             "Knapsack-optimal token budgeting, Shannon entropy scoring, "
-            "SimHash deduplication, predictive pre-fetch, and checkpoint/resume."
+            "SimHash deduplication, predictive pre-fetch, and checkpoint/resume. "
+            "At the start of each task, call recall_relevant once with a concise "
+            "task-derived query, top_k=3, and full=false before loading broader "
+            "context. Use smart_read or optimize_context for substantial context."
         ),
     )
     # MCP SDK 1.x does not expose `version` on FastMCP's constructor. Without
@@ -2989,7 +3008,11 @@ def create_mcp_server(
         engine = EntrolyEngine(config=_config)
 
     # Cross-session feedback journal + task-conditioned profiles
-    _checkpoint_dir = os.environ.get("ENTROLY_DIR", os.path.join(os.getcwd(), ".entroly"))
+    # Reuse EntrolyConfig's project-isolated state root. Its default is
+    # ~/.entroly/checkpoints/<cwd-hash>, so starting an MCP client never drops
+    # a .entroly directory into the repository and different projects do not
+    # share retrieval state. ENTROLY_DIR remains the explicit override.
+    _checkpoint_dir = str(engine.config.checkpoint_dir)
     _feedback_journal = FeedbackJournal(_checkpoint_dir)
     _task_profiles = TaskProfileOptimizer(_feedback_journal)
     _task_profiles.optimize_all()  # warm from existing journal
@@ -3294,13 +3317,7 @@ def create_mcp_server(
         # This gives 5-10x token savings: ~200-token belief REPLACES ~800-token code.
         nonlocal _vault_beliefs_loaded
         if not _vault_beliefs_loaded and engine._use_rust:
-            vault_beliefs_dir = os.path.join(
-                os.environ.get("ENTROLY_VAULT", os.path.join(
-                    os.environ.get("ENTROLY_DIR", os.path.join(os.getcwd(), ".entroly")),
-                    "vault"
-                )),
-                "beliefs",
-            )
+            vault_beliefs_dir = os.path.join(_vault_base, "beliefs")
             if os.path.isdir(vault_beliefs_dir) and hasattr(engine._rust, "load_vault_beliefs"):
                 try:
                     n = engine._rust.load_vault_beliefs(vault_beliefs_dir)
@@ -4931,7 +4948,7 @@ def create_mcp_server(
     # Initialize the epistemic router and vault manager
     _vault_base = os.environ.get(
         "ENTROLY_VAULT",
-        os.path.join(os.environ.get("ENTROLY_DIR", os.path.join(os.getcwd(), ".entroly")), "vault"),
+        os.path.join(_checkpoint_dir, "vault"),
     )
     _vault_mgr = VaultManager(VaultConfig(base_path=_vault_base))
     _epistemic_router = EpistemicRouter(
@@ -5260,17 +5277,21 @@ def create_mcp_server(
     # Universal self-improvement bus — every component logs metrics here
     _component_bus = ComponentFeedbackBus(_checkpoint_dir)
 
-    _evolution_daemon = EvolutionDaemon(
-        vault=_vault_mgr,
-        evolution_logger=_py_evolution,
-        value_tracker=_value_tracker,
-        feedback_journal=_feedback_journal,
-        rust_engine=engine._rust if engine._use_rust else None,
-        project_root=_source_dir,
-        data_dir=_checkpoint_dir,
-    )
-    _evolution_daemon.start()  # non-blocking background thread
-    logger.info("EvolutionDaemon: autonomous self-improvement started")
+    _evolution_daemon = None
+    if _mcp_passive_mode():
+        logger.info("MCP passive mode: autonomous evolution disabled")
+    else:
+        _evolution_daemon = EvolutionDaemon(
+            vault=_vault_mgr,
+            evolution_logger=_py_evolution,
+            value_tracker=_value_tracker,
+            feedback_journal=_feedback_journal,
+            rust_engine=engine._rust if engine._use_rust else None,
+            project_root=_source_dir,
+            data_dir=_checkpoint_dir,
+        )
+        _evolution_daemon.start()  # non-blocking background thread
+        logger.info("EvolutionDaemon: autonomous self-improvement started")
 
     # ── Wire reward-driven crystallization ───────────────────────────
     # Closes the success-side of the evolution loop: when a query
@@ -6516,6 +6537,12 @@ def _start_background_services(engine: EntrolyEngine) -> threading.Thread:
     """Initialize project services without delaying MCP transport readiness."""
 
     def _initialize():
+        if _mcp_passive_mode():
+            logger.info(
+                "MCP passive mode: auto-index, watchers, listeners, and autotune disabled"
+            )
+            return
+
         # Index before starting the watcher so its initial mtime snapshot
         # reflects the files already ingested by the first pass.
         try:

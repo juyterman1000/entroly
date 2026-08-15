@@ -9,6 +9,63 @@ import entroly.auto_index as auto_index_module
 import entroly.server as server
 
 
+def test_passive_background_services_skip_autonomous_work(monkeypatch):
+    calls = []
+
+    monkeypatch.setenv("ENTROLY_MCP_PASSIVE", "1")
+    monkeypatch.setattr(
+        auto_index_module,
+        "auto_index",
+        lambda _engine: calls.append("index"),
+    )
+    monkeypatch.setattr(
+        auto_index_module,
+        "start_incremental_watcher",
+        lambda _engine: calls.append("watcher"),
+    )
+    monkeypatch.setattr(
+        server,
+        "_start_autotune_daemon",
+        lambda _engine: calls.append("autotune"),
+    )
+    engine = SimpleNamespace(
+        _workspace_listener=SimpleNamespace(
+            start=lambda **_kwargs: calls.append("belief-listener")
+        )
+    )
+
+    startup_thread = server._start_background_services(engine)
+    startup_thread.join(timeout=2)
+
+    assert not startup_thread.is_alive()
+    assert calls == []
+
+
+def test_passive_mcp_server_does_not_construct_evolution_daemon(
+    monkeypatch,
+    tmp_path,
+):
+    class UnexpectedEvolutionDaemon:
+        def __init__(self, **_kwargs):
+            raise AssertionError("passive MCP startup constructed EvolutionDaemon")
+
+    project_dir = tmp_path / "project"
+    state_home = tmp_path / "home"
+    project_dir.mkdir()
+    state_home.mkdir()
+    monkeypatch.chdir(project_dir)
+    monkeypatch.setenv("HOME", str(state_home))
+    monkeypatch.setenv("USERPROFILE", str(state_home))
+    monkeypatch.setenv("ENTROLY_MCP_PASSIVE", "true")
+    monkeypatch.setattr(server, "EvolutionDaemon", UnexpectedEvolutionDaemon)
+
+    mcp, _engine = server.create_mcp_server(allowed_tools={"recall_relevant"})
+
+    assert mcp.instructions is not None
+    assert "call recall_relevant once" in mcp.instructions
+    assert not (project_dir / ".entroly").exists()
+
+
 def test_background_services_do_not_block_mcp_startup(monkeypatch):
     index_started = threading.Event()
     allow_index_to_finish = threading.Event()
