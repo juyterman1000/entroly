@@ -59,20 +59,37 @@ PROMINENT_PUBLIC_FILES = (
     "docs/marketing/tutorial_reddit.md",
 )
 
-RETIRED_MARKETING_PAGES = (
+# `docs/dashboard.html` stays retired because it is an application view, not a
+# content page: there is nothing on it for a search engine to answer with.
+RETIRED_MARKETING_PAGES = ("docs/dashboard.html",)
+
+RETIRED_SETUP_PAGES: tuple[str, ...] = ()
+
+# Republished 2026-08-15.
+#
+# These pages were retired to tombstones because their claims could not be
+# sourced -- a universal 70-95% range, a retired 0.844 AUROC, equivalence
+# conclusions against an API judge, and "every response" verifier coverage.
+# Retirement removed the claims by removing the pages, which also removed every
+# entry point to the topics they covered.
+#
+# They are indexable again now that each figure on them resolves to a committed
+# artifact under `benchmarks/results/`. Retirement is no longer what keeps them
+# honest, so they must stay inside CLAIM_SENSITIVE_PUBLIC_FILES below: the
+# STALE_PUBLIC_CLAIMS scan is now the thing standing between these pages and a
+# repeat of what got them retired. Do not republish a page by deleting its entry
+# here without first adding it there.
+REPUBLISHED_PUBLIC_PAGES = (
     "docs/best-context-compression-tools.html",
+    "docs/token-compression-tools.html",
     "docs/cursor-token-usage-fix.html",
     "docs/how-to-reduce-claude-api-costs.html",
     "docs/reduce-llm-api-costs.html",
     "docs/prompt-compression.html",
     "docs/hallucination-guard.html",
     "docs/prevent-ai-hallucinations.html",
-    "docs/dashboard.html",
     "docs/token-optimization.html",
     "docs/what-is-context-rot.html",
-)
-
-RETIRED_SETUP_PAGES = (
     "docs/cursor-context-guide.html",
     "docs/claude-code-setup.html",
 )
@@ -92,6 +109,7 @@ TRANSLATED_READMES = (
 CLAIM_SENSITIVE_PUBLIC_FILES = (
     *RETIRED_MARKETING_PAGES,
     *RETIRED_SETUP_PAGES,
+    *REPUBLISHED_PUBLIC_PAGES,
     *TRANSLATED_READMES,
     "docs/context-engineering.html",
     "docs/DETAILS.md",

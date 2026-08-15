@@ -7,7 +7,7 @@
 <meta name="description" content="Cursor only sees 5-10 files at a time. Learn how to give Cursor access to your entire codebase with Entroly's context engineering engine. Fix hallucinations, reduce token costs by 78%.">
 <meta name="keywords" content="Cursor context window, Cursor limit, Cursor hallucination, Cursor MCP server, Cursor context engineering, Cursor sees few files, Cursor AI coding, fix Cursor errors, Cursor token limit, Cursor full codebase">
 <meta property="og:title" content="Fix Cursor's Context Window Limit — Give It Your Full Codebase">
-<meta property="og:description" content="Cursor only sees 5-10 files. Entroly shows it your entire codebase at variable resolution. 78% fewer tokens, better answers.">
+<meta property="og:description" content="Cursor only sees 5-10 files. Entroly selects evidence from the whole repository under an explicit token budget, and keeps what it omits recoverable.">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://juyterman1000.github.io/entroly/docs/cursor-context-guide.html">
 <link rel="canonical" href="https://juyterman1000.github.io/entroly/docs/cursor-context-guide.html">
@@ -126,7 +126,7 @@ footer{text-align:center;padding:40px 24px;color:var(--muted);font-size:13px;bor
   <li><strong>Everything else</strong> appears as one-line references (so Cursor knows they exist)</li>
 </ul>
 
-<p>The result: <strong>Cursor sees all your files</strong>, uses 78% fewer tokens, and gives dramatically better answers.</p>
+<p>The result: Cursor is given evidence selected from across the repository rather than a fixed handful of open files, under a budget you set. Token reduction depends on the repository and query — measure yours with <code>entroly simulate</code>.</p>
 
 <h2>Setup: 2 Minutes with Cursor</h2>
 
@@ -196,7 +196,7 @@ entroly proxy --quality max         # full pipeline, best results</pre>
 
 <div class="cta-box">
   <h3>Stop Cursor from hallucinating. Give it your full codebase.</h3>
-  <p>One install. Zero config changes to Cursor. Works immediately.</p>
+  <p>One install. Entroly registers itself as an MCP server; you restart Cursor once.</p>
   <pre>pip install entroly[full] && entroly go</pre>
   <p><a href="https://github.com/juyterman1000/entroly" class="cta-btn">View on GitHub</a></p>
 </div>

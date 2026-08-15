@@ -4,16 +4,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>LLM Hallucination Guard — $0 Local Hallucination Detection | Entroly WITNESS</title>
-<meta name="description" content="Entroly WITNESS is a $0 local hallucination guard for LLMs. Detects unsupported claims in LLM output at 0.7976 AUROC (statistically equivalent to GPT-4o-mini judge). 3ms latency. No API call. Works offline. Open-source, Apache-2.0.">
+<meta name="description" content="Entroly WITNESS is a $0 local hallucination guard for LLMs. Detects unsupported claims in LLM output at 0.7976 AUROC on the held-out HaluEval-QA split. ~3ms latency. No API call. Works offline. Open-source, Apache-2.0.">
 <meta name="keywords" content="LLM hallucination guard, hallucination detection, LLM hallucination, AI hallucination check, detect hallucination, LLM output verification, hallucination prevention, WITNESS, STAVE, NLI verifier, grounding check, LLM fact check, AI fact checking, hallucination filter, reduce LLM hallucination, RAG hallucination, code hallucination">
 <meta property="og:title" content="$0 Local LLM Hallucination Guard — Entroly WITNESS">
-<meta property="og:description" content="Detect LLM hallucinations locally at 0.7976 AUROC. No API call. 3ms latency. Statistically equivalent to GPT-4o-mini judge at $0 cost.">
+<meta property="og:description" content="Detect LLM hallucinations locally at 0.7976 AUROC on the held-out HaluEval-QA split. No API call. ~3ms latency. $0 marginal cost.">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://juyterman1000.github.io/entroly/docs/hallucination-guard.html">
 <meta property="og:image" content="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/logo.png">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="$0 Local LLM Hallucination Guard — Entroly WITNESS">
-<meta name="twitter:description" content="Detect LLM hallucinations locally at 0.7976 AUROC. No API call. 3ms latency. Statistically equivalent to GPT-4o-mini judge.">
+<meta name="twitter:description" content="Detect LLM hallucinations locally at 0.7976 AUROC on the held-out HaluEval-QA split. No API call. ~3ms latency.">
 <link rel="canonical" href="https://juyterman1000.github.io/entroly/docs/hallucination-guard.html">
 <script type="application/ld+json">
 {
@@ -82,7 +82,7 @@ footer{text-align:center;padding:40px 24px;color:var(--muted);font-size:13px;bor
 
 <p><strong>Last updated: June 2026</strong></p>
 
-<p>LLM hallucinations — where models confidently state things not supported by the evidence they were given — are a critical problem in production AI systems. Entroly's <strong>WITNESS</strong> is a local, deterministic hallucination guard that checks every LLM response against the evidence it was given at <strong>$0 cost</strong> and <strong>~3ms latency</strong>.</p>
+<p>LLM hallucinations — where models confidently state things not supported by the evidence they were given — are a critical problem in production AI systems. Entroly's <strong>WITNESS</strong> is a local, deterministic hallucination guard that checks LLM responses against the evidence they were given, on the routes where it is enabled, at <strong>$0 cost</strong> and <strong>~3ms latency</strong>.</p>
 
 <div class="stat-grid">
   <div class="stat">
