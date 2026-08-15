@@ -9,6 +9,8 @@
 
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
+  <!-- Set this to the deployed collector's /v1/public-savings URL. Empty fails closed to the checked-in proof. -->
+  <meta name="entroly-community-savings-endpoint" content="">
   <title>Entroly — The Open-Source Context OS for AI Agents</title>
   <meta name="description"
     content="Open-source Context OS for AI agents: auditable context engineering, recoverable compression, memory, receipts, verification, and MCP integrations.">
@@ -499,6 +501,146 @@
       font-size: 14px;
       color: var(--muted);
       margin-top: 8px;
+    }
+
+    /* Reproducible savings proof */
+    .savings-proof {
+      margin: -12px 0 56px;
+      padding: 32px;
+      border: 1px solid rgba(74, 222, 128, 0.3);
+      border-radius: 20px;
+      background: linear-gradient(135deg, rgba(74, 222, 128, 0.08), rgba(129, 140, 248, 0.08));
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.22);
+    }
+
+    .savings-proof-head {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 24px;
+    }
+
+    .savings-proof-head h3 {
+      font-size: clamp(1.5rem, 3vw, 2rem);
+      margin-bottom: 6px;
+    }
+
+    .savings-proof-head p,
+    .savings-note {
+      color: var(--muted);
+    }
+
+    .savings-proof-head a,
+    .savings-note a {
+      color: var(--green);
+    }
+
+    .savings-live-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      margin-top: 10px;
+      color: var(--muted);
+      font: 600 12px 'JetBrains Mono', monospace;
+    }
+
+    .savings-live-status::before {
+      content: '';
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--muted);
+    }
+
+    .savings-live-status.live {
+      color: var(--green);
+    }
+
+    .savings-live-status.live::before {
+      background: var(--green);
+      box-shadow: 0 0 12px rgba(74, 222, 128, 0.75);
+    }
+
+    .savings-proof-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+
+    .savings-metric {
+      min-width: 0;
+      padding: 24px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: rgba(5, 5, 8, 0.68);
+    }
+
+    .savings-metric .value {
+      color: var(--green);
+      font: 800 clamp(2rem, 4vw, 3rem)/1 'Outfit', sans-serif;
+      letter-spacing: -1px;
+    }
+
+    .savings-metric .metric-label {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 10px;
+    }
+
+    .savings-rate {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .savings-rate input {
+      width: 86px;
+      padding: 7px 9px;
+      color: var(--text);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      font: 600 13px 'JetBrains Mono', monospace;
+    }
+
+    .savings-note {
+      margin-top: 20px;
+      font-size: 13px;
+      line-height: 1.7;
+    }
+
+    .savings-command {
+      display: inline-block;
+      margin-top: 12px;
+      padding: 9px 12px;
+      color: var(--green);
+      background: rgba(5, 5, 8, 0.72);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font: 500 12px 'JetBrains Mono', monospace;
+    }
+
+    @media(max-width: 768px) {
+      .savings-proof {
+        padding: 22px;
+      }
+
+      .savings-proof-head {
+        display: block;
+      }
+
+      .savings-proof-head a {
+        display: inline-block;
+        margin-top: 10px;
+      }
+
+      .savings-proof-grid {
+        grid-template-columns: 1fr;
+      }
     }
 
     /* Section Layout */
@@ -1057,6 +1199,42 @@
       <h2>Selection needs an audit trail.</h2>
     </div>
 
+    <div class="savings-proof" id="savings-proof" data-tokens-saved="709927" data-reveal>
+      <div class="savings-proof-head">
+        <div>
+          <h3 id="savingsTitle">Measured savings, with evidence.</h3>
+          <p id="savingsDescription">Latest bounded proof: 717,847 source tokens reduced to 7,920 selected tokens.</p>
+          <span class="savings-live-status" id="savingsLiveStatus" aria-live="polite">Verified proof fallback</span>
+        </div>
+        <a href="site-savings-proof.json">Machine-readable proof</a>
+      </div>
+      <div class="savings-proof-grid">
+        <div class="savings-metric">
+          <div class="value" id="proofTokensSaved">709,927</div>
+          <div class="metric-label" id="tokensSavedLabel">Tokens saved in the verified proof run</div>
+        </div>
+        <div class="savings-metric">
+          <div class="value" id="proofReduction">98.9%</div>
+          <div class="metric-label">Context reduction, with exact recovery verified</div>
+        </div>
+        <div class="savings-metric">
+          <div class="value" id="proofUsdSaved" aria-live="polite">$0.71</div>
+          <div class="metric-label" id="usdSavedLabel">Modeled input cost avoided for this proof run</div>
+          <label class="savings-rate" for="proofUsdRate">
+            Proof calculator: USD per 1M input tokens
+            <input id="proofUsdRate" type="number" min="0" step="0.01" value="1.00" inputmode="decimal">
+          </label>
+        </div>
+      </div>
+      <p class="savings-note">
+        Community totals, when live, include only explicitly opted-in provider-bound proxy savings. Every contribution
+        is rounded down to 1,000 tokens and one cent; dollars are modeled, not a provider invoice. The checked-in proof
+        remains visible if the aggregate service is unavailable. See your installation's exact local evidence with
+        <code>entroly value</code>. <a href="https://github.com/juyterman1000/entroly/blob/main/docs/live-tokenomics.md">Measurement contract</a>.
+        <br><span class="savings-command">entroly value --json &nbsp;|&nbsp; entroly dashboard</span>
+      </p>
+    </div>
+
     <div class="comp-grid">
       <div class="comp-card bad" data-reveal>
         <h3>Uncontrolled Context</h3>
@@ -1275,8 +1453,8 @@
 
     <div class="repro" data-reveal>
       <span style="color:var(--muted)">$</span> <span class="c">entroly verify-claims</span>
-      <span class="o">→ runs locally, no API key required. On Entroly's own 92-file repo: 326,361 tokens → 7,969
-        (97.6% reduction), 9/9 checks pass — written to <b>.entroly_verification.json</b> so you can diff it yourself.</span>
+      <span class="o">→ runs locally, no API key required. In the latest bounded proof run: 717,847 tokens → 7,920
+        (98.9% reduction), 12/12 checks pass, exact recovery verified — see <a href="site-savings-proof.json">the proof JSON</a>.</span>
     </div>
   </section>
 
@@ -1308,6 +1486,103 @@
   </footer>
 
   <script>
+    // Render checked-in proof first. A configured aggregate endpoint can replace
+    // the token and USD cards with conservative, opt-in community totals.
+    (() => {
+      const panel = document.getElementById('savings-proof');
+      const tokenNode = document.getElementById('proofTokensSaved');
+      const reductionNode = document.getElementById('proofReduction');
+      const usdNode = document.getElementById('proofUsdSaved');
+      const rateInput = document.getElementById('proofUsdRate');
+      const statusNode = document.getElementById('savingsLiveStatus');
+      const titleNode = document.getElementById('savingsTitle');
+      const descriptionNode = document.getElementById('savingsDescription');
+      const tokenLabel = document.getElementById('tokensSavedLabel');
+      const usdLabel = document.getElementById('usdSavedLabel');
+      const endpointMeta = document.querySelector('meta[name="entroly-community-savings-endpoint"]');
+      const communityEndpoint = endpointMeta ? endpointMeta.content.trim() : '';
+      let tokensSaved = Number(panel.dataset.tokensSaved);
+      let showingCommunity = false;
+
+      const renderUsd = () => {
+        if (showingCommunity) return;
+        const rate = Number(rateInput.value);
+        const modeled = Number.isFinite(rate) && rate >= 0
+          ? (tokensSaved / 1_000_000) * rate
+          : 0;
+        usdNode.textContent = new Intl.NumberFormat('en-US', {
+          style: 'currency',
+          currency: 'USD',
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 4
+        }).format(modeled);
+      };
+
+      rateInput.addEventListener('input', renderUsd);
+      renderUsd();
+
+      fetch('site-savings-proof.json', { cache: 'no-store' })
+        .then(response => response.ok ? response.json() : Promise.reject(new Error('proof unavailable')))
+        .then(proof => {
+          const saved = Number(proof.tokens_saved);
+          const reduction = Number(proof.reduction_pct);
+          if (Number.isFinite(saved) && saved >= 0) {
+            tokensSaved = saved;
+            panel.dataset.tokensSaved = String(saved);
+            tokenNode.textContent = new Intl.NumberFormat('en-US').format(saved);
+          }
+          if (Number.isFinite(reduction) && reduction >= 0 && reduction <= 100) {
+            reductionNode.textContent = `${reduction.toFixed(1)}%`;
+          }
+          renderUsd();
+        })
+        .catch(() => {
+          // Keep the checked-in HTML fallback visible when the proof fetch is unavailable.
+        });
+
+      const renderCommunitySavings = community => {
+        if (community.schema_version !== 'entroly.community-savings.v1') return;
+        const reportedTokens = Number(community.reported_provider_tokens_saved);
+        const reportedUsd = Number(community.reported_modeled_input_cost_avoided_usd);
+        if (!Number.isSafeInteger(reportedTokens) || reportedTokens < 0) return;
+        if (!Number.isFinite(reportedUsd) || reportedUsd < 0) return;
+
+        showingCommunity = true;
+        tokenNode.textContent = new Intl.NumberFormat('en-US').format(reportedTokens);
+        usdNode.textContent = new Intl.NumberFormat('en-US', {
+          style: 'currency',
+          currency: 'USD',
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        }).format(reportedUsd);
+        titleNode.textContent = 'Community savings, continuously counted.';
+        descriptionNode.textContent = 'Conservative totals reported by opted-in Entroly proxy installations since the counter launched.';
+        tokenLabel.textContent = 'Reported provider-bound tokens saved';
+        usdLabel.textContent = 'Reported modeled input cost avoided';
+        rateInput.closest('.savings-rate').hidden = true;
+        const updated = new Date(community.as_of_utc);
+        statusNode.textContent = Number.isNaN(updated.valueOf())
+          ? 'Live community aggregate'
+          : `Live · updated ${updated.toLocaleString()}`;
+        statusNode.classList.add('live');
+      };
+
+      const pollCommunitySavings = () => {
+        if (!communityEndpoint) return;
+        fetch(communityEndpoint, { cache: 'no-store', credentials: 'omit' })
+          .then(response => response.ok ? response.json() : Promise.reject(new Error('aggregate unavailable')))
+          .then(renderCommunitySavings)
+          .catch(() => {
+            if (!showingCommunity) statusNode.textContent = 'Verified proof fallback · live aggregate unavailable';
+          });
+      };
+
+      if (communityEndpoint) {
+        pollCommunitySavings();
+        window.setInterval(pollCommunitySavings, 60_000);
+      }
+    })();
+
     // Reveal on scroll
     const observer = new IntersectionObserver((entries) => {
       entries.forEach(entry => {

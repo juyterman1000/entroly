@@ -35,28 +35,30 @@ when the caller explicitly supplies `X-Entroly-Active-Tools`; Entroly does not
 guess which tools are safe to hide. Forced choices and unnamed provider tools
 are retained, and a non-matching allowlist leaves the request unchanged.
 
-## Why the README does not show a worldwide total yet
+## Community counter: conservative, opt-in, and cumulative
 
-The optional product-health collector intentionally accepts only coarse token
-reduction buckets and whether a provider-bound observation had a positive
-modeled-cost signal. It rejects exact token counts, exact dollar amounts, model
-identifiers, prompts, code, paths and exception details.
+The optional product-health collector accepts a separate savings-contribution
+event for provider-bound proxy reductions. Before the event leaves a consenting
+machine, tokens are rounded down to whole 1,000-token units and modeled input
+cost is rounded down to whole cents. Sub-unit remainders stay local. The event
+contains no model, price, prompt, code, path, request body, or exact per-request
+value.
 
-Consequently, the collector can honestly report:
+The unauthenticated `GET /v1/public-savings` endpoint can therefore report:
 
-- opted-in monthly pseudonyms that observed a positive reduction;
-- provider-bound positive-reduction observations;
-- coarse reduction and token buckets;
-- observations with a positive modeled-cost signal;
-- platform-family and bounded reliability aggregates.
+- a cumulative lower bound of opted-in, provider-bound tokens saved;
+- cumulative modeled input cost avoided for explicitly priced models;
+- the aggregate update time and fixed measurement/privacy labels.
 
-It cannot honestly report an exact all-time worldwide token or dollar total.
-Downloads are package fetches, not users, and multiplying them by a benchmark
-ratio would fabricate adoption and savings.
+It is not a census, provider invoice, unique-user metric, or exact worldwide
+total. It starts when the community counter is deployed and includes only
+consenting proxy installations. Downloads are package fetches, not users, and
+are never multiplied by a benchmark ratio to create savings.
 
-## Requirements for a future public counter
+## Public-site contract
 
-A public README counter may be enabled only when all of these are true:
+The website may switch from its checked-in reproducible proof to the cumulative
+counter only when all of these are true:
 
 1. A public aggregate endpoint is deployed and its source is linked.
 2. Participation is separately opt-in and previewable before consent.
@@ -67,6 +69,9 @@ A public README counter may be enabled only when all of these are true:
 6. The README renderer fails closed to `unavailable`; it never estimates from
    downloads, stars, benchmark ratios or missing observations.
 
-Until that contract is met, the live trustworthy counter is the user's local
-Context Value Receipt. See [Privacy-Safe Product Health Telemetry](telemetry-privacy.md)
-for the complete event allowlist and deletion behavior.
+The site polls the configured endpoint every 60 seconds and fails closed to the
+checked-in proof when the endpoint is absent, malformed, or unavailable. A
+user's exact trustworthy total remains the local Context Value Receipt. See
+[Privacy-Safe Product Health Telemetry](telemetry-privacy.md) for the complete
+event allowlist, quantization, retention, anonymized archival, and deletion
+boundaries.

@@ -22,6 +22,7 @@ from typing import Any
 from .product_telemetry import (
     BATCH_SCHEMA_VERSION,
     DELETE_SCHEMA_VERSION,
+    LEGACY_BATCH_SCHEMA_VERSION,
     MAX_BATCH_BYTES,
     MAX_BATCH_EVENTS,
     sanitize_public_event,
@@ -30,6 +31,17 @@ from .product_telemetry import (
 
 DEFAULT_COLLECTOR_RETENTION_DAYS = 90
 _INSTALLATION_ID = re.compile(r"^[0-9a-f]{24}$")
+
+
+def _savings_units(properties_json: str) -> tuple[int, int]:
+    """Return bounded token-thousand and cent units from a stored event."""
+    try:
+        properties = json.loads(properties_json)
+        token_units = max(0, int(properties.get("tokens_saved_thousands", 0)))
+        cent_units = max(0, int(properties.get("modeled_cost_saved_cents", 0)))
+        return min(token_units, 10**12), min(cent_units, 10**12)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return 0, 0
 
 
 def _retention_days() -> int:
@@ -43,7 +55,10 @@ def _retention_days() -> int:
 def validate_batch_payload(value: Any) -> list[dict[str, Any]]:
     if not isinstance(value, dict) or set(value) != {"schema_version", "events"}:
         raise ValueError("batch must contain only schema_version and events")
-    if value.get("schema_version") != BATCH_SCHEMA_VERSION:
+    if value.get("schema_version") not in {
+        LEGACY_BATCH_SCHEMA_VERSION,
+        BATCH_SCHEMA_VERSION,
+    }:
         raise ValueError("unsupported telemetry batch schema")
     events = value.get("events")
     if not isinstance(events, list) or not 1 <= len(events) <= MAX_BATCH_EVENTS:
@@ -106,6 +121,13 @@ class TelemetryStore:
                     ON product_events(occurred_on);
                 CREATE INDEX IF NOT EXISTS idx_product_events_name_day
                     ON product_events(event_name, occurred_on);
+                CREATE TABLE IF NOT EXISTS savings_archive (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    tokens_saved_thousands INTEGER NOT NULL DEFAULT 0,
+                    modeled_cost_saved_cents INTEGER NOT NULL DEFAULT 0,
+                    contribution_events INTEGER NOT NULL DEFAULT 0,
+                    archived_through TEXT
+                );
                 """
             )
             self._prune(connection)
@@ -117,9 +139,40 @@ class TelemetryStore:
 
     @staticmethod
     def _prune(connection: sqlite3.Connection) -> None:
+        if not connection.in_transaction:
+            connection.execute("BEGIN IMMEDIATE")
         cutoff = (
             datetime.now(timezone.utc).date() - timedelta(days=_retention_days())
         ).isoformat()
+        expired = connection.execute(
+            """
+            SELECT properties_json
+              FROM product_events
+             WHERE occurred_on < ? AND event_name = 'savings_contribution'
+            """,
+            (cutoff,),
+        ).fetchall()
+        token_units = 0
+        cent_units = 0
+        for (properties_json,) in expired:
+            tokens, cents = _savings_units(str(properties_json))
+            token_units += tokens
+            cent_units += cents
+        if expired:
+            connection.execute(
+                """
+                INSERT INTO savings_archive (
+                    id, tokens_saved_thousands, modeled_cost_saved_cents,
+                    contribution_events, archived_through
+                ) VALUES (1, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    tokens_saved_thousands = tokens_saved_thousands + excluded.tokens_saved_thousands,
+                    modeled_cost_saved_cents = modeled_cost_saved_cents + excluded.modeled_cost_saved_cents,
+                    contribution_events = contribution_events + excluded.contribution_events,
+                    archived_through = excluded.archived_through
+                """,
+                (token_units, cent_units, len(expired), cutoff),
+            )
         connection.execute(
             "DELETE FROM product_events WHERE occurred_on < ?",
             (cutoff,),
@@ -159,6 +212,51 @@ class TelemetryStore:
                 tuple(padded),
             )
         return max(0, int(cursor.rowcount))
+
+    def public_savings(self) -> dict[str, Any]:
+        """Return the identifier-free cumulative community-savings lower bound."""
+        with self._connect() as connection:
+            self._prune(connection)
+            archive = connection.execute(
+                """
+                SELECT tokens_saved_thousands, modeled_cost_saved_cents
+                  FROM savings_archive
+                 WHERE id = 1
+                """
+            ).fetchone() or (0, 0)
+            rows = connection.execute(
+                """
+                SELECT properties_json
+                  FROM product_events
+                 WHERE event_name = 'savings_contribution'
+                """
+            ).fetchall()
+
+        token_units = max(0, int(archive[0] or 0))
+        cent_units = max(0, int(archive[1] or 0))
+        for (properties_json,) in rows:
+            tokens, cents = _savings_units(str(properties_json))
+            token_units += tokens
+            cent_units += cents
+
+        return {
+            "schema_version": "entroly.community-savings.v1",
+            "as_of_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+            "reported_provider_tokens_saved": token_units * 1_000,
+            "reported_modeled_input_cost_avoided_usd": round(cent_units / 100, 2),
+            "evidence": {
+                "scope": "opt-in provider-bound Entroly proxy reductions",
+                "tokens": "each contribution rounded down to 1,000-token units",
+                "money": "modeled input cost rounded down to cents; not an invoice",
+                "historical_coverage": "since the community counter was enabled",
+            },
+            "privacy": {
+                "prompts_or_content_exposed": False,
+                "identifiers_exposed": False,
+                "model_or_price_exposed": False,
+                "exact_per_request_values_exposed": False,
+            },
+        }
 
     def summary(self, *, days: int = 30) -> dict[str, Any]:
         bounded_days = max(1, min(int(days), _retention_days()))
@@ -299,7 +397,7 @@ class TelemetryStore:
                 "exit_feedback_responses": platform_exit_responses[platform_name],
             }
         return {
-            "schema_version": "entroly.product-telemetry-summary.v2",
+            "schema_version": "entroly.product-telemetry-summary.v3",
             "window_days": bounded_days,
             "since": since,
             "privacy": {
@@ -369,6 +467,7 @@ class TelemetryStore:
             "platforms": platforms,
             "surfaces": dict(sorted(surfaces.items())),
             "versions": dict(sorted(versions.items())),
+            "community_savings": self.public_savings(),
         }
 
 
@@ -384,6 +483,7 @@ def create_app(
     db_path: str | Path,
     ingest_token: str = "",
     admin_token: str = "",
+    public_origin: str = "https://juyterman1000.github.io",
 ) -> Any:
     """Build a loopback-friendly Starlette collector application."""
     from starlette.applications import Starlette
@@ -433,12 +533,23 @@ def create_app(
             return JSONResponse({"error": "invalid_days"}, status_code=400)
         return JSONResponse(store.summary(days=days))
 
+    async def public_savings(request: Request) -> JSONResponse:
+        headers = {
+            "Cache-Control": "public, max-age=30",
+            "Vary": "Origin",
+        }
+        request_origin = str(request.headers.get("origin", ""))
+        if public_origin and request_origin == public_origin:
+            headers["Access-Control-Allow-Origin"] = public_origin
+        return JSONResponse(store.public_savings(), headers=headers)
+
     return Starlette(
         routes=[
             Route("/health", health, methods=["GET"]),
             Route("/v1/events", ingest, methods=["POST"]),
             Route("/v1/events", delete_events, methods=["DELETE"]),
             Route("/v1/summary", summary, methods=["GET"]),
+            Route("/v1/public-savings", public_savings, methods=["GET"]),
         ]
     )
 
@@ -463,6 +574,10 @@ def main() -> None:
         db_path=args.db,
         ingest_token=os.environ.get("ENTROLY_TELEMETRY_INGEST_TOKEN", ""),
         admin_token=os.environ.get("ENTROLY_TELEMETRY_ADMIN_TOKEN", ""),
+        public_origin=os.environ.get(
+            "ENTROLY_TELEMETRY_PUBLIC_ORIGIN",
+            "https://juyterman1000.github.io",
+        ),
     )
     uvicorn.run(app, host=args.host, port=args.port, access_log=False)
 

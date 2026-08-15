@@ -1,0 +1,30 @@
+{
+  "schema_version": "entroly.site-savings-proof.v1",
+  "measured_at_utc": "2026-08-15T02:38:29Z",
+  "implementation_commit": "ac6012def24d815f676e497ef34ce7276e7c4ce6",
+  "entroly_version": "1.0.77",
+  "command": "python -m entroly verify-claims",
+  "scope": "One bounded local verification run against the Entroly repository checkout",
+  "files_indexed": 160,
+  "source_tokens": 717847,
+  "selected_tokens": 7920,
+  "tokens_saved": 709927,
+  "reduction_pct": 98.9,
+  "checks": {
+    "passed": 12,
+    "failed": 0
+  },
+  "exact_recovery_verified": true,
+  "usd_model": {
+    "status": "modeled_from_visitor_supplied_rate",
+    "formula": "tokens_saved / 1000000 * input_usd_per_million_tokens",
+    "default_input_usd_per_million_tokens": 1.0,
+    "default_modeled_usd_saved": 0.709927
+  },
+  "limitations": [
+    "This is a reproducible proof run, not a worldwide or all-user savings total.",
+    "The verifier bounds indexing for a safe first-run smoke test; files_indexed is the measured denominator.",
+    "Modeled USD excludes output tokens, cache pricing, subscriptions, local compute and provider-specific billing adjustments.",
+    "Each installation's all-time totals come from its local Context Value Receipt via entroly value or entroly dashboard."
+  ]
+}

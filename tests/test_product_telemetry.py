@@ -126,6 +126,59 @@ def test_value_signal_uses_only_coarse_buckets():
     }
 
 
+def test_savings_contribution_is_opt_in_quantized_and_carries_remainders():
+    assert telemetry.capture_savings_contribution(
+        provider_tokens_saved=9_999,
+        modeled_cost_avoided_usd=99.99,
+    ) is False
+    assert not telemetry._savings_remainder_path().exists()
+
+    telemetry.enable()
+    assert telemetry.capture_savings_contribution(
+        provider_tokens_saved=999,
+        modeled_cost_avoided_usd=0.009,
+    ) is False
+    assert not any(item["event_name"] == "savings_contribution" for item in _queue())
+    assert json.loads(telemetry._savings_remainder_path().read_text()) == {
+        "micro_usd": 9000,
+        "tokens": 999,
+    }
+
+    assert telemetry.capture_savings_contribution(
+        provider_tokens_saved=2,
+        modeled_cost_avoided_usd=0.002,
+    ) is True
+    contribution = [
+        item for item in _queue() if item["event_name"] == "savings_contribution"
+    ][0]
+    assert contribution["properties"] == {
+        "modeled_cost_saved_cents": "1",
+        "tokens_saved_thousands": "1",
+    }
+    rendered = json.dumps(contribution)
+    assert "0.002" not in rendered
+    assert "0.009" not in rendered
+    assert json.loads(telemetry._savings_remainder_path().read_text()) == {
+        "micro_usd": 1000,
+        "tokens": 1,
+    }
+
+
+def test_legacy_v2_batches_remain_valid():
+    telemetry.enable()
+    event = _queue()[0]
+    event["schema_version"] = telemetry.LEGACY_SCHEMA_VERSION
+
+    validated = validate_batch_payload(
+        {
+            "schema_version": telemetry.LEGACY_BATCH_SCHEMA_VERSION,
+            "events": [event],
+        }
+    )
+
+    assert validated == [event]
+
+
 def test_one_time_exit_feedback_is_structured_unlinked_and_not_persisted(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ):
@@ -365,6 +418,10 @@ def test_failed_flush_keeps_queue_and_exposes_only_error_category(
 
 def test_disable_withdraws_consent_and_purges_identity_and_queue():
     telemetry.enable()
+    telemetry.capture_savings_contribution(
+        provider_tokens_saved=999,
+        modeled_cost_avoided_usd=0.009,
+    )
     assert telemetry._config_path().exists()
     assert telemetry._queue_path().exists()
 
@@ -373,6 +430,7 @@ def test_disable_withdraws_consent_and_purges_identity_and_queue():
     assert report["enabled"] is False
     assert not telemetry._config_path().exists()
     assert not telemetry._queue_path().exists()
+    assert not telemetry._savings_remainder_path().exists()
     assert telemetry.status()["enabled"] is False
 
 
@@ -481,6 +539,10 @@ def test_collector_http_surface_is_authenticated_and_aggregate_only(tmp_path: Pa
 
     telemetry.enable()
     telemetry.capture_cli_result("doctor", result="success", elapsed_seconds=0.2)
+    telemetry.capture_savings_contribution(
+        provider_tokens_saved=12_345,
+        modeled_cost_avoided_usd=0.129,
+    )
     events = _queue()
     app = create_app(
         db_path=tmp_path / "collector.db",
@@ -496,7 +558,7 @@ def test_collector_http_surface_is_authenticated_and_aggregate_only(tmp_path: Pa
         json=payload,
         headers={"Authorization": "Bearer ingest-secret"},
     )
-    assert response.json() == {"accepted": 2, "inserted": 2}
+    assert response.json() == {"accepted": 3, "inserted": 3}
     assert client.get("/v1/summary").status_code == 404
     response = client.get(
         "/v1/summary",
@@ -505,6 +567,23 @@ def test_collector_http_surface_is_authenticated_and_aggregate_only(tmp_path: Pa
     rendered = response.text
     assert response.status_code == 200
     assert events[0]["installation_id"] not in rendered
+
+    response = client.get(
+        "/v1/public-savings",
+        headers={"Origin": "https://juyterman1000.github.io"},
+    )
+    public = response.json()
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == (
+        "https://juyterman1000.github.io"
+    )
+    assert response.headers["cache-control"] == "public, max-age=30"
+    assert public["schema_version"] == "entroly.community-savings.v1"
+    assert public["reported_provider_tokens_saved"] == 12_000
+    assert public["reported_modeled_input_cost_avoided_usd"] == 0.12
+    assert events[0]["installation_id"] not in response.text
+    assert "platform" not in public
+    assert "contribution_events" not in public
 
     deletion = {
         "schema_version": telemetry.DELETE_SCHEMA_VERSION,
@@ -516,7 +595,47 @@ def test_collector_http_surface_is_authenticated_and_aggregate_only(tmp_path: Pa
         json=deletion,
         headers={"Authorization": "Bearer ingest-secret"},
     )
-    assert response.json() == {"deleted": 2}
+    assert response.json() == {"deleted": 3}
+    assert client.get("/v1/public-savings").json()[
+        "reported_provider_tokens_saved"
+    ] == 0
+
+
+def test_expired_savings_are_folded_into_identifier_free_cumulative_archive(
+    tmp_path: Path,
+):
+    telemetry.enable()
+    telemetry.capture_savings_contribution(
+        provider_tokens_saved=4_321,
+        modeled_cost_avoided_usd=0.049,
+    )
+    contribution = [
+        item for item in _queue() if item["event_name"] == "savings_contribution"
+    ][0]
+    store = TelemetryStore(tmp_path / "archive.db")
+    assert store.ingest([contribution]) == 1
+
+    with store._connect() as connection:
+        connection.execute(
+            "UPDATE product_events SET occurred_on = '2020-01-01' WHERE event_id = ?",
+            (contribution["event_id"],),
+        )
+
+    public = store.public_savings()
+    assert public["reported_provider_tokens_saved"] == 4_000
+    assert public["reported_modeled_input_cost_avoided_usd"] == 0.04
+    assert store.delete_installations([contribution["installation_id"]]) == 0
+    with store._connect() as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM product_events"
+        ).fetchone()[0] == 0
+        archived = connection.execute(
+            """
+            SELECT tokens_saved_thousands, modeled_cost_saved_cents
+              FROM savings_archive WHERE id = 1
+            """
+        ).fetchone()
+    assert archived == (4, 4)
 
 
 def test_cli_telemetry_preview_is_complete_and_content_blind(capsys):

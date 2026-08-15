@@ -8,7 +8,9 @@ This module exists to answer two narrow product questions:
 
 It is deliberately unsuitable for prompts, source code, file paths, model
 inputs, exception messages, tracebacks, hostnames, usernames, credentials,
-exact token counts, exact costs, or model identifiers.
+exact token counts, exact costs, or model identifiers. Provider-bound community
+savings contributions are rounded down to 1,000-token and one-cent units before
+they leave the machine.
 The event schema is a closed allowlist and telemetry is disabled until the
 operator runs ``entroly telemetry on``. Air-gap mode and the hard-disable
 environment flag always win over stored consent.
@@ -31,12 +33,15 @@ import urllib.parse
 import urllib.request
 import uuid
 from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation, ROUND_FLOOR
 from pathlib import Path
 from typing import Any, Iterator
 
 
-SCHEMA_VERSION = "entroly.product-telemetry.v2"
-BATCH_SCHEMA_VERSION = "entroly.product-telemetry-batch.v2"
+LEGACY_SCHEMA_VERSION = "entroly.product-telemetry.v2"
+LEGACY_BATCH_SCHEMA_VERSION = "entroly.product-telemetry-batch.v2"
+SCHEMA_VERSION = "entroly.product-telemetry.v3"
+BATCH_SCHEMA_VERSION = "entroly.product-telemetry-batch.v3"
 DELETE_SCHEMA_VERSION = "entroly.product-telemetry-delete.v1"
 CONSENT_VERSION = 1
 DEFAULT_RETENTION_DAYS = 14
@@ -84,7 +89,7 @@ _ERROR_TYPES = frozenset({
     "MemoryError", "OSError", "PermissionError", "RuntimeError",
     "TimeoutError", "TypeError", "ValueError", "OtherError",
 })
-_EVENT_PROPERTIES = {
+_LEGACY_EVENT_PROPERTIES = {
     "activation": frozenset({"surface"}),
     "command": frozenset({"command", "result", "duration_bucket", "error_type"}),
     "exit_feedback": frozenset({
@@ -97,6 +102,12 @@ _EVENT_PROPERTIES = {
     "surface_started": frozenset({"surface"}),
     "surface_error": frozenset({"surface", "error_type"}),
 }
+_EVENT_PROPERTIES = {
+    **_LEGACY_EVENT_PROPERTIES,
+    "savings_contribution": frozenset({
+        "tokens_saved_thousands", "modeled_cost_saved_cents",
+    }),
+}
 _REQUIRED_EVENT_PROPERTIES = {
     "activation": frozenset({"surface"}),
     "command": frozenset({"command", "result", "duration_bucket"}),
@@ -104,6 +115,7 @@ _REQUIRED_EVENT_PROPERTIES = {
     "optimization_outcome": _EVENT_PROPERTIES["optimization_outcome"],
     "surface_started": frozenset({"surface"}),
     "surface_error": frozenset({"surface", "error_type"}),
+    "savings_contribution": _EVENT_PROPERTIES["savings_contribution"],
 }
 _HEX_24 = re.compile(r"^[0-9a-f]{24}$")
 _UUID_HEX = re.compile(r"^[0-9a-f]{32}$")
@@ -132,6 +144,10 @@ def _markers_path() -> Path:
 
 def _status_path() -> Path:
     return _state_dir() / "product-telemetry-status.json"
+
+
+def _savings_remainder_path() -> Path:
+    return _state_dir() / "product-telemetry-savings-remainder.json"
 
 
 def _lock_path() -> Path:
@@ -299,7 +315,13 @@ def disable_and_purge(*, delete_remote: bool = True) -> dict[str, Any]:
     else:
         remote_deletion = "not_configured"
     removed: list[str] = []
-    for path in (_queue_path(), _markers_path(), _status_path(), _config_path()):
+    for path in (
+        _queue_path(),
+        _markers_path(),
+        _status_path(),
+        _savings_remainder_path(),
+        _config_path(),
+    ):
         try:
             path.unlink()
             removed.append(path.name)
@@ -424,8 +446,18 @@ def reduction_percent_bucket(before_tokens: int, after_tokens: int) -> str:
     return "90_plus"
 
 
-def _sanitize_properties(event_name: str, raw: dict[str, Any]) -> dict[str, str]:
-    allowed = _EVENT_PROPERTIES.get(event_name, frozenset())
+def _sanitize_properties(
+    event_name: str,
+    raw: dict[str, Any],
+    *,
+    schema_version: str = SCHEMA_VERSION,
+) -> dict[str, str]:
+    event_properties = (
+        _LEGACY_EVENT_PROPERTIES
+        if schema_version == LEGACY_SCHEMA_VERSION
+        else _EVENT_PROPERTIES
+    )
+    allowed = event_properties.get(event_name, frozenset())
     result: dict[str, str] = {}
     for key in allowed:
         if key not in raw:
@@ -457,15 +489,29 @@ def _sanitize_properties(event_name: str, raw: dict[str, Any]) -> dict[str, str]
             result[key] = str(value) if value in _SURFACES else "other"
         elif key == "use_duration_bucket":
             result[key] = str(value) if value in _USE_DURATION_BUCKETS else "unknown"
+        elif key in {"tokens_saved_thousands", "modeled_cost_saved_cents"}:
+            rendered = str(value)
+            if re.fullmatch(r"[0-9]{1,12}", rendered):
+                result[key] = rendered
+            else:
+                result[key] = "0"
     return result
 
 
 def sanitize_public_event(value: Any, *, strict: bool = False) -> dict[str, Any] | None:
     """Validate the public wire schema; arbitrary properties never survive."""
-    if not isinstance(value, dict) or value.get("schema_version") != SCHEMA_VERSION:
+    if not isinstance(value, dict):
         return None
+    schema_version = value.get("schema_version")
+    if schema_version not in {LEGACY_SCHEMA_VERSION, SCHEMA_VERSION}:
+        return None
+    event_properties = (
+        _LEGACY_EVENT_PROPERTIES
+        if schema_version == LEGACY_SCHEMA_VERSION
+        else _EVENT_PROPERTIES
+    )
     event_name = value.get("event_name")
-    if event_name not in _EVENT_PROPERTIES:
+    if event_name not in event_properties:
         return None
     event_id = value.get("event_id")
     installation_id = value.get("installation_id")
@@ -490,11 +536,18 @@ def sanitize_public_event(value: Any, *, strict: bool = False) -> dict[str, Any]
     raw_properties = value.get("properties")
     if not isinstance(raw_properties, dict):
         raw_properties = {}
-    properties = _sanitize_properties(str(event_name), raw_properties)
+    properties = _sanitize_properties(
+        str(event_name), raw_properties, schema_version=str(schema_version)
+    )
     if not _REQUIRED_EVENT_PROPERTIES[str(event_name)].issubset(properties):
         return None
+    if event_name == "savings_contribution" and not any(
+        int(properties[key]) > 0
+        for key in ("tokens_saved_thousands", "modeled_cost_saved_cents")
+    ):
+        return None
     sanitized = {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": str(schema_version),
         "event_id": event_id,
         "occurred_on": str(occurred_on),
         "installation_id": installation_id,
@@ -671,6 +724,82 @@ def capture_optimization_outcome(
         },
         once_per_day=True,
     )
+
+
+def capture_savings_contribution(
+    *,
+    provider_tokens_saved: int,
+    modeled_cost_avoided_usd: float,
+) -> bool:
+    """Queue one conservative provider-bound community-savings delta.
+
+    Exact per-request values never leave the machine. Token savings are rounded
+    down to whole thousands and modeled cost is rounded down to whole cents.
+    Sub-unit remainders remain local until a later request crosses a threshold.
+    The closed event schema carries no model, price, prompt, path, or request
+    content. Disabled telemetry remains a silent no-op.
+    """
+    if not is_enabled():
+        return False
+    try:
+        tokens = max(0, int(provider_tokens_saved))
+    except (TypeError, ValueError, OverflowError):
+        tokens = 0
+    try:
+        cost = Decimal(str(modeled_cost_avoided_usd))
+        cost_micro_usd = int(
+            (max(Decimal(0), cost) * 1_000_000).to_integral_value(
+                rounding=ROUND_FLOOR
+            )
+        )
+    except (InvalidOperation, TypeError, ValueError, OverflowError):
+        cost_micro_usd = 0
+    if tokens == 0 and cost_micro_usd == 0:
+        return False
+
+    try:
+        config = _load_config()
+        with _process_lock():
+            remainder = _load_json(_savings_remainder_path())
+            token_total = tokens + max(0, int(remainder.get("tokens", 0) or 0))
+            micro_total = cost_micro_usd + max(
+                0, int(remainder.get("micro_usd", 0) or 0)
+            )
+            token_units, token_remainder = divmod(token_total, 1_000)
+            cent_units, micro_remainder = divmod(micro_total, 10_000)
+            next_remainder = {
+                "tokens": token_remainder,
+                "micro_usd": micro_remainder,
+            }
+            if token_units == 0 and cent_units == 0:
+                _atomic_json(_savings_remainder_path(), next_remainder)
+                return False
+
+            day = _today()
+            event = {
+                "schema_version": SCHEMA_VERSION,
+                "event_id": uuid.uuid4().hex,
+                "occurred_on": day,
+                "installation_id": _installation_id(config, day),
+                "event_name": "savings_contribution",
+                "version": _package_version(),
+                "platform": _platform_family(),
+                "python": f"{sys.version_info.major}.{sys.version_info.minor}",
+                "properties": {
+                    "tokens_saved_thousands": str(token_units),
+                    "modeled_cost_saved_cents": str(cent_units),
+                },
+            }
+            sanitized = sanitize_public_event(event, strict=True)
+            if sanitized is None:
+                return False
+            events = _read_queue()
+            events.append(sanitized)
+            _write_queue(events)
+            _atomic_json(_savings_remainder_path(), next_remainder)
+        return True
+    except Exception:
+        return False
 
 
 def exit_feedback_choices() -> dict[str, list[str]]:
@@ -913,9 +1042,14 @@ def preview() -> dict[str, Any]:
             "exact_token_counts", "exact_costs", "model_identifiers",
             "free_text_feedback",
         ],
+        "community_savings": (
+            "provider-bound deltas only; tokens rounded down to 1,000-token "
+            "units and modeled cost rounded down to cents"
+        ),
         "identifier": "random monthly-rotating pseudonym; local seed never uploaded",
         "frequency_protection": (
-            "command, surface, error, and value categories are deduplicated per UTC day"
+            "command, surface, error, and coarse value categories are deduplicated "
+            "per UTC day; savings deltas use random event IDs for collector deduplication"
         ),
         "exit_feedback": (
             "structured fields only; sent once only after separate confirmation"
@@ -963,6 +1097,7 @@ __all__ = [
     "capture",
     "capture_cli_result",
     "capture_optimization_outcome",
+    "capture_savings_contribution",
     "capture_surface_error",
     "capture_surface_started",
     "disable_and_purge",

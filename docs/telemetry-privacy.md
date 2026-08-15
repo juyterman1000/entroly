@@ -26,10 +26,13 @@ The wire format is a closed allowlist. A consenting installation can report:
 - whether the reduction was a local estimate or a provider-bound estimate
 - whether a provider-bound reduction had a configured price and therefore a
   positive **modeled** cost signal
+- optional provider-bound community-savings contributions, quantized down to
+  whole 1,000-token units and whole cents before they leave the machine
 
-Command, surface, error, and value categories are deduplicated per UTC day.
-Exact workload volume is not reported and event counts must not be interpreted
-as command frequency.
+Command, surface, error, and coarse value categories are deduplicated per UTC
+day. Savings contributions carry random event IDs so a retried upload cannot be
+counted twice. The reported savings number is a rounded-down lower bound; event
+counts must not be interpreted as command or request frequency.
 
 ## What is never collected
 
@@ -67,6 +70,10 @@ that response quality improved. Reports keep these claims separate:
 
 - Local queue: at most 200 events and 14 days, with owner-only permissions when supported
 - Collector database: 90 days by default, configurable from 1 to 365 days
+- Cumulative community counter: expired contribution rows are folded into two
+  identifier-free integer totals before normal retention pruning. No date,
+  platform, version, model, price, event identifier, or installation pseudonym
+  survives in that archive.
 - Transport: HTTPS only, except explicit loopback HTTP for local development
 - Ambient proxy variables: ignored unless `ENTROLY_TELEMETRY_TRUST_PROXY_ENV=1`
 - Upload batch: at most 20 events and 64 KiB with a short fail-open timeout;
@@ -74,6 +81,13 @@ that response quality improved. Reports keep these claims separate:
 - Withdrawal: `entroly telemetry off` removes local consent, queue, status,
   markers, and random seed, and requests deletion of the four recent monthly
   pseudonyms from a configured collector
+
+Remote deletion removes contributions still inside the collector retention
+window. After a contribution has been folded into the identifier-free archive,
+it can no longer be linked to an installation or individually subtracted. This
+is the tradeoff that permits a cumulative counter without indefinitely retaining
+pseudonymous event rows. Disabling telemetry also removes the unsent local
+quantization remainder.
 
 ## Self-host the aggregate collector
 
@@ -90,9 +104,15 @@ On macOS or Linux, use `export NAME=value`. Keep the admin summary endpoint
 private. If ingest is intentionally tokenless for public clients, enforce
 request-size limits and rate limiting at the reverse proxy.
 
-The collector exposes only aggregate summaries: active monthly pseudonym counts,
+The private collector summary exposes only aggregates: active monthly pseudonym counts,
 activation counts, coarse errors, command reliability, platform-family health,
 and coarse benefit evidence. It never returns raw events or pseudonyms.
+
+`GET /v1/public-savings` requires no admin credential and returns only the two
+cumulative lower-bound totals plus an update timestamp and fixed evidence/privacy
+labels. It exposes no pseudonym or contribution count. Browser access is allowed
+only for the configured `ENTROLY_TELEMETRY_PUBLIC_ORIGIN` (the Entroly GitHub
+Pages origin by default), and responses are cacheable for 30 seconds.
 
 Telemetry cannot observe a package installation that fails before Entroly first
 starts. Registry downloads, release CI, and user-submitted diagnostics must cover

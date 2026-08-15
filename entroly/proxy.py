@@ -2712,21 +2712,32 @@ class PromptCompilerProxy:
                         )
                         from .product_telemetry import (
                             capture_optimization_outcome,
+                            capture_savings_contribution,
                             flush_async,
                         )
-                        from .value_tracker import _has_priced_model
+                        from .value_tracker import _has_priced_model, estimate_cost
 
-                        if capture_optimization_outcome(
+                        priced_model = _saved > 0 and _has_priced_model(_model)
+                        coarse_captured = capture_optimization_outcome(
                             "proxy",
                             before_tokens=original_tokens,
                             after_tokens=optimized_tokens,
                             measurement_scope="provider_bound_estimate",
                             cost_evidence=(
                                 "modeled_positive"
-                                if _saved > 0 and _has_priced_model(_model)
+                                if priced_model
                                 else "not_available"
                             ),
-                        ):
+                        )
+                        savings_captured = capture_savings_contribution(
+                            provider_tokens_saved=_saved,
+                            modeled_cost_avoided_usd=(
+                                estimate_cost(_saved, _model, kind="input")
+                                if priced_model
+                                else 0.0
+                            ),
+                        )
+                        if coarse_captured or savings_captured:
                             flush_async()
                     except Exception:
                         pass  # Never block a request for tracking

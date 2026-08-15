@@ -37,7 +37,7 @@ Select the highest-value evidence first, compress it, keep originals recoverable
 | **Compression tokens saved** | Canonical whole-request savings excluding measured tool-schema deferral | `entroly.proxy.tokens.compression_saved` / `entroly_proxy_compression_tokens_saved_total` |
 | **Tool-schema tokens deferred** | Savings from a caller explicitly limiting the active tool set with `X-Entroly-Active-Tools` | `entroly.proxy.tokens.tool_schema_saved` / `entroly_proxy_tool_schema_tokens_saved_total` |
 
-> **Live means measured by Entroly, not a fabricated global number.** Exact token and dollar totals stay local; privacy-safe product-health telemetry uses coarse buckets rather than exact global savings. Run `entroly value`, `entroly value --json`, or open `entroly dashboard` for live cumulative totals on your installation. For proxy observability, scrape `/metrics` and see [Metrics & Monitoring](docs/grafana/README.md).
+> **Live means measured by Entroly, not a fabricated global number.** Exact totals stay in each installation's local Value Receipt. Separately opted-in proxy installations may contribute a conservative community lower bound: every provider-bound delta is rounded down to whole 1,000-token units and whole cents before upload, with no prompt, content, model, price, or exact per-request value. It is not an exact worldwide total or provider invoice. Run `entroly value`, `entroly value --json`, or open `entroly dashboard` for your exact local cumulative totals. For the public-counter contract and proxy metrics, see [Live tokenomics](docs/live-tokenomics.md) and [Metrics & Monitoring](docs/grafana/README.md).
 
 Tool schemas are never hidden by a relevance guess. To opt in for a request,
 send a comma-separated active set such as

@@ -26,17 +26,19 @@ def test_live_tokenomics_is_front_loaded_and_uses_real_commands() -> None:
 
 def test_public_counter_contract_refuses_unmeasured_worldwide_claims() -> None:
     combined = README + TOKENOMICS
+    normalized = " ".join(combined.split()).casefold()
     required_boundaries = (
         "not a fabricated",
-        "rejects exact token counts",
+        "rounded down to whole 1,000-token units",
+        "not an exact worldwide total",
         "Downloads are package fetches, not users",
-        "fails closed to `unavailable`",
+        "fails closed to the checked-in proof",
     )
     for boundary in required_boundaries:
-        assert boundary.casefold() in combined.casefold()
+        assert boundary.casefold() in normalized
 
-    assert "downloads ×" not in combined.casefold()
-    assert "guarantees realized savings" not in combined.casefold()
+    assert "downloads ×" not in normalized
+    assert "guarantees realized savings" not in normalized
 
 
 def test_download_milestone_is_reconciled_and_not_called_users() -> None:
