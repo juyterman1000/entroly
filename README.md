@@ -26,7 +26,7 @@ Select the highest-value evidence first, compress it, keep originals recoverable
 <p align="center"><b>⭐ If Entroly is useful to you, please star the repository on GitHub.</b><br>
 <a href="https://github.com/juyterman1000/entroly">⭐ Star Entroly on GitHub</a> — it helps the project grow and reach more developers.</p>
 
-## ⚡ Live Token Savings
+## ⚡ Live Tokenomics
 
 <p align="center"><b>Tokens saved</b> · <b>Estimated cost avoided</b> · <b>Compression savings</b> · <b>Tool-schema deferral savings</b></p>
 
@@ -50,7 +50,7 @@ the request unchanged.
 ---
 
 <p align="center">
-  <b><a href="#-live-token-savings">Token savings</a> · <a href="#integration-hub">Integrations</a> · <a href="#what-is-entroly-in-plain-english">What is it?</a> · <a href="#install">Install</a> · <a href="#quickstart--by-how-you-work">Quickstart</a> · <a href="#see-it-work-in-30-seconds">See it work</a> · <a href="#benchmarks">Benchmarks</a> · <a href="#common-questions">Questions</a></b>
+  <b><a href="#live-tokenomics">Tokenomics</a> · <a href="#integration-hub">Integrations</a> · <a href="#what-is-entroly-in-plain-english">What is it?</a> · <a href="#install">Install</a> · <a href="#quickstart--by-how-you-work">Quickstart</a> · <a href="#see-it-work-in-30-seconds">See it work</a> · <a href="#benchmarks">Benchmarks</a> · <a href="#common-questions">Questions</a></b>
 </p>
 
 ---
