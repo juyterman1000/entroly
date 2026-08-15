@@ -24,7 +24,7 @@ def _report() -> dict:
 
 
 def test_local_report_accepts_structured_latency_contract() -> None:
-    _validate_local_report(_report(), label="simulate")
+    assert _validate_local_report(_report(), label="simulate") is None
 
 
 @pytest.mark.parametrize(
