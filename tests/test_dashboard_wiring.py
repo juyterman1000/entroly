@@ -213,6 +213,55 @@ def test_snapshot_not_blank_without_engine(fresh_dir):
     assert snap["engine_state"]["has_value_data"] is True
 
 
+def test_dashboard_models_banked_value_without_claiming_realized_savings(fresh_dir):
+    d, vt = fresh_dir
+    vt.ValueTracker(d).record(
+        tokens_saved=39_136_125,
+        model="",
+        source="mcp",
+    )
+
+    import entroly.dashboard as dash
+    importlib.reload(dash)
+    dash._engine = None
+    vt._tracker = None
+    snap = dash._get_full_snapshot()
+
+    assert snap["banked_value"] == {
+        "tokens_reduced": 39_136_125,
+        "default_usd_per_million": 1.0,
+        "modeled_future_value_usd": 39.136125,
+        "classification": "modeled_future_value_not_realized_savings",
+    }
+    assert snap["value_trends"]["lifetime"]["provider_cost_avoided_usd"] == 0.0
+
+
+@pytest.mark.parametrize(
+    ("tokens", "rate", "expected"),
+    [
+        (39_136_125, 1.0, 39.136125),
+        (39_136_125, 3.0, 117.408375),
+        (-1, 3.0, 0.0),
+        (1_000_000, float("nan"), 0.0),
+    ],
+)
+def test_modeled_banked_value_calculator(tokens, rate, expected):
+    from entroly.dashboard import _modeled_banked_value_usd
+
+    assert _modeled_banked_value_usd(tokens, rate) == expected
+
+
+def test_dashboard_labels_banked_value_separately_from_realized_savings():
+    from entroly.dashboard import DASHBOARD_HTML
+
+    assert "BANKED FUTURE VALUE" in DASHBOARD_HTML
+    assert "Banked Future Value" in DASHBOARD_HTML
+    assert "modeled future value, not realized savings" in DASHBOARD_HTML
+    assert "USD per 1M input tokens" in DASHBOARD_HTML
+    assert "bankedUsdPerMillion" in DASHBOARD_HTML
+    assert "if(raw===null)return 1" in DASHBOARD_HTML
+
+
 _NODE = shutil.which("node")
 
 

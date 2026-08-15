@@ -22,6 +22,15 @@ classes:
 panel automatically. The ledger stores operational counts and aggregate token
 measurements, not prompts or source content.
 
+The dashboard also exposes a **Banked Future Value** calculator for
+`local_operations.tokens_reduced`. It multiplies locally reduced tokens by a
+user-selected USD-per-million-input-tokens rate (default `$1.00/M`). The rate
+is stored only in the browser's local storage. This value is a forward-looking
+scenario for context that may later replace provider input; it is not added to
+provider-bound savings, the realized cost total, or the public community
+counter. The machine-readable snapshot labels it
+`modeled_future_value_not_realized_savings`.
+
 The proxy also publishes a reconciled all-layer counter and two components:
 
 | Surface | Aggregate | Compression component | Tool-schema component |
