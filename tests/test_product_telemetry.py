@@ -369,7 +369,7 @@ class _Opener:
     def __init__(self):
         self.requests = []
 
-    def open(self, request, timeout):
+    def open(self, request, *, timeout):
         self.requests.append((request, timeout))
         return _Response()
 
@@ -401,7 +401,8 @@ def test_failed_flush_keeps_queue_and_exposes_only_error_category(
     monkeypatch: pytest.MonkeyPatch,
 ):
     class FailingOpener:
-        def open(self, _request, _timeout):
+        def open(self, _request, *, timeout):
+            del timeout
             raise OSError("secret internal proxy and customer path")
 
     monkeypatch.setattr(telemetry, "_opener", lambda: FailingOpener())

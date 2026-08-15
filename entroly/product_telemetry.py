@@ -892,7 +892,7 @@ def submit_exit_feedback(
         method="POST",
     )
     try:
-        with _opener().open(request, _request_timeout()) as response:
+        with _opener().open(request, timeout=_request_timeout()) as response:
             status_code = int(getattr(response, "status", 0) or response.getcode())
             if not 200 <= status_code < 300:
                 return {"status": "error", "sent": 0, "error_type": "OtherError"}
@@ -950,7 +950,7 @@ def _request_remote_deletion(config: dict[str, Any]) -> str:
         method="DELETE",
     )
     try:
-        with _opener().open(request, _request_timeout()) as response:
+        with _opener().open(request, timeout=_request_timeout()) as response:
             status_code = int(getattr(response, "status", 0) or response.getcode())
             return "deleted" if 200 <= status_code < 300 else "error"
     except Exception:
@@ -990,7 +990,7 @@ def flush(
         request = urllib.request.Request(
             endpoint, data=body, headers=_request_headers(), method="POST"
         )
-        with _opener().open(request, _request_timeout()) as response:
+        with _opener().open(request, timeout=_request_timeout()) as response:
             status_code = int(getattr(response, "status", 0) or response.getcode())
             if not 200 <= status_code < 300:
                 raise urllib.error.HTTPError(
