@@ -1105,3 +1105,157 @@ def test_committed_openclaw_benchmark_matches_runtime():
         )
     )
     assert run_openclaw_benchmark() == expected
+
+
+def _pytest_log(count: int, tag: str) -> str:
+    lines = [f"tests/test_{tag}_{i}.py::case_{i} PASSED [ {i % 100}%]" for i in range(count)]
+    lines += [
+        "=================================== FAILURES ===================================",
+        f"tests/test_{tag}.py:42: in test_total",
+        "    assert cart.total() == 4",
+        "E   AssertionError: assert 3 == 4",
+        "=========================== short test summary info ============================",
+        f"FAILED tests/test_{tag}.py::test_total - AssertionError: assert 3 == 4",
+        f"= 1 failed, {count} passed in 12.31s =",
+    ]
+    return "\n".join(lines)
+
+
+def _session_with_old_tool_logs(
+    *, runs: int = 3, block_extra: dict | None = None
+) -> list[dict]:
+    """A long session whose tool logs sit behind the preserved recent tail."""
+
+    messages: list[dict] = [{"role": "user", "content": "the cart total is wrong, find it"}]
+    for index in range(runs):
+        block = {
+            "type": "tool_result",
+            "tool_use_id": f"toolu_{index}",
+            "content": _pytest_log(300, f"m{index}"),
+            "is_error": False,
+        }
+        if block_extra:
+            block.update(block_extra)
+        messages.append({"role": "assistant", "content": [block]})
+        messages.append({"role": "assistant", "content": "I ran the suite and it failed."})
+    messages += [
+        {"role": "user", "content": "which assertion?"},
+        {"role": "assistant", "content": "the cart total assertion"},
+        {"role": "user", "content": "fix it"},
+        {"role": "assistant", "content": "working on it"},
+    ]
+    return messages
+
+
+def _assemble_session(tmp_path, messages, *, budget: int, **extra):
+    return assemble(
+        {
+            "operation": "assemble",
+            "session_id": "session/tools",
+            "messages": messages,
+            "token_budget": budget,
+            "receipt_dir": str(tmp_path),
+            "receipt_commit_challenge_sha256": _RECEIPT_COMMIT_CHALLENGE,
+            "query": "which assertion failed",
+            **extra,
+        }
+    )
+
+
+def test_old_tool_output_is_compressed_and_keeps_the_failure(tmp_path):
+    """A tool_result-only message used to be exempt from compression entirely.
+
+    `_protected_message` treated "no rewritable free text" as "structured,
+    therefore untouchable", so the largest thing in an agent session was the
+    one thing guaranteed to survive whole.
+    """
+
+    messages = _session_with_old_tool_logs()
+    result = _assemble_session(tmp_path, messages, budget=5000)
+
+    assert result["ok"] is True
+    assert not [w for w in result["warnings"] if "exact original" in w]
+    assert result["tool_output_tokens_saved"] > 0
+    assert result["estimated_tokens"] < result["source_tokens"]
+
+    block = result["messages"][1]["content"][0]
+    assert "assert 3 == 4" in block["content"]
+    assert "1 failed, 300 passed" in block["content"]
+    assert len(block["content"]) < len(messages[1]["content"][0]["content"])
+
+
+def test_compressed_tool_result_keeps_its_protocol_identity(tmp_path):
+    """`tool_use_id` pairs a result with its call and `is_error` is branched on."""
+
+    messages = _session_with_old_tool_logs()
+    result = _assemble_session(tmp_path, messages, budget=5000)
+
+    for index, source in enumerate(messages):
+        assembled = result["messages"][index]
+        if not isinstance(source.get("content"), list):
+            continue
+        for block_index, source_block in enumerate(source["content"]):
+            if source_block.get("type") != "tool_result":
+                continue
+            assembled_block = assembled["content"][block_index]
+            assert assembled_block["type"] == "tool_result"
+            assert assembled_block["tool_use_id"] == source_block["tool_use_id"]
+            assert assembled_block["is_error"] == source_block["is_error"]
+
+
+def test_tool_result_with_an_unknown_key_is_left_opaque(tmp_path):
+    """An unrecognized extension must pass through rather than be rewritten."""
+
+    messages = _session_with_old_tool_logs(block_extra={"cache_control": {"type": "ephemeral"}})
+    result = _assemble_session(tmp_path, messages, budget=5000)
+
+    assert result["tool_output_tokens_saved"] == 0
+    for index, source in enumerate(messages):
+        if isinstance(source.get("content"), list):
+            assert result["messages"][index]["content"] == source["content"]
+
+
+def test_context_within_budget_still_returns_exact_tool_output(tmp_path):
+    """"It fits, so nothing was changed" has to keep meaning that."""
+
+    messages = _session_with_old_tool_logs(runs=1)
+    result = _assemble_session(tmp_path, messages, budget=1_000_000)
+
+    assert result["changed"] is False
+    assert result["tool_output_tokens_saved"] == 0
+    assert result["messages"] == messages
+
+
+def test_tool_output_compression_can_be_turned_off(tmp_path):
+    messages = _session_with_old_tool_logs()
+    result = _assemble_session(
+        tmp_path, messages, budget=5000, compress_tool_results=False
+    )
+
+    assert result["tool_output_tokens_saved"] == 0
+
+
+def test_assembly_invariant_rejects_a_rewritten_tool_use_id():
+    """The widened invariant must still fail closed on identity drift."""
+
+    from entroly.openclaw_bridge import _validate_assembly_invariants
+
+    source = [
+        {
+            "role": "assistant",
+            "content": [
+                {"type": "tool_result", "tool_use_id": "toolu_1", "content": "x" * 40},
+            ],
+        }
+    ]
+    tampered = [
+        {
+            "role": "assistant",
+            "content": [
+                {"type": "tool_result", "tool_use_id": "toolu_2", "content": "x"},
+            ],
+        }
+    ]
+
+    with pytest.raises(ValueError, match="tool result identity changed"):
+        _validate_assembly_invariants(source, tampered, set())

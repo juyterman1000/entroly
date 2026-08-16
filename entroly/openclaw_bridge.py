@@ -89,6 +89,101 @@ def _compressible_text_locations(message: dict[str, Any]) -> list[tuple[int | No
     return locations
 
 
+# A tool_result block carries protocol identity (`tool_use_id`) and an error
+# flag the agent branches on. Only its textual payload may be rewritten, and
+# only when the block is otherwise shaped exactly as the protocol defines it.
+# Anything carrying a key outside this set is treated as opaque and passed
+# through untouched, so an unrecognized extension can never be silently eaten.
+_TOOL_RESULT_KEYS = frozenset({"type", "tool_use_id", "content", "is_error"})
+
+
+def _is_plain_text_block(block: Any) -> bool:
+    return (
+        isinstance(block, dict)
+        and block.get("type") == "text"
+        and isinstance(block.get("text"), str)
+        and set(block) <= {"type", "text"}
+    )
+
+
+def _tool_result_text_locations(
+    message: dict[str, Any],
+) -> list[tuple[int, int | None, str]]:
+    """Return ``(block_index, inner_index, text)`` for rewritable tool output.
+
+    ``inner_index`` is ``None`` when the block's ``content`` is a bare string
+    and an index when it is a list of plain text blocks. Tool results are the
+    bulk of a long agent session -- a single pytest or compiler run dwarfs the
+    prose around it -- but they are excluded from
+    ``_compressible_text_locations`` because that helper is deliberately
+    restricted to unsigned free text.
+    """
+
+    content = message.get("content")
+    if not isinstance(content, list):
+        return []
+
+    locations: list[tuple[int, int | None, str]] = []
+    for block_index, block in enumerate(content):
+        if (
+            not isinstance(block, dict)
+            or block.get("type") != "tool_result"
+            or not set(block) <= _TOOL_RESULT_KEYS
+        ):
+            continue
+        inner = block.get("content")
+        if isinstance(inner, str):
+            locations.append((block_index, None, inner))
+        elif isinstance(inner, list):
+            for inner_index, inner_block in enumerate(inner):
+                if _is_plain_text_block(inner_block):
+                    locations.append((block_index, inner_index, inner_block["text"]))
+    return locations
+
+
+def _compress_tool_results(
+    message: dict[str, Any],
+) -> tuple[dict[str, Any], int]:
+    """Compress a message's tool_result payloads. Returns (message, tokens_saved).
+
+    Delegates to the proxy's ``compress_tool_output``, which already applies the
+    specialized codecs, then the pattern rules, then ESC. Reusing it keeps a
+    single definition of what a compressed tool result looks like across the
+    proxy and the OpenClaw bridge rather than growing a second one here.
+    """
+
+    locations = _tool_result_text_locations(message)
+    if not locations:
+        return message, 0
+
+    try:
+        from .proxy_transform import compress_tool_output
+    except Exception:
+        return message, 0
+
+    updated = copy.deepcopy(message)
+    saved = 0
+    for block_index, inner_index, raw_text in locations:
+        try:
+            compressed, kind, _ratio = compress_tool_output(raw_text)
+        except Exception:
+            # Fail open: an unexpected payload keeps its original bytes.
+            continue
+        if kind == "none" or compressed == raw_text:
+            continue
+        delta = _estimate_value_tokens(raw_text) - _estimate_value_tokens(compressed)
+        if delta <= 0:
+            continue
+        saved += delta
+        if inner_index is None:
+            updated["content"][block_index]["content"] = compressed
+        else:
+            updated["content"][block_index]["content"][inner_index]["text"] = compressed
+    if saved == 0:
+        return message, 0
+    return updated, saved
+
+
 def _message_text(message: dict[str, Any], *, compressible_only: bool) -> str:
     if compressible_only:
         return "\n".join(text for _, text in _compressible_text_locations(message))
@@ -131,15 +226,36 @@ def _compressible_text_tokens(message: dict[str, Any]) -> int:
     return sum(_estimate_value_tokens(text) for _, text in _compressible_text_locations(message))
 
 
+def _tool_result_text_tokens(message: dict[str, Any]) -> int:
+    return sum(
+        _estimate_value_tokens(text) for _, _, text in _tool_result_text_locations(message)
+    )
+
+
 def _fixed_message_tokens(message: dict[str, Any]) -> int:
-    return max(0, _provider_visible_message_tokens(message) - _compressible_text_tokens(message))
+    """Tokens the budget cannot reclaim from this message.
+
+    Tool output is subtracted alongside free text. Counting it as fixed made
+    the arithmetic self-defeating: a single large log inflated the fixed total
+    past the whole budget, `content_budget` went non-positive, and the
+    assembler returned the original context -- so the one message responsible
+    for the overflow was the one guaranteed to survive it whole.
+    """
+
+    reclaimable = _compressible_text_tokens(message) + _tool_result_text_tokens(message)
+    return max(0, _provider_visible_message_tokens(message) - reclaimable)
 
 
 def _protected_message(message: dict[str, Any]) -> bool:
     """Return whether a message must remain byte-for-byte equivalent."""
     if message.get("role") in {"system", "developer"}:
         return True
-    return not _compressible_text_locations(message)
+    # "No rewritable free text" used to imply "structured, therefore
+    # untouchable". A tool_result-only message satisfies that test, which made
+    # every large tool log permanently exempt from compression.
+    return not (
+        _compressible_text_locations(message) or _tool_result_text_locations(message)
+    )
 
 
 def _message_relevance(
@@ -243,7 +359,21 @@ def _compress_message_bodies(
     content_budget: int,
     distill: bool,
     query: str,
-) -> tuple[list[dict[str, Any]], set[int], list[dict[str, Any]], int]:
+    compress_tool_results: bool = True,
+) -> tuple[list[dict[str, Any]], set[int], list[dict[str, Any]], int, int]:
+    # Tool output is compressed before the text budget is allocated. A single
+    # test or compiler run can outweigh every prose message around it, so
+    # spending the budget on prose first would squeeze the explanation while
+    # the log that caused the overflow passes through whole.
+    tool_tokens_saved = 0
+    if compress_tool_results:
+        reduced: list[dict[str, Any]] = []
+        for message in messages:
+            message, saved = _compress_tool_results(message)
+            tool_tokens_saved += saved
+            reduced.append(message)
+        messages = reduced
+
     text_tokens = [
         max(1, _compressible_text_tokens(message)) for message in messages
     ]
@@ -327,7 +457,7 @@ def _compress_message_bodies(
         result.append(compressed_message)
     for index, item in enumerate(relevance):
         item["allocated_tokens"] = allocations[index]
-    return result, pinned, relevance, distillation_failures
+    return result, pinned, relevance, distillation_failures, tool_tokens_saved
 
 
 def _safe_session_name(session_id: str) -> str:
@@ -538,6 +668,9 @@ def _validate_assembly_invariants(
             for block_index, _ in _compressible_text_locations(source)
             if block_index is not None
         }
+        eligible_tool_results = {
+            block_index for block_index, _, _ in _tool_result_text_locations(source)
+        }
         for block_index, (source_block, assembled_block) in enumerate(
             zip(source_content, assembled_content, strict=True)
         ):
@@ -550,6 +683,66 @@ def _validate_assembly_invariants(
                 ):
                     raise ValueError(
                         f"text block shape changed at index {index}:{block_index}"
+                    )
+            elif block_index in eligible_tool_results:
+                # A tool_result may lose payload text but must keep its
+                # protocol identity. `tool_use_id` pairs the result with the
+                # call that produced it and `is_error` is what the agent
+                # branches on, so both are compared exactly; only `content`
+                # may differ, and only by staying the same shape.
+                if not isinstance(assembled_block, dict):
+                    raise ValueError(
+                        f"tool result shape changed at index {index}:{block_index}"
+                    )
+                source_identity = {
+                    key: value
+                    for key, value in source_block.items()
+                    if key != "content"
+                }
+                assembled_identity = {
+                    key: value
+                    for key, value in assembled_block.items()
+                    if key != "content"
+                }
+                if _canonical_json(source_identity) != _canonical_json(
+                    assembled_identity
+                ):
+                    raise ValueError(
+                        f"tool result identity changed at index {index}:{block_index}"
+                    )
+                source_inner = source_block.get("content")
+                assembled_inner = assembled_block.get("content")
+                if isinstance(source_inner, str):
+                    if not isinstance(assembled_inner, str):
+                        raise ValueError(
+                            f"tool result text shape changed at index {index}:{block_index}"
+                        )
+                elif isinstance(source_inner, list):
+                    if not isinstance(assembled_inner, list) or len(
+                        source_inner
+                    ) != len(assembled_inner):
+                        raise ValueError(
+                            f"tool result block count changed at index {index}:{block_index}"
+                        )
+                    for inner_index, (source_inner_block, assembled_inner_block) in (
+                        enumerate(zip(source_inner, assembled_inner, strict=True))
+                    ):
+                        if _is_plain_text_block(source_inner_block):
+                            if not _is_plain_text_block(assembled_inner_block):
+                                raise ValueError(
+                                    "tool result text block shape changed at "
+                                    f"index {index}:{block_index}:{inner_index}"
+                                )
+                        elif _canonical_json(source_inner_block) != _canonical_json(
+                            assembled_inner_block
+                        ):
+                            raise ValueError(
+                                "opaque tool result block changed at "
+                                f"index {index}:{block_index}:{inner_index}"
+                            )
+                elif _canonical_json(source_inner) != _canonical_json(assembled_inner):
+                    raise ValueError(
+                        f"opaque tool result changed at index {index}:{block_index}"
                     )
             elif _canonical_json(source_block) != _canonical_json(assembled_block):
                 raise ValueError(
@@ -1300,6 +1493,10 @@ def assemble(request: dict[str, Any]) -> dict[str, Any]:
         [messages[index] for index in sorted(protected_indexes)]
     )
 
+    # Stays zero on both pass-through paths. Under budget the caller is
+    # promised the exact original context, so tool output is not touched
+    # either -- "it fits, so nothing was changed" has to keep meaning that.
+    tool_tokens_saved = 0
     if source_tokens <= budget:
         assembled = messages
     elif protected_tokens >= budget:
@@ -1322,11 +1519,20 @@ def assemble(request: dict[str, Any]) -> dict[str, Any]:
                 "Entroly returned the exact original context."
             )
         else:
-            compressed, pinned, relevance, distillation_failures = _compress_message_bodies(
+            (
+                compressed,
+                pinned,
+                relevance,
+                distillation_failures,
+                tool_tokens_saved,
+            ) = _compress_message_bodies(
                 compressible,
                 content_budget=content_budget,
                 distill=bool(request.get("distill", True)),
                 query=query,
+                compress_tool_results=bool(
+                    request.get("compress_tool_results", True)
+                ),
             )
             assembled = copy.deepcopy(messages)
             for local_index, (index, compressed_message) in enumerate(
@@ -1401,6 +1607,10 @@ def assemble(request: dict[str, Any]) -> dict[str, Any]:
         "estimated_tokens": assembled_tokens,
         "source_tokens": source_tokens,
         "tokens_saved": max(0, source_tokens - assembled_tokens),
+        # Reported separately so a receipt reader can tell reduction that came
+        # from discarding tool output from reduction that came from compressing
+        # what a human or the model actually wrote.
+        "tool_output_tokens_saved": tool_tokens_saved,
         "changed": assembled != messages,
         "receipt_id": receipt_id,
         "receipt_path": receipt_path,
