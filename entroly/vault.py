@@ -76,11 +76,19 @@ class BeliefArtifact:
     derived_from: list[str] = field(default_factory=list)
     title: str = ""
     body: str = ""
+    # Directory the sources are relative to, itself relative to the project
+    # root. `entroly compile scripts` records `helper.py` as a source and
+    # `scripts` here, so the pair resolves to exactly one file. Without it a
+    # source is only a suffix and can be matched against the wrong file, or
+    # against none. Empty on beliefs written before this field existed, and
+    # omitted from the frontmatter in that case so their bytes do not change.
+    source_root: str = ""
 
     def to_markdown(self) -> str:
         """Render as markdown with YAML frontmatter."""
         sources_yaml = "\n".join(f"  - {s}" for s in self.sources) if self.sources else "  - unknown"
         derived_yaml = "\n".join(f"  - {d}" for d in self.derived_from) if self.derived_from else "  - system"
+        source_root_yaml = f"source_root: {self.source_root}\n" if self.source_root else ""
 
         return (
             f"---\n"
@@ -89,6 +97,7 @@ class BeliefArtifact:
             f"status: {self.status}\n"
             f"confidence: {self.confidence}\n"
             f"sources:\n{sources_yaml}\n"
+            f"{source_root_yaml}"
             f"last_checked: {self.last_checked}\n"
             f"derived_from:\n{derived_yaml}\n"
             f"---\n\n"
@@ -475,15 +484,19 @@ class VaultManager:
             except (OSError, ValueError):
                 continue
 
-        # A source is matched by path *suffix*, not by joining it to a guessed
-        # base. `entroly compile scripts` records `_release_artifacts.py` while
-        # `entroly compile entroly` records `adaptive_budget.py`, and the belief
-        # stores neither root, so resolving against a fixed base marks live
-        # beliefs as dead: joining against the project root alone retracted 275
-        # of 715 here, nearly all of them real files one directory down.
-        known = _path_suffix_index(search_roots)
+        project_root = search_roots[0]
 
-        def _grounded(source: str) -> bool:
+        # Legacy beliefs carry no `source_root`, so their sources can only be
+        # matched by path *suffix*: `entroly compile scripts` recorded
+        # `_release_artifacts.py` and `entroly compile entroly` recorded
+        # `adaptive_budget.py`, with nothing saying which directory either came
+        # from. Joining those against the project root alone retracted 275 of
+        # 715 real beliefs here. The index is built lazily because a vault
+        # written entirely by current code never needs it.
+        suffix_index: set[str] | None = None
+
+        def _grounded(source: str, source_root: str) -> bool:
+            nonlocal suffix_index
             raw = source.split(":", 1)[0].replace("\\", "/").strip().lstrip("./")
             if not _is_path_like(raw):
                 # `write_belief` substitutes the sentinel `unknown` when a
@@ -491,7 +504,19 @@ class VaultManager:
                 # too. "Provenance was never recorded" is the opposite of
                 # "the file is gone" and must never retract anything.
                 return True
-            return raw in known
+            if source_root:
+                # Exact: the belief recorded the directory its sources are
+                # relative to, so there is exactly one file to look for.
+                return (project_root / source_root / raw).exists()
+            if suffix_index is None:
+                suffix_index = _path_suffix_index(search_roots)
+            # Deliberately permissive: a bare `helper.py` matches any file of
+            # that name anywhere in the tree, so a belief about a deleted
+            # `scripts/helper.py` survives while a `tests/helper.py` exists.
+            # That is the safe direction -- wrongly retracting loses knowledge,
+            # wrongly keeping is noise the next scan catches -- and it only
+            # affects beliefs written before `source_root` existed.
+            return raw in suffix_index
 
         retracted: list[str] = []
         already: list[str] = []
@@ -509,7 +534,11 @@ class VaultManager:
                 sources = _extract_sources(content)
                 if not sources:
                     continue  # nothing to verify against; leave it alone
-                if any(_grounded(src) for src in sources):
+                source_root = str(fm.get("source_root", "") or "").strip()
+                # One surviving source is enough. A belief citing ten entities
+                # in a file that still exists is still about real code; only a
+                # belief with nothing left standing has lost its evidence.
+                if any(_grounded(src, source_root) for src in sources):
                     continue
 
                 entity = fm.get("entity", md.stem)

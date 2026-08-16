@@ -124,3 +124,56 @@ def test_a_restored_file_lets_compilation_bring_the_belief_back(tmp_path):
     status, confidence = _status_and_confidence(vault, "returning")
     assert status != "ungrounded"
     assert confidence > 0.0
+
+
+def test_recorded_source_root_resolves_exactly(tmp_path):
+    """`source_root` removes the guessing entirely.
+
+    With it, a source is rejoined to one directory and there is exactly one
+    file to look for -- so a belief about a deleted `scripts/helper.py` is
+    retracted even while an unrelated `tests/helper.py` exists, which suffix
+    matching alone cannot distinguish.
+    """
+
+    project, vault = _vault(tmp_path)
+    (project / "scripts").mkdir()
+    (project / "tests").mkdir()
+    (project / "tests" / "helper.py").write_text("decoy = 1\n", encoding="utf-8")
+
+    vault.write_belief(
+        BeliefArtifact(entity="helper", title="helper", body="From scripts/.",
+                       sources=["helper.py:1"], source_root="scripts")
+    )
+
+    result = vault.mark_beliefs_ungrounded([str(project)])
+
+    assert result["retracted_entities"] == ["helper"]
+
+
+def test_recorded_source_root_keeps_a_live_belief(tmp_path):
+    project, vault = _vault(tmp_path)
+    (project / "scripts").mkdir()
+    (project / "scripts" / "helper.py").write_text("y = 2\n", encoding="utf-8")
+
+    vault.write_belief(
+        BeliefArtifact(entity="helper", title="helper", body="From scripts/.",
+                       sources=["helper.py:1"], source_root="scripts")
+    )
+
+    result = vault.mark_beliefs_ungrounded([str(project)])
+
+    assert result["retracted_entities"] == []
+
+
+def test_source_root_is_omitted_when_absent(tmp_path):
+    """Beliefs written before the field existed must not change shape."""
+
+    _, vault = _vault(tmp_path)
+    vault.write_belief(
+        BeliefArtifact(entity="legacy", title="legacy", body="No root.",
+                       sources=["mod.py:1"])
+    )
+
+    record = vault.read_belief("legacy")
+    assert record is not None
+    assert "source_root" not in record["frontmatter"]

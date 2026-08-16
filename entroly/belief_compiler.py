@@ -106,6 +106,22 @@ _RS_CONST = re.compile(r'^(?:pub\s+)?(?:const|static)\s+(\w+)', re.M)
 _RS_DOC = re.compile(r'///\s*(.*)')
 
 
+def _root_label(root: Path) -> str:
+    """The compiled directory, expressed relative to the project root.
+
+    Stored on each belief so a later groundedness check can rejoin it with a
+    source path and land on exactly one file. Returns "" when the directory is
+    outside the project, because a label that cannot be rejoined is worse than
+    no label: it would be trusted and resolve to nothing.
+    """
+
+    try:
+        relative = root.resolve().relative_to(Path.cwd().resolve())
+    except (ValueError, OSError):
+        return ""
+    return relative.as_posix() if relative.as_posix() != "." else ""
+
+
 def extract_entities(content: str, file_path: str) -> list[CodeEntity]:
     """Extract code entities from a source file."""
     ext = Path(file_path).suffix.lower()
@@ -518,7 +534,9 @@ class BeliefCompiler:
         # Phase 3: Generate beliefs for each module
         for rel_path, module in all_modules.items():
             try:
-                belief = self._module_to_belief(module, rel_path, resolver)
+                belief = self._module_to_belief(
+                    module, rel_path, resolver, source_root=_root_label(root)
+                )
                 self._vault.write_belief(belief)
                 result.beliefs_written += 1
                 result.belief_ids.append(belief.claim_id)
@@ -584,6 +602,7 @@ class BeliefCompiler:
         module: ModuleMap,
         file_path: str,
         resolver: EntityResolver | None = None,
+        source_root: str = "",
     ) -> BeliefArtifact:
         """Convert a ModuleMap to a BeliefArtifact."""
         # Build body
@@ -648,6 +667,10 @@ class BeliefCompiler:
             confidence=0.75,  # auto-compiled → moderate confidence
             status="inferred",
             sources=sources,
+            # Sources above are relative to the compiled directory. Recording
+            # which directory that was is what lets a later groundedness check
+            # resolve them to exactly one file instead of guessing.
+            source_root=source_root,
             derived_from=["belief_compiler", "sast"],
         )
 
