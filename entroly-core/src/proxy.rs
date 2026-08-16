@@ -308,9 +308,16 @@ pub fn run(
     // Shared agent (connection pooling) with a connect timeout so an
     // unreachable upstream can never hang a worker forever. No read timeout —
     // streaming (SSE) responses are long-lived by design.
-    let agent = ureq::AgentBuilder::new()
-        .timeout_connect(std::time::Duration::from_secs(10))
-        .build();
+    // ureq 3 reports a non-2xx upstream as Err(StatusCode) and drops the
+    // response with it. A proxy must forward the upstream's own 401/429/500
+    // body verbatim, so status-as-error is turned off and every response the
+    // upstream actually produced arrives as Ok.
+    let agent = ureq::Agent::new_with_config(
+        ureq::Agent::config_builder()
+            .timeout_connect(Some(std::time::Duration::from_secs(10)))
+            .http_status_as_error(false)
+            .build(),
+    );
     let mut handles = Vec::new();
     for _ in 0..workers {
         let server = Arc::clone(&server);
@@ -397,19 +404,30 @@ fn handle(
 
     let target = format!("{}{}", upstream.trim_end_matches('/'), url);
     // Preserve the client's HTTP method (GET /v1/models must not become a POST).
-    let mut up = agent.request(&method, &target);
-    for (k, val) in &fwd_headers {
-        up = up.set(k, val);
-    }
+    let up = || {
+        let mut b = ureq::http::Request::builder()
+            .method(method.as_str())
+            .uri(target.as_str());
+        for (k, val) in &fwd_headers {
+            b = b.header(k.as_str(), val.as_str());
+        }
+        b
+    };
 
-    // Bodyless methods (GET/HEAD/DELETE) use .call(); methods with a body send it.
+    // Bodyless methods (GET/HEAD/DELETE) send `()`; methods with a body send it.
+    // An empty `&str` body is not equivalent — it would frame a Content-Length: 0
+    // onto a GET the client never sent one on.
     let sent = if new_body.is_empty() {
-        up.call()
+        up().body(())
+            .map_err(ureq::Error::from)
+            .and_then(|r| agent.run(r))
     } else {
-        up.send_string(&new_body)
+        up().body(new_body.as_str())
+            .map_err(ureq::Error::from)
+            .and_then(|r| agent.run(r))
     };
     let resp = match sent {
-        Ok(r) | Err(ureq::Error::Status(_, r)) => r,
+        Ok(r) => r,
         Err(e) => {
             let _ = req.respond(
                 Response::from_string(format!("entroly-rs upstream error: {e}"))
@@ -419,25 +437,27 @@ fn handle(
         }
     };
 
-    let status = resp.status();
+    let status = resp.status().as_u16();
     let mut out_headers: Vec<Header> = Vec::new();
-    for name in resp.headers_names() {
+    // Iterating the header map forwards every value of a repeated header. The
+    // ureq 2 code read one value per name, which silently dropped all but the
+    // first Set-Cookie an upstream sent.
+    for (name, val) in resp.headers() {
         // ureq already decoded content-encoding; never re-forward length/encoding
         // headers (would mis-frame or double-decode). tiny_http frames the
         // decoded stream itself (chunked).
         if matches!(
-            name.to_ascii_lowercase().as_str(),
+            name.as_str().to_ascii_lowercase().as_str(),
             "content-length" | "transfer-encoding" | "connection" | "content-encoding"
         ) {
             continue;
         }
-        if let Some(val) = resp.header(&name) {
-            if let Ok(h) = Header::from_bytes(name.as_bytes(), val.as_bytes()) {
-                out_headers.push(h);
-            }
+        if let Ok(h) = Header::from_bytes(name.as_str().as_bytes(), val.as_bytes()) {
+            out_headers.push(h);
         }
     }
-    let reader = resp.into_reader();
+    // Unlimited by design: SSE responses are long-lived and must not be capped.
+    let reader = resp.into_body().into_reader();
     let response = Response::new(StatusCode(status), out_headers, reader, None, None);
     let _ = req.respond(response);
 }

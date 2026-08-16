@@ -65,8 +65,28 @@ After the first agent turn, run `/entroly-context` in any connected channel to
 see the estimated before/after context size, reduction, warnings, and receipt.
 Run `/entroly-context doctor` to verify the configured Python executable and
 local JSONL bridge before inviting users onto the Gateway. The plugin requires
-the Entroly 1.0.64 bridge v2 protocol; doctor reports an actionable upgrade
-instead of accepting an older, incompatible Python installation.
+the `entroly.openclaw.bridge.v2` protocol, which shipped in Entroly 1.0.57;
+doctor reports an actionable upgrade instead of accepting an older,
+incompatible Python installation.
+
+## Tool output
+
+In a long session the tool logs are usually the largest thing in the context: a
+single test, build, or linter run can outweigh every message written around it.
+When the transcript exceeds the budget, Entroly compresses the payload of
+`tool_result` blocks that sit behind the preserved recent turns, using the same
+codecs the proxy applies — specialized codecs first, then the pattern rules,
+then the entropic shell codec — so failures, summaries, and identifiers survive
+while repeated passing lines do not.
+
+A block's `tool_use_id` and `is_error` are never rewritten, and any
+`tool_result` carrying a key Entroly does not recognize is passed through
+untouched. Within budget nothing is compressed at all, including tool output.
+The assemble response reports `tool_output_tokens_saved` separately from
+`tokens_saved`, so a receipt reader can tell reduction that came from
+discarding tool noise from reduction that came from compressing what a person
+or the model actually wrote. Set `compress_tool_results: false` on the assemble
+request to disable it.
 
 OpenClaw's resolved prompt token budget is authoritative. When an older or
 degraded host cannot provide one, Entroly automatically resolves a conservative

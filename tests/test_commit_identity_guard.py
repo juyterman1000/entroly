@@ -227,3 +227,84 @@ def test_bot_author_exception_is_never_used_for_pull_requests(tmp_path: Path) ->
 
     assert result.returncode == 1
     assert "author is github-actions[bot]" in result.stdout
+
+
+DEPENDABOT_EMAIL = "49699333+dependabot[bot]@users.noreply.github.com"
+
+
+def _dependabot_commit(
+    repo: Path,
+    *,
+    subject: str,
+    include_source_path: bool = False,
+) -> str:
+    """A Dependabot-authored commit, optionally reaching outside dependency files."""
+
+    manifest = repo / "entroly-core"
+    manifest.mkdir(exist_ok=True)
+    (manifest / "Cargo.toml").write_text('ureq = "3"\n', encoding="utf-8")
+    if include_source_path:
+        src = manifest / "src"
+        src.mkdir(exist_ok=True)
+        (src / "proxy.rs").write_text("// hand-written migration\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    bot = _identity_env(
+        author_name="dependabot[bot]",
+        author_email=DEPENDABOT_EMAIL,
+        committer_name="GitHub",
+        committer_email="noreply@github.com",
+    )
+    _git(repo, "commit", "-m", subject, env=bot)
+    return _git(repo, "rev-parse", "HEAD")
+
+
+def test_dependabot_chore_deps_subject_is_accepted(tmp_path: Path) -> None:
+    """Dependabot derives its prefix from repository commit style.
+
+    It moved from `build(deps)` to `chore(deps)`, which the guard's subject
+    pattern did not accept -- so #326 and #328 both failed this guard on main
+    for the wording of their subject alone.
+    """
+
+    repo, before = _init_repo(tmp_path)
+    after = _dependabot_commit(
+        repo, subject="chore(deps): bump ureq from 2.12.1 to 3.4.0 in /entroly-core (#326)"
+    )
+
+    result = _run_guard(repo, tmp_path, event_name="push", event=_push_event(before, after))
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_dependabot_build_deps_subject_is_still_accepted(tmp_path: Path) -> None:
+    """The older prefix is still in history and must keep passing."""
+
+    repo, before = _init_repo(tmp_path)
+    after = _dependabot_commit(
+        repo, subject="build(deps-dev): update tiktoken requirement to >=0.9,<0.14 (#157)"
+    )
+
+    result = _run_guard(repo, tmp_path, event_name="push", event=_push_event(before, after))
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_dependabot_commit_cannot_carry_hand_written_source(tmp_path: Path) -> None:
+    """The path scope is the real boundary, and widening the subject keeps it.
+
+    A maintainer who pushes a migration onto a Dependabot branch produces a
+    squash commit authored by Dependabot over hand-written source. That must
+    stay rejected regardless of how the subject is worded.
+    """
+
+    repo, before = _init_repo(tmp_path)
+    after = _dependabot_commit(
+        repo,
+        subject="chore(deps): bump ureq from 2.12.1 to 3.4.0 in /entroly-core (#326)",
+        include_source_path=True,
+    )
+
+    result = _run_guard(repo, tmp_path, event_name="push", event=_push_event(before, after))
+
+    assert result.returncode == 1
+    assert "author is dependabot[bot]" in result.stdout
