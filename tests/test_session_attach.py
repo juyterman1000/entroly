@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import subprocess
 
 import pytest
 
@@ -73,6 +74,44 @@ def test_attachment_install_commands_never_contain_raw_token(tmp_path):
         assert issued.grant.grant_id in rendered
         assert str(issued.token_file) in rendered
         assert f"ENTROLY_SOURCE={tmp_path.resolve()}" in rendered
+
+
+def test_claude_install_command_places_name_before_greedy_env_flag(tmp_path):
+    store = AttachmentStore(tmp_path / "state")
+    issued = store.create(client="claude", project_root=tmp_path, ttl_seconds=60)
+    (command,) = issued.install_commands
+
+    assert command[:3] == ("claude", "mcp", "add")
+    name = f"entroly-{issued.grant.grant_id}"
+    # The Claude CLI's -e/--env is variadic; the server name must precede it or
+    # it is swallowed as an env var. Guard the ordering explicitly.
+    assert command[3] == name
+    assert command.index(name) < command.index("-e")
+    # Exactly one env var reaches the CLI: `--` must immediately follow it.
+    env_index = command.index("-e")
+    assert command[env_index + 2] == "--"
+
+
+def test_default_install_runner_resolves_launcher_through_pathext(tmp_path, monkeypatch):
+    from entroly import session_attach
+
+    store = AttachmentStore(tmp_path / "state")
+    issued = store.create(client="claude", project_root=tmp_path, ttl_seconds=60)
+
+    launcher = tmp_path / "claude.cmd"
+    launcher.write_text("@echo off\n", encoding="utf-8")
+    seen: list[str] = []
+
+    monkeypatch.setattr(session_attach.shutil, "which", lambda name: str(launcher))
+
+    def fake_run(argv, **_kwargs):
+        seen.append(argv[0])
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    monkeypatch.setattr(session_attach.subprocess, "run", fake_run)
+    session_attach.install_attachment(issued, store=store)
+
+    assert seen == [str(launcher)]
 
 
 def test_mcp_access_policy_removes_ungranted_tools_and_reauthorizes_each_call():

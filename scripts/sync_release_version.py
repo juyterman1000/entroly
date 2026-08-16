@@ -37,6 +37,8 @@ SEMVER_RE = re.compile(rf"^{SEMVER_TEXT}$")
 RELEASE_SURFACES: tuple[str, ...] = (
     ".claude-plugin/manifest.json",
     ".mcpb-build/manifest.json",
+    "CITATION.cff",
+    "codemeta.json",
     "entroly-core/Cargo.lock",
     "entroly-core/Cargo.toml",
     "entroly-core/README.md",
@@ -76,6 +78,7 @@ TOML_VERSION_SURFACES = {
 JSON_TOP_LEVEL_VERSION_SURFACES = {
     ".claude-plugin/manifest.json",
     ".mcpb-build/manifest.json",
+    "codemeta.json",
     "entroly-wasm/package.json",
     "entroly/npm-alias/package.json",
     "entroly/npm/package.json",
@@ -336,6 +339,19 @@ def _transform_surface(surface: str, text: str, target: str) -> str:
 
     if surface == "server.json":
         return _replace_server_json_versions(text, target, surface)
+
+    if surface == "CITATION.cff":
+        # Only the `version:` key. `date-released` records when a release
+        # actually happened, so it is set by the release, not by preparing the
+        # metadata for one.
+        return _replace_versions(
+            text,
+            rf"^version:\s*(?P<version>{SEMVER_TEXT})\s*$",
+            target,
+            surface=surface,
+            minimum=1,
+            maximum=1,
+        )
 
     if surface == "tests/test_release_surface.py":
         return _replace_release_test_versions(text, target, surface)

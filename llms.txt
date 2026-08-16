@@ -119,3 +119,29 @@ Weak fit: short prompts, tiny repositories, fixed-price subscriptions where the 
 - [MCP package](https://www.npmjs.com/package/entroly-mcp): NPX bridge for MCP clients.
 - [Node and WASM package](https://www.npmjs.com/package/entroly): Compatibility alias for the Node and WASM runtime.
 - [Team and security guide](https://github.com/juyterman1000/entroly/blob/main/docs/for-teams.md): Deployment, security, and evaluation guidance.
+
+## Multilingual And International README Translations
+
+Entroly provides comprehensive localized documentation in 20 languages:
+
+- [English (Primary)](https://github.com/juyterman1000/entroly/blob/main/README.md)
+- [简体中文 (Simplified Chinese)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.zh.md)
+- [繁體中文 (Traditional Chinese)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.zh-TW.md)
+- [日本語 (Japanese)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.ja.md)
+- [한국어 (Korean)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.ko.md)
+- [Español (Spanish)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.es.md)
+- [हिन्दी (Hindi)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.hi.md)
+- [Français (French)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.fr.md)
+- [Deutsch (German)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.de.md)
+- [Português (Portuguese - Brazil)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.pt-BR.md)
+- [Italiano (Italian)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.it.md)
+- [Türkçe (Turkish)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.tr.md)
+- [Tiếng Việt (Vietnamese)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.vi.md)
+- [Bahasa Indonesia (Indonesian)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.id.md)
+- [Polski (Polish)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.pl.md)
+- [Nederlands (Dutch)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.nl.md)
+- [ไทย (Thai)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.th.md)
+- [Svenska (Swedish)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.sv.md)
+- [Čeština (Czech)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.cs.md)
+- [Tagalog (Filipino)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.tl.md)
+- [Română (Romanian)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.ro.md)

@@ -24,7 +24,7 @@ Quick Setup (Claude Code)::
 
 """
 
-__version__ = "1.0.77"
+__version__ = "1.0.78"
 
 try:
     from .sdk import (  # noqa: F401
