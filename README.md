@@ -309,6 +309,7 @@ Run `entroly doctor`. If that doesn't sort it, [open an issue](https://github.co
 - **[AI efficiency hub](docs/ai-efficiency.html)** — token economics, AI cost optimization, memory, hallucination reduction, model routing, adaptive context, and verified code intelligence.
 - **[AI cost optimization](docs/ai-cost-optimization.html)** — provider-bound input savings, billing boundaries, and workload-specific measurement.
 - **[Token economics](docs/token-economics.html)** — token saving, context compression, cache-aware context control, and more room in the context window.
+- **[Best token compression tools](docs/token-compression-tools.html)** — comparison across 6 token reduction surfaces, ratios, byte-exact recoverability, and benchmark results.
 - **[Memory OS](docs/memory-os.html)** — budget-aware working, episodic, and semantic memory.
 - **[Hallucination reduction](docs/hallucination-reduction.html)** — WITNESS evidence-support verification.
 - **[Guarded model routing](docs/model-routing.html)** — RAVS routing, uncertainty control, and fail-closed escalation.
