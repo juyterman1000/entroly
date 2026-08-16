@@ -65,8 +65,9 @@ After the first agent turn, run `/entroly-context` in any connected channel to
 see the estimated before/after context size, reduction, warnings, and receipt.
 Run `/entroly-context doctor` to verify the configured Python executable and
 local JSONL bridge before inviting users onto the Gateway. The plugin requires
-the Entroly 1.0.64 bridge v2 protocol; doctor reports an actionable upgrade
-instead of accepting an older, incompatible Python installation.
+the `entroly.openclaw.bridge.v2` protocol, which shipped in Entroly 1.0.57;
+doctor reports an actionable upgrade instead of accepting an older,
+incompatible Python installation.
 
 OpenClaw's resolved prompt token budget is authoritative. When an older or
 degraded host cannot provide one, Entroly automatically resolves a conservative
