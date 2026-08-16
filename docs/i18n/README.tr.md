@@ -1,166 +1,96 @@
-> **Archived translation:** This file is not aligned with the current evidence-backed README and may contain outdated or unsupported claims. Use the [canonical README](../../README.md) and [public evidence policy](../public-evidence.md).
-
 <p align="center">
-  <a href="../../README.md">🇬🇧 English</a> •
-  <a href="README.zh-CN.md">🇨🇳 中文</a> •
-  <a href="README.ja.md">🇯🇵 日本語</a> •
-  <a href="README.ko.md">🇰🇷 한국어</a> •
-  <a href="README.pt-BR.md">🇧🇷 Português</a> •
-  <a href="README.es.md">🇪🇸 Español</a> •
-  <a href="README.de.md">🇩🇪 Deutsch</a> •
-  <a href="README.fr.md">🇫🇷 Français</a> •
-  <a href="README.ru.md">🇷🇺 Русский</a> •
-  <a href="README.hi.md">🇮🇳 हिन्दी</a>
+  <img src="../../docs/assets/entroly_wordmark.svg" width="820" alt="Entroly">
 </p>
 
+<h1 align="center">Entroly — Yapay Zeka Operasyon Maliyetlerini Düşüren Tak-Çalıştır Bağlam Güvencesi</h1>
+
+<p align="center"><b>Kritik kanıtların kontrolünü kaybetmeden gereksiz bağlamı azaltın.</b><br>
+Önce en değerli kanıtları seçin, sıkıştırın, orijinalleri kurtarılabilir tutun ve bir makbuz oluşturun — kod tabanınızı veya ajan mimarinizi yeniden yazmanıza gerek yok.</p>
 <p align="center">
-  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/logo.png" width="180" alt="Entroly">
-</p>
-
-<h1 align="center">AI kodlamada Claude / OpenAI / Gemini faturanızı %70–95 düşürün.</h1>
-
-<h3 align="center">Bağlamı sıkıştırın, sağlayıcı önbelleklerini sıcak tutun ve her yanıtı $0 halüsinasyon korumasıyla doğrulayın.<br/>Cursor, Claude Code, Codex, Aider + 34 tanesi ve özel sağlayıcılar için hazır — 30sn, kod değişikliği yok.</h3>
-
-<p align="center"><sub>Denetlenebilir bağlam kontrol düzlemi · her yanıt bir makbuz alır: ne kullanıldı, ne atlandı, neden ve hangi riskler kalıyor · yerel öncelikli · Rust + WASM · geri alınabilir · gerçek iş yüklerinde ölçülen tasarruf</sub></p>
-
-<p align="center">
-  <a href="../../README.md#install"><b>Kurulum</b></a> ·
-  <a href="../../cookbook/README.md"><b>Cookbook</b></a> ·
-  <a href="../../README.md#benchmarks"><b>Kıyaslama</b></a> ·
-  <a href="../../README.md#works-with-your-stack"><b>38 desteklenen ajan</b></a> ·
-  <a href="https://juyterman1000.github.io/entroly/docs/dashboard.html"><b>Dashboard</b></a>
-</p>
-
-<p align="center">
-  <code>npm install -g entroly && entroly</code>&nbsp;&nbsp;|&nbsp;&nbsp;<code>pip install entroly && entroly go</code>&nbsp;&nbsp;|&nbsp;&nbsp;<a href="https://juyterman1000.github.io/entroly/"><b>Canlı demo →</b></a>
-</p>
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/self_improvement.svg" alt="Entroly kendini geliştirme" width="800">
+  <sub>Entroly yerel öncelikli (local-first) bir Context OS'tur: içerik adresli kanıt, kurtarılabilir sıkıştırma ve denetlenebilir makbuzlar. Claude Code, Codex, OpenClaw, GitHub Copilot, Cursor, Aider ve OpenAI/Anthropic uyumlu uygulamalarla proxy, MCP, eklenti, wrapper ve SDK yolları üzerinden çalışır.</sub>
 </p>
 <p align="center">
-  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/token_savings.svg" alt="Entroly kâr" width="800">
+  <a href="https://pypi.org/project/entroly/"><img src="https://img.shields.io/pypi/v/entroly?color=blue&label=PyPI" alt="Entroly on PyPI"></a>
+  <a href="https://www.npmjs.com/package/entroly"><img src="https://img.shields.io/npm/v/entroly?color=red&label=npm" alt="Entroly on npm"></a>
+  <a href="../../LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-green" alt="Apache-2.0 license"></a>
+  <a href="https://github.com/juyterman1000/entroly"><img src="https://img.shields.io/github/stars/juyterman1000/entroly?style=social" alt="Entroly GitHub stars"></a>
 </p>
+
+<p align="center"><b>100.438 indirme · her geçen gün büyüyor</b><br>
+<sub>Farklı dağıtım kaynaklarından ölçülmüştür.</sub></p>
+
+<p align="center"><b>⭐ Entroly işinize yaradıysa, GitHub'da depoya yıldız verin.</b><br>
+<a href="https://github.com/juyterman1000/entroly">⭐ GitHub'da Entroly'ye yıldız ver</a> — projenin büyümesine ve daha fazla geliştiriciye ulaşmasına yardımcı olur.</p>
+
 <p align="center">
-  <img src="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/context_quality.svg" alt="Entroly bağlam kalitesi" width="800">
+  <b><a href="../../README.md">English</a> · <a href="README.zh.md">简体中文</a> · <a href="README.zh-TW.md">繁體中文</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.es.md">Español</a> · <a href="README.hi.md">हिन्दी</a> · <a href="README.fr.md">Français</a> · <a href="README.de.md">Deutsch</a> · <a href="README.pt-BR.md">Português</a> · <a href="README.it.md">Italiano</a> · Türkçe · <a href="README.vi.md">Tiếng Việt</a> · <a href="README.id.md">Bahasa Indonesia</a> · <a href="README.pl.md">Polski</a> · <a href="README.nl.md">Nederlands</a> · <a href="README.th.md">ไทย</a> · <a href="README.sv.md">Svenska</a> · <a href="README.cs.md">Čeština</a> · <a href="README.tl.md">Tagalog</a> · <a href="README.ro.md">Română</a></b>
 </p>
 
 ---
 
-## Sorun — ve Kârlılığa Etkisi
+## Entroly Nedir? (Yalın dille)
 
-Her AI kodlama aracı — Claude, Cursor, Codex, Aider — aynı kör noktaya sahip: **aynı anda sadece 5–10 dosya görür.** Kod tabanınızın diğer %95'i görünmez.
+Yapay zeka kodlama asistanlarının bellek sınırı vardır. Kod tabanınızın tamamını verdiğinizde yavaşlar, pahalılaşır ve dikkati dağılır — birine yalnızca 47. sayfaya ihtiyacı varken 500 sayfalık bir kılavuz vermek gibi.
 
-Modeller büyümeye devam ediyor — **Claude Opus 4.7** daha fazla yetenek ve daha yüksek token başına maliyetle yeni çıktı. Daha büyük bağlam pencereleri sorunu çözmez; daha da kötüleştirir. İstek başına 186.000 token için ödeme yapıyorsunuz — ve bunun çoğu sadece kopyalanmış boilerplate kodu.
+**Entroly 47. sayfayı bulur.**
 
-> **Entroly her iki sorunu da 30 saniyede çözer.**
+Kodunuzla yapay zeka arasında yer alır, her şeyi okur ve yalnızca sorulan soru için gerçekten önemli olan kısımları iletir.
+|  |  |
+|---|---|
+| 💰 **Faturanız düşer** | Yapay zekaya daha az metin göndermek, daha küçük bir fatura anlamına gelir. |
+| 🔍 **Hiçbir şey kaybolmaz** | Entroly'nin bir kenara koyduğu her şey saklanır ve *birebir* kurtarılabilir. |
+| 🧾 **Çalışmasını kontrol edebilirsiniz** | Her kararın bir makbuzu vardır: ne saklandı, ne hariç tutuldu ve neden. |
+
+**Kodumu değiştirmem gerekiyor mu?** Hayır. Entroly zaten kullandığınız araçlarla çalışır — Claude Code, Cursor, Copilot ve 30+ diğer araç.
 
 ---
+## Kurulum
 
-## 1. Günde Ne Değişir
-
-| Metrik | Entroly Öncesi | **Entroly Sonrası** |
+| Platform | Kurulum | Ne Elde Edersiniz |
 |---|---|---|
-| AI'nın gördüğü dosyalar | 5–10 | **Desteklenen dosyalar değişken çözünürlükte seçilir** |
-| İstek başına token | ~186.000 | **9.300 – 55.000** |
-| Aylık AI harcaması (günde 1K istek) | sağlayıcıya/modele bağlı | **giriş tokenları azaldığında düşer** |
-| AI yanıt doğruluğu | sağlanan bağlama bağlı | **seçilen kanıtlara göre denetlenebilir** |
-| İnceleme yükü | manuel inceleme | **sertifika/kanıt parçacıkları mevcut** |
-| Kurulum | Günlerce prompt mühendisliği | **30 saniye** |
-
-> Tasarruflar depo boyutuna, sorgu genişliğine, model fiyatlandırmasına ve bütçeye bağlıdır. Kendi deponuzda yerel ölçümler için `entroly demo` veya `entroly verify-claims` komutlarını çalıştırın.
-
----
-
-## Rakiplerinizin Zaten Bildiği Şey
-
-Bugün Entroly'i benimseyen ekipler sadece para biriktirmiyor — ekibinizin **asla yetişemeyeceği bileşik bir avantaj** biriktiriyor.
-
-- **1. Hafta:** Onların AI'ı desteklenen dosyaları değişken çözünürlükte görüyor. Sizinki sadece birkaç açık dosyayı.
-- **1. Ay:** Onların runtime'ı kod tabanı kalıplarını öğrendi. Sizinki hâlâ import'larda halüsinasyon görüyor.
-- **3. Ay:** Onların kurulumu federasyona bağlı — dünya çapında binlerce ekipten optimizasyon stratejileri emiyor. Siz bunun var olduğunu bile bilmiyorsunuz.
-- **6. Ay:** API maliyetlerinde $80K+ tasarruf ettiler. Bu bütçe işe alımlara gitti. Siz hâlâ finans ekibine AI faturasının neden arttığını açıklıyorsunuz.
-
-Her beklediğiniz gün fark büyüyor. Federasyon etkisi **erken benimseyenleri daha hızlı güçlendirir** — ve bu avantaj bileşik büyür.
-
----
-
-## 🌐 Federe Sürü Öğrenmesi — Bilim Kurgu Gibi Görünen Kısım
-
-Rüya Döngüsü'nü alın ve **dünyada Entroly çalıştıran her geliştiriciyle** çarpın.
-
-Siz uyurken daemon'unuz rüya görüyor — ve 10.000 diğeri de. Her biri biraz farklı kod sıkıştırma hileleri keşfediyor. Her biri öğrendiğini anonim olarak paylaşıyor. Her biri diğerlerinin bulduklarını emiyor.
-
-**Uyanıyorsunuz. AI'nız dün bıraktığınızdan daha akıllı. Sizin yüzünüzden değil — sürünün rüyasında bulduğu şey yüzünden.**
-
-```
-Daemon'unuz rüya görür → daha iyi bir strateji keşfeder → anonim paylaşır
-     ↓
-10.000 diğer daemon dün gece aynı şeyi yaptı
-     ↓
-Laptopunuzu açarsınız → AI'nız zaten hepsini emmiş
-```
-
-
-**Ağ etkisi:**
-- Her yeni kullanıcı herkesin AI'ını iyileştirir — o kurulu tabanı forklayamazsınız
-- Altyapı maliyeti: **$0**. GitHub'da çalışır. Sunucu yok. GPU yok. Bulut yok
+| 🐍 **Python** (pip) — *önerilen* | `pip install -U entroly` | Her şey: CLI aracı, AI editör sunucusu, kod kütüphanesi |
+| 📦 **Node / npm** | `npm install -g entroly` | Aynı motor, Python gerektirmez |
+| 🦀 **Rust** (kaynaktan derleme) | `cd entroly-core && cargo build --release --bin entroly-rs --features proxy` | Bağımsız tek bir program |
+| 🍺 **Homebrew** | `brew install juyterman1000/entroly/entroly` | macOS/Linux üzerinde CLI aracı |
+| 🐳 **Docker** | `docker pull ghcr.io/juyterman1000/entroly:latest` | Konteyner içinde çalışır |
 
 ```bash
-# Katılım — her zaman sizin seçiminiz
-export ENTROLY_FEDERATION=1
+cd /your/repo
+entroly verify-claims
+entroly simulate
 ```
 
-### 🔒 Yerel Olarak Çalışır. Kodunuz Asla Makinenizden Çıkmaz.
+---
+## Hızlı Başlangıç
 
-Hava boşluklu ve düzenlemeye tabi ortamlarda çalışır — hiçbir şey dışarıya veri göndermez.
+> `pip install -U entroly && entroly go` — hepsi bu.
+
+```python
+from entroly import compress, compress_messages, optimize
+compressed = compress(api_response, budget=2000)
+messages   = compress_messages(messages, budget=30000)
+context    = optimize(fragments, budget=8000, query="giriş hatasını düzelt")
+```
+
+---
+## Kıyaslamalar (Benchmarks)
+
+| Kıyaslama | Temel | Entroly ile | Koruma | Token Tasarrufu |
+|---|---|---|---|---|
+| NeedleInAHaystack | 100% | 100% | **100%** | **99.5%** |
+| LongBench (HotpotQA) | 64% | 66% | **103%** | **85.3%** |
+| Berkeley Function Calling | 100% | 100% | **100%** | **79.3%** |
+| SQuAD 2.0 | 80% | 72% | **90%** | **43.8%** |
+
+---
+## Özellikler
+
+- **Önce seçer, sonra sıkıştırır** — sorunuza hangi dosyaların gerçekten yanıt verdiğini belirler, *ardından* sıkıştırır.
+- **Orijinali birebir geri verir** — hariç tutulan her şey karakteri karakterine kurtarılabilir.
+- **Çalışmasını şeffafça gösterir** — her karar için makbuz.
+- **Yanıtları doğrular** — yapay zekanın yanıtını verilen kanıtlarla yerel olarak karşılaştırır.
 
 ---
 
-## Kıyaslamalar
-
-### Doğruluk Korunması
-
-Sıkıştırma doğruluğu etkilemez — canlı API ile doğrulandı (gpt-4o-mini, Wilson %95 CI):
-
-| Kıyaslama | n | Bütçe | Temel (95% CI) | Entroly ile (95% CI) | Korunma | Token Tasarrufu |
-|---|---|---|---|---|---|---|
-| NeedleInAHaystack | 20 | 2K | 100% [83.9–100%] | 100% [83.9–100%] | **100.0%** | **99.5%** |
-| LongBench (HotpotQA) | 50 | 2K | 64.0% [50.1–75.9%] | 68.0% [54.2–79.2%] | **106.2%** | **85.3%** |
-| Berkeley Function Calling | 50 | 500 | 100% [92.9–100%] | 100% [92.9–100%] | **100.0%** | **79.3%** |
-| SQuAD 2.0 | 50 | 100 | 78.0% [64.8–87.2%] | 76.0% [62.6–85.7%] | **97.4%** | **39.3%** |
-| GSM8K | 100 | 50K | 85.0% [76.7–90.7%] | 86.0% [77.9–91.5%] | **101.2%** | pass-through¹ |
-| MMLU | 100 | 50K | 82.0% [73.3–88.3%] | 85.9% [77.8–91.4%] | **104.7%** | pass-through¹ |
-| TruthfulQA (MC1) | 100 | 50K | 72.0% [62.5–79.9%] | 73.7% [64.3–81.4%] | **102.4%** | pass-through¹ |
-
-> ¹ **pass-through**: Bağlam zaten bütçe dahilinde — Entroly doğru şekilde hiçbir şey yapmaz. Sonuçlar modele, veri setine ve token bütçesine göre değişir.
-
-### Entroly Karşılaştırması (Uzun Bağlam)
-
-| Yöntem | Korunma | Token Azaltma | Mimari / Ödünleşimler |
-|---|---|---|---|
-| **Entroly** | **100–106%** | **85–99%** | **Hızlı (~80ms).** Parça düzeyinde sırt çantası. Mükemmel birebir yapısal sadakat. |
-| Token düzeyinde sinirsel budama | ~98–99% | 80–95% | **Yüksek yük.** Yerel transformer gerektirir. Kod sözdizimini bozar. |
-| Kural tabanlı birebir sıkıştırma | ~100% | 50–70% | **Yüksek sadakat.** Ancak daha düşük token azaltma. |
-| Dikkat tabanlı sıkıştırma | 95%+ | 26–54% | **Sağlam doğruluk.** Ancak daha düşük token azaltma. |
-
----
-
-## Tam Eşitlik: Python & Node.js
-
-| Yetenek | Python | Node.js (WASM) |
-|---|---|---|
-| Bağlam sıkıştırma | ✅ | ✅ |
-| Kendini geliştirme | ✅ | ✅ |
-| Rüya döngüsü | ✅ | ✅ |
-| Federasyon | ✅ | ✅ |
-| Yanıt damıtma | ✅ | ✅ |
-| Sohbet ağ geçitleri | ✅ | ✅ |
-| agentskills.io dışa aktarma | ✅ | ✅ |
-
----
-
-<p align="center">
-  <b>AI'nızın israf ettiği tokenlar için ödeme yapmayı bırakın. Kendini öğreten bir AI başlatın.</b><br/>
-  <code>npm install -g entroly && entroly</code>&nbsp;&nbsp;|&nbsp;&nbsp;<code>pip install entroly && entroly go</code>
-</p>
+<p align="center"><sub>Apache-2.0 · yerel öncelikli · varsayılan olarak harici analiz yok</sub></p>
+<p align="center"><code>pip install entroly && entroly go</code></p>
