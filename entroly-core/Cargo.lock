@@ -235,7 +235,7 @@ dependencies = [
 
 [[package]]
 name = "entroly-engine"
-version = "1.0.77"
+version = "1.0.78"
 dependencies = [
  "flate2",
  "md-5",
