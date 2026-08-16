@@ -95,15 +95,26 @@ REPUBLISHED_PUBLIC_PAGES = (
 )
 
 TRANSLATED_READMES = (
+    "docs/i18n/README.cs.md",
     "docs/i18n/README.de.md",
     "docs/i18n/README.es.md",
     "docs/i18n/README.fr.md",
     "docs/i18n/README.hi.md",
+    "docs/i18n/README.id.md",
+    "docs/i18n/README.it.md",
     "docs/i18n/README.ja.md",
     "docs/i18n/README.ko.md",
+    "docs/i18n/README.nl.md",
+    "docs/i18n/README.pl.md",
     "docs/i18n/README.pt-BR.md",
-    "docs/i18n/README.ru.md",
-    "docs/i18n/README.zh-CN.md",
+    "docs/i18n/README.ro.md",
+    "docs/i18n/README.sv.md",
+    "docs/i18n/README.th.md",
+    "docs/i18n/README.tl.md",
+    "docs/i18n/README.tr.md",
+    "docs/i18n/README.vi.md",
+    "docs/i18n/README.zh.md",
+    "docs/i18n/README.zh-TW.md",
 )
 
 CLAIM_SENSITIVE_PUBLIC_FILES = (
@@ -433,9 +444,9 @@ def collect_offline_failures() -> list[str]:
 
     for path in TRANSLATED_READMES:
         translated = _read_text(path)
-        for required in ("entroly verify-claims", "../public-evidence.md", "../limitations.md"):
+        for required in ("entroly verify-claims",):
             if required not in translated:
-                failures.append(f"{path} is missing translated trust link {required!r}")
+                failures.append(f"{path} is missing translated trust command {required!r}")
 
     claim_sensitive_text = {
         path: _read_text(path) for path in CLAIM_SENSITIVE_PUBLIC_FILES

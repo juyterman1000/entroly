@@ -23,7 +23,7 @@ AI applications often send repeated files, long histories, logs, and low-value m
 - report provider-observed usage separately from local-only reductions;
 - work across cloud and local models without locking you to one agent runtime.
 
-Savings and quality depend on the workload, provider, model, budget, and integration. Entroly does not promise a universal compression percentage or guaranteed bill reduction.
+Savings and quality depend on the workload, provider, model, budget, and integration. Entroly does not promise a universal compression percentage or guaranteed bill reduction; actual savings depend on observable request boundaries.
 
 ## Install
 

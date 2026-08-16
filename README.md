@@ -20,11 +20,15 @@ Select the highest-value evidence first, compress it, keep originals recoverable
   <a href="https://github.com/juyterman1000/entroly"><img src="https://img.shields.io/github/stars/juyterman1000/entroly?style=social" alt="Entroly GitHub stars"></a>
 </p>
 
-<p align="center"><b>100,438 downloads</b><br>
-<sub>Measured across different distribution sources. <a href="docs/adoption-evidence.md">Evidence and exclusions</a>.</sub></p>
+<p align="center"><b>100,438 downloads · growing day by day</b><br>
+<sub>Measured across different distribution sources.</sub></p>
 
 <p align="center"><b>⭐ If Entroly is useful to you, please star the repository on GitHub.</b><br>
 <a href="https://github.com/juyterman1000/entroly">⭐ Star Entroly on GitHub</a> — it helps the project grow and reach more developers.</p>
+
+<p align="center">
+  <b>English · <a href="docs/i18n/README.zh.md">简体中文</a> · <a href="docs/i18n/README.zh-TW.md">繁體中文</a> · <a href="docs/i18n/README.ja.md">日本語</a> · <a href="docs/i18n/README.ko.md">한국어</a> · <a href="docs/i18n/README.es.md">Español</a> · <a href="docs/i18n/README.hi.md">हिन्दी</a> · <a href="docs/i18n/README.fr.md">Français</a> · <a href="docs/i18n/README.de.md">Deutsch</a> · <a href="docs/i18n/README.pt-BR.md">Português</a> · <a href="docs/i18n/README.it.md">Italiano</a> · <a href="docs/i18n/README.tr.md">Türkçe</a> · <a href="docs/i18n/README.vi.md">Tiếng Việt</a> · <a href="docs/i18n/README.id.md">Bahasa Indonesia</a> · <a href="docs/i18n/README.pl.md">Polski</a> · <a href="docs/i18n/README.nl.md">Nederlands</a> · <a href="docs/i18n/README.th.md">ไทย</a> · <a href="docs/i18n/README.sv.md">Svenska</a> · <a href="docs/i18n/README.cs.md">Čeština</a> · <a href="docs/i18n/README.tl.md">Tagalog</a> · <a href="docs/i18n/README.ro.md">Română</a></b>
+</p>
 
 ## ⚡ Live Token Savings
 
@@ -305,6 +309,7 @@ Run `entroly doctor`. If that doesn't sort it, [open an issue](https://github.co
 - **[AI efficiency hub](docs/ai-efficiency.html)** — token economics, AI cost optimization, memory, hallucination reduction, model routing, adaptive context, and verified code intelligence.
 - **[AI cost optimization](docs/ai-cost-optimization.html)** — provider-bound input savings, billing boundaries, and workload-specific measurement.
 - **[Token economics](docs/token-economics.html)** — token saving, context compression, cache-aware context control, and more room in the context window.
+- **[Best token compression tools](docs/token-compression-tools.html)** — comparison across 6 token reduction surfaces, ratios, byte-exact recoverability, and benchmark results.
 - **[Memory OS](docs/memory-os.html)** — budget-aware working, episodic, and semantic memory.
 - **[Hallucination reduction](docs/hallucination-reduction.html)** — WITNESS evidence-support verification.
 - **[Guarded model routing](docs/model-routing.html)** — RAVS routing, uncertainty control, and fail-closed escalation.

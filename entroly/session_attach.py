@@ -13,6 +13,7 @@ import json
 import os
 import re
 import secrets
+import shutil
 import sqlite3
 import subprocess
 import time
@@ -447,7 +448,11 @@ def attachment_install_commands(
     )
     source_env = f"ENTROLY_SOURCE={grant.project_root}"
     if grant.client == "claude":
-        return (("claude", "mcp", "add", "--scope", "local", "-e", source_env, name, "--", *server),)
+        # The Claude CLI's `-e/--env` is a greedy variadic option: if it appears
+        # before the server <name> positional it swallows the name as a second
+        # env var ("Invalid environment variable format"). Keep <name> first and
+        # terminate the env list with `--` so exactly one env var is parsed.
+        return (("claude", "mcp", "add", name, "--scope", "local", "-e", source_env, "--", *server),)
     if grant.client == "codex":
         return (("codex", "mcp", "add", name, "--env", source_env, "--", *server),)
     if grant.client == "copilot":
@@ -477,11 +482,24 @@ def attachment_remove_commands(grant: AttachmentGrant) -> tuple[tuple[str, ...],
     raise ValueError(f"unsupported attachment client: {grant.client}")
 
 
+def _run_client_command(command, **kwargs):
+    """Default runner that resolves the client launcher through PATHEXT.
+
+    Windows CLI launchers installed by npm are ``.cmd`` shims (``claude.cmd``),
+    and ``CreateProcess`` does not apply PATHEXT to a bare ``"claude"`` argument,
+    so a plain ``subprocess.run(["claude", ...])`` fails with WinError 2. Resolve
+    the executable with ``shutil.which`` first; on POSIX this is a no-op.
+    """
+    resolved = shutil.which(command[0])
+    argv = [resolved, *command[1:]] if resolved else list(command)
+    return subprocess.run(argv, **kwargs)
+
+
 def install_attachment(
     issued: IssuedAttachment,
     *,
     store: AttachmentStore | None = None,
-    runner=subprocess.run,
+    runner=_run_client_command,
 ) -> tuple[subprocess.CompletedProcess[str], ...]:
     results: list[subprocess.CompletedProcess[str]] = []
     for command in issued.install_commands:
@@ -521,7 +539,7 @@ def install_attachment(
 def uninstall_attachment(
     grant: AttachmentGrant,
     *,
-    runner=subprocess.run,
+    runner=_run_client_command,
 ) -> tuple[subprocess.CompletedProcess[str], ...]:
     """Remove a client entry after access has already been revoked."""
     results: list[subprocess.CompletedProcess[str]] = []
