@@ -78,3 +78,76 @@ def test_clean_vault_reports_healthy(vault):
     assert report["healthy"] is True
     assert report["contradictions"] == []
     assert report["duplicates"] == []
+
+
+def test_reports_belief_whose_source_is_gone(tmp_path):
+    """Compilation only ever adds, so a belief outlives the file it came from.
+
+    Nothing previously distinguished such a belief from a live one: it kept
+    its confidence and ranked beside beliefs that still have evidence.
+    """
+
+    project = tmp_path / "project"
+    (project / "src").mkdir(parents=True)
+    (project / "src" / "live.py").write_text("x = 1\n", encoding="utf-8")
+
+    vault = VaultManager(VaultConfig(base_path=str(project / ".entroly" / "vault")))
+    vault.write_belief(
+        BeliefArtifact(entity="live", title="live", body="Describes a real module.",
+                       sources=["src/live.py:1"])
+    )
+    vault.write_belief(
+        BeliefArtifact(entity="removed", title="removed", body="Describes a deleted module.",
+                       sources=["src/removed.py:1"])
+    )
+
+    report = VaultHygiene(vault._base).scan()
+    entities = {row["entity"] for row in report["ungrounded"]}
+
+    assert "removed" in entities
+    assert "live" not in entities
+
+
+def test_source_recorded_relative_to_the_compiled_dir_is_still_grounded(tmp_path):
+    """A belief does not record which directory was compiled.
+
+    `entroly compile scripts` writes `helper.py` while `entroly compile .`
+    writes `scripts/helper.py`, for the same file. Resolving only against the
+    project root marks the first form dead -- which is what made a naive check
+    retract 275 of 715 real beliefs on the entroly repo.
+    """
+
+    project = tmp_path / "project"
+    (project / "scripts").mkdir(parents=True)
+    (project / "scripts" / "helper.py").write_text("y = 2\n", encoding="utf-8")
+
+    vault = VaultManager(VaultConfig(base_path=str(project / ".entroly" / "vault")))
+    vault.write_belief(
+        BeliefArtifact(entity="helper", title="helper", body="Compiled from scripts/.",
+                       sources=["helper.py:1"])
+    )
+
+    report = VaultHygiene(vault._base).scan()
+
+    assert [row["entity"] for row in report["ungrounded"]] == []
+
+
+def test_groundedness_is_reported_but_does_not_fail_the_health_verdict(tmp_path):
+    """Groundedness depends on inferring a root the belief never recorded.
+
+    A vault read from an unexpected working directory would otherwise report
+    every belief dead, so the finding informs a caller instead of gating.
+    """
+
+    project = tmp_path / "project"
+    project.mkdir()
+    vault = VaultManager(VaultConfig(base_path=str(project / ".entroly" / "vault")))
+    vault.write_belief(
+        BeliefArtifact(entity="orphan", title="orphan", body="No file backs this.",
+                       sources=["nowhere/at/all.py:1"])
+    )
+
+    report = VaultHygiene(vault._base).scan()
+
+    assert report["ungrounded"]
+    assert report["healthy"] is True

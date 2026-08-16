@@ -76,11 +76,19 @@ class BeliefArtifact:
     derived_from: list[str] = field(default_factory=list)
     title: str = ""
     body: str = ""
+    # Directory the sources are relative to, itself relative to the project
+    # root. `entroly compile scripts` records `helper.py` as a source and
+    # `scripts` here, so the pair resolves to exactly one file. Without it a
+    # source is only a suffix and can be matched against the wrong file, or
+    # against none. Empty on beliefs written before this field existed, and
+    # omitted from the frontmatter in that case so their bytes do not change.
+    source_root: str = ""
 
     def to_markdown(self) -> str:
         """Render as markdown with YAML frontmatter."""
         sources_yaml = "\n".join(f"  - {s}" for s in self.sources) if self.sources else "  - unknown"
         derived_yaml = "\n".join(f"  - {d}" for d in self.derived_from) if self.derived_from else "  - system"
+        source_root_yaml = f"source_root: {self.source_root}\n" if self.source_root else ""
 
         return (
             f"---\n"
@@ -89,6 +97,7 @@ class BeliefArtifact:
             f"status: {self.status}\n"
             f"confidence: {self.confidence}\n"
             f"sources:\n{sources_yaml}\n"
+            f"{source_root_yaml}"
             f"last_checked: {self.last_checked}\n"
             f"derived_from:\n{derived_yaml}\n"
             f"---\n\n"
@@ -438,6 +447,127 @@ class VaultManager:
             "already_stale": already_stale,
         }
 
+    def mark_beliefs_ungrounded(
+        self, roots: list[str] | None = None
+    ) -> dict[str, Any]:
+        """Retract beliefs whose every cited source file is gone from disk.
+
+        Compilation is additive: it writes a belief when it sees a file and
+        never revisits one whose file was deleted or moved. The belief then
+        keeps its original confidence forever, and retrieval returns it beside
+        live beliefs with nothing to tell them apart -- a confident claim about
+        code that no longer exists, which is the failure mode the fail-closed
+        rule exists to prevent.
+
+        Sources are recorded relative to whichever directory compilation was
+        given, and a belief does not record which directory that was, so each
+        source is resolved against the project root and against every supplied
+        root before it is called missing. A belief is retracted only when no
+        candidate resolves; the bias is deliberately toward leaving a belief
+        alone, because wrongly retracting a live belief loses knowledge while
+        wrongly keeping a dead one is merely noise this scan will catch again.
+
+        The belief is marked, never deleted: it stays auditable, and the next
+        compilation that sees the file again restores it.
+        """
+
+        # Function-local, matching mark_beliefs_stale_for_files: `vault` sits in
+        # the import cycle CLAUDE.md flags as load-bearing.
+        import re
+
+        self.ensure_structure()
+
+        search_roots = [self._base.resolve().parent.parent]
+        for root in roots or []:
+            try:
+                search_roots.append(Path(root).resolve())
+            except (OSError, ValueError):
+                continue
+
+        project_root = search_roots[0]
+
+        # Legacy beliefs carry no `source_root`, so their sources can only be
+        # matched by path *suffix*: `entroly compile scripts` recorded
+        # `_release_artifacts.py` and `entroly compile entroly` recorded
+        # `adaptive_budget.py`, with nothing saying which directory either came
+        # from. Joining those against the project root alone retracted 275 of
+        # 715 real beliefs here. The index is built lazily because a vault
+        # written entirely by current code never needs it.
+        suffix_index: set[str] | None = None
+
+        def _grounded(source: str, source_root: str) -> bool:
+            nonlocal suffix_index
+            raw = source.split(":", 1)[0].replace("\\", "/").strip().lstrip("./")
+            if not _is_path_like(raw):
+                # `write_belief` substitutes the sentinel `unknown` when a
+                # belief carries no provenance, and callers pass bare labels
+                # too. "Provenance was never recorded" is the opposite of
+                # "the file is gone" and must never retract anything.
+                return True
+            if source_root:
+                # Exact: the belief recorded the directory its sources are
+                # relative to, so there is exactly one file to look for.
+                return (project_root / source_root / raw).exists()
+            if suffix_index is None:
+                suffix_index = _path_suffix_index(search_roots)
+            # Deliberately permissive: a bare `helper.py` matches any file of
+            # that name anywhere in the tree, so a belief about a deleted
+            # `scripts/helper.py` survives while a `tests/helper.py` exists.
+            # That is the safe direction -- wrongly retracting loses knowledge,
+            # wrongly keeping is noise the next scan catches -- and it only
+            # affects beliefs written before `source_root` existed.
+            return raw in suffix_index
+
+        retracted: list[str] = []
+        already: list[str] = []
+        beliefs_dir = self._base / "beliefs"
+        for md in beliefs_dir.rglob("*.md"):
+            try:
+                safe_path = resolve_file_within(beliefs_dir, md)
+                if safe_path is None:
+                    continue
+                content = safe_path.read_text(encoding="utf-8", errors="replace")
+                fm = _parse_frontmatter(content)
+                if not fm:
+                    continue
+
+                sources = _extract_sources(content)
+                if not sources:
+                    continue  # nothing to verify against; leave it alone
+                source_root = str(fm.get("source_root", "") or "").strip()
+                # One surviving source is enough. A belief citing ten entities
+                # in a file that still exists is still about real code; only a
+                # belief with nothing left standing has lost its evidence.
+                if any(_grounded(src, source_root) for src in sources):
+                    continue
+
+                entity = fm.get("entity", md.stem)
+                if fm.get("status", "") == "ungrounded":
+                    already.append(entity)
+                    continue
+
+                updated = content
+                if "status:" in updated:
+                    updated = re.sub(
+                        r"^status:\s+.+$", "status: ungrounded", updated, count=1, flags=re.M
+                    )
+                # Confidence is the number retrieval ranks on. A belief with no
+                # surviving source has no evidence left to justify one.
+                if "confidence:" in updated:
+                    updated = re.sub(
+                        r"^confidence:\s+.+$", "confidence: 0.0", updated, count=1, flags=re.M
+                    )
+                safe_path.write_text(updated, encoding="utf-8")
+                retracted.append(entity)
+            except Exception as e:  # pragma: no cover - defensive
+                logger.debug(f"Vault: failed to check groundedness for {md}: {e}")
+
+        return {
+            "status": "updated",
+            "retracted_entities": retracted,
+            "already_ungrounded": already,
+        }
+
     # â”€â”€ Private Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     def _update_belief_confidence(
@@ -514,6 +644,65 @@ def _parse_frontmatter(content: str) -> dict[str, str] | None:
             if key and value:
                 result[key] = value
     return result if result else None
+
+
+_GROUNDEDNESS_SKIP_DIRS = frozenset({
+    ".git", ".venv", "venv", "node_modules", "target", "__pycache__",
+    ".entroly", ".mypy_cache", ".pytest_cache", ".ruff_cache", "dist", "build",
+    ".tmp", "site-packages",
+})
+
+
+def _is_path_like(value: str) -> bool:
+    """Whether a recorded source names a file rather than a bare label.
+
+    Beliefs cite `src/mod.py:12`, but also carry sentinels: `write_belief`
+    stores `unknown` when no provenance was given. A token with no directory
+    separator and no extension is a label, and treating one as a missing file
+    would retract a belief for never having recorded where it came from.
+    """
+
+    if not value:
+        return False
+    return "/" in value or bool(Path(value).suffix)
+
+
+def _path_suffix_index(roots: list[Path]) -> set[str]:
+    """Every trailing path fragment of every real file under ``roots``.
+
+    Indexing suffixes rather than full paths is what makes a belief's source
+    resolvable without knowing which directory was compiled: `x.py`,
+    `pkg/x.py` and `a/pkg/x.py` all hit the same file. Heavy generated trees
+    are pruned -- on this repository they are three orders of magnitude larger
+    than the source and contain nothing a belief can cite.
+    """
+
+    index: set[str] = set()
+    seen_roots: set[Path] = set()
+    for root in roots:
+        if root in seen_roots or not root.is_dir():
+            continue
+        seen_roots.add(root)
+        stack = [root]
+        while stack:
+            directory = stack.pop()
+            try:
+                entries = list(directory.iterdir())
+            except OSError:
+                continue
+            for entry in entries:
+                if entry.name in _GROUNDEDNESS_SKIP_DIRS:
+                    continue
+                if entry.is_dir():
+                    stack.append(entry)
+                elif entry.is_file():
+                    try:
+                        parts = entry.relative_to(root).as_posix().split("/")
+                    except ValueError:  # pragma: no cover - defensive
+                        continue
+                    for start in range(len(parts)):
+                        index.add("/".join(parts[start:]))
+    return index
 
 
 def _extract_sources(content: str) -> list[str]:

@@ -5325,6 +5325,28 @@ def cmd_compile(args):
         for e in result.errors[:5]:
             print(f"    {C.GRAY}- {e}{C.RESET}")
 
+    # Compilation only ever adds. Without this pass a belief outlives the file
+    # it was compiled from, keeps its confidence, and is returned beside live
+    # beliefs with nothing marking it dead -- so a refresh is also when the
+    # vault should let go of what is no longer there.
+    #
+    # It writes to beliefs, so it is escapable: a groundedness check that
+    # misfires on an unusual layout must not leave a user with no way to
+    # compile. `--no-retract` skips it; the beliefs stay as they were.
+    if getattr(args, "no_retract", False) or os.environ.get("ENTROLY_NO_RETRACT"):
+        print(f"  {C.GRAY}Retraction skipped (--no-retract).{C.RESET}")
+    else:
+        retraction = vault.mark_beliefs_ungrounded([target])
+        retracted = retraction.get("retracted_entities", [])
+        if retracted:
+            shown = ", ".join(retracted[:5])
+            more = f" (+{len(retracted) - 5} more)" if len(retracted) > 5 else ""
+            print(
+                f"  {C.YELLOW}Retracted:{C.RESET}          {len(retracted)} belief(s) "
+                f"whose source is gone"
+            )
+            print(f"    {C.GRAY}{shown}{more}{C.RESET}")
+
     coverage = vault.coverage_index()
     print(f"\n  {C.CYAN}Vault coverage:{C.RESET} {coverage['total_beliefs']} beliefs")
     print(f"  {C.CYAN}Avg confidence:{C.RESET} {coverage['average_confidence']:.2f}")
@@ -6694,6 +6716,14 @@ def main():
     compile_parser.add_argument(
         "--max-files", type=int, default=0,
         help="Maximum files to process (default: 0 = unlimited)",
+    )
+    compile_parser.add_argument(
+        "--no-retract", action="store_true",
+        help=(
+            "Keep beliefs whose source file no longer exists. By default a "
+            "compile also retracts them, since they would otherwise be "
+            "returned beside live beliefs at full confidence."
+        ),
     )
 
     # entroly verify
