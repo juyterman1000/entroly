@@ -624,6 +624,140 @@
       font: 500 12px 'JetBrains Mono', monospace;
     }
 
+    /* Value estimator: indigo = "your projection", distinct from the green measured proof. */
+    .savings-estimator {
+      margin-top: 28px;
+      padding: 24px;
+      border: 1px solid rgba(129, 140, 248, 0.35);
+      border-radius: 16px;
+      background: rgba(5, 5, 8, 0.55);
+    }
+
+    .estimator-head h4 {
+      font-size: clamp(1.1rem, 2vw, 1.4rem);
+      margin-bottom: 6px;
+    }
+
+    .estimator-head p {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .estimator-controls {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 18px;
+      align-items: start;
+      margin: 20px 0;
+    }
+
+    .estimator-field-label {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .estimator-models {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .estimator-models label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 11px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: var(--surface);
+      color: var(--muted);
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .estimator-models label:has(input:checked) {
+      border-color: #818cf8;
+      color: var(--text);
+      box-shadow: 0 0 0 1px #818cf8 inset;
+    }
+
+    .estimator-models label b {
+      color: #818cf8;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .estimator-models input {
+      accent-color: #818cf8;
+    }
+
+    .estimator-custom {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .estimator-custom input,
+    .estimator-volume input {
+      padding: 7px 9px;
+      color: var(--text);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      font: 600 13px 'JetBrains Mono', monospace;
+    }
+
+    .estimator-custom input {
+      width: 92px;
+    }
+
+    .estimator-volume input {
+      width: 100%;
+    }
+
+    .estimator-output {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+    }
+
+    .estimator-result {
+      min-width: 0;
+      padding: 18px;
+      border: 1px solid rgba(129, 140, 248, 0.3);
+      border-radius: 12px;
+      background: rgba(129, 140, 248, 0.06);
+    }
+
+    .estimator-result .value {
+      color: #818cf8;
+      font: 800 clamp(1.5rem, 3vw, 2.2rem)/1 'Outfit', sans-serif;
+      letter-spacing: -0.5px;
+    }
+
+    .estimator-result .metric-label {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 8px;
+    }
+
+    .estimator-fineprint {
+      margin-top: 16px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .estimator-fineprint a {
+      color: var(--green);
+    }
+
     @media(max-width: 768px) {
       .savings-proof {
         padding: 22px;
@@ -639,6 +773,11 @@
       }
 
       .savings-proof-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .estimator-controls,
+      .estimator-output {
         grid-template-columns: 1fr;
       }
     }
@@ -1203,7 +1342,7 @@
       <div class="savings-proof-head">
         <div>
           <h3 id="savingsTitle">Measured savings, with evidence.</h3>
-          <p id="savingsDescription">Latest bounded proof: 717,847 source tokens reduced to 7,920 selected tokens.</p>
+          <p id="savingsDescription">One <code>entroly verify-claims</code> run on this repository: 717,847 source tokens compressed to 7,920 &mdash; reproducible in seconds, <strong>not</strong> a total accumulated over the project's lifetime.</p>
           <span class="savings-live-status" id="savingsLiveStatus" aria-live="polite">Verified proof fallback</span>
         </div>
         <a href="site-savings-proof.json">Machine-readable proof</a>
@@ -1211,7 +1350,7 @@
       <div class="savings-proof-grid">
         <div class="savings-metric">
           <div class="value" id="proofTokensSaved">709,927</div>
-          <div class="metric-label" id="tokensSavedLabel">Tokens saved in the verified proof run</div>
+          <div class="metric-label" id="tokensSavedLabel">Tokens saved in a single verify-claims run &mdash; not a lifetime total</div>
         </div>
         <div class="savings-metric">
           <div class="value" id="proofReduction">98.9%</div>
@@ -1226,6 +1365,49 @@
           </label>
         </div>
       </div>
+
+      <div class="savings-estimator" id="savingsEstimator">
+        <div class="estimator-head">
+          <h4>Now project it onto your scale</h4>
+          <p>The card above is <strong>one</strong> run that finishes in seconds. Entroly applies the same selection to every request, so savings compound with your volume. Pick a model price and your monthly input tokens:</p>
+        </div>
+        <div class="estimator-controls">
+          <div class="estimator-field">
+            <span class="estimator-field-label">Model input price (USD per 1M tokens &middot; list price, editable)</span>
+            <div class="estimator-models" role="radiogroup" aria-label="Model input price">
+              <label><input type="radio" name="estModel" value="0.15"><span>GPT-4o mini</span><b>$0.15</b></label>
+              <label><input type="radio" name="estModel" value="2.50"><span>GPT-4o</span><b>$2.50</b></label>
+              <label><input type="radio" name="estModel" value="3.00"><span>Sonnet</span><b>$3.00</b></label>
+              <label><input type="radio" name="estModel" value="15.00" checked><span>Opus</span><b>$15.00</b></label>
+            </div>
+            <label class="estimator-custom">Custom&nbsp;$<input id="estRate" type="number" min="0" step="0.01" value="15.00" inputmode="decimal">&nbsp;/&nbsp;1M</label>
+          </div>
+          <label class="estimator-field estimator-volume" for="estVolume">
+            <span class="estimator-field-label">Your input tokens / month</span>
+            <input id="estVolume" type="number" min="0" step="1000000" value="100000000" inputmode="numeric">
+          </label>
+        </div>
+        <div class="estimator-output">
+          <div class="estimator-result">
+            <div class="value" id="estTokensAvoided">98,900,000</div>
+            <div class="metric-label">tokens avoided / month at the proof run's 98.9%</div>
+          </div>
+          <div class="estimator-result">
+            <div class="value" id="estMonthly">$1,484</div>
+            <div class="metric-label">modeled input cost avoided / month</div>
+          </div>
+          <div class="estimator-result">
+            <div class="value" id="estYearly">$17,802</div>
+            <div class="metric-label">modeled input cost avoided / year</div>
+          </div>
+        </div>
+        <p class="estimator-fineprint">
+          Estimate = your monthly input tokens &times; the proof run's 98.9% reduction &times; the list price you select.
+          Modeled, not a provider invoice; your real reduction varies by workload (43.8%&ndash;99.5% across the
+          <a href="#benchmarks">published benchmarks</a>). The verified floor above &mdash; 709,927 tokens = $0.71 at $1&nbsp;/&nbsp;1M &mdash; is a single reproducible run, not a cumulative total.
+        </p>
+      </div>
+
       <p class="savings-note">
         Community totals, when live, include only explicitly opted-in provider-bound proxy savings. Every contribution
         is rounded down to 1,000 tokens and one cent; dollars are modeled, not a provider invoice. The checked-in proof
@@ -1594,6 +1776,51 @@
         pollCommunitySavings();
         window.setInterval(pollCommunitySavings, 60_000);
       }
+    })();
+
+    // Value estimator: projects the verified proof run's 98.9% reduction onto the
+    // visitor's own monthly volume and chosen list price. Every output is modeled
+    // and labeled as such; the measured green proof above stays the floor. This
+    // exists so a single-run figure is not misread as a lifetime total.
+    (() => {
+      const est = document.getElementById('savingsEstimator');
+      if (!est) return;
+      const rateInput = document.getElementById('estRate');
+      const volumeInput = document.getElementById('estVolume');
+      const modelRadios = Array.from(est.querySelectorAll('input[name="estModel"]'));
+      const tokensNode = document.getElementById('estTokensAvoided');
+      const monthlyNode = document.getElementById('estMonthly');
+      const yearlyNode = document.getElementById('estYearly');
+      const REDUCTION = 0.989; // proof run: 717,847 -> 7,920 selected tokens
+      const intFmt = new Intl.NumberFormat('en-US');
+      const usdFmt = new Intl.NumberFormat('en-US', {
+        style: 'currency', currency: 'USD', maximumFractionDigits: 0
+      });
+
+      const render = () => {
+        const rate = Number(rateInput.value);
+        const volume = Number(volumeInput.value);
+        const safeRate = Number.isFinite(rate) && rate >= 0 ? rate : 0;
+        const safeVolume = Number.isFinite(volume) && volume >= 0 ? volume : 0;
+        const tokensAvoided = safeVolume * REDUCTION;
+        const monthly = (tokensAvoided / 1_000_000) * safeRate;
+        tokensNode.textContent = intFmt.format(Math.round(tokensAvoided));
+        monthlyNode.textContent = usdFmt.format(monthly);
+        yearlyNode.textContent = usdFmt.format(monthly * 12);
+      };
+
+      modelRadios.forEach(radio => radio.addEventListener('change', () => {
+        if (radio.checked) {
+          rateInput.value = Number(radio.value).toFixed(2);
+          render();
+        }
+      }));
+      rateInput.addEventListener('input', () => {
+        modelRadios.forEach(r => { r.checked = Number(r.value) === Number(rateInput.value); });
+        render();
+      });
+      volumeInput.addEventListener('input', render);
+      render();
     })();
 
     // Reveal on scroll
