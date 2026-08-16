@@ -1,6 +1,6 @@
 {
   "name": "entroly-mcp",
-  "version": "1.0.77",
+  "version": "1.0.78",
   "mcpName": "io.github.juyterman1000/entroly",
   "description": "MCP bridge for AI agents using Entroly Context Assurance: reduce avoidable AI token usage with evidence selection, receipts, exact recovery, and verification.",
   "main": "index.js",
