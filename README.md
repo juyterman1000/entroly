@@ -21,7 +21,7 @@ Select the highest-value evidence first, compress it, keep originals recoverable
 </p>
 
 <p align="center"><b>100,438 downloads</b><br>
-<sub>Measured across different distribution sources. <a href="docs/adoption-evidence.md">Evidence and exclusions</a>.</sub></p>
+<sub>Measured across different distribution sources.</sub></p>
 
 <p align="center"><b>⭐ If Entroly is useful to you, please star the repository on GitHub.</b><br>
 <a href="https://github.com/juyterman1000/entroly">⭐ Star Entroly on GitHub</a> — it helps the project grow and reach more developers.</p>
