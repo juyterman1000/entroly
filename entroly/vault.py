@@ -62,6 +62,41 @@ class VaultConfig:
 # Belief Artifact Schema
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Write a vault artifact so a reader never sees a partial one.
+
+    ``Path.write_text`` truncates the target and then writes, so an
+    interruption leaves a belief whose frontmatter no longer parses. Such a
+    file reads as "not a belief" while the append-only ledger still records
+    it, which is the same vault-disagrees-with-its-audit-trail failure a
+    filename collision produced. Writing a sibling temp file and renaming it
+    makes the replacement atomic on POSIX and Windows alike.
+    """
+
+    temp_path = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    try:
+        temp_path.write_text(text, encoding="utf-8")
+        os.replace(temp_path, path)
+    except OSError:
+        try:
+            temp_path.unlink()
+        except OSError:  # pragma: no cover - best effort cleanup
+            pass
+        raise
+
+
+def _yaml_scalar(value: Any) -> str:
+    """Flatten a value to a single frontmatter line.
+
+    The frontmatter parser is line-based, so any newline in a value begins a
+    new key and lets that value forge the ones around it. Collapsing all
+    whitespace is enough to close that, and is lossless for the identifiers,
+    paths and timestamps these fields actually hold.
+    """
+
+    return " ".join(str(value).split())
+
+
 @dataclass
 class BeliefArtifact:
     """A machine-auditable belief written to the vault."""
@@ -86,19 +121,33 @@ class BeliefArtifact:
 
     def to_markdown(self) -> str:
         """Render as markdown with YAML frontmatter."""
-        sources_yaml = "\n".join(f"  - {s}" for s in self.sources) if self.sources else "  - unknown"
-        derived_yaml = "\n".join(f"  - {d}" for d in self.derived_from) if self.derived_from else "  - system"
-        source_root_yaml = f"source_root: {self.source_root}\n" if self.source_root else ""
+        # Frontmatter is parsed line by line, so a newline inside any value
+        # starts a new key. Entity names come from indexed source code, which
+        # is untrusted input: an entity of "x\nclaim_id: FORGED" rewrote the
+        # claim_id -- the identifier the append-only ledger is cross-referenced
+        # by. Every scalar is flattened to one line before it is written.
+        sources_yaml = (
+            "\n".join(f"  - {_yaml_scalar(s)}" for s in self.sources)
+            if self.sources
+            else "  - unknown"
+        )
+        derived_yaml = (
+            "\n".join(f"  - {_yaml_scalar(d)}" for d in self.derived_from)
+            if self.derived_from
+            else "  - system"
+        )
+        source_root = _yaml_scalar(self.source_root)
+        source_root_yaml = f"source_root: {source_root}\n" if source_root else ""
 
         return (
             f"---\n"
-            f"claim_id: {self.claim_id}\n"
-            f"entity: {self.entity}\n"
-            f"status: {self.status}\n"
+            f"claim_id: {_yaml_scalar(self.claim_id)}\n"
+            f"entity: {_yaml_scalar(self.entity)}\n"
+            f"status: {_yaml_scalar(self.status)}\n"
             f"confidence: {self.confidence}\n"
             f"sources:\n{sources_yaml}\n"
             f"{source_root_yaml}"
-            f"last_checked: {self.last_checked}\n"
+            f"last_checked: {_yaml_scalar(self.last_checked)}\n"
             f"derived_from:\n{derived_yaml}\n"
             f"---\n\n"
             f"# {self.title or self.entity}\n\n"
@@ -133,12 +182,15 @@ class VerificationArtifact:
 
     def to_markdown(self) -> str:
         return (
+            # Flattened for the same reason as BeliefArtifact: `challenges`
+            # holds the claim_id this verification is about, and a newline in
+            # any value would let it rewrite the others.
             f"---\n"
-            f"challenges: {self.challenges}\n"
-            f"result: {self.result}\n"
+            f"challenges: {_yaml_scalar(self.challenges)}\n"
+            f"result: {_yaml_scalar(self.result)}\n"
             f"confidence_delta: {self.confidence_delta:+.2f}\n"
-            f"checked_at: {self.checked_at}\n"
-            f"method: {self.method}\n"
+            f"checked_at: {_yaml_scalar(self.checked_at)}\n"
+            f"method: {_yaml_scalar(self.method)}\n"
             f"---\n\n"
             f"# {self.title}\n\n"
             f"{self.body}\n"
@@ -207,14 +259,24 @@ class VaultManager:
         """Write a belief artifact to the vault."""
         self.ensure_structure()
 
-        # Sanitize entity for filename
-        safe_name = _safe_filename(artifact.entity or artifact.claim_id)
-        file_path = self._base / "beliefs" / f"{safe_name}.md"
+        # Sanitize entity for filename. The mapping is many-to-one, so if the
+        # preferred name is already held by a *different* entity, fall back to
+        # a digest-qualified one. Without this the second belief overwrote the
+        # first and the vault silently held one belief while the append-only
+        # ledger recorded two -- the audit trail asserting something the vault
+        # had destroyed.
+        entity = artifact.entity or artifact.claim_id
+        preferred, disambiguated = _belief_filenames(entity)
+        file_path = self._base / "beliefs" / f"{preferred}.md"
+        if file_path.exists():
+            owner = _entity_of(file_path)
+            if owner is not None and owner != entity:
+                file_path = self._base / "beliefs" / f"{disambiguated}.md"
 
         safe_path = resolve_output_within(self._base, file_path)
         if safe_path is None:
             raise ValueError(f"Refusing to write outside vault: {file_path}")
-        safe_path.write_text(artifact.to_markdown(), encoding="utf-8")
+        _atomic_write_text(safe_path, artifact.to_markdown())
 
         # The per-entity file is overwrite-in-place; the append-only ledger
         # preserves every version for as-of/diff/timeline queries. A ledger
@@ -241,13 +303,33 @@ class VaultManager:
         self.ensure_structure()
         beliefs_dir = self._base / "beliefs"
 
-        safe_name = _safe_filename(entity)
-        file_path = beliefs_dir / f"{safe_name}.md"
+        preferred, disambiguated = _belief_filenames(entity)
+        file_path = beliefs_dir / f"{preferred}.md"
+
+        # The preferred name may be held by a different entity after a
+        # sanitisation collision, in which case this entity lives under its
+        # digest-qualified name.
+        if file_path.exists() and _entity_of(file_path) not in (None, entity):
+            alternative = beliefs_dir / f"{disambiguated}.md"
+            if alternative.exists():
+                file_path = alternative
 
         if not file_path.exists():
-            # Try fuzzy match
-            for md in beliefs_dir.rglob("*.md"):
-                if entity.lower() in md.stem.lower():
+            file_path = beliefs_dir / f"{disambiguated}.md"
+
+        if not file_path.exists():
+            # Last resort: find the file that *claims* this entity. Matching on
+            # the recorded entity rather than on the filename is what keeps the
+            # answer correct -- the previous substring match returned the first
+            # file whose stem merely contained the query, so asking for `cache`
+            # answered with `cache_aligner`'s belief under `cache_aligner`'s
+            # name, which in an auditable store is a wrong answer, not a
+            # near miss.
+            for md in sorted(beliefs_dir.rglob("*.md")):
+                candidate = resolve_file_within(beliefs_dir, md)
+                if candidate is None:
+                    continue
+                if _entity_of(candidate) == entity:
                     file_path = md
                     break
             else:
@@ -304,7 +386,7 @@ class VaultManager:
         safe_path = resolve_output_within(self._base, file_path)
         if safe_path is None:
             raise ValueError(f"Refusing to write outside vault: {file_path}")
-        safe_path.write_text(artifact.to_markdown(), encoding="utf-8")
+        _atomic_write_text(safe_path, artifact.to_markdown())
 
         # If verification confirmed, update the belief's confidence
         if artifact.result == "confirmed" and artifact.challenges:
@@ -340,10 +422,10 @@ class VaultManager:
         safe_path = resolve_output_within(self._base, file_path)
         if safe_path is None:
             raise ValueError(f"Refusing to write outside vault: {file_path}")
-        safe_path.write_text(
-            f"---\ntype: {action_type}\ntimestamp: {timestamp}\n---\n\n"
+        _atomic_write_text(
+            safe_path,
+            f"---\ntype: {_yaml_scalar(action_type)}\ntimestamp: {_yaml_scalar(timestamp)}\n---\n\n"
             f"# {title}\n\n{content}\n",
-            encoding="utf-8",
         )
 
         logger.info(f"Vault: wrote action '{title}' -> {file_path}")
@@ -433,7 +515,7 @@ class VaultManager:
                 if "status:" in updated:
                     import re
                     updated = re.sub(r"^status:\s+.+$", "status: stale", updated, count=1, flags=re.M)
-                safe_path.write_text(updated, encoding="utf-8")
+                _atomic_write_text(safe_path, updated)
                 updated_entities.append(entity)
                 updated_files.append(str(safe_path))
             except Exception as e:
@@ -557,7 +639,7 @@ class VaultManager:
                     updated = re.sub(
                         r"^confidence:\s+.+$", "confidence: 0.0", updated, count=1, flags=re.M
                     )
-                safe_path.write_text(updated, encoding="utf-8")
+                _atomic_write_text(safe_path, updated)
                 retracted.append(entity)
             except Exception as e:  # pragma: no cover - defensive
                 logger.debug(f"Vault: failed to check groundedness for {md}: {e}")
@@ -604,7 +686,7 @@ class VaultManager:
                             f"last_checked: {now}",
                             updated,
                         )
-                    safe_path.write_text(updated, encoding="utf-8")
+                    _atomic_write_text(safe_path, updated)
                     logger.info(
                         f"Vault: updated belief {claim_id} confidence "
                         f"{old_conf:.2f} â†' {new_conf:.2f}"
@@ -624,6 +706,41 @@ def _safe_filename(s: str) -> str:
     safe = re.sub(r'[^\w\-.]', '_', s.strip().lower())
     safe = re.sub(r'_+', '_', safe).strip('_')
     return safe[:80] or "untitled"
+
+
+def _entity_of(path: Path) -> str | None:
+    """The entity a belief file claims, or None if it is not a readable belief."""
+
+    try:
+        content = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    frontmatter = _parse_frontmatter(content)
+    if frontmatter is None:
+        return None
+    return frontmatter.get("entity")
+
+
+def _disambiguated_filename(entity: str) -> str:
+    """A filename that survives a sanitisation collision.
+
+    ``_safe_filename`` is many-to-one: it maps every character outside
+    ``[\\w.-]`` to ``_`` and truncates at 80, so ``foo::bar`` and ``foo_bar``
+    both become ``foo_bar``. Appending a digest of the full entity restores
+    injectivity. Used only when a name is already taken by a different entity,
+    so every existing belief keeps the filename it was written under.
+    """
+
+    import hashlib
+
+    digest = hashlib.sha256(entity.encode("utf-8")).hexdigest()[:10]
+    return f"{_safe_filename(entity)[:69]}-{digest}"
+
+
+def _belief_filenames(entity: str) -> tuple[str, str]:
+    """The preferred filename for an entity and its collision-safe alternative."""
+
+    return _safe_filename(entity or "untitled"), _disambiguated_filename(entity)
 
 
 def _parse_frontmatter(content: str) -> dict[str, str] | None:
