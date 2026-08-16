@@ -1547,6 +1547,19 @@
         if (!Number.isSafeInteger(reportedTokens) || reportedTokens < 0) return;
         if (!Number.isFinite(reportedUsd) || reportedUsd < 0) return;
 
+        // Every community contribution is rounded down to whole tokens and whole
+        // cents, so a freshly launched aggregate reports exactly 0. Rendering
+        // "$0.00 reported" reads as "Entroly saved nothing" — the opposite of the
+        // verified proof. Until the aggregate crosses one reportable cent, keep the
+        // evidence-backed proof value on screen and frame the community total as
+        // forthcoming (a future value that accrues), never as a measured zero.
+        if (reportedTokens === 0 || reportedUsd === 0) {
+          showingCommunity = false;
+          statusNode.textContent = 'Verified proof today · community savings accruing';
+          statusNode.classList.remove('live');
+          return;
+        }
+
         showingCommunity = true;
         tokenNode.textContent = new Intl.NumberFormat('en-US').format(reportedTokens);
         usdNode.textContent = new Intl.NumberFormat('en-US', {
