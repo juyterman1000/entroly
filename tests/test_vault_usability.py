@@ -139,3 +139,54 @@ def test_compile_walks_a_whole_repository(tmp_path):
 
     assert {"pkg", "scripts", "deep"} <= names
     assert ".tmp" not in names
+
+
+def test_backfill_is_idempotent_for_project_relative_sources(tmp_path):
+    """A source already relative to the project root has an empty prefix.
+
+    Writing that as `source_root:` with no value produced a key the
+    frontmatter parser drops, so the belief never counted as filled and was
+    rewritten on every compile.
+    """
+
+    project = tmp_path / "p"
+    (project / "bench").mkdir(parents=True)
+    (project / "bench" / "accuracy.py").write_text("x = 1\n", encoding="utf-8")
+
+    vault = VaultManager(VaultConfig(base_path=str(project / ".entroly" / "vault")))
+    vault.write_belief(
+        BeliefArtifact(entity="accuracy", title="a", body="b",
+                       sources=["bench/accuracy.py:1"])
+    )
+
+    first = vault.backfill_source_roots([str(project)])
+    second = vault.backfill_source_roots([str(project)])
+
+    assert first["backfilled_entities"] == ["accuracy"]
+    assert second["backfilled_entities"] == []
+
+    belief = (project / ".entroly" / "vault" / "beliefs" / "accuracy.md")
+    frontmatter = _parse_frontmatter(belief.read_text(encoding="utf-8")) or {}
+    assert frontmatter["source_root"] == "."
+
+
+def test_project_relative_root_still_grounds_and_retracts(tmp_path):
+    """`.` must resolve for both a live and a deleted source."""
+
+    project = tmp_path / "p"
+    (project / "bench").mkdir(parents=True)
+    (project / "bench" / "live.py").write_text("x = 1\n", encoding="utf-8")
+
+    vault = VaultManager(VaultConfig(base_path=str(project / ".entroly" / "vault")))
+    vault.write_belief(
+        BeliefArtifact(entity="live", title="l", body="b",
+                       sources=["bench/live.py:1"], source_root=".")
+    )
+    vault.write_belief(
+        BeliefArtifact(entity="dead", title="d", body="b",
+                       sources=["bench/dead.py:1"], source_root=".")
+    )
+
+    result = vault.mark_beliefs_ungrounded([str(project)])
+
+    assert result["retracted_entities"] == ["dead"]

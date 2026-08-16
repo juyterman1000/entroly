@@ -743,7 +743,12 @@ class VaultManager:
                     ambiguous.append(entity)
                     continue
 
-                root = next(iter(resolved))[0]
+                # An empty prefix means the source is already project-relative
+                # (`bench/accuracy.py`). Recording that as `source_root:` with
+                # no value writes a key the frontmatter parser then drops, so
+                # the belief never counted as filled and was rewritten on every
+                # compile. `.` says the same thing and survives a round trip.
+                root = next(iter(resolved))[0] or "."
                 if not (project_root / root / sources[0]).exists():
                     ambiguous.append(entity)
                     continue
