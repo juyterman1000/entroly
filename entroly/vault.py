@@ -112,6 +112,105 @@ def _atomic_write_text(path: Path, text: str) -> None:
         raise
 
 
+def _humanize_seconds(seconds: float) -> str:
+    """A coarse duration. `0.0 day(s)` tells a reader nothing useful."""
+
+    if seconds < 90:
+        return f"{int(seconds)}s"
+    if seconds < 5400:
+        return f"{seconds / 60:.0f}m"
+    if seconds < 172800:
+        return f"{seconds / 3600:.0f}h"
+    return f"{seconds / 86400:.0f}d"
+
+
+def vault_readiness(vault_base: str | Path, project_root: str | Path | None = None) -> dict[str, Any]:
+    """Whether the belief vault can answer questions about the current tree.
+
+    `entroly ingest` and `entroly search` use different stores: ingest fills
+    `.entroly/receipts/index.json` from documents, search reads
+    `.entroly/vault/beliefs/` built by `entroly compile`. Ingest reports a loud
+    success either way, so running it and then searching returns whatever the
+    vault last held, with nothing at the point of use saying the two are
+    unrelated. Returning the reason lets a caller say so.
+
+    Reports rather than decides: a stale answer is still an answer, and the
+    caller may legitimately want it.
+    """
+
+    base = Path(vault_base)
+    root = Path(project_root) if project_root is not None else base.resolve().parent.parent
+    beliefs = sorted((base / "beliefs").glob("*.md")) if (base / "beliefs").exists() else []
+
+    newest_belief = 0.0
+    for path in beliefs:
+        try:
+            newest_belief = max(newest_belief, path.stat().st_mtime)
+        except OSError:
+            continue
+
+    receipts_index = base.parent / "receipts" / "index.json"
+    has_receipts = receipts_index.exists()
+
+    reasons: list[str] = []
+    if not beliefs:
+        if has_receipts:
+            reasons.append(
+                "the belief vault is empty but a document index exists -- "
+                "`entroly ingest` fills the document index, which `entroly search` "
+                "does not read; run `entroly compile <dir>` to build beliefs"
+            )
+        else:
+            reasons.append("the belief vault is empty; run `entroly compile <dir>`")
+    else:
+        newest_source = 0.0
+        newest_source_name = ""
+        for path in _iter_source_files(root):
+            try:
+                mtime = path.stat().st_mtime
+            except OSError:
+                continue
+            if mtime > newest_source:
+                newest_source, newest_source_name = mtime, path.name
+        if newest_source > newest_belief:
+            reasons.append(
+                f"source is newer than the newest belief by "
+                f"{_humanize_seconds(newest_source - newest_belief)} "
+                f"(most recently {newest_source_name}); re-run `entroly compile <dir>` "
+                "or results will describe code as it used to be"
+            )
+
+    return {
+        "belief_count": len(beliefs),
+        "has_document_index": has_receipts,
+        "ready": not reasons,
+        "reasons": reasons,
+    }
+
+
+def _iter_source_files(root: Path, limit: int = 4000):
+    """Source files under ``root``, pruning generated trees. Bounded."""
+
+    seen = 0
+    stack = [root]
+    while stack and seen < limit:
+        directory = stack.pop()
+        try:
+            entries = list(directory.iterdir())
+        except OSError:
+            continue
+        for entry in entries:
+            if entry.name in _GROUNDEDNESS_SKIP_DIRS or entry.name.startswith("."):
+                continue
+            if entry.is_dir():
+                stack.append(entry)
+            elif entry.is_file() and entry.suffix in _SOURCE_SUFFIXES:
+                seen += 1
+                yield entry
+                if seen >= limit:
+                    return
+
+
 def _set_frontmatter_field(content: str, key: str, value: Any) -> str:
     """Rewrite one frontmatter key, leaving the body untouched.
 
@@ -589,6 +688,87 @@ class VaultManager:
             "already_stale": already_stale,
         }
 
+    def backfill_source_roots(self, roots: list[str] | None = None) -> dict[str, Any]:
+        """Give legacy beliefs the `source_root` they were written without.
+
+        Beliefs written before the field existed record a bare `helper.py`,
+        so groundedness has to fall back to matching any file with that
+        suffix -- permissive enough that a belief about a deleted
+        `scripts/helper.py` survives while an unrelated `tests/helper.py`
+        exists. Recovering the root converts those to exact resolution.
+
+        The root is recovered only when the belief's sources resolve to
+        exactly one directory. Two files sharing a basename leave it
+        ambiguous, and a guess would be worse than the fallback: it would
+        look authoritative while pointing at the wrong file.
+        """
+
+        import re
+
+        self.ensure_structure()
+        search_roots = [self._base.resolve().parent.parent]
+        for root in roots or []:
+            try:
+                search_roots.append(Path(root).resolve())
+            except (OSError, ValueError):
+                continue
+        project_root = search_roots[0]
+        candidates = _path_owner_index(search_roots)
+
+        filled: list[str] = []
+        ambiguous: list[str] = []
+        for md in (self._base / "beliefs").rglob("*.md"):
+            try:
+                safe_path = resolve_file_within(self._base / "beliefs", md)
+                if safe_path is None:
+                    continue
+                content = safe_path.read_text(encoding="utf-8", errors="replace")
+                frontmatter = _parse_frontmatter(content)
+                if not frontmatter or frontmatter.get("source_root"):
+                    continue
+                sources = [
+                    s.split(":", 1)[0].replace("\\", "/").strip().lstrip("./")
+                    for s in _extract_sources(content)
+                ]
+                sources = [s for s in sources if _is_path_like(s)]
+                if not sources:
+                    continue
+
+                entity = frontmatter.get("entity", md.stem)
+                owners = {
+                    tuple(sorted(candidates.get(source, ()))) for source in sources
+                }
+                resolved = {o for o in owners if len(o) == 1}
+                if len(resolved) != 1 or len(owners) != 1:
+                    ambiguous.append(entity)
+                    continue
+
+                root = next(iter(resolved))[0]
+                if not (project_root / root / sources[0]).exists():
+                    ambiguous.append(entity)
+                    continue
+
+                updated = re.sub(
+                    r"^(sources:(?:\r?\n[ \t]+-[^\r\n]*)+)",
+                    lambda m: f"{m.group(1)}\nsource_root: {root}",
+                    content,
+                    count=1,
+                    flags=re.MULTILINE,
+                )
+                if updated == content:
+                    ambiguous.append(entity)
+                    continue
+                _atomic_write_text(safe_path, updated)
+                filled.append(entity)
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug(f"Vault: source_root backfill failed for {md}: {exc}")
+
+        return {
+            "status": "updated",
+            "backfilled_entities": filled,
+            "ambiguous_entities": ambiguous,
+        }
+
     def mark_beliefs_ungrounded(
         self, roots: list[str] | None = None
     ) -> dict[str, Any]:
@@ -816,6 +996,12 @@ def _parse_frontmatter(content: str) -> dict[str, str] | None:
     return result if result else None
 
 
+_SOURCE_SUFFIXES = frozenset({
+    ".py", ".rs", ".js", ".ts", ".tsx", ".jsx", ".go", ".java", ".rb", ".c",
+    ".h", ".cpp", ".hpp", ".cs", ".swift", ".kt", ".php", ".scala",
+})
+
+
 _GROUNDEDNESS_SKIP_DIRS = frozenset({
     ".git", ".venv", "venv", "node_modules", "target", "__pycache__",
     ".entroly", ".mypy_cache", ".pytest_cache", ".ruff_cache", "dist", "build",
@@ -835,6 +1021,43 @@ def _is_path_like(value: str) -> bool:
     if not value:
         return False
     return "/" in value or bool(Path(value).suffix)
+
+
+def _path_owner_index(roots: list[Path]) -> dict[str, set[str]]:
+    """Map each path suffix to the root-relative directories that can supply it.
+
+    A suffix owned by exactly one directory identifies a belief's
+    `source_root`; one owned by several is ambiguous and must stay that way.
+    """
+
+    owners: dict[str, set[str]] = {}
+    seen_roots: set[Path] = set()
+    for root in roots:
+        if root in seen_roots or not root.is_dir():
+            continue
+        seen_roots.add(root)
+        stack = [root]
+        while stack:
+            directory = stack.pop()
+            try:
+                entries = list(directory.iterdir())
+            except OSError:
+                continue
+            for entry in entries:
+                if entry.name in _GROUNDEDNESS_SKIP_DIRS:
+                    continue
+                if entry.is_dir():
+                    stack.append(entry)
+                elif entry.is_file():
+                    try:
+                        parts = entry.relative_to(root).as_posix().split("/")
+                    except ValueError:  # pragma: no cover - defensive
+                        continue
+                    for start in range(len(parts)):
+                        suffix = "/".join(parts[start:])
+                        owner = "/".join(parts[:start])
+                        owners.setdefault(suffix, set()).add(owner)
+    return owners
 
 
 def _path_suffix_index(roots: list[Path]) -> set[str]:
