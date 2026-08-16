@@ -143,7 +143,12 @@ jobs:
               subject = git_output("show", "-s", "--format=%s", commit).strip()
               return bool(
                   re.fullmatch(
-                      r"(?:build\(deps(?:-[^)]+)?\): (?:bump|update)|Bump|Update) "
+                      # Dependabot derives this prefix from the repository's own
+                      # commit style and moved from `build(deps)` to
+                      # `chore(deps)`; both appear in history, so accept either.
+                      # The real boundary is the path scope checked above, not
+                      # the wording of the subject.
+                      r"(?:(?:build|chore)\(deps(?:-[^)]+)?\): (?:bump|update)|Bump|Update) "
                       r".+ \(#\d+\)",
                       subject,
                       re.IGNORECASE,
