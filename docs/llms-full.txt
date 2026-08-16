@@ -155,6 +155,32 @@ Discovery and recovery are separate operations. Ranking may identify which evide
 - [HTTP proxy](https://github.com/juyterman1000/entroly/blob/main/entroly/proxy.py): Provider proxy and optional WITNESS policy integration.
 - [CLI](https://github.com/juyterman1000/entroly/blob/main/entroly/cli.py): Commands, onboarding, diagnostics, and wrappers.
 
+## Multilingual And International README Translations
+
+Entroly provides comprehensive localized documentation in 20 languages:
+
+- [English (Primary)](https://github.com/juyterman1000/entroly/blob/main/README.md)
+- [简体中文 (Simplified Chinese)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.zh.md)
+- [繁體中文 (Traditional Chinese)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.zh-TW.md)
+- [日本語 (Japanese)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.ja.md)
+- [한국어 (Korean)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.ko.md)
+- [Español (Spanish)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.es.md)
+- [हिन्दी (Hindi)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.hi.md)
+- [Français (French)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.fr.md)
+- [Deutsch (German)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.de.md)
+- [Português (Portuguese - Brazil)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.pt-BR.md)
+- [Italiano (Italian)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.it.md)
+- [Türkçe (Turkish)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.tr.md)
+- [Tiếng Việt (Vietnamese)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.vi.md)
+- [Bahasa Indonesia (Indonesian)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.id.md)
+- [Polski (Polish)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.pl.md)
+- [Nederlands (Dutch)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.nl.md)
+- [ไทย (Thai)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.th.md)
+- [Svenska (Swedish)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.sv.md)
+- [Čeština (Czech)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.cs.md)
+- [Tagalog (Filipino)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.tl.md)
+- [Română (Romanian)](https://github.com/juyterman1000/entroly/blob/main/docs/i18n/README.ro.md)
+
 ## License
 
 - [Apache-2.0 license](https://github.com/juyterman1000/entroly/blob/main/LICENSE): Open-source license terms.

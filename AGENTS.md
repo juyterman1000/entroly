@@ -44,6 +44,11 @@ For any meaningful change:
 6. Expand to release tests only if packaging/native/release surfaces changed.
 7. Summarize risk, test evidence, and rollback path.
 
+## UI Verification Rule
+
+For any pull request or change that modifies UI state (`entroly dashboard`, web UI assets, or interactive docs):
+- Include a short video recording or visual demo (e.g., WebP/MP4 recording) in the PR description demonstrating the UI flow and verifying no visual regressions.
+
 ## Commands
 
 ```bash
