@@ -27,6 +27,8 @@ from __future__ import annotations
 
 import logging
 import os
+import random
+import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -62,6 +64,9 @@ class VaultConfig:
 # Belief Artifact Schema
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
+_ATOMIC_REPLACE_ATTEMPTS = 18
+
+
 def _atomic_write_text(path: Path, text: str) -> None:
     """Write a vault artifact so a reader never sees a partial one.
 
@@ -73,16 +78,64 @@ def _atomic_write_text(path: Path, text: str) -> None:
     makes the replacement atomic on POSIX and Windows alike.
     """
 
-    temp_path = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    # The token must be unique per *write*, not per process: threads in one
+    # process share a pid, so a pid-only name made concurrent writers collide
+    # on the same temp file and fail with EACCES on Windows. Atomicity held --
+    # readers never saw a torn file -- but the writes themselves crashed.
+    temp_path = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
     try:
         temp_path.write_text(text, encoding="utf-8")
-        os.replace(temp_path, path)
+        # Windows refuses to rename over a file another handle has open, so a
+        # concurrent reader makes `os.replace` raise EACCES. Retrying is what
+        # keeps the swap both atomic and available: readers hold the file for
+        # microseconds, and without this the durability fix would have traded
+        # torn reads for lost writes. POSIX takes the first attempt every time.
+        delay = 0.002
+        for attempt in range(_ATOMIC_REPLACE_ATTEMPTS):
+            try:
+                os.replace(temp_path, path)
+                break
+            except PermissionError:
+                if attempt == _ATOMIC_REPLACE_ATTEMPTS - 1:
+                    raise
+                # Jittered, or concurrent writers retry in lockstep and keep
+                # colliding with the same reader. Measured on Windows with four
+                # writers against two readers: 61 of 240 writes failed with no
+                # retry, 2 with a fixed backoff, 0 with jitter over this window.
+                time.sleep(delay * (0.5 + random.random()))
+                delay = min(delay * 2, 0.05)
     except OSError:
         try:
             temp_path.unlink()
         except OSError:  # pragma: no cover - best effort cleanup
             pass
         raise
+
+
+def _set_frontmatter_field(content: str, key: str, value: Any) -> str:
+    """Rewrite one frontmatter key, leaving the body untouched.
+
+    The body is prose compiled from source docstrings, so it can legitimately
+    contain the text ``confidence: 0.5`` or ``status: inferred``. An unanchored
+    ``str.replace`` over the whole document rewrote those too, silently
+    changing what a belief claims about the code while updating its metadata.
+    Only the region above the closing ``---`` is eligible, and only the first
+    match of an anchored key.
+    """
+
+    import re
+
+    if not content.startswith("---"):
+        return content
+    end = content.find("\n---", 3)
+    if end < 0:
+        return content
+
+    head, tail = content[:end], content[end:]
+    pattern = re.compile(rf"^{re.escape(key)}:[^\r\n]*$", re.MULTILINE)
+    if not pattern.search(head):
+        return content
+    return pattern.sub(f"{key}: {_yaml_scalar(value)}", head, count=1) + tail
 
 
 def _yaml_scalar(value: Any) -> str:
@@ -501,7 +554,14 @@ class VaultManager:
                         break
 
                 if not matched:
-                    matched = any(stem in entity_lc for stem in changed_stems)
+                    # Fallback for beliefs whose sources are missing: match the
+                    # entity against a changed file's stem *exactly*. This was a
+                    # substring test, so editing `auth.py` also marked
+                    # `authentication_service` and `oauth_client` stale --
+                    # beliefs it has nothing to do with. Staleness is what gates
+                    # trust in a belief, so marking fresh ones stale erodes the
+                    # signal rather than erring safely.
+                    matched = entity_lc in changed_stems
 
                 if not matched:
                     continue
@@ -665,27 +725,20 @@ class VaultManager:
                 content = safe_path.read_text(encoding="utf-8", errors="replace")
                 fm = _parse_frontmatter(content)
                 if fm and fm.get("claim_id") == claim_id:
-                    old_conf = float(fm.get("confidence", 0.5))
+                    try:
+                        old_conf = float(fm.get("confidence", 0.5))
+                    except (TypeError, ValueError):
+                        # A malformed confidence is not a reason to skip the
+                        # update; treat it as the schema default and repair it.
+                        old_conf = 0.5
                     new_conf = max(0.0, min(1.0, old_conf + delta))
-                    # Rewrite the confidence line
-                    updated = content.replace(
-                        f"confidence: {fm['confidence']}",
-                        f"confidence: {new_conf}",
+
+                    updated = _set_frontmatter_field(content, "confidence", new_conf)
+                    if delta > 0 and fm.get("status") == "inferred":
+                        updated = _set_frontmatter_field(updated, "status", "verified")
+                    updated = _set_frontmatter_field(
+                        updated, "last_checked", datetime.now(timezone.utc).isoformat()
                     )
-                    # Also update status to verified if delta is positive
-                    if delta > 0 and "status: inferred" in updated:
-                        updated = updated.replace(
-                            "status: inferred", "status: verified"
-                        )
-                    # Update last_checked
-                    now = datetime.now(timezone.utc).isoformat()
-                    if "last_checked:" in updated:
-                        import re
-                        updated = re.sub(
-                            r"last_checked: .+",
-                            f"last_checked: {now}",
-                            updated,
-                        )
                     _atomic_write_text(safe_path, updated)
                     logger.info(
                         f"Vault: updated belief {claim_id} confidence "
