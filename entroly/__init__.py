@@ -55,6 +55,24 @@ try:
 except ImportError:
     pass
 
+# Auditable receipt log: an append-only, RFC-6962-style transparency log over
+# Context Receipts. `record_commitment` logs only a commitment root and counts,
+# so a receipt can be proven to have been logged without disclosing the context
+# it describes -- the local-first way to share a receipt.
+#
+# These modules were merged in 2026-06 with 78 passing tests but no import path
+# from any shipped entry point, so `scripts/codebase_graph.py` reported them
+# unreachable and no user could call them. Exporting the facade here is what
+# makes `receipt_merkle` and `receipt_disclosure` reachable too.
+try:
+    from .auditable_receipts import (  # noqa: F401
+        AuditableReceiptLog,
+        ReceiptProof,
+        RecordedReceipt,
+    )
+except ImportError:
+    pass
+
 # Verified AI efficiency layer: secure intake, proof-carrying context,
 # hallucination suppression, exact recovery, and verified-only evolution.
 try:
