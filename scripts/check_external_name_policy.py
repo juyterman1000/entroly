@@ -9,6 +9,7 @@ identifier, filename, and directory forms after alphanumeric normalization.
 from __future__ import annotations
 
 import hashlib
+import re
 import sys
 from functools import lru_cache
 from pathlib import Path
@@ -47,14 +48,35 @@ SKIP_PARTS = {
     "dist",
     # scratch and vendored third-party trees we neither author nor ship
     "tmp",
+    # `.gitignore` ignores both `tmp/` and `.tmp/`, but only `tmp` was listed
+    # here. A local `.tmp/` therefore stayed in the walk, and at 1.6 GB it was
+    # enough on its own to push the scan past the 300s budget its test allows.
+    # Only the exact name is skipped: `.gitignore` does not cover `.tmp_*`, so
+    # such a directory can hold tracked files and must still be scanned.
+    ".tmp",
+    # Private local notes, ignored at `.gitignore:25`. Competitor names are the
+    # point of that directory and the policy is about what the project
+    # publishes, so scanning it reported violations that no clean checkout can
+    # reproduce -- the check passed in CI and failed only on the author's
+    # machine, which is the worst way for a policy gate to behave.
+    ".internal",
     "site-packages",
     # local developer configuration, never published
     ".claude",
 }
 
 
+_NON_ALNUM = re.compile(r"[\W_]+", re.UNICODE)
+
+
 def normalized(value: str) -> str:
-    return "".join(character for character in value.casefold() if character.isalnum())
+    # `"".join(c for c in value.casefold() if c.isalnum())` is a Python-level
+    # loop with a method call per character, and it runs on every line of every
+    # scanned file. `re.sub` does the same filtering inside the regex engine.
+    # `[\W_]` is the exact complement of `str.isalnum()` for the `str` type
+    # under `re.UNICODE`: `\w` is alphanumerics plus underscore, so excluding
+    # underscore leaves alphanumerics.
+    return _NON_ALNUM.sub("", value.casefold())
 
 
 @lru_cache(maxsize=1 << 20)
