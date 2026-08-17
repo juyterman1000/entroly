@@ -66,4 +66,14 @@ receipt.to_agent = 'tampered';
 assert(!WorkGraph.verifyHandoffIntegrity(receipt), 'tampered receipt passed self-integrity');
 assert(!first.verifyHandoff(receipt), 'tampered receipt passed graph-bound verification');
 
+let unsafeTimestampRejected = false;
+try { first.coordination(Number.MAX_SAFE_INTEGER + 1); }
+catch (_) { unsafeTimestampRejected = true; }
+assert(unsafeTimestampRejected, 'unsafe timestamp was accepted by npm/WASM boundary');
+
+let negativeEvidenceRejected = false;
+try { first.resume(unfinished[0].node_id, -1); }
+catch (_) { negativeEvidenceRejected = true; }
+assert(negativeEvidenceRejected, 'negative maxEvidence was accepted');
+
 console.log('Work Graph npm contract: PASS');
