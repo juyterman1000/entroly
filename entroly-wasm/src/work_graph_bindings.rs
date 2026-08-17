@@ -1,0 +1,144 @@
+//! Thin wasm-bindgen boundary over the shared Rust AI Work Graph.
+//!
+//! No Work Graph inference, trust, coordination, or handoff logic belongs here.
+//! JavaScript submits canonical JSON to `entroly-engine` and receives the same
+//! canonical JSON that Python receives through PyO3.
+
+use entroly_engine::work_graph::{HandoffReceipt, WorkGraph};
+use wasm_bindgen::prelude::*;
+
+fn js_err(error: impl std::fmt::Display) -> JsValue {
+    JsValue::from_str(&error.to_string())
+}
+
+fn parse_receipt(json_text: &str) -> Result<HandoffReceipt, JsValue> {
+    serde_json::from_str(json_text).map_err(js_err)
+}
+
+#[wasm_bindgen]
+pub struct WasmWorkGraph {
+    inner: WorkGraph,
+}
+
+#[wasm_bindgen]
+impl WasmWorkGraph {
+    #[wasm_bindgen(constructor)]
+    pub fn new(repo_id: &str) -> Result<WasmWorkGraph, JsValue> {
+        Ok(Self {
+            inner: WorkGraph::new(repo_id).map_err(js_err)?,
+        })
+    }
+
+    #[wasm_bindgen(js_name = fromJSON)]
+    pub fn from_json(json_text: &str) -> Result<WasmWorkGraph, JsValue> {
+        Ok(Self {
+            inner: WorkGraph::from_json(json_text).map_err(js_err)?,
+        })
+    }
+
+    #[wasm_bindgen(getter, js_name = repoId)]
+    pub fn repo_id(&self) -> String {
+        self.inner.repo_id().to_owned()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn revision(&self) -> u64 {
+        self.inner.revision()
+    }
+
+    #[wasm_bindgen(getter, js_name = graphCommitment)]
+    pub fn graph_commitment(&self) -> String {
+        self.inner.graph_commitment().to_owned()
+    }
+
+    #[wasm_bindgen(getter, js_name = eventCount)]
+    pub fn event_count(&self) -> usize {
+        self.inner.event_count()
+    }
+
+    #[wasm_bindgen(js_name = applyEventJSON)]
+    pub fn apply_event_json(&mut self, json_text: &str) -> Result<String, JsValue> {
+        self.inner.apply_event_json(json_text).map_err(js_err)
+    }
+
+    #[wasm_bindgen(js_name = observeRepositoryJSON)]
+    pub fn observe_repository_json(&mut self, json_text: &str) -> Result<String, JsValue> {
+        self.inner.observe_repository_json(json_text).map_err(js_err)
+    }
+
+    #[wasm_bindgen(js_name = mergeJSON)]
+    pub fn merge_json(&mut self, json_text: &str) -> Result<usize, JsValue> {
+        self.inner.merge_json(json_text).map_err(js_err)
+    }
+
+    #[wasm_bindgen(js_name = exportJSON)]
+    pub fn export_json(&self, pretty: bool) -> Result<String, JsValue> {
+        self.inner.export_json(pretty).map_err(js_err)
+    }
+
+    #[wasm_bindgen(js_name = summaryJSON)]
+    pub fn summary_json(&self) -> Result<String, JsValue> {
+        self.inner.summary_json().map_err(js_err)
+    }
+
+    #[wasm_bindgen(js_name = snapshotJSON)]
+    pub fn snapshot_json(&self, pretty: bool) -> Result<String, JsValue> {
+        self.inner.snapshot_json(pretty).map_err(js_err)
+    }
+
+    #[wasm_bindgen(js_name = unfinishedJSON)]
+    pub fn unfinished_json(&self, pretty: bool) -> Result<String, JsValue> {
+        self.inner.unfinished_json(pretty).map_err(js_err)
+    }
+
+    #[wasm_bindgen(js_name = resumeJSON)]
+    pub fn resume_json(
+        &self,
+        workstream_id: Option<String>,
+        max_evidence: usize,
+        pretty: bool,
+    ) -> Result<String, JsValue> {
+        self.inner
+            .resume_json(workstream_id.as_deref(), max_evidence, pretty)
+            .map_err(js_err)
+    }
+
+    #[wasm_bindgen(js_name = coordinationJSON)]
+    pub fn coordination_json(&self, now_ms: i64, pretty: bool) -> Result<String, JsValue> {
+        self.inner.coordination_json(now_ms, pretty).map_err(js_err)
+    }
+
+    #[wasm_bindgen(js_name = handoffJSON)]
+    pub fn handoff_json(
+        &self,
+        workstream_id: &str,
+        from_agent: &str,
+        to_agent: &str,
+        generated_at_ms: i64,
+        pretty: bool,
+    ) -> Result<String, JsValue> {
+        self.inner
+            .handoff_json(
+                workstream_id,
+                from_agent,
+                to_agent,
+                generated_at_ms,
+                pretty,
+            )
+            .map_err(js_err)
+    }
+
+    #[wasm_bindgen(js_name = verifyHandoffJSON)]
+    pub fn verify_handoff_json(&self, receipt_json: &str) -> Result<bool, JsValue> {
+        let receipt = parse_receipt(receipt_json)?;
+        self.inner
+            .verify_handoff_receipt_against_graph(&receipt)
+            .map_err(js_err)
+    }
+
+    #[wasm_bindgen(js_name = verifyHandoffIntegrityJSON)]
+    pub fn verify_handoff_integrity_json(receipt_json: &str) -> Result<bool, JsValue> {
+        let receipt = parse_receipt(receipt_json)?;
+        WorkGraph::verify_handoff_receipt(&receipt).map_err(js_err)
+    }
+}
