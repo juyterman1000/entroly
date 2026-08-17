@@ -26,7 +26,7 @@ def append_once(path: str, marker: str, addition: str) -> None:
     target.write_text(text + addition, encoding="utf-8")
 
 
-# PyO3: binding exists, but it must be declared and registered in the module users import.
+# PyO3: the shared binding must be declared and registered in the module users import.
 replace_once(
     "entroly-core/src/lib.rs",
     "mod witness;\n",
@@ -45,7 +45,7 @@ replace_once(
     "pub(crate) use entroly_engine::utilization;\nmod work_graph_bindings;\npub use work_graph_bindings::WasmWorkGraph;\n",
 )
 
-# JS orchestration must stay Number-friendly even though wasm-bindgen maps raw i64 to BigInt.
+# JS Number <-> wasm i64 transport must reject unsafe integers instead of rounding.
 replace_once(
     "entroly-wasm/src/work_graph_bindings.rs",
     "use wasm_bindgen::prelude::*;\n",
@@ -84,32 +84,41 @@ replace_once(
     "      requireSafeInteger(generatedAtMs, 'generatedAtMs'),\n      Boolean(pretty),\n",
 )
 
-# Root npm surface: users should not need a deep import.
+# Root npm surface: users should not need deep imports for either the graph or Git observer.
 replace_once(
     "entroly-wasm/index.js",
     "const { EntrolyConfig } = require('./js/config');\n",
-    "const { EntrolyConfig } = require('./js/config');\nconst { WorkGraph } = require('./js/work_graph');\n",
+    "const { EntrolyConfig } = require('./js/config');\nconst { WorkGraph } = require('./js/work_graph');\nconst { RepositoryDiscoveryError, discoverRepositoryObservation } = require('./js/work_graph_repo');\n",
 )
 replace_once(
     "entroly-wasm/index.js",
     "  EntrolyEngine: WasmEntrolyEngine,\n  WasmEntrolyEngine,\n",
-    "  EntrolyEngine: WasmEntrolyEngine,\n  WasmEntrolyEngine,\n  WorkGraph,\n",
+    "  EntrolyEngine: WasmEntrolyEngine,\n  WasmEntrolyEngine,\n  WorkGraph,\n  RepositoryDiscoveryError,\n  discoverRepositoryObservation,\n",
 )
 replace_once(
     "entroly-wasm/index.d.ts",
     'export * from "./pkg/entroly_wasm";\n',
-    'export * from "./pkg/entroly_wasm";\nexport * from "./js/work_graph";\n',
+    'export * from "./pkg/entroly_wasm";\nexport * from "./js/work_graph";\nexport * from "./js/work_graph_repo";\n',
 )
 
 # Published npm tarball and actual npm test contract.
 package_path = ROOT / "entroly-wasm/package.json"
 package = json.loads(package_path.read_text(encoding="utf-8"))
 files = package.setdefault("files", [])
-for name in ("js/work_graph.js", "js/work_graph.d.ts"):
+for name in (
+    "js/work_graph.js",
+    "js/work_graph.d.ts",
+    "js/work_graph_repo.js",
+    "js/work_graph_repo.d.ts",
+):
     if name not in files:
         files.append(name)
-package.setdefault("scripts", {})["test"] = "node test_wasm_e2e.js && node test_work_graph.js"
-package_path.write_text(json.dumps(package, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+package.setdefault("scripts", {})["test"] = (
+    "node test_wasm_e2e.js && node test_work_graph.js && node test_work_graph_repo.js"
+)
+package_path.write_text(
+    json.dumps(package, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+)
 
 # Work Graph npm contract must fail on unsafe numeric transport, not silently round timestamps.
 replace_once(
@@ -118,11 +127,16 @@ replace_once(
     "assert(!first.verifyHandoff(receipt), 'tampered receipt passed graph-bound verification');\n\nlet unsafeTimestampRejected = false;\ntry { first.coordination(Number.MAX_SAFE_INTEGER + 1); }\ncatch (_) { unsafeTimestampRejected = true; }\nassert(unsafeTimestampRejected, 'unsafe timestamp was accepted by npm/WASM boundary');\n\nlet negativeEvidenceRejected = false;\ntry { first.resume(unfinished[0].node_id, -1); }\ncatch (_) { negativeEvidenceRejected = true; }\nassert(negativeEvidenceRejected, 'negative maxEvidence was accepted');\n\nconsole.log('Work Graph npm contract: PASS');\n",
 )
 
-# Python root discoverability. The wrapper itself tolerates native absence so fallback installs import safely.
+# Python root discoverability. The wrapper tolerates native absence so fallback installs import safely.
 append_once(
     "entroly/__init__.py",
     "AI Work Graph — shared Rust temporal work-state engine",
     "\n# AI Work Graph — shared Rust temporal work-state engine. Python remains a\n# thin orchestration layer over entroly-engine.\ntry:\n    from .work_graph import WorkGraph, WorkGraphUnavailableError  # noqa: F401\nexcept ImportError:\n    pass\n",
+)
+append_once(
+    "entroly/__init__.py",
+    "discover_repository_observation",
+    "\nfrom .work_graph_repo import (  # noqa: F401\n    RepositoryDiscoveryError,\n    discover_repository_observation,\n)\n",
 )
 
 print("Work Graph binding finalization applied successfully")
