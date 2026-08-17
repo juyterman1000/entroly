@@ -62,7 +62,9 @@ impl PyWorkGraph {
     }
 
     fn observe_repository_json(&mut self, json_text: &str) -> PyResult<String> {
-        self.inner.observe_repository_json(json_text).map_err(py_err)
+        self.inner
+            .observe_repository_json(json_text)
+            .map_err(py_err)
     }
 
     fn merge_json(&mut self, json_text: &str) -> PyResult<usize> {
@@ -115,13 +117,7 @@ impl PyWorkGraph {
         pretty: bool,
     ) -> PyResult<String> {
         self.inner
-            .handoff_json(
-                workstream_id,
-                from_agent,
-                to_agent,
-                generated_at_ms,
-                pretty,
-            )
+            .handoff_json(workstream_id, from_agent, to_agent, generated_at_ms, pretty)
             .map_err(py_err)
     }
 
