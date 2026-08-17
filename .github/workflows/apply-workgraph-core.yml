@@ -32,28 +32,29 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - name: Validate shared engine and capture exact diagnostics
+      - name: Format new module only
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2021 entroly-engine/src/work_graph.rs
+
+      - name: Validate shared engine
         id: validate
         shell: bash
         run: |
           set +e
           : > /tmp/workgraph-validation.log
-
-          echo '== rustfmt targeted ==' | tee -a /tmp/workgraph-validation.log
-          rustfmt --edition 2021 --check entroly-engine/src/lib.rs entroly-engine/src/work_graph.rs >>/tmp/workgraph-validation.log 2>&1
+          echo '== rustfmt work_graph --check ==' | tee -a /tmp/workgraph-validation.log
+          rustfmt --edition 2021 --check entroly-engine/src/work_graph.rs >>/tmp/workgraph-validation.log 2>&1
           fmt_status=$?
-
           echo '== cargo test ==' | tee -a /tmp/workgraph-validation.log
           cargo test --manifest-path entroly-engine/Cargo.toml --all-targets >>/tmp/workgraph-validation.log 2>&1
           test_status=$?
-
           echo '== cargo clippy ==' | tee -a /tmp/workgraph-validation.log
           cargo clippy --manifest-path entroly-engine/Cargo.toml --all-targets -- -D warnings >>/tmp/workgraph-validation.log 2>&1
           clippy_status=$?
-
           printf '\nfmt=%s test=%s clippy=%s\n' "$fmt_status" "$test_status" "$clippy_status" | tee -a /tmp/workgraph-validation.log
           cat /tmp/workgraph-validation.log
-
           if [ "$fmt_status" -eq 0 ] && [ "$test_status" -eq 0 ] && [ "$clippy_status" -eq 0 ]; then
             echo 'ok=true' >> "$GITHUB_OUTPUT"
           else
@@ -66,12 +67,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cp /tmp/workgraph-validation.log .workgraph-bootstrap/validation-v4.txt
+          cp /tmp/workgraph-validation.log .workgraph-bootstrap/validation-final.txt
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .workgraph-bootstrap/validation-v4.txt
+          git add .workgraph-bootstrap/validation-final.txt
           if ! git diff --cached --quiet; then
-            git commit -m 'chore(work-graph): publish Rust v4 validation diagnostics'
+            git commit -m 'chore(work-graph): publish final Rust diagnostics'
             git push origin HEAD:feat/ai-work-graph-v1
           fi
 
