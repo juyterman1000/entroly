@@ -14,9 +14,18 @@ operation's failure is recorded rather than swallowed.
 ``SOAK_VAULT`` places the vault somewhere specific, which is the point on a
 shared mount: ledger appends are serialized by an exclusive-create lock file
 because `fcntl.flock` needs a working `lockd` to mean anything across NFS
-clients. That has been verified on SMB and by simulating advisory-lock failure,
-but not on a real NFS export -- run this against one before trusting a vault
-shared that way.
+clients.
+
+Measured, six processes each time, ledger records matching writes exactly with
+an intact chain in every case: 900s on local disk (14,954 writes), 120s on SMB
+(2,379), 120s on a real NFSv3 export (2,599), and 90s on the same export
+mounted `nolock` (2,240). That last one is the case worth naming -- with
+`local_lock=all` no lock reaches the server, which is how `flock` degrades on a
+misconfigured mount, and the exclusive-create lock file carried the guarantee
+on its own.
+
+Run it against your own mount anyway. The point of the entry point is that a
+deployment's storage is the one variable a test suite cannot stand in for.
 
 Exits non-zero when any invariant broke: a worker error, an unreadable belief,
 a stray temp file, an unparseable ledger record, a chain that does not verify,
