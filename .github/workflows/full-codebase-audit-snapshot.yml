@@ -1,0 +1,82 @@
+name: Full Codebase Audit Snapshot
+
+on:
+  push:
+    branches:
+      - audit/full-codebase-snapshot-20260817
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out pinned main tree
+        uses: actions/checkout@v6
+        with:
+          ref: 30dd8aa8be5b607cf7ee074f3aa6f60cb3081acd
+          fetch-depth: 1
+
+      - name: Build exhaustive tracked-file manifest and source bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/entroly-audit
+          git ls-files -z > /tmp/entroly-audit/paths.z
+          git ls-files > /tmp/entroly-audit/paths.txt
+          python - <<'PY'
+          import hashlib, json, pathlib, subprocess
+
+          root = pathlib.Path('.').resolve()
+          raw = subprocess.check_output(['git', 'ls-files', '-z'])
+          paths = [p.decode('utf-8', 'surrogateescape') for p in raw.split(b'\0') if p]
+          rows = []
+          text_count = 0
+          binary_count = 0
+          total_bytes = 0
+          for rel in paths:
+              path = root / rel
+              data = path.read_bytes()
+              total_bytes += len(data)
+              sample = data[:8192]
+              is_binary = b'\0' in sample
+              try:
+                  if not is_binary:
+                      data.decode('utf-8')
+              except UnicodeDecodeError:
+                  is_binary = True
+              if is_binary:
+                  binary_count += 1
+              else:
+                  text_count += 1
+              rows.append({
+                  'path': rel,
+                  'bytes': len(data),
+                  'sha256': hashlib.sha256(data).hexdigest(),
+                  'kind': 'binary' if is_binary else 'text',
+              })
+          manifest = {
+              'pinned_commit': '30dd8aa8be5b607cf7ee074f3aa6f60cb3081acd',
+              'tracked_files': len(rows),
+              'text_files': text_count,
+              'binary_files': binary_count,
+              'total_bytes': total_bytes,
+              'files': rows,
+          }
+          out = pathlib.Path('/tmp/entroly-audit/manifest.json')
+          out.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+          print(json.dumps({k: manifest[k] for k in ('pinned_commit','tracked_files','text_files','binary_files','total_bytes')}, sort_keys=True))
+          PY
+          tar --null -czf /tmp/entroly-audit/source.tar.gz --files-from=/tmp/entroly-audit/paths.z
+          sha256sum /tmp/entroly-audit/source.tar.gz > /tmp/entroly-audit/source.tar.gz.sha256
+
+      - name: Upload pinned audit snapshot
+        uses: actions/upload-artifact@v6
+        with:
+          name: entroly-full-codebase-audit-30dd8aa
+          path: /tmp/entroly-audit
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
