@@ -1,10 +1,47 @@
-name: Retired Work Graph Finalizer
+name: Materialize Work Graph Hooks
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [feat/ai-work-graph-v1]
+
+permissions:
+  contents: write
 
 jobs:
-  retired:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - run: echo 'Work Graph validation now runs through normal pull-request CI.'
+      - uses: actions/checkout@v6
+        with:
+          ref: feat/ai-work-graph-v1
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Apply reviewed registration/package hooks
+        run: python scripts/_workgraph_finalize.py
+
+      - name: Refresh affected Cargo lockfiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --manifest-path entroly-engine/Cargo.toml
+          cargo check --manifest-path entroly-core/Cargo.toml
+          cargo check --manifest-path entroly-wasm/Cargo.toml --target wasm32-unknown-unknown
+
+      - name: Commit actual product tree only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm -f scripts/_workgraph_finalize.py .github/workflows/workgraph-finalize.yml
+          git rm -f .workgraph-finalize-result.txt .workgraph-validation-bindings.txt || true
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'feat(bindings): materialize AI Work Graph Python/npm surfaces'
+          git push origin HEAD:feat/ai-work-graph-v1
