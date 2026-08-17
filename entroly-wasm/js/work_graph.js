@@ -4,6 +4,11 @@
 // inference, trust upgrades, coordination logic, or handoff verification lives
 // here; those semantics are single-source-of-truth in entroly-engine.
 
+const {
+  RepositoryDiscoveryError,
+  discoverRepositoryObservation,
+} = require('./work_graph_repo');
+
 function wasmWorkGraph() {
   const { WasmWorkGraph } = require('../pkg/entroly_wasm');
   if (!WasmWorkGraph) {
@@ -21,6 +26,14 @@ function fromJSONText(value) {
   return JSON.parse(value);
 }
 
+function requireSafeInteger(value, name, { min = Number.MIN_SAFE_INTEGER } = {}) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < min) {
+    throw new TypeError(`${name} must be a safe integer${min === 0 ? ' >= 0' : ''}`);
+  }
+  return number;
+}
+
 class WorkGraph {
   constructor(repoId, inner = null) {
     const Native = wasmWorkGraph();
@@ -30,6 +43,13 @@ class WorkGraph {
   static fromJSON(serialized) {
     const Native = wasmWorkGraph();
     return new WorkGraph('', Native.fromJSON(toJSONText(serialized)));
+  }
+
+  static fromRepository(repoPath = '.', options = {}) {
+    const observation = discoverRepositoryObservation(repoPath, options);
+    const graph = new WorkGraph(observation.repo_id);
+    graph.observeRepository(observation);
+    return graph;
   }
 
   static verifyHandoffIntegrity(receipt) {
@@ -47,6 +67,16 @@ class WorkGraph {
 
   observeRepository(observation) {
     return this._inner.observeRepositoryJSON(toJSONText(observation));
+  }
+
+  refreshRepository(repoPath = '.', options = {}) {
+    const observation = discoverRepositoryObservation(repoPath, options);
+    if (observation.repo_id !== this.repoId) {
+      throw new Error(
+        `repository identity changed: expected ${this.repoId}, got ${observation.repo_id}`,
+      );
+    }
+    return this.observeRepository(observation);
   }
 
   merge(other) {
@@ -76,11 +106,18 @@ class WorkGraph {
 
   resume(workstreamId = null, maxEvidence = 128, pretty = false) {
     const id = workstreamId == null ? undefined : String(workstreamId);
-    return fromJSONText(this._inner.resumeJSON(id, Number(maxEvidence), Boolean(pretty)));
+    return fromJSONText(this._inner.resumeJSON(
+      id,
+      requireSafeInteger(maxEvidence, 'maxEvidence', { min: 0 }),
+      Boolean(pretty),
+    ));
   }
 
   coordination(nowMs = Date.now(), pretty = false) {
-    return fromJSONText(this._inner.coordinationJSON(Number(nowMs), Boolean(pretty)));
+    return fromJSONText(this._inner.coordinationJSON(
+      requireSafeInteger(nowMs, 'nowMs'),
+      Boolean(pretty),
+    ));
   }
 
   handoff(workstreamId, fromAgent, toAgent, generatedAtMs = Date.now(), pretty = false) {
@@ -88,7 +125,7 @@ class WorkGraph {
       String(workstreamId),
       String(fromAgent),
       String(toAgent),
-      Number(generatedAtMs),
+      requireSafeInteger(generatedAtMs, 'generatedAtMs'),
       Boolean(pretty),
     ));
   }
@@ -98,4 +135,8 @@ class WorkGraph {
   }
 }
 
-module.exports = { WorkGraph };
+module.exports = {
+  WorkGraph,
+  RepositoryDiscoveryError,
+  discoverRepositoryObservation,
+};
