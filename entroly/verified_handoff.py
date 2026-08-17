@@ -67,44 +67,89 @@ logger = logging.getLogger(__name__)
 @dataclass
 class VerifiedClaim:
     """A single claim with its WITNESS verification result."""
-    text: str                   # the claim text
-    label: str                  # "grounded" | "unsupported" | "contradicted"
-    confidence: float           # WITNESS confidence [0, 1]
-    evidence_snippet: str       # supporting evidence (truncated)
-    passed: bool                # True if grounded or unsupported (non-blocking)
-    blocked: bool               # True if contradicted (blocked from handoff)
+    text: str
+    label: str
+    confidence: float
+    evidence_snippet: str
+    passed: bool
+    blocked: bool
 
 
 @dataclass
 class HandoffBundle:
     """A verified context bundle for agent-to-agent handoff.
 
-    Contains only claims that passed WITNESS verification.
-    Contradicted claims are recorded but excluded from the
-    verified_context that Agent B receives.
+    Contains only claims that passed WITNESS verification. Contradicted claims
+    are recorded but excluded from the verified_context that Agent B receives.
     """
-    bundle_id: str                  # SHA-256 of verified content
-    from_agent: str                 # source agent identifier
-    to_agent: str                   # target agent identifier
-    created_at: str                 # ISO 8601 timestamp
-    verified_context: str           # cleaned output (contradictions removed)
-    original_output: str            # Agent A's full output (for audit)
-    claims: list[VerifiedClaim]     # per-claim verification results
-    witness_summary_score: float    # overall WITNESS score
-    n_grounded: int                 # claims that passed verification
-    n_unsupported: int              # claims with no evidence (warned)
-    n_contradicted: int             # claims blocked from handoff
-    n_total: int                    # total claims examined
-    latency_ms: float               # verification latency
-    chain_position: int = 0         # position in multi-agent chain (0-indexed)
+    bundle_id: str
+    from_agent: str
+    to_agent: str
+    created_at: str
+    verified_context: str
+    original_output: str
+    claims: list[VerifiedClaim]
+    witness_summary_score: float
+    n_grounded: int
+    n_unsupported: int
+    n_contradicted: int
+    n_total: int
+    latency_ms: float
+    chain_position: int = 0
     upstream_bundle_ids: list[str] = field(default_factory=list)
+    # Creation-time commitment. This must never be recomputed implicitly from
+    # mutable bundle fields at receive time, otherwise a mutated bundle would
+    # compare a hash of the new value with itself and always pass.
+    sealed_integrity_hash: str = ""
+
+    def _integrity_payload(self) -> dict[str, Any]:
+        """Canonical security-relevant payload covered by the bundle seal."""
+        return {
+            "bundle_id": self.bundle_id,
+            "from_agent": self.from_agent,
+            "to_agent": self.to_agent,
+            "created_at": self.created_at,
+            "verified_context": self.verified_context,
+            "original_output": self.original_output,
+            "claims": [
+                {
+                    "text": claim.text,
+                    "label": claim.label,
+                    "confidence": claim.confidence,
+                    "evidence_snippet": claim.evidence_snippet,
+                    "passed": claim.passed,
+                    "blocked": claim.blocked,
+                }
+                for claim in self.claims
+            ],
+            "witness_summary_score": self.witness_summary_score,
+            "n_grounded": self.n_grounded,
+            "n_unsupported": self.n_unsupported,
+            "n_contradicted": self.n_contradicted,
+            "n_total": self.n_total,
+            "chain_position": self.chain_position,
+            "upstream_bundle_ids": list(self.upstream_bundle_ids),
+        }
+
+    def compute_integrity_hash(self) -> str:
+        """Compute the canonical SHA-256 commitment for the current payload."""
+        payload = json.dumps(
+            self._integrity_payload(),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+        return hashlib.sha256(payload).hexdigest()
+
+    def seal(self) -> str:
+        """Seal the bundle once, at creation, and return the commitment."""
+        self.sealed_integrity_hash = self.compute_integrity_hash()
+        return self.sealed_integrity_hash
 
     @property
     def integrity_hash(self) -> str:
-        """SHA-256 of the verified context for downstream chain verification."""
-        return hashlib.sha256(
-            self.verified_context.encode("utf-8")
-        ).hexdigest()
+        """Creation-time commitment used by downstream integrity checks."""
+        return self.sealed_integrity_hash
 
     @property
     def contamination_rate(self) -> float:
@@ -114,7 +159,7 @@ class HandoffBundle:
         return self.n_contradicted / self.n_total
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize for transport / logging."""
+        """Serialize summary metadata for transport / logging."""
         return {
             "bundle_id": self.bundle_id,
             "from_agent": self.from_agent,
@@ -145,62 +190,36 @@ def handoff(
     upstream_bundles: list[str] | None = None,
     analyzer: Any | None = None,
 ) -> HandoffBundle:
-    """Create a WITNESS-verified handoff bundle.
-
-    Runs WITNESS on Agent A's output against the evidence context,
-    strips contradicted claims, and packages the verified remainder
-    for Agent B.
-
-    Parameters
-    ----------
-    output : str
-        Agent A's output text.
-    evidence : str
-        The evidence/context that Agent A was working with.
-    from_agent : str
-        Source agent identifier.
-    to_agent : str
-        Target agent identifier.
-    mode : str
-        "strict" — block contradicted AND unsupported claims.
-        "audit"  — block only contradicted; warn on unsupported.
-        "permissive" — warn on everything, block nothing.
-    chain_position : int
-        Position in the agent chain (0 = first handoff).
-    upstream_bundles : list[str]
-        Bundle IDs from upstream handoffs (for chain tracking).
-    analyzer : WitnessAnalyzer, optional
-        Pre-configured WitnessAnalyzer instance.  If None, creates one
-        with default settings.
-
-    Returns
-    -------
-    HandoffBundle
-        Verified context bundle ready for Agent B.
-    """
+    """Create a WITNESS-verified handoff bundle."""
     t0 = time.perf_counter()
 
-    # Import here to avoid circular imports
+    if mode not in {"strict", "audit", "permissive"}:
+        raise ValueError(f"Unsupported WVH mode: {mode!r}")
+    if not isinstance(from_agent, str) or not from_agent.strip():
+        raise ValueError("from_agent must be a non-empty string")
+    if not isinstance(to_agent, str) or not to_agent.strip():
+        raise ValueError("to_agent must be a non-empty string")
+    if chain_position < 0:
+        raise ValueError("chain_position must be >= 0")
+    if upstream_bundles is not None and any(
+        not isinstance(bundle_id, str) or not bundle_id
+        for bundle_id in upstream_bundles
+    ):
+        raise ValueError("upstream_bundles must contain non-empty bundle IDs")
+
     from .witness import WitnessAnalyzer
 
     if analyzer is None:
         analyzer = WitnessAnalyzer(use_stave=True)
 
-    # Run WITNESS verification
     result = analyzer.analyze(output, evidence)
-
-    # Classify each claim
     verified_claims: list[VerifiedClaim] = []
     blocked_texts: list[str] = []
 
     for cert in result.certificates:
-        is_blocked = False
-
-        if cert.label == "contradicted":
-            is_blocked = True
-        elif cert.label == "unsupported" and mode == "strict":
-            is_blocked = True
-
+        is_blocked = cert.label == "contradicted" or (
+            cert.label == "unsupported" and mode == "strict"
+        )
         claim = VerifiedClaim(
             text=cert.claim if hasattr(cert, "claim") else str(cert),
             label=cert.label,
@@ -210,15 +229,11 @@ def handoff(
             blocked=is_blocked,
         )
         verified_claims.append(claim)
-
         if is_blocked:
             blocked_texts.append(claim.text)
 
-    # Build verified context (remove contradicted claims from output)
     verified_context = output
     for blocked_text in blocked_texts:
-        # Remove the blocked claim from the output
-        # Use careful text replacement to avoid breaking surrounding context
         if blocked_text in verified_context:
             verified_context = verified_context.replace(
                 blocked_text,
@@ -226,7 +241,6 @@ def handoff(
                 1,
             )
 
-    # Add warnings for unsupported claims in audit mode
     if mode == "audit":
         warnings = [
             c.text for c in verified_claims
@@ -234,19 +248,16 @@ def handoff(
         ]
         if warnings:
             warning_block = "\n[WVH WARNING: The following claims lack supporting evidence:]\n"
-            for w in warnings:
-                warning_block += f"  ⚠ {w}\n"
+            for warning in warnings:
+                warning_block += f"  ⚠ {warning}\n"
             verified_context = verified_context + "\n" + warning_block
 
-    # Count by label
     n_grounded = sum(1 for c in verified_claims if c.label == "grounded")
     n_unsupported = sum(1 for c in verified_claims if c.label == "unsupported")
     n_contradicted = sum(1 for c in verified_claims if c.label == "contradicted")
 
-    # Generate bundle ID
     bundle_content = f"{verified_context}|{from_agent}|{to_agent}"
     bundle_id = hashlib.sha256(bundle_content.encode("utf-8")).hexdigest()[:16]
-
     latency_ms = (time.perf_counter() - t0) * 1000
 
     bundle = HandoffBundle(
@@ -264,19 +275,20 @@ def handoff(
         n_total=len(verified_claims),
         latency_ms=latency_ms,
         chain_position=chain_position,
-        upstream_bundle_ids=upstream_bundles or [],
+        upstream_bundle_ids=list(upstream_bundles or []),
     )
+    bundle.seal()
 
     logger.info(
         "[WVH] Handoff %s → %s: %d/%d claims passed, %d blocked, score=%.2f, %.0fms",
-        from_agent, to_agent,
+        from_agent,
+        to_agent,
         n_grounded + n_unsupported - (n_unsupported if mode == "strict" else 0),
         len(verified_claims),
         n_contradicted + (n_unsupported if mode == "strict" else 0),
         result.summary_score,
         latency_ms,
     )
-
     return bundle
 
 
@@ -284,47 +296,32 @@ def receive(
     bundle: HandoffBundle,
     verify_integrity: bool = True,
 ) -> str:
-    """Unpack a handoff bundle for the receiving agent.
-
-    Optionally verifies the integrity hash to detect tampering
-    in transit.
-
-    Parameters
-    ----------
-    bundle : HandoffBundle
-        The verified bundle from handoff().
-    verify_integrity : bool
-        If True, recompute and verify the integrity hash.
-
-    Returns
-    -------
-    str
-        The verified context text for the receiving agent.
-
-    Raises
-    ------
-    ValueError
-        If integrity verification fails.
-    """
+    """Unpack a handoff bundle for the receiving agent."""
     if verify_integrity:
         expected = bundle.integrity_hash
-        actual = hashlib.sha256(
-            bundle.verified_context.encode("utf-8")
-        ).hexdigest()
+        if not expected:
+            raise ValueError(
+                f"[WVH] Bundle {bundle.bundle_id} has no creation-time integrity seal; "
+                "integrity cannot be verified."
+            )
+        actual = bundle.compute_integrity_hash()
         if actual != expected:
             raise ValueError(
                 f"[WVH] Integrity check failed for bundle {bundle.bundle_id}. "
                 f"Expected {expected[:16]}..., got {actual[:16]}... "
-                "Context may have been tampered with in transit."
+                "Bundle content or routing metadata changed after verification."
             )
 
     logger.info(
         "[WVH] Agent %s received bundle %s from %s "
         "(%d grounded, %d blocked, chain pos %d)",
-        bundle.to_agent, bundle.bundle_id[:8], bundle.from_agent,
-        bundle.n_grounded, bundle.n_contradicted, bundle.chain_position,
+        bundle.to_agent,
+        bundle.bundle_id[:8],
+        bundle.from_agent,
+        bundle.n_grounded,
+        bundle.n_contradicted,
+        bundle.chain_position,
     )
-
     return bundle.verified_context
 
 
@@ -336,29 +333,7 @@ def chain_handoff(
     mode: str = "strict",
     analyzer: Any | None = None,
 ) -> list[HandoffBundle]:
-    """Execute a verified handoff chain across multiple agents.
-
-    Each agent's output is verified before passing to the next.
-    Returns the list of handoff bundles for the entire chain.
-
-    Parameters
-    ----------
-    agents : list[str]
-        List of agent identifiers [agent_a, agent_b, agent_c, ...].
-    initial_output : str
-        The first agent's output.
-    evidence : str
-        The evidence context.
-    mode : str
-        Verification mode ("strict", "audit", "permissive").
-    analyzer : WitnessAnalyzer, optional
-        Shared analyzer instance.
-
-    Returns
-    -------
-    list[HandoffBundle]
-        One bundle per handoff in the chain.
-    """
+    """Execute a verified handoff chain across multiple agents."""
     if len(agents) < 2:
         raise ValueError("Chain requires at least 2 agents")
 
@@ -366,8 +341,7 @@ def chain_handoff(
     current_output = initial_output
 
     for i in range(len(agents) - 1):
-        upstream_ids = [b.bundle_id for b in bundles]
-
+        upstream_ids = [bundle.bundle_id for bundle in bundles]
         bundle = handoff(
             output=current_output,
             evidence=evidence,
