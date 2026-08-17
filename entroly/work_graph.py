@@ -3,7 +3,7 @@
 The authoritative Work Graph implementation lives in ``entroly-engine``. This
 module intentionally contains no task-state inference, trust upgrades,
 coordination rules, or handoff verification logic; it only provides ergonomic
-Python conversion around the PyO3 boundary.
+Python conversion and local observation around the PyO3 boundary.
 """
 
 from __future__ import annotations
@@ -60,6 +60,38 @@ class WorkGraph:
         obj._inner = native.from_json(_json_text(serialized))
         return obj
 
+    @classmethod
+    def from_repository(
+        cls,
+        path: str = ".",
+        *,
+        agent_id: str = "",
+        session_id: str = "",
+        task_hint: dict[str, Any] | None = None,
+        default_branch: str | None = None,
+        max_commits: int = 20,
+        observed_at_ms: int | None = None,
+        include_checkpoint: bool = True,
+        checkpoint_dir: str | None = None,
+    ) -> "WorkGraph":
+        """Build a graph from durable repository facts without guessing intent."""
+        from .work_graph_repo import discover_repository_observation
+
+        observation = discover_repository_observation(
+            path,
+            agent_id=agent_id,
+            session_id=session_id,
+            task_hint=task_hint,
+            default_branch=default_branch,
+            max_commits=max_commits,
+            observed_at_ms=observed_at_ms,
+            include_checkpoint=include_checkpoint,
+            checkpoint_dir=checkpoint_dir,
+        )
+        graph = cls(observation["repo_id"])
+        graph.observe_repository(observation)
+        return graph
+
     @staticmethod
     def verify_handoff_integrity(receipt: str | Mapping[str, Any]) -> bool:
         native = _require_native()
@@ -86,6 +118,40 @@ class WorkGraph:
 
     def observe_repository(self, observation: str | Mapping[str, Any]) -> str:
         return str(self._inner.observe_repository_json(_json_text(observation)))
+
+    def refresh_repository(
+        self,
+        path: str = ".",
+        *,
+        agent_id: str = "",
+        session_id: str = "",
+        task_hint: dict[str, Any] | None = None,
+        default_branch: str | None = None,
+        max_commits: int = 20,
+        observed_at_ms: int | None = None,
+        include_checkpoint: bool = True,
+        checkpoint_dir: str | None = None,
+    ) -> str:
+        """Refresh current Git/checkpoint facts using the shared Rust semantics."""
+        from .work_graph_repo import discover_repository_observation
+
+        observation = discover_repository_observation(
+            path,
+            agent_id=agent_id,
+            session_id=session_id,
+            task_hint=task_hint,
+            default_branch=default_branch,
+            max_commits=max_commits,
+            observed_at_ms=observed_at_ms,
+            include_checkpoint=include_checkpoint,
+            checkpoint_dir=checkpoint_dir,
+        )
+        if observation["repo_id"] != self.repo_id:
+            raise ValueError(
+                f"repository identity changed: expected {self.repo_id}, "
+                f"got {observation['repo_id']}"
+            )
+        return self.observe_repository(observation)
 
     def merge(self, other: "WorkGraph" | str | Mapping[str, Any]) -> int:
         payload = other.export_json() if isinstance(other, WorkGraph) else _json_text(other)
