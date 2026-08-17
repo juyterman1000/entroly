@@ -720,9 +720,27 @@ class BeliefLedger:
         )
 
     def verify_chain(self) -> dict[str, Any]:
-        """Recompute the hash chain. Fail-closed: reports the first break."""
+        """Recompute the hash chain. Fail-closed: reports the first break.
+
+        Held under the append lock. The log and the head are two files, and
+        reading them at different instants let a concurrent append land in
+        between: the log was counted before the append and the head read after
+        it, so a healthy ledger reported "truncated: head expects 299, found
+        298". A soak of three writers against a maintainer produced six such
+        alarms in a minute, on a chain that was intact at the end.
+
+        A tamper alarm that fires on healthy data is worse than none, so the
+        verification takes a consistent snapshot rather than tolerating a
+        window -- tolerating one would have blunted real truncation detection
+        by exactly the amount of the tolerance.
+        """
+
         if not self._log.exists():
             return {"status": "empty", "records": 0}
+        with self._exclusive():
+            return self._verify_locked()
+
+    def _verify_locked(self) -> dict[str, Any]:
         prev_hash = ""
         count = 0
         for line_no, line in enumerate(

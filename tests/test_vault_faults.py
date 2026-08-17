@@ -201,3 +201,50 @@ def test_an_unreadable_belief_does_not_break_a_vault_scan(tmp_path):
     assert _parse_frontmatter(
         Path(survivor["path"]).read_text(encoding="utf-8")
     ) is not None
+
+
+def test_verification_during_concurrent_writes_does_not_false_alarm(tmp_path):
+    """The log and the head are two files.
+
+    Reading them at different instants let a concurrent append land between:
+    the log counted before it, the head read after it, and a healthy ledger
+    reported "truncated: head expects 299, found 298". A soak of three writers
+    against a maintainer produced six such alarms in a minute on a chain that
+    was intact throughout. A tamper alarm that fires on healthy data is worse
+    than none.
+    """
+
+    import threading
+
+    vault = _vault(tmp_path)
+    vault.write_belief(
+        BeliefArtifact(entity="seed", title="t", body="b", sources=["a.py:1"])
+    )
+    ledger = BeliefLedger(vault._base)
+    stop = False
+    false_alarms: list[str] = []
+
+    def verify_loop() -> None:
+        while not stop:
+            report = ledger.verify_chain()
+            if report["status"] != "intact":
+                false_alarms.append(str(report.get("reason", report)))
+
+    def write_loop() -> None:
+        for index in range(60):
+            vault.write_belief(
+                BeliefArtifact(entity=f"w{index}", title="t", body=f"b{index}",
+                               sources=["a.py:1"])
+            )
+
+    verifier = threading.Thread(target=verify_loop)
+    verifier.start()
+    writers = [threading.Thread(target=write_loop) for _ in range(2)]
+    for thread in writers:
+        thread.start()
+    for thread in writers:
+        thread.join()
+    stop = True
+    verifier.join()
+
+    assert false_alarms == [], f"verification false-alarmed: {false_alarms[:3]}"
