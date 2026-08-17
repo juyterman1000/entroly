@@ -1,0 +1,58 @@
+name: Full Codebase Native Audit
+
+on:
+  push:
+    branches: [audit/full-codebase-snapshot-20260817]
+
+permissions:
+  contents: read
+
+jobs:
+  native-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out pinned main source
+        uses: actions/checkout@v6
+        with:
+          ref: 30dd8aa8be5b607cf7ee074f3aa6f60cb3081acd
+          fetch-depth: 1
+
+      - name: Install Rust stable with wasm target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Test shared engine
+        run: cargo test --manifest-path entroly-engine/Cargo.toml --all-targets
+
+      - name: Test QCCR
+        run: cargo test --manifest-path entroly-qccr/Cargo.toml --all-targets
+
+      - name: Test native core
+        run: cargo test --manifest-path entroly-core/Cargo.toml --lib
+
+      - name: Test WASM Rust crate
+        run: cargo test --manifest-path entroly-wasm/Cargo.toml --lib
+
+      - name: Install wasm-pack
+        uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          version: latest
+
+      - name: Build Node WASM package
+        working-directory: entroly-wasm
+        run: wasm-pack build --target nodejs --out-dir pkg
+
+      - name: Run Node/WASM contract tests
+        working-directory: entroly-wasm
+        run: |
+          node test_smoke.js
+          node test_startup.js
+          node test_security.js
+          node test_qccr_routing.js
+          node test_app_sdk.js
+          node test_autotune.js
+          node test_distill.js
+          node test_federation_js.js
+          node test_wasm_e2e.js
