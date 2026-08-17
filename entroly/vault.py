@@ -211,6 +211,33 @@ def _iter_source_files(root: Path, limit: int = 4000):
                     return
 
 
+def _split_frontmatter(content: str) -> tuple[str, str] | None:
+    """Split a belief into its frontmatter block and the rest.
+
+    The closing delimiter is a line that is exactly ``---``. Locating it with
+    a substring search instead matched the first ``---`` *anywhere*, so an
+    entity of ``x --- y`` ended the block mid-value: the entity parsed as
+    ``x`` and every field after it -- status, confidence, sources, the
+    claim_id the ledger is keyed by -- spilled into the body. Entity names
+    come from indexed source code, so that input is not hypothetical.
+
+    Returns ``(frontmatter_text, body_text)`` or None when there is no
+    complete block.
+    """
+
+    if not content.startswith("---"):
+        return None
+    lines = content.splitlines(keepends=True)
+    if not lines:
+        return None
+    consumed = len(lines[0])
+    for line in lines[1:]:
+        if line.strip() == "---":
+            return content[len(lines[0]) : consumed], content[consumed + len(line) :]
+        consumed += len(line)
+    return None
+
+
 def _set_frontmatter_field(content: str, key: str, value: Any) -> str:
     """Rewrite one frontmatter key, leaving the body untouched.
 
@@ -983,13 +1010,11 @@ def _belief_filenames(entity: str) -> tuple[str, str]:
 
 def _parse_frontmatter(content: str) -> dict[str, str] | None:
     """Parse YAML frontmatter from markdown content."""
-    if not content.startswith("---"):
-        return None
-    end = content.find("---", 3)
-    if end < 0:
+    split = _split_frontmatter(content)
+    if split is None:
         return None
 
-    fm_text = content[3:end].strip()
+    fm_text = split[0].strip()
     result: dict[str, str] = {}
     for line in fm_text.splitlines():
         if ":" in line and not line.strip().startswith("-"):
@@ -1105,13 +1130,11 @@ def _path_suffix_index(roots: list[Path]) -> set[str]:
 
 def _extract_sources(content: str) -> list[str]:
     """Extract sources list from frontmatter."""
-    if not content.startswith("---"):
-        return []
-    end = content.find("---", 3)
-    if end < 0:
+    split = _split_frontmatter(content)
+    if split is None:
         return []
 
-    fm_text = content[3:end].strip().splitlines()
+    fm_text = split[0].strip().splitlines()
     sources: list[str] = []
     in_sources = False
     for line in fm_text:
@@ -1130,11 +1153,9 @@ def _extract_sources(content: str) -> list[str]:
 
 def _extract_body(content: str) -> str:
     """Extract body content after frontmatter."""
-    if not content.startswith("---"):
+    split = _split_frontmatter(content)
+    if split is None:
         return content
-    end = content.find("---", 3)
-    if end < 0:
-        return content
-    return content[end + 3:].strip()
+    return split[1].strip()
 
 

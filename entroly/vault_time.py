@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -120,20 +121,107 @@ class BeliefLedger:
     # ── Writing ──────────────────────────────────────────────────────
 
     def _last_record(self) -> dict[str, Any] | None:
+        """The final record, read from the tail rather than the whole file.
+
+        Every append needs the previous record's seq and hash, and this used
+        to `read_text()` the entire ledger to get them -- 69% of the cost of
+        writing a belief, on a file that only grows. Seeking from the end
+        reads one line's worth regardless of history, which is what makes
+        appending independent of how much history exists.
+
+        The tail is authoritative, unlike `head.json`: a crash between the
+        append and the head write would leave the head one record behind, and
+        chaining onto that would silently fork the chain.
+        """
+
         if not self._log.exists():
             return None
-        last_line = ""
-        for line in self._log.read_text(encoding="utf-8").splitlines():
-            if line.strip():
-                last_line = line
-        if not last_line:
+        try:
+            with self._log.open("rb") as handle:
+                handle.seek(0, os.SEEK_END)
+                size = handle.tell()
+                if size == 0:
+                    return None
+                block = 4096
+                buffer = b""
+                while size > 0:
+                    step = min(block, size)
+                    size -= step
+                    handle.seek(size)
+                    buffer = handle.read(step) + buffer
+                    lines = [ln for ln in buffer.split(b"\n") if ln.strip()]
+                    # Need a complete line: unless the chunk reaches the file
+                    # start, the first fragment may be cut mid-record.
+                    if len(lines) >= 2 or size == 0:
+                        break
+                lines = [ln for ln in buffer.split(b"\n") if ln.strip()]
+                if not lines:
+                    return None
+                last_line = lines[-1].decode("utf-8")
+        except OSError:
             return None
+
         try:
             return json.loads(last_line)
         except json.JSONDecodeError as exc:
             raise LedgerIntegrityError(
                 f"unreadable final ledger record: {exc}"
             ) from exc
+
+    @property
+    def _head(self) -> Path:
+        return self._dir / "head.json"
+
+    def _write_head(self, seq: int, record_hash: str) -> None:
+        """Record where the chain currently ends.
+
+        A hash chain proves that the records present are internally
+        consistent. It cannot notice records that are *absent from the end*:
+        deleting the last N lines leaves a shorter chain that still verifies,
+        so the most recent history -- the part most worth erasing -- was the
+        part the chain did not protect. Storing the expected head means a
+        truncated log no longer matches what the ledger last committed to.
+
+        This raises the bar rather than sealing it: an actor who can rewrite
+        the log can also rewrite this file. Detecting that needs an attestation
+        anchored outside the vault, which `receipt_attestation` provides for
+        receipts and this deliberately does not reimplement.
+        """
+
+        # Reuses the vault's atomic write rather than repeating `os.replace`
+        # here. A second copy was a second place to omit the jittered retry
+        # that Windows needs when a reader holds the target open, and it
+        # promptly failed under the concurrency test the first copy passes.
+        # One implementation of "replace this file safely" is the point.
+        from .vault import _atomic_write_text
+
+        payload = json.dumps(
+            {"schema": LEDGER_SCHEMA, "seq": int(seq), "record_sha256": record_hash},
+            sort_keys=True,
+        )
+        _atomic_write_text(self._head, payload)
+
+    def _append(self, record: dict[str, Any]) -> None:
+        """Append one record and advance the head together.
+
+        The single append path. Redaction appends a tombstone rather than
+        rewriting history, and when only `record()` advanced the head that
+        tombstone made the log look truncated -- a legitimate operation
+        reported as tampering. Anything that appends must move the head, so
+        there is one place that does both.
+        """
+
+        with self._log.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, sort_keys=True, ensure_ascii=False) + "\n")
+        self._write_head(record["seq"], record[_RECORD_HASH_FIELD])
+
+    def _read_head(self) -> dict[str, Any] | None:
+        if not self._head.exists():
+            return None
+        try:
+            return json.loads(self._head.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
 
     def record(self, artifact: Any, *, backfilled: bool = False,
                tx_time: str | None = None) -> dict[str, Any]:
@@ -171,8 +259,7 @@ class BeliefLedger:
             "prev_sha256": last[_RECORD_HASH_FIELD] if last else "",
         }
         record[_RECORD_HASH_FIELD] = _record_hash(record)
-        with self._log.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(record, sort_keys=True, ensure_ascii=False) + "\n")
+        self._append(record)
         return {
             "status": "recorded",
             "seq": record["seq"],
@@ -316,8 +403,10 @@ class BeliefLedger:
             "prev_sha256": last[_RECORD_HASH_FIELD] if last else "",
         }
         tombstone[_RECORD_HASH_FIELD] = _record_hash(tombstone)
-        with self._log.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(tombstone, sort_keys=True, ensure_ascii=False) + "\n")
+        # Through the same append path as a belief version: a redaction adds
+        # to history rather than rewriting it, so it must advance the head too
+        # or a lawful redaction reads as a truncated log.
+        self._append(tombstone)
         return {
             "status": "redacted",
             "versions": len(matched),
@@ -426,4 +515,20 @@ class BeliefLedger:
                         "reason": "record_sha256 mismatch"}
             prev_hash = rec[_RECORD_HASH_FIELD]
             count += 1
+
+        # A chain proves the records present are consistent; it cannot notice
+        # records missing from the *end*. Dropping the last N lines leaves a
+        # shorter chain that still verifies, so the most recent history was
+        # exactly the part the chain did not protect. Comparing against the
+        # head the ledger last committed to closes that.
+        head = self._read_head()
+        if head is not None:
+            if int(head.get("seq", 0)) != count or head.get("record_sha256") != prev_hash:
+                return {
+                    "status": "broken",
+                    "records": count,
+                    "reason": "ledger truncated: head expects "
+                              f"{head.get('seq')} record(s), found {count}",
+                }
+
         return {"status": "intact", "records": count}

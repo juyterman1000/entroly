@@ -271,3 +271,114 @@ def test_concurrent_writers_never_tear_a_belief_or_lose_a_write(tmp_path):
     assert torn == []
     assert _parse_frontmatter(target.read_text(encoding="utf-8")) is not None
     assert not list((vault._base / "beliefs").glob("*.tmp"))
+
+
+def _ledger(vault):
+    from entroly.vault_time import BeliefLedger
+
+    return BeliefLedger(vault._base)
+
+
+def test_ledger_detects_a_truncated_tail(tmp_path):
+    """A hash chain cannot notice records absent from the end.
+
+    Dropping the last N lines leaves a shorter chain that still verifies, so
+    the most recent history -- the part most worth erasing -- was exactly the
+    part the chain did not protect.
+    """
+
+    vault = _vault(tmp_path)
+    for index in range(5):
+        vault.write_belief(
+            BeliefArtifact(entity=f"e{index}", title="t", body=f"b{index}",
+                           sources=["a.py:1"])
+        )
+    ledger = _ledger(vault)
+    assert ledger.verify_chain()["status"] == "intact"
+
+    log = vault._base / "ledger" / "beliefs.jsonl"
+    lines = [line for line in log.read_text(encoding="utf-8").splitlines() if line.strip()]
+    log.write_text("\n".join(lines[:2]) + "\n", encoding="utf-8")
+
+    report = ledger.verify_chain()
+    assert report["status"] == "broken"
+    assert "truncated" in report["reason"]
+
+
+def test_ledger_still_detects_edited_and_removed_records(tmp_path):
+    vault = _vault(tmp_path)
+    for index in range(3):
+        vault.write_belief(
+            BeliefArtifact(entity=f"e{index}", title="t", body=f"b{index}",
+                           sources=["a.py:1"])
+        )
+    log = vault._base / "ledger" / "beliefs.jsonl"
+    rows = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines() if line.strip()]
+    rows[1]["confidence"] = 0.99
+    log.write_text(
+        "\n".join(json.dumps(row, sort_keys=True) for row in rows) + "\n", encoding="utf-8"
+    )
+
+    assert _ledger(vault).verify_chain()["reason"] == "record_sha256 mismatch"
+
+
+def test_a_redaction_advances_the_head_rather_than_looking_like_truncation(tmp_path):
+    """Redaction appends a tombstone; it adds to history rather than rewriting it."""
+
+    vault = _vault(tmp_path)
+    vault.write_belief(
+        BeliefArtifact(entity="secret", title="s", body="sensitive", sources=["a.py:1"])
+    )
+    vault.write_belief(
+        BeliefArtifact(entity="other", title="o", body="fine", sources=["b.py:1"])
+    )
+    ledger = _ledger(vault)
+    ledger.redact(entity="secret", reason="test")
+
+    assert ledger.verify_chain()["status"] == "intact"
+
+
+def test_appending_does_not_get_slower_as_history_grows(tmp_path):
+    """Every append needs the previous record's seq and hash.
+
+    Reading the whole ledger to get them made appending cost grow with all
+    history ever written -- 69% of the cost of writing a belief, on a file
+    that only grows. Seeking from the end reads one line's worth regardless.
+    """
+
+    from entroly.vault_time import BeliefLedger
+
+    ledger = BeliefLedger(tmp_path / "vault")
+    ledger._dir.mkdir(parents=True)
+
+    def fill(count: int) -> float:
+        rows = [
+            json.dumps(
+                {
+                    "seq": index,
+                    "record_sha256": "a" * 64,
+                    "prev_sha256": "b" * 64,
+                    "entity": f"e{index}",
+                    "pad": "x" * 160,
+                },
+                sort_keys=True,
+            )
+            for index in range(count)
+        ]
+        ledger._log.write_text("\n".join(rows) + "\n", encoding="utf-8")
+        start = time.perf_counter()
+        for _ in range(20):
+            record = ledger._last_record()
+        assert record["seq"] == count - 1
+        return (time.perf_counter() - start) / 20
+
+    small = fill(500)
+    large = fill(50_000)
+
+    # 100x the history must not cost meaningfully more. A generous bound: the
+    # point is that this is flat, not that it hits a particular number on any
+    # given disk.
+    assert large < max(small * 5, 0.05), (
+        f"append lookup scales with history: {small:.4f}s at 500 records, "
+        f"{large:.4f}s at 50,000"
+    )
