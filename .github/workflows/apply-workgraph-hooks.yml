@@ -1,0 +1,132 @@
+name: Apply Work Graph Registration Hooks
+
+on:
+  push:
+    branches: [audit/full-codebase-snapshot-20260817]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feat/ai-work-graph-v1
+          fetch-depth: 0
+
+      - name: Apply minimal reviewed hooks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          def insert_once(path: str, needle: str, addition: str) -> None:
+              p = Path(path)
+              text = p.read_text()
+              if addition.strip() in text:
+                  return
+              if needle not in text:
+                  raise SystemExit(f"anchor missing in {path}: {needle!r}")
+              p.write_text(text.replace(needle, needle + addition, 1))
+
+          insert_once("entroly-core/src/lib.rs", "mod witness;\n", "mod work_graph_bindings;\n")
+          insert_once(
+              "entroly-core/src/lib.rs",
+              "    m.add_class::<PyDedupIndex>()?;\n",
+              "    work_graph_bindings::register(m)?;\n",
+          )
+          insert_once(
+              "entroly-wasm/src/lib.rs",
+              "pub(crate) use entroly_engine::utilization;\n",
+              "mod work_graph_bindings;\n",
+          )
+          insert_once(
+              "entroly-wasm/index.js",
+              "const { VaultObserver } = require('./js/vault_observer');\n",
+              "const { WorkGraph } = require('./js/work_graph');\n"
+              "const { RepositoryDiscoveryError, discoverRepositoryObservation } = require('./js/work_graph_repo');\n",
+          )
+          insert_once(
+              "entroly-wasm/index.js",
+              "  WasmEntrolyEngine,\n",
+              "  WorkGraph,\n"
+              "  RepositoryDiscoveryError,\n"
+              "  discoverRepositoryObservation,\n",
+          )
+
+          dts = Path("entroly-wasm/index.d.ts")
+          text = dts.read_text().rstrip() + "\n"
+          for line in (
+              'export * from "./js/work_graph";',
+              'export * from "./js/work_graph_repo";',
+          ):
+              if line not in text:
+                  text += "\n" + line + "\n"
+          dts.write_text(text)
+
+          package_path = Path("entroly-wasm/package.json")
+          package = json.loads(package_path.read_text())
+          files = package.setdefault("files", [])
+          for item in (
+              "js/work_graph.js",
+              "js/work_graph.d.ts",
+              "js/work_graph_repo.js",
+              "js/work_graph_repo.d.ts",
+          ):
+              if item not in files:
+                  files.append(item)
+          package.setdefault("scripts", {})["test"] = (
+              "node test_wasm_e2e.js && node test_work_graph.js && node test_work_graph_repo.js"
+          )
+          package_path.write_text(json.dumps(package, indent=2) + "\n")
+
+          init_path = Path("entroly/__init__.py")
+          text = init_path.read_text().rstrip() + "\n"
+          if "from .work_graph import WorkGraph, WorkGraphUnavailableError" not in text:
+              text += (
+                  "\n# AI Work Graph — shared Rust temporal work-state engine. Python remains\n"
+                  "# orchestration-only; inference/trust/handoff semantics live in Rust.\n"
+                  "try:\n"
+                  "    from .work_graph import WorkGraph, WorkGraphUnavailableError  # noqa: F401\n"
+                  "except ImportError:\n"
+                  "    pass\n"
+              )
+          if "from .work_graph_repo import RepositoryDiscoveryError, discover_repository_observation" not in text:
+              text += (
+                  "\nfrom .work_graph_repo import (  # noqa: F401\n"
+                  "    RepositoryDiscoveryError,\n"
+                  "    discover_repository_observation,\n"
+                  ")\n"
+              )
+          init_path.write_text(text)
+          PY
+
+          git diff --check
+          node --check entroly-wasm/index.js
+          python -m compileall -q entroly/work_graph.py entroly/work_graph_repo.py entroly/__init__.py
+
+      - name: Commit hooks without racing feature work
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --binary > /tmp/hooks.patch
+          git reset --hard HEAD
+          git fetch origin feat/ai-work-graph-v1
+          git rebase origin/feat/ai-work-graph-v1
+          git apply /tmp/hooks.patch
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            entroly-core/src/lib.rs \
+            entroly-wasm/src/lib.rs \
+            entroly-wasm/index.js \
+            entroly-wasm/index.d.ts \
+            entroly-wasm/package.json \
+            entroly/__init__.py
+          git commit -m 'feat: register AI Work Graph across Python and npm'
+          git push origin HEAD:feat/ai-work-graph-v1
