@@ -73,7 +73,9 @@ impl WasmWorkGraph {
 
     #[wasm_bindgen(js_name = observeRepositoryJSON)]
     pub fn observe_repository_json(&mut self, json_text: &str) -> Result<String, JsValue> {
-        self.inner.observe_repository_json(json_text).map_err(js_err)
+        self.inner
+            .observe_repository_json(json_text)
+            .map_err(js_err)
     }
 
     #[wasm_bindgen(js_name = mergeJSON)]
@@ -130,13 +132,7 @@ impl WasmWorkGraph {
     ) -> Result<String, JsValue> {
         let generated_at_ms = js_safe_i64(generated_at_ms, "generated_at_ms")?;
         self.inner
-            .handoff_json(
-                workstream_id,
-                from_agent,
-                to_agent,
-                generated_at_ms,
-                pretty,
-            )
+            .handoff_json(workstream_id, from_agent, to_agent, generated_at_ms, pretty)
             .map_err(js_err)
     }
 
