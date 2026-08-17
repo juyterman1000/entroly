@@ -90,3 +90,54 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'feat(bindings): expose shared AI Work Graph across Python and npm'
           git push origin HEAD:feat/ai-work-graph-v1
+
+      - name: Publish exact validation diagnostics on failure
+        if: failure()
+        shell: bash
+        run: |
+          set +e
+          {
+            echo 'WORK GRAPH FINALIZER FAILURE DIAGNOSTICS'
+            echo "head=$(git rev-parse HEAD)"
+            echo
+            echo '=== finalizer ==='
+            python scripts/_workgraph_finalize.py 2>&1
+            echo "exit=$?"
+            echo
+            echo '=== python syntax ==='
+            python -m py_compile entroly/work_graph.py tests/test_work_graph_bindings.py 2>&1
+            echo "exit=$?"
+            echo
+            echo '=== node syntax ==='
+            node --check entroly-wasm/index.js 2>&1
+            echo "index_exit=$?"
+            node --check entroly-wasm/js/work_graph.js 2>&1
+            echo "wrapper_exit=$?"
+            node --check entroly-wasm/test_work_graph.js 2>&1
+            echo "test_exit=$?"
+            echo
+            echo '=== cargo fmt ==='
+            cargo fmt --manifest-path entroly-engine/Cargo.toml -- --check 2>&1
+            echo "exit=$?"
+            echo
+            echo '=== engine tests ==='
+            cargo test --manifest-path entroly-engine/Cargo.toml --all-targets 2>&1
+            echo "exit=$?"
+            echo
+            echo '=== engine clippy ==='
+            cargo clippy --manifest-path entroly-engine/Cargo.toml --all-targets -- -D warnings 2>&1
+            echo "exit=$?"
+            echo
+            echo '=== core check ==='
+            cargo check --manifest-path entroly-core/Cargo.toml --all-targets 2>&1
+            echo "exit=$?"
+            echo
+            echo '=== wasm check ==='
+            cargo check --manifest-path entroly-wasm/Cargo.toml --target wasm32-unknown-unknown 2>&1
+            echo "exit=$?"
+          } > .workgraph-finalize-result.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .workgraph-finalize-result.txt
+          git commit -m 'chore(work-graph): record finalizer diagnostics' || true
+          git push origin HEAD:feat/ai-work-graph-v1 || true
