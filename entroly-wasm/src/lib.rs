@@ -55,6 +55,7 @@ pub(crate) use entroly_engine::semantic_dedup;
 pub(crate) use entroly_engine::skeleton;
 pub(crate) use entroly_engine::trajectory;
 pub(crate) use entroly_engine::utilization;
+mod work_graph_bindings;
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};

@@ -54,6 +54,7 @@ mod telemetry;
 pub(crate) use entroly_engine::trajectory;
 pub(crate) use entroly_engine::utilization;
 mod witness;
+mod work_graph_bindings;
 // Cross-agent memory IPC primitives vendored from juyterman1000/AgentOS
 // (MIT-licensed, same author). Provides:
 //   - ipc:         SimHash Conditional-Entropy IPC bus (SCHIPC)
@@ -6366,6 +6367,7 @@ fn entroly_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ContextFragment>()?;
     m.add_class::<EntrolyEngine>()?;
     m.add_class::<PyDedupIndex>()?;
+    work_graph_bindings::register(m)?;
     // ── Entropy / Hashing
     m.add_function(wrap_pyfunction!(py_shannon_entropy, m)?)?;
     m.add_function(wrap_pyfunction!(py_normalized_entropy, m)?)?;

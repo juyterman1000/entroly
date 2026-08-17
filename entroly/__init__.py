@@ -497,3 +497,15 @@ try:
     install_air_gap_guard()
 except Exception:  # never let the guard break import
     pass
+
+# AI Work Graph — shared Rust temporal work-state engine. Python remains
+# orchestration-only; inference/trust/handoff semantics live in Rust.
+try:
+    from .work_graph import WorkGraph, WorkGraphUnavailableError  # noqa: F401
+except ImportError:
+    pass
+
+from .work_graph_repo import (  # noqa: F401
+    RepositoryDiscoveryError,
+    discover_repository_observation,
+)

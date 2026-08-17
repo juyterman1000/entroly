@@ -18,6 +18,9 @@ let classifyLearningQueryRust;
 function bindWasmExports(mod) {
   ({
     WasmEntrolyEngine,
+  WorkGraph,
+  RepositoryDiscoveryError,
+  discoverRepositoryObservation,
     classify_query_transition: classifyQueryTransitionRust,
     reward_weighted_optimize: rewardWeightedOptimizeRust,
     optimize_task_profiles: optimizeTaskProfilesRust,
@@ -65,6 +68,8 @@ const { ValueTracker, EVOLUTION_TAX_RATE, estimateCost } = require('./js/value_t
 const { exportPromoted: exportAgentSkills } = require('./js/agentskills_export');
 const { TelegramGateway, DiscordGateway, SlackGateway } = require('./js/gateways');
 const { VaultObserver } = require('./js/vault_observer');
+const { WorkGraph } = require('./js/work_graph');
+const { RepositoryDiscoveryError, discoverRepositoryObservation } = require('./js/work_graph_repo');
 const {
   createContextReceipt,
   explainReceiptOmission,
