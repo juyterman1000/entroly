@@ -15,6 +15,16 @@ fn parse_receipt(json_text: &str) -> Result<HandoffReceipt, JsValue> {
     serde_json::from_str(json_text).map_err(js_err)
 }
 
+fn js_safe_i64(value: f64, name: &str) -> Result<i64, JsValue> {
+    const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
+    if !value.is_finite() || value.fract() != 0.0 || value.abs() > MAX_SAFE_INTEGER {
+        return Err(JsValue::from_str(&format!(
+            "{name} must be a finite JavaScript-safe integer"
+        )));
+    }
+    Ok(value as i64)
+}
+
 #[wasm_bindgen]
 pub struct WasmWorkGraph {
     inner: WorkGraph,
@@ -104,7 +114,8 @@ impl WasmWorkGraph {
     }
 
     #[wasm_bindgen(js_name = coordinationJSON)]
-    pub fn coordination_json(&self, now_ms: i64, pretty: bool) -> Result<String, JsValue> {
+    pub fn coordination_json(&self, now_ms: f64, pretty: bool) -> Result<String, JsValue> {
+        let now_ms = js_safe_i64(now_ms, "now_ms")?;
         self.inner.coordination_json(now_ms, pretty).map_err(js_err)
     }
 
@@ -114,9 +125,10 @@ impl WasmWorkGraph {
         workstream_id: &str,
         from_agent: &str,
         to_agent: &str,
-        generated_at_ms: i64,
+        generated_at_ms: f64,
         pretty: bool,
     ) -> Result<String, JsValue> {
+        let generated_at_ms = js_safe_i64(generated_at_ms, "generated_at_ms")?;
         self.inner
             .handoff_json(
                 workstream_id,
