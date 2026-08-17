@@ -87,6 +87,12 @@ SKIP_DIRECTORIES = frozenset({
     "node_modules",
     "target",
     "venv",
+    # Scratch trees. `.tmp` sat outside this list while `.entroly`, `.git` and
+    # `.venv` were in it, so `entroly ingest .` walked into one and produced
+    # 34,051 documents -- 32,524 of them from a single `.tmp/pr_work` checkout
+    # -- for a 528 MB index that then made `select` and `optimize` time out.
+    ".tmp",
+    "tmp",
 })
 
 SKIP_DIRECTORY_SUFFIXES = (

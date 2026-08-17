@@ -443,10 +443,19 @@ class BeliefCompiler:
     SUPPORTED_EXTENSIONS = {".py", ".rs", ".ts", ".tsx", ".js", ".jsx"}
 
     # Directories to skip
+    # `entroly compile .` is already recursive, so this list is what decides
+    # whether compiling a whole repository is practical. Without the scratch
+    # and cache entries below it walked 25,819 files here, 24,831 of them in a
+    # local `.tmp` checkout -- which is why compiling each source directory
+    # separately looked necessary. Pruning them makes one command cover the
+    # tree, and a directory missed that way reads as "not present" rather than
+    # "not indexed", which is the worse of the two failures.
     SKIP_DIRS = {
         "__pycache__", "node_modules", ".git", ".hg", "target",
         "dist", "build", ".tox", ".pytest_cache", ".mypy_cache",
         "venv", ".venv", "env", ".env",
+        ".tmp", "tmp", ".entroly", ".ruff_cache", ".hypothesis",
+        "htmlcov", "coverage", "site-packages", ".idea", ".vscode",
     }
 
     def __init__(self, vault: VaultManager):

@@ -27,6 +27,8 @@ from __future__ import annotations
 
 import logging
 import os
+import random
+import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -62,6 +64,9 @@ class VaultConfig:
 # Belief Artifact Schema
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
+_ATOMIC_REPLACE_ATTEMPTS = 18
+
+
 def _atomic_write_text(path: Path, text: str) -> None:
     """Write a vault artifact so a reader never sees a partial one.
 
@@ -73,16 +78,190 @@ def _atomic_write_text(path: Path, text: str) -> None:
     makes the replacement atomic on POSIX and Windows alike.
     """
 
-    temp_path = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    # The token must be unique per *write*, not per process: threads in one
+    # process share a pid, so a pid-only name made concurrent writers collide
+    # on the same temp file and fail with EACCES on Windows. Atomicity held --
+    # readers never saw a torn file -- but the writes themselves crashed.
+    temp_path = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
     try:
         temp_path.write_text(text, encoding="utf-8")
-        os.replace(temp_path, path)
+        # Windows refuses to rename over a file another handle has open, so a
+        # concurrent reader makes `os.replace` raise EACCES. Retrying is what
+        # keeps the swap both atomic and available: readers hold the file for
+        # microseconds, and without this the durability fix would have traded
+        # torn reads for lost writes. POSIX takes the first attempt every time.
+        delay = 0.002
+        for attempt in range(_ATOMIC_REPLACE_ATTEMPTS):
+            try:
+                os.replace(temp_path, path)
+                break
+            except PermissionError:
+                if attempt == _ATOMIC_REPLACE_ATTEMPTS - 1:
+                    raise
+                # Jittered, or concurrent writers retry in lockstep and keep
+                # colliding with the same reader. Measured on Windows with four
+                # writers against two readers: 61 of 240 writes failed with no
+                # retry, 2 with a fixed backoff, 0 with jitter over this window.
+                time.sleep(delay * (0.5 + random.random()))
+                delay = min(delay * 2, 0.05)
     except OSError:
         try:
             temp_path.unlink()
         except OSError:  # pragma: no cover - best effort cleanup
             pass
         raise
+
+
+def _humanize_seconds(seconds: float) -> str:
+    """A coarse duration. `0.0 day(s)` tells a reader nothing useful."""
+
+    if seconds < 90:
+        return f"{int(seconds)}s"
+    if seconds < 5400:
+        return f"{seconds / 60:.0f}m"
+    if seconds < 172800:
+        return f"{seconds / 3600:.0f}h"
+    return f"{seconds / 86400:.0f}d"
+
+
+def vault_readiness(vault_base: str | Path, project_root: str | Path | None = None) -> dict[str, Any]:
+    """Whether the belief vault can answer questions about the current tree.
+
+    `entroly ingest` and `entroly search` use different stores: ingest fills
+    `.entroly/receipts/index.json` from documents, search reads
+    `.entroly/vault/beliefs/` built by `entroly compile`. Ingest reports a loud
+    success either way, so running it and then searching returns whatever the
+    vault last held, with nothing at the point of use saying the two are
+    unrelated. Returning the reason lets a caller say so.
+
+    Reports rather than decides: a stale answer is still an answer, and the
+    caller may legitimately want it.
+    """
+
+    base = Path(vault_base)
+    root = Path(project_root) if project_root is not None else base.resolve().parent.parent
+    beliefs = sorted((base / "beliefs").glob("*.md")) if (base / "beliefs").exists() else []
+
+    newest_belief = 0.0
+    for path in beliefs:
+        try:
+            newest_belief = max(newest_belief, path.stat().st_mtime)
+        except OSError:
+            continue
+
+    receipts_index = base.parent / "receipts" / "index.json"
+    has_receipts = receipts_index.exists()
+
+    reasons: list[str] = []
+    if not beliefs:
+        if has_receipts:
+            reasons.append(
+                "the belief vault is empty but a document index exists -- "
+                "`entroly ingest` fills the document index, which `entroly search` "
+                "does not read; run `entroly compile <dir>` to build beliefs"
+            )
+        else:
+            reasons.append("the belief vault is empty; run `entroly compile <dir>`")
+    else:
+        newest_source = 0.0
+        newest_source_name = ""
+        for path in _iter_source_files(root):
+            try:
+                mtime = path.stat().st_mtime
+            except OSError:
+                continue
+            if mtime > newest_source:
+                newest_source, newest_source_name = mtime, path.name
+        if newest_source > newest_belief:
+            reasons.append(
+                f"source is newer than the newest belief by "
+                f"{_humanize_seconds(newest_source - newest_belief)} "
+                f"(most recently {newest_source_name}); re-run `entroly compile <dir>` "
+                "or results will describe code as it used to be"
+            )
+
+    return {
+        "belief_count": len(beliefs),
+        "has_document_index": has_receipts,
+        "ready": not reasons,
+        "reasons": reasons,
+    }
+
+
+def _iter_source_files(root: Path, limit: int = 4000):
+    """Source files under ``root``, pruning generated trees. Bounded."""
+
+    seen = 0
+    stack = [root]
+    while stack and seen < limit:
+        directory = stack.pop()
+        try:
+            entries = list(directory.iterdir())
+        except OSError:
+            continue
+        for entry in entries:
+            if entry.name in _GROUNDEDNESS_SKIP_DIRS or entry.name.startswith("."):
+                continue
+            if entry.is_dir():
+                stack.append(entry)
+            elif entry.is_file() and entry.suffix in _SOURCE_SUFFIXES:
+                seen += 1
+                yield entry
+                if seen >= limit:
+                    return
+
+
+def _split_frontmatter(content: str) -> tuple[str, str] | None:
+    """Split a belief into its frontmatter block and the rest.
+
+    The closing delimiter is a line that is exactly ``---``. Locating it with
+    a substring search instead matched the first ``---`` *anywhere*, so an
+    entity of ``x --- y`` ended the block mid-value: the entity parsed as
+    ``x`` and every field after it -- status, confidence, sources, the
+    claim_id the ledger is keyed by -- spilled into the body. Entity names
+    come from indexed source code, so that input is not hypothetical.
+
+    Returns ``(frontmatter_text, body_text)`` or None when there is no
+    complete block.
+    """
+
+    if not content.startswith("---"):
+        return None
+    lines = content.splitlines(keepends=True)
+    if not lines:
+        return None
+    consumed = len(lines[0])
+    for line in lines[1:]:
+        if line.strip() == "---":
+            return content[len(lines[0]) : consumed], content[consumed + len(line) :]
+        consumed += len(line)
+    return None
+
+
+def _set_frontmatter_field(content: str, key: str, value: Any) -> str:
+    """Rewrite one frontmatter key, leaving the body untouched.
+
+    The body is prose compiled from source docstrings, so it can legitimately
+    contain the text ``confidence: 0.5`` or ``status: inferred``. An unanchored
+    ``str.replace`` over the whole document rewrote those too, silently
+    changing what a belief claims about the code while updating its metadata.
+    Only the region above the closing ``---`` is eligible, and only the first
+    match of an anchored key.
+    """
+
+    import re
+
+    if not content.startswith("---"):
+        return content
+    end = content.find("\n---", 3)
+    if end < 0:
+        return content
+
+    head, tail = content[:end], content[end:]
+    pattern = re.compile(rf"^{re.escape(key)}:[^\r\n]*$", re.MULTILINE)
+    if not pattern.search(head):
+        return content
+    return pattern.sub(f"{key}: {_yaml_scalar(value)}", head, count=1) + tail
 
 
 def _yaml_scalar(value: Any) -> str:
@@ -501,7 +680,14 @@ class VaultManager:
                         break
 
                 if not matched:
-                    matched = any(stem in entity_lc for stem in changed_stems)
+                    # Fallback for beliefs whose sources are missing: match the
+                    # entity against a changed file's stem *exactly*. This was a
+                    # substring test, so editing `auth.py` also marked
+                    # `authentication_service` and `oauth_client` stale --
+                    # beliefs it has nothing to do with. Staleness is what gates
+                    # trust in a belief, so marking fresh ones stale erodes the
+                    # signal rather than erring safely.
+                    matched = entity_lc in changed_stems
 
                 if not matched:
                     continue
@@ -527,6 +713,92 @@ class VaultManager:
             "updated_entities": updated_entities,
             "updated_files": updated_files,
             "already_stale": already_stale,
+        }
+
+    def backfill_source_roots(self, roots: list[str] | None = None) -> dict[str, Any]:
+        """Give legacy beliefs the `source_root` they were written without.
+
+        Beliefs written before the field existed record a bare `helper.py`,
+        so groundedness has to fall back to matching any file with that
+        suffix -- permissive enough that a belief about a deleted
+        `scripts/helper.py` survives while an unrelated `tests/helper.py`
+        exists. Recovering the root converts those to exact resolution.
+
+        The root is recovered only when the belief's sources resolve to
+        exactly one directory. Two files sharing a basename leave it
+        ambiguous, and a guess would be worse than the fallback: it would
+        look authoritative while pointing at the wrong file.
+        """
+
+        import re
+
+        self.ensure_structure()
+        search_roots = [self._base.resolve().parent.parent]
+        for root in roots or []:
+            try:
+                search_roots.append(Path(root).resolve())
+            except (OSError, ValueError):
+                continue
+        project_root = search_roots[0]
+        candidates = _path_owner_index(search_roots)
+
+        filled: list[str] = []
+        ambiguous: list[str] = []
+        for md in (self._base / "beliefs").rglob("*.md"):
+            try:
+                safe_path = resolve_file_within(self._base / "beliefs", md)
+                if safe_path is None:
+                    continue
+                content = safe_path.read_text(encoding="utf-8", errors="replace")
+                frontmatter = _parse_frontmatter(content)
+                if not frontmatter or frontmatter.get("source_root"):
+                    continue
+                sources = [
+                    s.split(":", 1)[0].replace("\\", "/").strip().lstrip("./")
+                    for s in _extract_sources(content)
+                ]
+                sources = [s for s in sources if _is_path_like(s)]
+                if not sources:
+                    continue
+
+                entity = frontmatter.get("entity", md.stem)
+                owners = {
+                    tuple(sorted(candidates.get(source, ()))) for source in sources
+                }
+                resolved = {o for o in owners if len(o) == 1}
+                if len(resolved) != 1 or len(owners) != 1:
+                    ambiguous.append(entity)
+                    continue
+
+                # An empty prefix means the source is already project-relative
+                # (`bench/accuracy.py`). Recording that as `source_root:` with
+                # no value writes a key the frontmatter parser then drops, so
+                # the belief never counted as filled and was rewritten on every
+                # compile. `.` says the same thing and survives a round trip.
+                root = next(iter(resolved))[0] or "."
+                if not (project_root / root / sources[0]).exists():
+                    ambiguous.append(entity)
+                    continue
+
+                updated = re.sub(
+                    r"^(sources:(?:\r?\n[ \t]+-[^\r\n]*)+)",
+                    lambda m: f"{m.group(1)}\nsource_root: {root}",
+                    content,
+                    count=1,
+                    flags=re.MULTILINE,
+                )
+                if updated == content:
+                    ambiguous.append(entity)
+                    continue
+                _atomic_write_text(safe_path, updated)
+                filled.append(entity)
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug(f"Vault: source_root backfill failed for {md}: {exc}")
+
+        return {
+            "status": "updated",
+            "backfilled_entities": filled,
+            "ambiguous_entities": ambiguous,
         }
 
     def mark_beliefs_ungrounded(
@@ -665,27 +937,20 @@ class VaultManager:
                 content = safe_path.read_text(encoding="utf-8", errors="replace")
                 fm = _parse_frontmatter(content)
                 if fm and fm.get("claim_id") == claim_id:
-                    old_conf = float(fm.get("confidence", 0.5))
+                    try:
+                        old_conf = float(fm.get("confidence", 0.5))
+                    except (TypeError, ValueError):
+                        # A malformed confidence is not a reason to skip the
+                        # update; treat it as the schema default and repair it.
+                        old_conf = 0.5
                     new_conf = max(0.0, min(1.0, old_conf + delta))
-                    # Rewrite the confidence line
-                    updated = content.replace(
-                        f"confidence: {fm['confidence']}",
-                        f"confidence: {new_conf}",
+
+                    updated = _set_frontmatter_field(content, "confidence", new_conf)
+                    if delta > 0 and fm.get("status") == "inferred":
+                        updated = _set_frontmatter_field(updated, "status", "verified")
+                    updated = _set_frontmatter_field(
+                        updated, "last_checked", datetime.now(timezone.utc).isoformat()
                     )
-                    # Also update status to verified if delta is positive
-                    if delta > 0 and "status: inferred" in updated:
-                        updated = updated.replace(
-                            "status: inferred", "status: verified"
-                        )
-                    # Update last_checked
-                    now = datetime.now(timezone.utc).isoformat()
-                    if "last_checked:" in updated:
-                        import re
-                        updated = re.sub(
-                            r"last_checked: .+",
-                            f"last_checked: {now}",
-                            updated,
-                        )
                     _atomic_write_text(safe_path, updated)
                     logger.info(
                         f"Vault: updated belief {claim_id} confidence "
@@ -745,13 +1010,11 @@ def _belief_filenames(entity: str) -> tuple[str, str]:
 
 def _parse_frontmatter(content: str) -> dict[str, str] | None:
     """Parse YAML frontmatter from markdown content."""
-    if not content.startswith("---"):
-        return None
-    end = content.find("---", 3)
-    if end < 0:
+    split = _split_frontmatter(content)
+    if split is None:
         return None
 
-    fm_text = content[3:end].strip()
+    fm_text = split[0].strip()
     result: dict[str, str] = {}
     for line in fm_text.splitlines():
         if ":" in line and not line.strip().startswith("-"):
@@ -761,6 +1024,12 @@ def _parse_frontmatter(content: str) -> dict[str, str] | None:
             if key and value:
                 result[key] = value
     return result if result else None
+
+
+_SOURCE_SUFFIXES = frozenset({
+    ".py", ".rs", ".js", ".ts", ".tsx", ".jsx", ".go", ".java", ".rb", ".c",
+    ".h", ".cpp", ".hpp", ".cs", ".swift", ".kt", ".php", ".scala",
+})
 
 
 _GROUNDEDNESS_SKIP_DIRS = frozenset({
@@ -782,6 +1051,43 @@ def _is_path_like(value: str) -> bool:
     if not value:
         return False
     return "/" in value or bool(Path(value).suffix)
+
+
+def _path_owner_index(roots: list[Path]) -> dict[str, set[str]]:
+    """Map each path suffix to the root-relative directories that can supply it.
+
+    A suffix owned by exactly one directory identifies a belief's
+    `source_root`; one owned by several is ambiguous and must stay that way.
+    """
+
+    owners: dict[str, set[str]] = {}
+    seen_roots: set[Path] = set()
+    for root in roots:
+        if root in seen_roots or not root.is_dir():
+            continue
+        seen_roots.add(root)
+        stack = [root]
+        while stack:
+            directory = stack.pop()
+            try:
+                entries = list(directory.iterdir())
+            except OSError:
+                continue
+            for entry in entries:
+                if entry.name in _GROUNDEDNESS_SKIP_DIRS:
+                    continue
+                if entry.is_dir():
+                    stack.append(entry)
+                elif entry.is_file():
+                    try:
+                        parts = entry.relative_to(root).as_posix().split("/")
+                    except ValueError:  # pragma: no cover - defensive
+                        continue
+                    for start in range(len(parts)):
+                        suffix = "/".join(parts[start:])
+                        owner = "/".join(parts[:start])
+                        owners.setdefault(suffix, set()).add(owner)
+    return owners
 
 
 def _path_suffix_index(roots: list[Path]) -> set[str]:
@@ -824,13 +1130,11 @@ def _path_suffix_index(roots: list[Path]) -> set[str]:
 
 def _extract_sources(content: str) -> list[str]:
     """Extract sources list from frontmatter."""
-    if not content.startswith("---"):
-        return []
-    end = content.find("---", 3)
-    if end < 0:
+    split = _split_frontmatter(content)
+    if split is None:
         return []
 
-    fm_text = content[3:end].strip().splitlines()
+    fm_text = split[0].strip().splitlines()
     sources: list[str] = []
     in_sources = False
     for line in fm_text:
@@ -849,11 +1153,9 @@ def _extract_sources(content: str) -> list[str]:
 
 def _extract_body(content: str) -> str:
     """Extract body content after frontmatter."""
-    if not content.startswith("---"):
+    split = _split_frontmatter(content)
+    if split is None:
         return content
-    end = content.find("---", 3)
-    if end < 0:
-        return content
-    return content[end + 3:].strip()
+    return split[1].strip()
 
 

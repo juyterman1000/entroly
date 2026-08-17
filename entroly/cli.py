@@ -3615,6 +3615,34 @@ def cmd_doctor(args):
         print(f"  {C.RED}x{C.RESET} Python {py_ver} (need >=3.10)")
         checks_failed += 1
 
+    # 1b. Check that the `entroly` on PATH is the package that just imported.
+    # A separately installed copy takes PATH priority over a source checkout,
+    # so `entroly <cmd>` silently exercises the installed build while tests and
+    # edits apply to the source. Every verification run that way is testing
+    # code that is not the code under change, and nothing says so.
+    # Informational, and deliberately outside the counted checks: this
+    # describes the developer's environment rather than whether entroly works,
+    # which is the same reason absent proxy/docker/index are not failures.
+    _launcher = shutil.which("entroly")
+    if _launcher:
+        try:
+            _running = Path(__file__).resolve().parent
+            _launcher_root = Path(_launcher).resolve().parent.parent
+            if _running.parent not in (_launcher_root, *_launcher_root.parents):
+                print(
+                    f"  {C.YELLOW}!{C.RESET} `entroly` on PATH is a different "
+                    f"installation than the imported package"
+                )
+                print(f"    {C.GRAY}PATH:     {_launcher}{C.RESET}")
+                print(f"    {C.GRAY}imported: {_running}{C.RESET}")
+                print(
+                    f"    {C.GRAY}Commands run the PATH copy, so edits to the "
+                    f"imported tree take no effect. Reinstall it "
+                    f"(`pip install -e .`) or use `python -m entroly`.{C.RESET}"
+                )
+        except OSError:
+            pass
+
     # 2. Check Rust engine
     checks_total += 1
     from .native_status import QCCR_SYMBOLS, native_status
@@ -4410,6 +4438,9 @@ def cmd_optimize(args):
         pass
 
 
+_INGEST_VOLUME_WARNING = 5000
+
+
 def cmd_ingest(args):
     """entroly ingest PATH - build a local multi-document Context Receipt index."""
     from entroly.context_receipts import ingest_documents
@@ -4420,6 +4451,25 @@ def cmd_ingest(args):
     if not docs:
         print(f"  {C.RED}No supported documents found.{C.RESET} {supported_documents_hint()}", file=sys.stderr)
         return 1
+
+    # A document index is meant to be searched, and one built from a scratch
+    # tree is not. Pruning cannot know every such directory by name, so an
+    # implausible count is reported with the directory responsible rather than
+    # written out silently -- the failure was a 528 MB index that made `select`
+    # and `optimize` time out, with nothing at ingest time saying why.
+    if len(docs) > _INGEST_VOLUME_WARNING:
+        from collections import Counter
+
+        by_dir = Counter(Path(src).parent.as_posix() for src, _ in docs)
+        top_dir, top_count = by_dir.most_common(1)[0]
+        print(
+            f"  {C.YELLOW}! {len(docs)} documents is unusually many for a project "
+            f"index.{C.RESET}"
+        )
+        print(
+            f"    {C.GRAY}{top_count} came from {top_dir}. If that is generated or "
+            f"scratch content, ingest a narrower path.{C.RESET}"
+        )
     index = ingest_documents(
         docs,
         chunk_tokens=args.chunk_tokens,
@@ -5333,6 +5383,17 @@ def cmd_compile(args):
     # It writes to beliefs, so it is escapable: a groundedness check that
     # misfires on an unusual layout must not leave a user with no way to
     # compile. `--no-retract` skips it; the beliefs stay as they were.
+    # Beliefs written before `source_root` existed resolve their sources by
+    # suffix, which is permissive enough to keep a belief about a deleted file
+    # alive whenever any file of that name survives. Recovering the root first
+    # means retraction below judges them exactly, not by guess.
+    backfill = vault.backfill_source_roots([target])
+    if backfill.get("backfilled_entities"):
+        print(
+            f"  {C.CYAN}Provenance filled:{C.RESET}   "
+            f"{len(backfill['backfilled_entities'])} legacy belief(s)"
+        )
+
     if getattr(args, "no_retract", False) or os.environ.get("ENTROLY_NO_RETRACT"):
         print(f"  {C.GRAY}Retraction skipped (--no-retract).{C.RESET}")
     else:
@@ -5492,7 +5553,21 @@ def cmd_search(args):
 
     print(f"\n  {C.CYAN}{C.BOLD}Vault Search{C.RESET}")
     print(f"  {C.GRAY}Query: {query}{C.RESET}")
-    print(f"  {C.GRAY}Vault: {vault_base}{C.RESET}\n")
+    print(f"  {C.GRAY}Vault: {vault_base}{C.RESET}")
+
+    # Search reads the belief vault, which only `entroly compile` fills.
+    # `entroly ingest` fills a different store and reports its own loud
+    # success, so without this the two look interchangeable and a search
+    # silently answers from whatever the vault last held.
+    try:
+        from entroly.vault import vault_readiness
+
+        readiness = vault_readiness(vault_base, os.getcwd())
+        for reason in readiness["reasons"]:
+            print(f"  {C.YELLOW}! {reason}{C.RESET}")
+    except Exception:
+        pass  # a diagnostic must never block the search itself
+    print()
 
     try:
         from entroly_core import CogOpsEngine
