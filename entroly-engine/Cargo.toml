@@ -26,6 +26,7 @@ serde_json = "1.0"
 md-5 = "0.11"
 flate2 = "1.0"
 rayon = "1.12"
+sha2 = "0.10"
 
 # Deliberately NOT depended on here:
 #
@@ -35,7 +36,7 @@ rayon = "1.12"
 #                 feature choice on consumers — entroly-wasm needs `regex-lite`
 #                 to keep the shipped .wasm small, and Cargo would unify the
 #                 two into the larger one.
-#   regex, rand, sha2   unused by these modules; the binding crates keep their own.
+#   regex, rand   unused by these modules; the binding crates keep their own.
 
 [dev-dependencies]
 tempfile = "3.12"

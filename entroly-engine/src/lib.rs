@@ -59,3 +59,5 @@ pub mod simhash_wide;
 pub mod skeleton;
 pub mod trajectory;
 pub mod utilization;
+
+pub mod work_graph;
