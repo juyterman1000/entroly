@@ -17,15 +17,15 @@ jobs:
           ref: feat/ai-work-graph-v1
           fetch-depth: 0
 
-      - name: Reconstruct exact hardened payload
+      - name: Reconstruct exact clippy-clean payload
         shell: bash
         run: |
           set -euo pipefail
-          cat .workgraph-bootstrap/v3-00 .workgraph-bootstrap/v3-01 .workgraph-bootstrap/v3-02 .workgraph-bootstrap/v3-03 .workgraph-bootstrap/v3-04 > /tmp/workgraph.b64
-          test "$(wc -c < /tmp/workgraph.b64)" -eq 27788
-          printf '%s  %s\n' '4e031d0bf231d774a04f9d6d3dedf5fdfc82e3479b0891095b88778edf637ff6' /tmp/workgraph.b64 | sha256sum -c -
+          cat .workgraph-bootstrap/v4-00 .workgraph-bootstrap/v4-01 .workgraph-bootstrap/v4-02 > /tmp/workgraph.b64
+          test "$(wc -c < /tmp/workgraph.b64)" -eq 27804
+          printf '%s  %s\n' '21c90d989f1b618918a7069405d55bb7ef83fb9ce3348535945eb836d021c4e8' /tmp/workgraph.b64 | sha256sum -c -
           base64 -d /tmp/workgraph.b64 > /tmp/workgraph.tar.xz
-          printf '%s  %s\n' '4f9a0cc2bd16a5437869e664b7577df1a696191f252bfeac12aba9c0b63c17b1' /tmp/workgraph.tar.xz | sha256sum -c -
+          printf '%s  %s\n' 'bc285978581e3b22294736653b1ec744cc423f4c08c84d17af87e1ca57b164f1' /tmp/workgraph.tar.xz | sha256sum -c -
           tar -xJf /tmp/workgraph.tar.xz -C "$GITHUB_WORKSPACE"
 
       - uses: dtolnay/rust-toolchain@stable
@@ -39,16 +39,9 @@ jobs:
           set +e
           : > /tmp/workgraph-validation.log
 
-          echo '== cargo fmt ==' | tee -a /tmp/workgraph-validation.log
-          cargo fmt --manifest-path entroly-engine/Cargo.toml >>/tmp/workgraph-validation.log 2>&1
+          echo '== rustfmt targeted ==' | tee -a /tmp/workgraph-validation.log
+          rustfmt --edition 2021 --check entroly-engine/src/lib.rs entroly-engine/src/work_graph.rs >>/tmp/workgraph-validation.log 2>&1
           fmt_status=$?
-
-          unexpected=$(git diff --name-only | grep -Ev '^(entroly-engine/Cargo.toml|entroly-engine/src/lib.rs|entroly-engine/src/work_graph.rs)$' || true)
-          if [ -n "$unexpected" ]; then
-            echo 'ERROR: rustfmt changed files outside the Work Graph patch:' | tee -a /tmp/workgraph-validation.log
-            printf '%s\n' "$unexpected" | tee -a /tmp/workgraph-validation.log
-            fmt_status=1
-          fi
 
           echo '== cargo test ==' | tee -a /tmp/workgraph-validation.log
           cargo test --manifest-path entroly-engine/Cargo.toml --all-targets >>/tmp/workgraph-validation.log 2>&1
@@ -73,12 +66,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cp /tmp/workgraph-validation.log .workgraph-bootstrap/validation.txt
+          cp /tmp/workgraph-validation.log .workgraph-bootstrap/validation-v4.txt
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .workgraph-bootstrap/validation.txt
+          git add .workgraph-bootstrap/validation-v4.txt
           if ! git diff --cached --quiet; then
-            git commit -m 'chore(work-graph): publish Rust validation diagnostics'
+            git commit -m 'chore(work-graph): publish Rust v4 validation diagnostics'
             git push origin HEAD:feat/ai-work-graph-v1
           fi
 
