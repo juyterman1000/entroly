@@ -33,7 +33,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
+import random
+import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -43,6 +47,46 @@ from .path_safety import resolve_output_within
 
 LEDGER_SCHEMA = "entroly.belief-ledger.v1"
 _RECORD_HASH_FIELD = "record_sha256"
+_LOCK_TIMEOUT_SECONDS = 30.0
+_LOCK_REGION = 1024
+
+logger = logging.getLogger(__name__)
+
+
+def _lock_exclusive(handle: Any) -> None:
+    """Take an exclusive advisory lock, raising OSError while contended."""
+
+    try:
+        import fcntl
+
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return
+    except ImportError:
+        pass
+    try:
+        import msvcrt
+
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, _LOCK_REGION)
+    except ImportError:  # pragma: no cover - platform without either API
+        return
+
+
+def _unlock(handle: Any) -> None:
+    try:
+        import fcntl
+
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        return
+    except ImportError:
+        pass
+    try:
+        import msvcrt
+
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, _LOCK_REGION)
+    except (ImportError, OSError):  # pragma: no cover - best effort release
+        pass
 
 
 class LedgerIntegrityError(RuntimeError):
@@ -172,6 +216,53 @@ class BeliefLedger:
     def _head(self) -> Path:
         return self._dir / "head.json"
 
+    @contextmanager
+    def _exclusive(self) -> Iterator[None]:
+        """Serialize the read-tail -> append -> write-head sequence.
+
+        Appending is a read-modify-write: a record's `seq` and `prev_sha256`
+        come from whatever is currently last. Two processes that read the same
+        tail both chain onto it, and the loser's record is overwritten by the
+        winner's -- measured at three processes writing 90 beliefs, the ledger
+        held 65-71 records and `verify_chain` reported a `prev_sha256`
+        mismatch every time. `entroly serve` holding a vault open while
+        `entroly compile` writes to it is exactly that shape.
+
+        Blocking, unlike the best-effort non-blocking helpers in
+        `checkpoint.py`: a lock that gives up when contended would leave the
+        very case it exists for unprotected. If the platform offers no locking
+        at all the append still proceeds -- a ledger that refuses to record is
+        worse than one that can be raced -- and the chain check remains the
+        backstop that makes such a race visible.
+        """
+
+        self._dir.mkdir(parents=True, exist_ok=True)
+        lock_path = self._dir / ".lock"
+        handle = open(lock_path, "a+")  # noqa: SIM115 - released in finally
+        acquired = False
+        try:
+            deadline = time.monotonic() + _LOCK_TIMEOUT_SECONDS
+            delay = 0.001
+            while True:
+                try:
+                    _lock_exclusive(handle)
+                    acquired = True
+                    break
+                except OSError:
+                    if time.monotonic() >= deadline:
+                        logger.warning(
+                            "vault ledger lock timed out after %.0fs; appending "
+                            "unserialized", _LOCK_TIMEOUT_SECONDS
+                        )
+                        break
+                    time.sleep(delay * (0.5 + random.random()))
+                    delay = min(delay * 2, 0.05)
+            yield
+        finally:
+            if acquired:
+                _unlock(handle)
+            handle.close()
+
     def _write_head(self, seq: int, record_hash: str) -> None:
         """Record where the chain currently ends.
 
@@ -242,6 +333,16 @@ class BeliefLedger:
         if not safe_obj.exists():
             safe_obj.write_text(body, encoding="utf-8")
 
+        # Held across read-tail, build and append: a record's seq and
+        # prev_sha256 come from whatever is currently last, so reading outside
+        # the lock lets two processes chain onto the same tail and lose one of
+        # the two records.
+        with self._exclusive():
+            return self._record_locked(artifact, backfilled, tx_time, body_sha)
+
+    def _record_locked(
+        self, artifact: Any, backfilled: bool, tx_time: str | None, body_sha: str
+    ) -> dict[str, Any]:
         last = self._last_record()
         record = {
             "schema": LEDGER_SCHEMA,
@@ -388,6 +489,14 @@ class BeliefLedger:
                 obj.unlink()
                 deleted_objects.append(sha)
 
+        with self._exclusive():
+            return self._tombstone_locked(matched, claim_id, entity, reason,
+                                          deleted_objects, retained_shared)
+
+    def _tombstone_locked(
+        self, matched: list[dict[str, Any]], claim_id: str, entity: str,
+        reason: str, deleted_objects: list[str], retained_shared: list[str],
+    ) -> dict[str, Any]:
         last = self._last_record()
         tombstone = {
             "schema": LEDGER_SCHEMA,
