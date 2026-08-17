@@ -17,15 +17,15 @@ jobs:
           ref: feat/ai-work-graph-v1
           fetch-depth: 0
 
-      - name: Reconstruct exact audited payload
+      - name: Reconstruct exact hardened payload
         shell: bash
         run: |
           set -euo pipefail
-          cat .workgraph-bootstrap/chunk-00 .workgraph-bootstrap/chunk-01 .workgraph-bootstrap/chunk-02 .workgraph-bootstrap/chunk-03 > /tmp/workgraph.b64
-          test "$(wc -c < /tmp/workgraph.b64)" -eq 22028
-          printf '%s  %s\n' '8f2192a3a712d374f15a9b53630225f3c95e246de347e016e77202f50db0c2b1' /tmp/workgraph.b64 | sha256sum -c -
+          cat .workgraph-bootstrap/v3-00 .workgraph-bootstrap/v3-01 .workgraph-bootstrap/v3-02 .workgraph-bootstrap/v3-03 .workgraph-bootstrap/v3-04 > /tmp/workgraph.b64
+          test "$(wc -c < /tmp/workgraph.b64)" -eq 27788
+          printf '%s  %s\n' '4e031d0bf231d774a04f9d6d3dedf5fdfc82e3479b0891095b88778edf637ff6' /tmp/workgraph.b64 | sha256sum -c -
           base64 -d /tmp/workgraph.b64 > /tmp/workgraph.tar.xz
-          printf '%s  %s\n' '611bece0014ecd6df974d9b98db7cee14c5492845882e4be3ce039b0e41d8ef7' /tmp/workgraph.tar.xz | sha256sum -c -
+          printf '%s  %s\n' '4f9a0cc2bd16a5437869e664b7577df1a696191f252bfeac12aba9c0b63c17b1' /tmp/workgraph.tar.xz | sha256sum -c -
           tar -xJf /tmp/workgraph.tar.xz -C "$GITHUB_WORKSPACE"
 
       - uses: dtolnay/rust-toolchain@stable
