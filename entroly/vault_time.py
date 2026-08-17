@@ -751,12 +751,33 @@ class BeliefLedger:
         # head the ledger last committed to closes that.
         head = self._read_head()
         if head is not None:
-            if int(head.get("seq", 0)) != count or head.get("record_sha256") != prev_hash:
+            expected = int(head.get("seq", 0))
+            # Only a head expecting *more* than exists means records were
+            # removed. A head expecting fewer is the opposite situation: the
+            # log was appended and the process died before the head advanced,
+            # leaving it one behind on a chain that is entirely intact.
+            # Reporting that as tampering would raise a permanent false alarm
+            # on a healthy ledger, and an alarm that cries wolf is worse than
+            # none -- it is the reason the real one gets ignored.
+            if expected > count:
                 return {
                     "status": "broken",
                     "records": count,
-                    "reason": "ledger truncated: head expects "
-                              f"{head.get('seq')} record(s), found {count}",
+                    "reason": f"ledger truncated: head expects {expected} "
+                              f"record(s), found {count}",
+                }
+            if expected == count and head.get("record_sha256") != prev_hash:
+                return {
+                    "status": "broken",
+                    "records": count,
+                    "reason": "head does not match the final record",
+                }
+            if expected < count:
+                return {
+                    "status": "intact",
+                    "records": count,
+                    "note": f"head lagged at {expected}; the next append will "
+                            "advance it",
                 }
 
         return {"status": "intact", "records": count}
