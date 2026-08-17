@@ -36,7 +36,9 @@ import json
 import logging
 import os
 import random
+import socket
 import time
+import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -48,31 +50,124 @@ from .path_safety import resolve_output_within
 LEDGER_SCHEMA = "entroly.belief-ledger.v1"
 _RECORD_HASH_FIELD = "record_sha256"
 _LOCK_TIMEOUT_SECONDS = 30.0
+_LOCK_STALE_SECONDS = 120.0
+_LOCK_SETTLE_SECONDS = 1.0
 _LOCK_REGION = 1024
 
 logger = logging.getLogger(__name__)
 
 
-def _lock_exclusive(handle: Any) -> None:
-    """Take an exclusive advisory lock, raising OSError while contended."""
+def _lock_token() -> str:
+    """Identifies one lock holder, uniquely across machines."""
+
+    return f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex}"
+
+
+def _try_acquire(lock_path: Path, token: str) -> bool:
+    """Claim the lock by creating its file exclusively.
+
+    `O_CREAT | O_EXCL` is the one mutual-exclusion primitive that holds on a
+    network filesystem: NFSv3 and later implement exclusive create atomically
+    server-side, and SMB does the same. `fcntl.flock` does not -- without a
+    working `lockd` it degrades to a local-only lock, so two machines sharing
+    a vault over NFS would each believe they held it and interleave their
+    read-modify-write appends exactly as unlocked processes did.
+
+    The advisory lock is still taken underneath where the platform offers it,
+    because it releases automatically when a process dies. The lock *file* is
+    what makes the guarantee portable; the advisory lock is what makes the
+    common local case recover instantly from a crash.
+    """
+
+    try:
+        fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+    except FileExistsError:
+        return False
+    except OSError:
+        return False
+
+    try:
+        os.write(fd, f"{token}\n{time.time():.3f}\n".encode())
+    finally:
+        os.close(fd)
+    return True
+
+
+def _lock_is_stale(lock_path: Path) -> bool:
+    """Whether a lock file was abandoned rather than held.
+
+    A lock file outlives the process that made it, so a crash mid-append would
+    block every later writer forever. Age alone is not proof of abandonment,
+    though: a slow holder is not a dead one. The file's mtime is read twice
+    across a settle interval and the lock is only broken when it has not moved,
+    which distinguishes "nobody is there" from "someone is still working".
+
+    mtime comes from the file server, so this comparison is unaffected by
+    clock skew between clients -- both readings come from the same clock.
+    """
+
+    try:
+        first = lock_path.stat().st_mtime
+    except OSError:
+        return False
+    if time.time() - first < _LOCK_STALE_SECONDS:
+        return False
+    time.sleep(_LOCK_SETTLE_SECONDS)
+    try:
+        return lock_path.stat().st_mtime == first
+    except OSError:
+        return False
+
+
+def _release(lock_path: Path, token: str) -> None:
+    """Remove the lock, but only if it is still ours.
+
+    A lock broken as stale can be re-taken by someone else while the original
+    holder is still running. Deleting unconditionally would then release a
+    lock the caller does not hold, letting two writers proceed at once -- so
+    the token written at acquisition is checked first.
+    """
+
+    try:
+        held = lock_path.read_text(encoding="utf-8").split("\n", 1)[0]
+    except OSError:
+        return
+    if held != token:
+        logger.warning(
+            "vault ledger lock was taken over while held; not releasing another "
+            "holder's lock"
+        )
+        return
+    try:
+        lock_path.unlink()
+    except OSError:  # pragma: no cover - best effort release
+        pass
+
+
+def _advisory_lock(handle: Any) -> bool:
+    """Best-effort OS lock, layered under the lock file. True when taken."""
 
     try:
         import fcntl
 
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        return
+        return True
     except ImportError:
         pass
+    except OSError:
+        return False
     try:
         import msvcrt
 
         handle.seek(0)
         msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, _LOCK_REGION)
-    except ImportError:  # pragma: no cover - platform without either API
-        return
+        return True
+    except (ImportError, OSError):
+        return False
+    return False
 
 
-def _unlock(handle: Any) -> None:
+def _advisory_unlock(handle: Any) -> None:
     try:
         import fcntl
 
@@ -80,6 +175,8 @@ def _unlock(handle: Any) -> None:
         return
     except ImportError:
         pass
+    except OSError:
+        return
     try:
         import msvcrt
 
@@ -238,30 +335,52 @@ class BeliefLedger:
 
         self._dir.mkdir(parents=True, exist_ok=True)
         lock_path = self._dir / ".lock"
-        handle = open(lock_path, "a+")  # noqa: SIM115 - released in finally
+        token = _lock_token()
         acquired = False
-        try:
-            deadline = time.monotonic() + _LOCK_TIMEOUT_SECONDS
-            delay = 0.001
-            while True:
+        handle = None
+
+        deadline = time.monotonic() + _LOCK_TIMEOUT_SECONDS
+        delay = 0.001
+        while True:
+            if _try_acquire(lock_path, token):
+                acquired = True
+                break
+            if _lock_is_stale(lock_path):
+                # Breaking a stale lock races with anyone else breaking it, so
+                # the winner is decided by the exclusive create on the next
+                # pass, not by the unlink.
+                logger.warning("breaking an abandoned vault ledger lock")
                 try:
-                    _lock_exclusive(handle)
-                    acquired = True
-                    break
+                    lock_path.unlink()
                 except OSError:
-                    if time.monotonic() >= deadline:
-                        logger.warning(
-                            "vault ledger lock timed out after %.0fs; appending "
-                            "unserialized", _LOCK_TIMEOUT_SECONDS
-                        )
-                        break
-                    time.sleep(delay * (0.5 + random.random()))
-                    delay = min(delay * 2, 0.05)
+                    pass
+                continue
+            if time.monotonic() >= deadline:
+                logger.warning(
+                    "vault ledger lock timed out after %.0fs; appending "
+                    "unserialized", _LOCK_TIMEOUT_SECONDS
+                )
+                break
+            time.sleep(delay * (0.5 + random.random()))
+            delay = min(delay * 2, 0.05)
+
+        if acquired:
+            try:
+                handle = open(lock_path, "r+")  # noqa: SIM115 - closed in finally
+            except OSError:
+                handle = None
+            if handle is not None and not _advisory_lock(handle):
+                handle.close()
+                handle = None
+
+        try:
             yield
         finally:
+            if handle is not None:
+                _advisory_unlock(handle)
+                handle.close()
             if acquired:
-                _unlock(handle)
-            handle.close()
+                _release(lock_path, token)
 
     def _write_head(self, seq: int, record_hash: str) -> None:
         """Record where the chain currently ends.
