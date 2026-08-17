@@ -31,7 +31,14 @@ def _run_git(
     timeout: float = 5.0,
     check: bool = True,
 ) -> str:
-    """Run one read-only Git observation with hostile-repo safeguards."""
+    """Run one read-only Git observation with hostile-repo safeguards.
+
+    ``core.fsmonitor`` may name an executable in repository-local config, so it
+    is disabled explicitly. Optional locks are disabled as well: observation
+    must not rewrite/refresh the user's index merely because an agent inspected
+    work state. No command in this adapter performs fetch/push/network I/O.
+    """
+
     env = os.environ.copy()
     env.update(
         {
@@ -91,6 +98,8 @@ def _try_git(cwd: Path, *args: str, timeout: float = 5.0) -> str:
 
 
 def _normalize_remote(remote: str) -> str:
+    """Return credential-free host/path identity, or empty for local remotes."""
+
     value = remote.strip().rstrip("/")
     if not value:
         return ""
@@ -103,10 +112,12 @@ def _normalize_remote(remote: str) -> str:
             host = f"{host}:{parsed.port}"
         path = parsed.path.strip("/")
         return f"{host}/{path}" if host and path else ""
+    # SCP-style SSH URL: git@host:owner/repo. Usernames are intentionally omitted.
     if ":" in value and "@" in value.split(":", 1)[0]:
         lhs, rhs = value.split(":", 1)
         host = lhs.rsplit("@", 1)[-1].lower()
         return f"{host}/{rhs.strip('/')}"
+    # Local-path remotes are machine-specific; do not use them as portable identity.
     return ""
 
 
@@ -119,6 +130,7 @@ def _repository_id(root: Path) -> str:
     if roots:
         material = f"{roots[0]}\0{root.name}".encode("utf-8", "surrogatepass")
         return f"git-root:{hashlib.sha256(material).hexdigest()[:32]}"
+    # Empty repositories still need stable local identity without leaking the path.
     canonical = os.path.normcase(str(root.resolve())).encode("utf-8", "surrogatepass")
     return f"git-local:{hashlib.sha256(canonical).hexdigest()[:32]}"
 
@@ -139,8 +151,12 @@ def _validated_branch_override(root: Path, override: str | None) -> str:
     name = override.removeprefix("origin/").strip()
     if not name or name.startswith("-") or "\x00" in name or "\n" in name or "\r" in name:
         raise RepositoryDiscoveryError(f"invalid default branch override: {override!r}")
-    if not _try_git(root, "check-ref-format", f"refs/heads/{name}"):
-        raise RepositoryDiscoveryError(f"invalid default branch override: {override!r}")
+    try:
+        _run_git(root, "check-ref-format", f"refs/heads/{name}")
+    except RepositoryDiscoveryError as exc:
+        raise RepositoryDiscoveryError(
+            f"invalid default branch override: {override!r}"
+        ) from exc
     return name
 
 
@@ -244,7 +260,12 @@ def _parse_status(root: Path) -> list[dict[str, Any]]:
     return changes
 
 
-def _branch_commits(root: Path, base_ref: str, ahead_by: int, max_commits: int) -> list[dict[str, Any]]:
+def _branch_commits(
+    root: Path,
+    base_ref: str,
+    ahead_by: int,
+    max_commits: int,
+) -> list[dict[str, Any]]:
     if max_commits < 0:
         raise RepositoryDiscoveryError("max_commits must be >= 0")
     if max_commits > _MAX_COMMITS:
@@ -276,6 +297,11 @@ def _branch_commits(root: Path, base_ref: str, ahead_by: int, max_commits: int) 
                 "subject": subject.strip(),
                 "timestamp_ms": timestamp_ms,
                 "parent_shas": [item for item in parents.split() if item],
+                # Deliberately omitted in v1: expanding every historical commit
+                # into files can exceed the bounded Rust event size. Current
+                # worktree paths are observed exactly above; commit/file impact
+                # can be supplied later by repository intelligence as a separate
+                # evidence event.
                 "changed_paths": [],
             }
         )
@@ -288,10 +314,16 @@ def _checkpoint_metadata(
     checkpoint_dir: str | os.PathLike[str] | None,
 ) -> tuple[str, dict[str, Any]]:
     """Read latest project checkpoint without creating/pruning storage."""
+
     if checkpoint_dir is None:
+        # Reuse the existing project-isolation policy only when observing the
+        # current project. For an arbitrary path, the caller must provide its
+        # checkpoint directory explicitly rather than letting cwd select the
+        # wrong project's history.
         if root != Path.cwd().resolve():
             return "", {}
         from .config import _project_checkpoint_dir
+
         directory = _project_checkpoint_dir()
     else:
         directory = Path(checkpoint_dir).expanduser()
@@ -333,6 +365,7 @@ def discover_repository_observation(
     only when Git independently proves that work exists, preventing an old
     checkpoint from resurrecting a completed task in a clean repository.
     """
+
     root = _resolve_root(path)
     branch_name = _try_git(root, "symbolic-ref", "--quiet", "--short", "HEAD")
     head_sha = _try_git(root, "rev-parse", "--verify", "HEAD")

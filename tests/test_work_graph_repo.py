@@ -127,6 +127,13 @@ def test_invalid_default_branch_override_is_rejected(tmp_path: Path) -> None:
         discover_repository_observation(repo, default_branch="--help")
 
 
+def test_valid_default_branch_override_is_accepted(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    observation = discover_repository_observation(repo, default_branch="main")
+    assert observation["branch"]["default_branch"] == "main"
+    assert observation["branch"]["base_ref"] == "refs/heads/main"
+
+
 def test_change_explosion_fails_closed_instead_of_returning_partial_state(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     for index in range(513):
