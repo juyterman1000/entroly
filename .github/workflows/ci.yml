@@ -264,7 +264,15 @@ jobs:
   integration:
     name: Build Wheel + Functional Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # This cap has to leave room for the suite rather than track it. It sat at
+    # 15 minutes from v1.0, when the suite was a fraction of its current size,
+    # and by 2026-08-17 all five matrix entries were finishing in 13.7-14.3
+    # minutes — under 80 seconds of margin each. The 3.11 entry then crossed
+    # the line on ordinary runner variance and cancelled the job mid-suite:
+    # 3825 tests passing, nothing broken, main red. The per-test `--timeout=60`
+    # below is the real hang guard; this number only has to stay clear of
+    # normal variance.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -320,7 +328,10 @@ jobs:
       - name: Run Python tests
         run: |
           .venv/bin/pip install pytest pytest-timeout --timeout 120 --retries 5
-          .venv/bin/pytest tests/ -v --tb=short -x --timeout=60
+          # --durations prints the slowest tests on every run, so the growth
+          # that consumed the old budget stays visible in the log instead of
+          # only surfacing the next time it runs out of one.
+          .venv/bin/pytest tests/ -v --tb=short -x --timeout=60 --durations=15
 
       - name: Run entroly-core integration tests
         run: |
@@ -337,7 +348,9 @@ jobs:
     # pins the base-install surface so that class of regression can't recur.
     name: Pure-Python Fallback (base `pip install entroly`, no Rust engine)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Same stale-budget problem as 'integration', one push behind it: measured
+    # at 11.8 minutes against the old 15, and it grows from the same suite.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v6
         with:
@@ -384,7 +397,7 @@ jobs:
           # excluded — they belong to the 'integration' job. Everything else,
           # including the compress()/universal_compress non-annihilation
           # contract, MUST pass on the base install.
-          pytest tests/ -v --tb=short --timeout=60 -p no:cacheprovider \
+          pytest tests/ -v --tb=short --timeout=60 --durations=15 -p no:cacheprovider \
             --ignore=tests/functional_test.py \
             --ignore=tests/test_e2e.py \
             --ignore=tests/test_ios.py \
