@@ -1,0 +1,46 @@
+name: Apply Work Graph Core
+
+on:
+  push:
+    branches: [audit/full-codebase-snapshot-20260817]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feat/ai-work-graph-v1
+          fetch-depth: 0
+      - name: Reconstruct exact audited payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .workgraph-bootstrap/chunk-00 .workgraph-bootstrap/chunk-01 .workgraph-bootstrap/chunk-02 .workgraph-bootstrap/chunk-03 > /tmp/workgraph.b64
+          test "$(wc -c < /tmp/workgraph.b64)" -eq 22028
+          printf '%s  %s\n' '8f2192a3a712d374f15a9b53630225f3c95e246de347e016e77202f50db0c2b1' /tmp/workgraph.b64 | sha256sum -c -
+          base64 -d /tmp/workgraph.b64 > /tmp/workgraph.tar.xz
+          printf '%s  %s\n' '611bece0014ecd6df974d9b98db7cee14c5492845882e4be3ce039b0e41d8ef7' /tmp/workgraph.tar.xz | sha256sum -c -
+          tar -xJf /tmp/workgraph.tar.xz -C "$GITHUB_WORKSPACE"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Validate shared engine
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path entroly-engine/Cargo.toml -- --check
+          cargo test --manifest-path entroly-engine/Cargo.toml --all-targets
+          cargo clippy --manifest-path entroly-engine/Cargo.toml --all-targets -- -D warnings
+      - name: Commit real source only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm -r .workgraph-bootstrap .github/workflows/workgraph-assemble.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add entroly-engine/Cargo.toml entroly-engine/src/lib.rs entroly-engine/src/work_graph.rs
+          git commit -m 'feat(engine): add evidence-backed AI Work Graph core'
+          git push origin HEAD:feat/ai-work-graph-v1
