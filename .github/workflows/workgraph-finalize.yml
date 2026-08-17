@@ -1,0 +1,92 @@
+name: Work Graph Finalize
+
+on:
+  push:
+    branches: [feat/ai-work-graph-v1]
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feat/ai-work-graph-v1
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Apply self-checking integration finalizer
+        run: python scripts/_workgraph_finalize.py
+
+      - name: Validate source syntax and package metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile entroly/work_graph.py tests/test_work_graph_bindings.py
+          node --check entroly-wasm/index.js
+          node --check entroly-wasm/js/work_graph.js
+          node --check entroly-wasm/test_work_graph.js
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          pkg = json.loads(Path('entroly-wasm/package.json').read_text())
+          assert 'js/work_graph.js' in pkg['files']
+          assert 'js/work_graph.d.ts' in pkg['files']
+          assert pkg['scripts']['test'].endswith('node test_work_graph.js')
+          print('package metadata: OK')
+          PY
+
+      - name: Validate shared Rust semantic core
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path entroly-engine/Cargo.toml -- --check
+          cargo test --manifest-path entroly-engine/Cargo.toml --all-targets
+          cargo clippy --manifest-path entroly-engine/Cargo.toml --all-targets -- -D warnings
+
+      - name: Validate PyO3 and WASM binding crates compile
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --manifest-path entroly-core/Cargo.toml --all-targets
+          cargo check --manifest-path entroly-wasm/Cargo.toml --target wasm32-unknown-unknown
+
+      - name: Commit only production/test surfaces
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm scripts/_workgraph_finalize.py .github/workflows/workgraph-finalize.yml
+          git add \
+            entroly-core/src/lib.rs \
+            entroly-core/src/work_graph_bindings.rs \
+            entroly-wasm/src/lib.rs \
+            entroly-wasm/src/work_graph_bindings.rs \
+            entroly-wasm/js/work_graph.js \
+            entroly-wasm/js/work_graph.d.ts \
+            entroly-wasm/index.js \
+            entroly-wasm/index.d.ts \
+            entroly-wasm/package.json \
+            entroly-wasm/test_work_graph.js \
+            entroly/work_graph.py \
+            entroly/__init__.py \
+            tests/test_work_graph_bindings.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat(bindings): expose shared AI Work Graph across Python and npm'
+          git push origin HEAD:feat/ai-work-graph-v1
