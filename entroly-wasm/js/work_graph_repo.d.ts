@@ -7,6 +7,8 @@ export interface RepositoryDiscoveryOptions {
   defaultBranch?: string;
   maxCommits?: number;
   observedAtMs?: number;
+  includeCheckpoint?: boolean;
+  checkpointDir?: string;
 }
 
 export class RepositoryDiscoveryError extends Error {}
