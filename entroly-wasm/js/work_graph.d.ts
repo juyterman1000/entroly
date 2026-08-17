@@ -1,3 +1,5 @@
+import type { RepositoryDiscoveryOptions } from "./work_graph_repo";
+
 export type WorkGraphTrust = "untrusted" | "inferred" | "observed" | "verified";
 export type WorkGraphStatus =
   | "unknown"
@@ -105,6 +107,7 @@ export type WorkGraphObservation = Record<string, unknown> & {
 export class WorkGraph {
   constructor(repoId: string);
   static fromJSON(serialized: string | Record<string, unknown>): WorkGraph;
+  static fromRepository(path?: string, options?: RepositoryDiscoveryOptions): WorkGraph;
   static verifyHandoffIntegrity(receipt: string | WorkGraphHandoffReceipt): boolean;
   readonly repoId: string;
   readonly revision: number;
@@ -112,6 +115,7 @@ export class WorkGraph {
   readonly eventCount: number;
   applyEvent(event: string | Record<string, unknown>): string;
   observeRepository(observation: string | WorkGraphObservation): string;
+  refreshRepository(path?: string, options?: RepositoryDiscoveryOptions): string;
   merge(other: WorkGraph | string | Record<string, unknown>): number;
   exportJSON(pretty?: boolean): string;
   exportState(): Record<string, unknown>;
@@ -129,3 +133,5 @@ export class WorkGraph {
   ): WorkGraphHandoffReceipt;
   verifyHandoff(receipt: string | WorkGraphHandoffReceipt): boolean;
 }
+
+export { RepositoryDiscoveryError, discoverRepositoryObservation } from "./work_graph_repo";
