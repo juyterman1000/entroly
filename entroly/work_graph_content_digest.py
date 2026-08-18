@@ -7,7 +7,7 @@ content identity when the current worktree bytes can be represented exactly.
 Security and honesty rules:
 - never follow symlinks or read special files;
 - never read outside the repository root;
-- bound every file read;
+- bound every file read and the aggregate bytes of one observation;
 - staged/conflicted paths remain non-dedupeable because one worktree digest
   cannot represent both index and worktree state;
 - detect path/file races before and after reading and fail closed;
@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 _MAX_HASH_FILE_BYTES = 64 * 1024 * 1024
+_MAX_HASH_TOTAL_BYTES = 128 * 1024 * 1024
 _HASH_CHUNK_BYTES = 1024 * 1024
 
 
@@ -84,7 +85,7 @@ def _object_hash_algorithm(root: Path) -> str | None:
     return value if value in {"sha1", "sha256"} else None
 
 
-def _relative_regular_path(root: Path, repo_rel: str) -> Path | None:
+def _relative_regular_path(root: Path, repo_rel: str) -> tuple[Path, os.stat_result] | None:
     value = repo_rel.replace("\\", "/")
     if not value or value.startswith("/") or "\x00" in value or "\n" in value or "\r" in value:
         return None
@@ -98,7 +99,7 @@ def _relative_regular_path(root: Path, repo_rel: str) -> Path | None:
         return None
     if not stat.S_ISREG(before.st_mode) or before.st_size > _MAX_HASH_FILE_BYTES:
         return None
-    return candidate
+    return candidate, before
 
 
 def _same_file(left: os.stat_result, right: os.stat_result) -> bool:
@@ -113,15 +114,11 @@ def _same_file(left: os.stat_result, right: os.stat_result) -> bool:
     )
 
 
-def _git_blob_digest(root: Path, repo_rel: str, algorithm: str) -> str:
-    candidate = _relative_regular_path(root, repo_rel)
-    if candidate is None:
-        return ""
+def _git_blob_digest(candidate: Path, expected: os.stat_result, algorithm: str) -> str:
     try:
-        before = os.lstat(candidate)
         flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_CLOEXEC", 0)
         # O_NOFOLLOW prevents the critical Unix symlink swap. Platforms without
-        # it still get the pre/open/post identity checks before any bytes are read.
+        # it still get pre/open/post identity checks before any bytes are read.
         flags |= getattr(os, "O_NOFOLLOW", 0)
         descriptor = os.open(candidate, flags)
     except OSError:
@@ -133,7 +130,7 @@ def _git_blob_digest(root: Path, repo_rel: str, algorithm: str) -> str:
             path_after_open = os.lstat(candidate)
         except OSError:
             return ""
-        if not _same_file(before, opened) or not _same_file(opened, path_after_open):
+        if not _same_file(expected, opened) or not _same_file(opened, path_after_open):
             return ""
         if opened.st_size > _MAX_HASH_FILE_BYTES:
             return ""
@@ -177,6 +174,9 @@ def enrich_worktree_content_digests(
     The input object is updated in place to avoid copying a potentially large
     bounded observation. Any uncertainty leaves ``content_digest`` empty, which
     merely disables Rust passive-snapshot deduplication for that observation.
+
+    The aggregate budget is all-or-nothing for non-deleted paths. This prevents
+    a partial subset from masquerading as content-complete semantic identity.
     """
 
     root = _root(repo_path)
@@ -185,6 +185,8 @@ def enrich_worktree_content_digests(
         return observation
     algorithm = _object_hash_algorithm(root)
 
+    pending: list[tuple[dict[str, Any], Path, os.stat_result]] = []
+    total_bytes = 0
     for raw in changes:
         if not isinstance(raw, dict):
             continue
@@ -197,8 +199,21 @@ def enrich_worktree_content_digests(
             continue
         if algorithm is None:
             continue
-        repo_rel = str(raw.get("path", ""))
-        raw["content_digest"] = _git_blob_digest(root, repo_rel, algorithm)
+        safe = _relative_regular_path(root, str(raw.get("path", "")))
+        if safe is None:
+            continue
+        candidate, metadata = safe
+        total_bytes += metadata.st_size
+        if total_bytes > _MAX_HASH_TOTAL_BYTES:
+            # Keep every non-deleted digest empty; Rust will fail closed and
+            # retain the observation as distinct audit history.
+            for pending_raw, _candidate, _metadata in pending:
+                pending_raw["content_digest"] = ""
+            return observation
+        pending.append((raw, candidate, metadata))
+
+    for raw, candidate, metadata in pending:
+        raw["content_digest"] = _git_blob_digest(candidate, metadata, algorithm)
     return observation
 
 
