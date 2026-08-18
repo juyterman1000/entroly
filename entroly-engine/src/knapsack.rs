@@ -2,19 +2,25 @@
 //!
 //! # Differentiable Soft Bisection (primary path, τ ≥ 0.05)
 //!
-//! Find threshold th* via 30-step bisection such that:
+//! Find the dual variable λ* via 30-step bisection such that:
 //!
-//!   f(th) = Σᵢ σ((sᵢ − th) / τ) · tokensᵢ  −  B  =  0
+//!   g(λ) = Σᵢ σ((sᵢ − λ·cᵢ) / τ) · cᵢ  −  B  =  0
 //!
-//! where sᵢ = w^T · featuresᵢ (pre-softcap linear score, same as REINFORCE).
-//! f is strictly monotone decreasing in th, so bisection always converges.
+//! where sᵢ = w^T · featuresᵢ (pre-softcap linear score, same as REINFORCE) and
+//! cᵢ = tokensᵢ. g is strictly monotone decreasing in λ, so bisection always
+//! converges.
 //!
-//! th* is the **exact Lagrange multiplier** for the token-budget constraint under
+//! λ* is the **exact Lagrange multiplier** for the token-budget constraint under
 //! the continuous KKT relaxation of the 0/1 knapsack — a principled dual variable,
-//! not a heuristic threshold.
+//! not a heuristic threshold. Note that it multiplies the *cost*: λ carries units
+//! of value-per-token, so `sᵢ − λ·cᵢ` is a reduced cost. A constant score offset
+//! `sᵢ − th` is a different rule and is only equivalent when every cᵢ is equal;
+//! this header described that weaker form until now, while all three call sites
+//! have always computed `σ((sᵢ − λ·cᵢ)/τ)`.
 //!
-//! After bisection, sort fragments by p_i = σ((sᵢ − th*) / τ) descending and
-//! greedily fill the *hard* budget (context windows are hard limits).
+//! After bisection, sort fragments by p_i = σ((sᵢ − λ*·cᵢ) / τ) descending —
+//! equivalently by reduced cost, the LP-duality ordering — and greedily fill the
+//! *hard* budget (context windows are hard limits).
 //!
 //! Complexity: O(30 · N) bisection + O(N log N) sort = O(N log N).
 //!   ≈ 33× faster than the O(N × Q=1000) DP table for N=500.
@@ -22,8 +28,11 @@
 //! Train/test consistency: the same linear score sᵢ and the same σ(·/τ) appear
 //! in the REINFORCE backward pass → no train/test mismatch.
 //!
-//! Convergence: as τ → 0, p_i → I(sᵢ > th*) and the greedy fill recovers the
-//! exact density-sorted greedy. The objective here is linear (Σ sᵢ·xᵢ), i.e.
+//! Convergence: as τ → 0, p_i → I(sᵢ > λ*·cᵢ) = I(sᵢ/cᵢ > λ*), so the greedy
+//! fill recovers the exact density-sorted greedy — which is the ordering the
+//! ½-approximation below refers to. (Under the `sᵢ − th` form it would instead
+//! recover a *score*-sorted greedy, a different and weaker algorithm; that is why
+//! the distinction is worth stating.) The objective here is linear (Σ sᵢ·xᵢ), i.e.
 //! modular, so density-greedy on a knapsack gives the ½-approximation of
 //! Dantzig-style rounding — NOT (1-1/e), which requires a submodular
 //! objective. If redundancy/diversity terms are added to the score (making

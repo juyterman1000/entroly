@@ -1186,3 +1186,52 @@ Remaining asymmetries after this change: `rnr` (npm only) and `simhash_wide`
 > that motivated the work, with the outcome marked inline. Both are now bound in
 > `entroly-wasm` and delegate to the same engine serializers as PyO3; see finding
 > G16. `rnr` and `simhash_wide` are unchanged.
+
+### Finding G17 (fixed) — the budget solver's header documented a weaker algorithm than it implements
+
+`knapsack.rs` is the most mathematically load-bearing module in the engine, and
+its module header described the wrong optimisation problem.
+
+The header stated the bisection as:
+
+```
+f(th) = SUM_i sigma((s_i - th) / tau) * tokens_i - B = 0
+```
+
+a constant score threshold `th`, and then called `th*` "the **exact Lagrange
+multiplier** for the token-budget constraint under the continuous KKT
+relaxation". Those two claims cannot both hold. The multiplier for a budget
+constraint carries units of value-per-token and must scale the cost; `s_i - th`
+is a constant offset and equals the KKT rule only when every `c_i` is identical.
+
+The implementation was right the whole time. All three sigmoid call sites compute
+the cost-scaled form:
+
+```rust
+sigmoid((score - lambda * tc) / tau) * tc     // line 291, expected_tokens
+sigmoid((score - lambda * tc) / tau) * tc     // line 373, compute_lambda_star
+let p = sigmoid((score - lambda_star * tc) / tau);   // line 422, ordering
+```
+
+and `soft_bisection_select` bisects on λ, sorts by reduced cost, and computes the
+log-sum-exp dual `D(λ*) = τ·Σ log(1 + exp((s_i − λ*·c_i)/τ)) + λ*·B` for the ADGT
+signal. `grep` for a constant-threshold form in non-comment code returns nothing.
+
+The convergence claim was affected too. The header said "as τ → 0,
+p_i → I(s_i > th*) and the greedy fill recovers the exact density-sorted greedy."
+Under the `th` form that is false — it would recover a *score*-sorted greedy.
+Under the implemented λ form it is true, because
+`I(s_i > λ*·c_i) = I(s_i/c_i > λ*)` is exactly a density threshold. So the header
+asserted the right conclusion from the wrong premise, and the ½-approximation
+discussion that follows depends on the density ordering it had just mis-derived.
+
+This is the reverse of the usual documentation defect: the code is better than
+its description. Nothing about the behaviour changed here — only the header,
+which now states the λ·cost form, notes explicitly that the constant-offset form
+is a different and weaker rule, and says why the distinction matters for the
+approximation bound.
+
+`cargo test --lib knapsack`: 22 passed. `cargo clippy --lib`: clean.
+
+The claim in `CLAUDE.md` — "density-greedy gives Dantzig-style ½, **not**
+(1-1/e)" — is correct and is now actually supported by the header above it.
