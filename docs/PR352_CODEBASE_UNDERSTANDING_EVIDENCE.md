@@ -1063,9 +1063,9 @@ until all are true. They are not all true. This is the accounting.
 
 | Condition | Status |
 |---|---|
-| Deep-codebase audit gate completed | **No.** 22 of 35 engine files read in full; `cache.rs` (3,689) and `skeleton.rs` (2,906) are the largest unread. Python closure not attempted. |
+| Deep-codebase audit gate completed | **No.** Measured properly (section 20): ~9,700 of 24,945 **production** lines read, about 39%. `cache.rs` is now complete; `sast.rs` (2,493) and `skeleton.rs` (2,101) are the largest remaining. Python closure not attempted. |
 | Production-relevant files classified; no unknown ownership | **Yes.** `scripts/ownership_matrix.py` classifies all 1,610 tracked files into the section 5 outcomes with all 13 fields; `--check` reports 0 unknown. 29 are parked as `review-required` rather than guessed. |
-| Semantic closures for every *changed* subsystem fully read | **Partial.** Changed modules were read (`cognitive_bus`, `nkbe`, `work_graph`, `eicv_suppressor`). `cache.rs` is shared and unread. |
+| Semantic closures for every *changed* subsystem fully read | **Yes for changed modules.** `cognitive_bus`, `nkbe`, `work_graph`, `eicv_suppressor`, `knapsack` and now `cache.rs` (production surface complete at line 1897) have all been read in full. Unchanged shared modules remain — see section 20. |
 | Public Python/CLI/MCP/provider/npm journeys traced end-to-end | **No.** Not traced this session. |
 | Pre-change baseline recorded | **Partial.** 4025/1/33 recorded at this SHA; no baseline captured at the branch point, so a pre-existing failure elsewhere is not yet distinguishable. |
 | Python and npm/WASM semantic parity proven | **Partial.** Was demonstrably false with four asymmetric modules. `cognitive_bus` and `nkbe` are now bound in both runtimes and delegate to identical engine serializers, pinned by tests on both sides (G16). `rnr` (npm-only) and `simhash_wide` (neither) remain. |
@@ -1924,3 +1924,93 @@ and `LshIndex::remove` currently leaves empty buckets behind (noted earlier in
 this document under G11). Doing it properly touches the index lifecycle in three
 places and deserves its own change with a growth-bound regression test, of the
 shape the probe above already sketches.
+
+---
+
+## 20. Closure accounting, measured properly
+
+Earlier sections reported closure as "N of 35 files", which overstated the
+remaining work in one direction and understated it in another. A file count
+treats `rnr.rs` (81 lines) and `work_graph.rs` (3,942) as equal, and it counts
+test code as if it were production surface.
+
+Measured across `entroly-engine/src`, splitting each file at its last
+`#[cfg(test)]` boundary:
+
+```
+  35 files
+  35,062 total lines
+  24,945 production lines   (71%)
+  10,117 test lines         (28%)
+```
+
+So a quarter of the crate is tests, and the closure obligation is against the
+24,945 production lines, not the raw total.
+
+### `cache.rs` is complete
+
+`cache.rs` is the file section 17 named as shared-and-unread. Its production code
+**ends at line 1897**; the remaining 1,792 lines are the test and benchmark
+module. The production surface has now been read in full, and it produced
+findings G19, G20, G21, G22, G23, G24 and G25 — the densest defect yield of any
+file in the crate, at roughly one finding per 270 production lines.
+
+That density is itself worth recording. `cache.rs` is 51% test code by line, has
+470 passing tests behind it, and still carried an unbounded index leak, three
+misdescribed contributions and an inert learned model. Test volume did not
+prevent any of them, because every one of these defects preserves correctness —
+the cache returns right answers while leaking memory, ignoring its cost model,
+and training a predictor nobody reads.
+
+### Remaining production lines
+
+| Module | Production lines | Read |
+|---|---:|---|
+| `sast.rs` | 2,493 | no |
+| `skeleton.rs` | 2,101 | no |
+| `knapsack_sds.rs` | 1,236 | no |
+| `depgraph.rs` | 1,219 | no |
+| `conversation_pruner.rs` | 920 | no |
+| `entropy.rs` | 891 | partial |
+| `health.rs` | 841 | no |
+| `causal.rs` | 731 | no |
+| `query_persona.rs` | 706 | no |
+| `channel.rs` | 674 | partial |
+| `resonance.rs` | 564 | partial |
+| `guardrails.rs` | 547 | no |
+| `hierarchical.rs` | 545 | no |
+| `prism.rs` | 496 | no |
+| `eicv.rs` | 475 | partial |
+| `learning.rs` | 394 | partial |
+| `anomaly.rs` | 278 | partial |
+| `coordination_index.rs` | 148 | test-only module |
+
+Roughly **15,300 production lines remain**, against about 9,700 read in full —
+so the closure stands near **39% of production surface**, not the 66% a file
+count suggested. Stating it the harder way is the point of the exercise.
+
+`coordination_index.rs` is excluded from the obligation in one sense and not the
+other: `lib.rs` declares it `#[cfg(test)] mod`, so it ships to nobody, but it is
+also the only evidence backing dogfood scenario E — which is why that scenario
+was re-asserted against the shipping path this session rather than left resting
+on it.
+
+### Two smaller notes from the end of `cache.rs`
+
+`import_cache` clears and rebuilds `slot_to_hash` and `semantic_index` from live
+entries, which means a checkpoint export/import cycle **compacts the G25 leak**.
+That is worth knowing before anyone tries to reproduce it: a benchmark that
+restores from a snapshot, or any short run, will not show the growth. It
+accumulates only across a long uninterrupted session, which is exactly the case
+least likely to be under a profiler.
+
+`stats()` calls `tail_stats.percentile()` three times, and `percentile()` sorts
+its vector on each call. Combined with the unbounded `TailStats` growth recorded
+earlier, a diagnostic call gets steadily more expensive over a session — the
+first sort is O(n log n) on an ever-larger n, and the two that follow re-sort an
+already-sorted vector.
+
+`set_cost_per_token` updates `CostModel::cost_per_token` only. It does not touch
+`recompute_cost` on existing entries, which is the `$0.01/token` literal that
+wins the `max()` in eviction (G19). So the public knob for making the cache
+cost-aware does not, on its own, make eviction cost-aware.
