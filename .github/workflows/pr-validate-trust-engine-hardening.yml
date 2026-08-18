@@ -1,0 +1,43 @@
+name: PR Validate Trust Engine Hardening
+
+on:
+  pull_request:
+    branches:
+      - integration/workgraph-production-20260817
+    paths:
+      - scripts/harden_trust_engine_api.py
+      - .github/workflows/pr-validate-trust-engine-hardening.yml
+      - .github/workflows/validate-trust-engine-hardening.yml
+
+permissions:
+  contents: read
+
+jobs:
+  rust-trust-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Pin and apply staged trust patch in validation workspace only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object entroly-engine/src/eicv.rs)" = "fbd076ce5de513647d9eaa6ba9cb7001656b32aa"
+          test "$(git hash-object entroly-engine/src/lib.rs)" = "1eb0d523c118fc701c4c91bbabe7c00be920f408"
+          python scripts/harden_trust_engine_api.py
+          git diff --check
+          test "$(git diff --name-only | sort)" = "$(printf '%s\n' \
+            entroly-engine/src/eicv.rs \
+            entroly-engine/src/lib.rs \
+            entroly-engine/src/trust_engine.rs | sort)"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Validate default and PyO3 feature configurations
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path entroly-engine/Cargo.toml -- --check
+          cargo test --manifest-path entroly-engine/Cargo.toml --lib
+          cargo test --manifest-path entroly-engine/Cargo.toml --lib --features python
+          cargo clippy --manifest-path entroly-engine/Cargo.toml --all-targets -- -D warnings
+          cargo clippy --manifest-path entroly-engine/Cargo.toml --all-targets --features python -- -D warnings
