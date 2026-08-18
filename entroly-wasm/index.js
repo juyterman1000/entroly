@@ -74,6 +74,7 @@ const { VaultObserver } = require('./js/vault_observer');
 const {
   WorkGraph,
   RepositoryDiscoveryError,
+  discoverRepositoryIdentity,
   discoverRepositoryObservation,
 } = require('./js/work_graph');
 const {
@@ -142,6 +143,7 @@ module.exports = {
   // Shared Rust AI Work Graph with Node-only repository/persistence glue.
   WorkGraph,
   RepositoryDiscoveryError,
+  discoverRepositoryIdentity,
   discoverRepositoryObservation,
   WorkGraphStore,
   WorkGraphStoreError,
