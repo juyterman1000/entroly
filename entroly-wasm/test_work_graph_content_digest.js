@@ -63,8 +63,6 @@ try {
       enrichWorktreeContentDigests(root, symlinked);
       assert(symlinked.changes[0].content_digest === '', 'symlink target outside repository was fingerprinted');
     } catch (error) {
-      // Some Windows environments disallow symlink creation without developer
-      // mode/elevation. Only that setup failure may skip this assertion.
       if (!error || !['EPERM', 'EACCES', 'ENOSYS'].includes(error.code)) throw error;
     }
   } finally {
@@ -78,6 +76,19 @@ try {
   const oversized = { changes: [{ path: 'large.bin', kind: 'untracked', staged: false, conflicted: false, content_digest: '' }] };
   enrichWorktreeContentDigests(root, oversized);
   assert(oversized.changes[0].content_digest === '', 'oversized file was fingerprinted');
+
+  const aggregateChanges = [];
+  for (let index = 0; index < 3; index += 1) {
+    const name = `aggregate-${index}.bin`;
+    const fd = fs.openSync(path.join(root, name), 'w');
+    try { fs.ftruncateSync(fd, 45 * 1024 * 1024); }
+    finally { fs.closeSync(fd); }
+    aggregateChanges.push({ path: name, kind: 'untracked', staged: false, conflicted: false, content_digest: '' });
+  }
+  const aggregate = { changes: aggregateChanges };
+  enrichWorktreeContentDigests(root, aggregate);
+  assert(aggregate.changes.every(change => change.content_digest === ''),
+    'aggregate fingerprint budget produced a partial semantic snapshot');
 
   console.log('Work Graph npm content fingerprint contract: PASS');
 } finally {
