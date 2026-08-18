@@ -34,6 +34,7 @@ pub mod bm25;
 pub mod cache;
 pub mod causal;
 pub mod channel;
+pub mod context_engine;
 pub mod conversation_pruner;
 pub mod dedup;
 pub mod depgraph;
@@ -58,6 +59,7 @@ pub mod semantic_dedup;
 pub mod simhash_wide;
 pub mod skeleton;
 pub mod trajectory;
+pub mod trust_engine;
 pub mod utilization;
 
 pub mod work_graph;
