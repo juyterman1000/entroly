@@ -68,32 +68,70 @@ def test_mcp_claim_records_agent_statement_and_lease(monkeypatch, tmp_path):
     assert fake.observation["leases"][0]["scope_paths"] == ["src/auth"]
 
 
-def test_mcp_resume_refreshes_repo_before_recovery(monkeypatch, tmp_path):
-    fake = FakeStore()
-    monkeypatch.setenv("ENTROLY_SOURCE", str(tmp_path))
-    monkeypatch.setattr(m, "_store_for_path", lambda _p: fake)
-    observation = {"repo_id": "repo:test", "observed_at_ms": 77, "leases": []}
-    monkeypatch.setattr(m, "discover_repository_observation", lambda _path: observation)
-
-    result = m.work_resume(workstream_id="workstream:1", max_evidence=8)
-
-    assert result["status"] == "ok"
-    assert fake.observation is observation
-    assert '"workstream":"workstream:1"' in result["context"]
-    assert '"max_evidence":8' in result["context"]
-
-
-def test_mcp_handoff_refreshes_repo_before_sealing_receipt(monkeypatch, tmp_path):
+def test_mcp_resume_observes_fingerprints_persists_then_recovers(monkeypatch, tmp_path):
     fake = FakeStore()
     calls = []
     monkeypatch.setenv("ENTROLY_SOURCE", str(tmp_path))
     monkeypatch.setattr(m, "_store_for_path", lambda _p: fake)
-    observation = {"repo_id": "repo:test", "observed_at_ms": 88, "leases": []}
+    observation = {
+        "repo_id": "repo:test",
+        "observed_at_ms": 77,
+        "leases": [],
+        "changes": [{"path": "app.py", "content_digest": ""}],
+    }
     monkeypatch.setattr(
         m,
         "discover_repository_observation",
         lambda _path: calls.append("observe") or observation,
     )
+
+    def fingerprint(_path, obs):
+        calls.append("fingerprint")
+        obs["changes"][0]["content_digest"] = "git-blob:abc"
+        return obs
+
+    monkeypatch.setattr(m, "enrich_worktree_content_digests", fingerprint)
+    fake.submit_observation = (
+        lambda obs: calls.append("persist") or setattr(fake, "observation", obs) or FakeGraph()
+    )
+    fake.resume = lambda *args, **kwargs: calls.append("resume") or {
+        "workstream": args[0],
+        "max_evidence": kwargs["max_evidence"],
+    }
+
+    result = m.work_resume(workstream_id="workstream:1", max_evidence=8)
+
+    assert result["status"] == "ok"
+    assert calls == ["observe", "fingerprint", "persist", "resume"]
+    assert fake.observation is observation
+    assert fake.observation["changes"][0]["content_digest"] == "git-blob:abc"
+    assert '"workstream":"workstream:1"' in result["context"]
+    assert '"max_evidence":8' in result["context"]
+
+
+def test_mcp_handoff_fingerprints_latest_repo_before_sealing_receipt(monkeypatch, tmp_path):
+    fake = FakeStore()
+    calls = []
+    monkeypatch.setenv("ENTROLY_SOURCE", str(tmp_path))
+    monkeypatch.setattr(m, "_store_for_path", lambda _p: fake)
+    observation = {
+        "repo_id": "repo:test",
+        "observed_at_ms": 88,
+        "leases": [],
+        "changes": [{"path": "app.py", "content_digest": ""}],
+    }
+    monkeypatch.setattr(
+        m,
+        "discover_repository_observation",
+        lambda _path: calls.append("observe") or observation,
+    )
+
+    def fingerprint(_path, obs):
+        calls.append("fingerprint")
+        obs["changes"][0]["content_digest"] = "git-blob:def"
+        return obs
+
+    monkeypatch.setattr(m, "enrich_worktree_content_digests", fingerprint)
     fake.submit_observation = lambda obs: calls.append("persist") or setattr(fake, "observation", obs) or FakeGraph()
     fake.handoff = lambda workstream, source, target: calls.append("handoff") or {
         "workstream_id": workstream,
@@ -108,8 +146,8 @@ def test_mcp_handoff_refreshes_repo_before_sealing_receipt(monkeypatch, tmp_path
     )
 
     assert result["status"] == "ok"
-    assert calls == ["observe", "persist", "handoff"]
-    assert fake.observation is observation
+    assert calls == ["observe", "fingerprint", "persist", "handoff"]
+    assert fake.observation["changes"][0]["content_digest"] == "git-blob:def"
     assert '"from_agent":"claude"' in result["context"]
     assert '"to_agent":"codex"' in result["context"]
 
@@ -121,6 +159,11 @@ def test_mcp_handoff_validates_before_repository_mutation(monkeypatch, tmp_path)
         m,
         "discover_repository_observation",
         lambda _path: calls.append("observe") or {},
+    )
+    monkeypatch.setattr(
+        m,
+        "enrich_worktree_content_digests",
+        lambda _path, observation: calls.append("fingerprint") or observation,
     )
     result = m.work_handoff(
         workstream_id="",
