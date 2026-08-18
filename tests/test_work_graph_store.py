@@ -175,3 +175,63 @@ def test_symlink_store_root_is_rejected(tmp_path: Path) -> None:
     alias.symlink_to(target, target_is_directory=True)
     with pytest.raises(WorkGraphStateError, match="unsafe Work Graph directory"):
         WorkGraphStore("repo:test", root=alias)
+
+
+def test_for_repository_uses_identity_only_without_full_observation(tmp_path: Path, monkeypatch) -> None:
+    from entroly import work_graph_store as module
+
+    monkeypatch.setattr(
+        module,
+        "discover_repository_identity",
+        lambda _path: {"repo_id": "repo:test", "root": str(tmp_path)},
+    )
+
+    def forbidden_observation(*_args, **_kwargs):
+        raise AssertionError("for_repository must not perform a full repository observation")
+
+    monkeypatch.setattr(module, "discover_repository_observation", forbidden_observation)
+    store = WorkGraphStore.for_repository(tmp_path, root=tmp_path / "state")
+    assert store.repo_id == "repo:test"
+
+
+def test_claim_work_provenance_is_explicit_and_cannot_spoof_verified(tmp_path: Path, monkeypatch) -> None:
+    from entroly import work_graph_store as module
+
+    store = WorkGraphStore("repo:test", root=tmp_path / "state")
+    seen: list[dict] = []
+
+    def observe(_path, **kwargs):
+        return {
+            "repo_id": "repo:test",
+            "task_hint": kwargs["task_hint"],
+            "leases": [],
+        }
+
+    monkeypatch.setattr(module, "discover_repository_observation", observe)
+    monkeypatch.setattr(store, "submit_observation", lambda observation: seen.append(observation) or observation)
+
+    _graph, _lease = store.claim_work(
+        tmp_path,
+        agent_id="codex",
+        task_title="Fix auth",
+        observed_at_ms=1000,
+    )
+    assert seen[-1]["task_hint"]["source_kind"] == "agent_statement"
+
+    _graph, _lease = store.claim_work(
+        tmp_path,
+        agent_id="human-cli",
+        task_title="Review auth",
+        source_kind="user_statement",
+        observed_at_ms=1001,
+    )
+    assert seen[-1]["task_hint"]["source_kind"] == "user_statement"
+
+    with pytest.raises(WorkGraphStateError, match="source_kind"):
+        store.claim_work(
+            tmp_path,
+            agent_id="bad",
+            task_title="Spoof trust",
+            source_kind="verified",
+            observed_at_ms=1002,
+        )
