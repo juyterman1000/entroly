@@ -1,0 +1,80 @@
+name: Validate Trust Engine Hardening
+
+on:
+  push:
+    branches:
+      - core/trust-engine-hardening-20260817
+    paths:
+      - scripts/harden_trust_engine_api.py
+      - .github/workflows/validate-trust-engine-hardening.yml
+
+permissions:
+  contents: write
+
+jobs:
+  validate-and-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: core/trust-engine-hardening-20260817
+          fetch-depth: 0
+
+      - name: Pin exact audited inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object entroly-engine/src/eicv.rs)" = "fbd076ce5de513647d9eaa6ba9cb7001656b32aa"
+          test "$(git hash-object entroly-engine/src/lib.rs)" = "1eb0d523c118fc701c4c91bbabe7c00be920f408"
+          grep -q '^sha2 = "0.10"$' entroly-engine/Cargo.toml
+          git rev-parse HEAD > /tmp/trust-start-head
+
+      - name: Apply evidence-bounded trust patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/harden_trust_engine_api.py
+          git diff --check
+          test "$(git diff --name-only | sort)" = "$(printf '%s\n' \
+            entroly-engine/src/eicv.rs \
+            entroly-engine/src/lib.rs \
+            entroly-engine/src/trust_engine.rs | sort)"
+          grep -q 'pub evidence_commitment: String' entroly-engine/src/eicv.rs
+          grep -q 'pub fn try_new(profile: &str)' entroly-engine/src/eicv.rs
+          grep -q 'pub enum EvidenceSupportStatus' entroly-engine/src/trust_engine.rs
+          grep -q 'assess_claim_support' entroly-engine/src/trust_engine.rs
+          ! grep -q 'Truncated SHA-256 hex of the evidence' entroly-engine/src/eicv.rs
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Validate shared engine in both binding configurations
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path entroly-engine/Cargo.toml
+          cargo test --manifest-path entroly-engine/Cargo.toml --lib
+          cargo test --manifest-path entroly-engine/Cargo.toml --lib --features python
+          cargo clippy --manifest-path entroly-engine/Cargo.toml --all-targets -- -D warnings
+          cargo clippy --manifest-path entroly-engine/Cargo.toml --all-targets --features python -- -D warnings
+          test "$(git diff --name-only | sort)" = "$(printf '%s\n' \
+            entroly-engine/src/eicv.rs \
+            entroly-engine/src/lib.rs \
+            entroly-engine/src/trust_engine.rs | sort)"
+
+      - name: Refuse races and publish only validated product files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin core/trust-engine-hardening-20260817
+          test "$(cat /tmp/trust-start-head)" = "$(git rev-parse origin/core/trust-engine-hardening-20260817)"
+          rm scripts/harden_trust_engine_api.py .github/workflows/validate-trust-engine-hardening.yml
+          git diff --check
+          git config user.name "entroly-core-hardening-bot"
+          git config user.email "208309368+juyterman1000@users.noreply.github.com"
+          git add -A scripts/harden_trust_engine_api.py .github/workflows/validate-trust-engine-hardening.yml \
+            entroly-engine/src/eicv.rs entroly-engine/src/lib.rs entroly-engine/src/trust_engine.rs
+          git commit -m "feat(trust): add evidence-bounded Rust Trust Engine facade"
+          git push origin HEAD:core/trust-engine-hardening-20260817
