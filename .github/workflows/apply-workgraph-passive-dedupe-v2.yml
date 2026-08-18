@@ -1,0 +1,76 @@
+name: Apply Work Graph Passive Snapshot Dedupe v2
+
+on:
+  push:
+    branches:
+      - audit/workgraph-passive-dedupe-20260817
+    paths:
+      - .github/workflows/apply-workgraph-passive-dedupe-v2.yml
+      - scripts/apply_workgraph_passive_dedupe_v2.py
+
+permissions:
+  contents: write
+
+jobs:
+  validate-and-apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out exact feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/ai-work-graph-v1
+          fetch-depth: 0
+
+      - name: Require audited Rust and hardened fingerprint adapters
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object entroly-engine/src/work_graph.rs)" = "4cfa2d84123b53bc8d6a4b68e5d5431da9ac3a30"
+          grep -q 'O_NOFOLLOW' entroly/work_graph_content_digest.py
+          grep -q 'st_ino' entroly/work_graph_content_digest.py
+          grep -q 'MAX_HASH_FILE_BYTES' entroly/work_graph_content_digest.py
+          grep -q 'O_NOFOLLOW' entroly-wasm/js/work_graph_content_digest.js
+          grep -q 'mtimeNs' entroly-wasm/js/work_graph_content_digest.js
+          grep -q 'MAX_HASH_FILE_BYTES' entroly-wasm/js/work_graph_content_digest.js
+          git rev-parse HEAD > /tmp/workgraph-passive-start-head
+
+      - name: Recover and apply corrected exact-anchor patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin audit/workgraph-passive-dedupe-20260817:audit-passive
+          git show audit-passive:scripts/apply_workgraph_passive_dedupe_v2.py > /tmp/apply_workgraph_passive_dedupe_v2.py
+          python /tmp/apply_workgraph_passive_dedupe_v2.py
+          test "$(git diff --name-only)" = "entroly-engine/src/work_graph.rs"
+          git diff --check
+          grep -q 'fn passive_repository_snapshot_fingerprint' entroly-engine/src/work_graph.rs
+          grep -q 'identical_content_complete_passive_snapshots_do_not_grow_history' entroly-engine/src/work_graph.rs
+          grep -q 'repeated_active_verification_is_never_collapsed' entroly-engine/src/work_graph.rs
+          grep -q 'repeated_model_execution_is_never_collapsed' entroly-engine/src/work_graph.rs
+
+      - name: Install Rust validation toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Validate shared Rust semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path entroly-engine/Cargo.toml
+          cargo test --manifest-path entroly-engine/Cargo.toml --lib
+          cargo clippy --manifest-path entroly-engine/Cargo.toml --all-targets -- -D warnings
+          test "$(git diff --name-only)" = "entroly-engine/src/work_graph.rs"
+
+      - name: Refuse feature-branch races and push one Rust-only commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin feat/ai-work-graph-v1
+          test "$(cat /tmp/workgraph-passive-start-head)" = "$(git rev-parse origin/feat/ai-work-graph-v1)"
+          test "$(git diff --name-only)" = "entroly-engine/src/work_graph.rs"
+          git config user.name "entroly-workgraph-bot"
+          git config user.email "208309368+juyterman1000@users.noreply.github.com"
+          git add entroly-engine/src/work_graph.rs
+          git commit -m "fix(work-graph): dedupe content-complete passive snapshots"
+          git push origin HEAD:feat/ai-work-graph-v1
