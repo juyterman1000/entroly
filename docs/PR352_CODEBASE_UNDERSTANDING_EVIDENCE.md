@@ -2210,3 +2210,71 @@ corrected to match the code with no behavioural risk at all. Whether the
 saturation constant should change — `raw / 4.0` is what compresses everything
 above one Critical into the top decile — is a scoring-policy question that
 affects every consumer of `SastReport.risk_score`.
+
+### Finding G29 — the secret-redaction path does not meet its own "never exposed" claim
+
+`scan_content` redacts findings in the `Hardcoded Secrets` category, with the
+stated goal:
+
+```rust
+// Privacy: redact line content for secret-category findings
+// so that actual credentials are never exposed in SAST reports.
+```
+
+Three branches, and only two of them redact:
+
+```rust
+if let Some(eq_pos) = trimmed.find('=') {
+    format!("{}= [REDACTED]", &trimmed[..eq_pos])       // safe: key name only
+} else if trimmed.len() > 30 {
+    ... format!("{}...[REDACTED]", &trimmed[..safe])    // first 20 BYTES verbatim
+} else {
+    "[REDACTED — secret detected]".to_string()          // safe
+}
+```
+
+The middle branch emits the first 20 bytes of the line unmodified. How much
+credential that discloses depends on where the credential starts, measured
+against the real logic:
+
+| Input | Output | Secret bytes leaked |
+|---|---|---|
+| `"aws_access_key_id": "AKIA…"` | `"aws_access_key_id":...[REDACTED]` | 0 — key name fills the window |
+| `"AKIAIOSFODNN7EXAMPLE", # prod` | `[REDACTED — secret detected]` | 0 — under 30, fully redacted |
+| `github_token: ghp_16C7e42F…` | `github_token: ghp_16...[REDACTED]` | 6 |
+| `authenticate("sk-proj-abc…")` | `authenticate("sk-pro...[REDACTED]` | 6 |
+| `'ghp_16C7e42F292c6912E7710c838347Ae178B4a'` | `'ghp_16C7e42F292c691...[REDACTED]` | **19** |
+
+So the exposure is bounded at 20 bytes and reaches that bound when the line
+begins with the credential — a bare token in an array, a CSV field, a
+continuation line, or a quoted literal on its own.
+
+Severity is genuinely limited: 19 characters of a 40-character GitHub PAT is not
+usable on its own. But "never exposed" is an absolute, and it does not hold; a
+prefix is enough to correlate a leaked credential against a known key, and for
+short secrets — PINs, legacy API keys, database passwords — 19 characters can be
+most or all of it. The `=` branch shows the design intent clearly: emit the
+*name*, never the value. The middle branch abandons that and emits a positional
+prefix instead.
+
+**Not changed.** The fix is not simply a smaller window — that only shrinks the
+leak. It is to apply the same rule the `=` branch already follows: find the
+delimiter (`:`, `=`, `(`, whitespace after a key token) and emit everything up to
+it, falling back to full redaction when no delimiter is found. That is a behaviour
+change to reported output, and `line_content` is consumed by callers that may
+already depend on its current shape.
+
+### Checked and clean
+
+Two things worth recording as negative results, since both would have been
+serious and neither is true:
+
+* **No dead rule patterns.** `scan_content` matches with
+  `line_lower.contains(rule.pattern)` — using the pattern *raw*, while `requires`
+  and `suppressed_by` are both lowercased at match time. Any rule whose pattern
+  carried an uppercase character would therefore never fire. All 151 patterns are
+  already lowercase, so nothing is dead; the lowercasing on the other two fields
+  is defensive rather than load-bearing.
+* **No UTF-8 panic in redaction.** `find('=')` returns a char boundary because
+  `=` is ASCII, and the `len() > 30` branch explicitly walks back to a boundary
+  with `is_char_boundary`. Both slices are safe.
