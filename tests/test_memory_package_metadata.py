@@ -58,13 +58,33 @@ def test_root_pyproject_defines_documented_full_extra() -> None:
         assert dependency in full_section
 
 
-def test_root_pyproject_keeps_native_engine_optional() -> None:
+def test_root_pyproject_requires_native_engine() -> None:
+    """The native engine is a hard dependency, not an extra.
+
+    This assertion used to read `"entroly-core" not in hard_deps`. Shipping it
+    as an extra meant `pip install entroly` -- the command in the README, the
+    quickstart, and every integration doc -- produced an install where
+    query-conditioned selection (QCCR) never runs: it is gated on the native
+    module in `EntrolyEngine.optimize_context`, and its candidate set comes from
+    `self._rust.export_fragments()`, which has no pure-Python equivalent.
+
+    Measured consequence on this repo: three unrelated queries, including the
+    nonsense control "banana bicycle weather forecast tuna sandwich", returned a
+    byte-identical 23 fragments / 7,588 tokens and the same "76.29% saved",
+    because the figure is baseline-minus-budget arithmetic that nothing about
+    the query can move. Every accuracy benchmark here measures the QCCR path, so
+    the default install did not run the code that was benchmarked.
+
+    The pure-Python fallback still exists for platforms without a wheel; it is
+    just no longer what a normal install silently gets.
+    """
     text = Path("pyproject.toml").read_text(encoding="utf-8")
     hard_deps = text.split("dependencies = [", 1)[1].split("]", 1)[0]
     native_extra = text.split("native = [", 1)[1].split("]", 1)[0]
 
     assert "mcp" in hard_deps
-    assert "entroly-core" not in hard_deps
+    assert "entroly-core" in hard_deps
+    # Retained as a compatibility alias for existing install instructions.
     assert "entroly-core" in native_extra
 
 
@@ -87,7 +107,9 @@ def test_nested_pyproject_dependency_shape_matches_root() -> None:
         test_extra = text.split("test = [", 1)[1].split("]", 1)[0]
 
         assert "mcp" in hard_deps
-        assert "entroly-core" not in hard_deps
+        # Required in both manifests -- see
+        # test_root_pyproject_requires_native_engine for why this flipped.
+        assert "entroly-core" in hard_deps
         assert "entroly-core" in native_extra
         assert "entroly-core" in full_extra
         assert "pytest" in test_extra

@@ -34,7 +34,7 @@ Do not merge a change that weakens these invariants:
 - **Receipt honesty:** selected context, omitted evidence, risks, hashes, and token ratios must be inspectable.
 - **Reversibility:** compressed or summarized context must remain traceable back to source spans.
 - **Fail-closed verification:** WITNESS, RAVS, and native-status checks must degrade safely, not silently claim confidence.
-- **Local-first operation:** no surprise remote calls for ranking, receipts, verification, or diagnostics.
+- **Local-first operation:** no surprise remote calls for ranking, receipts, verification, or diagnostics. The single carve-out is engine repair: when the native engine is missing, `entroly/self_heal.py` installs `entroly-core` from PyPI before measuring, because without it selection never reads the query and any reported saving is budget arithmetic. It is a package install — no code, prompts, or telemetry leave the machine — it is skipped when the engine is present, and `ENTROLY_NO_SELF_HEAL=1` disables it. Do not extend this carve-out to anything else, and never repair from an import path.
 - **Cache stability:** prompt prefixes should remain byte-stable unless intentionally changed.
 - **Release consistency:** Python, Rust, WASM, npm, Homebrew, docs, and native minimum versions must agree.
 - **Benchmark honesty:** claims must include baseline, token budget, workload, and caveats.

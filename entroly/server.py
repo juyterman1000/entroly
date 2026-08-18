@@ -644,17 +644,209 @@ def _selection_matches_query(query: str, selected: list) -> bool:
     terms = _query_terms(query)
     if not terms:
         return True          # no lexical intent to satisfy; not a no-match
+
+    # Token membership with stemming, not raw substring containment.
+    #
+    # Substring matching fails on ordinary English morphology, and the failure
+    # is silent and one-directional: it reports "no term in common" for a
+    # selection that plainly answers the question. Measured on a two-file
+    # corpus, the query "How are credit cards charged?" against
+    # `charge_card(customer.card, amount)` matched nothing -- "cards" is not a
+    # substring of "card" and "charged" is not a substring of "charge" -- so a
+    # correct selection was discarded as a no-match. Natural-language queries
+    # are the normal case, and plurals and past tense are not exotic.
+    #
+    # `sufficiency._lexical_terms` is the tokenizer this repository already
+    # standardised on for exactly this question; its own `attainable()` says
+    # "use token membership, never unsafe raw-substring matching". One
+    # definition of "a term appears here" is worth more than two.
+    try:
+        from .sufficiency import _lexical_terms, stem
+    except Exception:  # pragma: no cover - sufficiency is always present
+        _lexical_terms = None
+
+    if _lexical_terms is None:
+        for frag in selected or []:
+            if not isinstance(frag, dict) or frag.get("is_pinned"):
+                continue
+            haystack = (
+                str(frag.get("content") or "") + " " + str(frag.get("source") or "")
+            ).lower()
+            if any(t in haystack for t in terms):
+                return True
+        return False
+
+    # Both sides through the *same* tokenizer, or the comparison is meaningless.
+    # `_query_terms` keeps `parse_manifest` whole while `_lexical_terms` splits
+    # the haystack into `parse`/`manifest`, so passing raw query words here made
+    # every snake_case identifier -- the most precise thing a developer can
+    # type -- fail to match the code that defines it. Substring matching used to
+    # paper over this; token membership cannot, so the query gets tokenised too.
+    wanted = {t for t in terms}
+    wanted |= {s for s in (stem(t) for t in terms) if s}
+    for term in terms:
+        wanted |= _lexical_terms(term)
     for frag in selected or []:
         if not isinstance(frag, dict) or frag.get("is_pinned"):
             continue
-        haystack = (
-            str(frag.get("content") or "")
-            + " "
-            + str(frag.get("source") or "")
-        ).lower()
-        if any(t in haystack for t in terms):
+        # Per fragment rather than over the whole selection: a match on the
+        # first fragment costs one tokenisation, not all of them.
+        present = _lexical_terms(
+            str(frag.get("content") or "") + " " + str(frag.get("source") or "")
+        )
+        if wanted & present:
             return True
     return False
+
+
+def apply_no_match_contract(
+    result: dict,
+    query: str,
+    *,
+    scores_are_ranked: bool = True,
+) -> dict:
+    """Refuse to pass off unrelated context as a match. Mutates and returns.
+
+    A query matching nothing still yields a ranked list, so the tool used to
+    hand back confident-looking unrelated files and bill the omitted corpus as
+    "savings". Say so explicitly instead: keep pinned/required evidence
+    (operator policy, not relevance), drop the rest, and credit zero savings.
+    Withholding context because nothing matched is not a saving, and unrelated
+    context is worse than none.
+
+    This lives outside ``optimize_context`` because that is not the only place
+    selection happens. ``cli.cmd_optimize`` deliberately bypasses
+    ``optimize_context`` on its default path -- it re-selects over the full
+    fragment store rather than through ``recall()``, which caps at ~25 items --
+    so for a long time the guard ran only on the engine-less fallback branch,
+    where ranking does not happen anyway. It was present exactly where it was
+    useless and absent exactly where it mattered. One implementation, applied by
+    every selection surface, is the fix; do not re-inline it.
+
+    ``scores_are_ranked=False`` disables the variance discriminator for callers
+    whose fragments carry a flat relevance by construction. QCCR is one:
+    ``_rust_select`` returns synthetic per-file fragments scored 1.0 for a
+    matching query and 0.0 for a non-matching one -- measured, not assumed --
+    so every QCCR selection looks "degenerate" to a spread test while
+    ``_evidence_backed`` and ``_selection_matches_query`` still separate the two
+    cases cleanly. Leaving the variance test on for that caller would wipe every
+    successful selection; leaving the whole contract off, which is what happened
+    before, lets a nonsense query return twelve confident files.
+    """
+    if not query:
+        return result
+
+    selected = result.get("selected_fragments") or result.get("selected") or []
+    if not selected:
+        return result
+
+    # Nothing was excluded -> there was no selection decision to be wrong about.
+    #
+    # "Unrelated context is worse than none" is a claim about *displacing*
+    # relevant evidence under a budget. When the optimizer returned every
+    # candidate it had, nothing was displaced, so withholding is pure loss.
+    # Measured: a two-file, 47-token repository against an 8,000-token budget
+    # asked "How does the authentication flow work?" returned both files and
+    # was then wiped to zero, because `stem("authentication")` is None and never
+    # reaches the token `auth` -- the whole corpus discarded over a vocabulary
+    # gap, with no budget pressure that discarding could possibly relieve.
+    #
+    # The guard still applies wherever the optimizer actually chose: a selection
+    # of 23 fragments drawn from 140 candidates is a decision, and a wrong one
+    # costs the user the budget it consumed.
+    considered = result.get("total_fragments")
+    try:
+        if considered and len(selected) >= int(considered):
+            return result
+    except (TypeError, ValueError):
+        pass
+
+    degenerate = scores_are_ranked and _score_distribution_is_degenerate(selected)
+    evidence = _evidence_signal(selected)
+    lexical = _selection_matches_query(query, selected)
+
+    # Unmeasured relevance must not vote. For a measured selection this is
+    # exactly the old condition -- `evidence is False` is `not _evidence_backed`
+    # and `D or not (E and M)` expands to `D or not E or not M` -- so nothing
+    # changes for any caller that ranks. When no score exists at all, the
+    # lexical check decides alone rather than a missing field convicting a
+    # selection that was never scored. Strictly fewer trips, never more.
+    if not (degenerate or evidence is False or not lexical):
+        return result
+
+    pinned = [f for f in selected if isinstance(f, dict) and f.get("is_pinned")]
+    result["selected_fragments"] = pinned
+    result["selected"] = pinned
+    result["selected_count"] = len(pinned)
+    result["tokens_used"] = sum(int(f.get("token_count", 0) or 0) for f in pinned)
+    result["total_tokens"] = result["tokens_used"]
+    result["tokens_saved"] = 0
+    result["tokens_saved_this_call"] = 0
+    result["status"] = "no_match"
+    result["no_match"] = {
+        "reason": (
+            "the ranker produced no discrimination for this query "
+            "(flat score distribution) or the returned text shared "
+            "no term with it; returning pinned evidence only rather "
+            "than unrelated files"
+        ),
+        "degenerate_ranking": degenerate,
+        # Says which signal convicted. `false` here means the selection carried
+        # no relevance at all and the lexical check decided on its own -- report
+        # what was measured rather than implying a score was consulted.
+        "evidence_measured": evidence is not None,
+        "lexical_match": lexical,
+        "query": query,
+        "candidates_considered": result.get("total_fragments", 0),
+        "pinned_retained": len(pinned),
+        "remediation": (
+            "rephrase with identifiers from the codebase, or run "
+            "`entroly health` to confirm the repository is indexed"
+        ),
+    }
+    return result
+
+
+def _evidence_signal(selected: list) -> bool | None:
+    """Three-valued relevance verdict: True, False, or **unmeasured**.
+
+    ``True``  at least one non-pinned fragment carries a positive score.
+    ``False`` scores are present on non-pinned fragments and none is positive.
+    ``None``  no non-pinned fragment carries a score at all -- the question was
+              never asked, so it has no answer.
+
+    The third state is not pedantry. Relevance is computed *during* selection
+    and is not stored on a fragment, so a selection replayed from somewhere
+    other than a ranker arrives without it -- the fast path replays a
+    crystallized recipe straight out of the fragment store, and those fragments
+    carry ``id``/``source``/``content``/``token_count`` and no score. Collapsing
+    "never scored" into "scored zero" would read every one of those as
+    unrelated and discard a selection that was promoted precisely because it was
+    measured to work.
+
+    Absence of evidence is not evidence of absence, and this codebase already
+    settled that argument once: the sufficiency certificate reports
+    ``boundary_exposure_measured=False`` rather than claiming an exposure of
+    zero it could not compute. Same discipline here.
+
+    Pinned fragments are excluded throughout: they are included by operator
+    policy, not by evidence, so they must never make a no-match look matched.
+    """
+    measured = False
+    for frag in selected or []:
+        if not isinstance(frag, dict) or frag.get("is_pinned"):
+            continue
+        for key in ("relevance", "relevance_score", "score"):
+            if key in frag:
+                try:
+                    value = float(frag[key] or 0.0)
+                except (TypeError, ValueError):
+                    continue
+                measured = True
+                if value > 0.0:
+                    return True
+                break
+    return False if measured else None
 
 
 def _evidence_backed(selected: list) -> bool:
@@ -666,21 +858,12 @@ def _evidence_backed(selected: list) -> bool:
     on this repo: the nonsense query "zzqqxx blorptastic wubbleflux" selected 8
     files at ~0.6 relevance, sharing its top hits with a real query.
 
-    Pinned fragments are excluded from this test: they are included by operator
-    policy, not by evidence, so they must never make a no-match look matched.
+    Kept as the two-valued view for callers that only need "is there evidence".
+    Unmeasured reads as False here, which is the safe answer to that question;
+    callers that must distinguish "no evidence" from "no measurement" -- the
+    no-match contract among them -- use `_evidence_signal` instead.
     """
-    for frag in selected or []:
-        if not isinstance(frag, dict) or frag.get("is_pinned"):
-            continue
-        for key in ("relevance", "relevance_score", "score"):
-            if key in frag:
-                try:
-                    if float(frag[key] or 0.0) > 0.0:
-                        return True
-                except (TypeError, ValueError):
-                    continue
-                break
-    return False
+    return _evidence_signal(selected) is True
 
 
 def _honest_tokens_saved(selected: list, tokens_saved: int) -> int:
@@ -1142,6 +1325,21 @@ class EntrolyEngine:
         # is over.
         fp_result = self._try_fast_path(query, token_budget)
         if fp_result is not None:
+            # The fast path returns before the whole pipeline, so it also
+            # returns before the no-match contract at the far end of this
+            # method. A promoted skill is fitness-gated and freshness-checked,
+            # but its trigger is a regex over the query: a pattern that fires
+            # too broadly replays a recipe that has nothing to do with what was
+            # asked, and that is precisely the "confident unrelated files"
+            # failure the contract exists to stop.
+            #
+            # `scores_are_ranked=False` because there is no ranking here to be
+            # degenerate -- the selection is a memoized decision, not a scored
+            # one. Its fragments come straight from the store and carry no
+            # relevance, so `_evidence_signal` reports unmeasured and the
+            # lexical check decides alone. Passing True instead would read every
+            # fast-path hit as unranked and discard it.
+            apply_no_match_contract(fp_result, query, scores_are_ranked=False)
             return fp_result
 
         # Query refinement: expand vague queries using in-memory file context.
@@ -1533,6 +1731,26 @@ class EntrolyEngine:
             except Exception as e:
                 logger.debug("OnlinePrism observation error: %s", e)
 
+            # ── No-match contract ────────────────────────────────────────
+            # This is the engine method every non-MCP caller reaches: the CLI,
+            # the SDK, the proxy. The guard used to exist only on the MCP tool
+            # handler of the same name nested inside `create_mcp_server`, so a
+            # query matching nothing returned confident unrelated files
+            # everywhere except MCP. Verified before this line existed: a
+            # selection scoring `relevance: 0.0` with no query term in the
+            # delivered text came back as an ordinary success.
+            #
+            # `selector` is set to "qccr" by the query path above. QCCR's
+            # relevance is a match indicator (uniform 1.0 matched / 0.0 not),
+            # not a rank, so the variance discriminator cannot read it and is
+            # switched off for that path; `_evidence_backed` carries the signal
+            # instead. The native knapsack path does produce a real ranking, so
+            # it keeps the variance test.
+            apply_no_match_contract(
+                result,
+                query,
+                scores_are_ranked=result.get("selector") != "qccr",
+            )
             return result
         finally:
             gc.enable()
@@ -3564,51 +3782,7 @@ def create_mcp_server(
             }
 
         # ── No-match contract ────────────────────────────────────────
-        # A query matching nothing still yields a ranked list, so the tool used
-        # to hand back confident-looking unrelated files and bill the omitted
-        # corpus as "savings". Say so explicitly instead: keep pinned/required
-        # evidence (operator policy, not relevance), drop the rest, and credit
-        # zero savings. Withholding context because nothing matched is not a
-        # saving, and unrelated context is worse than none.
-        if query:
-            _sel = result.get("selected_fragments") or result.get("selected") or []
-            _degenerate = _score_distribution_is_degenerate(_sel)
-            if _sel and (
-                _degenerate
-                or not (
-                    _evidence_backed(_sel)
-                    and _selection_matches_query(query, _sel)
-                )
-            ):
-                _pinned = [
-                    f for f in _sel if isinstance(f, dict) and f.get("is_pinned")
-                ]
-                result["selected_fragments"] = _pinned
-                result["selected"] = _pinned
-                result["selected_count"] = len(_pinned)
-                result["tokens_used"] = sum(
-                    int(f.get("token_count", 0) or 0) for f in _pinned
-                )
-                result["total_tokens"] = result["tokens_used"]
-                result["tokens_saved"] = 0
-                result["tokens_saved_this_call"] = 0
-                result["status"] = "no_match"
-                result["no_match"] = {
-                    "reason": (
-                        "the ranker produced no discrimination for this query "
-                        "(flat score distribution) or the returned text shared "
-                        "no term with it; returning pinned evidence only rather "
-                        "than unrelated files"
-                    ),
-                    "degenerate_ranking": _degenerate,
-                    "query": query,
-                    "candidates_considered": result.get("total_fragments", 0),
-                    "pinned_retained": len(_pinned),
-                    "remediation": (
-                        "rephrase with identifiers from the codebase, or run "
-                        "`entroly health` to confirm the repository is indexed"
-                    ),
-                }
+        apply_no_match_contract(result, query)
 
         # CCR: compressed IOS variants must remain exactly recoverable.
         # Attach content-addressed handles before serializing the MCP result.
@@ -6671,8 +6845,118 @@ def _start_background_services(engine: EntrolyEngine) -> threading.Thread:
     return t
 
 
+def _repair_native_engine_at_startup() -> None:
+    """Install the native engine before serving, then restart into it.
+
+    Without it, ``optimize_context`` never takes the QCCR path and selection
+    ignores the query -- every request returns the same fragments. That is worse
+    on a long-lived server than on a one-shot CLI run, because the client keeps
+    receiving confidently-wrong context for the life of the session.
+
+    All output goes to stderr: this server speaks JSON-RPC over stdout, and one
+    stray line there desynchronises the client.
+    """
+    from . import self_heal
+
+    if self_heal.native_engine_ready():
+        return
+
+    # Repair being switched off must never mean the degradation is silent. A
+    # long-lived server has no other place to say this: the client just keeps
+    # receiving context selected without reference to the query, indefinitely.
+    if self_heal.disabled() or self_heal.already_healed():
+        print(
+            f"[entroly] WARNING: serving without the native engine. Context "
+            f"selection will not read the query -- every request returns the "
+            f"same fragments. Install entroly-core, or unset "
+            f"{self_heal.ENV_DISABLE} to let Entroly install it.",
+            file=sys.stderr,
+        )
+        return
+
+    print(
+        "[entroly] native engine missing; context selection would ignore the "
+        "query. Repairing before serving...",
+        file=sys.stderr,
+    )
+    outcome = self_heal.repair_native()
+    for name, ok, detail in outcome.steps:
+        print(
+            f"[entroly] {name}: {'ok' if ok else 'failed'} ({detail})",
+            file=sys.stderr,
+        )
+    if outcome.needs_reexec:
+        print("[entroly] engine installed; restarting server.", file=sys.stderr)
+        sys.exit(self_heal.reexec_after_repair())
+    if outcome.blocked:
+        print(
+            f"[entroly] serving without the native engine: "
+            f"{outcome.blocked_reason}. Selection will not read the query.",
+            file=sys.stderr,
+        )
+
+
+# Announced once per process: a server restarted by its host should say it
+# again, but a single boot should not repeat itself.
+_SESSION_PROTECTION_ANNOUNCED = False
+
+
+def _announce_session_protection_mode() -> None:
+    """State once, at startup, which runaway-session protection is in force.
+
+    Runaway-session rescue (``entroly/session_rescue.py``) compacts an
+    append-only conversation before it crosses the provider context limit,
+    keeping the prompt prefix byte-stable and every omitted span recoverable.
+    It rewrites the *outbound provider request*, and only the proxy sees one:
+    MCP tools are invoked with their own arguments and never receive the host's
+    transcript, so this surface has no conversation to rescue.
+
+    That boundary is architectural and is not going to be closed here. What can
+    be closed is the user not knowing about it -- the failure mode is someone
+    running long agent sessions over MCP who believes the runaway protection
+    they read about is running. Same contract as the ``no_match`` payload and
+    the ``[unearned]`` label: when Entroly cannot do a thing, it says so.
+
+    stderr only: this server speaks JSON-RPC over stdout and one stray line
+    there desynchronises the client.
+    """
+    global _SESSION_PROTECTION_ANNOUNCED
+    if _SESSION_PROTECTION_ANNOUNCED:
+        return
+    _SESSION_PROTECTION_ANNOUNCED = True
+
+    # An operator who switched rescue off does not need to be told how to switch
+    # it on; that is nagging, not reporting.
+    if os.environ.get("ENTROLY_SESSION_RESCUE", "1").lower() not in {
+        "1", "true", "yes", "on",
+    }:
+        return
+
+    print(
+        "[entroly] runaway-session rescue is not automatic on the MCP surface: "
+        "MCP tools are called with their own arguments and never receive the "
+        "conversation, so there is nothing here to compact. Route agent traffic "
+        "through `entroly proxy` to get it applied for you, or call "
+        "`entroly.rescue_session(...)` with the transcript from a host that can "
+        "pass it. (`entroly capabilities` reports this per mode.)",
+        file=sys.stderr,
+    )
+
+
 def main():
-    """Entry point for the entroly MCP server."""
+    """Entry point for the entroly MCP server.
+
+    Engine repair lives here rather than in ``cli.cmd_serve`` because this is
+    where every MCP entry path converges. Bare ``entroly`` under an MCP host has
+    a piped stdin, so ``_docker_launcher.launch`` calls ``_run_native()`` and
+    reaches this function without going through the CLI subcommand at all --
+    and that is the path Claude Code and the ``entroly-mcp`` npm bridge use.
+    Hooking only the subcommand would have left the primary surface unrepaired.
+    The session-protection notice rides the same convergence point.
+    """
+    _repair_native_engine_at_startup()
+    _announce_session_protection_mode()
+
     engine_type = "Rust" if _RUST_AVAILABLE else "Python"
     # Prefer the constant on the loaded package — guaranteed to match the code
     # actually running. `importlib.metadata.version()` can return a stale value

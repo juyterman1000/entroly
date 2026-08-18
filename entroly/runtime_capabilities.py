@@ -77,6 +77,36 @@ def runtime_capabilities() -> dict[str, Any]:
             "anthropic_messages": {"implemented": True, "connectivity_verified": False},
             "gemini_generate_content": {"implemented": True, "connectivity_verified": False},
         },
+        # Some protections are installed everywhere but can only be *active* in
+        # the mode that sees the data they protect. Reporting them as a flat
+        # "implemented: true" is how a user ends up believing an inactive
+        # guard is running, so the mode is part of the capability.
+        "session_protection": {
+            "implemented": True,
+            # The distinction is automatic vs available, not proxy vs nothing.
+            # `SessionRescueController` is pure policy -- it imports nothing
+            # HTTP-aware -- so any caller that can hand over its conversation
+            # can drive it via `entroly.rescue_session`. What the proxy alone
+            # provides is doing it *for* you: rescue rewrites the outbound
+            # provider request, and the proxy is the only surface Entroly owns
+            # that sees one. MCP tools are invoked with their own arguments and
+            # never receive the host's transcript, so an MCP host that wants
+            # rescue has to pass the conversation in.
+            "automatic_modes": ["proxy"],
+            "callable_from": ["sdk", "cli", "mcp-host", "provider-sdk-wrapper"],
+            "entry_point": "entroly.rescue_session",
+            "reason_not_automatic_elsewhere": (
+                "session rescue rewrites the outbound provider request; only "
+                "the proxy sees one, so every other surface must pass its "
+                "conversation to entroly.rescue_session"
+            ),
+            "enable_with": "entroly proxy",
+            "disable_env": "ENTROLY_SESSION_RESCUE",
+            # Both are properties of the rescue itself, not of the mode, and are
+            # what separate it from summarizing compaction.
+            "omissions_recoverable": True,
+            "prefix_cache_stable": True,
+        },
         "operations": {
             "doctor": True,
             "proxy": True,
@@ -97,6 +127,7 @@ def render_capabilities_text(report: dict[str, Any]) -> str:
     """Render a concise human-readable view without adding new claims."""
     engine = report["engine"]
     dependencies = report["dependencies"]
+    session = report.get("session_protection") or {}
     lines = [
         f"Entroly {report['package']['version']} runtime capabilities",
         f"  Engine: {engine['active']}",
@@ -105,6 +136,22 @@ def render_capabilities_text(report: dict[str, Any]) -> str:
             "  HTTP proxy dependencies: "
             + ("installed" if dependencies["http_proxy"]["installed"] else "missing")
         ),
+    ]
+    if session:
+        # Two facts, because reporting only the first reads as "you don't have
+        # this": where it happens for you, and how to invoke it where it does
+        # not. The user's real question is "am I protected right now", and the
+        # answer depends on how they are running Entroly.
+        lines.append(
+            "  Runaway-session rescue: automatic in "
+            + ", ".join(session["automatic_modes"])
+            + " (`"
+            + session["enable_with"]
+            + "`); callable anywhere via `"
+            + session["entry_point"]
+            + "`"
+        )
+    lines += [
         "  Provider connectivity: not checked (offline report)",
         "  Benchmark leadership: not implied",
     ]

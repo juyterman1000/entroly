@@ -215,14 +215,35 @@ def test_mcp_registry_identity_is_canonical_and_non_squattable() -> None:
     assert actual == expected
 
 
-def test_native_engine_is_optional_for_first_time_install() -> None:
+def test_native_engine_ships_with_first_time_install() -> None:
+    """A first-time `pip install entroly` must include the native engine.
+
+    This assertion used to read `not any(dep.startswith("entroly-core") ...)`.
+    Shipping the engine as an extra meant the command in the README, the
+    quickstart, and every integration doc produced an install where
+    query-conditioned selection (QCCR) never runs: it is gated on the native
+    module in `EntrolyEngine.optimize_context`, and its candidate set comes
+    from `self._rust.export_fragments()`, which has no pure-Python equivalent.
+
+    Measured consequence: three unrelated queries, including the nonsense
+    control "banana bicycle weather forecast tuna sandwich", returned a
+    byte-identical 23 fragments / 7,588 tokens and the same "76.29% saved",
+    because that figure is baseline-minus-budget arithmetic that nothing about
+    the query can move. Every accuracy benchmark in this repo measures the QCCR
+    path, so the default install did not run the code that was benchmarked.
+
+    The `native` and `full` extras are retained as compatibility aliases for
+    install instructions already in the wild; they now resolve to the same
+    thing as a plain install. See also
+    test_memory_package_metadata.test_root_pyproject_requires_native_engine.
+    """
     for path in ("pyproject.toml", "entroly/pyproject.toml"):
         project = _read_project_metadata(path)
         hard_deps = project["dependencies"]
         native_deps = project["optional-dependencies"]["native"]
         full_deps = project["optional-dependencies"]["full"]
 
-        assert not any(dep.startswith("entroly-core") for dep in hard_deps)
+        assert f"entroly-core>={RELEASE_VERSION},<2" in hard_deps
         assert f"entroly-core>={RELEASE_VERSION},<2" in native_deps
         assert f"entroly-core>={RELEASE_VERSION},<2" in full_deps
 

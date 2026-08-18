@@ -26,6 +26,24 @@ Quick Setup (Claude Code)::
 
 __version__ = "1.0.78"
 
+# Explicit repair for library users. The CLI restores a missing native engine
+# automatically, but an import path must never do that: installing a package
+# while a module is being imported risks re-entrant imports, partially
+# initialised state, and multiprocessing deadlock. So SDK users opt in by
+# calling it:
+#
+#     import entroly
+#     entroly.repair()          # installs the native engine if it is missing
+#     entroly.native_engine_ready()
+#
+# Without the native engine, `compress`/`optimize` still return results and
+# still respect the token budget, but selection does not read the query --
+# see entroly/self_heal.py for the measurement.
+try:
+    from .self_heal import native_engine_ready, repair  # noqa: F401
+except ImportError:  # pragma: no cover - stdlib-only module
+    pass
+
 try:
     from .sdk import (  # noqa: F401
         compress,
@@ -198,6 +216,21 @@ try:
         compress_evidence_locked,
         compress_payload_messages,
         detect_heavy_content_type,
+    )
+except ImportError:
+    pass
+
+# Runaway-session rescue, for callers that assemble their own prompts.
+# The proxy applies this automatically because it sees the outbound request;
+# every other surface has to hand the conversation over, so it needs a name.
+# Below the soft watermark it returns the conversation untouched, which makes
+# it safe to call on every turn -- and calling every turn is what lets the
+# watermark policy see the growth it acts on.
+try:
+    from .session_rescue import (  # noqa: F401
+        SessionRescuePolicy,
+        SessionRescueResult,
+        rescue_session,
     )
 except ImportError:
     pass

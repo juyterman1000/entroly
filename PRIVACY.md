@@ -59,6 +59,16 @@ server. Failures are ignored. Set `ENTROLY_DISABLE_UPDATE_CHECK=1` to disable
 the request. The proxy does not probe LLM provider hosts at startup unless you
 explicitly set `ENTROLY_CHECK_UPSTREAM=1`.
 
+When the native engine (`entroly-core`) is missing, commands that measure
+context — `simulate`, `demo`, `perf`, and the MCP/proxy services at startup —
+install it from PyPI before running. Without it, context selection cannot read
+your query, so any reported saving would be budget arithmetic rather than a
+measured result. This is an ordinary package install from PyPI, not an
+Entroly-operated server: no code, prompts, file contents, queries, or telemetry
+are transmitted. It is skipped entirely when the engine is already present, it
+never runs from a library import path, and `ENTROLY_NO_SELF_HEAL=1` disables it —
+in which case Entroly reports the figure explicitly labelled as unearned.
+
 `entroly telemetry on` stores a local preference only. No outbound telemetry
 uploader is included in this release.
 

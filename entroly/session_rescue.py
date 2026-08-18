@@ -25,6 +25,9 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Sequence
 
+import os
+from pathlib import Path
+
 from .compression_retrieval_store_secure import CompressionRetrievalStore
 from .evidence_locked_compression import compress_evidence_locked, estimate_tokens
 
@@ -547,9 +550,131 @@ class SessionRescueController:
             }
 
 
+# ── surface-neutral entry point ──────────────────────────────────────────────
+#
+# The controller above is pure policy: it takes a message list and returns a
+# transformed one. Nothing in it is HTTP-aware. It was reachable only through
+# `entroly proxy` for no better reason than that being its first caller, which
+# left every pip, npm, SDK and provider-SDK user without a capability their
+# install already contained.
+#
+# What *is* proxy-specific is being automatic. Rescue must run on the outbound
+# request, and the proxy is the only surface Entroly owns that sees one. Any
+# caller that can hand over its conversation can drive the same policy; this is
+# that entry point.
+
+_DEFAULT_CONTROLLER: SessionRescueController | None = None
+_DEFAULT_CONTROLLER_LOCK = threading.Lock()
+
+
+def default_controller() -> SessionRescueController:
+    """The process-wide controller, created on first use.
+
+    Sharing one controller per process is load-bearing, not convenience. The
+    freeze semantics that keep the prompt prefix byte-stable live in its
+    per-conversation state: once a message has been compacted, its transformed
+    bytes are reused for the rest of the session instead of being recomputed.
+    A caller that built a fresh controller per turn would recompress the old
+    prefix every time, changing bytes the provider cache is keyed on -- turning
+    a cache-preserving rescue into a cache-destroying one.
+
+    Honours the same `ENTROLY_DIR` / `ENTROLY_SESSION_RESCUE_STORE` settings as
+    the proxy, so a machine running both writes recovery records to one store
+    and `entroly recover` finds spans from either surface.
+    """
+    global _DEFAULT_CONTROLLER
+    if _DEFAULT_CONTROLLER is not None:
+        return _DEFAULT_CONTROLLER
+    with _DEFAULT_CONTROLLER_LOCK:
+        if _DEFAULT_CONTROLLER is None:
+            root = Path(os.environ.get("ENTROLY_DIR", str(Path.home() / ".entroly")))
+            path = Path(
+                os.environ.get(
+                    "ENTROLY_SESSION_RESCUE_STORE",
+                    str(root / "session_rescue_recovery.json"),
+                )
+            )
+            path.parent.mkdir(parents=True, exist_ok=True)
+            _DEFAULT_CONTROLLER = SessionRescueController(
+                recovery_store=CompressionRetrievalStore(path)
+            )
+    return _DEFAULT_CONTROLLER
+
+
+def rescue_session(
+    conversation_id: str,
+    messages: Sequence[dict[str, Any]],
+    *,
+    context_window: int,
+    query: str = "",
+    loop_detected: bool = False,
+    cache_warm: bool = False,
+    controller: SessionRescueController | None = None,
+) -> SessionRescueResult:
+    """Compact a conversation that is approaching the provider context limit.
+
+    The same policy the proxy runs, callable from anywhere that assembles a
+    prompt -- the Python SDK, a provider-SDK wrapper, a CLI pipeline, or an MCP
+    host that chooses to pass its transcript in::
+
+        from entroly.session_rescue import rescue_session
+
+        result = rescue_session(
+            conversation_id=session_id,
+            messages=messages,
+            context_window=200_000,
+            cache_warm=True,          # defer while a warm prefix would be lost
+        )
+        messages = result.messages    # unchanged unless a watermark was crossed
+
+    Below the soft watermark this returns the conversation untouched, so it is
+    safe to call on every turn; that is how it is meant to be used, because the
+    watermark policy needs to see the growth to act on it.
+
+    Omitted spans are persisted to the recovery store *before* the returned copy
+    is changed, so nothing is dropped that cannot be recovered.
+
+    `cache_warm=True` tells the policy that a warm provider cache would be
+    sacrificed by compacting now; it defers under soft pressure and overrides
+    only at the hard watermark or on a detected retry loop. Callers that cannot
+    tell should leave it False.
+
+    **What actually gets compacted, and what does not.** Candidates are tool and
+    function messages (and, once past the hard watermark or on a detected loop,
+    older assistant turns) outside the protected tail. Within those, only
+    content the evidence-locked compressor recognises as compressible is
+    touched -- bulky structured output: logs, JSON, tables, build chatter. Plain
+    prose reasoning is left alone rather than paraphrased, which is the point:
+    this compacts machine output, it does not summarise your conversation.
+
+    A consequence worth stating plainly, because a silent no-op is the failure
+    mode this project keeps having: a conversation over the watermark whose bulk
+    is prose comes back with ``action="pressure-observed"`` and
+    ``tokens_saved=0``. That is the honest answer -- nothing safely compressible
+    was found -- not a malfunction. Check ``result.action`` rather than assuming
+    a call did something.
+
+    ``query`` is accepted for interface parity with the proxy and is **not** used
+    to choose what to drop. Compaction is deliberately query-independent so that
+    the same historical message always compresses to the same bytes; letting the
+    newest question reshape old content would churn the very prefix the provider
+    cache is keyed on.
+    """
+    return (controller or default_controller()).rescue(
+        conversation_id,
+        messages,
+        context_window=context_window,
+        query=query,
+        loop_detected=loop_detected,
+        cache_warm=cache_warm,
+    )
+
+
 __all__ = [
     "SessionRescueController",
     "SessionRescuePolicy",
     "SessionRescueResult",
+    "default_controller",
     "estimate_message_tokens",
+    "rescue_session",
 ]
