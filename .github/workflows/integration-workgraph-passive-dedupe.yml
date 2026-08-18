@@ -1,4 +1,4 @@
-# Retriggered on the consolidated PR #352 head after the Claude delivery branch was split.
+# Retriggered on consolidated PR #352 head ff4d1a5 after documentation-only movement.
 name: Integration - Apply Work Graph Passive Snapshot Dedupe
 
 on:
