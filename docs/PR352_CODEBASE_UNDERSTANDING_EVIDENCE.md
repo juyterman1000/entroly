@@ -960,3 +960,121 @@ in `entroly-engine`, 112 in `entroly-core`. `cargo clippy --lib`: clean.
 Against the *published* core the same suite cannot exercise the Work Graph at
 all -- those tests skip rather than run, which is why this run is the first
 evidence that the surface works end to end.
+
+---
+
+## 16. Master prompt section 22 — "every file is mapped", answered
+
+Section 22 poses twelve questions and requires a reviewed report rather than an
+assertion. Answers below are derived from the branch, not recalled.
+
+**Method.** Engine modules are the `pub mod` declarations in
+`entroly-engine/src/lib.rs`. Binding exposure is every reference to a module
+path from `entroly-core/src` (PyO3) and `entroly-wasm/src` (WASM), counted
+separately and cross-checked per module rather than from a single grep.
+
+### Q5/Q6 — capabilities missing from a runtime
+
+33 public engine modules, plus `coordination_index` which is declared
+`#[cfg(test)] mod` and ships nowhere. Four modules are asymmetric:
+
+| Module | Lines | entroly-core (Python) | entroly-wasm (npm) | Used inside engine |
+|---|---:|---|---|---|
+| `rnr` | 81 | **absent** | present | yes — `eicv.rs` |
+| `cognitive_bus` | 955 | present | **absent** | no |
+| `nkbe` | 486 | present | **absent** | no |
+| `simhash_wide` | 235 | **absent** | **absent** | **no** |
+
+The remaining 29 are reachable from both bindings.
+
+`rnr::rnr_score` is callable from npm but not from Python. Python reaches its
+behaviour only indirectly, through `eicv`, which consumes it internally.
+
+`cognitive_bus` and `nkbe` are Python-only. **These are the two modules this
+session moved out of `entroly-wasm` into `entroly-engine`.** The move satisfied
+section 3's architectural law — shared semantics now live once in Rust — and
+simultaneously left a section 14 parity gap, because only the PyO3 binding was
+written. That is a real cost of this session's own increment, recorded rather
+than left for a reviewer to find.
+
+### `simhash_wide` is dead code, and it is the fix for a limitation the crate documents
+
+`simhash_wide` is referenced by no engine module and by neither binding. It is
+235 lines carrying `FINGERPRINT_VERSION = 2`, a domain-separated MD5 byte
+contract, widths of 64/256/1024 bits, a pinned golden vector, and five tests.
+
+It is not ordinary dead code. `dedup.rs::test_lcb_power_is_limited_by_fragment_length`
+documents a measured weakness — short near-duplicates cannot be penalised because
+a 64-bit fingerprint over a handful of trigrams carries too little evidence — and
+states the remedy explicitly:
+
+> "that is a bit-width problem, not a bound problem. **Widening the fingerprint
+> shrinks the standard error and lifts this directly.**"
+
+`simhash_wide` is that widening. Its own test
+`wide_fingerprints_separate_duplicates_from_strangers` asserts that 64-bit
+populations overlap while 256- and 1024-bit populations separate, and
+`noise_floor` quantifies the gain as `pi / (2*sqrt(bits))` — 0.196 at 64 bits,
+0.098 at 256, 0.049 at 1024.
+
+So the engine contains a tested implementation of the remedy for its own
+documented limitation, wired to nothing. Not changed here: adopting it is a
+persisted-fingerprint format change — `FINGERPRINT_VERSION`, `SUPPORTED_WIDTHS`
+and the fail-closed `comparable()` rule exist precisely because stored records
+must not be compared across widths — so it needs a migration path for existing
+indexes, not a switch flip.
+
+### Q1-Q4, Q7-Q12 — status
+
+| # | Question | Answer at this SHA |
+|---|---|---|
+| 1 | Python files holding shared semantics that should be Rust | Not enumerated. 301 Python modules; 20 import `entroly_core` directly. No ownership matrix exists. |
+| 2 | Which have already been ported | `cognitive_bus`, `nkbe` this session; work-graph identity exposed. Not a complete list. |
+| 3 | Which remain intentionally Python | Documented only for `repository_intelligence/graph_identity.py` and `graph_projection.py`. |
+| 4 | Node files that are equivalent orchestration | Not enumerated. |
+| 5 | Capabilities missing from WASM/npm | `cognitive_bus`, `nkbe` — see table above. |
+| 6 | Rust modules with no Python/npm exposure | `simhash_wide` (neither), `rnr` (no Python). |
+| 7 | Public imports/CLI/MCP depending on legacy paths | Not traced. |
+| 8 | Tests covering each migration | Partial: work-graph identity/projection covered by 29 tests, verified against a real engine. |
+| 9 | Packaging manifests include required files | Not re-verified at this SHA. `docs/DETAILS.md` still claims musl wheels are published, which is false here. |
+| 10 | Generated artifacts treated as source | Not audited. |
+| 11 | Repo map/docs stale after changes | `docs/repo_file_map.md` not refreshed for this session's moves. |
+| 12 | Can Python and npm differ on the same observation | **Yes.** `cognitive_bus` and `nkbe` exist only in Python; `rnr` only in npm. Parity is not proven and is currently false. |
+
+## 17. Master prompt section 24 — Definition of Done, honest status
+
+Section 24 lists 34 conditions and says not to mark the stage production-ready
+until all are true. They are not all true. This is the accounting.
+
+**Satisfied, with evidence in this document:**
+
+| Condition | Evidence |
+|---|---|
+| Evidence doc exists, reports coverage honestly | this file; coverage stated as 22/35 engine files, not rounded up |
+| Repository artifacts graph-addressable, stable identity | `graph_identity.py`; 8 tests pinning the engine construction, run against a real build |
+| Bounded/lazy materialization | `graph_projection.py` caps files/symbols/operations and reports drops; 9 tests |
+| Rust canonical owner of shared work-graph identity | `stable_node_id_for_token` / `stable_edge_id_for_token` in the engine; Python derives, never recomputes — pinned by `test_identity_is_derived_not_reimplemented` |
+| Parallel conflict detection without hard locking | `test_work_graph_multiprocess` passes after G15; real cross-process race, conflict materialized |
+| Multi-process persistence tests pass | same test; atomic replace, no debris |
+| Security/path/hostile-input tests pass | included in the 4025 |
+| PR to main remains draft | PR #352 `isDraft: true` |
+
+**Not satisfied, and why:**
+
+| Condition | Status |
+|---|---|
+| Deep-codebase audit gate completed | **No.** 22 of 35 engine files read in full; `cache.rs` (3,689) and `skeleton.rs` (2,906) are the largest unread. Python closure not attempted. |
+| Production-relevant files classified; no unknown ownership | **No.** Section 5 asks for a 13-field ownership matrix over every production file. None exists for 301 Python modules. |
+| Semantic closures for every *changed* subsystem fully read | **Partial.** Changed modules were read (`cognitive_bus`, `nkbe`, `work_graph`, `eicv_suppressor`). `cache.rs` is shared and unread. |
+| Public Python/CLI/MCP/provider/npm journeys traced end-to-end | **No.** Not traced this session. |
+| Pre-change baseline recorded | **Partial.** 4025/1/33 recorded at this SHA; no baseline captured at the branch point, so a pre-existing failure elsewhere is not yet distinguishable. |
+| Python and npm/WASM semantic parity proven | **No — demonstrated false.** Four asymmetric modules, section 16 above. |
+| Every production file classified in migration/ownership map | **No.** Same gap as above. |
+| Large-repo/incremental performance measured | **No.** |
+| Dogfood scenarios A-T (section 19) | **Not run** this session. Section 19 defines twenty scenarios; none were executed as a gauntlet. |
+| Exact final SHA CI green | **Not checked.** |
+
+**Conclusion.** The gate is not satisfied and this stage is not production-ready.
+The largest remaining blocks are the section 5 ownership matrix, the section 19
+dogfood gauntlet, and the parity gap this session's own module moves created.
+Nothing in this document should be read as clearing them.
