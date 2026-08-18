@@ -678,3 +678,145 @@ already declared that mode impossible.
 
 `lib.rs:68` declares `#[cfg(test)] mod coordination_index;`. The module is 308
 lines and does not ship. Worth knowing before anything is built on it.
+
+### Finding G9 — repository intelligence already has graphs on `main`, and one of them collides with the Work Graph namespace
+
+The question "isn't repository intelligence already projected into a graph?"
+has a real basis: `origin/main` carries seven graph-shaped modules under
+`entroly/repository_intelligence/` — `graph.py`, `graph_query.py`,
+`program_graph.py`, `adaptive_program_graph.py`, `semantic_ir.py`,
+`interprocedural_flow.py`, `universal_flow.py`.
+
+They are graphs. None of them is *the* Work Graph, and they do not share an
+identity scheme with it or with each other. Counted on `origin/main`:
+
+| Module | Node id it mints |
+|---|---|
+| `graph_query.py` | `file:{path}` / `symbol:{symbol_id}` |
+| `program_graph.py` | `synthetic:{label}` |
+| `semantic_ir.py` | `_node_id(path, kind, name, start, end)` |
+| `interprocedural_flow.py` | `flow:{sha256(...)}` |
+| `syntax_session.py` | `_shape_id(file, kind, node_type, start, end)` |
+| `universal_flow.py` | its own `node_id` field |
+| `entroly-engine::work_graph` | `{token}:{sha256("node\|{token}\|{repo}\|{key}")[:24]}` |
+
+Six independent id spaces for one repository, which is the condition section 4.1
+exists to end.
+
+The specific hazard is `graph_query.py`. It mints `file:` and `symbol:` — the
+**same two namespace tokens** `stable_node_id` emits — with entirely different
+content after the colon:
+
+```
+repo-intel : file:src/app.py
+work graph : file:5ad0da59f0c4533433cded64
+```
+
+`_node_path` dispatches on that prefix and slices it off positionally
+(`node_id[5:]`, `node_id[7:]`), then looks the remainder up as a path:
+
+```python
+if node_id.startswith("file:"):
+    path = node_id[5:]
+    return path if path in index.files else None
+```
+
+Feed it a genuine Work Graph node id and it does not raise. It slices to
+`5ad0da59f0c4533433cd`, fails the `in index.files` test, and returns `None` —
+**reporting a node that exists as absent**. That is the fabricated-completeness
+failure mode the handoff forbids, reached without anyone writing a wrong answer:
+two id spaces that are indistinguishable to a reader, to `grep`, and to a prefix
+dispatch, and that silently disagree at lookup.
+
+So the answer is not "the projection is missing." It is that a projection exists,
+a second one exists in Rust, and the two are namespace-compatible and
+value-incompatible. `graph_identity.py` and `graph_projection.py` (added on this
+branch) supply the single derived identity; `tests/test_repository_graph_identity.py`
+pins that Python never recomputes the hash. This finding adds the guard for the
+collision itself.
+
+### Finding G10 — the SimHash similarity bug the crate documents as fixed is still live in four engine modules
+
+`dedup.rs` defines `simhash_cosine` and states the case against the linear form
+explicitly: two unrelated fragments are near-orthogonal, so `hamming ≈ BITS/2`,
+which `1 - hamming/BITS` reports as **0.5 similar** instead of 0; measured over
+1.1M real fragment pairs the linear form has MAE 0.502 against exact cosine
+versus 0.080 for `cos(π·hamming/64)`. `entroly-wasm/src/lib.rs:680` carries the
+same reasoning in a comment and calls `simhash_cosine`. `cache.rs`,
+`knapsack_sds.rs`, `entroly-core/src/lib.rs` and `simhash_probe.rs` all call it.
+
+Four modules in `entroly-engine` still compute the linear form inline:
+
+| Site | Consumer | Effect at `hamming ≈ 32` (unrelated) |
+|---|---|---|
+| `trajectory.rs:43` | `classify_query_transition` | scores 0.5; with `topic_change_threshold = 0.30` an unrelated query is classified **`ambiguous`, never `topic_change`** |
+| `cognitive_bus.rs:318` | subscriber novelty | `max_similarity` floors near 0.5, so `raw_novelty` caps near 0.5 — a genuinely novel event reads as half-novel |
+| `lsh.rs:216` | `score()` similarity term | the weighted term contributes `w_similarity · 0.5` for unrelated candidates |
+| `channel.rs:481` | SDR contradiction detection | `content_sim` floors near 0.5, so `sdr = structural_sim - content_sim` is depressed by ~0.5 against `sdr_threshold` |
+
+`trajectory.rs` is the clearest: it already imports `hamming_distance` from
+`crate::dedup` — the fix is one import away — and its documented purpose is to
+tell a rephrase from a topic change. Under the linear form the `topic_change`
+branch is reachable only for `hamming > 44.8` (similarity < 0.30), i.e. the
+*first* 70% of the orthogonality range is misreported as ambiguity.
+
+Not changed here. All four are behaviour, and three of them
+(`lsh.rs`, `channel.rs`, `trajectory.rs`) carry thresholds — `0.75`, `0.30`,
+`sdr_threshold`, `w_similarity` — that were tuned against the linear scale.
+Substituting `simhash_cosine` without recalibrating those constants would move
+every decision boundary at once, which is a change to make deliberately with the
+thresholds re-derived, not as a drive-by inside an audit. Recorded as the
+highest-value correctness item found by the closure read.
+
+### Finding G11 — LSH multi-probe covers 3 of 10 neighbours, chosen by index rather than by probability
+
+`lsh.rs` builds 10-bit keys (`BITS_PER_KEY = 10`) and probes with:
+
+```rust
+for flip in 0..MULTI_PROBE_DEPTH.min(BITS_PER_KEY) {   // 0..3
+    let neighbor = key ^ (1u16 << flip);
+```
+
+`flip` takes 0, 1, 2 — so only key bits 0–2 are ever flipped. Bits 3–9 are never
+probed, and since `bit_positions` is sorted ascending, key bit *i* is simply the
+*i*-th lowest sampled fingerprint bit. Nothing makes the three lowest more likely
+to have flipped than the other seven.
+
+That is not what multi-probe LSH is. The technique (Lv et al., VLDB 2007) derives
+a *probe sequence* ordered by the probability each neighbouring bucket contains a
+true near neighbour — typically from how close each projection landed to its
+quantisation boundary. Probing a fixed low-index prefix instead gives 3 of the 10
+single-bit neighbours selected arbitrarily, so recall is systematically biased:
+two fragments differing only in bits mapped to key positions 3–9 fall in
+different buckets in every one of the 12 tables and are never returned as
+candidates.
+
+The effect is silent — `query` returns a shorter candidate list, and the caller
+cannot distinguish "no near neighbour exists" from "the near neighbour hashed to
+an unprobed bucket."
+
+### Finding G12 — the LSH test that would catch G11 asserts nothing about the neighbour
+
+`test_similar_fingerprints_found` inserts `fp1` and `fp2 = fp1 ^ 0x7` (3 bits
+apart), queries `fp1`, and asserts only:
+
+```rust
+assert!(candidates.contains(&0));
+// fp2 is extremely close, multi-probe should almost always find it
+```
+
+The claim about `fp2` is a comment, not an assertion — index `1` is never
+checked. `candidates.contains(&0)` passes on the exact-bucket hit alone and would
+still pass with `MULTI_PROBE_DEPTH = 0`. So the multi-probe path, the entire
+reason the module exists, has no test that can fail.
+
+Not changed here: fixing G11 changes recall, and this test is how the change
+would be measured. Both belong in one deliberate commit that sets the probe
+sequence and then asserts the neighbour is actually returned.
+
+### Observation — `LshIndex::remove` leaks empty buckets
+
+`DedupIndex::remove` in `dedup.rs` drops a bucket once its vector empties;
+`LshIndex::remove` retains it. Unbounded only in the number of distinct keys
+(≤ 1024 per table × 12 tables), so it is bounded and small — noted for symmetry,
+not as a defect. The method is `#[allow(dead_code)]` and currently unreachable.
