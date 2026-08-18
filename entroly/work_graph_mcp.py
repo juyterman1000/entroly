@@ -130,7 +130,7 @@ def work_state(*, project: str = "", now_ms: int | None = None) -> dict[str, Any
             "coordination": graph.coordination(timestamp),
         }
         return _render_untrusted("work_state", payload)
-    except Exception as exc:  # MCP boundary must return structured errors
+    except Exception as exc:
         return _error("work_state", exc)
 
 
@@ -199,12 +199,19 @@ def work_resume(
     workstream_id: str = "",
     max_evidence: int = 128,
 ) -> dict[str, Any]:
-    """Recover one unfinished workstream from persisted graph state."""
+    """Refresh durable repo facts, then recover one unfinished workstream."""
     try:
-        if not isinstance(max_evidence, int) or isinstance(max_evidence, bool) or not 0 <= max_evidence <= _MAX_EVIDENCE:
-            raise ValueError(f"max_evidence must be an integer between 0 and {_MAX_EVIDENCE}")
+        if (
+            not isinstance(max_evidence, int)
+            or isinstance(max_evidence, bool)
+            or not 0 <= max_evidence <= _MAX_EVIDENCE
+        ):
+            raise ValueError(
+                f"max_evidence must be an integer between 0 and {_MAX_EVIDENCE}"
+            )
         path = _project_path(project)
         store = _store_for_path(path)
+        store.submit_observation(discover_repository_observation(path))
         view = store.resume(workstream_id or None, max_evidence=max_evidence)
         return _render_untrusted("work_resume", view)
     except Exception as exc:
