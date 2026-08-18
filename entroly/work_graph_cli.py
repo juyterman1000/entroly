@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from .work_graph import WorkGraphUnavailableError
+from .work_graph_content_digest import enrich_worktree_content_digests
 from .work_graph_repo import discover_repository_identity, discover_repository_observation
 from .work_graph_store import (
     WorkGraphLockTimeout,
@@ -32,6 +33,11 @@ def _project_path(project: str) -> Path:
 def _store_for_path(project: Path) -> WorkGraphStore:
     identity = discover_repository_identity(project)
     return WorkGraphStore(identity["repo_id"])
+
+
+def _passive_observation(project: Path) -> dict[str, Any]:
+    observation = discover_repository_observation(project)
+    return enrich_worktree_content_digests(project, observation)
 
 
 def _emit(payload: dict[str, Any], *, json_output: bool) -> None:
@@ -156,9 +162,9 @@ def run(args: Any) -> int:
                 )
             store = _store_for_path(project)
             # Resume is an explicit recovery action: refresh bounded durable
-            # repository/checkpoint facts first so a replacement agent can
-            # continue even if the previous agent never recorded a handoff.
-            store.submit_observation(discover_repository_observation(project))
+            # repository/checkpoint facts plus exact unstaged worktree identity
+            # before Rust reconstructs the workstream.
+            store.submit_observation(_passive_observation(project))
             payload = {
                 "status": "ok",
                 "resume": store.resume(workstream or None, max_evidence=max_evidence),
@@ -169,9 +175,8 @@ def run(args: Any) -> int:
             target_agent = _required_id(args.to_agent, "--to-agent")
             store = _store_for_path(project)
             # A handoff receipt must commit to the latest durable worktree and
-            # checkpoint facts, not whichever graph revision happened to be on
-            # disk before the user invoked this command.
-            store.submit_observation(discover_repository_observation(project))
+            # checkpoint facts, including exact unstaged worktree content identity.
+            store.submit_observation(_passive_observation(project))
             payload = {
                 "status": "ok",
                 "handoff": store.handoff(workstream, source_agent, target_agent),
