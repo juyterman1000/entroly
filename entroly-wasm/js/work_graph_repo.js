@@ -3,6 +3,7 @@
 // Local repository observation only. Work-state inference/trust remains in Rust.
 const crypto = require('crypto');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const zlib = require('zlib');
 const { execFileSync } = require('child_process');
@@ -96,6 +97,11 @@ function repositoryId(root) {
     .split(/\r?\n/).filter(Boolean);
   if (roots.length) return `git-root:${sha32(`${roots[0]}\0${path.basename(root)}`)}`;
   return `git-local:${sha32(process.platform === 'win32' ? root.toLowerCase() : root)}`;
+}
+
+function discoverRepositoryIdentity(repoPath = '.') {
+  const root = resolveRoot(repoPath);
+  return { repo_id: repositoryId(root), root };
 }
 
 function validateDefaultBranch(root, override) {
@@ -210,6 +216,30 @@ function branchCommits(root, base, ahead, maxCommits) {
   return commits;
 }
 
+function projectCheckpointCandidates(root, explicitDir = null) {
+  if (explicitDir) return [path.resolve(String(explicitDir))];
+  if (process.env.ENTROLY_DIR) return [path.resolve(process.env.ENTROLY_DIR)];
+  const projectHash = crypto
+    .createHash('sha256')
+    .update(path.resolve(root), 'utf8')
+    .digest('hex')
+    .slice(0, 12);
+  return [
+    path.join(os.homedir(), '.entroly', 'checkpoints', projectHash),
+    path.join(os.tmpdir(), 'entroly', 'checkpoints', projectHash),
+  ];
+}
+
+function existingCheckpointDir(root, explicitDir = null) {
+  for (const candidate of projectCheckpointCandidates(root, explicitDir)) {
+    try {
+      const stat = fs.lstatSync(candidate);
+      if (!stat.isSymbolicLink() && stat.isDirectory()) return candidate;
+    } catch (_) {}
+  }
+  return '';
+}
+
 function latestCheckpointMetadata(checkpointDir) {
   if (!checkpointDir) return ['', {}];
   const directory = path.resolve(String(checkpointDir));
@@ -260,7 +290,7 @@ function discoverRepositoryObservation(repoPath = '.', options = {}) {
   let taskHint = options.taskHint ? { ...options.taskHint } : null;
   const decisions = [];
   const includeCheckpoint = options.includeCheckpoint !== false;
-  const checkpointDir = options.checkpointDir || process.env.ENTROLY_DIR || '';
+  const checkpointDir = existingCheckpointDir(root, options.checkpointDir || null);
   if (includeCheckpoint && meaningfulGit && checkpointDir) {
     const [checkpointId, metadata] = latestCheckpointMetadata(checkpointDir);
     if (checkpointId) {
@@ -327,4 +357,8 @@ function discoverRepositoryObservation(repoPath = '.', options = {}) {
   };
 }
 
-module.exports = { RepositoryDiscoveryError, discoverRepositoryObservation };
+module.exports = {
+  RepositoryDiscoveryError,
+  discoverRepositoryIdentity,
+  discoverRepositoryObservation,
+};
