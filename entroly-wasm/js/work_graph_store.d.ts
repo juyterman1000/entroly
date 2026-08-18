@@ -23,6 +23,7 @@ export interface WorkClaimOptions {
   ttlMs?: number;
   leaseId?: string;
   observedAtMs?: number;
+  sourceKind?: "agent_statement" | "user_statement";
 }
 
 export class WorkGraphStoreError extends Error {}
