@@ -3528,6 +3528,86 @@ mod tests {
         );
     }
 
+    /// Section 19 scenario E: two agents on disjoint paths and symbols must
+    /// produce no conflict at all.
+    ///
+    /// This asserts it on the **shipping** coordination path. The only prior
+    /// evidence for scenario E lived in `coordination_index`, which `lib.rs`
+    /// declares `#[cfg(test)] mod` -- 308 lines that never reach a binding, so
+    /// they cannot speak for what users actually run.
+    ///
+    /// A false conflict is not cosmetic: it tells two agents who could safely
+    /// work in parallel that they cannot, which is the failure that makes
+    /// coordination worth less than no coordination at all.
+    #[test]
+    fn disjoint_parallel_leases_produce_no_conflict() {
+        let mut graph = WorkGraph::new("repo-1").unwrap();
+        let mut obs = clean_observation();
+        obs.task_hint = Some(TaskHint {
+            task_id: "task:shared".to_string(),
+            title: "Parallel work".to_string(),
+            trust: TrustLevel::Observed,
+            source_kind: EvidenceKind::UserStatement,
+            explicit_status: WorkStatus::InProgress,
+            remaining_work: vec![],
+            source_ref: "user".to_string(),
+        });
+        obs.leases = vec![
+            WorkLeaseObservation {
+                lease_id: "lease:a".to_string(),
+                agent_id: "claude".to_string(),
+                task_id: "task:shared".to_string(),
+                scope_paths: vec!["src/auth".to_string()],
+                scope_symbols: vec!["Auth.refresh".to_string()],
+                expires_at_ms: 5_000,
+                source_ref: "agent".to_string(),
+            },
+            WorkLeaseObservation {
+                lease_id: "lease:b".to_string(),
+                agent_id: "codex".to_string(),
+                task_id: "task:shared".to_string(),
+                scope_paths: vec!["src/billing".to_string()],
+                scope_symbols: vec!["Invoice.total".to_string()],
+                expires_at_ms: 5_000,
+                source_ref: "agent".to_string(),
+            },
+        ];
+        graph.observe_repository(obs).unwrap();
+
+        let report = graph.coordination_report(2_000);
+        assert_eq!(report.active_leases, 2, "both leases must still be active");
+        assert!(
+            report.conflicts.is_empty(),
+            "disjoint scopes reported a conflict: {:?}",
+            report.conflicts
+        );
+    }
+
+    /// A sibling path that merely shares a textual prefix is not an overlap.
+    ///
+    /// `src/auth` and `src/auth.py` are different artifacts, and a bare
+    /// `starts_with` would also collide `src/auth` with `src/authorization.rs`.
+    /// `paths_overlap` requires the `/` boundary, which is correct -- and which
+    /// a test in `tests/test_work_graph_multiprocess.py` contradicted until this
+    /// session by asserting a conflict between exactly this pair (finding G15).
+    #[test]
+    fn prefix_sibling_paths_are_not_treated_as_overlapping() {
+        assert!(!paths_overlap("src/auth", "src/auth.py"));
+        assert!(!paths_overlap("src/auth", "src/authorization.rs"));
+        assert!(!paths_overlap("src/auth", "src/authz/token.rs"));
+
+        // Genuine containment must still hold.
+        assert!(paths_overlap("src/auth", "src/auth/token.rs"));
+        assert!(paths_overlap("src/auth/token.rs", "src/auth"));
+        assert!(paths_overlap("src/auth", "src/auth"));
+
+        // Separator style and stray slashes must not change the answer.
+        assert!(paths_overlap(r"src\auth", "src/auth/token.rs"));
+        assert!(paths_overlap("/src/auth/", "src/auth"));
+        assert!(!paths_overlap("", "src/auth"));
+    }
+
+
     #[test]
     fn event_merge_is_commutative_and_deduplicated() {
         let mut a = WorkGraph::new("repo-1").unwrap();

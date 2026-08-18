@@ -1692,7 +1692,7 @@ Python tests across ten files, run against an engine built from this tree.
 | B | clean repo null control | `work_graph::tests::clean_repo_is_null_control`; `test_work_graph_repo.py::test_clean_repo_is_null_control` | mechanism |
 | C | explicit cross-agent handoff | `test_verified_handoff.py` (6 tests); `test_native_work_graph_roundtrip_and_handoff_integrity` | mechanism |
 | D | interrupted agent, no handoff | `test_work_graph_interrupted_agent.py`; `test_work_graph_cross_agent_recovery.py`; `work_graph::tests::resume_prioritizes_verified_evidence` | mechanism |
-| E | parallel non-overlap | `coordination_index::tests::thousand_disjoint_agents_produce_zero_candidates` — **but `coordination_index` is `#[cfg(test)] mod` and does not ship** | test-only module |
+| E | parallel non-overlap | `work_graph::tests::disjoint_parallel_leases_produce_no_conflict` and `prefix_sibling_paths_are_not_treated_as_overlapping` — **added this session on the shipping path** | mechanism |
 | F | parallel overlap | `work_graph::tests::overlapping_parallel_leases_are_reported_but_not_locked`; `test_work_graph_multiprocess.py` (fixed this session, G15) | mechanism |
 | G | rename + symbol continuity | — | **gap** |
 | H | stale CI | — | **gap** |
@@ -1704,8 +1704,8 @@ Python tests across ten files, run against an engine built from this tree.
 | N | large repository | `RepositoryLimits` (max_files 20,000; 256 MB total; 2 MB/file; 500k symbols; 1M edges) and the section 4.2 caps in `graph_projection.py` exist — **no test exercises them at scale, and no incremental-rebuild test exists** | partial |
 | O | generated/vendor directories | `parsers.py::IGNORED_DIRS` = `.tox .venv venv node_modules target dist build vendor __pycache__` — policy exists, **no test asserts a source graph stays undrowned** | partial |
 | P | Python/Node convergence | `test_work_graph_cross_language_digest_parity.py` (2 tests); `semantically_unordered_observations_have_identical_commitments` — **digest and commitment parity only; no round trip where Node writes an event Python then reads** | partial |
-| Q | multiprocessing contention | `test_work_graph_multiprocess.py`; `work_graph_store.py::_stale_lock` / `_break_stale_lock` implemented — **stale-lock recovery itself is untested** | partial |
-| R | crash during persistence | — | **gap** |
+| Q | multiprocessing contention | `test_work_graph_multiprocess.py`; plus 3 stale-lock tests in `tests/test_work_graph_store_durability.py` — breaks a stale lock, respects a live one, leaves committed state untouched. **Added this session**; verified to discriminate (disabling `_break_stale_lock` makes the recovery test time out). | mechanism |
+| R | crash during persistence | `tests/test_work_graph_store_durability.py` — 3 tests: state survives a failure at the `os.replace` boundary, no `.state-*.tmp` debris, store stays writable afterwards. **Added this session.** | mechanism |
 | S | compression/recovery | receipt fidelity and exact-recovery suites exist elsewhere in the tree | not re-verified here |
 | T | package/user journey | `test_work_graph_packaging.py`; `test_work_graph_entrypoints.py`; `test_release_surface.py` — **wheel-install and npm-install journeys not executed at this SHA; G8 means the published core cannot serve the Work Graph half at all** | partial |
 
@@ -1742,3 +1742,36 @@ Priority order, on the evidence above:
    fails to break is an availability outage.
 4. **G, H** — rename lineage and stale-CI verification are real product claims
    with no evidence at all.
+
+### Update — scenarios E, Q and R closed
+
+Three of the four items the priority list named are now covered on the shipping
+paths, with 470 engine tests and 6 new Python tests green.
+
+**R.** `tests/test_work_graph_store_durability.py` fails `os.replace` at the
+temp-write boundary and asserts the previous commitment is still loadable, that
+no `.state-*.tmp` survives, and that the store accepts the next write rather than
+wedging on a lock it never released. The crash is simulated at the replace rather
+than by signalling a process, because the point of the design is that the old
+state survives *whatever* happens before the replace commits; raising there
+reproduces that without depending on signal timing.
+
+**Q.** `_break_stale_lock` was implemented and untested. Three tests now cover
+it: a lock backdated with `os.utime` is broken and work proceeds; a live lock is
+respected and the acquirer times out instead; and breaking a stale lock leaves
+the committed commitment unchanged. The recovery test was checked for
+discrimination — monkeypatching `_break_stale_lock` to return `False` makes it
+raise `WorkGraphLockTimeout`, so it is exercising the mechanism rather than
+passing incidentally.
+
+**E.** The disjoint case now asserts against `coordination_report` and
+`paths_overlap` in `work_graph.rs` instead of the non-shipping
+`coordination_index`. A second test pins the boundary rule directly:
+`src/auth` does not overlap `src/auth.py` or `src/authorization.rs`, while
+`src/auth/token.rs` does, and separator style does not change the answer. That
+rule is what finding G15 turned on, and it had no direct test before.
+
+Remaining section 19 gaps: **G** (rename and symbol lineage) and **H** (stale CI
+must not report the current head verified). Both are product claims with no
+evidence, and neither is a fixture-shaped problem — they need the behaviour to
+exist first, which is a design question rather than a test-writing one.
