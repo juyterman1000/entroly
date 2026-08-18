@@ -1066,13 +1066,13 @@ until all are true. They are not all true. This is the accounting.
 | Deep-codebase audit gate completed | **No.** Measured properly (section 20): ~9,700 of 24,945 **production** lines read, about 39%. `cache.rs` is now complete; `sast.rs` (2,493) and `skeleton.rs` (2,101) are the largest remaining. Python closure not attempted. |
 | Production-relevant files classified; no unknown ownership | **Yes.** `scripts/ownership_matrix.py` classifies all 1,610 tracked files into the section 5 outcomes with all 13 fields; `--check` reports 0 unknown. 29 are parked as `review-required` rather than guessed. |
 | Semantic closures for every *changed* subsystem fully read | **Yes for changed modules.** `cognitive_bus`, `nkbe`, `work_graph`, `eicv_suppressor`, `knapsack` and now `cache.rs` (production surface complete at line 1897) have all been read in full. Unchanged shared modules remain — see section 20. |
-| Public Python/CLI/MCP/provider/npm journeys traced end-to-end | **No.** Not traced this session. |
+| Public Python/CLI/MCP/provider/npm journeys traced end-to-end | **Implemented but untriggered.** `deep-dogfood.yml` runs installed-entrypoint journeys, feature families and release-artifact black-box tests; it never fires for this branch (G30). `workflow_dispatch` is available.
 | Pre-change baseline recorded | **Partial.** 4025/1/33 recorded at this SHA; no baseline captured at the branch point, so a pre-existing failure elsewhere is not yet distinguishable. |
 | Python and npm/WASM semantic parity proven | **Partial.** Was demonstrably false with four asymmetric modules. `cognitive_bus` and `nkbe` are now bound in both runtimes and delegate to identical engine serializers, pinned by tests on both sides (G16). `rnr` (npm-only) and `simhash_wide` (neither) remain. |
 | Every production file classified in migration/ownership map | **Yes.** `docs/OWNERSHIP_MATRIX.md`, regenerated from `git ls-files` rather than hand-maintained. |
 | Large-repo/incremental performance measured | **No.** |
 | Dogfood scenarios A-T (section 19) | **Partial.** The gauntlet run itself has not happened. Section 19 is now mapped scenario by scenario (section 19 of this document): 11 have passing mechanism-level evidence, 5 are partial, 3 are gaps (G, H, R), and E is covered only by a `#[cfg(test)] mod` that does not ship. |
-| Exact final SHA CI green | **Not checked.** |
+| Exact final SHA CI green | **Unevaluated, not failing.** 1 of 23 workflows runs on this branch; `ci.yml` is gated on `pull_request: branches: [main]` and PR #356 targets the integration branch (G30). |
 
 **Conclusion.** The gate is not satisfied and this stage is not production-ready.
 The largest remaining blocks are the section 5 ownership matrix, the section 19
@@ -2278,3 +2278,79 @@ serious and neither is true:
 * **No UTF-8 panic in redaction.** `find('=')` returns a char boundary because
   `=` is ASCII, and the `len() > 30` branch explicitly walks back to a boundary
   with `is_char_boundary`. Both slices are safe.
+
+---
+
+## 21. Master prompt section 24 — "exact final SHA CI green", checked
+
+### Finding G30 — PR #356 reports mergeable and clean while 22 of 23 workflows have never run
+
+At head `cdfafe71`:
+
+```
+check-runs for this SHA :  1   (benchmark, success)
+gh pr view 356          :  mergeStateStatus CLEAN, mergeable MERGEABLE
+workflows defined       : 23
+```
+
+Every one of the twenty-plus commits on this branch shows the same single check.
+`ci.yml` — the actual test suite — has never run on any of them.
+
+The cause is a trigger filter, not a failure:
+
+```yaml
+# ci.yml
+on:
+  push:        { branches: [main] }
+  pull_request:{ branches: [main] }
+
+# deep-dogfood.yml
+on:
+  pull_request: { branches: [main] }
+  workflow_dispatch:
+
+# user-journey-trust.yml
+on:
+  pull_request: { branches: [main] }
+```
+
+PR #356 targets `integration/workgraph-production-20260817`, not `main`, so none
+of them fire. GitHub then reports the PR as clean because the one check that is
+configured to run — `benchmark.yml` — passes.
+
+So section 24's condition "exact final SHA CI is green for all required gates" is
+**not satisfied and not failing** — it is unevaluated. A green tick on this PR
+carries almost no information, and would carry none about correctness: the suite
+that runs 4,000+ tests is not among the checks.
+
+**This reframes two other DoD items.** They were recorded earlier in this
+document as not-done:
+
+| Item | Earlier reading | Actual state |
+|---|---|---|
+| Public Python/CLI/MCP/npm journeys traced end-to-end | "not traced this session" | `deep-dogfood.yml` implements them — installed-entrypoint journeys per Python version, feature families, release-artifact black-box — and never triggers for this branch |
+| Dogfood gauntlet run | "not run" | same workflow; `workflow_dispatch` is available |
+
+They are not unimplemented. They are untriggered, which is a different problem
+with a different fix.
+
+**The structural consequence is worth more than the individual items.** Work
+accumulating on an integration branch receives essentially no CI until it is
+merged toward `main`, at which point every gate runs at once against a large
+accumulated diff. That is the inverse of the incremental discipline section 25
+asks for ("run targeted tests immediately... commit a cohesive unit"), and it is
+why a 20-commit branch can look green while nothing verified it.
+
+**Not triggered from here, deliberately.** `deep-dogfood.yml` exposes
+`workflow_dispatch`, so this branch's journeys could be run on demand. Two
+reasons to leave that to the maintainer rather than do it unilaterally: it is a
+matrix workflow across Python versions and feature families, so it is not cheap;
+and CI capacity in this repository is a known constraint — an earlier session
+diagnosed queue starvation from duplicate runs and added concurrency groups
+(PR #348) to fix it. Spending that capacity is a maintainer's call.
+
+The cheap structural fix, if the intent is that integration branches are gated:
+add `integration/**` to the `pull_request.branches` list on `ci.yml` at minimum,
+so the suite runs where the work actually lands. That is a one-line change to a
+workflow and a real decision about release discipline, which is why it is
+recorded rather than made.
