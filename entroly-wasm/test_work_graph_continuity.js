@@ -21,16 +21,22 @@ function git(repo, args) {
   return execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 }
 
-const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'entroly-work-continuity-'));
-git(repo, ['init', '-b', 'main']);
-git(repo, ['config', 'user.email', 'test@example.com']);
-git(repo, ['config', 'user.name', 'Test']);
-fs.writeFileSync(path.join(repo, 'app.py'), 'VALUE = 1\n', 'utf8');
-git(repo, ['add', 'app.py']);
-git(repo, ['commit', '-m', 'initial']);
-git(repo, ['checkout', '-b', 'feature/interrupted']);
-fs.writeFileSync(path.join(repo, 'app.py'), 'VALUE = 2\n', 'utf8');
+function createInterruptedRepo(prefix) {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  git(repo, ['init', '-b', 'main']);
+  git(repo, ['config', 'user.email', 'test@example.com']);
+  git(repo, ['config', 'user.name', 'Test']);
+  fs.writeFileSync(path.join(repo, 'app.py'), 'VALUE = 1\n', 'utf8');
+  git(repo, ['add', 'app.py']);
+  git(repo, ['commit', '-m', 'initial']);
+  git(repo, ['checkout', '-b', 'feature/interrupted']);
+  fs.writeFileSync(path.join(repo, 'app.py'), 'VALUE = 2\n', 'utf8');
+  return repo;
+}
 
+// Fast orchestration contract: validate call ordering and fail-before-mutation
+// behavior independently of the native store implementation.
+const repo = createInterruptedRepo('entroly-work-continuity-');
 const original = WorkGraphStore.forRepository;
 try {
   const calls = [];
@@ -125,9 +131,41 @@ try {
   }
   assert(rejected, 'unsafe handoff timestamp was accepted');
   assert(calls.length === 0, 'unsafe handoff timestamp touched repository/store state');
-
-  console.log('Work Graph npm interrupted-agent continuity contract: PASS');
 } finally {
   WorkGraphStore.forRepository = original;
   fs.rmSync(repo, { recursive: true, force: true });
 }
+
+// Real distribution contract: the previous agent never called Entroly and no
+// Work Graph state exists. Only durable Git work remains. The npm/WASM path must
+// reconstruct an unfinished workstream and persist it before returning resume
+// context to the replacement agent.
+const realRepo = createInterruptedRepo('entroly-work-continuity-e2e-');
+const stateRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'entroly-work-state-e2e-'));
+try {
+  const view = resumeRepository(realRepo, {
+    maxEvidence: 32,
+    storeOptions: { root: stateRoot },
+    repositoryOptions: { maxCommits: 3 },
+  });
+
+  assert(view && view.selected_workstream, 'real resume returned no selected workstream');
+  assert(view.selected_workstream.status === 'in_progress',
+    `expected in_progress, got ${view.selected_workstream.status}`);
+  assert(Array.isArray(view.selected_workstream.changed_paths), 'real resume changed_paths missing');
+  assert(view.selected_workstream.changed_paths.includes('app.py'),
+    'replacement agent did not recover the interrupted changed file');
+  assert(Array.isArray(view.evidence) && view.evidence.length > 0,
+    'real resume returned no evidence');
+
+  const store = WorkGraphStore.forRepository(realRepo, { root: stateRoot });
+  const summary = store.load().summary();
+  assert(summary.event_count === 1, `expected one recovered event, got ${summary.event_count}`);
+  assert(summary.unfinished_count === 1,
+    `expected one unfinished workstream, got ${summary.unfinished_count}`);
+} finally {
+  fs.rmSync(realRepo, { recursive: true, force: true });
+  fs.rmSync(stateRoot, { recursive: true, force: true });
+}
+
+console.log('Work Graph npm interrupted-agent continuity contract: PASS');
