@@ -4,7 +4,7 @@
 >
 > **Do not treat this document as proof that a feature exists.** Verify the current branch and tests first. This document distinguishes what is already present from the next implementation work.
 >
-> **Required continuation read:** after this architecture handoff, read `docs/PR352_PREVIOUS_SESSION_COMPLETED_WORK.md` for the component-by-component ledger of work already implemented, then read `docs/PR352_MASTER_IMPLEMENTATION_PROMPT.md` as the execution contract. Do not rebuild completed components merely because you would structure them differently; change them only for a concrete correctness, parity, security, performance, compatibility, or product requirement.
+> **Required continuation read order:** after this architecture handoff, read `docs/PR352_PREVIOUS_SESSION_COMPLETED_WORK.md`, then complete `docs/PR352_DEEP_CODEBASE_AUDIT_GATE.md`, then use `docs/PR352_MASTER_IMPLEMENTATION_PROMPT.md` as the execution contract. Before major semantic migration, create/update `docs/PR352_CODEBASE_UNDERSTANDING_EVIDENCE.md` with quantitative coverage, semantic-closure full reads, user-journey traces, duplicate-semantics findings, schema review, and baseline test evidence. A symbol scan, grep pass, repo summary, or reading only changed files does **not** satisfy the audit gate.
 
 ## 1. Product mission
 
