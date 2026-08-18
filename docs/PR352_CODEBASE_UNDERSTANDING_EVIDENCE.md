@@ -1593,3 +1593,78 @@ contributing under a thousandth of the score at realistic magnitudes.
 the 0.35 threshold were presumably tuned against these exact saturating values;
 giving the cost term real influence changes the admission rate immediately and
 needs the constants re-derived against a workload, not adjusted by inspection.
+
+### Finding G23 — the "lazy greedy" evictor is neither lazy nor faster, and is selected precisely when the cache is large
+
+`SubmodularEvictor` documents the Minoux lazy-greedy optimisation:
+
+> "Lazy evaluation (lazy greedy): maintain a max-heap of marginals, **only
+> recompute when a candidate reaches the heap top**. Amortized O(n log n) per
+> eviction vs O(n²) naive."
+
+`select_victim_lazy` does not do that. It computes every marginal eagerly, pushes
+all of them into a heap, and then reads only the top:
+
+```rust
+for entry in &entry_vec {
+    let value = Self::entry_value(entry, &entry_vec, cost_model, current_turn, decay_gamma);
+    heap.push(LazyHeapEntry { hash: entry.exact_hash, marginal: value, _last_computed_at: 0 });
+}
+heap.peek().map(|e| e.hash)
+```
+
+`entry_value` is itself O(n) — it takes a `max` of `simhash_similarity` against
+every other entry to compute the diversity bonus. So initialising the heap is
+**O(n²)**, and the heap construction adds a further O(n log n) that is then
+discarded after a single `peek`.
+
+The complexity claim cannot hold as written. O(n log n) per eviction is
+unreachable while each marginal costs O(n) to evaluate; that is exactly why the
+real lazy-greedy algorithm defers evaluation and re-checks stale bounds at the
+heap top. The machinery for that is present and inert — `LazyHeapEntry` carries
+a `_last_computed_at` generation counter whose own comment reads *"(structural,
+write-only)"*. It is assigned `0` at line 935 and never read anywhere.
+
+So `select_victim_lazy` is functionally identical to `select_victim` — the
+"simple O(n²) fallback" — and strictly slower, because it does the same O(n²)
+work plus a heap build.
+
+The dispatch makes it worse rather than harmless (`cache.rs:1618`):
+
+```rust
+if self.entries.len() > 64 {
+    SubmodularEvictor::select_victim_lazy(...)   // O(n^2) + O(n log n)
+} else {
+    SubmodularEvictor::select_victim(...)        // O(n^2)
+}
+```
+
+The slower path is chosen exactly when `n` is large, i.e. when the difference
+costs the most. A cache of 4,096 entries pays ~4,096 × 4,096 similarity
+computations plus a 4,096-element heap build on every eviction.
+
+**Also: `LazyHeapEntry` violates the `Ord`/`Eq` consistency contract.**
+`PartialEq` compares by `hash` while `Ord` compares by `marginal`:
+
+```rust
+fn eq(&self, other: &Self) -> bool { self.hash == other.hash }
+...
+fn cmp(&self, other: &Self) -> Ordering { other.marginal.partial_cmp(&self.marginal)... }
+```
+
+`std` requires `a == b` iff `a.cmp(&b) == Ordering::Equal`. Two entries with
+equal marginals and different hashes compare `Equal` but are not `Eq`; two
+entries with the same hash and different marginals are `Eq` but do not compare
+`Equal`. For the current peek-only usage this is benign, and the reversal itself
+is correct — `BinaryHeap` is a max-heap and the reversed `cmp` does make `peek()`
+return the lowest marginal, so victim selection picks the right entry. But the
+inconsistency is a trap for anyone who later calls `pop` in a loop or moves this
+into a `BTreeMap`.
+
+**Not changed.** Two defensible fixes exist and they are not the same change:
+delete the heap and call `select_victim` for all sizes, which is honest and
+slightly faster; or implement the lazy recompute the docs describe, which needs
+the generation counter wired up and a stale-bound re-check, and which only pays
+off once `entry_value` stops being O(n) — the diversity `max` would need an
+incremental structure. Choosing between them is a design decision, and the
+measurement that should drive it does not exist yet.
