@@ -637,3 +637,44 @@ Worth carrying forward because it is the same shape as two defects this branch
 found independently: one name serving two meanings (`optimize_context` as both
 engine method and MCP handler) and one value serving two states (`_evidence_backed`
 returning False for both "scored zero" and "never scored").
+
+
+## 15. Finding D4 — the crate's own charter names the failure this branch closed
+
+`entroly-engine/src/lib.rs` explains why the crate exists:
+
+> `entroly-core` and `entroly-wasm` previously carried *copies* of these 32
+> modules. Nothing linked them, so nothing failed when one was fixed and the
+> other was not, and they drifted by 4,065 lines — including a similarity
+> estimator that was corrected in the core while the WebAssembly build kept
+> shipping the broken form.
+>
+> With the algorithms here, that failure mode is unrepresentable: a change
+> reaches every distribution channel or it does not compile.
+
+Two things follow.
+
+**The estimator it refers to is `simhash_cosine`.** `dedup.rs` documents the
+correction in detail: the intuitive `1 - hamming/64` is linear in the angle
+rather than its cosine, and reports two unrelated fragments -- which sit near
+orthogonal at `hamming ≈ 32` -- as 0.5 similar instead of 0. Measured over 1.1M
+real pairs, MAE 0.502 against exact cosine versus 0.080 for the correct form.
+npm shipped the wrong one while Python shipped the right one. That is the
+concrete cost of the duplication, in the product's core ranking signal.
+
+**The claim was still false when this branch started.** At
+`09a98a5b`, `entroly-engine/src/lib.rs` declared 31 `pub mod` and neither
+`cognitive_bus` nor `nkbe` was among them. Both still lived in the binding
+crates -- one live copy in `entroly-core`, one dead copy in `entroly-wasm` --
+so for those two modules a change did *not* have to reach every channel, and
+nothing would have failed to compile if they diverged. The count is 33 now.
+
+This reframes findings H1 and the two consolidation commits. They are not
+general tidying: they close the last two instances of the exact failure mode
+`entroly-engine` was created to eliminate, in a crate whose own documentation
+already declared that mode impossible.
+
+### Observation — `coordination_index` is test-only
+
+`lib.rs:68` declares `#[cfg(test)] mod coordination_index;`. The module is 308
+lines and does not ship. Worth knowing before anything is built on it.
