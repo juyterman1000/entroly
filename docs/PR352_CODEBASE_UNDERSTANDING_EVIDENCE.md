@@ -2014,3 +2014,89 @@ already-sorted vector.
 `recompute_cost` on existing entries, which is the `$0.01/token` literal that
 wins the `max()` in eviction (G19). So the public knob for making the cache
 cost-aware does not, on its own, make eviction cost-aware.
+
+### `sast.rs` — the header's counts are accurate
+
+Worth stating plainly after `cache.rs`: every quantitative claim in `sast.rs`
+checks out.
+
+```
+rule entries        : 151      (header claims 151, in three places)
+rule ids            : 151      distinct, no duplicates
+distinct CWEs       :  38
+taint_aware: true   :  44      (header says "~46")
+taint_aware: false  : 107      (header says "~105")
+```
+
+The taint-aware split is 44/107 against a documented "~46/~105", which the tilde
+covers. The rule count is exact. `CLAUDE.md` repeats "151 rules" and is right.
+
+### Finding G26 — the taint engine over-taints on short names and cannot see attribute assignments
+
+`sast.rs` claims taint-flow is what makes it precise:
+
+> "Single-line pattern matching alone produces ~60% false positive rate;
+> taint-flow context reduces it to ~15%."
+
+44 of the 151 rules are `taint_aware` and fire only with propagated taint, so
+this machinery decides whether roughly a third of the rule set reports anything.
+It has two defects that push in opposite directions.
+
+**Over-tainting: variable matching is substring, not token.**
+
+```rust
+let rhs_tainted = tainted.iter().any(|var| lower.contains(var.as_str()));
+// and in line_is_tainted:
+tainted_vars.iter().any(|var| line_lower.contains(var.as_str()))
+```
+
+A tainted variable named `id` — which `let id = req.query.id` produces, a
+canonical source — then marks any line containing those two characters as
+tainted. Reproduced against the real extraction logic:
+
+```
+tainted var 'id' taints 4/6 unrelated lines: width = 10, validate(user), provider.connect()
+tainted var 'x'  taints 2/6 unrelated lines: max_retries = 3, def index():
+```
+
+`id`, `x`, `a`, `req`, `db` are ordinary names. Any one of them entering the
+tainted set effectively marks the whole file tainted, which turns the 44
+taint-aware rules into pattern-only rules with none of the precision the header
+attributes to them.
+
+**Under-tainting: attribute assignments are dropped entirely.**
+
+`extract_assignment_lhs` requires the extracted name to be a bare identifier:
+
+```rust
+if var_name.chars().all(|c| c.is_alphanumeric() || c == '_') && !var_name.is_empty() {
+    return Some(var_name.to_ascii_lowercase());
+}
+return None;
+```
+
+A `.` fails that test, so every attribute target returns `None`:
+
+```
+self.data = request.args     -> None
+this.payload = req.body      -> None
+obj.field = input()          -> None
+```
+
+Storing a request value on an object is the most common taint-carrying idiom in
+both Python and JavaScript, and none of it propagates. Tuple unpacking loses data
+too — `a, b = request.form.getlist("x")` yields only `b`, because the extractor
+takes the last whitespace-separated token before `=`; `a` is silently untainted.
+
+**Why both matter together.** The engine is simultaneously too eager on short
+names and blind to the common storage idiom, so the FP-rate claim is not
+supported in either direction: precision is worse than stated where short names
+appear, and recall is worse where taint flows through attributes.
+
+**Not changed.** The substring test wants a token-boundary match, and the
+extractor wants to accept dotted targets — both are small edits, and both change
+which of 44 rules fire on real code. That is a detection-behaviour change to a
+security scanner, and it needs a corpus with known-good labels to measure against
+before and after, not an inspection-time judgement. The ~60%/~15% figures in the
+header are the natural baseline for that measurement, and nothing in the
+repository records how they were obtained.
