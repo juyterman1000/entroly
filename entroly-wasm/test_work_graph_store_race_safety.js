@@ -33,6 +33,14 @@ try {
   assert(store.readLockToken() === liveToken, 'live-owner token changed');
   fs.unlinkSync(store.lockPath);
 
+  const foreignToken = `definitely-other-host:${process.pid}:foreign-owner`;
+  fs.writeFileSync(store.lockPath, `${foreignToken}\n0\n`, { mode: 0o600 });
+  age(store.lockPath);
+  assert(store.breakStaleLock() === false, 'old foreign-host lock was reclaimed without proof');
+  assert(fs.existsSync(store.lockPath), 'foreign-host lock disappeared');
+  assert(store.readLockToken() === foreignToken, 'foreign-host token changed');
+  fs.unlinkSync(store.lockPath);
+
   fs.writeFileSync(store.lockPath, 'dead-owner\n0\n', { mode: 0o600 });
   age(store.lockPath);
   assert(store.breakStaleLock() === true, 'dead old lock was not reclaimed');
