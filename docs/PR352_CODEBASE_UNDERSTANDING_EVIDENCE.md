@@ -2100,3 +2100,113 @@ security scanner, and it needs a corpus with known-good labels to measure agains
 before and after, not an inspection-time judgement. The ~60%/~15% figures in the
 header are the natural baseline for that measurement, and nothing in the
 repository records how they were obtained.
+
+### Finding G27 — Python docstrings are scanned as executable code
+
+`sast.rs` lists false-positive suppression as one of its six mechanisms:
+
+> "5. **False-positive suppression**: test files, **comment blocks**, constant
+> strings"
+
+`CommentTracker::update_and_check` gates block-comment entry on a length test:
+
+```rust
+if (trimmed.starts_with("\"\"\"") || trimmed.starts_with("'''"))
+    && trimmed.len() > 3
+    && !trimmed[3..].contains("\"\"\"")
+    && !trimmed[3..].contains("'''")
+{
+    self.in_block_comment = true;
+    return true;
+}
+```
+
+A bare `"""` on its own line has length exactly 3, so `trimmed.len() > 3` is
+false and the branch never runs. That is the canonical Python docstring opener.
+Reproduced against the real logic:
+
+```
+'def handler(req):'                          comment=False
+'    """'                                    comment=False   <- opener missed
+'    Uses eval(user_input) as an example.'   comment=False   <- body scanned as code
+'    """'                                    comment=False
+'    return 1'                               comment=False
+```
+
+Not one line is recognised. The opener fails the length test, so
+`in_block_comment` is never set, so the body is scanned as live source, so the
+closer is never reached as a terminator either.
+
+The consequence is direct: any docstring mentioning `eval(`, `pickle.loads`,
+`md5`, `subprocess`, `password` or any of the other 151 rule patterns produces a
+finding against prose. Documentation that *describes* a vulnerability — including
+security documentation, which is where such words concentrate — is the worst
+case. This is precisely the false-positive class the module says it suppresses.
+
+The asymmetry makes it easy to miss when reading: the *exit* check inside a block
+comment is `trimmed.starts_with("\"\"\"")` with no length condition, so closing
+works. Only entry is broken, and only for the bare-delimiter form. A docstring
+written `"""Summary text` (length > 3) opens correctly, which is why this
+survives casual testing.
+
+**Not changed.** Dropping `trimmed.len() > 3` is a one-line fix, but it changes
+which findings a security scanner reports across every Python file in every
+scanned repository, and the same corpus-measurement argument as G26 applies.
+Recorded with the reproduction so the fix can be measured rather than assumed.
+
+### Finding G28 (doc corrected) — the risk score's documentation describes a different function
+
+`compute_risk_score` carries a doc block that is wrong in its formula, both of
+its worked examples, and its two marginal-contribution claims.
+
+Documented:
+
+```
+risk = min(10, Σ(severity_weight × confidence × (1 + taint_bonus)) / scaling_factor)
+  - Each Critical adds ~2.4 to the score
+  - Each High adds ~1.3
+  - At raw=4 (one Critical + confidence 1.0) → score ~7.0
+```
+
+Implemented:
+
+```rust
+let taint_boost = if f.taint_flow { 1.3 } else { 1.0 };
+let raw: f64 = Σ (severity.cvss_weight() * confidence * taint_boost);
+let compressed = 10.0 * (1.0 - (-raw / 4.0).exp());
+```
+
+Four discrepancies:
+
+1. **The shape is not a division.** The doc says `Σ(...) / scaling_factor`; the
+   code applies exponential saturation `10·(1 − e^(−raw/4))`.
+2. **`(1 + taint_bonus)` is not what runs.** The multiplier is `1.3` directly,
+   not `2.3`.
+3. **The worked example is doubly wrong.** One Critical at confidence 1.0 gives
+   `raw = 9.5` — `Severity::Critical.cvss_weight()` is 9.5, not 4 — and the
+   resulting score is **9.07**, not ~7.0. (Score at raw = 4 is 6.32, so neither
+   half of the sentence lands.)
+4. **Nothing "adds" a fixed amount.** The function saturates, so marginal
+   contribution collapses:
+
+   | Findings | Score | Marginal |
+   |---|---:|---:|
+   | 1 Critical | 9.07 | +9.07 |
+   | 2 Critical | 9.91 | +0.84 |
+   | 3 Critical | 9.99 | +0.08 |
+   | 4 Critical | 10.00 | +0.01 |
+
+   "Each Critical adds ~2.4" describes a linear model. The code is not one, and
+   the same holds for High: 8.03, then +1.58, then +0.31.
+
+The practical consequence outlives the documentation error. A single Critical
+pins the score at 9.07/10, and a file with one Critical is nearly
+indistinguishable from a file with five (9.07 against 10.00). An aggregate risk
+score exists to rank files by how much attention they need; this one saturates
+too fast to do that, and the doc block hides it by describing an additive scale.
+
+**Not changed**, and the two halves are different decisions. The doc block can be
+corrected to match the code with no behavioural risk at all. Whether the
+saturation constant should change — `raw / 4.0` is what compresses everything
+above one Critical into the top decile — is a scoring-policy question that
+affects every consumer of `SastReport.risk_score`.
