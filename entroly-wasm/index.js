@@ -85,6 +85,7 @@ const {
 } = require('./js/work_graph_store');
 const {
   MAX_RESUME_EVIDENCE,
+  handoffRepository,
   resumeRepository,
 } = require('./js/work_graph_continuity');
 const {
@@ -154,6 +155,7 @@ module.exports = {
   WorkGraphLockTimeout,
   WorkGraphStateError,
   MAX_RESUME_EVIDENCE,
+  handoffRepository,
   resumeRepository,
 
   // Configuration
