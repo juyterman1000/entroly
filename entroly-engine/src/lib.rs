@@ -61,3 +61,6 @@ pub mod trajectory;
 pub mod utilization;
 
 pub mod work_graph;
+
+#[cfg(test)]
+mod coordination_index;
