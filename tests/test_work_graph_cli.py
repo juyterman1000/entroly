@@ -76,11 +76,26 @@ def test_standalone_parser_exposes_all_work_actions():
         assert args.work_action == action
 
 
-def test_cli_resume_refreshes_repo_before_recovery(monkeypatch, tmp_path):
+def test_cli_resume_fingerprints_repo_before_recovery(monkeypatch, tmp_path):
     fake = FakeStore()
     calls = []
-    monkeypatch.setattr(c, "_store_for_path", lambda _p: fake)
-    monkeypatch.setattr(c, "discover_repository_observation", lambda _p: calls.append("observe") or {"repo_id": "repo:test"})
+    observation = {
+        "repo_id": "repo:test",
+        "changes": [{"path": "app.py", "content_digest": ""}],
+    }
+    monkeypatch.setattr(c, "_store_for_path", lambda _p: calls.append("store") or fake)
+    monkeypatch.setattr(
+        c,
+        "discover_repository_observation",
+        lambda _p: calls.append("observe") or observation,
+    )
+
+    def fingerprint(_path, obs):
+        calls.append("fingerprint")
+        obs["changes"][0]["content_digest"] = "git-blob:abc"
+        return obs
+
+    monkeypatch.setattr(c, "enrich_worktree_content_digests", fingerprint)
     fake.submit_observation = lambda obs: calls.append("persist") or setattr(fake, "observation", obs) or FakeGraph()
     fake.resume = lambda *args, **kwargs: calls.append("resume") or {"ok": True}
     args = SimpleNamespace(
@@ -91,7 +106,8 @@ def test_cli_resume_refreshes_repo_before_recovery(monkeypatch, tmp_path):
         max_evidence=32,
     )
     assert c.run(args) == 0
-    assert calls == ["observe", "persist", "resume"]
+    assert calls == ["store", "observe", "fingerprint", "persist", "resume"]
+    assert fake.observation["changes"][0]["content_digest"] == "git-blob:abc"
 
 
 def test_cli_resume_validates_before_store_or_repository_refresh(monkeypatch, tmp_path):
@@ -101,6 +117,11 @@ def test_cli_resume_validates_before_store_or_repository_refresh(monkeypatch, tm
         c,
         "discover_repository_observation",
         lambda _p: calls.append("observe") or {"repo_id": "repo:test"},
+    )
+    monkeypatch.setattr(
+        c,
+        "enrich_worktree_content_digests",
+        lambda _p, observation: calls.append("fingerprint") or observation,
     )
     args = SimpleNamespace(
         work_action="resume",
@@ -113,15 +134,26 @@ def test_cli_resume_validates_before_store_or_repository_refresh(monkeypatch, tm
     assert calls == []
 
 
-def test_cli_handoff_refreshes_repo_before_receipt(monkeypatch, tmp_path):
+def test_cli_handoff_fingerprints_repo_before_receipt(monkeypatch, tmp_path):
     fake = FakeStore()
     calls = []
+    observation = {
+        "repo_id": "repo:test",
+        "changes": [{"path": "app.py", "content_digest": ""}],
+    }
     monkeypatch.setattr(c, "_store_for_path", lambda _p: calls.append("store") or fake)
     monkeypatch.setattr(
         c,
         "discover_repository_observation",
-        lambda _p: calls.append("observe") or {"repo_id": "repo:test"},
+        lambda _p: calls.append("observe") or observation,
     )
+
+    def fingerprint(_path, obs):
+        calls.append("fingerprint")
+        obs["changes"][0]["content_digest"] = "git-blob:def"
+        return obs
+
+    monkeypatch.setattr(c, "enrich_worktree_content_digests", fingerprint)
     fake.submit_observation = lambda obs: calls.append("persist") or setattr(fake, "observation", obs) or FakeGraph()
     fake.handoff = lambda *args, **kwargs: calls.append("handoff") or {"ok": True}
     args = SimpleNamespace(
@@ -133,12 +165,18 @@ def test_cli_handoff_refreshes_repo_before_receipt(monkeypatch, tmp_path):
         to_agent="codex",
     )
     assert c.run(args) == 0
-    assert calls == ["store", "observe", "persist", "handoff"]
+    assert calls == ["store", "observe", "fingerprint", "persist", "handoff"]
+    assert fake.observation["changes"][0]["content_digest"] == "git-blob:def"
 
 
 def test_cli_handoff_validates_before_store_construction(monkeypatch, tmp_path):
     calls = []
     monkeypatch.setattr(c, "_store_for_path", lambda _p: calls.append("store") or FakeStore())
+    monkeypatch.setattr(
+        c,
+        "enrich_worktree_content_digests",
+        lambda _p, observation: calls.append("fingerprint") or observation,
+    )
     args = SimpleNamespace(
         work_action="handoff",
         json_output=True,
