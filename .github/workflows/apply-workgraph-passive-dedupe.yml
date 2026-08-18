@@ -1,0 +1,356 @@
+name: Apply Work Graph Passive Snapshot Dedupe
+
+on:
+  push:
+    branches:
+      - audit/workgraph-passive-dedupe-20260817
+    paths:
+      - .github/workflows/apply-workgraph-passive-dedupe.yml
+
+permissions:
+  contents: write
+
+jobs:
+  validate-and-apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out exact feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/ai-work-graph-v1
+          fetch-depth: 0
+
+      - name: Require audited Rust base blob
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object entroly-engine/src/work_graph.rs)" = "4cfa2d84123b53bc8d6a4b68e5d5431da9ac3a30"
+
+      - name: Apply narrow semantic patch and kill tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('entroly-engine/src/work_graph.rs')
+          text = path.read_text(encoding='utf-8')
+          assert 'fn passive_repository_snapshot_fingerprint(' not in text
+
+          old_observe = '''    pub fn observe_repository(
+                  &mut self,
+                  observation: RepositoryObservation,
+              ) -> Result<String, WorkGraphError> {
+                  if observation.repo_id != self.repo_id {
+                      return Err(WorkGraphError::RepoMismatch {
+                          expected: self.repo_id.clone(),
+                          actual: observation.repo_id,
+                      });
+                  }
+                  let event = observation_to_event(observation)?;
+                  self.apply_event(event)
+              }
+          '''
+          new_observe = '''    pub fn observe_repository(
+                  &mut self,
+                  observation: RepositoryObservation,
+              ) -> Result<String, WorkGraphError> {
+                  if observation.repo_id != self.repo_id {
+                      return Err(WorkGraphError::RepoMismatch {
+                          expected: self.repo_id.clone(),
+                          actual: observation.repo_id.clone(),
+                      });
+                  }
+                  let passive_fingerprint = passive_repository_snapshot_fingerprint(&observation)?;
+                  let mut event = observation_to_event(observation)?;
+                  if let Some(fingerprint) = passive_fingerprint {
+                      let source_ref = format!("repo-snapshot:{fingerprint}");
+                      if let Some(last) = self.events.last() {
+                          if last.source_kind == EvidenceKind::RepositoryFact
+                              && last.source_ref == source_ref
+                          {
+                              return Ok(last.event_id.clone());
+                          }
+                      }
+                      event.source_ref = source_ref;
+                  }
+                  self.apply_event(event)
+              }
+          '''
+          if old_observe not in text:
+              raise SystemExit('observe_repository anchor changed; refusing patch')
+          text = text.replace(old_observe, new_observe, 1)
+
+          sort_start = text.index('    observation.changes.sort_by(|a, b| {', text.index('fn observation_to_event('))
+          sort_end_marker = '    observation.leases.sort_by(|a, b| a.lease_id.cmp(&b.lease_id));\n'
+          sort_end = text.index(sort_end_marker, sort_start) + len(sort_end_marker)
+          sort_block = text[sort_start:sort_end]
+          text = text[:sort_start] + '    canonicalize_repository_observation(&mut observation);\n' + text[sort_end:]
+
+          helper = '''fn canonicalize_repository_observation(observation: &mut RepositoryObservation) {
+          ''' + sort_block + '''}
+
+          fn valid_passive_content_digest(change: &FileChangeObservation) -> bool {
+              if change.staged || change.conflicted {
+                  return false;
+              }
+              if change.kind == FileChangeKind::Deleted {
+                  return change.content_digest == "worktree:deleted";
+              }
+              let Some(hex) = change.content_digest.strip_prefix("git-blob:") else {
+                  return false;
+              };
+              matches!(hex.len(), 40 | 64) && hex.bytes().all(|byte| byte.is_ascii_hexdigit())
+          }
+
+          fn passive_repository_snapshot_fingerprint(
+              observation: &RepositoryObservation,
+          ) -> Result<Option<String>, WorkGraphError> {
+              if !observation.agent_id.is_empty()
+                  || !observation.session_id.is_empty()
+                  || !observation.verifications.is_empty()
+                  || !observation.claims.is_empty()
+                  || !observation.leases.is_empty()
+                  || !observation.model_executions.is_empty()
+              {
+                  return Ok(None);
+              }
+              if observation
+                  .task_hint
+                  .as_ref()
+                  .is_some_and(|task| task.source_kind != EvidenceKind::Checkpoint)
+              {
+                  return Ok(None);
+              }
+              if observation
+                  .decisions
+                  .iter()
+                  .any(|decision| decision.source_kind != EvidenceKind::Checkpoint)
+              {
+                  return Ok(None);
+              }
+              if observation
+                  .changes
+                  .iter()
+                  .any(|change| !valid_passive_content_digest(change))
+              {
+                  return Ok(None);
+              }
+
+              let mut semantic = observation.clone();
+              semantic.observed_at_ms = 0;
+              canonicalize_repository_observation(&mut semantic);
+              Ok(Some(sha256_json(&semantic)?))
+          }
+
+          '''
+          observation_anchor = 'fn observation_to_event('
+          insert_at = text.index(observation_anchor)
+          text = text[:insert_at] + helper + text[insert_at:]
+
+          test_helper_anchor = '    #[test]\n    fn clean_repo_is_null_control()'
+          test_helper = '''    fn passive_dirty_observation(digest: &str, observed_at_ms: i64) -> RepositoryObservation {
+                  let mut obs = clean_observation();
+                  obs.observed_at_ms = observed_at_ms;
+                  obs.branch.name = "feature/passive".to_string();
+                  obs.changes.push(FileChangeObservation {
+                      path: "src/auth.rs".to_string(),
+                      kind: FileChangeKind::Modified,
+                      staged: false,
+                      conflicted: false,
+                      old_path: String::new(),
+                      content_digest: digest.to_string(),
+                  });
+                  obs
+              }
+
+          '''
+          if test_helper_anchor not in text:
+              raise SystemExit('test helper anchor changed; refusing patch')
+          text = text.replace(test_helper_anchor, test_helper + test_helper_anchor, 1)
+
+          tests_anchor = '    #[test]\n    fn explicit_task_without_durable_changes_is_planned()'
+          tests = '''    #[test]
+              fn passive_snapshot_same_content_different_timestamp_dedupes() {
+                  let mut graph = WorkGraph::new("repo-1").unwrap();
+                  let one = passive_dirty_observation(
+                      "git-blob:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                      1_000,
+                  );
+                  let mut two = one.clone();
+                  two.observed_at_ms = 2_000;
+                  let first_id = graph.observe_repository(one).unwrap();
+                  let second_id = graph.observe_repository(two).unwrap();
+                  assert_eq!(first_id, second_id);
+                  assert_eq!(graph.event_count(), 1);
+              }
+
+              #[test]
+              fn passive_snapshot_changed_bytes_remain_auditable() {
+                  let mut graph = WorkGraph::new("repo-1").unwrap();
+                  graph
+                      .observe_repository(passive_dirty_observation(
+                          "git-blob:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                          1_000,
+                      ))
+                      .unwrap();
+                  graph
+                      .observe_repository(passive_dirty_observation(
+                          "git-blob:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                          2_000,
+                      ))
+                      .unwrap();
+                  assert_eq!(graph.event_count(), 2);
+              }
+
+              #[test]
+              fn passive_snapshot_refuses_incomplete_or_active_identity() {
+                  let mut missing = WorkGraph::new("repo-1").unwrap();
+                  missing
+                      .observe_repository(passive_dirty_observation("", 1_000))
+                      .unwrap();
+                  missing
+                      .observe_repository(passive_dirty_observation("", 2_000))
+                      .unwrap();
+                  assert_eq!(missing.event_count(), 2);
+
+                  let mut invalid = WorkGraph::new("repo-1").unwrap();
+                  invalid
+                      .observe_repository(passive_dirty_observation("not-a-git-object", 1_000))
+                      .unwrap();
+                  invalid
+                      .observe_repository(passive_dirty_observation("not-a-git-object", 2_000))
+                      .unwrap();
+                  assert_eq!(invalid.event_count(), 2);
+
+                  let mut staged = WorkGraph::new("repo-1").unwrap();
+                  let mut staged_one = passive_dirty_observation(
+                      "git-blob:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                      1_000,
+                  );
+                  staged_one.changes[0].staged = true;
+                  let mut staged_two = staged_one.clone();
+                  staged_two.observed_at_ms = 2_000;
+                  staged.observe_repository(staged_one).unwrap();
+                  staged.observe_repository(staged_two).unwrap();
+                  assert_eq!(staged.event_count(), 2);
+
+                  let mut active = WorkGraph::new("repo-1").unwrap();
+                  let mut active_one = passive_dirty_observation(
+                      "git-blob:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                      1_000,
+                  );
+                  active_one.agent_id = "claude".to_string();
+                  let mut active_two = active_one.clone();
+                  active_two.observed_at_ms = 2_000;
+                  active.observe_repository(active_one).unwrap();
+                  active.observe_repository(active_two).unwrap();
+                  assert_eq!(active.event_count(), 2);
+              }
+
+              #[test]
+              fn passive_snapshot_change_away_and_back_is_not_erased() {
+                  let mut graph = WorkGraph::new("repo-1").unwrap();
+                  graph
+                      .observe_repository(passive_dirty_observation(
+                          "git-blob:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                          1_000,
+                      ))
+                      .unwrap();
+                  graph
+                      .observe_repository(passive_dirty_observation(
+                          "git-blob:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                          2_000,
+                      ))
+                      .unwrap();
+                  graph
+                      .observe_repository(passive_dirty_observation(
+                          "git-blob:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                          3_000,
+                      ))
+                      .unwrap();
+                  assert_eq!(graph.event_count(), 3);
+              }
+
+              #[test]
+              fn deleted_passive_snapshot_accepts_only_terminal_marker() {
+                  let mut graph = WorkGraph::new("repo-1").unwrap();
+                  let mut one = clean_observation();
+                  one.branch.name = "feature/delete".to_string();
+                  one.changes.push(FileChangeObservation {
+                      path: "old.txt".to_string(),
+                      kind: FileChangeKind::Deleted,
+                      staged: false,
+                      conflicted: false,
+                      old_path: String::new(),
+                      content_digest: "worktree:deleted".to_string(),
+                  });
+                  let mut two = one.clone();
+                  two.observed_at_ms += 1;
+                  graph.observe_repository(one).unwrap();
+                  graph.observe_repository(two).unwrap();
+                  assert_eq!(graph.event_count(), 1);
+
+                  let mut wrong = WorkGraph::new("repo-1").unwrap();
+                  let mut bad = clean_observation();
+                  bad.branch.name = "feature/delete".to_string();
+                  bad.changes.push(FileChangeObservation {
+                      path: "old.txt".to_string(),
+                      kind: FileChangeKind::Deleted,
+                      staged: false,
+                      conflicted: false,
+                      old_path: String::new(),
+                      content_digest: "git-blob:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+                  });
+                  let mut bad_two = bad.clone();
+                  bad_two.observed_at_ms += 1;
+                  wrong.observe_repository(bad).unwrap();
+                  wrong.observe_repository(bad_two).unwrap();
+                  assert_eq!(wrong.event_count(), 2);
+              }
+
+          '''
+          if tests_anchor not in text:
+              raise SystemExit('test insertion anchor changed; refusing patch')
+          text = text.replace(tests_anchor, tests + tests_anchor, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Format exact patch
+        run: cargo fmt --manifest-path entroly-engine/Cargo.toml
+
+      - name: Test shared Rust engine
+        run: cargo test --manifest-path entroly-engine/Cargo.toml --lib
+
+      - name: Clippy shared Rust engine
+        run: cargo clippy --manifest-path entroly-engine/Cargo.toml --all-targets -- -D warnings
+
+      - name: Restrict product diff to Work Graph core
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only)"
+          test "$changed" = "entroly-engine/src/work_graph.rs"
+
+      - name: Refuse branch races
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin feat/ai-work-graph-v1
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/feat/ai-work-graph-v1)"
+          test "$(git show HEAD:entroly-engine/src/work_graph.rs | git hash-object --stdin)" = "4cfa2d84123b53bc8d6a4b68e5d5431da9ac3a30"
+
+      - name: Commit validated Rust patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "entroly-workgraph-bot"
+          git config user.email "208309368+juyterman1000@users.noreply.github.com"
+          git add entroly-engine/src/work_graph.rs
+          git commit -m "fix(work-graph): dedupe content-complete passive snapshots"
+          git push origin HEAD:feat/ai-work-graph-v1

@@ -1,0 +1,77 @@
+name: Retrigger Work Graph Passive Dedupe
+
+# Retrigger marker: hardened worktree fingerprint readers v2.
+on:
+  push:
+    branches:
+      - audit/workgraph-passive-dedupe-20260817
+    paths:
+      - .github/workflows/retrigger-workgraph-passive-dedupe.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-audited-patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/ai-work-graph-v1
+          fetch-depth: 0
+
+      - name: Recover audited patch script
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin audit/workgraph-passive-dedupe-20260817:audit-passive
+          git show audit-passive:.github/workflows/apply-workgraph-passive-dedupe.yml > /tmp/source.yml
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('/tmp/source.yml').read_text(encoding='utf-8')
+          start_marker = "          python - <<'PY'\n"
+          end_marker = "\n          PY\n"
+          start = text.index(start_marker) + len(start_marker)
+          end = text.index(end_marker, start)
+          lines = text[start:end].splitlines()
+          body = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines)
+          Path('/tmp/apply_workgraph_passive_dedupe.py').write_text(body + '\n', encoding='utf-8')
+          PY
+
+      - name: Require exact audited Rust blob and real digest adapters
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object entroly-engine/src/work_graph.rs)" = "4cfa2d84123b53bc8d6a4b68e5d5431da9ac3a30"
+          grep -q 'enrich_worktree_content_digests' entroly/work_graph_mcp.py
+          grep -q 'enrichWorktreeContentDigests' entroly-wasm/js/work_graph_continuity.js
+          start_head="$(git rev-parse HEAD)"
+          printf '%s\n' "$start_head" > /tmp/workgraph-start-head
+          python /tmp/apply_workgraph_passive_dedupe.py
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Validate shared Rust semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path entroly-engine/Cargo.toml
+          cargo test --manifest-path entroly-engine/Cargo.toml --lib
+          cargo clippy --manifest-path entroly-engine/Cargo.toml --all-targets -- -D warnings
+          test "$(git diff --name-only)" = "entroly-engine/src/work_graph.rs"
+
+      - name: Refuse branch races and push validated product commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin feat/ai-work-graph-v1
+          test "$(cat /tmp/workgraph-start-head)" = "$(git rev-parse origin/feat/ai-work-graph-v1)"
+          git config user.name "entroly-workgraph-bot"
+          git config user.email "208309368+juyterman1000@users.noreply.github.com"
+          git add entroly-engine/src/work_graph.rs
+          git commit -m "fix(work-graph): dedupe content-complete passive snapshots"
+          git push origin HEAD:feat/ai-work-graph-v1
