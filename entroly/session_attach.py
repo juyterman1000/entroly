@@ -450,149 +450,154 @@ def attachment_install_commands(
     if grant.client == "claude":
         # The Claude CLI's `-e/--env` is a greedy variadic option: if it appears
         # before the server <name> positional it swallows the name as a second
-        # env var ("Invalid environment variable format"). Keep <name> first.
-        return (
-            (
-                "claude",
-                "mcp",
-                "add",
-                name,
-                "-e",
-                source_env,
-                "--",
-                *server,
-            ),
-        )
+        # env var ("Invalid environment variable format"). Keep <name> first and
+        # terminate the env list with `--` so exactly one env var is parsed.
+        return (("claude", "mcp", "add", name, "--scope", "local", "-e", source_env, "--", *server),)
     if grant.client == "codex":
-        return (
-            (
-                "codex",
-                "mcp",
-                "add",
-                name,
-                "--env",
-                source_env,
-                "--",
-                *server,
-            ),
-        )
+        return (("codex", "mcp", "add", name, "--env", source_env, "--", *server),)
     if grant.client == "copilot":
-        # GitHub Copilot CLI accepts a JSON MCP server config via stdin in
-        # current releases. Keep the command data-only; no shell expansion.
-        return (
-            (
-                "copilot",
-                "mcp",
-                "add",
-                name,
-                "--env",
-                source_env,
-                "--",
-                *server,
-            ),
-        )
+        return (("copilot", "mcp", "add", name, "--env", source_env, "--", *server),)
+    if grant.client == "openclaw":
+        add = ["openclaw", "mcp", "add", name, "--command", "entroly"]
+        for argument in server[1:]:
+            add.extend(("--arg", argument))
+        add.extend(("--env", source_env))
+        return (tuple(add), ("openclaw", "mcp", "reload"))
+    raise ValueError(f"unsupported attachment client: {grant.client}")
+
+
+def attachment_remove_commands(grant: AttachmentGrant) -> tuple[tuple[str, ...], ...]:
+    name = f"entroly-{grant.grant_id}"
+    if grant.client == "claude":
+        return (("claude", "mcp", "remove", "--scope", "local", name),)
+    if grant.client == "codex":
+        return (("codex", "mcp", "remove", name),)
+    if grant.client == "copilot":
+        return (("copilot", "mcp", "remove", name),)
     if grant.client == "openclaw":
         return (
-            (
-                "openclaw",
-                "mcp",
-                "add",
-                name,
-                "--env",
-                source_env,
-                "--",
-                *server,
-            ),
+            ("openclaw", "mcp", "unset", name),
+            ("openclaw", "mcp", "reload"),
         )
     raise ValueError(f"unsupported attachment client: {grant.client}")
 
 
-def _run_client_command(
-    command: Sequence[str],
-    *,
-    runner=subprocess.run,
-) -> subprocess.CompletedProcess[str]:
-    if not command:
-        raise AttachmentError("empty attachment client command")
-    executable = command[0]
-    resolved = shutil.which(executable)
-    if resolved is None:
-        raise AttachmentError(f"attachment client executable not found: {executable}")
-    argv = [resolved, *command[1:]]
-    return runner(
-        argv,
-        check=False,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        stdin=subprocess.DEVNULL,
-    )
+def _run_client_command(command, **kwargs):
+    """Default runner that resolves the client launcher through PATHEXT.
+
+    Windows CLI launchers installed by npm are ``.cmd`` shims (``claude.cmd``),
+    and ``CreateProcess`` does not apply PATHEXT to a bare ``"claude"`` argument,
+    so a plain ``subprocess.run(["claude", ...])`` fails with WinError 2. Resolve
+    the executable with ``shutil.which`` first; on POSIX this is a no-op.
+    """
+    resolved = shutil.which(command[0])
+    argv = [resolved, *command[1:]] if resolved else list(command)
+    return subprocess.run(argv, **kwargs)
 
 
 def install_attachment(
     issued: IssuedAttachment,
     *,
-    store: AttachmentStore,
-    runner=subprocess.run,
-) -> AttachmentGrant:
-    installed: list[tuple[str, ...]] = []
-    try:
-        for command in issued.install_commands:
-            result = _run_client_command(command, runner=runner)
-            if result.returncode != 0:
-                detail = (result.stderr or result.stdout or "client configuration failed").strip()
-                raise AttachmentError(detail)
-            installed.append(command)
-    except Exception as exc:
+    store: AttachmentStore | None = None,
+    runner=_run_client_command,
+) -> tuple[subprocess.CompletedProcess[str], ...]:
+    results: list[subprocess.CompletedProcess[str]] = []
+    for command in issued.install_commands:
         try:
-            revoked = store.revoke(issued.grant.grant_id)
-        except Exception:
-            revoked = issued.grant
-        rollback_errors: list[str] = []
-        try:
-            uninstall_attachment(revoked, runner=runner)
-        except Exception as rollback_exc:
-            rollback_errors.append(str(rollback_exc))
-        suffix = f"; rollback warning: {'; '.join(rollback_errors)}" if rollback_errors else ""
-        raise AttachmentError(f"attachment install failed; rolled back and grant revoked: {exc}{suffix}") from exc
-    return store.get(issued.grant.grant_id)
+            result = runner(command, check=False, text=True, capture_output=True)
+        except OSError as exc:
+            result = subprocess.CompletedProcess(command, 127, "", str(exc))
+        results.append(result)
+        if result.returncode != 0:
+            rollback_errors: list[str] = []
+            for rollback in attachment_remove_commands(issued.grant):
+                try:
+                    removal = runner(rollback, check=False, text=True, capture_output=True)
+                    if removal.returncode != 0:
+                        rollback_errors.append(
+                            f"{rollback[0]} exit {removal.returncode}: {removal.stderr.strip()}"
+                        )
+                except OSError as exc:
+                    rollback_errors.append(str(exc))
+            if store is not None:
+                try:
+                    store.revoke(issued.grant.grant_id)
+                except AttachmentError as exc:
+                    rollback_errors.append(f"grant revocation failed: {exc}")
+            recovery = (
+                f"rollback incomplete ({'; '.join(rollback_errors)})"
+                if rollback_errors
+                else "client configuration rolled back and grant revoked"
+            )
+            raise AttachmentError(
+                f"client configuration failed ({command[0]} exit {result.returncode}): "
+                f"{result.stderr.strip()}; {recovery}"
+            )
+    return tuple(results)
 
 
 def uninstall_attachment(
     grant: AttachmentGrant,
     *,
-    runner=subprocess.run,
+    runner=_run_client_command,
+) -> tuple[subprocess.CompletedProcess[str], ...]:
+    """Remove a client entry after access has already been revoked."""
+    results: list[subprocess.CompletedProcess[str]] = []
+    for command in attachment_remove_commands(grant):
+        try:
+            result = runner(command, check=False, text=True, capture_output=True)
+        except OSError as exc:
+            raise AttachmentError(
+                f"access is revoked, but client configuration removal failed: {exc}; "
+                f"run manually: {format_command(command)}"
+            ) from exc
+        results.append(result)
+        if result.returncode != 0:
+            raise AttachmentError(
+                "access is revoked, but client configuration removal failed "
+                f"({command[0]} exit {result.returncode}): {result.stderr.strip()}; "
+                f"run manually: {format_command(command)}"
+            )
+    return tuple(results)
+
+
+def serve_attachment(
+    *,
+    grant_id: str,
+    token_file: str | Path,
+    state_dir: str | Path,
 ) -> None:
-    name = f"entroly-{grant.grant_id}"
-    commands = {
-        "claude": ("claude", "mcp", "remove", name),
-        "codex": ("codex", "mcp", "remove", name),
-        "copilot": ("copilot", "mcp", "remove", name),
-        "openclaw": ("openclaw", "mcp", "remove", name),
-    }
-    command = commands.get(grant.client)
-    if command is None:
-        raise AttachmentError(f"unsupported attachment client: {grant.client}")
-    result = _run_client_command(command, runner=runner)
-    if result.returncode != 0:
-        detail = (result.stderr or result.stdout or "client configuration failed").strip()
-        raise AttachmentError(
-            "attachment access is revoked, but client uninstall failed; "
-            f"run manually: {' '.join(command)} ({detail})"
-        )
+    store = AttachmentStore(state_dir)
+    token_path = Path(token_file).expanduser().resolve()
+    expected_path = store._token_path(grant_id).resolve()
+    if token_path != expected_path:
+        raise AttachmentError("attachment token file does not match the grant")
+    try:
+        token = token_path.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise AttachmentError(f"attachment token file is unavailable: {exc}") from exc
+    grant = store.authorize(grant_id, token)
+    project_root = Path(grant.project_root)
+    if not project_root.is_dir():
+        raise AttachmentError("attachment project root is no longer available")
+
+    os.environ["ENTROLY_DIR"] = str(store.state_dir)
+    os.environ["ENTROLY_SOURCE"] = str(project_root)
+    os.chdir(project_root)
+
+    from entroly.server import _start_background_services, create_mcp_server
+
+    def authorize_tool(tool: str) -> None:
+        store.authorize(grant_id, token, tool=tool)
+
+    mcp, engine = create_mcp_server(
+        allowed_tools=set(grant.tools),
+        authorize_tool=authorize_tool,
+    )
+    _start_background_services(engine)
+    mcp.run()
 
 
-__all__ = [
-    "ATTACHMENT_CLIENTS",
-    "DEFAULT_SCOPES",
-    "TOOL_SCOPES",
-    "AttachmentError",
-    "AttachmentGrant",
-    "AttachmentStore",
-    "IssuedAttachment",
-    "attachment_install_commands",
-    "install_attachment",
-    "parse_ttl",
-    "resolve_tool_scopes",
-    "uninstall_attachment",
-]
+def format_command(command: Sequence[str]) -> str:
+    """Render a copyable command without invoking a platform shell."""
+    return subprocess.list2cmdline(list(command))
