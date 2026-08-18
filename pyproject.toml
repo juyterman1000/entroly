@@ -97,6 +97,8 @@ entroly = "entroly.docker_launcher_safe:launch"
 entroly-memory = "entroly.memory_cli:main"
 entroly-compression-mcp = "entroly.compression_mcp:main"
 entroly-repository-mcp = "entroly.repository_intelligence.mcp:main"
+entroly-work = "entroly.work_graph_cli:main"
+entroly-work-graph-mcp = "entroly.work_graph_mcp_server:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
