@@ -1064,12 +1064,12 @@ until all are true. They are not all true. This is the accounting.
 | Condition | Status |
 |---|---|
 | Deep-codebase audit gate completed | **No.** 22 of 35 engine files read in full; `cache.rs` (3,689) and `skeleton.rs` (2,906) are the largest unread. Python closure not attempted. |
-| Production-relevant files classified; no unknown ownership | **No.** Section 5 asks for a 13-field ownership matrix over every production file. None exists for 301 Python modules. |
+| Production-relevant files classified; no unknown ownership | **Yes.** `scripts/ownership_matrix.py` classifies all 1,610 tracked files into the section 5 outcomes with all 13 fields; `--check` reports 0 unknown. 29 are parked as `review-required` rather than guessed. |
 | Semantic closures for every *changed* subsystem fully read | **Partial.** Changed modules were read (`cognitive_bus`, `nkbe`, `work_graph`, `eicv_suppressor`). `cache.rs` is shared and unread. |
 | Public Python/CLI/MCP/provider/npm journeys traced end-to-end | **No.** Not traced this session. |
 | Pre-change baseline recorded | **Partial.** 4025/1/33 recorded at this SHA; no baseline captured at the branch point, so a pre-existing failure elsewhere is not yet distinguishable. |
 | Python and npm/WASM semantic parity proven | **Partial.** Was demonstrably false with four asymmetric modules. `cognitive_bus` and `nkbe` are now bound in both runtimes and delegate to identical engine serializers, pinned by tests on both sides (G16). `rnr` (npm-only) and `simhash_wide` (neither) remain. |
-| Every production file classified in migration/ownership map | **No.** Same gap as above. |
+| Every production file classified in migration/ownership map | **Yes.** `docs/OWNERSHIP_MATRIX.md`, regenerated from `git ls-files` rather than hand-maintained. |
 | Large-repo/incremental performance measured | **No.** |
 | Dogfood scenarios A-T (section 19) | **Not run** this session. Section 19 defines twenty scenarios; none were executed as a gauntlet. |
 | Exact final SHA CI green | **Not checked.** |
@@ -1235,3 +1235,109 @@ approximation bound.
 
 The claim in `CLAUDE.md` — "density-greedy gives Dantzig-style ½, **not**
 (1-1/e)" — is correct and is now actually supported by the header above it.
+
+---
+
+## 18. Master prompt section 5 — the ownership matrix now exists and is machine-checkable
+
+`scripts/ownership_matrix.py` builds the section 5 inventory from `git ls-files`
+and emits all thirteen required fields. `--check` exits non-zero if any tracked
+file has unknown ownership.
+
+At this SHA:
+
+```
+  1109  tests-fixtures-docs-packaging
+   340  python-host-orchestration
+    48  node-host-orchestration
+    37  rust-semantic-owner
+    29  review-required
+    25  pyo3-binding
+    16  generated-build-artifact
+     6  wasm-binding
+  1610  total
+
+OK: every tracked file is classified (29 awaiting human review)
+```
+
+**Zero unknown**, which is the section 24 condition. The output is
+`docs/OWNERSHIP_MATRIX.md`, regenerated rather than hand-maintained.
+
+### Why it is generated rather than written
+
+Section 5 says to treat existing maps as useful evidence, not unquestionable
+truth. That warning was load-bearing. `docs/repo_file_map.md` carried 280 rows,
+of which **174 pointed at files that no longer exist** (`extractor.py`,
+`super_dump.txt`, `test_auth.py`, `all_files_list.txt` and 170 more), and it
+omitted **861 of 917 tracked Python modules**. It was not incomplete so much as
+mostly wrong, and any gate that leaned on it would have been certifying fiction.
+
+### What the classifier refuses to decide
+
+Path and import structure are facts and are reported as facts. Whether a given
+Python module *should* become Rust is a judgement, and a heuristic that pretended
+otherwise would manufacture the false completeness this gate exists to catch. So
+29 modules carrying computation with no host-orchestration and no native-boundary
+signal are classified `review-required` and listed as a queue —
+`esg.py`, `sufficiency.py`, `e_value.py`, `conformal_cascade.py`,
+`semantic_entropy.py`, `context_receipts/*` and others. `--check` reports them
+and fails only on `unknown`.
+
+### Finding G18 — a third copy of shared semantics in a binding crate, this one 686 lines and hand-synchronised
+
+The review queue surfaced `entroly/localization.py`. Its first line of Rust
+counterpart says the rest:
+
+> `entroly-wasm/src/localization.rs`:
+> "Tier-0 file localizer — **Rust port of `entroly/localization.py`**. Mirrors
+> the Python `Tier0Localizer.rerank_edit_target` **byte-faithfully** so npm/WASM
+> users get the SAME engine_s6 behaviour as pip / Python-MCP."
+
+686 Python lines and 663 Rust lines implementing one ranking algorithm. Verified
+at this SHA:
+
+* `entroly-engine/src/localization.rs` **does not exist** — the Rust copy lives
+  in `entroly-wasm`, a binding crate.
+* `entroly/localization.py` does **not** call `entroly_core`; it is a full
+  independent pure-Python implementation, not a surface over the Rust one.
+* Each side has its own tests — `tests/test_localization.py` and 10 Rust tests —
+  and **no test compares them**. No shared golden fixture exists anywhere in the
+  repository.
+
+So the byte-faithfulness contract is asserted in a doc comment and enforced by
+nothing. This is the same shape as `cognitive_bus` and `nkbe`, which this session
+already consolidated: shared product semantics living in a binding crate rather
+than the engine, against section 3's architectural law. It is the third instance
+and the most consequential, because the other two had one live copy and one dead
+twin, whereas both localization implementations are live, shipped, and diverge
+silently the moment either is edited.
+
+This is also the concrete answer to section 22 question 12 — *can Python and npm
+produce different semantic outcomes for the same normalized observation?* For
+localization: yes, and nothing in the repository would detect it.
+
+Not changed here. Moving 686 lines of ranking semantics into `entroly-engine` and
+reducing both sides to bindings is exactly the migration section 18 says not to
+big-bang, and section 5 requires API/behaviour/serialization parity to be
+*proven* before the old implementation is retired. The prerequisite is a shared
+golden fixture that both runtimes execute — which does not exist yet and is the
+right next commit.
+
+### Not duplicates, despite appearances
+
+Two pairs looked like duplication and are not. Recorded so the next reader does
+not re-litigate them:
+
+* `entroly/rnr.py` is **RNR\*** — Retrieval Necessity Ratio, the mutual
+  information `I(Y-hat; S)` between an ESG verdict and the evidence-source
+  indicator, used to test whether a detector is genuinely retrieval-grounded.
+  `entroly-engine/src/rnr.rs` is **RNR** — Recognize and Reject, token-level
+  recognition with a novel-entity penalty, one of five EICV fusion signals.
+  Same three letters, unrelated algorithms.
+* `entroly/semantic_entropy.py` is the EICV Layer 5 bidirectional NLI proxy;
+  `entroly/verifiers/semantic_entropy.py` is PROVE, causal-weighted semantic
+  entropy for detecting hallucinated prose about code. Same filename, different
+  purposes.
+
+Both are naming collisions rather than drift, but they cost real reading time and
+are worth renaming when either is next touched.
