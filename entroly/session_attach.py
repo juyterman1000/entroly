@@ -34,7 +34,6 @@ TOOL_SCOPES: dict[str, frozenset[str]] = {
             "explain_context",
             "vault_status",
             "coverage_gaps",
-            "work_state",
         }
     ),
     "context": frozenset(
@@ -78,8 +77,6 @@ TOOL_SCOPES: dict[str, frozenset[str]] = {
             "remember_fragment",
             "checkpoint_state",
             "resume_state",
-            "work_resume",
-            "work_handoff",
         }
     ),
     "record": frozenset(
@@ -89,7 +86,6 @@ TOOL_SCOPES: dict[str, frozenset[str]] = {
             "record_command_exit",
             "record_ci_result",
             "record_edit_outcome",
-            "work_claim",
         }
     ),
     "vault": frozenset(
