@@ -20,6 +20,7 @@ from .work_graph_store import (
 )
 
 _MAX_TTL_SECONDS = 30 * 24 * 60 * 60
+_MAX_EVIDENCE = 4096
 
 
 def _project_path(project: str) -> Path:
@@ -119,13 +120,22 @@ def run(args: Any) -> int:
                 "coordination": graph.coordination(int(time.time() * 1000)),
             }
         elif action == "resume":
+            max_evidence = args.max_evidence
+            if (
+                not isinstance(max_evidence, int)
+                or isinstance(max_evidence, bool)
+                or not 0 <= max_evidence <= _MAX_EVIDENCE
+            ):
+                raise ValueError(
+                    f"max_evidence must be an integer between 0 and {_MAX_EVIDENCE}"
+                )
             # Resume is an explicit recovery action: refresh bounded durable
             # repository/checkpoint facts first so a replacement agent can
             # continue even if the previous agent never recorded a handoff.
             store.submit_observation(discover_repository_observation(project))
             payload = {
                 "status": "ok",
-                "resume": store.resume(args.workstream or None, max_evidence=args.max_evidence),
+                "resume": store.resume(args.workstream or None, max_evidence=max_evidence),
             }
         elif action == "handoff":
             payload = {
