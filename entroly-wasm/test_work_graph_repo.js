@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -7,6 +8,7 @@ const zlib = require('zlib');
 const { spawnSync } = require('child_process');
 const {
   RepositoryDiscoveryError,
+  discoverRepositoryIdentity,
   discoverRepositoryObservation,
 } = require('./js/work_graph_repo');
 
@@ -38,6 +40,10 @@ try {
   assert(clean.changes.length === 0, 'clean repo must have no worktree changes');
   assert(clean.commits.length === 0, 'clean repo must remain a null-control observation');
   assert(clean.task_hint === null, 'observer must not invent task intent');
+
+  const identity = discoverRepositoryIdentity(repo);
+  assert(identity.repo_id === clean.repo_id, 'identity-only repo ID drifted from full observation');
+  assert(path.resolve(identity.root) === path.resolve(repo), 'identity root mismatch');
 
   const explicit = discoverRepositoryObservation(repo, {
     defaultBranch: 'main', observedAtMs: 1001,
@@ -93,12 +99,65 @@ try {
   assert(active.task_hint.remaining_work[0] === 'finish tests', 'checkpoint remaining work missing');
   assert(active.decisions[0].text === 'Preserve event order', 'checkpoint decision missing');
 
+  const oldHome = process.env.HOME;
+  const oldEntrolyDir = process.env.ENTROLY_DIR;
+  const fakeHome = path.join(root, 'home');
+  fs.mkdirSync(fakeHome);
+  process.env.HOME = fakeHome;
+  delete process.env.ENTROLY_DIR;
+  try {
+    const absentRoot = path.join(fakeHome, '.entroly');
+    const beforeDefault = discoverRepositoryObservation(repo, {
+      includeCheckpoint: true,
+      observedAtMs: 2100,
+    });
+    assert(beforeDefault.task_hint === null, 'missing default checkpoint invented a task');
+    assert(!fs.existsSync(absentRoot), 'checkpoint lookup created ~/.entroly as a read side effect');
+
+    const projectHash = crypto.createHash('sha256')
+      .update(path.resolve(repo), 'utf8').digest('hex').slice(0, 12);
+    const defaultDir = path.join(fakeHome, '.entroly', 'checkpoints', projectHash);
+    fs.mkdirSync(defaultDir, { recursive: true });
+    fs.copyFileSync(
+      path.join(checkpointDir, 'ckpt_test_1.json.gz'),
+      path.join(defaultDir, 'ckpt_test_1.json.gz'),
+    );
+    const defaultCheckpoint = discoverRepositoryObservation(repo, {
+      includeCheckpoint: true,
+      observedAtMs: 2200,
+    });
+    assert(defaultCheckpoint.task_hint.title === 'Fix streaming', 'default checkpoint path parity failed');
+  } finally {
+    if (oldHome === undefined) delete process.env.HOME; else process.env.HOME = oldHome;
+    if (oldEntrolyDir === undefined) delete process.env.ENTROLY_DIR; else process.env.ENTROLY_DIR = oldEntrolyDir;
+  }
+
   git(repo, 'remote', 'add', 'origin', 'https://alice:secret-one@example.com/org/repo.git');
   const firstId = discoverRepositoryObservation(repo, { observedAtMs: 3000 }).repo_id;
   git(repo, 'remote', 'set-url', 'origin', 'https://bob:secret-two@example.com/org/repo.git');
   const secondId = discoverRepositoryObservation(repo, { observedAtMs: 3001 }).repo_id;
   assert(firstId === secondId, 'credential changes must not change repo identity');
   assert(!firstId.includes('secret') && !firstId.includes('alice'), 'repo identity leaked credentials');
+
+  const hugeRepo = path.join(root, 'huge');
+  fs.mkdirSync(hugeRepo);
+  git(hugeRepo, 'init', '-b', 'main');
+  git(hugeRepo, 'config', 'user.email', 'test@example.com');
+  git(hugeRepo, 'config', 'user.name', 'Test');
+  fs.writeFileSync(path.join(hugeRepo, 'base.txt'), 'base\n');
+  git(hugeRepo, 'add', 'base.txt');
+  git(hugeRepo, 'commit', '-m', 'initial');
+  for (let index = 0; index < 513; index += 1) {
+    fs.writeFileSync(path.join(hugeRepo, `untracked-${index}.txt`), 'x\n');
+  }
+  const hugeIdentity = discoverRepositoryIdentity(hugeRepo);
+  assert(hugeIdentity.repo_id.startsWith('git-root:'), 'identity-only lookup failed on huge dirty repo');
+  let partialRejected = false;
+  try { discoverRepositoryObservation(hugeRepo); }
+  catch (error) {
+    partialRejected = error instanceof RepositoryDiscoveryError && /partial Work Graph/.test(error.message);
+  }
+  assert(partialRejected, 'full observer did not fail closed above the change cap');
 
   console.log('Work Graph npm Git discovery contract: PASS');
 } finally {
