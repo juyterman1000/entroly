@@ -5,9 +5,8 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execFileSync } = require('child_process');
 const { WorkGraph } = require('./work_graph');
-const { discoverRepositoryObservation } = require('./work_graph_repo');
+const { discoverRepositoryIdentity, discoverRepositoryObservation } = require('./work_graph_repo');
 
 const DEFAULT_LOCK_TIMEOUT_MS = 5000;
 const DEFAULT_STALE_LOCK_MS = 120000;
@@ -100,8 +99,8 @@ class WorkGraphStore {
   }
 
   static forRepository(repoPath = '.', options = {}) {
-    const observation = discoverRepositoryObservation(repoPath, { observedAtMs: 0 });
-    return new WorkGraphStore(observation.repo_id, options);
+    const identity = discoverRepositoryIdentity(repoPath);
+    return new WorkGraphStore(identity.repo_id, options);
   }
 
   readLockToken() {
@@ -288,6 +287,10 @@ class WorkGraphStore {
     const ttlMs = positiveSafeInteger(options.ttlMs ?? 900000, 'ttlMs');
     const leaseId = String(options.leaseId || crypto.randomUUID().replace(/-/g, ''));
     const taskId = String(options.taskId || '');
+    const sourceKind = String(options.sourceKind || 'agent_statement');
+    if (!['agent_statement', 'user_statement'].includes(sourceKind)) {
+      throw new WorkGraphStateError("sourceKind must be 'agent_statement' or 'user_statement'");
+    }
     const observation = discoverRepositoryObservation(repoPath, {
       agentId,
       sessionId: String(options.sessionId || ''),
@@ -298,7 +301,7 @@ class WorkGraphStore {
         trust: 'observed',
         explicit_status: 'in_progress',
         remaining_work: [],
-        source_kind: 'user_statement',
+        source_kind: sourceKind,
         source_ref: `work-claim:${leaseId}`,
       },
     });
