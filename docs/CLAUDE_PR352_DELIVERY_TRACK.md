@@ -48,7 +48,15 @@ Own these production gaps and tests:
    - Preserve the deliberate pure-Python fallback test surface installed with `--no-deps`; do not accidentally make the fallback CI test the native path.
    - Treat musl/wheel/npm packaging failures as production failures.
 
-6. **Cross-agent production gauntlet**
+6. **Runtime repair / surprise-network trust policy — P0**
+   - `entroly-core` is now a required base dependency. If it is missing at runtime, treat that first as an installation-integrity problem, not permission to silently mutate the environment.
+   - Audit `entroly/self_heal.py`, CLI measurement commands, MCP startup, and proxy startup together.
+   - Preferred production contract: no package-manager/network mutation unless the operator explicitly requested repair or explicitly enabled auto-repair. `entroly repair` is an appropriate explicit surface; import paths must never install anything.
+   - If any automatic repair remains, prove why it is necessary despite the hard dependency and make the policy explicit, bounded, auditable, and opt-in. Do not rely on documentation alone to justify surprise `pip install -U` behavior.
+   - Never pass `--break-system-packages`, never mutate an externally-managed Python, never install from an import path, never transmit repository/prompt contents, and never turn an install failure into a false savings/quality claim.
+   - Add regression tests that assert ordinary read/measure/service startup paths do not make an unexpected network/package-manager call under the final policy.
+
+7. **Cross-agent production gauntlet**
    - Previous agent never called Entroly; dirty repo remains; replacement resumes.
    - Previous agent committed changes; clean worktree but branch ahead; replacement sees changed paths and unfinished evidence without fabricated intent.
    - Python process + Node process converge on the same repo store.
@@ -117,6 +125,7 @@ Your track is done when:
 - committed and uncommitted interrupted work is recoverable without fabricated intent;
 - passive hashing is bounded per file and per observation;
 - published CLI/MCP/npm/Python surfaces expose the same semantic capability backed by Rust;
+- runtime repair/network behavior is explicit and cannot surprise-mutate a normal user environment;
 - cross-agent continuation/durable-store dogfood passes on exact branch head;
 - no product claim exceeds measured evidence;
 - all remaining failures are surfaced explicitly for integration, not hidden or worked around.
