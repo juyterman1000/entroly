@@ -1,0 +1,133 @@
+name: Apply Work Graph Content Digests
+
+on:
+  push:
+    branches: [audit/workgraph-passive-dedupe-20260817]
+    paths: [.github/workflows/apply-workgraph-content-digests.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  validate-and-apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/ai-work-graph-v1
+          fetch-depth: 0
+
+      - name: Add bounded content-complete digests to Python and Node observers
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          py = Path('entroly/work_graph_repo.py')
+          text = py.read_text(encoding='utf-8')
+          if '_worktree_content_digest(' not in text:
+              text = text.replace('import os\nimport subprocess\n', 'import os\nimport stat\nimport subprocess\n', 1)
+              text = text.replace('_MAX_COMMITS = 20\n', '_MAX_COMMITS = 20\n_MAX_DIGEST_FILE_BYTES = 16 * 1024 * 1024\n', 1)
+              anchor = '\ndef _branch_commits(\n'
+              helper = '''\ndef _worktree_content_digest(root: Path, change: dict[str, Any]) -> str:\n    # Dedupe is fail-closed: only bounded regular files whose exact worktree\n    # bytes can be hashed qualify. Staged/conflicted/special/oversized paths\n    # remain auditable as distinct observations.\n    if change.get("staged") or change.get("conflicted"):\n        return ""\n    if change.get("kind") == "deleted":\n        return "worktree:deleted"\n    relative = str(change.get("path", ""))\n    if not relative:\n        return ""\n    candidate = root / relative\n    try:\n        info = candidate.lstat()\n    except OSError:\n        return ""\n    if not stat.S_ISREG(info.st_mode) or info.st_size > _MAX_DIGEST_FILE_BYTES:\n        return ""\n    digest = _try_git(root, "hash-object", "--no-filters", "--", relative)\n    if len(digest) not in {40, 64} or any(ch not in "0123456789abcdefABCDEF" for ch in digest):\n        return ""\n    return f"git-blob:{digest.lower()}"\n\n'''
+              if anchor not in text:
+                  raise SystemExit('Python digest helper anchor changed')
+              text = text.replace(anchor, helper + anchor, 1)
+              old = '    changes = _parse_status(root)\n    commits = _branch_commits(root, base, ahead, int(max_commits))\n'
+              new = '    changes = _parse_status(root)\n    for change in changes:\n        change["content_digest"] = _worktree_content_digest(root, change)\n    commits = _branch_commits(root, base, ahead, int(max_commits))\n'
+              if old not in text:
+                  raise SystemExit('Python observation anchor changed')
+              text = text.replace(old, new, 1)
+              py.write_text(text, encoding='utf-8')
+
+          js = Path('entroly-wasm/js/work_graph_repo.js')
+          text = js.read_text(encoding='utf-8')
+          if 'function worktreeContentDigest(' not in text:
+              text = text.replace('const MAX_COMMITS = 20;\n', 'const MAX_COMMITS = 20;\nconst MAX_DIGEST_FILE_BYTES = 16 * 1024 * 1024;\n', 1)
+              anchor = '\nfunction branchCommits(root, base, ahead, maxCommits) {'
+              helper = '''\nfunction worktreeContentDigest(root, change) {\n  // Dedupe is fail-closed: do not follow symlinks or hash special/large files.\n  if (change.staged || change.conflicted) return '';\n  if (change.kind === 'deleted') return 'worktree:deleted';\n  const relative = String(change.path || '');\n  if (!relative) return '';\n  const candidate = path.join(root, relative);\n  let info;\n  try { info = fs.lstatSync(candidate); } catch (_) { return ''; }\n  if (!info.isFile() || info.isSymbolicLink() || info.size > MAX_DIGEST_FILE_BYTES) return '';\n  const digest = tryGit(root, ['hash-object', '--no-filters', '--', relative]);\n  if (!/^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$/.test(digest)) return '';\n  return `git-blob:${digest.toLowerCase()}`;\n}\n'''
+              if anchor not in text:
+                  raise SystemExit('Node digest helper anchor changed')
+              text = text.replace(anchor, helper + anchor, 1)
+              old = '  const changes = parseStatus(root);\n  const maxCommits = options.maxCommits == null ? MAX_COMMITS : options.maxCommits;\n'
+              new = '  const changes = parseStatus(root);\n  for (const change of changes) change.content_digest = worktreeContentDigest(root, change);\n  const maxCommits = options.maxCommits == null ? MAX_COMMITS : options.maxCommits;\n'
+              if old not in text:
+                  raise SystemExit('Node observation anchor changed')
+              text = text.replace(old, new, 1)
+              js.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Add cross-surface digest contract tests
+        shell: bash
+        run: |
+          cat > tests/test_work_graph_content_digest.py <<'PY'
+          from __future__ import annotations
+          import subprocess
+          from pathlib import Path
+          from entroly.work_graph_repo import discover_repository_observation
+
+          def git(repo: Path, *args: str) -> None:
+              subprocess.run(['git', '-C', str(repo), *args], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+          def test_worktree_digest_tracks_bytes_and_deletion(tmp_path: Path) -> None:
+              repo = tmp_path / 'repo'; repo.mkdir(); git(repo, 'init', '-b', 'main')
+              git(repo, 'config', 'user.email', 'test@example.com'); git(repo, 'config', 'user.name', 'Test')
+              target = repo / 'a.txt'; target.write_text('one\n'); git(repo, 'add', 'a.txt'); git(repo, 'commit', '-m', 'initial')
+              target.write_text('two\n')
+              first = discover_repository_observation(repo, include_checkpoint=False, observed_at_ms=1)
+              change = next(x for x in first['changes'] if x['path'] == 'a.txt')
+              assert change['content_digest'].startswith('git-blob:')
+              digest = change['content_digest']
+              target.write_text('three\n')
+              second = discover_repository_observation(repo, include_checkpoint=False, observed_at_ms=2)
+              assert next(x for x in second['changes'] if x['path'] == 'a.txt')['content_digest'] != digest
+              target.unlink()
+              third = discover_repository_observation(repo, include_checkpoint=False, observed_at_ms=3)
+              assert next(x for x in third['changes'] if x['path'] == 'a.txt')['content_digest'] == 'worktree:deleted'
+          PY
+          cat > entroly-wasm/test_work_graph_content_digest.js <<'JS'
+          'use strict';
+          const assert = require('assert');
+          const fs = require('fs'); const os = require('os'); const path = require('path');
+          const { execFileSync } = require('child_process');
+          const { discoverRepositoryObservation } = require('./js/work_graph_repo');
+          const root = fs.mkdtempSync(path.join(os.tmpdir(), 'entroly-wg-digest-'));
+          const git = (...args) => execFileSync('git', ['-C', root, ...args], { stdio: 'ignore' });
+          git('init', '-b', 'main'); git('config', 'user.email', 'test@example.com'); git('config', 'user.name', 'Test');
+          fs.writeFileSync(path.join(root, 'a.txt'), 'one\n'); git('add', 'a.txt'); git('commit', '-m', 'initial');
+          fs.writeFileSync(path.join(root, 'a.txt'), 'two\n');
+          const one = discoverRepositoryObservation(root, { includeCheckpoint: false, observedAtMs: 1 });
+          const d1 = one.changes.find(x => x.path === 'a.txt').content_digest; assert.match(d1, /^git-blob:[0-9a-f]{40,64}$/);
+          fs.writeFileSync(path.join(root, 'a.txt'), 'three\n');
+          const two = discoverRepositoryObservation(root, { includeCheckpoint: false, observedAtMs: 2 });
+          assert.notStrictEqual(two.changes.find(x => x.path === 'a.txt').content_digest, d1);
+          fs.unlinkSync(path.join(root, 'a.txt'));
+          const three = discoverRepositoryObservation(root, { includeCheckpoint: false, observedAtMs: 3 });
+          assert.strictEqual(three.changes.find(x => x.path === 'a.txt').content_digest, 'worktree:deleted');
+          fs.rmSync(root, { recursive: true, force: true });
+          JS
+
+      - name: Validate adapter contracts
+        run: |
+          python -m pytest -q tests/test_work_graph_repo.py tests/test_work_graph_content_digest.py
+          node entroly-wasm/test_work_graph_repo.js
+          node entroly-wasm/test_work_graph_content_digest.js
+          python -m py_compile entroly/work_graph_repo.py tests/test_work_graph_content_digest.py
+          node --check entroly-wasm/js/work_graph_repo.js
+          node --check entroly-wasm/test_work_graph_content_digest.js
+
+      - name: Refuse branch races and commit only validated product/test files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin feat/ai-work-graph-v1
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/feat/ai-work-graph-v1)"
+          changed="$(git diff --name-only | sort)"
+          expected="$(printf '%s\n' entroly-wasm/js/work_graph_repo.js entroly-wasm/test_work_graph_content_digest.js entroly/work_graph_repo.py tests/test_work_graph_content_digest.py | sort)"
+          test "$changed" = "$expected"
+          git config user.name 'entroly-workgraph-bot'
+          git config user.email '208309368+juyterman1000@users.noreply.github.com'
+          git add $changed
+          git commit -m 'fix(work-graph): add content-complete passive snapshot digests'
+          git push origin HEAD:feat/ai-work-graph-v1
