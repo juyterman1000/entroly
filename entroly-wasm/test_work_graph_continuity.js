@@ -1,5 +1,9 @@
 'use strict';
 
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { execFileSync } = require('child_process');
 const {
   WorkGraphStateError,
   WorkGraphStore,
@@ -13,12 +17,28 @@ function assert(condition, message) {
   if (!condition) throw new Error(message || 'assertion failed');
 }
 
+function git(repo, args) {
+  return execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+}
+
+const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'entroly-work-continuity-'));
+git(repo, ['init', '-b', 'main']);
+git(repo, ['config', 'user.email', 'test@example.com']);
+git(repo, ['config', 'user.name', 'Test']);
+fs.writeFileSync(path.join(repo, 'app.py'), 'VALUE = 1\n', 'utf8');
+git(repo, ['add', 'app.py']);
+git(repo, ['commit', '-m', 'initial']);
+git(repo, ['checkout', '-b', 'feature/interrupted']);
+fs.writeFileSync(path.join(repo, 'app.py'), 'VALUE = 2\n', 'utf8');
+
 const original = WorkGraphStore.forRepository;
 try {
   const calls = [];
+  let submitted = null;
   const fakeStore = {
-    updateRepository(repoPath, options) {
-      calls.push(['observe', repoPath, options]);
+    submitObservation(observation) {
+      submitted = observation;
+      calls.push(['persist', observation.changes[0].content_digest]);
       return { ignored: true };
     },
     resume(workstreamId, maxEvidence) {
@@ -40,28 +60,30 @@ try {
     return fakeStore;
   };
 
-  const view = resumeRepository('/repo', {
+  const view = resumeRepository(repo, {
     workstreamId: 'workstream:1',
     maxEvidence: 17,
     storeOptions: { root: '/state' },
     repositoryOptions: { maxCommits: 3 },
   });
   assert(view.repo_id === 'repo:test', 'resume view was not returned');
-  assert(JSON.stringify(calls) === JSON.stringify([
-    ['store', '/repo', { root: '/state' }],
-    ['observe', '/repo', { maxCommits: 3 }],
-    ['resume', 'workstream:1', 17],
-  ]), 'npm recovery did not run store -> observe -> resume in order');
+  assert(submitted && submitted.changes.length === 1, 'passive observation was not persisted');
+  assert(submitted.changes[0].path === 'app.py', 'wrong changed path was persisted');
+  assert(submitted.changes[0].content_digest.startsWith('git-blob:'), 'resume snapshot lacks content identity');
+  assert(calls[0][0] === 'store' && calls[1][0] === 'persist' && calls[2][0] === 'resume',
+    'npm recovery did not run store -> fingerprinted persist -> resume in order');
 
   calls.length = 0;
+  submitted = null;
   let rejected = false;
-  try { resumeRepository('/repo', { maxEvidence: -1 }); }
+  try { resumeRepository(repo, { maxEvidence: -1 }); }
   catch (error) { rejected = error instanceof WorkGraphStateError; }
   assert(rejected, 'invalid maxEvidence was accepted');
   assert(calls.length === 0, 'invalid recovery request touched repository/store state');
 
   calls.length = 0;
-  const receipt = handoffRepository('/repo', {
+  submitted = null;
+  const receipt = handoffRepository(repo, {
     workstreamId: 'workstream:1',
     fromAgent: 'claude',
     toAgent: 'codex',
@@ -70,16 +92,15 @@ try {
     repositoryOptions: { maxCommits: 2 },
   });
   assert(receipt.to_agent === 'codex', 'handoff receipt was not returned');
-  assert(JSON.stringify(calls) === JSON.stringify([
-    ['store', '/repo', { root: '/state' }],
-    ['observe', '/repo', { maxCommits: 2 }],
-    ['handoff', 'workstream:1', 'claude', 'codex', 1234],
-  ]), 'npm handoff did not run store -> observe -> handoff in order');
+  assert(submitted && submitted.changes[0].content_digest.startsWith('git-blob:'),
+    'handoff snapshot lacks content identity');
+  assert(calls[0][0] === 'store' && calls[1][0] === 'persist' && calls[2][0] === 'handoff',
+    'npm handoff did not run store -> fingerprinted persist -> handoff in order');
 
   calls.length = 0;
   rejected = false;
   try {
-    handoffRepository('/repo', {
+    handoffRepository(repo, {
       workstreamId: '',
       fromAgent: 'claude',
       toAgent: 'codex',
@@ -93,7 +114,7 @@ try {
   calls.length = 0;
   rejected = false;
   try {
-    handoffRepository('/repo', {
+    handoffRepository(repo, {
       workstreamId: 'workstream:1',
       fromAgent: 'claude',
       toAgent: 'codex',
@@ -108,4 +129,5 @@ try {
   console.log('Work Graph npm interrupted-agent continuity contract: PASS');
 } finally {
   WorkGraphStore.forRepository = original;
+  fs.rmSync(repo, { recursive: true, force: true });
 }
