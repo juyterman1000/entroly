@@ -42,15 +42,17 @@ def _repo(tmp_path: Path) -> Path:
 
 
 def _store(repo: Path, root: Path) -> WorkGraphStore:
+    store = WorkGraphStore.for_repository(
+        repo,
+        root=root,
+        lock_timeout_seconds=0.05,
+        stale_lock_seconds=1.0,
+    )
     try:
-        return WorkGraphStore.for_repository(
-            repo,
-            root=root,
-            lock_timeout_seconds=0.05,
-            stale_lock_seconds=1.0,
-        )
+        store.load()
     except WorkGraphUnavailableError as exc:
         pytest.skip(str(exc))
+    return store
 
 
 def test_store_roundtrip_is_atomic_private_and_integrity_checked(tmp_path: Path) -> None:
