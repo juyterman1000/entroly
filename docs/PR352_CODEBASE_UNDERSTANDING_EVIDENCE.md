@@ -1341,3 +1341,92 @@ not re-litigate them:
 
 Both are naming collisions rather than drift, but they cost real reading time and
 are worth renaming when either is next touched.
+
+### Finding G19 — the cache's per-model pricing table has no effect on eviction
+
+`cache.rs` opens by claiming five novel contributions. The second is:
+
+> "**Cost-Aware Submodular Diversity Eviction** — lazy greedy evaluation with
+> time-decay and hybrid cost model: U = P(hit) × (recompute_cost +
+> latency_saved) − memory_cost."
+
+and `CostModel` states it "optimizes *real-world cost savings*, not abstract hit
+rate", backed by `CostModel::for_model()` — 25 branches of researched per-token
+output pricing covering OpenAI, Anthropic, Google, DeepSeek, Meta and Mistral.
+
+That table does not reach the eviction decision. Two independent problems stack.
+
+**1. The utility function adds dollars to seconds.**
+
+```rust
+let recompute_value =
+    response_tokens as f64 * self.cost_per_token   // dollars
+    + self.latency_saved_ms * 0.001;               // milliseconds -> seconds
+p_hit * recompute_value - self.memory_cost_per_entry
+```
+
+`cost_per_token` is USD; `latency_saved_ms * 0.001` is seconds. Summing them is
+dimensionally invalid, and numerically the seconds term wins by two orders of
+magnitude — it contributes a flat 2.0 while a 1000-token GPT-4o response
+contributes 0.015:
+
+| Model | token term | utility | token share |
+|---|---:|---:|---:|
+| gemini-flash | 0.000300 | 1.999300 | 0.01% |
+| gpt-4o-mini | 0.000600 | 1.999600 | 0.03% |
+| gpt-4o | 0.015000 | 2.014000 | 0.74% |
+| gpt-4 | 0.060000 | 2.059000 | 2.91% |
+| claude-3-opus | 0.075000 | 2.074000 | 3.61% |
+
+The entire pricing table spans 3.6% of the utility value.
+
+**2. Then a hardcoded constant discards even that.**
+
+The evictor does not use the model's number directly (`cache.rs:888`):
+
+```rust
+let cost_value = model_cost.max(entry.recompute_cost);
+```
+
+and `recompute_cost` is set at construction (`cache.rs:110`) as
+`response_tokens as f64 * 0.01` — "default: $0.01/token", which is **667× the
+CostModel default of $0.000015/token**. Two different per-token prices live in
+the same file.
+
+Because the constant is so much larger, `max()` selects it for any response above
+roughly 100–200 tokens:
+
+```
+quality_score 0.5  ->  recompute_cost wins above 100 tokens
+quality_score 0.9  ->  recompute_cost wins above 181 tokens
+quality_score 1.0  ->  recompute_cost wins above 201 tokens
+```
+
+At a typical 800-token response the model estimate is 1.005 and the stored
+constant is 8.0. Substituting the cheapest and most expensive entries in the
+pricing table — Gemini Flash at $0.30/M against Claude Opus at $75/M, a 250×
+spread — changes nothing: all three select `recompute_cost = 8.0`.
+
+So for realistic response sizes, eviction cost is `tokens × 0.01`, a constant
+that ignores which model produced the response. `for_model()` is a public
+constructor a developer would reasonably call expecting it to matter.
+
+**Why the tests do not catch it.** `test_cost_model_expensive_better` asserts
+`utility(0.5, 1000) > utility(0.5, 10)` — a *direction*, not a magnitude. It
+passes by 0.0074 out of ~1.0. An assertion on ordering alone cannot detect that
+the term carrying the signal has been diluted 133:1 and then discarded by a
+`max()` it never sees, because the evictor path is not what the test exercises.
+
+Separately, `test_bench_cost_aware_utility` computes savings as
+`tokens_saved as f64 * 0.01` — the $0.01/token constant again, not
+`CostModel::cost_per_token`. The benchmark measures cost on a different price
+scale from the model it is benchmarking.
+
+**Not changed here.** Fixing it is a policy decision, not a typo: someone must
+choose whether latency is converted to dollars at an explicit $/second rate (and
+what that rate is), whether `recompute_cost` should be derived from the same
+`CostModel` rather than a literal, and whether existing tuned thresholds — the
+admission gate at line 751 uses the same `utility()` — were calibrated against
+today's numbers. All three call sites move together. Recorded with the crossover
+arithmetic so the decision can be made against real figures rather than
+re-derived.
