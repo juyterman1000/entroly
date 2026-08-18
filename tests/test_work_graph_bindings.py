@@ -91,3 +91,15 @@ def test_native_work_graph_roundtrip_and_handoff_integrity() -> None:
     receipt["to_agent"] = "tampered"
     assert not WorkGraph.verify_handoff_integrity(receipt)
     assert not graph.verify_handoff(receipt)
+
+
+def test_missing_native_binding_has_actionable_install_guidance(monkeypatch) -> None:
+    from entroly import work_graph as module
+
+    monkeypatch.setattr(module, "_RustWorkGraph", None)
+    monkeypatch.setattr(module, "_NATIVE_IMPORT_ERROR", ImportError("missing test binding"))
+    with pytest.raises(WorkGraphUnavailableError) as exc_info:
+        module.WorkGraph("repo:test")
+    message = str(exc_info.value)
+    assert 'pip install "entroly[native]"' in message
+    assert "missing test binding" in message
