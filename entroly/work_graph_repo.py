@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import os
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -143,6 +144,13 @@ def _resolve_root(path: str | os.PathLike[str]) -> Path:
     if not root:
         raise RepositoryDiscoveryError(f"not a Git worktree: {candidate}")
     return Path(root).resolve()
+
+
+def discover_repository_identity(path: str | os.PathLike[str] = ".") -> dict[str, str]:
+    """Return stable repository identity without scanning worktree/checkpoints."""
+
+    root = _resolve_root(path)
+    return {"repo_id": _repository_id(root), "root": str(root)}
 
 
 def _validated_branch_override(root: Path, override: str | None) -> str:
@@ -309,25 +317,47 @@ def _branch_commits(
     return commits
 
 
+def _existing_checkpoint_dir(
+    root: Path,
+    checkpoint_dir: str | os.PathLike[str] | None,
+) -> Path | None:
+    """Resolve the existing project checkpoint directory without creating it.
+
+    This mirrors ``config._project_checkpoint_dir`` but is intentionally
+    side-effect free so merely inspecting Work Graph state cannot create
+    ``~/.entroly`` directories. It also works for arbitrary repository paths,
+    which keeps Python and Node continuity lookup consistent.
+    """
+
+    if checkpoint_dir is not None:
+        candidates = [Path(checkpoint_dir).expanduser()]
+    else:
+        explicit = os.environ.get("ENTROLY_DIR")
+        if explicit:
+            candidates = [Path(explicit).expanduser()]
+        else:
+            project_hash = hashlib.sha256(str(root).encode()).hexdigest()[:12]
+            candidates = [
+                Path.home() / ".entroly" / "checkpoints" / project_hash,
+                Path(tempfile.gettempdir()) / "entroly" / "checkpoints" / project_hash,
+            ]
+    for candidate in candidates:
+        try:
+            if candidate.exists() and candidate.is_dir() and not candidate.is_symlink():
+                return candidate
+        except OSError:
+            continue
+    return None
+
+
 def _checkpoint_metadata(
     root: Path,
     checkpoint_dir: str | os.PathLike[str] | None,
 ) -> tuple[str, dict[str, Any]]:
     """Read latest project checkpoint without creating/pruning storage."""
 
-    if checkpoint_dir is None:
-        # Reuse the existing project-isolation policy only when observing the
-        # current project. For an arbitrary path, the caller must provide its
-        # checkpoint directory explicitly rather than letting cwd select the
-        # wrong project's history.
-        if root != Path.cwd().resolve():
-            return "", {}
-        from .config import _project_checkpoint_dir
-
-        directory = _project_checkpoint_dir()
-    else:
-        directory = Path(checkpoint_dir).expanduser()
-    if not directory.exists() or not directory.is_dir():
+    directory = _existing_checkpoint_dir(root, checkpoint_dir)
+    if directory is None:
         return "", {}
 
     from .checkpoint import CheckpointManager
@@ -448,4 +478,8 @@ def discover_repository_observation(
     }
 
 
-__all__ = ["RepositoryDiscoveryError", "discover_repository_observation"]
+__all__ = [
+    "RepositoryDiscoveryError",
+    "discover_repository_identity",
+    "discover_repository_observation",
+]
