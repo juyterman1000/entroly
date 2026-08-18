@@ -56,7 +56,7 @@
     "health": "node js/cli.js health",
     "demo": "node js/cli.js demo",
     "autotune": "node js/cli.js autotune",
-    "test": "node test_wasm_e2e.js && node test_work_graph.js && node test_work_graph_repo.js && node test_work_graph_store.js && node test_work_graph_continuity.js"
+    "test": "node test_wasm_e2e.js && node test_work_graph.js && node test_work_graph_repo.js && node test_work_graph_store.js && node test_work_graph_continuity.js && node test_work_graph_root_exports.js"
   },
   "keywords": [
     "entroly",
