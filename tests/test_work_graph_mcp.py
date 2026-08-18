@@ -68,6 +68,21 @@ def test_mcp_claim_records_agent_statement_and_lease(monkeypatch, tmp_path):
     assert fake.observation["leases"][0]["scope_paths"] == ["src/auth"]
 
 
+def test_mcp_resume_refreshes_repo_before_recovery(monkeypatch, tmp_path):
+    fake = FakeStore()
+    monkeypatch.setenv("ENTROLY_SOURCE", str(tmp_path))
+    monkeypatch.setattr(m, "_store_for_path", lambda _p: fake)
+    observation = {"repo_id": "repo:test", "observed_at_ms": 77, "leases": []}
+    monkeypatch.setattr(m, "discover_repository_observation", lambda _path: observation)
+
+    result = m.work_resume(workstream_id="workstream:1", max_evidence=8)
+
+    assert result["status"] == "ok"
+    assert fake.observation is observation
+    assert '"workstream":"workstream:1"' in result["context"]
+    assert '"max_evidence":8' in result["context"]
+
+
 def test_mcp_rejects_path_escape_scope_explosion_bad_evidence_and_ttl(monkeypatch, tmp_path):
     monkeypatch.setenv("ENTROLY_SOURCE", str(tmp_path))
     escaped = m.work_state(project="../outside")
