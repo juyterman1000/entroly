@@ -1497,3 +1497,99 @@ So the conclusion in that section stands and no site was missed. The method that
 produced it did not, and is corrected here rather than left as a footnote,
 because a scan that silently covers 2% of a file is exactly the kind of evidence
 this document exists to distrust.
+
+### Finding G21 — "Thompson Sampling Admission" performs no sampling
+
+`cache.rs` leads with five claimed contributions. The first:
+
+> "1. **Thompson Sampling Admission** with adaptive Rényi order α — **stochastic
+> admission via Beta posterior sampling**, where the entropy order α is learned
+> online via gradient descent on hit-rate."
+
+and again at the struct:
+
+> "Instead of hard-thresholding H_α > τ, we **sample from a Beta posterior**:
+> `p_admit ~ Beta(α_succ + prior, β_fail + prior)`"
+
+No sampling occurs. The implementation is:
+
+```rust
+let mean = self.alpha_succ / total;
+let variance = (self.alpha_succ * self.beta_fail) / (total * total * (total + 1.0));
+let p_admit = (mean + variance.sqrt() * entropy_signal).clamp(0.0, 1.0);
+```
+
+`mean + sd × entropy_signal`, fully deterministic. Verified three ways:
+
+* the only RNG anywhere in the file is a seeded LCG inside `#[cfg(test)]`
+  (`zipf_sequence`, for benchmarks);
+* `rand` is **not a dependency of `entroly-engine`** — the crate cannot draw a
+  random number;
+* an inline comment concedes it: *"Sample from Beta posterior (deterministic
+  approximation using mean + variance)"*.
+
+The inline comment is honest; the two headline claims are not, and they are the
+ones a reader or reviewer sees first.
+
+This is not a naming quibble. Thompson Sampling's guarantees come *from* the
+randomization — you draw θ from the posterior and act greedily on the draw, and
+the exploration that produces the regret bound is exactly that draw. Substituting
+a deterministic optimistic index changes the algorithm class, and the substituted
+index is stranger still: the bonus is `sd × entropy_signal`, where
+`entropy_signal` is a property of the **context being admitted**, not of the
+posterior's uncertainty about anything. Two states with identical posterior
+uncertainty get different "exploration" bonuses because their contexts have
+different entropy. That is an entropy-weighted score, not exploration.
+
+Naming it after a bandit algorithm it does not implement is the kind of claim
+`CLAUDE.md`'s benchmark-honesty invariant exists to prevent.
+
+### Finding G22 — the "cost-aware" half of the admission score carries no independent signal
+
+`should_admit` combines two terms:
+
+```rust
+let admission_score = 0.6 * p_admit + 0.4 * cost_bonus;
+let admit = admission_score > 0.35;
+```
+
+They are not independent. `cost_bonus` is `cost_model.utility(mean, response_tokens, 0).clamp(0.0, 1.0)`
+— and `mean` is the same posterior mean that drives `p_admit`. So 40% of the
+score is a saturating linear rescaling of the other 60%'s input, and the whole
+decision reduces to a threshold on the posterior mean.
+
+Measured across the input space (`entropy_signal = 0`, the worst case for
+admission):
+
+```
+admits iff posterior mean > 0.2498
+```
+
+`response_tokens` — the only genuinely cost-carrying input — barely participates:
+
+| posterior mean | score at 1 token | at 100,000 tokens | delta |
+|---|---:|---:|---:|
+| 0.10 | 0.139601 | 0.199600 | 0.060 |
+| 0.25 | 0.349602 | 0.499600 | 0.150 |
+| 0.50 | 0.699603 | 0.700000 | **0.0004** |
+
+At the typical mean of 0.5 the term is fully saturated by its own `clamp(0,1)`,
+so a 100,000× change in response size moves the score by four ten-thousandths.
+Sitting just under the boundary at mean 0.24, flipping a reject into an admit
+requires roughly **one million response tokens**; at 1,000 tokens the score moves
+by 0.0014 against a gap of 0.014.
+
+A note for the next reader: the naive reading is that the gate always admits,
+because `cost_bonus` looks like it pins near 1.0. That is wrong — `cost_bonus`
+scales with `mean`, so a pessimistic posterior drags both terms down together and
+the gate does reject. It was checked numerically rather than argued.
+
+Taken with G19, the cache's cost-awareness is nominal at both ends: the per-model
+pricing table cannot reach the eviction decision, and the cost term in the
+admission decision is a restatement of the hit-rate posterior with response size
+contributing under a thousandth of the score at realistic magnitudes.
+
+**Not changed.** Both are calibration decisions, not typos. The 0.6/0.4 split and
+the 0.35 threshold were presumably tuned against these exact saturating values;
+giving the cost term real influence changes the admission rate immediately and
+needs the constants re-derived against a workload, not adjusted by inspection.
