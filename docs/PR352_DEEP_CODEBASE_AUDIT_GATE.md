@@ -3,6 +3,8 @@
 > **Purpose:** Prevent surface-level repository reading from causing architectural regressions during the Work Graph / Context Engine / Trust Engine migration.
 >
 > **Rule:** No major semantic migration on PR #352 may begin until this gate is completed against the **exact current branch head**. A symbol scan, grep pass, repo summary, or reading only changed files does **not** satisfy this gate.
+>
+> **Required output:** create/update `docs/PR352_CODEBASE_UNDERSTANDING_EVIDENCE.md`. If that evidence file is missing, vague, stale relative to the migration head, or contains unresolved ownership in an area being changed, the migration is blocked and PR #352 is not merge-ready.
 
 ---
 
@@ -527,6 +529,8 @@ If `unknown/unclassified count > 0` in an area being migrated, do not migrate th
 
 If a major changed subsystem does not have a completed semantic closure, do not modify its shared semantics yet.
 
+The evidence file must use concrete counts and paths. Statements such as "reviewed deeply," "checked the architecture," or "read the codebase" are not acceptable substitutes.
+
 ---
 
 # 15. During implementation — change-impact protocol
@@ -598,6 +602,7 @@ Internal unit tests are necessary but not sufficient.
 
 PR #352 must remain draft if any of these is true:
 
+- `docs/PR352_CODEBASE_UNDERSTANDING_EVIDENCE.md` is absent or stale for the changed migration head;
 - production files remain unclassified in a migrated area;
 - a changed subsystem lacks full semantic-closure reading;
 - public entrypoint traces are incomplete;
