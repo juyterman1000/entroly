@@ -10,7 +10,10 @@
 
 1. `docs/PR352_CLAUDE_WORKGRAPH_HANDOFF.md` — architecture + continuation context.
 2. `docs/PR352_PREVIOUS_SESSION_COMPLETED_WORK.md` — concrete work already present; do not redo blindly.
-3. `docs/PR352_MASTER_IMPLEMENTATION_PROMPT.md` — execution contract and next production work.
+3. `docs/PR352_DEEP_CODEBASE_AUDIT_GATE.md` — mandatory evidence-based codebase-understanding gate; surface-level scanning does not satisfy it.
+4. `docs/PR352_MASTER_IMPLEMENTATION_PROMPT.md` — execution contract and next production work.
+
+Before major semantic migration, create/update `docs/PR352_CODEBASE_UNDERSTANDING_EVIDENCE.md` as required by the deep-audit gate.
 
 ---
 
@@ -512,6 +515,22 @@ Contains the larger execution contract:
 - deep dogfood scenarios;
 - exact-head production merge gate.
 
+## `docs/PR352_DEEP_CODEBASE_AUDIT_GATE.md`
+
+Contains the mandatory anti-surface-reading protocol:
+
+- complete tracked-file classification;
+- ownership/migration matrix;
+- language-aware structural mapping;
+- semantic-closure full reads for changed systems;
+- concrete user-journey traces;
+- pre-change behavioral contracts;
+- baseline tests before migration;
+- duplicate semantics audit;
+- persisted-schema audit;
+- packaging/delivery closure;
+- quantitative `PR352_CODEBASE_UNDERSTANDING_EVIDENCE.md` evidence.
+
 ### Do not skip these documents
 
 They contain decisions made specifically to prevent a large migration from breaking existing Entroly behavior.
@@ -586,12 +605,13 @@ Do this before writing major new code:
 
 1. confirm the current PR #352 head;
 2. read `CLAUDE.md`;
-3. read the three PR #352 continuation documents in order;
-4. inspect current changed files;
-5. run the existing focused Work Graph Rust/Python/WASM tests on the exact current branch;
-6. distinguish current failures from missing future features;
-7. refresh the repository ownership/migration matrix;
-8. only then continue the master implementation sequence.
+3. read the PR #352 continuation documents in the required order;
+4. complete `PR352_DEEP_CODEBASE_AUDIT_GATE.md` and create/update `docs/PR352_CODEBASE_UNDERSTANDING_EVIDENCE.md`;
+5. inspect current changed files;
+6. run the existing focused Work Graph Rust/Python/WASM tests on the exact current branch;
+7. distinguish current failures from missing future features;
+8. refresh the repository ownership/migration matrix;
+9. only then continue the master implementation sequence.
 
 Do not redo a completed component just because the implementation could be styled differently. Change it only for a concrete correctness, parity, security, performance, or product requirement.
 
@@ -622,6 +642,8 @@ initial cross-agent test foundation
               ↓ CONTINUE, DO NOT RESTART ↓
 
 NEXT
+mandatory deep codebase understanding evidence
+      +
 repository file/symbol graph integration
       +
 Work Graph-aware Context Engine
