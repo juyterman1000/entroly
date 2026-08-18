@@ -29,6 +29,7 @@ _MAX_RENDER_BYTES = 512 * 1024
 _MAX_SCOPE_ITEMS = 256
 _MAX_EVIDENCE = 4096
 _MAX_TTL_SECONDS = 30 * 24 * 60 * 60
+_MAX_ID_CHARS = 512
 
 
 def _project_root() -> Path:
@@ -67,6 +68,17 @@ def _bounded_strings(values: list[str] | tuple[str, ...] | None, name: str) -> l
             seen.add(value)
             output.append(value)
     return output
+
+
+def _bounded_id(value: object, name: str) -> str:
+    text = str(value).strip()
+    if not text:
+        raise ValueError(f"{name} must not be empty")
+    if len(text) > _MAX_ID_CHARS:
+        raise ValueError(f"{name} may not exceed {_MAX_ID_CHARS} characters")
+    if "\x00" in text:
+        raise ValueError(f"{name} may not contain NUL")
+    return text
 
 
 def _ttl_ms(ttl_seconds: float) -> int:
@@ -147,10 +159,12 @@ def work_claim(
 ) -> dict[str, Any]:
     """Record explicit agent work and an advisory lease in the shared graph."""
     try:
-        agent = str(agent_id).strip()
+        agent = _bounded_id(agent_id, "agent_id")
         title = str(task_title).strip()
-        if not agent or not title:
-            raise ValueError("agent_id and task_title must not be empty")
+        if not title:
+            raise ValueError("task_title must not be empty")
+        if len(title) > 8192:
+            raise ValueError("task_title may not exceed 8192 characters")
         bounded_paths = _bounded_strings(scope_paths, "scope_paths")
         bounded_symbols = _bounded_strings(scope_symbols, "scope_symbols")
         ttl = _ttl_ms(ttl_seconds)
@@ -209,10 +223,13 @@ def work_resume(
             raise ValueError(
                 f"max_evidence must be an integer between 0 and {_MAX_EVIDENCE}"
             )
+        selected_workstream = str(workstream_id).strip()
+        if len(selected_workstream) > _MAX_ID_CHARS or "\x00" in selected_workstream:
+            raise ValueError(f"workstream_id may not exceed {_MAX_ID_CHARS} characters or contain NUL")
         path = _project_path(project)
         store = _store_for_path(path)
         store.submit_observation(discover_repository_observation(path))
-        view = store.resume(workstream_id or None, max_evidence=max_evidence)
+        view = store.resume(selected_workstream or None, max_evidence=max_evidence)
         return _render_untrusted("work_resume", view)
     except Exception as exc:
         return _error("work_resume", exc)
@@ -225,13 +242,21 @@ def work_handoff(
     workstream_id: str,
     project: str = "",
 ) -> dict[str, Any]:
-    """Create a graph-bound, tamper-evident cross-agent handoff receipt."""
+    """Refresh durable facts, then create a graph-bound cross-agent receipt."""
     try:
-        if not str(from_agent).strip() or not str(to_agent).strip() or not str(workstream_id).strip():
-            raise ValueError("from_agent, to_agent, and workstream_id must not be empty")
+        source_agent = _bounded_id(from_agent, "from_agent")
+        target_agent = _bounded_id(to_agent, "to_agent")
+        selected_workstream = _bounded_id(workstream_id, "workstream_id")
         path = _project_path(project)
         store = _store_for_path(path)
-        receipt = store.handoff(workstream_id, from_agent, to_agent)
+        # Explicit handoff is a state-sealing operation. Capture the latest
+        # bounded Git/checkpoint facts first so the receipt is bound to what is
+        # actually on disk, not to an older graph snapshot.
+        store.submit_observation(discover_repository_observation(path))
+        receipt = store.handoff(selected_workstream, source_agent, target_agent)
         return _render_untrusted("work_handoff", receipt)
     except Exception as exc:
         return _error("work_handoff", exc)
+
+
+__all__ = ["work_claim", "work_handoff", "work_resume", "work_state"]
