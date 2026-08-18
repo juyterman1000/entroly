@@ -560,3 +560,80 @@ if node.status != WorkStatus::Unknown && node.status_trust > strongest {
 
 A node cannot assert a status at a trust level higher than the evidence
 supporting it. The rule is enforced in code, not merely documented.
+
+
+## 14. Stage D continued — semantic closure read, and what it found
+
+Coverage at the time of writing, stated exactly rather than rounded up:
+
+```text
+read in full
+  entroly-engine/src/fragment.rs        299
+  entroly-engine/src/query.rs           495
+  entroly-engine/src/cognitive_bus.rs   951   (read as part of moving it)
+  entroly-engine/src/nkbe.rs            486   (read as part of moving it)
+  entroly-core/src/cognitive_bus.rs     133   (rewritten)
+  entroly-core/src/nkbe.rs               76   (rewritten)
+  entroly/engine.py                   2,942   (relocated)
+
+read substantially
+  entroly-engine/src/work_graph.rs    3,825   public surface, apply_event,
+                                              from_json, coordination_report,
+                                              paths_overlap, the referential
+                                              validator, identity helpers
+  entroly-engine/src/depgraph.rs      1,591   public surface and data model
+  entroly-engine/src/entropy.rs       1,154   through the NCD section
+  entroly-engine/src/dedup.rs           484   through the LSH index
+  entroly-engine/src/utilization.rs     257   scoring path
+
+not read in full: the remaining ~58 .rs files, including cache.rs (3,689) and
+skeleton.rs (2,906)
+```
+
+### Finding D1 — documentation drift in the semantic source of truth
+
+Four gaps between what a module says and what it does, all found by reading and
+none by a failing test:
+
+| module | documented | actual |
+|---|---|---|
+| `query.rs` | `− specificity_bonus × 0.2` | `* 0.7` -- a factor of 3.5 in how strongly a technical term pulls a query out of refinement, and `needs_refinement` is a threshold on it |
+| `query.rs` | `{:.0}%%` intended as one percent | Rust does not escape `%`; users were told "50%% of tokens are generic verbs" |
+| `entropy.rs` | "ratio 0.80 → score 1.0" | at 0.80 the score is 0.8235; 1.0 is reached at 0.95. The adjacent comment giving the 0.10–0.95 range was the correct one |
+| `utilization.rs` | "Trigram Jaccard" in three places | containment (intersection over fragment trigrams). Opposite behaviour as responses grow, and the score feeds weight learning |
+
+Each was corrected in the comment, never in the computation: the code is the
+behaviour, and changing it to match a comment would be the opposite of an audit.
+
+This matters beyond the four fixes. `entroly-engine` is the single semantic
+source of truth for the Python and Node runtimes, and the product claim is
+auditability. Descriptions drifting from implementations in the crate that
+defines the meaning is a systemic finding, not four typos.
+
+### Finding D2 — the strongest code in the crate, for contrast
+
+`dedup.rs` is the counter-example and worth recording so this section is not
+read as uniformly negative. `simhash_cosine` derives similarity as
+`cos(pi * hamming / 64)` rather than the intuitive `1 - hamming/64`, and
+documents why with a measurement: over 1.1M real fragment pairs the linear form
+has MAE 0.502 against exact cosine, this form 0.080. `simhash_cosine_lcb` then
+applies a union bound across comparisons to correct the optimizer's curse, with
+the inflation measured (k=1: 0.078, k=256: 0.525, true value 0.062) and a
+correct argument for why clamping a *bound* at zero is sound while clamping an
+*estimate* injects +0.079 bias.
+
+That is what a semantic source of truth should look like: the claim, the
+alternative rejected, and the number that settles it.
+
+### Finding D3 — a documented conflation, already fixed upstream
+
+`fragment.rs` records that criticality once set `is_pinned`, which forces
+inclusion in every selection, when it meant `is_protected`, which only prevents
+eviction. A manifest or security file was therefore force-included in every
+query regardless of relevance. The fields are now separate and
+`tests/test_pin_protection_split.py` guards the split.
+
+Worth carrying forward because it is the same shape as two defects this branch
+found independently: one name serving two meanings (`optimize_context` as both
+engine method and MCP handler) and one value serving two states (`_evidence_backed`
+returning False for both "scored zero" and "never scored").
