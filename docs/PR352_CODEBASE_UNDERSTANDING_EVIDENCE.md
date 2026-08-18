@@ -981,8 +981,8 @@ separately and cross-checked per module rather than from a single grep.
 | Module | Lines | entroly-core (Python) | entroly-wasm (npm) | Used inside engine |
 |---|---:|---|---|---|
 | `rnr` | 81 | **absent** | present | yes — `eicv.rs` |
-| `cognitive_bus` | 955 | present | **absent** | no |
-| `nkbe` | 486 | present | **absent** | no |
+| `cognitive_bus` | 955 | present | **absent -> now present** | no |
+| `nkbe` | 486 | present | **absent -> now present** | no |
 | `simhash_wide` | 235 | **absent** | **absent** | **no** |
 
 The remaining 29 are reachable from both bindings.
@@ -1032,14 +1032,14 @@ indexes, not a switch flip.
 | 2 | Which have already been ported | `cognitive_bus`, `nkbe` this session; work-graph identity exposed. Not a complete list. |
 | 3 | Which remain intentionally Python | Documented only for `repository_intelligence/graph_identity.py` and `graph_projection.py`. |
 | 4 | Node files that are equivalent orchestration | Not enumerated. |
-| 5 | Capabilities missing from WASM/npm | `cognitive_bus`, `nkbe` — see table above. |
+| 5 | Capabilities missing from WASM/npm | Was `cognitive_bus`, `nkbe`; **both now bound** (finding G16). None remaining. |
 | 6 | Rust modules with no Python/npm exposure | `simhash_wide` (neither), `rnr` (no Python). |
 | 7 | Public imports/CLI/MCP depending on legacy paths | Not traced. |
 | 8 | Tests covering each migration | Partial: work-graph identity/projection covered by 29 tests, verified against a real engine. |
 | 9 | Packaging manifests include required files | Not re-verified at this SHA. `docs/DETAILS.md` still claims musl wheels are published, which is false here. |
 | 10 | Generated artifacts treated as source | Not audited. |
 | 11 | Repo map/docs stale after changes | `docs/repo_file_map.md` not refreshed for this session's moves. |
-| 12 | Can Python and npm differ on the same observation | **Yes.** `cognitive_bus` and `nkbe` exist only in Python; `rnr` only in npm. Parity is not proven and is currently false. |
+| 12 | Can Python and npm differ on the same observation | **Was yes, now narrowed.** `cognitive_bus` and `nkbe` are bound in both and delegate to the same engine serializers, so they cannot diverge. `rnr` remains npm-only. Parity is proven for those two, not yet for the whole surface. |
 
 ## 17. Master prompt section 24 — Definition of Done, honest status
 
@@ -1068,7 +1068,7 @@ until all are true. They are not all true. This is the accounting.
 | Semantic closures for every *changed* subsystem fully read | **Partial.** Changed modules were read (`cognitive_bus`, `nkbe`, `work_graph`, `eicv_suppressor`). `cache.rs` is shared and unread. |
 | Public Python/CLI/MCP/provider/npm journeys traced end-to-end | **No.** Not traced this session. |
 | Pre-change baseline recorded | **Partial.** 4025/1/33 recorded at this SHA; no baseline captured at the branch point, so a pre-existing failure elsewhere is not yet distinguishable. |
-| Python and npm/WASM semantic parity proven | **No — demonstrated false.** Four asymmetric modules, section 16 above. |
+| Python and npm/WASM semantic parity proven | **Partial.** Was demonstrably false with four asymmetric modules. `cognitive_bus` and `nkbe` are now bound in both runtimes and delegate to identical engine serializers, pinned by tests on both sides (G16). `rnr` (npm-only) and `simhash_wide` (neither) remain. |
 | Every production file classified in migration/ownership map | **No.** Same gap as above. |
 | Large-repo/incremental performance measured | **No.** |
 | Dogfood scenarios A-T (section 19) | **Not run** this session. Section 19 defines twenty scenarios; none were executed as a gauntlet. |
@@ -1180,3 +1180,9 @@ notice, so they are stated explicitly in both files.
 
 Remaining asymmetries after this change: `rnr` (npm only) and `simhash_wide`
 (neither, and dead inside the engine too — see section 16).
+
+
+> **Note on section 16.** The `cognitive_bus` and `nkbe` rows record the state
+> that motivated the work, with the outcome marked inline. Both are now bound in
+> `entroly-wasm` and delegate to the same engine serializers as PyO3; see finding
+> G16. `rnr` and `simhash_wide` are unchanged.
