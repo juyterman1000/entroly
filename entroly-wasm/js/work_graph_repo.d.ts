@@ -11,7 +11,14 @@ export interface RepositoryDiscoveryOptions {
   checkpointDir?: string;
 }
 
+export interface RepositoryIdentity {
+  repo_id: string;
+  root: string;
+}
+
 export class RepositoryDiscoveryError extends Error {}
+
+export function discoverRepositoryIdentity(path?: string): RepositoryIdentity;
 
 export function discoverRepositoryObservation(
   path?: string,
