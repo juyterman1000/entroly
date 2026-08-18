@@ -6,6 +6,7 @@
 
 const {
   RepositoryDiscoveryError,
+  discoverRepositoryIdentity,
   discoverRepositoryObservation,
 } = require('./work_graph_repo');
 
@@ -97,11 +98,11 @@ class WorkGraph {
   }
 
   snapshot(pretty = false) {
-    return fromJSONText(this._inner.snapshotJSON(Boolean(pretty)));
+    return fromJSONText(this._inner.snapshotJSON(Boolean(pretty));
   }
 
   unfinished(pretty = false) {
-    return fromJSONText(this._inner.unfinishedJSON(Boolean(pretty)));
+    return fromJSONText(this._inner.unfinishedJSON(Boolean(pretty));
   }
 
   resume(workstreamId = null, maxEvidence = 128, pretty = false) {
@@ -138,5 +139,6 @@ class WorkGraph {
 module.exports = {
   WorkGraph,
   RepositoryDiscoveryError,
+  discoverRepositoryIdentity,
   discoverRepositoryObservation,
 };
