@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from .work_graph import WorkGraph
-from .work_graph_repo import discover_repository_observation
+from .work_graph_repo import discover_repository_identity, discover_repository_observation
 
 DEFAULT_LOCK_TIMEOUT_SECONDS = 5.0
 DEFAULT_STALE_LOCK_SECONDS = 120.0
@@ -132,8 +132,8 @@ class WorkGraphStore:
     def for_repository(
         cls, path: str | os.PathLike[str] = ".", **options: Any
     ) -> "WorkGraphStore":
-        observation = discover_repository_observation(path, observed_at_ms=0)
-        return cls(observation["repo_id"], **options)
+        identity = discover_repository_identity(path)
+        return cls(identity["repo_id"], **options)
 
     def _lock_token(self) -> str:
         try:
@@ -337,9 +337,14 @@ class WorkGraphStore:
         ttl_seconds: float = 900.0,
         lease_id: str | None = None,
         observed_at_ms: int | None = None,
+        source_kind: str = "agent_statement",
     ) -> tuple[WorkGraph, str]:
         if not agent_id.strip() or not task_title.strip():
             raise WorkGraphStateError("agent_id and task_title must not be empty")
+        if source_kind not in {"agent_statement", "user_statement"}:
+            raise WorkGraphStateError(
+                "source_kind must be 'agent_statement' or 'user_statement'"
+            )
         now_ms = int(observed_at_ms if observed_at_ms is not None else time.time() * 1000)
         ttl_ms = max(1, int(_finite_nonnegative(ttl_seconds, "ttl_seconds") * 1000))
         selected = lease_id or uuid.uuid4().hex
@@ -353,7 +358,7 @@ class WorkGraphStore:
                 "trust": "observed",
                 "explicit_status": "in_progress",
                 "remaining_work": [],
-                "source_kind": "user_statement",
+                "source_kind": source_kind,
                 "source_ref": f"work-claim:{selected}",
             },
             observed_at_ms=now_ms,
