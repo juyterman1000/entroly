@@ -1,4 +1,4 @@
-# Retriggered on consolidated PR #352 head ff4d1a5 after documentation-only movement.
+# Product-input race guard: docs-only branch movement is allowed; any semantic/test input movement fails closed.
 name: Integration - Apply Work Graph Passive Snapshot Dedupe
 
 on:
@@ -21,7 +21,7 @@ jobs:
           ref: integration/workgraph-production-20260817
           fetch-depth: 0
 
-      - name: Pin audited inputs and current branch head
+      - name: Pin audited semantic and test inputs
         shell: bash
         run: |
           set -euo pipefail
@@ -32,7 +32,12 @@ jobs:
           grep -q 'O_NOFOLLOW' entroly-wasm/js/work_graph_content_digest.js
           grep -q 'mtimeNs' entroly-wasm/js/work_graph_content_digest.js
           grep -q 'MAX_HASH_FILE_BYTES' entroly-wasm/js/work_graph_content_digest.js
-          git rev-parse HEAD > /tmp/integration-start-head
+          git rev-parse HEAD:entroly-engine > /tmp/input-engine-tree
+          git rev-parse HEAD:entroly > /tmp/input-python-tree
+          git rev-parse HEAD:entroly-wasm > /tmp/input-wasm-tree
+          git rev-parse HEAD:tests > /tmp/input-tests-tree
+          git rev-parse HEAD:pyproject.toml > /tmp/input-root-project
+          git rev-parse HEAD:entroly-engine/Cargo.toml > /tmp/input-engine-manifest
           git fetch origin audit/workgraph-passive-dedupe-20260817:audit-passive
           test "$(git rev-parse audit-passive:scripts/apply_workgraph_passive_dedupe_v2.py)" = "d93f5a3c27eb9600fefd0c2d22db4a652cc6cfc7"
 
@@ -72,12 +77,13 @@ jobs:
           cargo clippy --manifest-path entroly-engine/Cargo.toml --all-targets -- -D warnings
           test "$(git diff --name-only)" = "entroly-engine/src/work_graph.rs"
 
-      - name: Refuse races, remove validator, and push one product commit
+      - name: Allow docs-only movement, reject semantic/test races, and publish
         shell: bash
         run: |
           set -euo pipefail
-          git fetch origin integration/workgraph-production-20260817
-          test "$(cat /tmp/integration-start-head)" = "$(git rev-parse origin/integration/workgraph-production-20260817)"
+          git config user.name "entroly-integration-bot"
+          git config user.email "208309368+juyterman1000@users.noreply.github.com"
+
           rm .github/workflows/integration-workgraph-passive-dedupe.yml
           git diff --check
           printf '%s\n' \
@@ -85,8 +91,22 @@ jobs:
             'entroly-engine/src/work_graph.rs' > /tmp/expected-paths
           git diff --name-only | sort > /tmp/actual-paths
           diff -u /tmp/expected-paths /tmp/actual-paths
-          git config user.name "entroly-integration-bot"
-          git config user.email "208309368+juyterman1000@users.noreply.github.com"
           git add entroly-engine/src/work_graph.rs .github/workflows/integration-workgraph-passive-dedupe.yml
           git commit -m "fix(work-graph): dedupe content-complete passive snapshots"
+
+          git fetch origin integration/workgraph-production-20260817
+          remote=origin/integration/workgraph-production-20260817
+          test "$(cat /tmp/input-engine-tree)" = "$(git rev-parse "$remote:entroly-engine")"
+          test "$(cat /tmp/input-python-tree)" = "$(git rev-parse "$remote:entroly")"
+          test "$(cat /tmp/input-wasm-tree)" = "$(git rev-parse "$remote:entroly-wasm")"
+          test "$(cat /tmp/input-tests-tree)" = "$(git rev-parse "$remote:tests")"
+          test "$(cat /tmp/input-root-project)" = "$(git rev-parse "$remote:pyproject.toml")"
+          test "$(cat /tmp/input-engine-manifest)" = "$(git rev-parse "$remote:entroly-engine/Cargo.toml")"
+
+          # Rebase the already-validated product commit over unrelated docs-only
+          # movement. Any code/test input movement above fails before this point.
+          git rebase "$remote"
+          test "$(git diff --name-only "$remote"...HEAD | sort)" = "$(printf '%s\n' \
+            .github/workflows/integration-workgraph-passive-dedupe.yml \
+            entroly-engine/src/work_graph.rs | sort)"
           git push origin HEAD:integration/workgraph-production-20260817
