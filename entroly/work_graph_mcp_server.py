@@ -80,6 +80,14 @@ def create_mcp_server():
     def work_resume(project: str = "", workstream_id: str = "", max_evidence: int = 128) -> str:
         """Reconstruct current repo facts, then recover unfinished work."""
         try:
+            if (
+                not isinstance(max_evidence, int)
+                or isinstance(max_evidence, bool)
+                or not 0 <= max_evidence <= _work._MAX_EVIDENCE
+            ):
+                raise ValueError(
+                    f"max_evidence must be an integer between 0 and {_work._MAX_EVIDENCE}"
+                )
             path = _work._project_path(project)
             identity = discover_repository_identity(path)
             store = WorkGraphStore(identity["repo_id"])
