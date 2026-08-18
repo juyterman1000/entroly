@@ -123,5 +123,5 @@ export function renderContextReceipt(receipt: Record<string, unknown>): string;
 export function explainReceiptOmission(receipt: Record<string, unknown>, chunkId: string): string;
 
 export * from "./js/work_graph";
-
 export * from "./js/work_graph_repo";
+export * from "./js/work_graph_store";
