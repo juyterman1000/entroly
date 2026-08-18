@@ -1,3 +1,4 @@
+# Retriggered after PR #348 runner-concurrency hardening landed on main.
 name: Validate Work Graph Store Race Hardening
 
 on:
