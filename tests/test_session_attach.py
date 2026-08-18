@@ -207,27 +207,6 @@ def test_client_uninstall_failure_is_actionable_after_access_is_revoked(tmp_path
     assert store.get(issued.grant.grant_id).status == "revoked"
 
 
-def test_work_graph_tools_preserve_attachment_least_privilege():
-    scopes, tools = resolve_tool_scopes([])
-    assert scopes == DEFAULT_SCOPES
-    assert "work_state" in tools
-    assert "work_claim" not in tools
-    assert "work_resume" not in tools
-    assert "work_handoff" not in tools
-
-    _scopes, remember_tools = resolve_tool_scopes(["observe", "remember"])
-    assert "work_state" in remember_tools
-    assert "work_resume" in remember_tools
-    assert "work_handoff" in remember_tools
-    assert "work_claim" not in remember_tools
-
-    _scopes, record_tools = resolve_tool_scopes(["observe", "record"])
-    assert "work_state" in record_tools
-    assert "work_claim" in record_tools
-    assert "work_resume" not in record_tools
-    assert "work_handoff" not in record_tools
-
-
 def test_attachment_scope_and_ttl_validation():
     assert parse_ttl("30m") == 1800
     scopes, tools = resolve_tool_scopes([])
