@@ -21,7 +21,15 @@ QCCR_SYMBOLS = (
 # symbol is absent. Checking the version alone would let `pip install entroly`
 # resolve to a core that cannot run the Work Graph while reporting a healthy
 # engine, the same silent capability loss QCCR gating exists to prevent.
-WORK_GRAPH_SYMBOLS = ("WorkGraph",)
+WORK_GRAPH_SYMBOLS = (
+    "WorkGraph",
+    # Canonical node/edge identity. A core carrying WorkGraph but not these
+    # cannot address artifacts the way the graph does, which is how a second
+    # free-form id scheme grew in the Python layer. Treat identity as part of
+    # the capability, not an optional extra.
+    "work_graph_node_id",
+    "work_graph_edge_id",
+)
 
 RELEASE_NATIVE_SYMBOLS = QCCR_SYMBOLS + (
     "extract_skeleton",

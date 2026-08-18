@@ -82,6 +82,10 @@ pub enum EventType {
 }
 
 impl EventType {
+    // Kept private: only this module parses tokens, and a public `from_str`
+    // inherent method shadows the `std::str::FromStr` trait method, which
+    // `clippy::should_implement_trait` rejects. `as_str` is public because
+    // bindings render the token.
     fn from_str(s: &str) -> Self {
         match s {
             "observation" => EventType::Observation,
@@ -102,7 +106,7 @@ impl EventType {
         }
     }
 
-    fn as_str(&self) -> &str {
+    pub fn as_str(&self) -> &str {
         match self {
             EventType::Observation => "observation",
             EventType::ToolResult => "tool_result",
@@ -717,10 +721,15 @@ impl CognitiveBus {
     }
 }
 
-#[cfg(test)]
 impl CognitiveBus {
-    // ── Rust-only helpers (not exposed to Python) ──
-    /// Drain raw events (Rust-only, for internal use and testing).
+    // ── Un-serialized accessors ──
+    //
+    // `drain`/`drain_memory_bridge` above render to `serde_json::Value` so the
+    // engine never has to know about a host runtime. Bindings need the domain
+    // type instead, so they can render into PyDict, JsValue, or anything else
+    // without a JSON round trip. These were `#[cfg(test)]` while the only
+    // caller was a test in the crate this module used to live in.
+    /// Drain raw events without serializing them.
     pub fn drain_raw(&mut self, agent_id: &str, limit: usize) -> Vec<BusEvent> {
         match self.subscribers.get_mut(agent_id) {
             Some(sub) => sub.drain(limit),
@@ -728,7 +737,7 @@ impl CognitiveBus {
         }
     }
 
-    /// Drain raw memory bridge events (Rust-only, for internal use and testing).
+    /// Drain raw memory-bridge events without serializing them.
     pub fn drain_memory_bridge_raw(&mut self) -> Vec<BusEvent> {
         std::mem::take(&mut self.memory_bridge_queue)
     }

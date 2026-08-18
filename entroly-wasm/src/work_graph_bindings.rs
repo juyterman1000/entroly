@@ -4,7 +4,9 @@
 //! JavaScript submits canonical JSON to `entroly-engine` and receives the same
 //! canonical JSON that Python receives through PyO3.
 
-use entroly_engine::work_graph::{HandoffReceipt, WorkGraph};
+use entroly_engine::work_graph::{
+    stable_edge_id_for_token, stable_node_id_for_token, HandoffReceipt, WorkGraph,
+};
 use wasm_bindgen::prelude::*;
 
 fn js_err(error: impl std::fmt::Display) -> JsValue {
@@ -13,6 +15,19 @@ fn js_err(error: impl std::fmt::Display) -> JsValue {
 
 fn parse_receipt(json_text: &str) -> Result<HandoffReceipt, JsValue> {
     serde_json::from_str(json_text).map_err(js_err)
+}
+
+/// Canonical node identity, so Node addresses artifacts exactly as Python and
+/// the graph itself do. Same engine function behind all three.
+#[wasm_bindgen(js_name = workGraphNodeId)]
+pub fn work_graph_node_id(kind: &str, repo_id: &str, key: &str) -> Result<String, JsValue> {
+    stable_node_id_for_token(kind, repo_id, key).map_err(js_err)
+}
+
+/// Canonical edge identity. See `workGraphNodeId`.
+#[wasm_bindgen(js_name = workGraphEdgeId)]
+pub fn work_graph_edge_id(from: &str, kind: &str, to: &str) -> Result<String, JsValue> {
+    stable_edge_id_for_token(from, kind, to).map_err(js_err)
 }
 
 fn js_safe_i64(value: f64, name: &str) -> Result<i64, JsValue> {

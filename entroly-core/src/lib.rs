@@ -36,6 +36,7 @@ pub(crate) use entroly_engine::knapsack_sds;
 pub(crate) use entroly_engine::learning;
 pub(crate) use entroly_engine::lsh;
 mod nkbe;
+mod py_json;
 pub(crate) use entroly_engine::prism;
 /// Single-binary HTTP proxy (transform is pure; server gated by `proxy` feature).
 pub mod proxy;
@@ -6429,6 +6430,8 @@ fn entroly_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(qccr::py_qccr_select, m)?)?;
     // ── Multi-Agent (additive — new classes, no existing API changes)
     m.add_class::<nkbe::NkbeAllocator>()?;
+    m.add_function(wrap_pyfunction!(work_graph_bindings::work_graph_node_id, m)?)?;
+    m.add_function(wrap_pyfunction!(work_graph_bindings::work_graph_edge_id, m)?)?;
     m.add_class::<cognitive_bus::CognitiveBus>()?;
     // ── CogOps Epistemic Engine
     m.add_class::<cogops::CogOpsEngine>()?;

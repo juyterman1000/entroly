@@ -4,7 +4,9 @@
 //! performs only boundary conversion and error mapping so Python and npm cannot
 //! drift in task-state inference, trust handling, coordination, or handoff rules.
 
-use entroly_engine::work_graph::{HandoffReceipt, WorkGraph};
+use entroly_engine::work_graph::{
+    stable_edge_id_for_token, stable_node_id_for_token, HandoffReceipt, WorkGraph,
+};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
@@ -14,6 +16,24 @@ fn py_err(error: impl std::fmt::Display) -> PyErr {
 
 fn parse_receipt(json_text: &str) -> PyResult<HandoffReceipt> {
     serde_json::from_str(json_text).map_err(py_err)
+}
+
+/// Canonical node identity, exposed so Python addresses artifacts the same way
+/// the graph does.
+///
+/// Without this, code that wants to refer to a file or symbol has to invent an
+/// id, which is how `entroly/repository_intelligence` ended up with a
+/// free-form `symbol_id` that cannot be matched against a `NodeKind::File` in
+/// the work graph. One artifact, one id, computed in one place.
+#[pyfunction]
+pub(crate) fn work_graph_node_id(kind: &str, repo_id: &str, key: &str) -> PyResult<String> {
+    stable_node_id_for_token(kind, repo_id, key).map_err(py_err)
+}
+
+/// Canonical edge identity. See `work_graph_node_id`.
+#[pyfunction]
+pub(crate) fn work_graph_edge_id(from: &str, kind: &str, to: &str) -> PyResult<String> {
+    stable_edge_id_for_token(from, kind, to).map_err(py_err)
 }
 
 #[pyclass(name = "WorkGraph", module = "entroly_core")]

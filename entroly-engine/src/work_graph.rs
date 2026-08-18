@@ -2899,6 +2899,43 @@ pub fn stable_node_id(kind: NodeKind, repo_id: &str, key: &str) -> String {
     format!("{}:{}", kind.token(), &digest[..24])
 }
 
+/// Canonical node identity from a kind *token*, for callers outside Rust.
+///
+/// `stable_node_id` takes a `NodeKind`, which a binding cannot construct from a
+/// string without duplicating the token table. Parsing goes through the same
+/// serde mapping the persisted format uses, so there is exactly one definition
+/// of "what `file` means" in the codebase.
+///
+/// This exists because the identity function was unreachable from Python and
+/// Node: `entroly/repository_intelligence` grew its own free-form `symbol_id`
+/// scheme, so a `File` in the work graph and a `FileRecord` in repository
+/// intelligence described the same artifact and could not be addressed as the
+/// same node. Shared identity is a shared semantic; it belongs here.
+pub fn stable_node_id_for_token(
+    kind_token: &str,
+    repo_id: &str,
+    key: &str,
+) -> Result<String, WorkGraphError> {
+    let kind: NodeKind = serde_json::from_value(serde_json::Value::String(
+        kind_token.to_string(),
+    ))
+    .map_err(|_| WorkGraphError::InvalidInput(format!("unknown node kind: {kind_token}")))?;
+    Ok(stable_node_id(kind, repo_id, key))
+}
+
+/// Canonical edge identity from a kind token. See `stable_node_id_for_token`.
+pub fn stable_edge_id_for_token(
+    from: &str,
+    kind_token: &str,
+    to: &str,
+) -> Result<String, WorkGraphError> {
+    let kind: EdgeKind = serde_json::from_value(serde_json::Value::String(
+        kind_token.to_string(),
+    ))
+    .map_err(|_| WorkGraphError::InvalidInput(format!("unknown edge kind: {kind_token}")))?;
+    Ok(stable_edge_id(from, kind, to))
+}
+
 pub fn stable_edge_id(from: &str, kind: EdgeKind, to: &str) -> String {
     let digest = sha256_text(&format!("edge|{from}|{}|{to}", kind.token()));
     format!("edge:{}", &digest[..24])

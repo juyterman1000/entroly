@@ -62,6 +62,16 @@ def _require_native() -> type:
     return _RustWorkGraph
 
 
+def _require_native_module():
+    """The native module itself, for the free functions rather than the class."""
+    if _RustWorkGraph is None:
+        detail = f": {_NATIVE_IMPORT_ERROR}" if _NATIVE_IMPORT_ERROR else ""
+        raise WorkGraphUnavailableError(
+            "Entroly Work Graph requires the native entroly_core extension. "
+            'Install it with `pip install "entroly[native]"` and retry' + detail
+        )
+    return _NATIVE_STATUS.module
+
 def _json_text(value: str | Mapping[str, Any] | list[Any]) -> str:
     if isinstance(value, str):
         return value
@@ -237,4 +247,38 @@ class WorkGraph:
         return bool(self._inner.verify_handoff_json(_json_text(receipt)))
 
 
-__all__ = ["WorkGraph", "WorkGraphUnavailableError"]
+def stable_node_id(kind: str, repo_id: str, key: str) -> str:
+    """Canonical identity for a graph-addressable artifact.
+
+    Computed by `entroly_engine::work_graph::stable_node_id`, the same function
+    the graph uses when it materializes a node, and the same one the WASM
+    binding exposes to Node as `workGraphNodeId`. One artifact therefore has one
+    id in every runtime.
+
+    This exists because the function was previously unreachable outside Rust.
+    `entroly/repository_intelligence` — the highest-fan-in module set in the
+    package — grew its own free-form ``symbol_id``, so a ``File`` in the work
+    graph and a ``FileRecord`` in repository intelligence described the same
+    artifact and could not be matched. Identity is a shared semantic; deriving
+    it twice guarantees two graphs that never join.
+
+    ``kind`` is a node-kind token such as ``repository``, ``file``, ``symbol``,
+    ``task`` or ``commit``; unknown tokens are rejected rather than hashed.
+    """
+    native = _require_native_module()
+    return str(native.work_graph_node_id(kind, repo_id, key))
+
+
+def stable_edge_id(from_id: str, kind: str, to_id: str) -> str:
+    """Canonical identity for an edge between two nodes.
+
+    See :func:`stable_node_id`. ``kind`` is an edge-kind token such as
+    ``contains``, ``defines``, ``imports`` or ``depends_on``.
+    """
+    native = _require_native_module()
+    return str(native.work_graph_edge_id(from_id, kind, to_id))
+
+
+__all__ = [
+    "stable_edge_id",
+    "stable_node_id","WorkGraph", "WorkGraphUnavailableError"]
