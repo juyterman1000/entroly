@@ -117,3 +117,22 @@ def test_oversized_file_is_not_read_for_passive_dedupe(tmp_path: Path) -> None:
     observation = _observation(path="large.bin", kind="untracked", staged=False, conflicted=False)
     enrich_worktree_content_digests(repo, observation)
     assert observation["changes"][0]["content_digest"] == ""
+
+
+def test_aggregate_budget_refuses_partial_semantic_snapshot(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    changes = []
+    # Sparse files make this fixture cheap: each file is individually below the
+    # 64 MiB cap, but together they exceed the 128 MiB observation budget.
+    for index in range(3):
+        name = f"large-{index}.bin"
+        with (repo / name).open("wb") as handle:
+            handle.truncate(45 * 1024 * 1024)
+        changes.append(
+            {"path": name, "kind": "untracked", "staged": False, "conflicted": False}
+        )
+
+    observation = _observation(*changes)
+    enrich_worktree_content_digests(repo, observation)
+
+    assert [item["content_digest"] for item in observation["changes"]] == ["", "", ""]
