@@ -17,6 +17,8 @@ import json
 from typing import Any
 
 from . import work_graph_mcp as _work
+from .work_graph_repo import discover_repository_identity, discover_repository_observation
+from .work_graph_store import WorkGraphStore
 
 
 def _json(payload: dict[str, Any]) -> str:
@@ -76,7 +78,14 @@ def create_mcp_server():
 
     @mcp.tool()
     def work_resume(project: str = "", workstream_id: str = "", max_evidence: int = 128) -> str:
-        """Recover one unfinished workstream with evidence and known failures."""
+        """Reconstruct current repo facts, then recover unfinished work."""
+        try:
+            path = _work._project_path(project)
+            identity = discover_repository_identity(path)
+            store = WorkGraphStore(identity["repo_id"])
+            store.submit_observation(discover_repository_observation(path))
+        except Exception as exc:
+            return _json(_work._error("work_resume", exc))
         return _json(
             _work.work_resume(
                 project=project,
