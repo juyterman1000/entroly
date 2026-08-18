@@ -17,23 +17,26 @@ fn normalize_scope_path(path: &str) -> String {
     path.replace('\\', "/").trim_matches('/').to_string()
 }
 
+/// Return only prefixes that can themselves be normalized lease paths under
+/// the production `paths_overlap` rule. Repeated separators are preserved:
+/// `src//auth` has the ancestor `src` and the full path `src//auth`; it must not
+/// silently become `src/auth` in the index.
 fn path_prefixes(path: &str) -> Vec<String> {
     let normalized = normalize_scope_path(path);
     if normalized.is_empty() {
         return Vec::new();
     }
     let mut prefixes = Vec::new();
-    let mut current = String::new();
-    for part in normalized.split('/') {
-        if part.is_empty() {
+    for (offset, ch) in normalized.char_indices() {
+        if ch != '/' || offset == 0 {
             continue;
         }
-        if !current.is_empty() {
-            current.push('/');
+        let prefix = &normalized[..offset];
+        if !prefix.ends_with('/') {
+            prefixes.push(prefix.to_string());
         }
-        current.push_str(part);
-        prefixes.push(current.clone());
     }
+    prefixes.push(normalized);
     prefixes
 }
 
@@ -76,9 +79,10 @@ fn naive_pairs(leases: &[LeaseScope]) -> BTreeSet<(usize, usize)> {
 ///
 /// For paths, two scopes overlap exactly when one normalized path is an equal
 /// or segment-boundary prefix of the other. `exact_paths` finds previously
-/// inserted ancestors; `descendants` maps every prefix to paths below it and
-/// finds previously inserted descendants. Symbols use an exact inverted index.
-/// The production overlap functions still perform the final decision.
+/// inserted ancestors; `descendants` maps every valid literal prefix to paths
+/// below it and finds previously inserted descendants. Symbols use an exact
+/// inverted index. The production overlap functions still perform the final
+/// decision after this candidate filter is promoted.
 fn indexed_pairs(leases: &[LeaseScope]) -> BTreeSet<(usize, usize)> {
     let mut exact_paths: BTreeMap<String, BTreeSet<usize>> = BTreeMap::new();
     let mut descendants: BTreeMap<String, BTreeSet<usize>> = BTreeMap::new();
@@ -248,6 +252,42 @@ mod tests {
                 symbols: vec!["Auth.refresh".into()],
             },
         ];
+        let expected = BTreeSet::from([(0, 1), (2, 3)]);
+        assert_eq!(indexed_pairs(&leases), expected);
+        assert_eq!(indexed_pairs(&leases), naive_pairs(&leases));
+    }
+
+    #[test]
+    fn indexed_candidates_preserve_literal_path_normalization_edge_cases() {
+        let leases = vec![
+            LeaseScope {
+                agent: "claude".into(),
+                paths: vec!["//src\\auth//".into()],
+                symbols: vec![],
+            },
+            LeaseScope {
+                agent: "codex".into(),
+                paths: vec!["src/auth/token.rs".into()],
+                symbols: vec![],
+            },
+            LeaseScope {
+                agent: "kimi".into(),
+                paths: vec!["src//graph".into()],
+                symbols: vec![],
+            },
+            LeaseScope {
+                agent: "copilot".into(),
+                paths: vec!["src//graph/api.rs".into()],
+                symbols: vec![],
+            },
+            LeaseScope {
+                agent: "deepseek".into(),
+                paths: vec!["src/graph".into()],
+                symbols: vec![],
+            },
+        ];
+        // `src//graph` and `src/graph` are intentionally distinct under the
+        // existing production rule even though both share the textual root.
         let expected = BTreeSet::from([(0, 1), (2, 3)]);
         assert_eq!(indexed_pairs(&leases), expected);
         assert_eq!(indexed_pairs(&leases), naive_pairs(&leases));
