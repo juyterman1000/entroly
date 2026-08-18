@@ -3,13 +3,14 @@
 // Node orchestration-only content identity for passive Work Graph snapshots.
 // Rust decides whether observations are semantically duplicate; this helper
 // merely supplies exact Git blob identity where it can do so without guessing.
-// It never follows symlinks, reads special files, or reads an unbounded file.
+// It never follows symlinks, reads special files, or reads unbounded data.
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
 const MAX_HASH_FILE_BYTES = 64 * 1024 * 1024;
+const MAX_HASH_TOTAL_BYTES = 128 * 1024 * 1024;
 const HASH_CHUNK_BYTES = 1024 * 1024;
 
 function gitEnv() {
@@ -80,18 +81,15 @@ function sameFile(left, right) {
     && left.ctimeNs === right.ctimeNs;
 }
 
-function gitBlobDigest(root, repoRel, algorithm) {
-  const safe = relativeRegularPath(root, repoRel);
-  if (!safe) return '';
-
+function gitBlobDigest(candidate, expected, algorithm) {
   let fd;
   try {
     let flags = fs.constants.O_RDONLY;
     if (typeof fs.constants.O_NOFOLLOW === 'number') flags |= fs.constants.O_NOFOLLOW;
-    fd = fs.openSync(safe.candidate, flags);
+    fd = fs.openSync(candidate, flags);
     const opened = fs.fstatSync(fd, { bigint: true });
-    const pathAfterOpen = fs.lstatSync(safe.candidate, { bigint: true });
-    if (!sameFile(safe.before, opened) || !sameFile(opened, pathAfterOpen)) return '';
+    const pathAfterOpen = fs.lstatSync(candidate, { bigint: true });
+    if (!sameFile(expected, opened) || !sameFile(opened, pathAfterOpen)) return '';
     if (opened.size > BigInt(MAX_HASH_FILE_BYTES)) return '';
 
     const hash = crypto.createHash(algorithm);
@@ -108,7 +106,7 @@ function gitBlobDigest(root, repoRel, algorithm) {
     }
 
     const after = fs.fstatSync(fd, { bigint: true });
-    const pathAfterRead = fs.lstatSync(safe.candidate, { bigint: true });
+    const pathAfterRead = fs.lstatSync(candidate, { bigint: true });
     if (!sameFile(opened, after) || !sameFile(after, pathAfterRead)) return '';
     return `git-blob:${hash.digest('hex')}`;
   } catch (_) {
@@ -125,6 +123,8 @@ function enrichWorktreeContentDigests(repoPath, observation) {
   if (!Array.isArray(changes)) return observation;
   const root = resolveRoot(repoPath);
   const algorithm = objectHashAlgorithm(root);
+  const pending = [];
+  let totalBytes = 0n;
 
   for (const change of changes) {
     if (!change || typeof change !== 'object') continue;
@@ -135,7 +135,20 @@ function enrichWorktreeContentDigests(repoPath, observation) {
       continue;
     }
     if (!algorithm) continue;
-    change.content_digest = gitBlobDigest(root, change.path, algorithm);
+    const safe = relativeRegularPath(root, change.path);
+    if (!safe) continue;
+    totalBytes += safe.before.size;
+    if (totalBytes > BigInt(MAX_HASH_TOTAL_BYTES)) {
+      // An incomplete subset must never masquerade as a complete semantic
+      // snapshot. Leave all non-deleted digests empty and let Rust retain it.
+      for (const [pendingChange] of pending) pendingChange.content_digest = '';
+      return observation;
+    }
+    pending.push([change, safe.candidate, safe.before]);
+  }
+
+  for (const [change, candidate, metadata] of pending) {
+    change.content_digest = gitBlobDigest(candidate, metadata, algorithm);
   }
   return observation;
 }
