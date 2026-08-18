@@ -1078,3 +1078,105 @@ until all are true. They are not all true. This is the accounting.
 The largest remaining blocks are the section 5 ownership matrix, the section 19
 dogfood gauntlet, and the parity gap this session's own module moves created.
 Nothing in this document should be read as clearing them.
+
+### Observation — panic audit of the engine's library paths
+
+Every `unwrap` / `expect` / `panic!` / `unreachable!` outside `#[cfg(test)]`
+across all 35 engine modules, resolved:
+
+| Site | Verdict |
+|---|---|
+| `learning.rs` x6 | **Safe.** `attract`/`repel` are built from `WEIGHT_KEYS.map(...)` and every `get_mut` iterates that same const array, so the key is always present. |
+| `cognitive_bus.rs:611` | **Safe.** The key was cloned out of `self.subscribers.keys()` immediately above with no intervening mutation. |
+| `conversation_pruner.rs:677` | **Safe.** `sentences.last()` sits in the `else` of `if sentences.len() <= 3`, so the slice is non-empty. |
+| `eicv.rs:398` | **Safe.** Guarded by `if cleaned.is_empty() { continue; }` two lines above. |
+| `resonance.rs:397` | **Safe.** `max_by` over a group that is non-empty by construction; already uses `total_cmp`. |
+| `sast.rs:681` | **Not code.** It is the `fix:` string of the SAST rule that flags `.unwrap()`. |
+| `depgraph.rs:736` | **Latent.** `boosts.values().max_by(\|a, b\| a.partial_cmp(b).unwrap())` panics on NaN. Not reachable from current construction — every `strength` is a finite literal (0.8, 0.95, 1.0) and summing finite values cannot produce NaN — but `DependencyEdge.strength` is a `pub` field, so an external constructor can introduce one. |
+
+The last one is worth a one-word change rather than a finding: `resonance.rs`
+already uses `total_cmp` for exactly this comparison, so the total-order idiom is
+already in-house and `depgraph.rs` is the outlier. Not changed here because it is
+unreachable at present and this document's rule has been to separate "wrong now"
+from "fragile later".
+
+No mojibake remains anywhere in the engine after the `bm25.rs` repair, and there
+are no `TODO`/`FIXME`/`HACK` markers — the `placeholder` matches are all domain
+vocabulary (`skeleton.rs` body elision, `anomaly.rs` stub detection, SAST rule
+text for SQL bind parameters).
+
+### Finding G16 (introduced by this session; fixed) — the consolidation broke a public payload shape
+
+Closing the section 14 parity gap surfaced a regression in this session's own
+work.
+
+`CognitiveBus` exposes two drain methods with **deliberately different** shapes:
+
+```
+drain()                -> id, source_agent, event_type, content,
+                          timestamp, emotional_tag, salience, is_spike   (8 keys)
+drain_memory_bridge()  -> content, source, salience,
+                          emotional_tag, event_type                      (5 keys)
+```
+
+The bridge payload is not the full event with fields removed. It renames one:
+`source_agent` becomes `source`, because it feeds `hippocampus.remember()`.
+Confirmed against `164e36fa^`, the commit before the consolidation, where the
+PyO3 binding built that 5-key dict explicitly.
+
+The rewritten binding routed **both** methods through one shared `event_dict`
+helper. So after the move, Python's `drain_memory_bridge()` returned the 8-key
+full-event shape with `source_agent` — three keys added, one renamed away.
+
+The binding's own module comment said:
+
+> "The key set and ordering are unchanged from the previous implementation:
+> renaming or dropping a key here is a public API break for every consumer of
+> `drain()` and `drain_memory_bridge()`."
+
+That comment was written in the same commit that violated it for one of the two
+methods named in it.
+
+Nothing caught it. No Python caller has adopted `drain_memory_bridge()` yet —
+`context_bridge.py:1452` only mentions it in a comment — so the whole suite
+stayed green over a broken public shape. It would have become a cross-runtime
+divergence the moment the WASM binding landed, since a new binding would
+naturally call the engine's canonical serializer and disagree with Python.
+
+Fixed by deleting the shared helper and having both bindings delegate to
+`entroly_engine::cognitive_bus`, which already emits the correct canonical JSON
+for each method. Neither runtime now builds its own payload, so they cannot
+disagree and neither can drift from the engine.
+
+Pinned on both sides:
+
+* `cognitive_bus::tests::drain_shapes_are_pinned_for_every_runtime` — engine
+  level, asserts both key sets and that the bridge payload carries `source` and
+  **not** `source_agent`.
+* `tests/test_cognitive_bus_shape_parity.py` — four tests through the real PyO3
+  binding, including that the two shapes are not interchangeable and that `id`,
+  `timestamp` and `is_spike` stay out of the bridge payload.
+
+The Python tests discriminate by construction: they assert the exact 5-key set
+and the absence of `source_agent`, which is precisely what the broken binding
+emitted. The pre-move shape was established from git history rather than by
+rebuilding the broken binding.
+
+The lesson is the one section 5 states directly — *do not port a file merely
+because a Rust equivalent exists; first prove API parity, behavior parity,
+serialization compatibility*. The consolidation was correct in direction and
+skipped that proof for one method.
+
+### Section 14 parity gap: closed for `cognitive_bus` and `nkbe`
+
+`entroly-wasm/src/cognitive_bus_bindings.rs` and `nkbe_bindings.rs` now expose
+both modules to npm, mirroring the PyO3 surface method for method, with the same
+defaults (`memorySalienceThreshold` 50.0; NKBE 128000 / 0.1 / 1e-4 / 30 / 5 /
+0.01). Divergent defaults would be a parity break neither side's tests would
+notice, so they are stated explicitly in both files.
+
+`cargo check --target wasm32-unknown-unknown` passes. `cargo clippy --lib` on
+`entroly-core` is clean; `cargo test --lib` is 112 (core) and 468 (engine).
+
+Remaining asymmetries after this change: `rnr` (npm only) and `simhash_wide`
+(neither, and dead inside the engine too — see section 16).

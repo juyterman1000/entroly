@@ -13,29 +13,25 @@
 //! where "once" is, and a binding crate is not.
 
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
 
 use entroly_engine::cognitive_bus::{BusEvent, CognitiveBus as EngineBus};
 
 use crate::py_json::json_to_py;
 
-/// Serialize one bus event into the dict shape Python callers already expect.
-///
-/// The key set and ordering are unchanged from the previous implementation:
-/// renaming or dropping a key here is a public API break for every consumer of
-/// `drain()` and `drain_memory_bridge()`.
-fn event_dict<'py>(py: Python<'py>, event: &BusEvent) -> PyResult<Bound<'py, PyDict>> {
-    let dict = PyDict::new(py);
-    dict.set_item("id", event.id)?;
-    dict.set_item("source_agent", &event.source_agent)?;
-    dict.set_item("event_type", event.event_type.as_str())?;
-    dict.set_item("content", &event.content)?;
-    dict.set_item("timestamp", event.timestamp)?;
-    dict.set_item("emotional_tag", event.emotional_tag)?;
-    dict.set_item("salience", event.salience)?;
-    dict.set_item("is_spike", event.is_spike)?;
-    Ok(dict)
-}
+// The two drain methods deliberately do NOT build their dicts here.
+//
+// `drain()` and `drain_memory_bridge()` return *different* shapes, and that is
+// intentional: `drain` yields the full event (8 keys, `source_agent`) while the
+// hippocampus bridge yields the 5 keys `hippocampus.remember()` actually
+// consumes, under the key `source`. An earlier version of this binding
+// serialized both through one shared helper, which silently widened the bridge
+// payload to the full event shape and renamed `source` to `source_agent` -- a
+// public API break, and one that would have put Python and npm on different
+// shapes the moment the WASM binding landed.
+//
+// Both now delegate to `entroly_engine::cognitive_bus`, which already emits the
+// canonical JSON for each, so the two runtimes cannot disagree and neither can
+// drift from the engine.
 
 #[pyclass]
 pub struct CognitiveBus {
@@ -85,29 +81,21 @@ impl CognitiveBus {
             .publish(source_agent, event_type, content, emotional_tag, salience)
     }
 
+    /// Full event shape: `id`, `source_agent`, `event_type`, `content`,
+    /// `timestamp`, `emotional_tag`, `salience`, `is_spike`.
     #[pyo3(signature = (agent_id, limit=10))]
-    pub fn drain<'py>(
-        &mut self,
-        py: Python<'py>,
-        agent_id: &str,
-        limit: usize,
-    ) -> PyResult<Vec<Bound<'py, PyDict>>> {
-        self.inner
-            .drain_raw(agent_id, limit)
-            .iter()
-            .map(|event| event_dict(py, event))
-            .collect()
+    pub fn drain(&mut self, py: Python<'_>, agent_id: &str, limit: usize) -> PyResult<PyObject> {
+        json_to_py(py, &serde_json::Value::Array(self.inner.drain(agent_id, limit)))
     }
 
-    pub fn drain_memory_bridge<'py>(
-        &mut self,
-        py: Python<'py>,
-    ) -> PyResult<Vec<Bound<'py, PyDict>>> {
-        self.inner
-            .drain_memory_bridge_raw()
-            .iter()
-            .map(|event| event_dict(py, event))
-            .collect()
+    /// Hippocampus bridge shape: `content`, `source`, `salience`,
+    /// `emotional_tag`, `event_type`. Narrower than `drain()` on purpose -- see
+    /// the note at the top of this file.
+    pub fn drain_memory_bridge(&mut self, py: Python<'_>) -> PyResult<PyObject> {
+        json_to_py(
+            py,
+            &serde_json::Value::Array(self.inner.drain_memory_bridge()),
+        )
     }
 
     pub fn queue_depth(&self, agent_id: &str) -> usize {
