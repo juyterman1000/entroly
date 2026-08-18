@@ -3,6 +3,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from entroly.work_graph_content_digest import enrich_worktree_content_digests
 
 
@@ -85,5 +87,33 @@ def test_deleted_unstaged_path_has_stable_terminal_marker(tmp_path: Path) -> Non
 def test_missing_file_hash_fails_closed_without_partial_digest(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     observation = _observation(path="missing.py", kind="modified", staged=False, conflicted=False)
+    enrich_worktree_content_digests(repo, observation)
+    assert observation["changes"][0]["content_digest"] == ""
+
+
+def test_symlink_never_fingerprints_target_outside_repository(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    outside = tmp_path / "outside-secret.txt"
+    outside.write_text("outside-secret\n", encoding="utf-8")
+    link = repo / "outside-link.txt"
+    try:
+        link.symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    observation = _observation(
+        path="outside-link.txt", kind="untracked", staged=False, conflicted=False
+    )
+    enrich_worktree_content_digests(repo, observation)
+    assert observation["changes"][0]["content_digest"] == ""
+
+
+def test_oversized_file_is_not_read_for_passive_dedupe(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    large = repo / "large.bin"
+    with large.open("wb") as handle:
+        handle.truncate(64 * 1024 * 1024 + 1)
+
+    observation = _observation(path="large.bin", kind="untracked", staged=False, conflicted=False)
     enrich_worktree_content_digests(repo, observation)
     assert observation["changes"][0]["content_digest"] == ""
