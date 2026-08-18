@@ -910,3 +910,53 @@ is 0.7 rather than the 0.2 an earlier comment claimed, and that the code was lef
 alone because the code is the behaviour. That is the correct disposition for a
 documentation/behaviour mismatch found by reading, and it is the pattern the rest
 of these findings follow.
+
+### Finding G15 (fixed) — the one suite failure was the test, not the engine
+
+Running the full suite against a locally built engine rather than the published
+core turned 33 skips into real executions and produced exactly one failure:
+
+```
+FAILED tests/test_work_graph_multiprocess.py::
+       test_concurrent_agent_processes_merge_without_lost_work - assert 0 == 1
+```
+
+The assertion is `len(report["conflicts"]) == 1`. Zero conflicts materialized
+because the two agents claimed scopes that do not overlap:
+
+| Agent | Scope claimed | Exists in fixture |
+|---|---|---|
+| claude | `src/auth` | no -- fixture created `src/auth.py` only |
+| codex | `src/auth.py` | yes |
+
+`paths_overlap` treats scopes as overlapping when they are equal or one is a
+parent of the other **at a `/` boundary**. `src/auth` is therefore not a parent
+of `src/auth.py`, and the engine is right: they are different paths, and a bare
+string-prefix test would also collide `src/auth` with `src/authorization.py`.
+The engine's own Rust test uses `src/auth/token.rs`, the case that does overlap.
+
+So the defect was the fixture asserting a conflict it never set up. Fixed by
+making `src/auth` a real package and narrowing the second claim to a file inside
+it -- claude takes `src/auth`, codex takes `src/auth/tokens.py` -- which is a
+genuine containment overlap and keeps the auth-implementation vs auth-tests
+story the test is written around. The comment left in place records why, so the
+next reader does not "fix" it back toward a substring match.
+
+This is the failure mode the whole exercise is aimed at: the test could not fail
+informatively while it was skipping, and it had been skipping because the
+published core has no `WorkGraph` (G8).
+
+### Suite status at this SHA
+
+With the engine built from this tree and installed to a scratch prefix:
+
+```
+4025 passed, 1 failed, 33 skipped, 3 xfailed   (32m09s)
+```
+
+after which the single failure above was fixed. `cargo test --lib`: 467 passed
+in `entroly-engine`, 112 in `entroly-core`. `cargo clippy --lib`: clean.
+
+Against the *published* core the same suite cannot exercise the Work Graph at
+all -- those tests skip rather than run, which is why this run is the first
+evidence that the surface works end to end.
