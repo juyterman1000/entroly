@@ -1,3 +1,4 @@
+# Retriggered after PR #348 concurrency hardening landed on main.
 name: Apply Work Graph Passive Snapshot Dedupe v2
 
 on:
