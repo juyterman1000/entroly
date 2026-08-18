@@ -29,7 +29,8 @@ def _require_native() -> type:
     if _RustWorkGraph is None:
         detail = f": {_NATIVE_IMPORT_ERROR}" if _NATIVE_IMPORT_ERROR else ""
         raise WorkGraphUnavailableError(
-            "Entroly Work Graph requires the native entroly_core extension" + detail
+            "Entroly Work Graph requires the native entroly_core extension. "
+            'Install it with `pip install "entroly[native]"` and retry' + detail
         )
     return _RustWorkGraph
 
