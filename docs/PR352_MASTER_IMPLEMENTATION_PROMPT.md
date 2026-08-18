@@ -6,7 +6,13 @@
 >
 > **Status:** integration / production-hardening branch. **DO NOT MERGE TO `main` until the final exact-head production gate in this document passes.**
 >
-> **Companion context:** read `docs/PR352_CLAUDE_WORKGRAPH_HANDOFF.md` first, then use this document as the execution contract.
+> **Required read order before implementation:**
+> 1. `docs/PR352_CLAUDE_WORKGRAPH_HANDOFF.md` — architecture and continuation context.
+> 2. `docs/PR352_PREVIOUS_SESSION_COMPLETED_WORK.md` — component-by-component ledger of what the previous session already implemented; do not redo blindly.
+> 3. `docs/PR352_DEEP_CODEBASE_AUDIT_GATE.md` — mandatory evidence-based codebase-understanding gate. A symbol scan, grep pass, repo summary, or reading only changed files does not satisfy it.
+> 4. This document — execution contract for the remaining production work.
+>
+> **Before major semantic migration:** create/update `docs/PR352_CODEBASE_UNDERSTANDING_EVIDENCE.md` exactly as required by the deep-audit gate. Do not begin a broad port/migration until the production-relevant file inventory is classified, the changed subsystem semantic closure is fully read, public user journeys are traced, baseline tests are recorded, and duplicate/shared semantics are mapped.
 
 ---
 
@@ -841,6 +847,8 @@ Proceed in reviewable phases.
 
 - read `CLAUDE.md` and branch-specific instructions;
 - read the handoff document;
+- read the previous-session completed-work ledger;
+- complete `PR352_DEEP_CODEBASE_AUDIT_GATE.md` and produce/update `docs/PR352_CODEBASE_UNDERSTANDING_EVIDENCE.md`;
 - inspect PR #352 current head and changed files;
 - run current focused tests before changes;
 - inventory current architecture;
@@ -1182,6 +1190,12 @@ When touching an existing subsystem, add a regression test for the old behavior 
 
 Do **not** mark this architecture stage production-ready until all are true:
 
+- [ ] Mandatory deep-codebase audit gate completed against the current semantic-migration head.
+- [ ] `docs/PR352_CODEBASE_UNDERSTANDING_EVIDENCE.md` exists and reports quantitative coverage honestly.
+- [ ] Production-relevant tracked files are classified; no migrated area contains unresolved unknown ownership.
+- [ ] Semantic closures for every changed shared subsystem were fully read.
+- [ ] Public Python/CLI/MCP/provider/npm user journeys affected by the change were traced end-to-end.
+- [ ] Pre-change baseline behavior/tests were recorded so regressions are distinguishable from pre-existing failures.
 - [ ] Rust is the canonical owner of all shared Work Graph semantics.
 - [ ] Shared Context Engine semantics are Rust-owned or intentionally documented where not yet shared.
 - [ ] Shared Trust Engine semantics are Rust-owned or intentionally documented where not yet shared.
@@ -1267,4 +1281,4 @@ The target mental model is:
 
 Build this as one production system, not a set of demos.
 
-**Read the branch. Map what exists. Preserve what works. Move shared meaning into Rust. Keep Python/npm thin. Prove parity. Dogfood the real cross-agent flows. Fail closed. Do not merge until the exact final head is production-grade.**
+**Read the branch deeply and measurably. Map what exists. Preserve what works. Move shared meaning into Rust. Keep Python/npm thin. Prove parity. Dogfood the real cross-agent flows. Fail closed. Do not merge until the exact final head is production-grade.**
