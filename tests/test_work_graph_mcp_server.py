@@ -72,3 +72,35 @@ def test_resume_tool_refreshes_repository_before_delegate(monkeypatch, tmp_path)
     assert events == [("store", "repo:test"), ("observe", {"repo_id": "repo:test"})]
     assert '"workstream_id":"w"' in payload
     assert '"max_evidence":9' in payload
+
+
+def test_invalid_resume_request_does_not_refresh_repository(monkeypatch):
+    import sys
+    import types
+
+    registered = {}
+
+    class FakeInner:
+        version = ""
+
+    class FakeMCP:
+        def __init__(self, *_args, **_kwargs):
+            self._mcp_server = FakeInner()
+
+        def tool(self):
+            def decorate(fn):
+                registered[fn.__name__] = fn
+                return fn
+            return decorate
+
+    fastmcp = types.ModuleType("mcp.server.fastmcp")
+    fastmcp.FastMCP = FakeMCP
+    monkeypatch.setitem(sys.modules, "mcp", types.ModuleType("mcp"))
+    monkeypatch.setitem(sys.modules, "mcp.server", types.ModuleType("mcp.server"))
+    monkeypatch.setitem(sys.modules, "mcp.server.fastmcp", fastmcp)
+    monkeypatch.setattr(server, "discover_repository_identity", lambda _p: (_ for _ in ()).throw(AssertionError("must not observe")))
+
+    server.create_mcp_server()
+    payload = registered["work_resume"](max_evidence=-1)
+
+    assert '"error":"invalid_work_graph_request"' in payload
