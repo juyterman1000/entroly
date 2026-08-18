@@ -1,4 +1,4 @@
-import type { WorkGraphResumeView } from "./work_graph";
+import type { WorkGraphHandoffReceipt, WorkGraphResumeView } from "./work_graph";
 import type { RepositoryDiscoveryOptions } from "./work_graph_repo";
 import type { WorkGraphStoreOptions } from "./work_graph_store";
 
@@ -9,7 +9,17 @@ export interface ResumeRepositoryOptions {
   repositoryOptions?: RepositoryDiscoveryOptions;
 }
 
+export interface HandoffRepositoryOptions {
+  workstreamId: string;
+  fromAgent: string;
+  toAgent: string;
+  generatedAtMs?: number;
+  storeOptions?: WorkGraphStoreOptions;
+  repositoryOptions?: RepositoryDiscoveryOptions;
+}
+
 export const MAX_RESUME_EVIDENCE: number;
+export const MAX_WORK_ID_CHARS: number;
 
 /**
  * Refresh bounded durable repository/checkpoint facts and recover unfinished
@@ -20,3 +30,9 @@ export function resumeRepository(
   repoPath?: string,
   options?: ResumeRepositoryOptions,
 ): WorkGraphResumeView;
+
+/** Refresh durable facts exactly once, then seal a graph-bound handoff receipt. */
+export function handoffRepository(
+  repoPath: string | undefined,
+  options: HandoffRepositoryOptions,
+): WorkGraphHandoffReceipt;
