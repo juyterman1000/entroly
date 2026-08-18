@@ -20,6 +20,18 @@ function git(repo, ...args) {
   return String(result.stdout || '').trim();
 }
 
+function evidenceKindForSource(graph, sourceRef) {
+  const document = graph.exportState();
+  for (const event of document.events || []) {
+    for (const operation of event.operations || []) {
+      if (operation.op === 'add_evidence' && operation.evidence && operation.evidence.source_ref === sourceRef) {
+        return operation.evidence.kind;
+      }
+    }
+  }
+  return null;
+}
+
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'entroly-workgraph-store-'));
 const repo = path.join(root, 'repo');
 const stateRoot = path.join(root, 'state');
@@ -105,6 +117,10 @@ try {
     scopePaths: ['src/auth'],
     observedAtMs: 3000,
   });
+  assert(
+    evidenceKindForSource(claimA.graph, `work-claim:${claimA.leaseId}`) === 'agent_statement',
+    'npm agent claim was not recorded as agent_statement',
+  );
   const claimB = store.claimWork(repo, {
     agentId: 'codex',
     taskTitle: 'Add auth tests',
@@ -116,6 +132,29 @@ try {
   const report = store.coordination(3200);
   assert(report.active_leases === 2, 'active lease count drift');
   assert(report.conflicts.length === 1, 'overlapping leases were not surfaced');
+
+  const humanClaim = store.claimWork(repo, {
+    agentId: 'human-cli',
+    taskTitle: 'Review auth',
+    taskId: 'auth-review',
+    sourceKind: 'user_statement',
+    scopePaths: ['docs/auth'],
+    ttlMs: 1,
+    observedAtMs: 3300,
+  });
+  assert(
+    evidenceKindForSource(humanClaim.graph, `work-claim:${humanClaim.leaseId}`) === 'user_statement',
+    'explicit npm human claim was not recorded as user_statement',
+  );
+  let badSourceRejected = false;
+  try {
+    store.claimWork(repo, {
+      agentId: 'bad', taskTitle: 'Bad provenance', sourceKind: 'verified', observedAtMs: 3400,
+    });
+  } catch (error) {
+    badSourceRejected = error instanceof WorkGraphStateError;
+  }
+  assert(badSourceRejected, 'npm accepted an unsupported claim provenance');
 
   const document = JSON.parse(fs.readFileSync(store.statePath, 'utf8'));
   document.graph_commitment = '0'.repeat(64);
