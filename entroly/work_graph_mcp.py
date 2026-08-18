@@ -17,6 +17,7 @@ from typing import Any
 
 from .hardening import sanitize_injected_context
 from .work_graph import WorkGraphUnavailableError
+from .work_graph_content_digest import enrich_worktree_content_digests
 from .work_graph_repo import discover_repository_identity, discover_repository_observation
 from .work_graph_store import (
     WorkGraphLockTimeout,
@@ -49,6 +50,12 @@ def _project_path(project: str = "") -> Path:
 def _store_for_path(path: Path) -> WorkGraphStore:
     identity = discover_repository_identity(path)
     return WorkGraphStore(identity["repo_id"])
+
+
+def _passive_observation(path: Path) -> dict[str, Any]:
+    """Capture a passive repo snapshot with fail-closed content identity."""
+    observation = discover_repository_observation(path)
+    return enrich_worktree_content_digests(path, observation)
 
 
 def _bounded_strings(values: list[str] | tuple[str, ...] | None, name: str) -> list[str]:
@@ -228,7 +235,7 @@ def work_resume(
             raise ValueError(f"workstream_id may not exceed {_MAX_ID_CHARS} characters or contain NUL")
         path = _project_path(project)
         store = _store_for_path(path)
-        store.submit_observation(discover_repository_observation(path))
+        store.submit_observation(_passive_observation(path))
         view = store.resume(selected_workstream or None, max_evidence=max_evidence)
         return _render_untrusted("work_resume", view)
     except Exception as exc:
@@ -250,9 +257,9 @@ def work_handoff(
         path = _project_path(project)
         store = _store_for_path(path)
         # Explicit handoff is a state-sealing operation. Capture the latest
-        # bounded Git/checkpoint facts first so the receipt is bound to what is
-        # actually on disk, not to an older graph snapshot.
-        store.submit_observation(discover_repository_observation(path))
+        # bounded Git/checkpoint facts plus exact worktree content identity first
+        # so the receipt is bound to what is actually on disk.
+        store.submit_observation(_passive_observation(path))
         receipt = store.handoff(selected_workstream, source_agent, target_agent)
         return _render_untrusted("work_handoff", receipt)
     except Exception as exc:
