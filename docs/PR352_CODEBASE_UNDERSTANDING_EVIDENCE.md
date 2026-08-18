@@ -250,10 +250,13 @@ after    4,033 tests collected
 ### Baseline results
 
 ```text
-command   python -m pytest tests/ -q --timeout=300 -p no:randomly
-SHA       09a98a5b (audit worktree; the package under test resolves to it)
-result    pending — recorded on completion
+command   python -m pytest tests/ -v --timeout=300 -p no:randomly
+SHA       09a98a5b + the fixes in this change (audit worktree)
+result    3,986 passed, 44 skipped, 3 xfailed, 0 failed  (19m34s)
 ```
+
+For contrast, the same suite at the unmodified head could not run at all:
+`Interrupted: 2 errors during collection`, exit code 2, zero tests executed.
 
 `tests/test_mcp_wire_budget.py` carries 2 pre-existing ruff E402 errors,
 untouched by this audit and distinguishable from any regression.
