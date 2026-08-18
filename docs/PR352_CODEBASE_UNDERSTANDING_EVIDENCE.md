@@ -1775,3 +1775,72 @@ Remaining section 19 gaps: **G** (rename and symbol lineage) and **H** (stale CI
 must not report the current head verified). Both are product claims with no
 evidence, and neither is a fixture-shaped problem — they need the behaviour to
 exist first, which is a design question rather than a test-writing one.
+
+### Finding G24 — the "Linear Bandit Hit Predictor" is trained, persisted, reported, and never consulted
+
+`cache.rs` claims as its fifth contribution:
+
+> "5. **Linear Bandit Hit Predictor** — lightweight learned P(hit|context) using
+> a 4-feature linear model updated via online SGD."
+
+and the struct adds:
+
+> "This bridges the gap between structured policy and learned prediction,
+> providing the 'last 5-10%' improvement over pure heuristics."
+
+`HitPredictor::predict` is never called on any decision path. Every call site in
+the file:
+
+| Line | Call | Context |
+|---|---|---|
+| 1078 | `pub fn predict` | definition |
+| 1109 | `let pred = self.predict(features)` | **inside `update()`**, to compute its own gradient |
+| 2069, 2070, 2912 | `pred.predict(...)` | inside `#[cfg(test)]` |
+
+So the model trains on every hit and miss (lines 1424, 1474, 1500), is serialized
+into `CacheSnapshot` so warm-start carries it forward, and exports
+`predictor_weights` in `CacheStats` (line 1752) — while influencing nothing. It
+is a closed loop: it learns from outcomes and feeds no decision that could change
+an outcome.
+
+It cannot deliver a "last 5-10% improvement" over heuristics it never reaches.
+The admission decision is `ThompsonGate::should_admit`, which uses the Beta
+posterior mean and the cost model; eviction is `SubmodularEvictor::entry_value`,
+which uses hit count, recency, cost and diversity. Neither consults the
+predictor. Removing `HitPredictor` entirely would change no cache behaviour, only
+the contents of a stats struct and a snapshot field.
+
+The visible symptoms are the reason this survived: weights move, they appear in
+diagnostics, and they persist across restarts. Everything about it looks live
+except the part that would matter.
+
+### The five claimed contributions, checked
+
+`cache.rs` opens by listing five "independently novel contributions". Verified
+individually against the shipping code:
+
+| # | Claim | State |
+|---|---|---|
+| 1 | Thompson Sampling Admission — "stochastic admission via Beta posterior sampling" | **Not as claimed.** No sampling; `rand` is not a dependency of the crate. Deterministic `mean + sd × entropy_signal` (G21). |
+| 2 | Cost-Aware Submodular Diversity Eviction | **Partly.** The submodular diversity term is live in `entry_value`. The *cost-awareness* is not — the pricing table cannot reach the decision (G19) — and the *lazy greedy* is neither lazy nor faster than the fallback it replaces (G23). |
+| 3 | Causal DAG Transitive Invalidation | **Live.** `CausalInvalidator::invalidate_weighted` is called at line 1685 with depth weights and cascade tracking. |
+| 4 | Streaming Entropy Sketches | **Live.** `context_entropy_sketch` is used at lines 724 and 1586; `EntropySketch::approx_h2` computes the O(1) moment-based H₂ as documented. |
+| 5 | Linear Bandit Hit Predictor | **Inert.** Trained, persisted and reported; never consulted (this finding). |
+
+Two of five do what the header says. One does half. Two do not.
+
+This matters beyond tidiness because the header is the file's contract with a
+reviewer, and four of these five claims would each take a reader ten minutes to
+falsify — but only if they thought to try. `CLAUDE.md` states the invariant
+directly: *"Benchmark honesty: claims must include baseline, token budget,
+workload, and caveats."* A module header asserting five novel mechanisms, three
+of which are absent or unreachable, is the same class of overclaim applied to
+architecture rather than numbers.
+
+**Not changed.** Wiring `HitPredictor` into admission is a behaviour change to a
+tuned path — `should_admit`'s 0.6/0.4 split and 0.35 threshold have no room
+reserved for a third signal, and adding one shifts the admission rate
+immediately. The alternatives are to consult it, to delete it, or to relabel the
+header honestly; all three are decisions for the owner, and the measurement that
+would choose between them does not exist. What this audit can do is remove the
+ambiguity about which of them is currently true.
