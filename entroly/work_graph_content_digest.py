@@ -4,99 +4,30 @@ This is orchestration-only. It does not decide whether two observations are the
 same work state; Rust owns that semantic decision. The helper merely supplies a
 content identity when the current worktree bytes can be represented exactly.
 
-Staged/conflicted paths deliberately remain without a digest because a single
-worktree hash cannot represent both index and worktree state. Hash failures also
-fail closed by leaving the digest empty, which makes the snapshot ineligible for
-future Rust passive-snapshot deduplication rather than risking lost work.
+Security and honesty rules:
+- never follow symlinks or read special files;
+- never read outside the repository root;
+- bound every file read;
+- staged/conflicted paths remain non-dedupeable because one worktree digest
+  cannot represent both index and worktree state;
+- detect path/file races before and after reading and fail closed;
+- preserve Git's SHA-1/SHA-256 blob identity exactly.
 """
 from __future__ import annotations
 
+import hashlib
 import os
+import stat
 import subprocess
 from pathlib import Path
 from typing import Any
 
-_MAX_HASH_OUTPUT_BYTES = 4 * 1024 * 1024
+_MAX_HASH_FILE_BYTES = 64 * 1024 * 1024
+_HASH_CHUNK_BYTES = 1024 * 1024
 
 
-def _root(path: str | os.PathLike[str]) -> Path:
-    candidate = Path(path).expanduser().resolve()
-    if candidate.is_file():
-        candidate = candidate.parent
-    result = subprocess.run(
-        [
-            "git",
-            "-c",
-            "core.fsmonitor=false",
-            "-c",
-            "core.untrackedCache=false",
-            "-c",
-            "submodule.recurse=false",
-            "-C",
-            str(candidate),
-            "rev-parse",
-            "--show-toplevel",
-        ],
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=5,
-        env={
-            **os.environ,
-            "GIT_TERMINAL_PROMPT": "0",
-            "GIT_OPTIONAL_LOCKS": "0",
-            "GIT_PAGER": "cat",
-            "LC_ALL": "C",
-            "LANG": "C",
-        },
-        check=False,
-    )
-    if result.returncode != 0 or not result.stdout.strip():
-        raise ValueError(f"not a Git worktree: {candidate}")
-    return Path(result.stdout.strip()).resolve()
-
-
-def enrich_worktree_content_digests(
-    repo_path: str | os.PathLike[str], observation: dict[str, Any]
-) -> dict[str, Any]:
-    """Return *observation* with exact worktree digests where safely available.
-
-    The input object is updated in place to avoid copying potentially large
-    bounded observations. Digests use Git's canonical blob hashing with filters
-    disabled, so Python and Node can produce the same identity for the same
-    bytes. Unrepresentable changes retain an empty ``content_digest``.
-    """
-
-    root = _root(repo_path)
-    changes = observation.get("changes")
-    if not isinstance(changes, list):
-        return observation
-
-    pending: list[tuple[dict[str, Any], str]] = []
-    for raw in changes:
-        if not isinstance(raw, dict):
-            continue
-        raw.setdefault("content_digest", "")
-        if raw.get("staged") or raw.get("conflicted"):
-            continue
-        kind = str(raw.get("kind", ""))
-        if kind == "deleted":
-            raw["content_digest"] = "worktree:deleted"
-            continue
-        repo_rel = str(raw.get("path", ""))
-        # --stdin-paths is line delimited. Rather than invent escaping rules,
-        # leave newline-bearing paths non-dedupeable.
-        if not repo_rel or "\n" in repo_rel or "\r" in repo_rel or "\x00" in repo_rel:
-            continue
-        pending.append((raw, repo_rel))
-
-    if not pending:
-        return observation
-
-    env = {
+def _git_env() -> dict[str, str]:
+    return {
         **os.environ,
         "GIT_TERMINAL_PROMPT": "0",
         "GIT_OPTIONAL_LOCKS": "0",
@@ -104,6 +35,9 @@ def enrich_worktree_content_digests(
         "LC_ALL": "C",
         "LANG": "C",
     }
+
+
+def _git_text(root: Path, *args: str) -> str:
     try:
         result = subprocess.run(
             [
@@ -116,40 +50,155 @@ def enrich_worktree_content_digests(
                 "submodule.recurse=false",
                 "-C",
                 str(root),
-                "hash-object",
-                "--no-filters",
-                "--stdin-paths",
+                *args,
             ],
-            input="".join(f"{repo_rel}\n" for _change, repo_rel in pending),
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
             encoding="utf-8",
             errors="replace",
             timeout=5,
-            env=env,
+            env=_git_env(),
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired):
-        return observation
-
+        return ""
     if result.returncode != 0:
-        return observation
-    if len(result.stdout.encode("utf-8", "replace")) > _MAX_HASH_OUTPUT_BYTES:
-        return observation
-    hashes = result.stdout.splitlines()
-    if len(hashes) != len(pending):
-        return observation
-    lowered = [digest.strip().lower() for digest in hashes]
-    if any(
-        len(digest) not in {40, 64}
-        or any(ch not in "0123456789abcdef" for ch in digest)
-        for digest in lowered
-    ):
-        return observation
+        return ""
+    return result.stdout.strip()
 
-    for (change, _repo_rel), digest in zip(pending, lowered, strict=True):
-        change["content_digest"] = f"git-blob:{digest}"
+
+def _root(path: str | os.PathLike[str]) -> Path:
+    candidate = Path(path).expanduser().resolve()
+    if candidate.is_file():
+        candidate = candidate.parent
+    output = _git_text(candidate, "rev-parse", "--show-toplevel")
+    if not output:
+        raise ValueError(f"not a Git worktree: {candidate}")
+    return Path(output).resolve()
+
+
+def _object_hash_algorithm(root: Path) -> str | None:
+    value = _git_text(root, "rev-parse", "--show-object-format").lower()
+    return value if value in {"sha1", "sha256"} else None
+
+
+def _relative_regular_path(root: Path, repo_rel: str) -> Path | None:
+    value = repo_rel.replace("\\", "/")
+    if not value or value.startswith("/") or "\x00" in value or "\n" in value or "\r" in value:
+        return None
+    parts = value.split("/")
+    if any(part in {"", ".", ".."} for part in parts):
+        return None
+    candidate = root.joinpath(*parts)
+    try:
+        before = os.lstat(candidate)
+    except OSError:
+        return None
+    if not stat.S_ISREG(before.st_mode) or before.st_size > _MAX_HASH_FILE_BYTES:
+        return None
+    return candidate
+
+
+def _same_file(left: os.stat_result, right: os.stat_result) -> bool:
+    return (
+        stat.S_ISREG(left.st_mode)
+        and stat.S_ISREG(right.st_mode)
+        and left.st_dev == right.st_dev
+        and left.st_ino == right.st_ino
+        and left.st_size == right.st_size
+        and getattr(left, "st_mtime_ns", None) == getattr(right, "st_mtime_ns", None)
+        and getattr(left, "st_ctime_ns", None) == getattr(right, "st_ctime_ns", None)
+    )
+
+
+def _git_blob_digest(root: Path, repo_rel: str, algorithm: str) -> str:
+    candidate = _relative_regular_path(root, repo_rel)
+    if candidate is None:
+        return ""
+    try:
+        before = os.lstat(candidate)
+        flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_CLOEXEC", 0)
+        # O_NOFOLLOW prevents the critical Unix symlink swap. Platforms without
+        # it still get the pre/open/post identity checks before any bytes are read.
+        flags |= getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(candidate, flags)
+    except OSError:
+        return ""
+
+    try:
+        opened = os.fstat(descriptor)
+        try:
+            path_after_open = os.lstat(candidate)
+        except OSError:
+            return ""
+        if not _same_file(before, opened) or not _same_file(opened, path_after_open):
+            return ""
+        if opened.st_size > _MAX_HASH_FILE_BYTES:
+            return ""
+
+        try:
+            hasher = hashlib.new(algorithm)
+        except (ValueError, TypeError):
+            return ""
+        hasher.update(f"blob {opened.st_size}\0".encode("ascii"))
+
+        remaining = opened.st_size
+        while remaining:
+            chunk = os.read(descriptor, min(_HASH_CHUNK_BYTES, remaining))
+            if not chunk:
+                return ""
+            hasher.update(chunk)
+            remaining -= len(chunk)
+
+        after = os.fstat(descriptor)
+        try:
+            path_after_read = os.lstat(candidate)
+        except OSError:
+            return ""
+        if not _same_file(opened, after) or not _same_file(after, path_after_read):
+            return ""
+        return f"git-blob:{hasher.hexdigest()}"
+    except OSError:
+        return ""
+    finally:
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+
+
+def enrich_worktree_content_digests(
+    repo_path: str | os.PathLike[str], observation: dict[str, Any]
+) -> dict[str, Any]:
+    """Add exact, bounded worktree blob identities where safely available.
+
+    The input object is updated in place to avoid copying a potentially large
+    bounded observation. Any uncertainty leaves ``content_digest`` empty, which
+    merely disables Rust passive-snapshot deduplication for that observation.
+    """
+
+    root = _root(repo_path)
+    changes = observation.get("changes")
+    if not isinstance(changes, list):
+        return observation
+    algorithm = _object_hash_algorithm(root)
+
+    for raw in changes:
+        if not isinstance(raw, dict):
+            continue
+        raw["content_digest"] = ""
+        if raw.get("staged") or raw.get("conflicted"):
+            continue
+        kind = str(raw.get("kind", ""))
+        if kind == "deleted":
+            raw["content_digest"] = "worktree:deleted"
+            continue
+        if algorithm is None:
+            continue
+        repo_rel = str(raw.get("path", ""))
+        raw["content_digest"] = _git_blob_digest(root, repo_rel, algorithm)
     return observation
 
 
