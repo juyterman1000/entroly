@@ -134,4 +134,8 @@ export class WorkGraph {
   verifyHandoff(receipt: string | WorkGraphHandoffReceipt): boolean;
 }
 
-export { RepositoryDiscoveryError, discoverRepositoryObservation } from "./work_graph_repo";
+export {
+  RepositoryDiscoveryError,
+  discoverRepositoryIdentity,
+  discoverRepositoryObservation,
+} from "./work_graph_repo";
