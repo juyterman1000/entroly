@@ -14,6 +14,24 @@ on:
 permissions:
   contents: read
 
+# Superseded runs cancel themselves.
+#
+# Four pushes to one draft branch inside three minutes queued 26 duplicate runs
+# and starved every other pull request of ubuntu runners for over an hour, while
+# macOS and Windows -- separate runner pools -- finished in a minute. The older
+# runs were validating commits that had already been replaced, so the queue was
+# spent on answers nobody could use.
+#
+# Keyed on the pull request number so concurrent pull requests never cancel each
+# other; `github.ref` is the fallback for push and dispatch events.
+concurrency:
+  group: cloudflare-community-savings-${{ github.event.pull_request.number || github.ref }}
+  # Only pull-request runs cancel. A push to main can be the run that publishes,
+  # tags, or syncs a release surface, and cancelling one of those mid-flight
+  # leaves partial state behind -- exactly the "release automation stays boring"
+  # rule in CLAUDE.md.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   validate:
     runs-on: ubuntu-latest
