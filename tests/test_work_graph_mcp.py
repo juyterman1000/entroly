@@ -83,6 +83,54 @@ def test_mcp_resume_refreshes_repo_before_recovery(monkeypatch, tmp_path):
     assert '"max_evidence":8' in result["context"]
 
 
+def test_mcp_handoff_refreshes_repo_before_sealing_receipt(monkeypatch, tmp_path):
+    fake = FakeStore()
+    calls = []
+    monkeypatch.setenv("ENTROLY_SOURCE", str(tmp_path))
+    monkeypatch.setattr(m, "_store_for_path", lambda _p: fake)
+    observation = {"repo_id": "repo:test", "observed_at_ms": 88, "leases": []}
+    monkeypatch.setattr(
+        m,
+        "discover_repository_observation",
+        lambda _path: calls.append("observe") or observation,
+    )
+    fake.submit_observation = lambda obs: calls.append("persist") or setattr(fake, "observation", obs) or FakeGraph()
+    fake.handoff = lambda workstream, source, target: calls.append("handoff") or {
+        "workstream_id": workstream,
+        "from_agent": source,
+        "to_agent": target,
+    }
+
+    result = m.work_handoff(
+        workstream_id="workstream:1",
+        from_agent="claude",
+        to_agent="codex",
+    )
+
+    assert result["status"] == "ok"
+    assert calls == ["observe", "persist", "handoff"]
+    assert fake.observation is observation
+    assert '"from_agent":"claude"' in result["context"]
+    assert '"to_agent":"codex"' in result["context"]
+
+
+def test_mcp_handoff_validates_before_repository_mutation(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setenv("ENTROLY_SOURCE", str(tmp_path))
+    monkeypatch.setattr(
+        m,
+        "discover_repository_observation",
+        lambda _path: calls.append("observe") or {},
+    )
+    result = m.work_handoff(
+        workstream_id="",
+        from_agent="claude",
+        to_agent="codex",
+    )
+    assert result["error"] == "invalid_work_graph_request"
+    assert calls == []
+
+
 def test_mcp_rejects_path_escape_scope_explosion_bad_evidence_and_ttl(monkeypatch, tmp_path):
     monkeypatch.setenv("ENTROLY_SOURCE", str(tmp_path))
     escaped = m.work_state(project="../outside")
@@ -95,3 +143,5 @@ def test_mcp_rejects_path_escape_scope_explosion_bad_evidence_and_ttl(monkeypatc
     assert too_big["error"] == "invalid_work_graph_request"
     bad_ttl = m.work_claim(agent_id="a", task_title="t", ttl_seconds=float("inf"))
     assert bad_ttl["error"] == "invalid_work_graph_request"
+    too_long_agent = m.work_claim(agent_id="a" * 513, task_title="t")
+    assert too_long_agent["error"] == "invalid_work_graph_request"
