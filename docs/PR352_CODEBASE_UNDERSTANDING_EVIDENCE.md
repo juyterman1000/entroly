@@ -1071,7 +1071,7 @@ until all are true. They are not all true. This is the accounting.
 | Python and npm/WASM semantic parity proven | **Partial.** Was demonstrably false with four asymmetric modules. `cognitive_bus` and `nkbe` are now bound in both runtimes and delegate to identical engine serializers, pinned by tests on both sides (G16). `rnr` (npm-only) and `simhash_wide` (neither) remain. |
 | Every production file classified in migration/ownership map | **Yes.** `docs/OWNERSHIP_MATRIX.md`, regenerated from `git ls-files` rather than hand-maintained. |
 | Large-repo/incremental performance measured | **No.** |
-| Dogfood scenarios A-T (section 19) | **Not run** this session. Section 19 defines twenty scenarios; none were executed as a gauntlet. |
+| Dogfood scenarios A-T (section 19) | **Partial.** The gauntlet run itself has not happened. Section 19 is now mapped scenario by scenario (section 19 of this document): 11 have passing mechanism-level evidence, 5 are partial, 3 are gaps (G, H, R), and E is covered only by a `#[cfg(test)] mod` that does not ship. |
 | Exact final SHA CI green | **Not checked.** |
 
 **Conclusion.** The gate is not satisfied and this stage is not production-ready.
@@ -1668,3 +1668,77 @@ the generation counter wired up and a stale-bound re-check, and which only pays
 off once `entry_value` stops being O(n) — the diversity `max` would need an
 incremental structure. Choosing between them is a design decision, and the
 measurement that should drive it does not exist yet.
+
+---
+
+## 19. Master prompt section 19 — dogfood gauntlet, mapped to existing evidence
+
+Section 19 opens with "Do not merge merely because unit tests pass" and asks for
+Entroly run against Entroly under realistic interruption and concurrency. That
+run has **not** happened, and this section does not claim otherwise.
+
+What it does is establish which of the twenty scenarios already have
+mechanism-level evidence and which have none, because "not run" was hiding both
+substantial existing coverage and a small number of genuine holes. The coverage
+existed across two languages and was never mapped, so nobody could tell them
+apart.
+
+**Verified for this table:** `cargo test --lib work_graph` — 17 passed; and 37
+Python tests across ten files, run against an engine built from this tree.
+
+| # | Scenario | Evidence | State |
+|---|---|---|---|
+| A | first-time dirty repo | `work_graph::tests::dirty_repo_creates_in_progress_workstream`; `test_work_graph_interrupted_agent_e2e.py` | mechanism |
+| B | clean repo null control | `work_graph::tests::clean_repo_is_null_control`; `test_work_graph_repo.py::test_clean_repo_is_null_control` | mechanism |
+| C | explicit cross-agent handoff | `test_verified_handoff.py` (6 tests); `test_native_work_graph_roundtrip_and_handoff_integrity` | mechanism |
+| D | interrupted agent, no handoff | `test_work_graph_interrupted_agent.py`; `test_work_graph_cross_agent_recovery.py`; `work_graph::tests::resume_prioritizes_verified_evidence` | mechanism |
+| E | parallel non-overlap | `coordination_index::tests::thousand_disjoint_agents_produce_zero_candidates` — **but `coordination_index` is `#[cfg(test)] mod` and does not ship** | test-only module |
+| F | parallel overlap | `work_graph::tests::overlapping_parallel_leases_are_reported_but_not_locked`; `test_work_graph_multiprocess.py` (fixed this session, G15) | mechanism |
+| G | rename + symbol continuity | — | **gap** |
+| H | stale CI | — | **gap** |
+| I | contradictory agent claim | `contradicted_claim_never_becomes_trusted_fact`; `failing_verification_blocks_work`; `lower_trust_observation_cannot_downgrade_verified_completion` | mechanism |
+| J | tampered graph state | `work_graph::tests::persisted_document_detects_tampering` | mechanism |
+| K | tampered handoff | `handoff_commitment_is_stable_and_detects_mutation`; `test_receive_rejects_verified_context_mutation`; `test_receive_rejects_routing_metadata_mutation` | mechanism |
+| L | content changed after handoff | `graph_bound_handoff_verification_rejects_stale_or_foreign_snapshots`; `test_digest_changes_when_worktree_bytes_change_without_status_change` | mechanism |
+| M | prompt injection in recovered memory | `test_work_graph_mcp.py::test_mcp_state_is_fenced_as_untrusted` | mechanism |
+| N | large repository | `RepositoryLimits` (max_files 20,000; 256 MB total; 2 MB/file; 500k symbols; 1M edges) and the section 4.2 caps in `graph_projection.py` exist — **no test exercises them at scale, and no incremental-rebuild test exists** | partial |
+| O | generated/vendor directories | `parsers.py::IGNORED_DIRS` = `.tox .venv venv node_modules target dist build vendor __pycache__` — policy exists, **no test asserts a source graph stays undrowned** | partial |
+| P | Python/Node convergence | `test_work_graph_cross_language_digest_parity.py` (2 tests); `semantically_unordered_observations_have_identical_commitments` — **digest and commitment parity only; no round trip where Node writes an event Python then reads** | partial |
+| Q | multiprocessing contention | `test_work_graph_multiprocess.py`; `work_graph_store.py::_stale_lock` / `_break_stale_lock` implemented — **stale-lock recovery itself is untested** | partial |
+| R | crash during persistence | — | **gap** |
+| S | compression/recovery | receipt fidelity and exact-recovery suites exist elsewhere in the tree | not re-verified here |
+| T | package/user journey | `test_work_graph_packaging.py`; `test_work_graph_entrypoints.py`; `test_release_surface.py` — **wheel-install and npm-install journeys not executed at this SHA; G8 means the published core cannot serve the Work Graph half at all** | partial |
+
+### What this changes
+
+Eleven scenarios have direct mechanism-level evidence that passes at this SHA.
+Five are partial in a specific, nameable way. Three are genuine gaps — G, H, R —
+and one, E, is covered only by a module that `lib.rs` declares
+`#[cfg(test)] mod`, so the code proving it does not ship.
+
+That last one deserves emphasis: scenario E asks that two agents on disjoint
+paths produce no false conflict, and the only test asserting it exercises
+`coordination_index`, which is 308 lines that never reach a binding. The
+shipping conflict path is `paths_overlap` in `work_graph.rs`, whose disjoint case
+is exercised only incidentally.
+
+### What is still required
+
+This table is **not** the section 19 run. Mechanism coverage means a unit test
+asserts the behaviour; section 19 asks for Entroly driven against Entroly through
+its real surfaces, which would exercise the CLI, MCP and npm paths together and
+is the only thing that can catch integration-level failure. The three gaps and
+the four partials should be closed first, since running the gauntlet against
+known-missing mechanisms would only rediscover them more slowly.
+
+Priority order, on the evidence above:
+
+1. **R (crash during persistence)** — the store already does temp-write plus
+   atomic replace; a fixture that kills between them is cheap and the failure
+   mode is catastrophic (unreadable state).
+2. **E** — promote the disjoint-case assertion onto the shipping `paths_overlap`
+   rather than the test-only index.
+3. **Q** — `_break_stale_lock` is implemented and untested; a stale lock that
+   fails to break is an availability outage.
+4. **G, H** — rename lineage and stale-CI verification are real product claims
+   with no evidence at all.
