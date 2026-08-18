@@ -15,6 +15,14 @@ QCCR_SYMBOLS = (
     "py_qccr_rank_files",
     "py_qccr_select",
 )
+# The Work Graph binding is a distinct capability from QCCR: a core can satisfy
+# MIN_ENTROLY_CORE_VERSION and still predate `WorkGraph`, which is exactly the
+# state of the published entroly-core 1.0.78 -- version_ok is True and the
+# symbol is absent. Checking the version alone would let `pip install entroly`
+# resolve to a core that cannot run the Work Graph while reporting a healthy
+# engine, the same silent capability loss QCCR gating exists to prevent.
+WORK_GRAPH_SYMBOLS = ("WorkGraph",)
+
 RELEASE_NATIVE_SYMBOLS = QCCR_SYMBOLS + (
     "extract_skeleton",
     "py_compress_block",

@@ -12,13 +12,40 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-try:
-    from entroly_core import WorkGraph as _RustWorkGraph  # type: ignore[attr-defined]
-except (ImportError, AttributeError) as exc:  # pragma: no cover - environment dependent
-    _RustWorkGraph = None
-    _NATIVE_IMPORT_ERROR: Exception | None = exc
-else:
-    _NATIVE_IMPORT_ERROR = None
+from .native_status import (
+    WORK_GRAPH_SYMBOLS,
+    native_status,
+    native_status_message,
+)
+
+# Resolved through the shared gate rather than a bare ``import entroly_core``.
+# The gate is the single answer to "may this process call into the native core",
+# and it refuses a core below MIN_ENTROLY_CORE_VERSION. A bare import here would
+# accept a stale core that the rest of the package refuses, producing the mixed
+# process `usable_core` exists to prevent -- the failure that once surfaced as
+# ``ContextFragment.__new__() got an unexpected keyword argument
+# 'recency_score'`` when one module used a stale core and another fell back.
+#
+# This deliberately does NOT add a pure-Python fallback. Work Graph semantics
+# are Rust-owned; a Python re-implementation would be a second source of truth
+# for status inference and commitments. Missing or stale core fails closed with
+# an actionable message instead.
+_NATIVE_STATUS = native_status(WORK_GRAPH_SYMBOLS)
+_RustWorkGraph = (
+    getattr(_NATIVE_STATUS.module, "WorkGraph", None) if _NATIVE_STATUS.ok else None
+)
+
+# Kept so callers and tests can inspect *why* the binding is unavailable. The
+# gate reports "absent", "incomplete", or "below the required version" through
+# native_status; all three arrive here as an actionable reason rather than a
+# bare ImportError from a direct import.
+_NATIVE_IMPORT_ERROR: Exception | None = None
+if _RustWorkGraph is None:
+    _NATIVE_IMPORT_ERROR = ImportError(
+        native_status_message(
+            _NATIVE_STATUS, feature="the Entroly Work Graph"
+        )
+    )
 
 
 class WorkGraphUnavailableError(RuntimeError):
