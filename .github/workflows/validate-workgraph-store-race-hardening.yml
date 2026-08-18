@@ -8,7 +8,9 @@ on:
     paths:
       - .github/workflows/validate-workgraph-store-race-hardening.yml
       - scripts/apply_workgraph_store_race_hardening.py
+      - scripts/refine_workgraph_store_owner_safety.py
       - tests/test_work_graph_store_race_safety.py
+      - tests/test_work_graph_store_foreign_lock.py
       - entroly-wasm/test_work_graph_store_race_safety.js
 
 permissions:
@@ -28,12 +30,16 @@ jobs:
         shell: bash
         run: git rev-parse HEAD > /tmp/store-race-start-head
 
-      - name: Apply exact-anchor hardening patch
+      - name: Apply exact-anchor hardening patches
         shell: bash
         run: |
           set -euo pipefail
           python scripts/apply_workgraph_store_race_hardening.py
-          python -m py_compile entroly/work_graph_store.py tests/test_work_graph_store_race_safety.py
+          python scripts/refine_workgraph_store_owner_safety.py
+          python -m py_compile \
+            entroly/work_graph_store.py \
+            tests/test_work_graph_store_race_safety.py \
+            tests/test_work_graph_store_foreign_lock.py
           node --check entroly-wasm/js/work_graph_store.js
           node --check entroly-wasm/test_work_graph_store_race_safety.js
           git diff --check
@@ -45,7 +51,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          PYTHONPATH=. python -m pytest -q tests/test_work_graph_store_race_safety.py
+          PYTHONPATH=. python -m pytest -q \
+            tests/test_work_graph_store_race_safety.py \
+            tests/test_work_graph_store_foreign_lock.py
           node entroly-wasm/test_work_graph_store_race_safety.js
 
       - name: Refuse branch races and commit validated product diff
