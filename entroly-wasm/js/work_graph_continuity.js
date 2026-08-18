@@ -3,6 +3,8 @@
 // Thin Node orchestration for interrupted-agent recovery and fresh handoff.
 // Repository observation and persistence happen here; all work-state meaning
 // remains in shared Rust.
+const { enrichWorktreeContentDigests } = require('./work_graph_content_digest');
+const { discoverRepositoryObservation } = require('./work_graph_repo');
 const { WorkGraphStateError, WorkGraphStore } = require('./work_graph_store');
 
 const MAX_RESUME_EVIDENCE = 4096;
@@ -40,6 +42,11 @@ function optionalWorkstreamId(value) {
   return text || null;
 }
 
+function passiveObservation(repoPath, repositoryOptions) {
+  const observation = discoverRepositoryObservation(repoPath, repositoryOptions);
+  return enrichWorktreeContentDigests(repoPath, observation);
+}
+
 function resumeRepository(repoPath = '.', options = {}) {
   // Validate before constructing the store or observing Git. Invalid recovery
   // requests must not mutate shared state.
@@ -49,7 +56,7 @@ function resumeRepository(repoPath = '.', options = {}) {
   const repositoryOptions = options.repositoryOptions || {};
 
   const store = WorkGraphStore.forRepository(repoPath, storeOptions);
-  store.updateRepository(repoPath, repositoryOptions);
+  store.submitObservation(passiveObservation(repoPath, repositoryOptions));
   return store.resume(workstreamId, maxEvidence);
 }
 
@@ -68,7 +75,7 @@ function handoffRepository(repoPath = '.', options = {}) {
   }
 
   const store = WorkGraphStore.forRepository(repoPath, storeOptions);
-  store.updateRepository(repoPath, repositoryOptions);
+  store.submitObservation(passiveObservation(repoPath, repositoryOptions));
   return store.handoff(workstreamId, fromAgent, toAgent, generatedAtMs);
 }
 
