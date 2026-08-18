@@ -91,3 +91,24 @@ def test_cli_resume_refreshes_repo_before_recovery(monkeypatch, tmp_path):
     )
     assert c.run(args) == 0
     assert calls == ["observe", "resume"]
+
+
+def test_cli_resume_validates_before_repository_refresh(monkeypatch, tmp_path):
+    calls = []
+    fake = FakeStore()
+    monkeypatch.setattr(c, "_store_for_path", lambda _p: fake)
+    monkeypatch.setattr(
+        c,
+        "discover_repository_observation",
+        lambda _p: calls.append("observe") or {"repo_id": "repo:test"},
+    )
+    args = SimpleNamespace(
+        work_action="resume",
+        json_output=True,
+        project=str(tmp_path),
+        workstream="",
+        max_evidence=-1,
+    )
+    assert c.run(args) == 1
+    assert calls == []
+    assert fake.observation is None
