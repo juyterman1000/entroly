@@ -133,7 +133,20 @@ counterpart is likewise internal (used by `work_graph_cli.py` and
 
 ## 4. Stage H — duplicate semantics audit
 
-### Finding H1 — `cognitive_bus` and `nkbe` are hand-maintained clones
+### Finding H1 (corrected) — one live copy, one dead copy
+
+An earlier revision of this document called these "hand-maintained clones with
+drift risk". That was wrong, and the correction matters: `mod cognitive_bus;`
+and `mod nkbe;` in `entroly-wasm/src/lib.rs` are the *only* references to those
+files in that crate. Neither carries a single `#[wasm_bindgen]`, neither is
+exported to npm. They were 1,432 lines of unreachable code, while the live
+implementations sat in the PyO3 crate. npm never had the capability at all, so
+there was no parity to lose -- only dead weight and a second place to change.
+
+Both are now `entroly-engine::cognitive_bus` and `entroly-engine::nkbe`, with
+164- and 76-line bindings over them. Original measurements follow.
+
+### Finding H1a — the original measurement
 
 ```text
 entroly-core/src/cognitive_bus.rs   966 lines   46 fns
@@ -479,3 +492,71 @@ Graph requires publishing an `entroly-core` that exports `WorkGraph` and raising
 the pin to that version. Until then the feature is undeliverable, exactly as
 gate section 13 warns -- "a semantic implementation with no delivered binding is
 incomplete."
+
+
+## 12. Stage H, continued — a third graph of the same repository
+
+Reading `entroly-engine/src/depgraph.rs` (1,591 lines) for the increment-4
+closure turned up a graph nobody had counted. The repository is now modelled
+three times, in three identity schemes:
+
+| Graph | Identity | Vocabulary |
+|---|---|---|
+| `engine::work_graph` | `stable_node_id(kind, repo_id, key)` | `NodeKind::{Repository, File, Symbol, …}`, edges `contains/defines/imports/depends_on` |
+| `engine::depgraph` | `fragment_id` | `DepType::{Import, FunctionCall, TypeReference, SameModule, TestOf, CrossLanguageFFI}` |
+| `repository_intelligence` | `path::qualified::kind` | `Symbol`, `CallEdge`, `FileRecord`, `RepositoryIndex` |
+
+`DepGraph` keeps `outgoing`/`incoming` dependency lists, a `symbol_table`
+mapping symbol name to the fragment that defines it, and `cross_lang_exports`
+recording PyO3/WASM/JNI/CGo boundaries. It already answers the questions
+section 4.1 asks -- transitive and reverse dependencies, connected components,
+symbol definitions -- but keyed to fragments, which are a selection-time
+concept, not to repository artifacts.
+
+**Consequence for increment 4.** Migrating `repository_intelligence` semantics
+into Rust is not "port 2,900 lines into an empty module". It is a reconciliation
+between two existing Rust graphs and one Python graph, and the identity question
+has to be settled first: does a File node in the work graph and a fragment in
+the dep graph denote the same thing, and if so which id wins? That is an
+architectural decision for the Work Graph owners, not something an audit should
+choose unilaterally, and it is why this increment stops at the identity join and
+the projection rather than moving code.
+
+The join built in this branch (`graph_identity`, `graph_projection`) connects
+the first and third. The second remains unjoined and is the open question.
+
+## 13. Increment status against master prompt Phase 1
+
+```text
+1. cognitive_bus -> engine        DONE      1,912 -> 951 engine + 164 binding
+2. nkbe -> engine                 DONE        992 -> 486 engine +  76 binding
+3. canonical node identity        DONE      exposed to Python and Node, hash-verified
+4. repository intelligence        PARTIAL   identity join + bounded projection done;
+                                            semantic migration blocked on the
+                                            reconciliation in section 12
+5. server.py engine split         DONE      6,748 -> 4,238 + 2,942, full suite clean
+                                            apart from two of this branch's own
+                                            wiring tests, since fixed
+```
+
+Semantic closure coverage, honestly:
+
+```text
+work_graph.rs   public surface, apply_event, from_json, coordination_report,
+                paths_overlap, validate_event_references_and_capacity, identity
+                helpers -- read
+depgraph.rs     public surface and data model -- read; internals not
+the other 63 .rs files                        -- not read in full
+```
+
+One invariant found by that reading and worth stating on its own, because it is
+the mechanism behind "completed means completed plus verified":
+
+```rust
+if node.status != WorkStatus::Unknown && node.status_trust > strongest {
+    return Err(... "status trust exceeds supporting evidence trust")
+}
+```
+
+A node cannot assert a status at a trust level higher than the evidence
+supporting it. The rule is enforced in code, not merely documented.
