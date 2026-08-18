@@ -84,6 +84,10 @@ const {
   WorkGraphStoreError,
 } = require('./js/work_graph_store');
 const {
+  MAX_RESUME_EVIDENCE,
+  resumeRepository,
+} = require('./js/work_graph_continuity');
+const {
   createContextReceipt,
   explainReceiptOmission,
   ingestReceiptDocuments,
@@ -149,6 +153,8 @@ module.exports = {
   WorkGraphStoreError,
   WorkGraphLockTimeout,
   WorkGraphStateError,
+  MAX_RESUME_EVIDENCE,
+  resumeRepository,
 
   // Configuration
   EntrolyConfig,
