@@ -1,5 +1,6 @@
 name: Retrigger Work Graph Passive Dedupe
 
+# Retrigger marker: hardened worktree fingerprint readers v2.
 on:
   push:
     branches:
