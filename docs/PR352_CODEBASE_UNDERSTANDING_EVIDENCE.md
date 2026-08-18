@@ -2354,3 +2354,69 @@ add `integration/**` to the `pull_request.branches` list on `ci.yml` at minimum,
 so the suite runs where the work actually lands. That is a one-line change to a
 workflow and a real decision about release discipline, which is why it is
 recorded rather than made.
+
+### Finding G31 — four SAST rules can never fire, including a Critical
+
+`detect_lang` maps file extensions to language tokens, and `rule_applies` matches
+a rule's declared `languages` against that token. Cross-checking the two sets
+mechanically, three declared tokens are never produced:
+
+| Declared token | Rules declaring it | Why it never matches |
+|---|---:|---|
+| `k8s` | 4 | `detect_lang` has no Kubernetes branch at all |
+| `hcl` | 4 | `.hcl` is mapped to `Some("tf")`, not `"hcl"` |
+| `bash` | 4 | `.bash` and `.zsh` are mapped to `Some("sh")`, not `"bash"` |
+
+The `hcl` and `bash` rules survive, because each declares a reachable token
+alongside the dead one — `["tf", "hcl"]` and `["sh", "bash"]` — so `tf` and `sh`
+carry them. Only the Kubernetes rules declare exclusively unreachable languages:
+
+```
+K8S-001   CWE-250  Critical   pattern "privileged"
+K8S-002   CWE-250  High       pattern "hostpath"
+K8S-003   CWE-250  High       pattern "runasuser"
+K8S-004   CWE-284  Medium     pattern "allowprivilegeescalation"
+```
+
+`rule_applies` returns `false` for every file against these, so **4 of 151 rules
+are permanently dead — 2.6% of the rule set, including one Critical and two
+High**, covering privileged containers, hostPath mounts, running as UID 0, and
+privilege escalation. The header's "151 rules" is an accurate count and a
+misleading capability claim; the effective number is 147.
+
+Making them live is more than a token fix. Kubernetes manifests are `.yaml`, and
+`.yaml` is generic — `detect_lang` would need to sniff content for `apiVersion:`
+and `kind:` rather than trust the extension. Note that the non-code-file skip
+would *not* additionally block them: that branch requires `rule.languages.is_empty()`,
+and these declare `["k8s"]`, so `rule_applies` is the only thing stopping them.
+
+There is a matching dead branch on the other side. `rule_applies` contains:
+
+```rust
+// Bash is a superset of sh
+if l == "bash" && rule.languages.contains(&"sh") {
+    return true;
+}
+```
+
+`detect_lang` never returns `"bash"`, so this can never trigger. The bridge is
+also written backwards for its stated purpose: to let a `.bash` file match a rule
+declaring `bash`, the test needed is `l == "sh" && rule.languages.contains(&"bash")`.
+It is harmless only because the four `SHELL-*` rules happen to declare `"sh"` too.
+
+**Not changed.** Adding Kubernetes detection means content sniffing in
+`detect_lang` and would start producing findings on every YAML manifest in every
+scanned repository — a detection-behaviour change of the same class as G26 and
+G27, needing the same corpus measurement. The dead `bash` branch is safe to
+delete or correct, but it belongs with that change rather than on its own.
+
+### Checked and clean
+
+* **`sast.rs` is valid UTF-8** with zero replacement characters. Marks that
+  appeared during inspection were this console's cp1252 rendering of em-dashes,
+  not file corruption. Worth stating because `bm25.rs` did carry real mojibake
+  earlier in this audit, so the possibility was live.
+* **No duplicate rule ids** across all 151 rules.
+* **`rule_applies`'s other three bridges are all reachable** — `cs`→`java`,
+  `c`→`cpp`, and `vue`/`svelte`→`js`/`ts` all rest on tokens `detect_lang`
+  actually returns.
