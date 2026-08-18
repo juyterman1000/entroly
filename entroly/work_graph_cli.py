@@ -21,6 +21,8 @@ from .work_graph_store import (
 
 _MAX_TTL_SECONDS = 30 * 24 * 60 * 60
 _MAX_EVIDENCE = 4096
+_MAX_ID_CHARS = 512
+_MAX_LABEL_CHARS = 8192
 
 
 def _project_path(project: str) -> Path:
@@ -59,22 +61,40 @@ def _error(exc: Exception) -> dict[str, Any]:
     return {"status": "error", "error": code, "detail": str(exc)[:2000]}
 
 
-def _claim(store: WorkGraphStore, project: Path, args: Any) -> tuple[Any, str]:
+def _required_id(value: object, name: str) -> str:
+    text = str(value).strip()
+    if not text:
+        raise ValueError(f"{name} must not be empty")
+    if len(text) > _MAX_ID_CHARS or "\x00" in text:
+        raise ValueError(f"{name} may not exceed {_MAX_ID_CHARS} characters or contain NUL")
+    return text
+
+
+def _claim(project: Path, args: Any) -> tuple[Any, str]:
     ttl = float(args.ttl)
     if not math.isfinite(ttl) or not 0 < ttl <= _MAX_TTL_SECONDS:
         raise ValueError(f"ttl must be > 0 and <= {_MAX_TTL_SECONDS}")
-    agent = str(args.agent).strip()
+    agent = _required_id(args.agent, "--agent")
     title = str(args.task).strip()
-    if not agent or not title:
-        raise ValueError("--agent and --task must not be empty")
+    if not title:
+        raise ValueError("--task must not be empty")
+    if len(title) > _MAX_LABEL_CHARS:
+        raise ValueError(f"--task may not exceed {_MAX_LABEL_CHARS} characters")
+    task_id = str(args.task_id or "").strip()
+    session_id = str(args.session or "").strip()
+    if len(task_id) > _MAX_ID_CHARS or "\x00" in task_id:
+        raise ValueError(f"--task-id may not exceed {_MAX_ID_CHARS} characters or contain NUL")
+    if len(session_id) > _MAX_ID_CHARS or "\x00" in session_id:
+        raise ValueError(f"--session may not exceed {_MAX_ID_CHARS} characters or contain NUL")
+    store = _store_for_path(project)
     now_ms = int(time.time() * 1000)
     lease_id = uuid.uuid4().hex
     observation = discover_repository_observation(
         project,
         agent_id=agent,
-        session_id=str(args.session or ""),
+        session_id=session_id,
         task_hint={
-            "task_id": str(args.task_id or ""),
+            "task_id": task_id,
             "title": title,
             "trust": "observed",
             "explicit_status": "in_progress",
@@ -87,7 +107,7 @@ def _claim(store: WorkGraphStore, project: Path, args: Any) -> tuple[Any, str]:
     observation["leases"] = [{
         "lease_id": lease_id,
         "agent_id": agent,
-        "task_id": str(args.task_id or ""),
+        "task_id": task_id,
         "scope_paths": sorted(set(args.path or [])),
         "scope_symbols": sorted(set(args.symbol or [])),
         "expires_at_ms": now_ms + max(1, int(ttl * 1000)),
@@ -101,8 +121,8 @@ def run(args: Any) -> int:
     json_output = bool(getattr(args, "json_output", False))
     try:
         project = _project_path(getattr(args, "project", "."))
-        store = _store_for_path(project)
         if action == "state":
+            store = _store_for_path(project)
             graph = store.load()
             payload = {
                 "status": "ok",
@@ -112,7 +132,7 @@ def run(args: Any) -> int:
                 "coordination": graph.coordination(int(time.time() * 1000)),
             }
         elif action == "claim":
-            graph, lease_id = _claim(store, project, args)
+            graph, lease_id = _claim(project, args)
             payload = {
                 "status": "ok",
                 "lease_id": lease_id,
@@ -129,18 +149,32 @@ def run(args: Any) -> int:
                 raise ValueError(
                     f"max_evidence must be an integer between 0 and {_MAX_EVIDENCE}"
                 )
+            workstream = str(args.workstream or "").strip()
+            if len(workstream) > _MAX_ID_CHARS or "\x00" in workstream:
+                raise ValueError(
+                    f"--workstream may not exceed {_MAX_ID_CHARS} characters or contain NUL"
+                )
+            store = _store_for_path(project)
             # Resume is an explicit recovery action: refresh bounded durable
             # repository/checkpoint facts first so a replacement agent can
             # continue even if the previous agent never recorded a handoff.
             store.submit_observation(discover_repository_observation(project))
             payload = {
                 "status": "ok",
-                "resume": store.resume(args.workstream or None, max_evidence=max_evidence),
+                "resume": store.resume(workstream or None, max_evidence=max_evidence),
             }
         elif action == "handoff":
+            workstream = _required_id(args.workstream, "--workstream")
+            source_agent = _required_id(args.from_agent, "--from-agent")
+            target_agent = _required_id(args.to_agent, "--to-agent")
+            store = _store_for_path(project)
+            # A handoff receipt must commit to the latest durable worktree and
+            # checkpoint facts, not whichever graph revision happened to be on
+            # disk before the user invoked this command.
+            store.submit_observation(discover_repository_observation(project))
             payload = {
                 "status": "ok",
-                "handoff": store.handoff(args.workstream, args.from_agent, args.to_agent),
+                "handoff": store.handoff(workstream, source_agent, target_agent),
             }
         else:
             payload = {"status": "error", "error": "missing_work_action", "detail": "choose state, claim, resume, or handoff"}
@@ -167,7 +201,7 @@ def build_parser() -> argparse.ArgumentParser:
     resume = actions.add_parser("resume", help="Recover an unfinished workstream")
     resume.add_argument("--workstream", default="")
     resume.add_argument("--max-evidence", type=int, default=128)
-    handoff = actions.add_parser("handoff", help="Create a graph-bound handoff receipt")
+    handoff = actions.add_parser("handoff", help="Create a fresh graph-bound handoff receipt")
     handoff.add_argument("--workstream", required=True)
     handoff.add_argument("--from-agent", required=True)
     handoff.add_argument("--to-agent", required=True)
