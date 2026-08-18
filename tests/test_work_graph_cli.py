@@ -74,3 +74,20 @@ def test_standalone_parser_exposes_all_work_actions():
         else:
             args = parser.parse_args([action])
         assert args.work_action == action
+
+
+def test_cli_resume_refreshes_repo_before_recovery(monkeypatch, tmp_path):
+    fake = FakeStore()
+    calls = []
+    monkeypatch.setattr(c, "_store_for_path", lambda _p: fake)
+    monkeypatch.setattr(c, "discover_repository_observation", lambda _p: calls.append("observe") or {"repo_id": "repo:test"})
+    fake.resume = lambda *args, **kwargs: calls.append("resume") or {"ok": True}
+    args = SimpleNamespace(
+        work_action="resume",
+        json_output=True,
+        project=str(tmp_path),
+        workstream="",
+        max_evidence=32,
+    )
+    assert c.run(args) == 0
+    assert calls == ["observe", "resume"]
