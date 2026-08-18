@@ -3,6 +3,8 @@
 > **Purpose:** This is the continuation contract for PR #352 (`integration/workgraph-production-20260817`). Read it before changing the Work Graph, Context Engine, Trust Engine, bindings, persistence, MCP, CLI, or release surfaces.
 >
 > **Do not treat this document as proof that a feature exists.** Verify the current branch and tests first. This document distinguishes what is already present from the next implementation work.
+>
+> **Required continuation read:** after this architecture handoff, read `docs/PR352_PREVIOUS_SESSION_COMPLETED_WORK.md` for the component-by-component ledger of work already implemented, then read `docs/PR352_MASTER_IMPLEMENTATION_PROMPT.md` as the execution contract. Do not rebuild completed components merely because you would structure them differently; change them only for a concrete correctness, parity, security, performance, compatibility, or product requirement.
 
 ## 1. Product mission
 
@@ -188,7 +190,7 @@ Current safeguards include:
 - branch/default-base/ahead/behind observation;
 - merge/rebase detection;
 - porcelain status parsing;
-- checkpoint use only when Git independently proves meaningful work exists.
+- checkpoint use only when Git independently proves that work exists.
 
 Do not weaken these protections for convenience.
 
@@ -574,7 +576,7 @@ A repo and an agent transcript are untrusted inputs.
 Preserve Entroly's trust contract:
 
 - local-first;
-- no surprise provider/network calls;
+- no surprise remote calls;
 - no prompt/code telemetry by default;
 - no shelling out to repository-controlled hooks/helpers when avoidable;
 - no prompt injection from recovered work state;
