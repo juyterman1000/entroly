@@ -6,7 +6,7 @@ remain owned by the existing Work Graph adapters/Rust engine.
 
 Run directly for any MCP-capable agent::
 
-    python -m entroly.work_graph_mcp_server
+    entroly-work-graph-mcp
 
 Set ``ENTROLY_SOURCE`` to confine the server to one repository and optionally
 ``ENTROLY_DIR`` to select the shared Entroly state directory.
@@ -17,8 +17,6 @@ import json
 from typing import Any
 
 from . import work_graph_mcp as _work
-from .work_graph_repo import discover_repository_identity, discover_repository_observation
-from .work_graph_store import WorkGraphStore
 
 
 def _json(payload: dict[str, Any]) -> str:
@@ -29,7 +27,9 @@ def create_mcp_server():
     try:
         from mcp.server.fastmcp import FastMCP
     except ImportError:
-        raise RuntimeError("MCP SDK not installed. Install Entroly with MCP support.") from None
+        raise RuntimeError(
+            'MCP SDK not installed. Reinstall Entroly with `pip install "entroly"`.'
+        ) from None
 
     mcp = FastMCP(
         "entroly-work-graph",
@@ -78,22 +78,7 @@ def create_mcp_server():
 
     @mcp.tool()
     def work_resume(project: str = "", workstream_id: str = "", max_evidence: int = 128) -> str:
-        """Reconstruct current repo facts, then recover unfinished work."""
-        try:
-            if (
-                not isinstance(max_evidence, int)
-                or isinstance(max_evidence, bool)
-                or not 0 <= max_evidence <= _work._MAX_EVIDENCE
-            ):
-                raise ValueError(
-                    f"max_evidence must be an integer between 0 and {_work._MAX_EVIDENCE}"
-                )
-            path = _work._project_path(project)
-            identity = discover_repository_identity(path)
-            store = WorkGraphStore(identity["repo_id"])
-            store.submit_observation(discover_repository_observation(path))
-        except Exception as exc:
-            return _json(_work._error("work_resume", exc))
+        """Refresh current durable facts once, then recover unfinished work."""
         return _json(
             _work.work_resume(
                 project=project,
