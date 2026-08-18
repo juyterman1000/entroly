@@ -119,6 +119,10 @@ def run(args: Any) -> int:
                 "coordination": graph.coordination(int(time.time() * 1000)),
             }
         elif action == "resume":
+            # Resume is an explicit recovery action: refresh bounded durable
+            # repository/checkpoint facts first so a replacement agent can
+            # continue even if the previous agent never recorded a handoff.
+            store.submit_observation(discover_repository_observation(project))
             payload = {
                 "status": "ok",
                 "resume": store.resume(args.workstream or None, max_evidence=args.max_evidence),
