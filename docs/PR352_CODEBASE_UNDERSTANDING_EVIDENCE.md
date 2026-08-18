@@ -1844,3 +1844,83 @@ immediately. The alternatives are to consult it, to delete it, or to relabel the
 header honestly; all three are decisions for the owner, and the measurement that
 would choose between them does not exist. What this audit can do is remove the
 ambiguity about which of them is currently true.
+
+### Finding G25 (severe) — the cache's semantic index and slot table leak on every eviction
+
+`EgscCache` keeps four structures in step: `entries`, `exact_index`,
+`slot_to_hash` and `semantic_index` (the `LshIndex`). Removal paths update the
+first two and never the last two.
+
+Eviction (`store_with_budget`, line ~1573):
+
+```rust
+self.entries.remove(&vh);
+self.exact_index.remove(&vh);
+self.total_evictions += 1;
+```
+
+`gc()` (line ~1708), which both bindings call from `advance_turn`:
+
+```rust
+for hash in &to_remove {
+    self.entries.remove(hash);
+    self.exact_index.remove(hash);
+}
+```
+
+Insertion only ever appends:
+
+```rust
+let slot = self.slot_to_hash.len();
+self.slot_to_hash.push(eh);
+self.semantic_index.insert(query_fp, slot);
+```
+
+Every operation on both structures in production code was enumerated: `push`,
+`insert`, `query`, indexed read, and `clear()` — where `clear()` is the explicit
+"empty the whole cache" API, not a rebuild, and the only other rebuild is
+snapshot import. Nothing prunes them incrementally. `LshIndex::remove` exists and
+is marked `#[allow(dead_code)]`, which is the same fact seen from the other side.
+
+**Measured.** A temporary probe (inserted, run, reverted) on a cache configured
+`max_entries: 16`, driven with 2,000 stores:
+
+```
+live_entries=16   slot_to_hash=343   max_entries=16
+```
+
+343 slots retained against a 16-entry cap — every one of the 327 evicted entries
+left its slot behind. The ratio is bounded only by how many admissions the
+TinyLFU gate lets through, which over a long session is unbounded.
+
+Two consequences, and the second is worse than the first:
+
+1. **Memory.** `slot_to_hash` costs 8 bytes per admission forever. `semantic_index`
+   inserts each fingerprint into all 12 LSH tables, so roughly 96 bytes more per
+   admission, also forever. A cache advertising `max_entries: 1024` grows without
+   any bound related to that number.
+
+2. **Hot-path latency.** `semantic_index.query()` returns candidate slots drawn
+   from every admission the cache has *ever* made, not from the live set. The
+   Layer-2 loop then does a `HashMap` lookup per candidate, which simply misses
+   for evicted entries:
+
+   ```rust
+   let candidate_hash = self.slot_to_hash[slot_idx];
+   if let Some(entry) = self.entries.get_mut(&candidate_hash) { ... }
+   ```
+
+   So semantic lookup stays *correct* while its cost drifts from O(live entries)
+   toward O(total admissions ever). The cache gets slower the longer it runs, and
+   the slowdown is invisible in hit-rate metrics because the answers stay right.
+
+That correctness is why this survived: nothing produces a wrong response, no test
+fails, and the only symptom is a resident-set and a p99 that climb over hours.
+
+**Not changed.** The fix is small — call `LshIndex::remove(entry.query_simhash, slot)`
+and free the slot on both removal paths — but it needs a slot free-list or
+tombstone so `slot_to_hash` indices stay stable for entries that are still live,
+and `LshIndex::remove` currently leaves empty buckets behind (noted earlier in
+this document under G11). Doing it properly touches the index lifecycle in three
+places and deserves its own change with a growth-bound regression test, of the
+shape the probe above already sketches.
