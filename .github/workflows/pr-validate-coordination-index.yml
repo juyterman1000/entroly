@@ -1,0 +1,45 @@
+name: PR Validate Work Graph Coordination Index
+
+on:
+  pull_request:
+    branches:
+      - integration/workgraph-production-20260817
+    paths:
+      - scripts/promote_coordination_index.py
+      - .github/workflows/pr-validate-coordination-index.yml
+
+permissions:
+  contents: read
+
+jobs:
+  coordination-equivalence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Pin current semantic inputs and apply promotion in workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object entroly-engine/src/coordination_index.rs)" = "d059650e5230693c19e02812529b5dbf9f4a44be"
+          test "$(git hash-object entroly-engine/src/work_graph.rs)" = "4cfa2d84123b53bc8d6a4b68e5d5431da9ac3a30"
+          test "$(git hash-object entroly-engine/src/lib.rs)" = "1eb0d523c118fc701c4c91bbabe7c00be920f408"
+          python scripts/promote_coordination_index.py
+          git diff --check
+          test "$(git diff --name-only | sort)" = "$(printf '%s\n' \
+            entroly-engine/src/coordination_index.rs \
+            entroly-engine/src/lib.rs \
+            entroly-engine/src/work_graph.rs | sort)"
+          grep -q 'pub(crate) fn candidate_pairs' entroly-engine/src/coordination_index.rs
+          grep -q 'Candidate generation is only a performance filter' entroly-engine/src/work_graph.rs
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Prove equivalence and compile quality
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path entroly-engine/Cargo.toml -- --check
+          cargo test --manifest-path entroly-engine/Cargo.toml --lib
+          cargo test --manifest-path entroly-engine/Cargo.toml --lib --features python
+          cargo clippy --manifest-path entroly-engine/Cargo.toml --all-targets -- -D warnings
+          cargo clippy --manifest-path entroly-engine/Cargo.toml --all-targets --features python -- -D warnings
