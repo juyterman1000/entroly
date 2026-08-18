@@ -77,6 +77,12 @@ const {
   discoverRepositoryObservation,
 } = require('./js/work_graph');
 const {
+  WorkGraphLockTimeout,
+  WorkGraphStateError,
+  WorkGraphStore,
+  WorkGraphStoreError,
+} = require('./js/work_graph_store');
+const {
   createContextReceipt,
   explainReceiptOmission,
   ingestReceiptDocuments,
@@ -133,10 +139,14 @@ module.exports = {
   optimizeTaskProfiles,
   classifyLearningQuery,
 
-  // Shared Rust AI Work Graph with Node-only repository observation glue.
+  // Shared Rust AI Work Graph with Node-only repository/persistence glue.
   WorkGraph,
   RepositoryDiscoveryError,
   discoverRepositoryObservation,
+  WorkGraphStore,
+  WorkGraphStoreError,
+  WorkGraphLockTimeout,
+  WorkGraphStateError,
 
   // Configuration
   EntrolyConfig,
