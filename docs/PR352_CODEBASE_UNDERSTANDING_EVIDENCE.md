@@ -820,3 +820,93 @@ sequence and then asserts the neighbour is actually returned.
 `LshIndex::remove` retains it. Unbounded only in the number of distinct keys
 (≤ 1024 per table × 12 tables), so it is bounded and small — noted for symmetry,
 not as a defect. The method is `#[allow(dead_code)]` and currently unreachable.
+
+### Finding G13 (severe; fixed) — strict-mode hallucination suppression destroyed code indentation in every response
+
+`eicv_suppressor.rs::apply_strict` ends with:
+
+```rust
+// Clean up double spaces / leading spaces from suppressions
+while result.contains("  ") {
+    result = result.replace("  ", " ");
+}
+let result = result.trim().to_string();
+```
+
+The intent is stated in the comment: tidy the gaps left behind when a
+hallucinated sentence is cut out. What it actually does is collapse *every* run
+of two or more spaces anywhere in the response, including indentation inside
+code blocks. Compiled and run against the real function body:
+
+```
+--- BEFORE ---                      --- AFTER ---
+fn handler() {                      fn handler() {
+    let x = parse()?;                let x = parse()?;
+    if x > 0 {                       if x > 0 {
+        emit(x);                     emit(x);
+    }                                }
+}                                   }
+```
+
+Every nesting level flattens to one space. For Python output this does not merely
+look wrong — it produces a syntactically invalid program, and the tool that
+produced it is the one whose stated purpose is handling code context.
+
+The control flow makes it worse. `apply_strict` returns early only when
+`claims.is_empty()`. With at least one claim — any sentence of four or more
+words — the replacement loop may run zero times while the collapse still
+executes unconditionally. So a **fully grounded response with nothing suppressed
+at all** still comes back with its indentation destroyed, and `suppress()`, the
+convenience entry point, defaults to exactly this mode (`"rag"`, `"strict"`).
+
+Fixed. The cleanup now travels with the removal instead of sweeping the
+document: a suppressed claim consumes the horizontal whitespace that trailed it,
+so no gap is created and no global pass is needed. Newlines are deliberately not
+consumed -- they carry the paragraph and code-block structure. The extended span
+can reach at most the first following non-space byte, which is where the next
+claim begins, so spans stay disjoint and the existing reverse-order application
+remains offset-safe.
+
+Three tests pin it, and two of them were confirmed to fail against the previous
+code before the fix was kept:
+
+| Test | Against old code |
+|---|---|
+| `strict_mode_preserves_code_indentation` | FAILED -- both nesting levels lost |
+| `strict_mode_leaves_a_fully_grounded_response_alone` | FAILED -- rewritten with zero suppressions |
+| `suppressing_a_claim_consumes_its_own_trailing_space` | passed -- pins the property the collapse also achieved, destructively |
+
+The first test grounds the code block in the context on purpose. Left ungrounded
+it is a single unsupported claim, strict mode deletes it wholesale, and the test
+would have passed for the wrong reason -- which is what the first draft did until
+the failure output showed the whole block missing.
+
+`cargo test --lib`: 467 passed. `cargo clippy --lib`: clean.
+
+### Finding G14 — `annotate` mode does not list what it documents as listing
+
+The module table says `annotate` will "Append warning footer **listing**
+unverified claims". `apply_annotate` takes `_certs` — underscore-prefixed,
+unused — and emits only a count:
+
+```
+[EICV Warning: 3 claims could not be verified against provided context]
+```
+
+A reader of the response cannot tell *which* three. The certificates carrying
+that detail are computed, returned in `SuppressionResult.certificates`, and
+discarded by the annotator. Documentation overclaim, not a logic error.
+
+### Observation — `softcap`'s documented fallback is narrower than its real one
+
+`fragment.rs` documents "When `cap ≤ 0`, falls back to `min(x, 1)`", but the
+guard is `if cap <= 0.0 || cap >= 10.0`. The upper cutoff is undocumented and
+untested — `test_softcap_properties` covers `cap = 0.0` only.
+
+### Observation — `query.rs` is clean, and says so honestly
+
+`compute_vagueness` carries a comment recording that its specificity coefficient
+is 0.7 rather than the 0.2 an earlier comment claimed, and that the code was left
+alone because the code is the behaviour. That is the correct disposition for a
+documentation/behaviour mismatch found by reading, and it is the pattern the rest
+of these findings follow.
