@@ -11,6 +11,7 @@
 //   npx entroly-wasm serve
 
 let WasmEntrolyEngine;
+let WasmWorkGraph;
 let classifyQueryTransitionRust;
 let rewardWeightedOptimizeRust;
 let optimizeTaskProfilesRust;
@@ -18,6 +19,7 @@ let classifyLearningQueryRust;
 function bindWasmExports(mod) {
   ({
     WasmEntrolyEngine,
+    WasmWorkGraph,
     classify_query_transition: classifyQueryTransitionRust,
     reward_weighted_optimize: rewardWeightedOptimizeRust,
     optimize_task_profiles: optimizeTaskProfilesRust,
@@ -39,11 +41,15 @@ function buildAndBindWasm() {
 try {
   bindWasmExports(require('./pkg/entroly_wasm'));
   if (
+    !WasmWorkGraph ||
     !classifyQueryTransitionRust ||
     !rewardWeightedOptimizeRust ||
     !optimizeTaskProfilesRust ||
     !classifyLearningQueryRust
   ) {
+    // A source checkout can contain an older generated pkg/ directory. Treat
+    // a missing Work Graph export exactly like any other stale native surface
+    // and rebuild before loading the high-level JS wrapper.
     buildAndBindWasm();
   }
 } catch (err) {
