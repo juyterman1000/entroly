@@ -1430,3 +1430,70 @@ admission gate at line 751 uses the same `utility()` — were calibrated against
 today's numbers. All three call sites move together. Recorded with the crossover
 arithmetic so the decision can be made against real figures rather than
 re-derived.
+
+### Finding G20 — `shifts_detected` is reported as a lifetime counter but is windowed state
+
+`ShiftDetector.shifts_detected` is `pub`, copied into `CacheStats`
+(`cache.rs:1755`), and printed in benchmark output as "Shifts detected: {}"
+(`cache.rs:3113`, `cache.rs:3478`). A reader takes it for a lifetime total.
+
+It is not. It doubles as the hysteresis state for the severe-reset rule, and
+`cache.rs:511` assigns it:
+
+```rust
+if self.observations_since_reset > 500 {
+    // Window expired -- reset shift counter for next window
+    self.shifts_detected = 1;
+    self.observations_since_reset = 0;
+}
+```
+
+So every time the 500-observation window lapses, the public count is discarded
+and restarted at 1. A cache that detected forty shifts over a long session can
+report `1`. The internal use is correct — the rule is "three shifts within 500
+observations means reset" and it needs a windowed count — but the same field
+serves both purposes, so the metric silently under-reports.
+
+Two fields would fix it: keep the windowed count private and add a monotonic
+`shifts_detected_total`. Not changed here because `CacheStats` is a public
+struct and adding a field is an API change that belongs with its consumers.
+
+### Observation — `TailStats` grows without bound in the production cache
+
+`TailStats::record` pushes one `f64` per observation into a `Vec` that is never
+truncated, and `percentile()` re-sorts the whole vector on every call:
+
+```rust
+pub fn record(&mut self, cost_saved: f64) {
+    self.costs.push(cost_saved);
+}
+```
+
+`tail_stats: TailStats` is a field of `EgscCache` (`cache.rs:1218`), so this is
+the production cache, not a benchmark harness. A long-lived cache — the only kind
+worth having — accumulates 8 bytes per recorded query indefinitely, and each
+percentile query costs O(n log n) over the full history.
+
+A reservoir sample or a t-digest would give the same P50/P95/P99 in bounded
+space. Recorded rather than changed: the fix alters the accuracy characteristics
+of a reported statistic, and the right structure depends on whether exactness at
+the tail matters more than memory.
+
+### Correction — the panic audit's method was wrong, though its conclusion was not
+
+The earlier panic audit in this document scanned each engine module with
+`awk '/#\[cfg\(test\)\]/{exit}'`, intending to stop at the test module. That
+stops at the **first** `#[cfg(test)]` anywhere in the file, and several modules
+attach one to a single test-only helper long before the test module — `cache.rs`
+has one on `CacheEntry::new` at line 64, so that file was scanned to line 64 of
+3,689.
+
+Re-run against the correct boundary (the last `#[cfg(test)]` line in each file),
+the result is the same set of sites plus one match in `entropy.rs:449`, which is
+the string literal `"unreachable!()"` inside stub detection — data, not code.
+`cache.rs` itself has zero panic-capable calls in production paths.
+
+So the conclusion in that section stands and no site was missed. The method that
+produced it did not, and is corrected here rather than left as a footnote,
+because a scan that silently covers 2% of a file is exactly the kind of evidence
+this document exists to distrust.
