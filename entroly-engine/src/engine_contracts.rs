@@ -13,6 +13,8 @@ use std::collections::BTreeSet;
 use std::fmt;
 
 const MAX_CONTRACT_ID_BYTES: usize = 512;
+const MAX_SCOPE_PATH_BYTES: usize = 4_096;
+const MAX_RECOVERY_HANDLE_BYTES: usize = 4_096;
 const MAX_COMMITMENT_BYTES: usize = 256;
 const MAX_SCOPE_ITEMS: usize = 512;
 const MAX_RECOVERY_HANDLES: usize = 512;
@@ -28,6 +30,7 @@ pub enum EngineContractError {
         field: &'static str,
         max_items: usize,
     },
+    InvalidTimestamp(&'static str),
 }
 
 impl fmt::Display for EngineContractError {
@@ -40,6 +43,7 @@ impl fmt::Display for EngineContractError {
             Self::TooManyItems { field, max_items } => {
                 write!(formatter, "{field} exceeds {max_items} items")
             }
+            Self::InvalidTimestamp(field) => write!(formatter, "{field} cannot be negative"),
         }
     }
 }
@@ -61,20 +65,29 @@ fn validate_text(
     Ok(())
 }
 
-fn canonical_ids(
+fn canonical_strings(
     field: &'static str,
     values: impl IntoIterator<Item = String>,
     max_items: usize,
+    max_bytes: usize,
 ) -> Result<Vec<String>, EngineContractError> {
     let mut unique = BTreeSet::new();
     for value in values {
-        validate_text(field, &value, MAX_CONTRACT_ID_BYTES, false)?;
+        validate_text(field, &value, max_bytes, false)?;
         unique.insert(value);
         if unique.len() > max_items {
             return Err(EngineContractError::TooManyItems { field, max_items });
         }
     }
     Ok(unique.into_iter().collect())
+}
+
+fn canonical_ids(
+    field: &'static str,
+    values: impl IntoIterator<Item = String>,
+    max_items: usize,
+) -> Result<Vec<String>, EngineContractError> {
+    canonical_strings(field, values, max_items, MAX_CONTRACT_ID_BYTES)
 }
 
 fn evidence_ids(evidence: &[EvidenceRef]) -> Result<Vec<String>, EngineContractError> {
@@ -148,7 +161,12 @@ impl WorkScope {
                 resume.selected_workstream.agent_ids.clone(),
                 MAX_SCOPE_ITEMS,
             )?,
-            changed_paths: canonical_ids("changed_paths", changed_paths, MAX_SCOPE_ITEMS)?,
+            changed_paths: canonical_strings(
+                "changed_paths",
+                changed_paths,
+                MAX_SCOPE_ITEMS,
+                MAX_SCOPE_PATH_BYTES,
+            )?,
             commit_ids: canonical_ids("commit_ids", commits, MAX_SCOPE_ITEMS)?,
             evidence_ids: canonical_ids("evidence_ids", evidence, MAX_SCOPE_ITEMS)?,
         })
@@ -211,6 +229,9 @@ impl ContextReceiptRef {
             MAX_COMMITMENT_BYTES,
             false,
         )?;
+        if observed_at_ms < 0 {
+            return Err(EngineContractError::InvalidTimestamp("observed_at_ms"));
+        }
 
         Ok(Self {
             receipt_id,
@@ -224,10 +245,11 @@ impl ContextReceiptRef {
                 selected_evidence_ids,
                 MAX_SCOPE_ITEMS,
             )?,
-            recovery_handles: canonical_ids(
+            recovery_handles: canonical_strings(
                 "recovery_handles",
                 recovery_handles,
                 MAX_RECOVERY_HANDLES,
+                MAX_RECOVERY_HANDLE_BYTES,
             )?,
             observed_at_ms,
         })
@@ -237,9 +259,7 @@ impl ContextReceiptRef {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::work_graph::{
-        EvidenceKind, NodeKind, TrustLevel, WorkItemView, WorkStatus,
-    };
+    use crate::work_graph::{EvidenceKind, NodeKind, TrustLevel, WorkItemView, WorkStatus};
     use std::collections::BTreeMap;
 
     fn resume_fixture() -> ResumeView {
@@ -299,6 +319,26 @@ mod tests {
     }
 
     #[test]
+    fn path_and_locator_bounds_are_distinct_from_id_bounds() {
+        let mut resume = resume_fixture();
+        resume.changed_paths = vec![format!("src/{}", "a".repeat(1_000))];
+        assert!(WorkScope::from_resume(&resume).is_ok());
+
+        let receipt = ContextReceiptRef::new(
+            "receipt:1".into(),
+            "workstream:auth".into(),
+            String::new(),
+            String::new(),
+            String::new(),
+            "sha256:x".into(),
+            vec![],
+            vec![format!("recover://{}", "b".repeat(1_000))],
+            1,
+        );
+        assert!(receipt.is_ok());
+    }
+
+    #[test]
     fn receipt_reference_never_needs_raw_context() {
         let receipt = ContextReceiptRef::new(
             "receipt:1".into(),
@@ -313,14 +353,8 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(
-            receipt.selected_evidence_ids,
-            vec!["evidence:git", "evidence:test"]
-        );
-        assert_eq!(
-            receipt.recovery_handles,
-            vec!["recover:chunk-1", "recover:chunk-2"]
-        );
+        assert_eq!(receipt.selected_evidence_ids, vec!["evidence:git", "evidence:test"]);
+        assert_eq!(receipt.recovery_handles, vec!["recover:chunk-1", "recover:chunk-2"]);
         let json = serde_json::to_string(&receipt).unwrap();
         assert!(!json.contains("selected_context"));
         assert!(!json.contains("omitted_context"));
@@ -328,7 +362,7 @@ mod tests {
     }
 
     #[test]
-    fn receipt_reference_rejects_unbounded_or_empty_identity() {
+    fn receipt_reference_rejects_unbounded_or_invalid_identity() {
         let empty = ContextReceiptRef::new(
             String::new(),
             "workstream:auth".into(),
@@ -341,6 +375,22 @@ mod tests {
             1,
         );
         assert!(matches!(empty, Err(EngineContractError::EmptyField("receipt_id"))));
+
+        let negative_time = ContextReceiptRef::new(
+            "receipt:1".into(),
+            "workstream:auth".into(),
+            String::new(),
+            String::new(),
+            String::new(),
+            "sha256:x".into(),
+            vec![],
+            vec![],
+            -1,
+        );
+        assert!(matches!(
+            negative_time,
+            Err(EngineContractError::InvalidTimestamp("observed_at_ms"))
+        ));
 
         let too_many = (0..=MAX_SCOPE_ITEMS)
             .map(|index| format!("evidence:{index}"))
