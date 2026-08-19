@@ -57,6 +57,7 @@ jobs:
         run: |
           python scripts/pr352_fix_engine_gc_policy.py
           python scripts/pr352_production_safety_lifetime.py
+          python scripts/pr352_incremental_work_graph_commitment.py
 
       - name: Format and lint changed sources
         shell: bash
@@ -70,11 +71,13 @@ jobs:
             tests/test_engine_host_gc_policy.py \
             tests/test_production_e2e.py \
             scripts/pr352_fix_engine_gc_policy.py \
+            scripts/pr352_incremental_work_graph_commitment.py \
             scripts/pr352_production_safety_lifetime.py
 
       - name: Focused Rust falsification tests
         shell: bash
         run: |
+          cargo test --manifest-path entroly-engine/Cargo.toml work_graph::tests::incremental_commitment_matches_canonical_serde_bytes -- --exact
           cargo test --manifest-path entroly-engine/Cargo.toml work_graph::tests::derived_event_id_index_tracks_append_dedupe_and_import -- --exact
           cargo test --manifest-path entroly-engine/Cargo.toml sast::tests::secret_findings_never_echo_source_bytes_at_any_position -- --exact
 
@@ -144,5 +147,5 @@ jobs:
             echo 'Production hardening already present; nothing to commit.'
             exit 0
           fi
-          git commit -m 'fix(prod): preserve host runtime and bound work event dedupe'
+          git commit -m 'fix(prod): preserve host runtime and bound work graph lifetime cost'
           git push origin HEAD:integration/workgraph-production-20260817
