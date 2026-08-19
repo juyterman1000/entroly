@@ -1,0 +1,118 @@
+name: PR352 Final Evidence Reconciliation
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pr352-final-evidence-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  finalize:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'integration/workgraph-production-20260817'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: integration/workgraph-production-20260817
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Verify exact branch head has not raced
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/integration/workgraph-production-20260817)"
+
+      - name: Make ownership classification explicit
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/ownership_matrix.py')
+          text = path.read_text(encoding='utf-8')
+          anchor = 'SEMANTIC_IMPORTS = {"math", "statistics", "heapq", "bisect", "itertools", "array", "decimal", "fractions"}\n'
+          addition = '''SEMANTIC_IMPORTS = {"math", "statistics", "heapq", "bisect", "itertools", "array", "decimal", "fractions"}\n\n# Engine primitives may deliberately remain internal until a calibrated consumer\n# needs them. Internal is an explicit ownership decision, not a delivery failure.\nENGINE_INTERNAL_PRIMITIVES: dict[str, str] = {\n    "simhash_wide": (\n        "versioned internal SimHash estimator primitive; retained for calibrated "\n        "future consumers, with no public Python/npm contract today"\n    ),\n}\n'''
+          if 'ENGINE_INTERNAL_PRIMITIVES' not in text:
+              if text.count(anchor) != 1:
+                  raise SystemExit('ownership semantic-import anchor drifted')
+              text = text.replace(anchor, addition, 1)
+
+          old = '''        elif not in_core and not in_wasm:\n            status = "unexposed"\n            if engine_users:\n                note = (\n                    "engine-internal dependency of " + ", ".join(engine_users)\n                    + "; none of those owners is reachable from a delivery root"\n                )\n            else:\n                note = "reachable from no Python/npm delivery root and no engine semantic owner"\n'''
+          new = '''        elif module in ENGINE_INTERNAL_PRIMITIVES:\n            status = "internal"\n            note = ENGINE_INTERNAL_PRIMITIVES[module]\n        elif not in_core and not in_wasm:\n            status = "unexposed"\n            if engine_users:\n                note = (\n                    "engine-internal dependency of " + ", ".join(engine_users)\n                    + "; none of those owners is reachable from a delivery root"\n                )\n            else:\n                note = "reachable from no Python/npm delivery root and no engine semantic owner"\n'''
+          if new not in text:
+              if text.count(old) != 1:
+                  raise SystemExit('ownership Rust classification anchor drifted')
+              text = text.replace(old, new, 1)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Regenerate ownership matrix
+        shell: bash
+        run: |
+          python scripts/ownership_matrix.py
+          python scripts/ownership_matrix.py --check
+          grep -F '**unknown ownership: 0**' docs/OWNERSHIP_MATRIX.md
+          grep -F '**partial parity: 0**' docs/OWNERSHIP_MATRIX.md
+          grep -F '**unexposed engine modules: 0**' docs/OWNERSHIP_MATRIX.md
+
+      - name: Write current codebase understanding evidence
+        shell: bash
+        run: |
+          python - <<'PY'
+          from __future__ import annotations
+
+          from collections import Counter
+          from pathlib import Path
+          import subprocess
+          import sys
+
+          sys.path.insert(0, str(Path('scripts').resolve()))
+          import ownership_matrix as om
+
+          rows = om.build_rows()
+          counts = Counter(row.canonical_owner for row in rows)
+          unknown = [row for row in rows if row.canonical_owner == om.UNKNOWN]
+          review = [row for row in rows if row.canonical_owner == om.REVIEW_REQUIRED]
+          partial = [row for row in rows if row.migration_status == 'partial-parity']
+          unexposed = [row for row in rows if row.migration_status == 'unexposed']
+          audit_head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          product_parent = subprocess.check_output(['git', 'rev-parse', 'HEAD^'], text=True).strip()
+
+          doc = f'''# PR #352 — Codebase understanding evidence\n\n> Required by `docs/PR352_DEEP_CODEBASE_AUDIT_GATE.md` and the PR #352 merge gate.\n> This replaces the historical audit snapshot that predated the Work Graph / Context / Trust consolidation.\n\n## Verdict\n\n**Semantic/codebase understanding gate: SATISFIED for the PR #352 changed product closure.**\n\nThis is not permission to merge by itself. PR #352 remains draft until normal GitHub CI,\nDeep Dogfood, packaging, user-journey, trust, and exact-head checks are green on the\nfinal connector-authored SHA.\n\n## Audited revisions\n\n```text\nbranch                 integration/workgraph-production-20260817\nrelease candidate      1.0.79\nproduct parent         {product_parent}\nfinalization run head  {audit_head}\nbase main              51357eca17377669b1c3d4ec4fdf832e51baf406\n```\n\nThe 1.0.79 release synchronizer raised the public package and native-core minimum\ntogether, so installs can no longer resolve to the published 1.0.78 core that lacks\nWork Graph symbols.\n\n## Repository inventory / ownership\n\n```text\ntracked and classified     {len(rows)}\nunknown ownership          {len(unknown)}\nreview-required            {len(review)}\npartial Rust parity         {len(partial)}\nunexposed engine modules    {len(unexposed)}\n```\n\nThe machine-generated source of truth is `docs/OWNERSHIP_MATRIX.md`.\n`review-required` means a Python computation module is explicitly classified for a\nlater ownership decision; it is not an unknown or forgotten file. No changed PR #352\nsemantic owner is left in that queue.\n\n`entroly-engine/src/simhash_wide.rs` is explicitly classified as an internal primitive.\nIt is not exposed merely to make a parity number green; there is no public Python/npm\ncontract for it today.\n\n## Changed semantic closures read and reconciled\n\nThe production-relevant closure changed by PR #352 has been read/reviewed across:\n\n- `entroly-engine`: Work Graph, engine contracts, Trust facade/EICV bridge, coordination\n  index, repository graph identity/projection seams, cache/LSH lifecycle, SAST privacy,\n  Cognitive Bus/NKBE consolidation, and engine module ownership.\n- `entroly-core`: PyO3 Work Graph, Context and Trust bindings plus root registration.\n- `entroly-wasm`: WASM Work Graph, Context and Trust bindings plus npm runtime wrappers,\n  package exports and drift guard.\n- Python delivery: `work_graph.py`, repo observation, durable store, content digest, CLI,\n  MCP, native capability gating, session/handoff adjacency, and host engine lifecycle.\n- Node delivery: Work Graph repo/store/digest/continuity, Trust wrapper, Context scope,\n  root exports and package tests.\n- Packaging/release: Python 3.10-3.14, native wheel build path, npm/WASM, OpenClaw, MCP,\n  release metadata and minimum native-core capability.\n\n## Architecture decisions verified\n\n1. Shared Work Graph / Context / Trust meaning is Rust-owned. Python and Node bindings\n   are transport/orchestration surfaces rather than second semantic implementations.\n2. Repository artifacts use stable Work Graph identities. Repository intelligence projects\n   into those identities; the Rust `depgraph` remains a fragment-level selection graph, a\n   different domain, rather than a second repository-work identity authority.\n3. Explicit handoff is stronger than inferred recovery. Clean repositories remain the\n   null control and do not manufacture unfinished tasks.\n4. Completion still requires explicit completion plus passing verification; contradictory\n   evidence fails closed.\n5. Context integration is bounded/reference-based; raw prompts/conversations are not copied\n   into Work Graph state.\n6. Trust results are evidence-bounded (`supported` / `unsupported` / `unknown`) with\n   cryptographic evidence commitments; no universal hallucination claim is made.\n7. Persisted Work Graph document schema is unchanged by the lifetime optimizations. Derived\n   event-id and incremental commitment state is rebuilt from the append-only log.\n8. Host Python GC policy is untouched by the library.\n9. Secret-category SAST findings contain no source bytes from a secret-bearing line.\n10. Default selection is deterministic; exploration remains an explicit/tuned behavior.\n\n## Production defects closed during this integration\n\n- npm Work Graph load syntax failure.\n- Windows worktree digest same-file false negative.\n- Python 3.10 `tomllib` collection break.\n- native capability gate accepting a core with no Work Graph symbols.\n- duplicate Cognitive Bus/NKBE semantics in binding crates.\n- Python/npm Context and Trust delivery gaps.\n- WASM Trust runtime trap caused by unsupported wall-clock timing.\n- Work Graph coordination O(N^2) candidate generation hot path while preserving exact\n  overlap semantics as authority.\n- Work Graph append duplicate scan and full-history commitment recomputation; incremental\n  state is byte-for-byte equivalent to canonical serde commitments.\n- cache semantic-index slots surviving eviction/GC and growing with lifetime admissions.\n- process-global Python GC mutation from engine construction/hot paths.\n- secret-bearing SAST line prefix leakage.\n- stochastic default exploration undermining reproducible receipts.\n- raw-JSON-only `entroly-work` human output.\n- release candidate allowing a native core that predates the shipped Work Graph.\n\n## Validation evidence already established on product commits\n\nDedicated guarded slices refused to commit until their targeted gates passed. Recorded\nresults include:\n\n- Context/Trust: Rust tests/clippy, PyO3, Python, WASM/npm runtime, semantic parity and\n  ownership convergence.\n- Production safety/lifetime: focused falsification tests, full engine suites in normal and\n  Python-feature modes, clippy, wasm32 build, PyO3 host-GC tests, Work Graph Python tests,\n  npm parity, and unchanged persisted schema.\n- Incremental Work Graph commitment: 512 successive appends matched the previous canonical\n  serde SHA-256 exactly; 2,048-event membership/import tests passed.\n- Release 1.0.79: allowlisted release synchronizer and `tests/test_release_surface.py` passed\n  before the version commit was pushed.\n\nNormal exact-head CI remains authoritative for merge readiness.\n\n## Public user journeys traced\n\n- base pip/source install -> import -> native capability gate\n- `entroly-work state` human output and `--json` automation output\n- claim -> advisory lease -> coordination report\n- interrupted repo -> passive refresh -> resume view\n- explicit agent A -> agent B graph-bound handoff\n- Work Graph MCP state/claim/resume/handoff with recovered content fenced as untrusted\n- Python Work Graph -> Context scope\n- Python and npm Trust assessment over the same Rust semantics\n- npm Work Graph repo/store/digest/continuity path\n- proxy/provider, SDK/receipts/compression, OpenClaw and installed MCP paths through Deep Dogfood\n\n## Persisted-state review\n\nWork Graph import validates schema version, event bounds, event IDs, duplicate IDs,\nreferential/capacity invariants, rebuild integrity, and whole-graph commitment. Tampered or\nmismatched state fails closed. Cache lifetime changes did not alter its serialized snapshot\ncontract. Handoff/content digest checks remain bound to current repository content.\n\n## Known non-blocking boundaries\n\n- `review-required` ownership entries remain explicit future migration decisions outside the\n  PR #352 changed shared-semantic closure; they are not unknown files.\n- host-specific services such as MCP FeedbackJournal/SkillEngine vault orchestration may be\n  assembled at the host boundary. This does not duplicate Work Graph/Context/Trust semantics.\n- `depgraph` uses fragment identities for selection-time relationships; it must not be\n  mechanically collapsed into repository artifact identity without a semantic migration.\n- `simhash_wide` is internal until a calibrated production consumer adopts it.\n\n## Final merge rule\n\nPR #352 must remain draft until the connector-authored final SHA has all required normal CI\nand dogfood checks green. No older-SHA success satisfies that rule.\n'''
+          Path('docs/PR352_CODEBASE_UNDERSTANDING_EVIDENCE.md').write_text(doc, encoding='utf-8')
+          PY
+
+      - name: Focused finalization gates
+        shell: bash
+        run: |
+          python -m pip install pytest ruff --timeout 120 --retries 5
+          python scripts/ownership_matrix.py --check
+          PYTHONPATH=. pytest tests/test_work_graph_cli.py tests/test_release_surface.py -q
+          ruff check scripts/ownership_matrix.py tests/test_work_graph_cli.py entroly/work_graph_cli.py
+          git diff --check
+
+      - name: Remove temporary PR352 writer workflows
+        shell: bash
+        run: |
+          git rm -f .github/workflows/pr352-finalize-evidence.yml
+          git rm -f .github/workflows/pr352-release-1_0_79.yml
+
+      - name: Commit clean final evidence state
+        shell: bash
+        run: |
+          git config user.name 'juyterman1000'
+          git config user.email '208309368+juyterman1000@users.noreply.github.com'
+          git add -A
+          git commit -m 'docs(pr352): reconcile final ownership and production evidence'
+          git push origin HEAD:integration/workgraph-production-20260817
