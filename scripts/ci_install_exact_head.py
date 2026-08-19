@@ -16,13 +16,14 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
-import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
+_PROJECT_VERSION_RE = re.compile(r'^version\s*=\s*["\']([^"\']+)["\']\s*(?:#.*)?$')
 
 
 def _run(argv: list[str], *, cwd: Path | None = None) -> None:
@@ -73,10 +74,33 @@ def _maturin_executable(python: str) -> str:
     raise RuntimeError(f"maturin executable not found under {scripts}")
 
 
+def _project_version(path: Path) -> str:
+    """Read only ``[project].version`` using syntax available on Python 3.10.
+
+    The CI bootstrap must run before test dependencies are installed, so it cannot
+    depend on ``tomllib`` (3.11+) or third-party ``tomli``. Version synchronization
+    already constrains this field to a plain quoted semantic version.
+    """
+    in_project = False
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if line == "[project]":
+            in_project = True
+            continue
+        if in_project and line.startswith("["):
+            break
+        if in_project:
+            match = _PROJECT_VERSION_RE.match(line)
+            if match:
+                return match.group(1)
+    raise RuntimeError(f"missing plain [project].version in {path}")
+
+
 def _project_versions() -> tuple[str, str]:
-    root_data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    core_data = tomllib.loads((ROOT / "entroly-core" / "pyproject.toml").read_text(encoding="utf-8"))
-    return str(root_data["project"]["version"]), str(core_data["project"]["version"])
+    return (
+        _project_version(ROOT / "pyproject.toml"),
+        _project_version(ROOT / "entroly-core" / "pyproject.toml"),
+    )
 
 
 def _pip(python: str, *args: str) -> None:
