@@ -129,7 +129,20 @@ jobs:
           const ordered = Object.fromEntries(Object.keys(value).sort().map(k => [k, value[k]]));
           process.stdout.write(JSON.stringify(ordered));
           JS
-          diff -u /tmp/python-trust.json /tmp/node-trust.json
+          .venv/bin/python - <<'PY'
+          import json
+          from pathlib import Path
+
+          python_value = json.loads(Path('/tmp/python-trust.json').read_text(encoding='utf-8'))
+          node_value = json.loads(Path('/tmp/node-trust.json').read_text(encoding='utf-8'))
+          assert python_value == node_value, {
+              'python': python_value,
+              'node': node_value,
+          }
+          assert python_value['status'] == node_value['status']
+          assert python_value['evidence_commitment'] == node_value['evidence_commitment']
+          print('Cross-runtime Trust semantic parity: PASS')
+          PY
 
       - name: Regenerate and prove ownership convergence
         shell: bash
