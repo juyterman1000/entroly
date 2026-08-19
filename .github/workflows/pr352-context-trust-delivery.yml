@@ -83,7 +83,14 @@ jobs:
           python -m venv .venv
           .venv/bin/pip install maturin pytest --timeout 120 --retries 5
           (cd entroly-core && ../.venv/bin/maturin develop --release)
-          PYTHONPATH=. .venv/bin/pytest tests/test_context_trust_delivery.py tests/test_work_graph_python_wrapper.py -q
+          PYTHONPATH=. .venv/bin/pytest \
+            tests/test_context_trust_delivery.py \
+            tests/test_work_graph_bindings.py \
+            tests/test_work_graph_contract.py \
+            tests/test_work_graph_root_api.py \
+            tests/test_work_graph_repo.py \
+            tests/test_work_graph_store.py \
+            -q
 
       - name: Install wasm-pack
         shell: bash
