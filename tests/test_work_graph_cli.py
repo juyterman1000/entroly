@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 from entroly import work_graph_cli as c
@@ -12,7 +13,7 @@ class FakeGraph:
         return {"event_count": 1}
 
     def coordination(self, now):
-        return {"as_of_ms": now}
+        return {"as_of_ms": now, "conflicts": []}
 
     def unfinished(self):
         return []
@@ -66,6 +67,7 @@ def test_cli_claim_uses_user_statement(monkeypatch, capsys, tmp_path):
 
 def test_standalone_parser_exposes_all_work_actions():
     parser = c.build_parser()
+    assert parser.prog == "entroly-work"
     for action in ("state", "claim", "resume", "handoff"):
         if action == "claim":
             args = parser.parse_args([action, "--agent", "codex", "--task", "Fix auth"])
@@ -74,6 +76,58 @@ def test_standalone_parser_exposes_all_work_actions():
         else:
             args = parser.parse_args([action])
         assert args.work_action == action
+
+
+def test_cli_human_state_is_compact_and_not_raw_json(monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr(c, "_store_for_path", lambda _p: FakeStore())
+    args = SimpleNamespace(
+        work_action="state",
+        json_output=False,
+        project=str(tmp_path),
+    )
+    assert c.run(args) == 0
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert "Entroly Work Graph" in captured.out
+    assert "Repository   repo:test" in captured.out
+    assert "Events       1" in captured.out
+    assert "Unfinished   0" in captured.out
+    assert "Conflicts    0" in captured.out
+    assert "No unfinished work is currently recorded." in captured.out
+    assert '"status"' not in captured.out
+    assert "{" not in captured.out
+
+
+def test_cli_json_state_remains_machine_readable(monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr(c, "_store_for_path", lambda _p: FakeStore())
+    args = SimpleNamespace(
+        work_action="state",
+        json_output=True,
+        project=str(tmp_path),
+    )
+    assert c.run(args) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "ok"
+    assert payload["repo_id"] == "repo:test"
+    assert payload["summary"] == {"event_count": 1}
+    assert payload["unfinished"] == []
+
+
+def test_cli_human_error_is_actionable(monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr(
+        c,
+        "_store_for_path",
+        lambda _p: (_ for _ in ()).throw(ValueError("bad project")),
+    )
+    args = SimpleNamespace(
+        work_action="state",
+        json_output=False,
+        project=str(tmp_path),
+    )
+    assert c.run(args) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "Entroly Work Graph error [invalid_work_graph_request]: bad project" in captured.err
 
 
 def test_cli_resume_fingerprints_repo_before_recovery(monkeypatch, tmp_path):

@@ -40,15 +40,134 @@ def _passive_observation(project: Path) -> dict[str, Any]:
     return enrich_worktree_content_digests(project, observation)
 
 
+def _mapping(value: object) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _count(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, (list, tuple, set, dict)):
+        return len(value)
+    return None
+
+
+def _first(mapping: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        value = mapping.get(key)
+        if value not in (None, "", [], {}):
+            return value
+    return None
+
+
+def _add_field(lines: list[str], label: str, value: object) -> None:
+    if value in (None, "", [], {}):
+        return
+    if isinstance(value, (list, tuple, set)):
+        value = len(value)
+    elif isinstance(value, dict):
+        value = len(value)
+    text = str(value)
+    if len(text) > 160:
+        text = text[:157] + "..."
+    lines.append(f"  {label:<12} {text}")
+
+
+def _coordination_conflicts(coordination: object) -> int | None:
+    data = _mapping(coordination)
+    for key in ("conflicts", "active_conflicts", "overlaps"):
+        count = _count(data.get(key))
+        if count is not None:
+            return count
+    return None
+
+
+def _summary_lines(summary: object) -> list[str]:
+    data = _mapping(summary)
+    lines: list[str] = []
+    metrics = (
+        ("Events", ("event_count", "events")),
+        ("Nodes", ("node_count", "nodes")),
+        ("Edges", ("edge_count", "edges")),
+        ("Tasks", ("task_count", "tasks")),
+        ("Workstreams", ("workstream_count", "workstreams")),
+        ("Evidence", ("evidence_count", "evidence")),
+    )
+    for label, keys in metrics:
+        value = _first(data, *keys)
+        count = _count(value)
+        _add_field(lines, label, count if count is not None else value)
+    return lines
+
+
+def _human_lines(payload: dict[str, Any]) -> list[str]:
+    lines = ["Entroly Work Graph"]
+
+    if "repo_id" in payload:
+        _add_field(lines, "Repository", payload.get("repo_id"))
+        lines.extend(_summary_lines(payload.get("summary")))
+        unfinished = _count(payload.get("unfinished"))
+        if unfinished is not None:
+            _add_field(lines, "Unfinished", unfinished)
+        conflicts = _coordination_conflicts(payload.get("coordination"))
+        if conflicts is not None:
+            _add_field(lines, "Conflicts", conflicts)
+        if unfinished == 0:
+            lines.append("  State        No unfinished work is currently recorded.")
+
+    elif "lease_id" in payload:
+        lines.append("  Status       Work claim recorded.")
+        _add_field(lines, "Lease", payload.get("lease_id"))
+        lines.extend(_summary_lines(payload.get("summary")))
+        conflicts = _coordination_conflicts(payload.get("coordination"))
+        if conflicts is not None:
+            _add_field(lines, "Conflicts", conflicts)
+
+    elif "resume" in payload:
+        view = _mapping(payload.get("resume"))
+        lines.append("  Status       Resume package ready.")
+        _add_field(lines, "Workstream", _first(view, "workstream_id", "workstream", "id"))
+        _add_field(lines, "Title", _first(view, "title", "task_title", "label"))
+        _add_field(lines, "Work status", _first(view, "status", "work_status"))
+        _add_field(lines, "Tasks", _first(view, "task_ids", "tasks"))
+        _add_field(lines, "Agents", _first(view, "agent_ids", "agents"))
+        _add_field(lines, "Changes", _first(view, "changed_paths", "changes"))
+        _add_field(lines, "Evidence", _first(view, "evidence_ids", "evidence"))
+        _add_field(lines, "Remaining", _first(view, "remaining_work", "remaining"))
+        if len(lines) == 2:
+            lines.append("  State        Recovery succeeded; use --json for the complete view.")
+
+    elif "handoff" in payload:
+        receipt = _mapping(payload.get("handoff"))
+        lines.append("  Status       Handoff sealed to the current Work Graph.")
+        _add_field(lines, "Workstream", _first(receipt, "workstream_id", "workstream"))
+        _add_field(lines, "From", _first(receipt, "source_agent", "from_agent"))
+        _add_field(lines, "To", _first(receipt, "target_agent", "to_agent"))
+        _add_field(lines, "Receipt", _first(receipt, "receipt_id", "handoff_id", "id"))
+        _add_field(lines, "Commitment", _first(receipt, "graph_commitment", "commitment"))
+        if len(lines) == 2:
+            lines.append("  State        Handoff created; use --json for the complete receipt.")
+
+    else:
+        lines.append("  Status       Operation completed.")
+
+    lines.append("  Detail       Use --json for the complete machine-readable result.")
+    return lines
+
+
 def _emit(payload: dict[str, Any], *, json_output: bool) -> None:
     if json_output:
         print(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False))
         return
     status = payload.get("status", "ok")
     if status == "error":
-        print(f"Work Graph error: {payload.get('detail', payload.get('error', 'unknown'))}", file=sys.stderr)
+        code = payload.get("error", "work_graph_error")
+        detail = payload.get("detail", "unknown")
+        print(f"Entroly Work Graph error [{code}]: {detail}", file=sys.stderr)
         return
-    print(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False))
+    print("\n".join(_human_lines(payload)))
 
 
 def _error(exc: Exception) -> dict[str, Any]:
@@ -182,7 +301,11 @@ def run(args: Any) -> int:
                 "handoff": store.handoff(workstream, source_agent, target_agent),
             }
         else:
-            payload = {"status": "error", "error": "missing_work_action", "detail": "choose state, claim, resume, or handoff"}
+            payload = {
+                "status": "error",
+                "error": "missing_work_action",
+                "detail": "choose state, claim, resume, or handoff",
+            }
     except Exception as exc:
         payload = _error(exc)
     _emit(payload, json_output=json_output)
@@ -190,11 +313,19 @@ def run(args: Any) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="python -m entroly.work_graph_cli", description="Entroly AI Work Graph")
+    parser = argparse.ArgumentParser(
+        prog="entroly-work",
+        description="Inspect, resume, coordinate, and hand off evidence-backed repository work.",
+    )
     parser.add_argument("--project", default=".", help="Git worktree to inspect")
-    parser.add_argument("--json", dest="json_output", action="store_true", help="Emit JSON")
+    parser.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        help="Emit the complete machine-readable result",
+    )
     actions = parser.add_subparsers(dest="work_action", required=True)
-    actions.add_parser("state", help="Show persisted shared work state")
+    actions.add_parser("state", help="Show shared repository work state")
     claim = actions.add_parser("claim", help="Claim work with an advisory lease")
     claim.add_argument("--agent", required=True)
     claim.add_argument("--task", required=True)
@@ -206,7 +337,7 @@ def build_parser() -> argparse.ArgumentParser:
     resume = actions.add_parser("resume", help="Recover an unfinished workstream")
     resume.add_argument("--workstream", default="")
     resume.add_argument("--max-evidence", type=int, default=128)
-    handoff = actions.add_parser("handoff", help="Create a fresh graph-bound handoff receipt")
+    handoff = actions.add_parser("handoff", help="Seal a graph-bound cross-agent handoff")
     handoff.add_argument("--workstream", required=True)
     handoff.add_argument("--from-agent", required=True)
     handoff.add_argument("--to-agent", required=True)
