@@ -1,0 +1,82 @@
+name: PR352 Cache Slot Lifecycle Repair
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pr352-cache-slot-lifecycle-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  repair:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'integration/workgraph-production-20260817'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: integration/workgraph-production-20260817
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Verify exact branch head has not raced
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/integration/workgraph-production-20260817)"
+
+      - name: Apply guarded private-index lifecycle repair
+        run: python scripts/pr352_fix_cache_slot_lifecycle.py
+
+      - name: Format check changed Rust files
+        shell: bash
+        run: |
+          rustfmt --edition 2021 --check entroly-engine/src/cache.rs entroly-engine/src/lsh.rs
+
+      - name: Focused cache and LSH regression tests
+        shell: bash
+        run: |
+          cargo test --manifest-path entroly-engine/Cargo.toml semantic_slots_stay_bounded_under_long_eviction_churn -- --exact
+          cargo test --manifest-path entroly-engine/Cargo.toml gc_recycles_slots_and_snapshot_import_rebuilds_private_indices -- --exact
+          cargo test --manifest-path entroly-engine/Cargo.toml lsh::tests::test_remove_not_returned -- --exact
+
+      - name: Full engine tests and clippy (WASM and Python configurations)
+        shell: bash
+        run: |
+          cargo test --manifest-path entroly-engine/Cargo.toml
+          cargo test --manifest-path entroly-engine/Cargo.toml --features python
+          cargo clippy --manifest-path entroly-engine/Cargo.toml --all-targets -- -D warnings
+          cargo clippy --manifest-path entroly-engine/Cargo.toml --features python --all-targets -- -D warnings
+
+      - name: Prove cache snapshot schema is untouched
+        shell: bash
+        run: |
+          git diff -- entroly-engine/src/cache.rs | grep -q 'slot_by_hash'
+          if git diff -- entroly-engine/src/cache.rs | grep -E '^[+-].*CacheSnapshot'; then
+            echo 'CacheSnapshot changed; refusing automatic product commit' >&2
+            exit 1
+          fi
+
+      - name: Commit validated product repair
+        shell: bash
+        run: |
+          if git diff --quiet -- entroly-engine/src/cache.rs entroly-engine/src/lsh.rs; then
+            echo 'Product repair already present; nothing to commit.'
+            exit 0
+          fi
+          git config user.name 'juyterman1000'
+          git config user.email '208309368+juyterman1000@users.noreply.github.com'
+          git add entroly-engine/src/cache.rs entroly-engine/src/lsh.rs
+          git commit -m 'fix(cache): bound semantic index lifetime growth'
+          git push origin HEAD:integration/workgraph-production-20260817
