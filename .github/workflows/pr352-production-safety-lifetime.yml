@@ -54,7 +54,9 @@ jobs:
 
       - name: Apply guarded production hardening
         shell: bash
-        run: python scripts/pr352_production_safety_lifetime.py
+        run: |
+          python scripts/pr352_fix_engine_gc_policy.py
+          python scripts/pr352_production_safety_lifetime.py
 
       - name: Format and lint changed sources
         shell: bash
@@ -67,13 +69,14 @@ jobs:
             entroly/engine.py \
             tests/test_engine_host_gc_policy.py \
             tests/test_production_e2e.py \
+            scripts/pr352_fix_engine_gc_policy.py \
             scripts/pr352_production_safety_lifetime.py
 
       - name: Focused Rust falsification tests
         shell: bash
         run: |
-          cargo test --manifest-path entroly-engine/Cargo.toml derived_event_id_index_tracks_append_dedupe_and_import -- --exact
-          cargo test --manifest-path entroly-engine/Cargo.toml secret_findings_never_echo_source_bytes_at_any_position -- --exact
+          cargo test --manifest-path entroly-engine/Cargo.toml work_graph::tests::derived_event_id_index_tracks_append_dedupe_and_import -- --exact
+          cargo test --manifest-path entroly-engine/Cargo.toml sast::tests::secret_findings_never_echo_source_bytes_at_any_position -- --exact
 
       - name: Full Rust engine gates
         shell: bash
