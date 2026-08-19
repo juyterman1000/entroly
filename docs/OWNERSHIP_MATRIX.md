@@ -12,22 +12,22 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 
 | Outcome | Files |
 |---|---:|
-| `tests-fixtures-docs-packaging` | 1109 |
-| `python-host-orchestration` | 340 |
+| `tests-fixtures-docs-packaging` | 1113 |
+| `python-host-orchestration` | 342 |
 | `node-host-orchestration` | 48 |
-| `rust-semantic-owner` | 37 |
+| `rust-semantic-owner` | 39 |
 | `review-required` | 29 |
 | `pyo3-binding` | 25 |
 | `generated-build-artifact` | 16 |
 | `wasm-binding` | 6 |
-| **total** | **1610** |
+| **total** | **1618** |
 
 ## Actionable queues
 
 * **unknown ownership: 0** — must be zero for the section 24 gate.
 * **review-required: 29** — computation with no host or native signal.
-* **partial parity: 1** — engine modules exposed to one runtime only.
-* **unexposed engine modules: 2** — reachable from no binding.
+* **partial parity: 0** — engine modules reachable from one delivery runtime only.
+* **unexposed engine modules: 3** — reachable from no Python/npm delivery root after engine dependency closure.
 
 ### Review required
 
@@ -61,14 +61,11 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 * `entroly/witness_atomic.py` — candidate Rust owner; classification needs a human decision
 * `entroly/witness_features.py` — candidate Rust owner; classification needs a human decision
 
-### Partial parity
-
-* `entroly-engine/src/rnr.rs` — exposed to npm only
-
 ### Unexposed
 
-* `entroly-engine/src/coordination_index.rs` — reachable from no binding; dead unless another engine module uses it
-* `entroly-engine/src/simhash_wide.rs` — reachable from no binding; dead unless another engine module uses it
+* `entroly-engine/src/engine_contracts.rs` — reachable from no Python/npm delivery root and no engine semantic owner
+* `entroly-engine/src/simhash_wide.rs` — reachable from no Python/npm delivery root and no engine semantic owner
+* `entroly-engine/src/trust_engine.rs` — reachable from no Python/npm delivery root and no engine semantic owner
 
 ## Full matrix
 
@@ -105,6 +102,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `.github/workflows/integration-workgraph-passive-dedupe.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.github/workflows/native-dogfood-diagnostic.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.github/workflows/onboarding-self-dogfood.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `.github/workflows/pr352-ownership-reachability.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.github/workflows/public-trust.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.github/workflows/publish-core-wheels.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.github/workflows/publish-mcp-registry.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
@@ -466,6 +464,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `docs/BENCHMARKS.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/DETAILS.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/ENTROLY_WIN_MASTER_PROMPT.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/OWNERSHIP_MATRIX.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/PR352_CLAUDE_WORKGRAPH_HANDOFF.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/PR352_CODEBASE_UNDERSTANDING_EVIDENCE.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/PR352_DEEP_CODEBASE_AUDIT_GATE.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
@@ -715,7 +714,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `entroly-core/pyproject.toml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `entroly-core/src/archetype.rs` | PyO3 conversion/export | rust | orchestration | pyo3-binding | - | entroly_core | - | cargo test --lib / pytest | import entroly_core | canonical | medium | must stay transport-only |
 | `entroly-core/src/bin/entroly-rs.rs` | PyO3 conversion/export | rust | orchestration | pyo3-binding | - | entroly_core | - | cargo test --lib / pytest | import entroly_core | canonical | medium | must stay transport-only |
-| `entroly-core/src/cognitive_bus.rs` | PyO3 conversion/export | rust | orchestration | pyo3-binding | - | entroly_core | - | cargo test --lib / pytest | import entroly_core | canonical | medium | must stay transport-only |
+| `entroly-core/src/cognitive_bus_bindings.rs` | PyO3 conversion/export | rust | orchestration | pyo3-binding | - | entroly_core | - | cargo test --lib / pytest | import entroly_core | canonical | medium | must stay transport-only |
 | `entroly-core/src/cogops.rs` | PyO3 conversion/export | rust | orchestration | pyo3-binding | - | entroly_core | - | cargo test --lib / pytest | import entroly_core | canonical | medium | must stay transport-only |
 | `entroly-core/src/compliance.rs` | PyO3 conversion/export | rust | orchestration | pyo3-binding | - | entroly_core | - | cargo test --lib / pytest | import entroly_core | canonical | medium | must stay transport-only |
 | `entroly-core/src/compress.rs` | PyO3 conversion/export | rust | orchestration | pyo3-binding | - | entroly_core | - | cargo test --lib / pytest | import entroly_core | canonical | medium | must stay transport-only |
@@ -729,7 +728,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `entroly-core/src/memory/kanerva.rs` | PyO3 conversion/export | rust | orchestration | pyo3-binding | - | entroly_core | - | cargo test --lib / pytest | import entroly_core | canonical | medium | must stay transport-only |
 | `entroly-core/src/memory/lsh.rs` | PyO3 conversion/export | rust | orchestration | pyo3-binding | - | entroly_core | - | cargo test --lib / pytest | import entroly_core | canonical | medium | must stay transport-only |
 | `entroly-core/src/memory/mod.rs` | PyO3 conversion/export | rust | orchestration | pyo3-binding | - | entroly_core | - | cargo test --lib / pytest | import entroly_core | canonical | medium | must stay transport-only |
-| `entroly-core/src/nkbe.rs` | PyO3 conversion/export | rust | orchestration | pyo3-binding | - | entroly_core | - | cargo test --lib / pytest | import entroly_core | canonical | medium | must stay transport-only |
+| `entroly-core/src/nkbe_bindings.rs` | PyO3 conversion/export | rust | orchestration | pyo3-binding | - | entroly_core | - | cargo test --lib / pytest | import entroly_core | canonical | medium | must stay transport-only |
 | `entroly-core/src/pollination.rs` | PyO3 conversion/export | rust | orchestration | pyo3-binding | - | entroly_core | - | cargo test --lib / pytest | import entroly_core | canonical | medium | must stay transport-only |
 | `entroly-core/src/proxy.rs` | PyO3 conversion/export | rust | orchestration | pyo3-binding | - | entroly_core | - | cargo test --lib / pytest | import entroly_core | canonical | medium | must stay transport-only |
 | `entroly-core/src/py_json.rs` | PyO3 conversion/export | rust | orchestration | pyo3-binding | - | entroly_core | - | cargo test --lib / pytest | import entroly_core | canonical | medium | must stay transport-only |
@@ -751,11 +750,12 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `entroly-engine/src/channel.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | channel | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
 | `entroly-engine/src/cognitive_bus.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | cognitive_bus | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
 | `entroly-engine/src/conversation_pruner.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | conversation_pruner | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
-| `entroly-engine/src/coordination_index.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | coordination_index | - | - | cargo test --lib | - | unexposed | medium | reachable from no binding; dead unless another engine module uses it |
+| `entroly-engine/src/coordination_index.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | coordination_index | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium | shared through engine dependency closure (Python transitively, npm transitively) |
 | `entroly-engine/src/dedup.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | dedup | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
 | `entroly-engine/src/depgraph.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | depgraph | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
 | `entroly-engine/src/eicv.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | eicv | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
 | `entroly-engine/src/eicv_suppressor.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | eicv_suppressor | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
+| `entroly-engine/src/engine_contracts.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | engine_contracts | - | - | cargo test --lib | - | unexposed | medium | reachable from no Python/npm delivery root and no engine semantic owner |
 | `entroly-engine/src/entropy.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | entropy | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
 | `entroly-engine/src/fragment.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | fragment | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
 | `entroly-engine/src/guardrails.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | guardrails | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
@@ -771,12 +771,13 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `entroly-engine/src/query.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | query | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
 | `entroly-engine/src/query_persona.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | query_persona | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
 | `entroly-engine/src/resonance.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | resonance | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
-| `entroly-engine/src/rnr.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | rnr | - | entroly-wasm | cargo test --lib | - | partial-parity | high | exposed to npm only |
+| `entroly-engine/src/rnr.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | rnr | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium | shared through engine dependency closure (Python transitively) |
 | `entroly-engine/src/sast.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | sast | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
 | `entroly-engine/src/semantic_dedup.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | semantic_dedup | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
-| `entroly-engine/src/simhash_wide.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | simhash_wide | - | - | cargo test --lib | - | unexposed | medium | reachable from no binding; dead unless another engine module uses it |
+| `entroly-engine/src/simhash_wide.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | simhash_wide | - | - | cargo test --lib | - | unexposed | medium | reachable from no Python/npm delivery root and no engine semantic owner |
 | `entroly-engine/src/skeleton.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | skeleton | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
 | `entroly-engine/src/trajectory.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | trajectory | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
+| `entroly-engine/src/trust_engine.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | trust_engine | - | - | cargo test --lib | - | unexposed | medium | reachable from no Python/npm delivery root and no engine semantic owner |
 | `entroly-engine/src/utilization.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | utilization | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
 | `entroly-engine/src/work_graph.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | work_graph | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
 | `entroly-qccr/Cargo.lock` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
@@ -1232,6 +1233,8 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `scripts/install-hooks.sh` | build, install or CI operational script | - | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | operational glue; no shared semantics |
 | `scripts/install.sh` | build, install or CI operational script | - | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | operational glue; no shared semantics |
 | `scripts/onboarding_self_dogfood.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
+| `scripts/ownership_matrix.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
+| `scripts/pr352_fix_ownership_reachability.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/proxy_e2e.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/public_artifact_dogfood.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/readme_proof.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
@@ -1379,6 +1382,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `tests/test_deep_functional.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_demo_dogfood.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_dependency_closure_integrity_benchmark.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_deterministic_exploration_defaults.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_discovery_metadata.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_distill.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_distribution_surface.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
@@ -1674,6 +1678,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `tests/test_work_graph_packaging.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_work_graph_repo.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_work_graph_store.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_work_graph_store_durability.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_workflow_guards.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_workspace_dependencies.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_workspace_dependency_index_integration.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |

@@ -163,6 +163,50 @@ def crate_references(crate: str) -> set[str]:
     return found
 
 
+def engine_dependency_graph() -> dict[str, set[str]]:
+    """Direct top-level `crate::module` dependencies inside entroly-engine.
+
+    This is deliberately structural rather than semantic: it answers which
+    canonical Rust modules are reachable from another canonical Rust module.
+    Public re-exports in lib.rs are not edges by themselves; executable module
+    references are. The graph is later closed transitively from each delivery
+    crate's direct engine roots.
+    """
+    src = REPO_ROOT / "entroly-engine" / "src"
+    modules = rust_modules("entroly-engine")
+    graph: dict[str, set[str]] = {module: set() for module in modules}
+    if not src.is_dir():
+        return graph
+    for path in src.glob("*.rs"):
+        module = path.stem
+        if module == "lib" or module not in graph:
+            continue
+        try:
+            source = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for match in re.finditer(r"\bcrate::([a-z0-9_]+)", source):
+            dependency = match.group(1)
+            if dependency in modules and dependency != module:
+                graph[module].add(dependency)
+    return graph
+
+
+def transitive_engine_references(
+    roots: set[str], graph: dict[str, set[str]]
+) -> set[str]:
+    """Return engine modules transitively reachable from host-crate roots."""
+    seen: set[str] = set()
+    queue = [module for module in roots if module in graph]
+    while queue:
+        module = queue.pop()
+        if module in seen:
+            continue
+        seen.add(module)
+        queue.extend(graph.get(module, ()))
+    return seen
+
+
 def python_imports(path: Path) -> set[str]:
     try:
         tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
@@ -228,20 +272,41 @@ def classify(path: str, ctx: dict) -> Row:
     # ---- Rust ------------------------------------------------------------
     if p.startswith("entroly-engine/src/") and p.endswith(".rs"):
         module = name[:-3]
-        in_core = module in ctx["core_refs"]
-        in_wasm = module in ctx["wasm_refs"]
+        core_direct = module in ctx["core_refs"]
+        wasm_direct = module in ctx["wasm_refs"]
+        in_core = module in ctx["core_reachable"]
+        in_wasm = module in ctx["wasm_reachable"]
+        engine_users = sorted(
+            owner for owner, dependencies in ctx["engine_graph"].items()
+            if module in dependencies
+        )
         if module == "lib":
             status = "canonical"
             note = "crate root"
         elif not in_core and not in_wasm:
             status = "unexposed"
-            note = "reachable from no binding; dead unless another engine module uses it"
+            if engine_users:
+                note = (
+                    "engine-internal dependency of " + ", ".join(engine_users)
+                    + "; none of those owners is reachable from a delivery root"
+                )
+            else:
+                note = "reachable from no Python/npm delivery root and no engine semantic owner"
         elif in_core and in_wasm:
             status = "canonical"
-            note = ""
+            paths: list[str] = []
+            if not core_direct:
+                paths.append("Python transitively")
+            if not wasm_direct:
+                paths.append("npm transitively")
+            note = (
+                "shared through engine dependency closure"
+                + (" (" + ", ".join(paths) + ")" if paths else "")
+                if paths else ""
+            )
         else:
             status = "partial-parity"
-            note = "exposed to %s only" % ("Python" if in_core else "npm")
+            note = "reachable from %s delivery only" % ("Python" if in_core else "npm")
         return Row(
             p, "shared semantic owner", "rust", "semantic", RUST_SEMANTIC_OWNER,
             module,
@@ -358,12 +423,22 @@ def classify(path: str, ctx: dict) -> Row:
                "no classification rule matched")
 
 
-def build_rows() -> list[Row]:
-    ctx = {
-        "core_refs": crate_references("entroly-core"),
-        "wasm_refs": crate_references("entroly-wasm"),
+def build_context() -> dict:
+    graph = engine_dependency_graph()
+    core_refs = crate_references("entroly-core")
+    wasm_refs = crate_references("entroly-wasm")
+    return {
+        "core_refs": core_refs,
+        "wasm_refs": wasm_refs,
+        "core_reachable": transitive_engine_references(core_refs, graph),
+        "wasm_reachable": transitive_engine_references(wasm_refs, graph),
+        "engine_graph": graph,
         "reachable": reachable_python_modules(),
     }
+
+
+def build_rows() -> list[Row]:
+    ctx = build_context()
     return [classify(path, ctx) for path in tracked_files()]
 
 
@@ -401,8 +476,8 @@ def render_markdown(rows: list[Row]) -> str:
     lines.append("")
     lines.append(f"* **unknown ownership: {len(unknown)}** — must be zero for the section 24 gate.")
     lines.append(f"* **review-required: {len(review)}** — computation with no host or native signal.")
-    lines.append(f"* **partial parity: {len(partial)}** — engine modules exposed to one runtime only.")
-    lines.append(f"* **unexposed engine modules: {len(unexposed)}** — reachable from no binding.")
+    lines.append(f"* **partial parity: {len(partial)}** — engine modules reachable from one delivery runtime only.")
+    lines.append(f"* **unexposed engine modules: {len(unexposed)}** — reachable from no Python/npm delivery root after engine dependency closure.")
     lines.append("")
     for label, bucket in (("Unknown", unknown), ("Review required", review),
                           ("Partial parity", partial), ("Unexposed", unexposed)):
