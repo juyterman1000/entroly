@@ -1,0 +1,102 @@
+name: PR352 Binding Ownership Cleanup
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - scripts/pr352_binding_ownership_cleanup.py
+      - .github/workflows/pr352-binding-ownership.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pr352-binding-ownership
+  cancel-in-progress: false
+
+jobs:
+  validate-and-land:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: integration/workgraph-production-20260817
+
+      - name: Pin latest integration head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin integration/workgraph-production-20260817
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/integration/workgraph-production-20260817)"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: wasm32-unknown-unknown
+
+      - name: Apply guarded binding ownership cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/pr352_binding_ownership_cleanup.py
+          git diff --check
+          expected="$(printf '%s\n' \
+            entroly-core/src/cognitive_bus.rs \
+            entroly-core/src/cognitive_bus_bindings.rs \
+            entroly-core/src/lib.rs \
+            entroly-core/src/nkbe.rs \
+            entroly-core/src/nkbe_bindings.rs \
+            entroly-engine/src/coordination_index.rs | sort)"
+          actual="$(git status --short | sed -E 's/^.. //' | sort)"
+          test "$actual" = "$expected" || {
+            echo "Unexpected ownership-cleanup diff"
+            echo "Expected:"; printf '%s\n' "$expected"
+            echo "Actual:"; printf '%s\n' "$actual"
+            exit 1
+          }
+
+      - name: Prove engine and binding crates
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path entroly-engine/Cargo.toml --lib
+          cargo clippy --manifest-path entroly-engine/Cargo.toml --all-targets -- -D warnings
+          cargo check --manifest-path entroly-core/Cargo.toml --all-targets
+          cargo clippy --manifest-path entroly-core/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path entroly-wasm/Cargo.toml --lib
+          cargo check --manifest-path entroly-wasm/Cargo.toml --target wasm32-unknown-unknown
+          cargo clippy --manifest-path entroly-wasm/Cargo.toml --target wasm32-unknown-unknown -- -D warnings
+
+      - name: Enforce engine-module drift guard unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
+          dupes=""
+          for m in $(sed -n 's/^pub mod \([a-z0-9_]*\);$/\1/p' entroly-engine/src/lib.rs); do
+            if [ -f "entroly-wasm/src/$m.rs" ]; then dupes="$dupes $m"; fi
+            if [ -f "entroly-core/src/$m.rs" ]; then dupes="$dupes $m(core)"; fi
+          done
+          test -z "$dupes" || {
+            echo "Duplicated engine module filenames remain:$dupes"
+            exit 1
+          }
+
+      - name: Commit validated ownership cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'juyterman1000'
+          git config user.email '208309368+juyterman1000@users.noreply.github.com'
+          git add -A \
+            entroly-core/src/cognitive_bus.rs \
+            entroly-core/src/cognitive_bus_bindings.rs \
+            entroly-core/src/lib.rs \
+            entroly-core/src/nkbe.rs \
+            entroly-core/src/nkbe_bindings.rs \
+            entroly-engine/src/coordination_index.rs
+          git diff --cached --check
+          git commit -m 'refactor(core): name PyO3 transport modules as bindings'
+          git push origin HEAD:integration/workgraph-production-20260817
