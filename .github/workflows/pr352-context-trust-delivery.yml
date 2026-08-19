@@ -86,13 +86,17 @@ jobs:
           python -m venv .venv
           .venv/bin/pip install maturin pytest --timeout 120 --retries 5
           (cd entroly-core && ../.venv/bin/maturin develop --release)
+          shopt -s nullglob
+          work_graph_tests=(tests/test_work_graph_*.py)
+          if (( ${#work_graph_tests[@]} == 0 )); then
+            echo 'No Work Graph Python tests discovered; refusing a vacuous delivery gate.' >&2
+            exit 1
+          fi
+          printf 'Discovered %d Work Graph Python test files\n' "${#work_graph_tests[@]}"
+          printf '  %s\n' "${work_graph_tests[@]}"
           PYTHONPATH=. .venv/bin/pytest \
             tests/test_context_trust_delivery.py \
-            tests/test_work_graph_bindings.py \
-            tests/test_work_graph_contract.py \
-            tests/test_work_graph_root_api.py \
-            tests/test_work_graph_repo.py \
-            tests/test_work_graph_store.py \
+            "${work_graph_tests[@]}" \
             -q
 
       - name: Install wasm-pack
