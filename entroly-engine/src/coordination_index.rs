@@ -1,8 +1,8 @@
-//! Falsification harness for scalable Work Graph lease candidate generation.
+//! Scalable Work Graph lease candidate generation.
 //!
-//! This module is test-only until the indexed candidate generator has proven
-//! semantic equivalence to the current all-pairs implementation. The exact
-//! overlap functions in `work_graph` remain authoritative in production.
+//! The indexed generator is production-wired only as a candidate filter after
+//! randomized equivalence testing against the naive all-pairs oracle. The exact
+//! overlap functions in `work_graph` remain authoritative for conflict semantics.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -85,7 +85,7 @@ fn naive_pairs(leases: &[TestLeaseScope]) -> BTreeSet<(usize, usize)> {
 /// inserted ancestors; `descendants` maps every valid literal prefix to paths
 /// below it and finds previously inserted descendants. Symbols use an exact
 /// inverted index. The production overlap functions still perform the final
-/// decision after this candidate filter is promoted.
+/// decision after this candidate filter.
 pub(crate) fn candidate_pairs(leases: &[CoordinationScope<'_>]) -> BTreeSet<(usize, usize)> {
     let mut exact_paths: BTreeMap<String, BTreeSet<usize>> = BTreeMap::new();
     let mut descendants: BTreeMap<String, BTreeSet<usize>> = BTreeMap::new();

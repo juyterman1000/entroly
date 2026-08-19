@@ -16,6 +16,7 @@ pub(crate) use entroly_engine::bm25;
 pub(crate) use entroly_engine::cache;
 pub(crate) use entroly_engine::causal;
 pub(crate) use entroly_engine::channel;
+#[path = "cognitive_bus_bindings.rs"]
 mod cognitive_bus;
 pub mod cogops;
 /// Pure-Rust text compression entry point for the standalone binary.
@@ -35,6 +36,7 @@ pub(crate) use entroly_engine::knapsack;
 pub(crate) use entroly_engine::knapsack_sds;
 pub(crate) use entroly_engine::learning;
 pub(crate) use entroly_engine::lsh;
+#[path = "nkbe_bindings.rs"]
 mod nkbe;
 mod py_json;
 pub(crate) use entroly_engine::prism;
