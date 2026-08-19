@@ -1,9 +1,9 @@
 name: PR352 Consolidate Core Product Work
 
 on:
-  push:
+  pull_request:
     branches:
-      - integration/workgraph-production-20260817
+      - main
     paths:
       - scripts/consolidate_pr352_core.py
       - .github/workflows/pr352-consolidate-core.yml
