@@ -18,8 +18,14 @@ branch                 integration/workgraph-production-20260817
 release candidate      1.0.79
 product parent         4a32fcdd58858abcb43831a4f8e6e0caa9e3d900
 finalization run head  9cd527572998b4837fd1e984d6a4ea9375c564f9
+clean finalized parent 252d58116427305ea3c068162123d32f353b4a1d
 base main              51357eca17377669b1c3d4ec4fdf832e51baf406
 ```
+
+The clean finalized parent contains the reconciled ownership matrix, refreshed understanding
+evidence, 1.0.79 release metadata, and no temporary PR352 writer workflows. This document-only
+connector commit intentionally changes no product semantics; its head is the exact SHA on which
+normal GitHub CI and dogfood must establish final release readiness.
 
 The 1.0.79 release synchronizer raised the public package and native-core minimum
 together, so installs can no longer resolve to the published 1.0.78 core that lacks
