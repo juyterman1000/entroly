@@ -40,6 +40,7 @@ pub mod dedup;
 pub mod depgraph;
 pub mod eicv;
 pub mod eicv_suppressor;
+pub mod engine_contracts;
 pub mod entropy;
 pub mod fragment;
 pub mod guardrails;
