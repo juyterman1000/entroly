@@ -18,6 +18,7 @@
 //! - coordination leases are advisory and never become filesystem locks;
 //! - persisted graph documents are integrity-checked on import.
 
+use crate::coordination_index::{candidate_pairs, CoordinationScope};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -1082,31 +1083,40 @@ impl WorkGraph {
             });
         }
         leases.sort_by(|a, b| a.id.cmp(&b.id));
+        let scopes: Vec<CoordinationScope<'_>> = leases
+            .iter()
+            .map(|lease| CoordinationScope {
+                agent: &lease.agent,
+                paths: &lease.paths,
+                symbols: &lease.symbols,
+            })
+            .collect();
         let mut conflicts = Vec::new();
-        for i in 0..leases.len() {
-            for j in (i + 1)..leases.len() {
-                let a = &leases[i];
-                let b = &leases[j];
-                if a.agent == b.agent || a.expires <= now_ms || b.expires <= now_ms {
-                    continue;
-                }
-                let overlapping_paths = overlap_paths(&a.paths, &b.paths);
-                let overlapping_symbols = overlap_exact(&a.symbols, &b.symbols);
-                if overlapping_paths.is_empty() && overlapping_symbols.is_empty() {
-                    continue;
-                }
-                conflicts.push(CoordinationConflict {
-                    lease_a: a.id.clone(),
-                    lease_b: b.id.clone(),
-                    agent_a: a.agent.clone(),
-                    agent_b: b.agent.clone(),
-                    task_a: a.task.clone(),
-                    task_b: b.task.clone(),
-                    overlapping_paths,
-                    overlapping_symbols,
-                    reason: "active advisory work scopes overlap".to_string(),
-                });
+        for (i, j) in candidate_pairs(&scopes) {
+            let a = &leases[i];
+            let b = &leases[j];
+            // Candidate generation is only a performance filter. Keep the
+            // pre-existing exact overlap functions authoritative so conflict
+            // semantics cannot drift with the index.
+            if a.agent == b.agent || a.expires <= now_ms || b.expires <= now_ms {
+                continue;
             }
+            let overlapping_paths = overlap_paths(&a.paths, &b.paths);
+            let overlapping_symbols = overlap_exact(&a.symbols, &b.symbols);
+            if overlapping_paths.is_empty() && overlapping_symbols.is_empty() {
+                continue;
+            }
+            conflicts.push(CoordinationConflict {
+                lease_a: a.id.clone(),
+                lease_b: b.id.clone(),
+                agent_a: a.agent.clone(),
+                agent_b: b.agent.clone(),
+                task_a: a.task.clone(),
+                task_b: b.task.clone(),
+                overlapping_paths,
+                overlapping_symbols,
+                reason: "active advisory work scopes overlap".to_string(),
+            });
         }
         CoordinationReport {
             as_of_ms: now_ms,

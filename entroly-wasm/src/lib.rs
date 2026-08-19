@@ -379,7 +379,7 @@ impl WasmEntrolyEngine {
             id_counter: 0,
             max_fragments: 10000,
             total_explorations: 0,
-            exploration_rate: 0.1,
+            exploration_rate: 0.0,
             rng_state: instance_id | 1,
             last_optimization: None,
             lsh_index: lsh::LshIndex::new(),

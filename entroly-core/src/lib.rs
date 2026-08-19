@@ -348,7 +348,7 @@ impl EntrolyEngine {
     #[pyo3(signature = (
         w_recency=0.30, w_frequency=0.25, w_semantic=0.25, w_entropy=0.20,
         decay_half_life=15, min_relevance=0.05,
-        hamming_threshold=3, exploration_rate=0.1, max_fragments=10000,
+        hamming_threshold=3, exploration_rate=0.0, max_fragments=10000,
         enable_ios=true, enable_ios_diversity=true, enable_ios_multi_resolution=true,
         ios_skeleton_info_factor=0.70, ios_belief_info_factor=0.50, ios_reference_info_factor=0.15, ios_diversity_floor=0.10
     ))]

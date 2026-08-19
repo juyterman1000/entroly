@@ -520,7 +520,7 @@ def _build_rust_engine(config: EntrolyConfig):
     )
     extra = dict(
         hamming_threshold=getattr(config, "dedup_hamming_threshold", 3),
-        exploration_rate=getattr(config, "exploration_rate", 0.10),
+        exploration_rate=getattr(config, "exploration_rate", 0.0),
         ios_skeleton_info_factor=getattr(config, "ios_skeleton_info_factor", 0.70),
         ios_reference_info_factor=getattr(config, "ios_reference_info_factor", 0.15),
         ios_diversity_floor=getattr(config, "ios_diversity_floor", 0.10),

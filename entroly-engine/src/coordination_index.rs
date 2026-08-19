@@ -6,11 +6,11 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-#[derive(Debug, Clone)]
-struct LeaseScope {
-    agent: String,
-    paths: Vec<String>,
-    symbols: Vec<String>,
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct CoordinationScope<'a> {
+    pub(crate) agent: &'a str,
+    pub(crate) paths: &'a [String],
+    pub(crate) symbols: &'a [String],
 }
 
 fn normalize_scope_path(path: &str) -> String {
@@ -40,6 +40,7 @@ fn path_prefixes(path: &str) -> Vec<String> {
     prefixes
 }
 
+#[cfg(test)]
 fn paths_overlap(left: &str, right: &str) -> bool {
     let left = normalize_scope_path(left);
     let right = normalize_scope_path(right);
@@ -51,7 +52,8 @@ fn paths_overlap(left: &str, right: &str) -> bool {
         || right.starts_with(&(left.clone() + "/"))
 }
 
-fn scopes_overlap(left: &LeaseScope, right: &LeaseScope) -> bool {
+#[cfg(test)]
+fn scopes_overlap(left: &TestLeaseScope, right: &TestLeaseScope) -> bool {
     left.paths
         .iter()
         .any(|a| right.paths.iter().any(|b| paths_overlap(a, b)))
@@ -61,7 +63,8 @@ fn scopes_overlap(left: &LeaseScope, right: &LeaseScope) -> bool {
             .any(|symbol| right.symbols.iter().any(|other| symbol == other))
 }
 
-fn naive_pairs(leases: &[LeaseScope]) -> BTreeSet<(usize, usize)> {
+#[cfg(test)]
+fn naive_pairs(leases: &[TestLeaseScope]) -> BTreeSet<(usize, usize)> {
     let mut pairs = BTreeSet::new();
     for left in 0..leases.len() {
         for right in (left + 1)..leases.len() {
@@ -83,7 +86,7 @@ fn naive_pairs(leases: &[LeaseScope]) -> BTreeSet<(usize, usize)> {
 /// below it and finds previously inserted descendants. Symbols use an exact
 /// inverted index. The production overlap functions still perform the final
 /// decision after this candidate filter is promoted.
-fn indexed_pairs(leases: &[LeaseScope]) -> BTreeSet<(usize, usize)> {
+pub(crate) fn candidate_pairs(leases: &[CoordinationScope<'_>]) -> BTreeSet<(usize, usize)> {
     let mut exact_paths: BTreeMap<String, BTreeSet<usize>> = BTreeMap::new();
     let mut descendants: BTreeMap<String, BTreeSet<usize>> = BTreeMap::new();
     let mut symbols: BTreeMap<String, BTreeSet<usize>> = BTreeMap::new();
@@ -92,7 +95,7 @@ fn indexed_pairs(leases: &[LeaseScope]) -> BTreeSet<(usize, usize)> {
     for (index, lease) in leases.iter().enumerate() {
         let mut candidates = BTreeSet::new();
 
-        for path in &lease.paths {
+        for path in lease.paths {
             let normalized = normalize_scope_path(path);
             if normalized.is_empty() {
                 continue;
@@ -107,7 +110,7 @@ fn indexed_pairs(leases: &[LeaseScope]) -> BTreeSet<(usize, usize)> {
             }
         }
 
-        for symbol in &lease.symbols {
+        for symbol in lease.symbols {
             if symbol.is_empty() {
                 continue;
             }
@@ -122,7 +125,7 @@ fn indexed_pairs(leases: &[LeaseScope]) -> BTreeSet<(usize, usize)> {
             }
         }
 
-        for path in &lease.paths {
+        for path in lease.paths {
             let normalized = normalize_scope_path(path);
             if normalized.is_empty() {
                 continue;
@@ -135,7 +138,7 @@ fn indexed_pairs(leases: &[LeaseScope]) -> BTreeSet<(usize, usize)> {
                 descendants.entry(prefix).or_default().insert(index);
             }
         }
-        for symbol in &lease.symbols {
+        for symbol in lease.symbols {
             if !symbol.is_empty() {
                 symbols.entry(symbol.clone()).or_default().insert(index);
             }
@@ -143,6 +146,26 @@ fn indexed_pairs(leases: &[LeaseScope]) -> BTreeSet<(usize, usize)> {
     }
 
     pairs
+}
+
+#[cfg(test)]
+#[derive(Debug, Clone)]
+struct TestLeaseScope {
+    agent: String,
+    paths: Vec<String>,
+    symbols: Vec<String>,
+}
+
+#[cfg(test)]
+fn borrowed_scopes(leases: &[TestLeaseScope]) -> Vec<CoordinationScope<'_>> {
+    leases
+        .iter()
+        .map(|lease| CoordinationScope {
+            agent: &lease.agent,
+            paths: &lease.paths,
+            symbols: &lease.symbols,
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -170,7 +193,7 @@ mod tests {
         }
     }
 
-    fn random_scope(rng: &mut Lcg, index: usize) -> LeaseScope {
+    fn random_scope(rng: &mut Lcg, index: usize) -> TestLeaseScope {
         const ROOTS: &[&str] = &["src", "tests", "docs", "crates", "packages"];
         const AREAS: &[&str] = &["auth", "cache", "graph", "mcp", "router", "memory"];
         const FILES: &[&str] = &["mod.rs", "api.rs", "state.py", "index.js", "types.ts"];
@@ -203,7 +226,7 @@ mod tests {
             symbols.insert(rng.pick(SYMBOLS).to_string());
         }
 
-        LeaseScope {
+        TestLeaseScope {
             // Reuse some identities deliberately: same-agent overlaps must not
             // become conflicts in either implementation.
             agent: format!("agent-{}", (index + rng.bounded(5)) % 7),
@@ -221,7 +244,7 @@ mod tests {
                 .map(|index| random_scope(&mut rng, index))
                 .collect();
             assert_eq!(
-                indexed_pairs(&leases),
+                candidate_pairs(&borrowed_scopes(&leases)),
                 naive_pairs(&leases),
                 "candidate mismatch for deterministic seed {seed}"
             );
@@ -231,56 +254,59 @@ mod tests {
     #[test]
     fn indexed_candidates_handle_ancestor_descendant_and_exact_symbol_cases() {
         let leases = vec![
-            LeaseScope {
+            TestLeaseScope {
                 agent: "claude".into(),
                 paths: vec!["src/auth".into()],
                 symbols: vec![],
             },
-            LeaseScope {
+            TestLeaseScope {
                 agent: "codex".into(),
                 paths: vec!["src/auth/token.rs".into()],
                 symbols: vec![],
             },
-            LeaseScope {
+            TestLeaseScope {
                 agent: "kimi".into(),
                 paths: vec!["docs/auth".into()],
                 symbols: vec!["Auth.refresh".into()],
             },
-            LeaseScope {
+            TestLeaseScope {
                 agent: "copilot".into(),
                 paths: vec!["packages/web".into()],
                 symbols: vec!["Auth.refresh".into()],
             },
         ];
         let expected = BTreeSet::from([(0, 1), (2, 3)]);
-        assert_eq!(indexed_pairs(&leases), expected);
-        assert_eq!(indexed_pairs(&leases), naive_pairs(&leases));
+        assert_eq!(candidate_pairs(&borrowed_scopes(&leases)), expected);
+        assert_eq!(
+            candidate_pairs(&borrowed_scopes(&leases)),
+            naive_pairs(&leases)
+        );
     }
 
     #[test]
     fn indexed_candidates_preserve_literal_path_normalization_edge_cases() {
         let leases = vec![
-            LeaseScope {
+            TestLeaseScope {
                 agent: "claude".into(),
                 paths: vec!["//src\\auth//".into()],
                 symbols: vec![],
             },
-            LeaseScope {
+            TestLeaseScope {
                 agent: "codex".into(),
                 paths: vec!["src/auth/token.rs".into()],
                 symbols: vec![],
             },
-            LeaseScope {
+            TestLeaseScope {
                 agent: "kimi".into(),
                 paths: vec!["src//graph".into()],
                 symbols: vec![],
             },
-            LeaseScope {
+            TestLeaseScope {
                 agent: "copilot".into(),
                 paths: vec!["src//graph/api.rs".into()],
                 symbols: vec![],
             },
-            LeaseScope {
+            TestLeaseScope {
                 agent: "deepseek".into(),
                 paths: vec!["src/graph".into()],
                 symbols: vec![],
@@ -289,20 +315,23 @@ mod tests {
         // `src//graph` and `src/graph` are intentionally distinct under the
         // existing production rule even though both share the textual root.
         let expected = BTreeSet::from([(0, 1), (2, 3)]);
-        assert_eq!(indexed_pairs(&leases), expected);
-        assert_eq!(indexed_pairs(&leases), naive_pairs(&leases));
+        assert_eq!(candidate_pairs(&borrowed_scopes(&leases)), expected);
+        assert_eq!(
+            candidate_pairs(&borrowed_scopes(&leases)),
+            naive_pairs(&leases)
+        );
     }
 
     #[test]
     fn thousand_disjoint_agents_produce_zero_candidates() {
         let leases: Vec<_> = (0..1_000)
-            .map(|index| LeaseScope {
+            .map(|index| TestLeaseScope {
                 agent: format!("agent-{index}"),
                 paths: vec![format!("workspace-{index}/file.rs")],
                 symbols: vec![format!("Symbol{index}")],
             })
             .collect();
-        assert!(indexed_pairs(&leases).is_empty());
+        assert!(candidate_pairs(&borrowed_scopes(&leases)).is_empty());
         assert!(naive_pairs(&leases).is_empty());
     }
 }

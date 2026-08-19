@@ -404,7 +404,6 @@ mod tests {
             "sha256:x".into(),
             too_many,
             vec![],
-            vec![],
             1,
         );
         assert!(matches!(
