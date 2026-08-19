@@ -44,6 +44,7 @@ jobs:
       - name: Apply guarded Context and Trust delivery integration
         shell: bash
         run: |
+          python scripts/pr352_fix_eicv_wasm_clock.py
           python scripts/pr352_integrate_context_trust_delivery.py
           python scripts/pr352_fix_context_delivery_fixture.py
 
@@ -51,6 +52,7 @@ jobs:
         shell: bash
         run: |
           rustfmt --edition 2021 \
+            entroly-engine/src/eicv.rs \
             entroly-engine/src/work_graph.rs \
             entroly-engine/src/trust_engine.rs \
             entroly-core/src/work_graph_bindings.rs \
@@ -60,6 +62,7 @@ jobs:
             entroly-wasm/src/trust_engine_bindings.rs \
             entroly-wasm/src/lib.rs
           rustfmt --edition 2021 --check \
+            entroly-engine/src/eicv.rs \
             entroly-engine/src/work_graph.rs \
             entroly-engine/src/trust_engine.rs \
             entroly-core/src/work_graph_bindings.rs \
@@ -154,6 +157,7 @@ jobs:
           git config user.name 'juyterman1000'
           git config user.email '208309368+juyterman1000@users.noreply.github.com'
           git add \
+            entroly-engine/src/eicv.rs \
             entroly-engine/src/work_graph.rs \
             entroly-engine/src/trust_engine.rs \
             entroly-core/src/work_graph_bindings.rs \
