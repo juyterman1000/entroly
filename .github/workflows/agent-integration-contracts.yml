@@ -67,8 +67,8 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install package and test dependencies
-        run: python -m pip install -e ".[test]"
+      - name: Install exact-head package and test dependencies
+        run: python scripts/ci_install_exact_head.py --extras test
       - name: Run focused integration and discovery contracts
         run: >-
           python -m pytest -q
