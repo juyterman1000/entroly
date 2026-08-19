@@ -1,0 +1,145 @@
+name: PR352 Production Safety Lifetime Hardening
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pr352-production-safety-lifetime-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  harden:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'integration/workgraph-production-20260817'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: integration/workgraph-production-20260817
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Verify exact branch head has not raced
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/integration/workgraph-production-20260817)"
+
+      - name: Capture persisted Work Graph document contract
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('entroly-engine/src/work_graph.rs').read_text(encoding='utf-8')
+          start = text.index('#[derive(Debug, Clone, Serialize, Deserialize)]\nstruct WorkGraphDocument')
+          end = text.index('#[derive(Debug, Clone)]\npub struct WorkGraph', start)
+          Path('/tmp/workgraph-document.before').write_text(text[start:end], encoding='utf-8')
+          PY
+
+      - name: Apply guarded production hardening
+        shell: bash
+        run: python scripts/pr352_production_safety_lifetime.py
+
+      - name: Format and lint changed sources
+        shell: bash
+        run: |
+          rustfmt --edition 2021 entroly-engine/src/work_graph.rs entroly-engine/src/sast.rs
+          rustfmt --edition 2021 --check entroly-engine/src/work_graph.rs entroly-engine/src/sast.rs
+          python -m venv .venv
+          .venv/bin/pip install pytest maturin ruff --timeout 120 --retries 5
+          .venv/bin/ruff check \
+            entroly/engine.py \
+            tests/test_engine_host_gc_policy.py \
+            tests/test_production_e2e.py \
+            scripts/pr352_production_safety_lifetime.py
+
+      - name: Focused Rust falsification tests
+        shell: bash
+        run: |
+          cargo test --manifest-path entroly-engine/Cargo.toml derived_event_id_index_tracks_append_dedupe_and_import -- --exact
+          cargo test --manifest-path entroly-engine/Cargo.toml secret_findings_never_echo_source_bytes_at_any_position -- --exact
+
+      - name: Full Rust engine gates
+        shell: bash
+        run: |
+          cargo test --manifest-path entroly-engine/Cargo.toml
+          cargo test --manifest-path entroly-engine/Cargo.toml --features python
+          cargo clippy --manifest-path entroly-engine/Cargo.toml --all-targets -- -D warnings
+          cargo clippy --manifest-path entroly-engine/Cargo.toml --features python --all-targets -- -D warnings
+          cargo check --manifest-path entroly-wasm/Cargo.toml --target wasm32-unknown-unknown
+
+      - name: Build PyO3 and prove host GC contract
+        shell: bash
+        run: |
+          (cd entroly-core && ../.venv/bin/maturin develop --release)
+          PYTHONPATH=. .venv/bin/pytest tests/test_engine_host_gc_policy.py -q
+          PYTHONPATH=. .venv/bin/python tests/test_production_e2e.py
+
+      - name: Work Graph Python regression closure
+        shell: bash
+        run: |
+          shopt -s nullglob
+          work_graph_tests=(tests/test_work_graph_*.py)
+          if (( ${#work_graph_tests[@]} == 0 )); then
+            echo 'No Work Graph Python tests discovered; refusing a vacuous gate.' >&2
+            exit 1
+          fi
+          PYTHONPATH=. .venv/bin/pytest \
+            tests/test_context_trust_delivery.py \
+            "${work_graph_tests[@]}" \
+            -q
+
+      - name: Install wasm-pack and run npm parity suite
+        shell: bash
+        run: |
+          cargo install wasm-pack --version 0.15.0 --locked
+          (cd entroly-wasm && npm test)
+
+      - name: Prove persisted schema unchanged
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('entroly-engine/src/work_graph.rs').read_text(encoding='utf-8')
+          start = text.index('#[derive(Debug, Clone, Serialize, Deserialize)]\nstruct WorkGraphDocument')
+          end = text.index('#[derive(Debug, Clone)]\npub struct WorkGraph', start)
+          after = text[start:end]
+          before = Path('/tmp/workgraph-document.before').read_text(encoding='utf-8')
+          assert after == before, 'WorkGraphDocument persisted schema changed'
+          print('WorkGraphDocument persisted schema: unchanged')
+          PY
+          python scripts/ownership_matrix.py --check
+
+      - name: Commit validated production hardening
+        shell: bash
+        run: |
+          git config user.name 'juyterman1000'
+          git config user.email '208309368+juyterman1000@users.noreply.github.com'
+          git add \
+            entroly/engine.py \
+            entroly-engine/src/sast.rs \
+            entroly-engine/src/work_graph.rs \
+            tests/test_engine_host_gc_policy.py \
+            tests/test_production_e2e.py
+          if git diff --cached --quiet; then
+            echo 'Production hardening already present; nothing to commit.'
+            exit 0
+          fi
+          git commit -m 'fix(prod): preserve host runtime and bound work event dedupe'
+          git push origin HEAD:integration/workgraph-production-20260817
