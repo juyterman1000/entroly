@@ -210,7 +210,7 @@ checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 
 [[package]]
 name = "entroly-core"
-version = "1.0.78"
+version = "1.0.79"
 dependencies = [
  "entroly-engine",
  "entroly-qccr",
@@ -230,7 +230,7 @@ dependencies = [
 
 [[package]]
 name = "entroly-engine"
-version = "1.0.78"
+version = "1.0.79"
 dependencies = [
  "flate2",
  "md-5",
@@ -238,11 +238,12 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
+ "sha2",
 ]
 
 [[package]]
 name = "entroly-qccr"
-version = "1.0.78"
+version = "1.0.79"
 dependencies = [
  "regex",
  "serde",

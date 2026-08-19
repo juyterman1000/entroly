@@ -1206,7 +1206,11 @@ pub struct EgscCache {
     exact_index: HashMap<u64, u64>,
     semantic_index: LshIndex,
     entries: HashMap<u64, CacheEntry>,
+    // Private in-memory semantic-index bookkeeping. These are rebuilt
+    // from live entries on import and are deliberately not persisted.
     slot_to_hash: Vec<u64>,
+    slot_by_hash: HashMap<u64, usize>,
+    free_slots: Vec<usize>,
     /// Thompson sampling admission gate.
     thompson_gate: ThompsonGate,
     /// Linear bandit hit predictor.
@@ -1285,6 +1289,8 @@ impl EgscCache {
             semantic_index: LshIndex::new(),
             entries: HashMap::with_capacity(config.max_entries),
             slot_to_hash: Vec::with_capacity(config.max_entries),
+            slot_by_hash: HashMap::with_capacity(config.max_entries),
+            free_slots: Vec::new(),
             thompson_gate: ThompsonGate::new(),
             hit_predictor: HitPredictor::new(),
             freq_sketch: FrequencySketch::new(),
@@ -1523,6 +1529,37 @@ impl EgscCache {
         )
     }
 
+    /// Remove one live entry and all of its private lookup-index state.
+    ///
+    /// Semantic slots are recycled instead of appended forever. This keeps
+    /// lookup memory/latency bounded by the cache high-water mark while
+    /// leaving CacheSnapshot unchanged (indices are rebuilt on import).
+    fn remove_entry(&mut self, hash: u64) -> bool {
+        let Some(entry) = self.entries.remove(&hash) else {
+            return false;
+        };
+        self.exact_index.remove(&hash);
+        if let Some(slot) = self.slot_by_hash.remove(&hash) {
+            self.semantic_index.remove(entry.query_simhash, slot);
+            self.free_slots.push(slot);
+        }
+        true
+    }
+
+    fn allocate_semantic_slot(&mut self, hash: u64, query_fp: u64) {
+        let slot = if let Some(slot) = self.free_slots.pop() {
+            debug_assert!(slot < self.slot_to_hash.len());
+            self.slot_to_hash[slot] = hash;
+            slot
+        } else {
+            let slot = self.slot_to_hash.len();
+            self.slot_to_hash.push(hash);
+            slot
+        };
+        self.slot_by_hash.insert(hash, slot);
+        self.semantic_index.insert(query_fp, slot);
+    }
+
     /// Budget-aware store used by the engine so exact hits respect the budget that produced them.
     #[allow(clippy::too_many_arguments)]
     pub fn store_with_budget(
@@ -1571,9 +1608,8 @@ impl EgscCache {
                     self.total_rejections += 1;
                     return false;
                 }
-                // Admit: evict the victim
-                self.entries.remove(&vh);
-                self.exact_index.remove(&vh);
+                // Admit: evict the victim and recycle its semantic slot.
+                self.remove_entry(vh);
                 self.total_evictions += 1;
                 self.freq_admissions += 1;
             }
@@ -1602,9 +1638,7 @@ impl EgscCache {
             current_turn,
         );
         self.exact_index.insert(eh, eh);
-        let slot = self.slot_to_hash.len();
-        self.slot_to_hash.push(eh);
-        self.semantic_index.insert(query_fp, slot);
+        self.allocate_semantic_slot(eh, query_fp);
         self.entries.insert(eh, entry);
         self.total_admissions += 1;
         true
@@ -1642,9 +1676,9 @@ impl EgscCache {
 
     fn evict_one(&mut self) {
         if let Some(hash) = self.find_victim() {
-            self.entries.remove(&hash);
-            self.exact_index.remove(&hash);
-            self.total_evictions += 1;
+            if self.remove_entry(hash) {
+                self.total_evictions += 1;
+            }
         }
     }
 
@@ -1706,8 +1740,7 @@ impl EgscCache {
             .map(|(&h, _)| h)
             .collect();
         for hash in &to_remove {
-            self.entries.remove(hash);
-            self.exact_index.remove(hash);
+            self.remove_entry(*hash);
         }
         (before - self.entries.len()) as u32
     }
@@ -1717,6 +1750,8 @@ impl EgscCache {
         self.exact_index.clear();
         self.semantic_index.clear();
         self.slot_to_hash.clear();
+        self.slot_by_hash.clear();
+        self.free_slots.clear();
         self.adaptive_thresholds.clear();
     }
 
@@ -1841,6 +1876,8 @@ impl EgscCache {
         self.exact_index.clear();
         self.semantic_index.clear();
         self.slot_to_hash.clear();
+        self.slot_by_hash.clear();
+        self.free_slots.clear();
 
         // Restore entries and rebuild indices
         let entry_count = snapshot.entries.len();
@@ -1850,6 +1887,7 @@ impl EgscCache {
             // Rebuild semantic index: slot = current len, push hash, insert fp→slot
             let slot = self.slot_to_hash.len();
             self.slot_to_hash.push(hash);
+            self.slot_by_hash.insert(hash, slot);
             self.semantic_index.insert(entry.query_simhash, slot);
             // Store entry
             self.entries.insert(hash, entry);
@@ -1905,6 +1943,103 @@ mod tests {
     /// Helper: create flat depth weights (all depth 0) for testing.
     fn flat_depths(ids: &HashSet<String>) -> HashMap<String, u32> {
         ids.iter().map(|id| (id.clone(), 0u32)).collect()
+    }
+
+    fn churn_config(max_entries: usize) -> EgscConfig {
+        EgscConfig {
+            max_entries,
+            enable_entropy_gate: false,
+            enable_submodular_eviction: false,
+            ..Default::default()
+        }
+    }
+
+    fn store_churn_entry(cache: &mut EgscCache, index: usize) {
+        assert!(cache.store_with_budget(
+            &format!("query-{index}"),
+            fids(&[&format!("fragment-{index}")]),
+            &[],
+            format!("response-{index}"),
+            32,
+            index as u32,
+            512,
+        ));
+    }
+
+    fn assert_semantic_slot_invariants(cache: &EgscCache) {
+        assert_eq!(cache.slot_by_hash.len(), cache.entries.len());
+        assert_eq!(
+            cache.slot_by_hash.len() + cache.free_slots.len(),
+            cache.slot_to_hash.len(),
+            "every allocated slot must be either live or reusable"
+        );
+        for (&hash, &slot) in &cache.slot_by_hash {
+            assert!(slot < cache.slot_to_hash.len());
+            assert_eq!(cache.slot_to_hash[slot], hash);
+            assert!(cache.entries.contains_key(&hash));
+        }
+    }
+
+    #[test]
+    fn semantic_slots_stay_bounded_under_long_eviction_churn() {
+        let mut cache = EgscCache::new(churn_config(8));
+        for index in 0..2_000 {
+            store_churn_entry(&mut cache, index);
+            assert!(cache.len() <= 8);
+            assert!(
+                cache.slot_to_hash.len() <= 8,
+                "semantic slots grew beyond live cache capacity at iteration {index}: {}",
+                cache.slot_to_hash.len()
+            );
+            assert_semantic_slot_invariants(&cache);
+        }
+
+        // No LSH candidate may point at an evicted hash after long churn.
+        for index in 0..2_000 {
+            for slot in cache
+                .semantic_index
+                .query(simhash(&format!("query-{index}")))
+            {
+                let hash = cache.slot_to_hash[slot];
+                assert!(cache.entries.contains_key(&hash));
+                assert_eq!(cache.slot_by_hash.get(&hash), Some(&slot));
+            }
+        }
+    }
+
+    #[test]
+    fn gc_recycles_slots_and_snapshot_import_rebuilds_private_indices() {
+        let mut cache = EgscCache::new(churn_config(4));
+        for index in 0..4 {
+            store_churn_entry(&mut cache, index);
+        }
+        let high_water = cache.slot_to_hash.len();
+        let victim = *cache
+            .entries
+            .keys()
+            .next()
+            .expect("expected live cache entry");
+        cache.entries.get_mut(&victim).unwrap().quality_score = 0.0;
+        assert_eq!(cache.gc(0.1), 1);
+        assert_eq!(cache.free_slots.len(), 1);
+        assert_semantic_slot_invariants(&cache);
+
+        store_churn_entry(&mut cache, 100);
+        assert_eq!(
+            cache.slot_to_hash.len(),
+            high_water,
+            "GC slot must be reused"
+        );
+        assert!(cache.free_slots.is_empty());
+        assert_semantic_slot_invariants(&cache);
+
+        let snapshot = cache.export_cache().expect("snapshot export");
+        let mut restored = EgscCache::new(churn_config(1));
+        let restored_count = restored.import_cache(&snapshot).expect("snapshot import");
+        assert_eq!(restored_count, cache.len());
+        assert_eq!(restored.slot_to_hash.len(), restored.len());
+        assert!(restored.free_slots.is_empty());
+        assert_semantic_slot_invariants(&restored);
     }
 
     // ── Thompson Gate ──

@@ -2280,14 +2280,33 @@ fn confidence_for_context(source: &str, line: &str, rule: &SastRule) -> f64 {
 // ═══════════════════════════════════════════════════════════════════
 // CVSS-inspired aggregate risk score
 ///
-/// Formula inspired by CVSS v3.1 base score:
-///   risk = min(10, Σ(severity_weight × confidence × (1 + taint_bonus)) / scaling_factor)
+/// Severity-weighted, confidence-scaled, exponentially saturating:
+///
+///   raw   = Σ(severity_weight × confidence × taint_boost)   taint_boost = 1.3 or 1.0
+///   score = 10 · (1 − exp(−raw / 4))                        asymptote 10, never exceeds it
 ///
 /// Rationale:
-///   - Each Critical adds ~2.4 to the score
-///   - Each High adds ~1.3
 ///   - Confidence-weighted so low-confidence findings don't dominate
-///   - Capped at 10.0 (CVSS maximum)
+///   - Saturating rather than additive, so a long tail of Low findings cannot
+///     out-score a single Critical
+///
+/// The saturation is steep, and callers should know it. `Critical` weighs 9.5,
+/// so **one** Critical at full confidence already scores 9.07/10:
+///
+///   1 Critical  →  9.07      2 Critical  →  9.91
+///   3 Critical  →  9.99      4 Critical  → 10.00
+///   1 High      →  8.03      2 High      →  9.61
+///
+/// So this ranks "has a serious problem" against "does not", and does **not**
+/// rank two serious files against each other — a one-Critical file and a
+/// five-Critical file differ by less than a point. Anything needing that
+/// distinction should count findings by severity rather than read `risk_score`.
+///
+/// This block previously described `Σ(...) / scaling_factor` with "each Critical
+/// adds ~2.4" and "raw=4 (one Critical) → ~7.0". None of that matched: the code
+/// has always been exponential rather than a division, one Critical is raw 9.5
+/// rather than 4, and a saturating function has no fixed per-finding increment.
+/// The code is unchanged; only this description was wrong.
 // ═══════════════════════════════════════════════════════════════════
 fn compute_risk_score(findings: &[SastFinding]) -> f64 {
     if findings.is_empty() {
@@ -2403,23 +2422,14 @@ pub fn scan_content(content: &str, source: &str) -> SastReport {
                 continue;
             }
 
-            // Privacy: redact line content for secret-category findings
-            // so that actual credentials are never exposed in SAST reports.
+            // Privacy invariant: once a line matches a secret-category rule,
+            // never echo *any* source bytes from that line. Even a truncated
+            // prefix can disclose a credential when the token begins the line,
+            // appears on the left-hand side, or is embedded in non-assignment
+            // syntax. Rule/category/path/line metadata already carries the
+            // debugging context without repeating secret material.
             let safe_content = if rule.category == "Hardcoded Secrets" {
-                let trimmed = line.trim();
-                if let Some(eq_pos) = trimmed.find('=') {
-                    // Show key name but redact value: "api_key = [REDACTED]"
-                    format!("{}= [REDACTED]", &trimmed[..eq_pos])
-                } else if trimmed.len() > 30 {
-                    // Find nearest valid UTF-8 boundary at or before byte 20
-                    let safe = (0..=20.min(trimmed.len()))
-                        .rev()
-                        .find(|&i| trimmed.is_char_boundary(i))
-                        .unwrap_or(0);
-                    format!("{}...[REDACTED]", &trimmed[..safe])
-                } else {
-                    "[REDACTED — secret detected]".to_string()
-                }
+                "[REDACTED — secret-bearing line]".to_string()
             } else {
                 line.trim().to_string()
             };
@@ -2516,22 +2526,44 @@ mod tests {
         let code = "password = \"hunter2\"";
         let report = scan(code, "auth.py");
         let finding = &report.findings[0];
-        assert!(
-            finding.line_content.contains("[REDACTED]"),
-            "Secret-category finding must redact line_content, got: {}",
-            finding.line_content
+        assert_eq!(
+            finding.line_content, "[REDACTED — secret-bearing line]",
+            "Secret-category finding must fully redact source bytes"
         );
         assert!(
             !finding.line_content.contains("hunter2"),
             "Actual secret value must not appear in line_content: {}",
             finding.line_content
         );
-        // Should still show the key name for debugging
-        assert!(
-            finding.line_content.contains("password"),
-            "Key name should be preserved for context: {}",
-            finding.line_content
-        );
+        assert_eq!(finding.line_content, "[REDACTED — secret-bearing line]");
+    }
+
+    #[test]
+    fn secret_findings_never_echo_source_bytes_at_any_position() {
+        let secret = "sk-proj-supersecret123456789";
+        let cases = [
+            format!("\"{secret}\" trailing diagnostic text"),
+            format!("prefix text \"{secret}\" trailing text"),
+            format!("prefix text ending with \"{secret}\""),
+            format!("\"{secret}\" = placeholder"),
+        ];
+        for code in cases {
+            let report = scan(&code, "leak.txt");
+            let finding = report
+                .findings
+                .iter()
+                .find(|finding| finding.rule_id == "SEC-003")
+                .expect("sk- token must still be detected");
+            assert_eq!(
+                finding.line_content, "[REDACTED — secret-bearing line]",
+                "secret findings must not retain source bytes"
+            );
+            let serialized = serde_json::to_string(&report).unwrap();
+            assert!(
+                !serialized.contains(secret),
+                "serialized SAST report leaked secret bytes: {serialized}"
+            );
+        }
     }
 
     #[test]
@@ -2548,10 +2580,9 @@ mod tests {
             "API key must not appear in SAST finding: {}",
             finding.line_content
         );
-        assert!(
-            finding.line_content.contains("[REDACTED]"),
-            "Finding must contain [REDACTED]: {}",
-            finding.line_content
+        assert_eq!(
+            finding.line_content, "[REDACTED — secret-bearing line]",
+            "API-key finding must fully redact source bytes"
         );
     }
 

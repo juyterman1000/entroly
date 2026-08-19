@@ -7,7 +7,13 @@
 //! stuff context in, hope it helps. This makes Entroly closed-loop.
 //!
 //! Scoring per fragment fᵢ against response r:
-//!   1. Trigram Jaccard: J₃(fᵢ, r) = |trigrams(fᵢ) ∩ trigrams(r)| / |trigrams(fᵢ)|
+//!   1. Trigram containment: C₃(fᵢ, r) = |trigrams(fᵢ) ∩ trigrams(r)| / |trigrams(fᵢ)|
+//!      Containment, not Jaccard: the denominator is the fragment alone, not the
+//!      union. That is the right choice here -- the question is how much of the
+//!      fragment showed up in the response, so a long response should not be
+//!      penalised the way symmetric Jaccard would penalise it -- but it was
+//!      called Jaccard in three places, which inverts how a reader predicts the
+//!      score behaves as responses grow.
 //!   2. Identifier overlap: I(fᵢ, r) = |idents(fᵢ) ∩ idents(r)| / |idents(fᵢ)|
 //!   3. Combined: U(fᵢ) = 0.4 × J₃ + 0.6 × I
 //!
@@ -28,7 +34,7 @@ use std::collections::HashSet;
 pub struct FragmentUtilization {
     pub fragment_id: String,
     pub source: String,
-    /// Trigram Jaccard overlap [0, 1].
+    /// Trigram containment overlap [0, 1]: intersection over fragment trigrams.
     pub trigram_overlap: f64,
     /// Identifier overlap [0, 1].
     pub identifier_overlap: f64,
@@ -101,7 +107,7 @@ pub fn score_utilization(fragments: &[&ContextFragment], response: &str) -> Util
         let frag_trigrams = trigrams(&frag.content);
         let frag_idents = identifier_set(&frag.content);
 
-        // Trigram Jaccard: |intersection| / |fragment_trigrams|
+        // Trigram containment: |intersection| / |fragment_trigrams|
         let trigram_overlap = if frag_trigrams.is_empty() {
             0.0
         } else {

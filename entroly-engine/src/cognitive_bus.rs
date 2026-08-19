@@ -28,8 +28,10 @@
 //! Welford Spike Detection (online, no windowing):
 //!   is_spike = (x − μ̄) > k·σ    // k=3, immediate broadcast, bypass queue
 //!
-use pyo3::prelude::*;
-use pyo3::types::PyDict;
+//! References:
+//!   - Jaques et al., "Social Influence as Intrinsic Motivation", ICML 2019
+//!   - McClelland et al., "Complementary Learning Systems", Psych Review 1995
+
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, VecDeque};
 
@@ -80,6 +82,10 @@ pub enum EventType {
 }
 
 impl EventType {
+    // Kept private: only this module parses tokens, and a public `from_str`
+    // inherent method shadows the `std::str::FromStr` trait method, which
+    // `clippy::should_implement_trait` rejects. `as_str` is public because
+    // bindings render the token.
     fn from_str(s: &str) -> Self {
         match s {
             "observation" => EventType::Observation,
@@ -100,7 +106,7 @@ impl EventType {
         }
     }
 
-    fn as_str(&self) -> &str {
+    pub fn as_str(&self) -> &str {
         match self {
             EventType::Observation => "observation",
             EventType::ToolResult => "tool_result",
@@ -448,7 +454,6 @@ impl Subscriber {
 ///   - MemoryRecall events inject recalled memories into agent context
 ///   - Emotional tags (from hippocampus) boost priority (critical=3x)
 ///   - Consolidated memories get dampened priority (already in long-term)
-#[pyclass]
 pub struct CognitiveBus {
     subscribers: HashMap<String, Subscriber>,
     event_counter: u64,
@@ -468,10 +473,7 @@ pub struct CognitiveBus {
     total_memory_bridged: u64,
 }
 
-#[pymethods]
 impl CognitiveBus {
-    #[new]
-    #[pyo3(signature = (memory_salience_threshold=50.0))]
     pub fn new(memory_salience_threshold: f64) -> Self {
         CognitiveBus {
             subscribers: HashMap::new(),
@@ -544,7 +546,6 @@ impl CognitiveBus {
     ///
     /// Returns:
     ///   Number of subscribers the event was routed to.
-    #[pyo3(signature = (source_agent, event_type, content, emotional_tag=0, salience=0.0))]
     pub fn publish(
         &mut self,
         source_agent: &str,
@@ -643,59 +644,50 @@ impl CognitiveBus {
     ///
     /// Returns:
     ///   List of dicts with event data.
-    #[pyo3(signature = (agent_id, limit=10))]
-    pub fn drain<'py>(
-        &mut self,
-        py: Python<'py>,
-        agent_id: &str,
-        limit: usize,
-    ) -> PyResult<Vec<Bound<'py, PyDict>>> {
+    pub fn drain(&mut self, agent_id: &str, limit: usize) -> Vec<serde_json::Value> {
         let sub = match self.subscribers.get_mut(agent_id) {
             Some(s) => s,
-            None => return Ok(Vec::new()),
+            None => return Vec::new(),
         };
 
         let events = sub.drain(limit);
         let mut result = Vec::with_capacity(events.len());
 
         for event in events {
-            let dict = PyDict::new(py);
-            dict.set_item("id", event.id)?;
-            dict.set_item("source_agent", &event.source_agent)?;
-            dict.set_item("event_type", event.event_type.as_str())?;
-            dict.set_item("content", &event.content)?;
-            dict.set_item("timestamp", event.timestamp)?;
-            dict.set_item("emotional_tag", event.emotional_tag)?;
-            dict.set_item("salience", event.salience)?;
-            dict.set_item("is_spike", event.is_spike)?;
-            result.push(dict);
+            result.push(serde_json::json!({
+                "id": event.id,
+                "source_agent": event.source_agent,
+                "event_type": event.event_type.as_str(),
+                "content": event.content,
+                "timestamp": event.timestamp,
+                "emotional_tag": event.emotional_tag,
+                "salience": event.salience,
+                "is_spike": event.is_spike,
+            }));
         }
 
-        Ok(result)
+        result
     }
 
     /// Drain events flagged for hippocampus memory bridging.
     ///
     /// Called by the Python layer to feed high-salience events to
     /// hippocampus.remember(). Returns and clears the bridge queue.
-    pub fn drain_memory_bridge<'py>(
-        &mut self,
-        py: Python<'py>,
-    ) -> PyResult<Vec<Bound<'py, PyDict>>> {
+    pub fn drain_memory_bridge(&mut self) -> Vec<serde_json::Value> {
         let events = std::mem::take(&mut self.memory_bridge_queue);
         let mut result = Vec::with_capacity(events.len());
 
         for event in events {
-            let dict = PyDict::new(py);
-            dict.set_item("content", &event.content)?;
-            dict.set_item("source", &event.source_agent)?;
-            dict.set_item("salience", event.salience)?;
-            dict.set_item("emotional_tag", event.emotional_tag)?;
-            dict.set_item("event_type", event.event_type.as_str())?;
-            result.push(dict);
+            result.push(serde_json::json!({
+                "content": event.content,
+                "source": event.source_agent,
+                "salience": event.salience,
+                "emotional_tag": event.emotional_tag,
+                "event_type": event.event_type.as_str(),
+            }));
         }
 
-        Ok(result)
+        result
     }
 
     /// Get queue depth for a subscriber.
@@ -707,40 +699,37 @@ impl CognitiveBus {
     }
 
     /// Get bus statistics.
-    pub fn stats<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
-        let dict = PyDict::new(py);
-        dict.set_item("subscribers", self.subscribers.len())?;
-        dict.set_item("total_published", self.total_published)?;
-        dict.set_item("total_deduplicated", self.total_deduplicated)?;
-        dict.set_item("total_spikes", self.total_spikes)?;
-        dict.set_item("total_memory_bridged", self.total_memory_bridged)?;
-        dict.set_item("current_tick", self.current_tick)?;
-
-        // Per-subscriber stats
-        let sub_stats = PyDict::new(py);
+    pub fn stats(&self) -> serde_json::Value {
+        let mut sub_details = serde_json::Map::new();
         for (id, sub) in &self.subscribers {
-            let s = PyDict::new(py);
-            s.set_item("queue_depth", sub.queue.len())?;
-            s.set_item("total_delivered", sub.total_delivered)?;
-            s.set_item(
-                "subscribed_types",
-                sub.subscribed_types
-                    .iter()
-                    .map(|t| t.as_str().to_string())
-                    .collect::<Vec<_>>(),
-            )?;
-            sub_stats.set_item(id.as_str(), s)?;
+            sub_details.insert(id.clone(), serde_json::json!({
+                "queue_depth": sub.queue.len(),
+                "total_delivered": sub.total_delivered,
+                "subscribed_types": sub.subscribed_types.iter().map(|t| t.as_str().to_string()).collect::<Vec<_>>(),
+            }));
         }
-        dict.set_item("subscribers_detail", sub_stats)?;
 
-        Ok(dict)
+        serde_json::json!({
+            "subscribers": self.subscribers.len(),
+            "total_published": self.total_published,
+            "total_deduplicated": self.total_deduplicated,
+            "total_spikes": self.total_spikes,
+            "total_memory_bridged": self.total_memory_bridged,
+            "current_tick": self.current_tick,
+            "subscribers_detail": sub_details,
+        })
     }
 }
 
-#[cfg(test)]
 impl CognitiveBus {
-    // ── Rust-only helpers (not exposed to Python) ──
-    /// Drain raw events (Rust-only, for internal use and testing).
+    // ── Un-serialized accessors ──
+    //
+    // `drain`/`drain_memory_bridge` above render to `serde_json::Value` so the
+    // engine never has to know about a host runtime. Bindings need the domain
+    // type instead, so they can render into PyDict, JsValue, or anything else
+    // without a JSON round trip. These were `#[cfg(test)]` while the only
+    // caller was a test in the crate this module used to live in.
+    /// Drain raw events without serializing them.
     pub fn drain_raw(&mut self, agent_id: &str, limit: usize) -> Vec<BusEvent> {
         match self.subscribers.get_mut(agent_id) {
             Some(sub) => sub.drain(limit),
@@ -748,7 +737,7 @@ impl CognitiveBus {
         }
     }
 
-    /// Drain raw memory bridge events (Rust-only, for internal use and testing).
+    /// Drain raw memory-bridge events without serializing them.
     pub fn drain_memory_bridge_raw(&mut self) -> Vec<BusEvent> {
         std::mem::take(&mut self.memory_bridge_queue)
     }
@@ -759,6 +748,77 @@ impl CognitiveBus {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The two drain shapes are a cross-runtime contract, not an implementation
+    /// detail.
+    ///
+    /// `drain` and `drain_memory_bridge` deliberately return *different* key
+    /// sets, and the bridge one is not a subset-with-renames of the other: it
+    /// uses `source` where the full event uses `source_agent`. The PyO3 binding
+    /// once serialized both through a single shared helper, which silently
+    /// widened the bridge payload and renamed that key -- a public API break
+    /// that no test caught because no caller had adopted it yet.
+    ///
+    /// Both bindings now delegate here, so pinning the shapes at the engine
+    /// pins them for Python and npm at once.
+    #[test]
+    fn drain_shapes_are_pinned_for_every_runtime() {
+        fn keys(value: &serde_json::Value) -> Vec<String> {
+            let mut names: Vec<String> = value
+                .as_object()
+                .expect("drained event must be a JSON object")
+                .keys()
+                .cloned()
+                .collect();
+            names.sort();
+            names
+        }
+
+        let mut bus = CognitiveBus::new(0.0);
+        bus.subscribe("reader", vec!["observation".to_string()]);
+        bus.publish("writer", "observation", "payload text", 3, 99.0);
+
+        let drained = bus.drain("reader", 10);
+        assert_eq!(drained.len(), 1, "subscriber should have received the event");
+        assert_eq!(
+            keys(&drained[0]),
+            vec![
+                "content",
+                "emotional_tag",
+                "event_type",
+                "id",
+                "is_spike",
+                "salience",
+                "source_agent",
+                "timestamp",
+            ]
+        );
+
+        let bridged = bus.drain_memory_bridge();
+        assert_eq!(
+            bridged.len(),
+            1,
+            "salience 99 over threshold 0 should reach the bridge"
+        );
+        assert_eq!(
+            keys(&bridged[0]),
+            vec![
+                "content",
+                "emotional_tag",
+                "event_type",
+                "salience",
+                "source",
+            ]
+        );
+
+        // The distinction that the collapsed helper destroyed.
+        assert!(bridged[0].get("source").is_some());
+        assert!(
+            bridged[0].get("source_agent").is_none(),
+            "bridge payload must not carry the full-event key name"
+        );
+        assert_eq!(bridged[0]["source"], serde_json::json!("writer"));
+    }
 
     #[test]
     fn test_welford_basic() {

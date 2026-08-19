@@ -170,20 +170,33 @@ Keep failures in benchmark denominators. Publish repository revision, package ve
 
 ## Engine & install options
 
-Python is the reference runtime. The optional Rust core accelerates supported
-compute-heavy paths through PyO3, and a separate Node runtime ships through
-WASM. The base Python install does not imply that the Rust extension is active;
-`entroly verify-claims` reports the engine mode it actually exercised.
+Python orchestrates; the Rust core (`entroly-core`, via PyO3) does the
+compute-heavy work, and a separate Node runtime ships through WASM. The Rust
+core is a **required** dependency of the base install, not an extra: query
+conditioned selection is gated on it, so an install without it fills the token
+budget without ever reading the query. `entroly verify-claims` reports the
+engine mode it actually exercised.
 
 ```bash
-pip install entroly            # core: MCP server + Python engine
+pip install entroly            # MCP server + Rust engine
 pip install entroly[proxy]     # + HTTP proxy
-pip install entroly[native]    # + Rust engine
 pip install entroly[full]      # everything
 
 npm install -g entroly         # WASM runtime, no Python needed
 docker pull ghcr.io/juyterman1000/entroly:latest
 ```
+
+`entroly[native]` still resolves — it is kept as a compatibility alias for
+install instructions already published, and now installs the same thing as a
+plain `pip install entroly`.
+
+abi3 wheels are published for macOS universal2, Linux glibc and musl
+(x86_64/aarch64), and Windows x64. On a platform with no published wheel the
+install fails rather than silently degrading; build the core from source
+(`cd entroly-core && maturin develop --release`) for those. If the engine is
+missing at runtime, Entroly installs it from PyPI before measuring anything —
+see the note under [Install](../README.md#install); `ENTROLY_NO_SELF_HEAL=1`
+disables that, and the reported figure is then labelled unearned.
 
 **Single binary, no Python** — a standalone Rust proxy that auto-detects Anthropic/OpenAI/Gemini and stays cache-aligned:
 

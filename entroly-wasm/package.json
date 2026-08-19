@@ -1,6 +1,6 @@
 {
   "name": "entroly-wasm",
-  "version": "1.0.78",
+  "version": "1.0.79",
   "description": "WebAssembly Context Assurance for AI agents: reduce avoidable token usage with local evidence selection, receipts, exact recovery, and verification.",
   "main": "index.js",
   "types": "index.d.ts",
@@ -37,7 +37,18 @@
     "js/vault_observer.js",
     "js/distill.js",
     "js/federation.js",
-    "js/evolution_daemon.js"
+    "js/evolution_daemon.js",
+    "js/trust_engine.js",
+    "js/trust_engine.d.ts",
+    "js/work_graph.js",
+    "js/work_graph.d.ts",
+    "js/work_graph_repo.js",
+    "js/work_graph_repo.d.ts",
+    "js/work_graph_store.js",
+    "js/work_graph_store.d.ts",
+    "js/work_graph_content_digest.js",
+    "js/work_graph_continuity.js",
+    "js/work_graph_continuity.d.ts"
   ],
   "scripts": {
     "build": "wasm-pack build --target nodejs --out-dir pkg",
@@ -48,7 +59,7 @@
     "health": "node js/cli.js health",
     "demo": "node js/cli.js demo",
     "autotune": "node js/cli.js autotune",
-    "test": "node test_wasm_e2e.js"
+    "test": "node test_wasm_e2e.js && node test_work_graph.js && node test_work_graph_repo.js && node test_work_graph_store.js && node test_work_graph_content_digest.js && node test_work_graph_continuity.js && node test_context_trust_delivery.js && node test_work_graph_root_exports.js"
   },
   "keywords": [
     "entroly",

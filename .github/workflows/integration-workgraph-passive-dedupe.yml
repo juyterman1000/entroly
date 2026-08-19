@@ -1,0 +1,112 @@
+# Product-input race guard: docs-only branch movement is allowed; any semantic/test input movement fails closed.
+name: Integration - Apply Work Graph Passive Snapshot Dedupe
+
+on:
+  push:
+    branches:
+      - integration/workgraph-production-20260817
+    paths:
+      - .github/workflows/integration-workgraph-passive-dedupe.yml
+
+permissions:
+  contents: write
+
+jobs:
+  validate-and-apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out exact integration branch
+        uses: actions/checkout@v4
+        with:
+          ref: integration/workgraph-production-20260817
+          fetch-depth: 0
+
+      - name: Pin audited semantic and test inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object entroly-engine/src/work_graph.rs)" = "4cfa2d84123b53bc8d6a4b68e5d5431da9ac3a30"
+          grep -q 'O_NOFOLLOW' entroly/work_graph_content_digest.py
+          grep -q 'st_ino' entroly/work_graph_content_digest.py
+          grep -q '_MAX_HASH_FILE_BYTES' entroly/work_graph_content_digest.py
+          grep -q 'O_NOFOLLOW' entroly-wasm/js/work_graph_content_digest.js
+          grep -q 'mtimeNs' entroly-wasm/js/work_graph_content_digest.js
+          grep -q 'MAX_HASH_FILE_BYTES' entroly-wasm/js/work_graph_content_digest.js
+          git rev-parse HEAD:entroly-engine > /tmp/input-engine-tree
+          git rev-parse HEAD:entroly > /tmp/input-python-tree
+          git rev-parse HEAD:entroly-wasm > /tmp/input-wasm-tree
+          git rev-parse HEAD:tests > /tmp/input-tests-tree
+          git rev-parse HEAD:pyproject.toml > /tmp/input-root-project
+          git rev-parse HEAD:entroly-engine/Cargo.toml > /tmp/input-engine-manifest
+          git fetch origin audit/workgraph-passive-dedupe-20260817:audit-passive
+          test "$(git rev-parse audit-passive:scripts/apply_workgraph_passive_dedupe_v2.py)" = "d93f5a3c27eb9600fefd0c2d22db4a652cc6cfc7"
+
+      - name: Apply audited passive-snapshot semantic patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git show audit-passive:scripts/apply_workgraph_passive_dedupe_v2.py > /tmp/apply_workgraph_passive_dedupe_v2.py
+          python /tmp/apply_workgraph_passive_dedupe_v2.py
+          test "$(git diff --name-only)" = "entroly-engine/src/work_graph.rs"
+          git diff --check
+          grep -q 'fn passive_repository_snapshot_fingerprint' entroly-engine/src/work_graph.rs
+          grep -q 'identical_content_complete_passive_snapshots_do_not_grow_history' entroly-engine/src/work_graph.rs
+          grep -q 'repeated_active_verification_is_never_collapsed' entroly-engine/src/work_graph.rs
+          grep -q 'repeated_model_execution_is_never_collapsed' entroly-engine/src/work_graph.rs
+
+      - name: Validate adapter digest parity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            tests/test_work_graph_content_digest.py \
+            tests/test_work_graph_cross_language_digest_parity.py
+          node entroly-wasm/test_work_graph_content_digest.js
+
+      - name: Install Rust validation toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Validate shared Rust semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path entroly-engine/Cargo.toml
+          cargo test --manifest-path entroly-engine/Cargo.toml --lib
+          cargo clippy --manifest-path entroly-engine/Cargo.toml --all-targets -- -D warnings
+          test "$(git diff --name-only)" = "entroly-engine/src/work_graph.rs"
+
+      - name: Allow docs-only movement, reject semantic/test races, and publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "entroly-integration-bot"
+          git config user.email "208309368+juyterman1000@users.noreply.github.com"
+
+          rm .github/workflows/integration-workgraph-passive-dedupe.yml
+          git diff --check
+          printf '%s\n' \
+            '.github/workflows/integration-workgraph-passive-dedupe.yml' \
+            'entroly-engine/src/work_graph.rs' > /tmp/expected-paths
+          git diff --name-only | sort > /tmp/actual-paths
+          diff -u /tmp/expected-paths /tmp/actual-paths
+          git add entroly-engine/src/work_graph.rs .github/workflows/integration-workgraph-passive-dedupe.yml
+          git commit -m "fix(work-graph): dedupe content-complete passive snapshots"
+
+          git fetch origin integration/workgraph-production-20260817
+          remote=origin/integration/workgraph-production-20260817
+          test "$(cat /tmp/input-engine-tree)" = "$(git rev-parse "$remote:entroly-engine")"
+          test "$(cat /tmp/input-python-tree)" = "$(git rev-parse "$remote:entroly")"
+          test "$(cat /tmp/input-wasm-tree)" = "$(git rev-parse "$remote:entroly-wasm")"
+          test "$(cat /tmp/input-tests-tree)" = "$(git rev-parse "$remote:tests")"
+          test "$(cat /tmp/input-root-project)" = "$(git rev-parse "$remote:pyproject.toml")"
+          test "$(cat /tmp/input-engine-manifest)" = "$(git rev-parse "$remote:entroly-engine/Cargo.toml")"
+
+          # Rebase the already-validated product commit over unrelated docs-only
+          # movement. Any code/test input movement above fails before this point.
+          git rebase "$remote"
+          test "$(git diff --name-only "$remote"...HEAD | sort)" = "$(printf '%s\n' \
+            .github/workflows/integration-workgraph-passive-dedupe.yml \
+            entroly-engine/src/work_graph.rs | sort)"
+          git push origin HEAD:integration/workgraph-production-20260817

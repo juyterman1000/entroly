@@ -48,6 +48,44 @@ jobs:
           name: wheels-linux-aarch64
           path: dist
 
+  # musl wheels exist because entroly-core is a REQUIRED dependency of entroly
+  # (see pyproject.toml). entroly-core publishes no sdist -- deliberately, per
+  # the abi3 note above -- so a platform without a wheel cannot resolve the
+  # dependency at all and `pip install entroly` fails outright there. glibc
+  # wheels do not install on musl, which would break every Alpine-based image.
+  # Keep these jobs in the `publish` needs list.
+  linux-musl-x86_64:
+    name: Linux musl (x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --out dist --manifest-path entroly-core/Cargo.toml
+          manylinux: musllinux_1_2
+          target: x86_64-unknown-linux-musl
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wheels-linux-musl-x86_64
+          path: dist
+
+  linux-musl-aarch64:
+    name: Linux musl (aarch64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --out dist --manifest-path entroly-core/Cargo.toml
+          manylinux: musllinux_1_2
+          target: aarch64-unknown-linux-musl
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wheels-linux-musl-aarch64
+          path: dist
+
   macos-universal:
     name: macOS (universal2)
     runs-on: macos-14
@@ -101,7 +139,14 @@ jobs:
 
   publish:
     name: Publish to PyPI
-    needs: [rust-gate, linux-x86_64, linux-aarch64, macos-universal, windows]
+    needs:
+      - rust-gate
+      - linux-x86_64
+      - linux-aarch64
+      - linux-musl-x86_64
+      - linux-musl-aarch64
+      - macos-universal
+      - windows
     runs-on: ubuntu-latest
     permissions:
       id-token: write

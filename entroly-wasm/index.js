@@ -11,6 +11,8 @@
 //   npx entroly-wasm serve
 
 let WasmEntrolyEngine;
+let WasmWorkGraph;
+let WasmTrustEngine;
 let classifyQueryTransitionRust;
 let rewardWeightedOptimizeRust;
 let optimizeTaskProfilesRust;
@@ -18,6 +20,8 @@ let classifyLearningQueryRust;
 function bindWasmExports(mod) {
   ({
     WasmEntrolyEngine,
+    WasmWorkGraph,
+    WasmTrustEngine,
     classify_query_transition: classifyQueryTransitionRust,
     reward_weighted_optimize: rewardWeightedOptimizeRust,
     optimize_task_profiles: optimizeTaskProfilesRust,
@@ -39,11 +43,16 @@ function buildAndBindWasm() {
 try {
   bindWasmExports(require('./pkg/entroly_wasm'));
   if (
+    !WasmWorkGraph ||
+    !WasmTrustEngine ||
     !classifyQueryTransitionRust ||
     !rewardWeightedOptimizeRust ||
     !optimizeTaskProfilesRust ||
     !classifyLearningQueryRust
   ) {
+    // A source checkout can contain an older generated pkg/ directory. Treat
+    // a missing Work Graph export exactly like any other stale native surface
+    // and rebuild before loading the high-level JS wrapper.
     buildAndBindWasm();
   }
 } catch (err) {
@@ -65,6 +74,24 @@ const { ValueTracker, EVOLUTION_TAX_RATE, estimateCost } = require('./js/value_t
 const { exportPromoted: exportAgentSkills } = require('./js/agentskills_export');
 const { TelegramGateway, DiscordGateway, SlackGateway } = require('./js/gateways');
 const { VaultObserver } = require('./js/vault_observer');
+const { TrustEngine } = require('./js/trust_engine');
+const {
+  WorkGraph,
+  RepositoryDiscoveryError,
+  discoverRepositoryIdentity,
+  discoverRepositoryObservation,
+} = require('./js/work_graph');
+const {
+  WorkGraphLockTimeout,
+  WorkGraphStateError,
+  WorkGraphStore,
+  WorkGraphStoreError,
+} = require('./js/work_graph_store');
+const {
+  MAX_RESUME_EVIDENCE,
+  handoffRepository,
+  resumeRepository,
+} = require('./js/work_graph_continuity');
 const {
   createContextReceipt,
   explainReceiptOmission,
@@ -121,6 +148,22 @@ module.exports = {
   rewardWeightedOptimize,
   optimizeTaskProfiles,
   classifyLearningQuery,
+
+  // Shared Rust evidence-bounded Trust Engine.
+  TrustEngine,
+
+  // Shared Rust AI Work Graph with Node-only repository/persistence glue.
+  WorkGraph,
+  RepositoryDiscoveryError,
+  discoverRepositoryIdentity,
+  discoverRepositoryObservation,
+  WorkGraphStore,
+  WorkGraphStoreError,
+  WorkGraphLockTimeout,
+  WorkGraphStateError,
+  MAX_RESUME_EVIDENCE,
+  handoffRepository,
+  resumeRepository,
 
   // Configuration
   EntrolyConfig,
