@@ -184,7 +184,9 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    python = str(Path(args.python).resolve()) if Path(args.python).exists() else args.python
+    # Preserve the path used to invoke a virtualenv interpreter. Path.resolve()
+    # follows the venv symlink to the host Python and silently escapes the venv.
+    python = os.path.abspath(args.python) if Path(args.python).exists() else args.python
     root_version, core_version = _project_versions()
     if root_version != core_version:
         raise SystemExit(
