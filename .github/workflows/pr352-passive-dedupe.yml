@@ -1,0 +1,84 @@
+name: PR352 Land Passive Snapshot Dedupe
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - scripts/pr352_apply_passive_dedupe.py
+      - .github/workflows/pr352-passive-dedupe.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pr352-passive-dedupe
+  cancel-in-progress: false
+
+jobs:
+  validate-and-land:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: integration/workgraph-production-20260817
+
+      - name: Pin latest integration head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin integration/workgraph-production-20260817
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/integration/workgraph-production-20260817)"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Apply guarded passive-snapshot transform
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/pr352_apply_passive_dedupe.py
+          git diff --check
+          actual="$(git status --short | sed -E 's/^.. //' | sort)"
+          test "$actual" = "entroly-engine/src/work_graph.rs" || {
+            echo "Unexpected passive-dedupe diff:"
+            printf '%s\n' "$actual"
+            exit 1
+          }
+
+      - name: Prove passive null controls and full engine invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path entroly-engine/Cargo.toml --lib passive_
+          cargo test --manifest-path entroly-engine/Cargo.toml --lib repeated_active_verification_is_never_collapsed
+          cargo test --manifest-path entroly-engine/Cargo.toml --lib repeated_model_execution_is_never_collapsed
+          cargo test --manifest-path entroly-engine/Cargo.toml --lib
+          cargo test --manifest-path entroly-engine/Cargo.toml --lib --features python
+          cargo clippy --manifest-path entroly-engine/Cargo.toml --all-targets -- -D warnings
+          cargo clippy --manifest-path entroly-engine/Cargo.toml --all-targets --features python -- -D warnings
+
+      - name: Prove bindings still compile against engine
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --manifest-path entroly-core/Cargo.toml --all-targets
+          cargo check --manifest-path entroly-wasm/Cargo.toml --all-targets
+
+      - name: Commit only validated product code
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'juyterman1000'
+          git config user.email '208309368+juyterman1000@users.noreply.github.com'
+          git add entroly-engine/src/work_graph.rs
+          git diff --cached --check
+          git diff --cached --quiet && {
+            echo "No passive-dedupe product diff produced"
+            exit 1
+          }
+          git commit -m 'fix(work-graph): dedupe content-complete passive snapshots'
+          git push origin HEAD:integration/workgraph-production-20260817
