@@ -149,7 +149,7 @@ def main() -> int:
 
     #[test]
     fn incremental_commitment_matches_canonical_serde_bytes() {
-        let mut graph = WorkGraph::new("repo-commitment-parity").unwrap();
+        let mut graph = WorkGraph::new("repo-1").unwrap();
         assert_eq!(
             graph.graph_commitment(),
             canonical_full_graph_commitment(&graph)
