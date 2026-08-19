@@ -71,14 +71,18 @@ jobs:
         run: |
           set -euo pipefail
           before="$(git status --short | sed -E 's/^.. //' | sort)"
-          cargo fmt --all
+          cargo fmt --manifest-path entroly-engine/Cargo.toml
+          cargo fmt --manifest-path entroly-core/Cargo.toml
+          cargo fmt --manifest-path entroly-wasm/Cargo.toml
           after="$(git status --short | sed -E 's/^.. //' | sort)"
           test "$before" = "$after" || {
             echo "rustfmt touched files outside the intended consolidation set"
             diff -u <(printf '%s\n' "$before") <(printf '%s\n' "$after") || true
             exit 1
           }
-          cargo fmt --all -- --check
+          cargo fmt --manifest-path entroly-engine/Cargo.toml -- --check
+          cargo fmt --manifest-path entroly-core/Cargo.toml -- --check
+          cargo fmt --manifest-path entroly-wasm/Cargo.toml -- --check
           git diff --check
 
       - name: Prove coordination equivalence and engine quality
