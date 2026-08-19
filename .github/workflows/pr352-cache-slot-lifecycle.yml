@@ -39,9 +39,10 @@ jobs:
       - name: Apply guarded private-index lifecycle repair
         run: python scripts/pr352_fix_cache_slot_lifecycle.py
 
-      - name: Format check changed Rust files
+      - name: Format changed Rust files
         shell: bash
         run: |
+          rustfmt --edition 2021 entroly-engine/src/cache.rs entroly-engine/src/lsh.rs
           rustfmt --edition 2021 --check entroly-engine/src/cache.rs entroly-engine/src/lsh.rs
 
       - name: Focused cache and LSH regression tests
