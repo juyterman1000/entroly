@@ -82,6 +82,10 @@ pub enum EventType {
 }
 
 impl EventType {
+    // Kept private: only this module parses tokens, and a public `from_str`
+    // inherent method shadows the `std::str::FromStr` trait method, which
+    // `clippy::should_implement_trait` rejects. `as_str` is public because
+    // bindings render the token.
     fn from_str(s: &str) -> Self {
         match s {
             "observation" => EventType::Observation,
@@ -102,7 +106,7 @@ impl EventType {
         }
     }
 
-    fn as_str(&self) -> &str {
+    pub fn as_str(&self) -> &str {
         match self {
             EventType::Observation => "observation",
             EventType::ToolResult => "tool_result",
@@ -717,10 +721,15 @@ impl CognitiveBus {
     }
 }
 
-#[cfg(test)]
 impl CognitiveBus {
-    // ── Rust-only helpers (not exposed to Python) ──
-    /// Drain raw events (Rust-only, for internal use and testing).
+    // ── Un-serialized accessors ──
+    //
+    // `drain`/`drain_memory_bridge` above render to `serde_json::Value` so the
+    // engine never has to know about a host runtime. Bindings need the domain
+    // type instead, so they can render into PyDict, JsValue, or anything else
+    // without a JSON round trip. These were `#[cfg(test)]` while the only
+    // caller was a test in the crate this module used to live in.
+    /// Drain raw events without serializing them.
     pub fn drain_raw(&mut self, agent_id: &str, limit: usize) -> Vec<BusEvent> {
         match self.subscribers.get_mut(agent_id) {
             Some(sub) => sub.drain(limit),
@@ -728,7 +737,7 @@ impl CognitiveBus {
         }
     }
 
-    /// Drain raw memory bridge events (Rust-only, for internal use and testing).
+    /// Drain raw memory-bridge events without serializing them.
     pub fn drain_memory_bridge_raw(&mut self) -> Vec<BusEvent> {
         std::mem::take(&mut self.memory_bridge_queue)
     }
@@ -739,6 +748,77 @@ impl CognitiveBus {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The two drain shapes are a cross-runtime contract, not an implementation
+    /// detail.
+    ///
+    /// `drain` and `drain_memory_bridge` deliberately return *different* key
+    /// sets, and the bridge one is not a subset-with-renames of the other: it
+    /// uses `source` where the full event uses `source_agent`. The PyO3 binding
+    /// once serialized both through a single shared helper, which silently
+    /// widened the bridge payload and renamed that key -- a public API break
+    /// that no test caught because no caller had adopted it yet.
+    ///
+    /// Both bindings now delegate here, so pinning the shapes at the engine
+    /// pins them for Python and npm at once.
+    #[test]
+    fn drain_shapes_are_pinned_for_every_runtime() {
+        fn keys(value: &serde_json::Value) -> Vec<String> {
+            let mut names: Vec<String> = value
+                .as_object()
+                .expect("drained event must be a JSON object")
+                .keys()
+                .cloned()
+                .collect();
+            names.sort();
+            names
+        }
+
+        let mut bus = CognitiveBus::new(0.0);
+        bus.subscribe("reader", vec!["observation".to_string()]);
+        bus.publish("writer", "observation", "payload text", 3, 99.0);
+
+        let drained = bus.drain("reader", 10);
+        assert_eq!(drained.len(), 1, "subscriber should have received the event");
+        assert_eq!(
+            keys(&drained[0]),
+            vec![
+                "content",
+                "emotional_tag",
+                "event_type",
+                "id",
+                "is_spike",
+                "salience",
+                "source_agent",
+                "timestamp",
+            ]
+        );
+
+        let bridged = bus.drain_memory_bridge();
+        assert_eq!(
+            bridged.len(),
+            1,
+            "salience 99 over threshold 0 should reach the bridge"
+        );
+        assert_eq!(
+            keys(&bridged[0]),
+            vec![
+                "content",
+                "emotional_tag",
+                "event_type",
+                "salience",
+                "source",
+            ]
+        );
+
+        // The distinction that the collapsed helper destroyed.
+        assert!(bridged[0].get("source").is_some());
+        assert!(
+            bridged[0].get("source_agent").is_none(),
+            "bridge payload must not carry the full-event key name"
+        );
+        assert_eq!(bridged[0]["source"], serde_json::json!("writer"));
+    }
 
     #[test]
     fn test_welford_basic() {

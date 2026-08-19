@@ -158,8 +158,22 @@ impl EicvSuppressor {
                     warned += 1;
                 }
                 "hallucinated" => {
-                    // SUPPRESS — remove entirely
-                    replacements.push((claim.start, claim.end, String::new()));
+                    // SUPPRESS — remove the claim together with the horizontal
+                    // whitespace that trailed it, so the removal leaves no gap
+                    // and no global cleanup pass is needed afterwards. Newlines
+                    // are deliberately not consumed: they carry the paragraph
+                    // and code-block structure of the response.
+                    //
+                    // The extended end can reach at most the first following
+                    // non-space byte, which is where the next claim begins, so
+                    // spans stay disjoint and the reverse-order application
+                    // below remains offset-safe.
+                    let bytes = output.as_bytes();
+                    let mut end = claim.end.min(output.len());
+                    while end < output.len() && (bytes[end] == b' ' || bytes[end] == b'\t') {
+                        end += 1;
+                    }
+                    replacements.push((claim.start, end, String::new()));
                     suppressed += 1;
                 }
                 _ => {}
@@ -175,10 +189,15 @@ impl EicvSuppressor {
             result.replace_range(actual_start..actual_end, replacement);
         }
 
-        // Clean up double spaces / leading spaces from suppressions
-        while result.contains("  ") {
-            result = result.replace("  ", " ");
-        }
+        // Trim only the document edges. There was a `while
+        // result.contains("  ") { result.replace("  ", " ") }` here, which
+        // collapsed every run of spaces in the response -- including the
+        // indentation of any code block, flattening each nesting level to a
+        // single space and turning Python output into a syntax error. It also
+        // ran unconditionally: `apply_strict` returns early only when there are
+        // no claims at all, so a fully grounded response with nothing
+        // suppressed was rewritten too. Removals now consume their own trailing
+        // whitespace above, which is what the collapse was reaching for.
         let result = result.trim().to_string();
 
         (result, suppressed, warned)
@@ -335,6 +354,70 @@ mod tests {
             "some claim that is long enough.",
         );
         assert!(result.n_claims >= 1);
+    }
+
+    #[test]
+    fn strict_mode_preserves_code_indentation() {
+        // Strict mode used to run `while result.contains("  ") { replace("  ",
+        // " ") }` over the whole response, which flattened every nesting level
+        // in a code block to one space -- turning Python output into a syntax
+        // error. The cleanup now travels with the removal instead.
+        //
+        // The code block is present in the grounding context so that it is
+        // *supported* and therefore not removed. Without that the block is an
+        // unsupported claim, strict mode deletes it wholesale, and the test
+        // would pass for the wrong reason.
+        let code = "fn handler() {\n    let x = parse()?;\n        emit(x);\n}";
+        let context = format!("The handler parses the payload and emits the result. {}", code);
+        let output = format!("The handler parses the payload and emits the result.\n\n{}", code);
+
+        let s = EicvSuppressor::new("rag", "strict");
+        let result = s.suppress(&context, &output);
+
+        assert!(
+            result.rewritten_output.contains("\n    let x = parse()?;"),
+            "one level of indentation was lost: {:?}",
+            result.rewritten_output
+        );
+        assert!(
+            result.rewritten_output.contains("\n        emit(x);"),
+            "two levels of indentation were lost: {:?}",
+            result.rewritten_output
+        );
+    }
+
+    #[test]
+    fn strict_mode_leaves_a_fully_grounded_response_alone() {
+        // `apply_strict` returns early only when there are no claims at all,
+        // so with nothing suppressed the response must come back unchanged.
+        // Under the old global collapse it did not.
+        let context = "Paris is the capital of France and sits on the Seine.";
+        let output = "Paris  is the capital of France and sits on the Seine.";
+        let s = EicvSuppressor::new("rag", "strict");
+        let result = s.suppress(context, output);
+
+        assert_eq!(result.suppressed_count, 0);
+        assert_eq!(
+            result.rewritten_output, output,
+            "a response with nothing suppressed was rewritten anyway"
+        );
+    }
+
+    #[test]
+    fn suppressing_a_claim_consumes_its_own_trailing_space() {
+        // The property the global collapse was reaching for, obtained locally.
+        let context = "Paris is the capital of France.";
+        let output = "Paris is the capital of France. Tokyo is the largest city in Brazil with fifty million people. Lyon sits south of Paris in France.";
+        let s = EicvSuppressor::new("rag", "strict");
+        let result = s.suppress(context, output);
+
+        if result.suppressed_count > 0 {
+            assert!(
+                !result.rewritten_output.contains("  "),
+                "removal left a gap: {:?}",
+                result.rewritten_output
+            );
+        }
     }
 
     #[test]

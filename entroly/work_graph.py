@@ -12,13 +12,40 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-try:
-    from entroly_core import WorkGraph as _RustWorkGraph  # type: ignore[attr-defined]
-except (ImportError, AttributeError) as exc:  # pragma: no cover - environment dependent
-    _RustWorkGraph = None
-    _NATIVE_IMPORT_ERROR: Exception | None = exc
-else:
-    _NATIVE_IMPORT_ERROR = None
+from .native_status import (
+    WORK_GRAPH_SYMBOLS,
+    native_status,
+    native_status_message,
+)
+
+# Resolved through the shared gate rather than a bare ``import entroly_core``.
+# The gate is the single answer to "may this process call into the native core",
+# and it refuses a core below MIN_ENTROLY_CORE_VERSION. A bare import here would
+# accept a stale core that the rest of the package refuses, producing the mixed
+# process `usable_core` exists to prevent -- the failure that once surfaced as
+# ``ContextFragment.__new__() got an unexpected keyword argument
+# 'recency_score'`` when one module used a stale core and another fell back.
+#
+# This deliberately does NOT add a pure-Python fallback. Work Graph semantics
+# are Rust-owned; a Python re-implementation would be a second source of truth
+# for status inference and commitments. Missing or stale core fails closed with
+# an actionable message instead.
+_NATIVE_STATUS = native_status(WORK_GRAPH_SYMBOLS)
+_RustWorkGraph = (
+    getattr(_NATIVE_STATUS.module, "WorkGraph", None) if _NATIVE_STATUS.ok else None
+)
+
+# Kept so callers and tests can inspect *why* the binding is unavailable. The
+# gate reports "absent", "incomplete", or "below the required version" through
+# native_status; all three arrive here as an actionable reason rather than a
+# bare ImportError from a direct import.
+_NATIVE_IMPORT_ERROR: Exception | None = None
+if _RustWorkGraph is None:
+    _NATIVE_IMPORT_ERROR = ImportError(
+        native_status_message(
+            _NATIVE_STATUS, feature="the Entroly Work Graph"
+        )
+    )
 
 
 class WorkGraphUnavailableError(RuntimeError):
@@ -34,6 +61,16 @@ def _require_native() -> type:
         )
     return _RustWorkGraph
 
+
+def _require_native_module():
+    """The native module itself, for the free functions rather than the class."""
+    if _RustWorkGraph is None:
+        detail = f": {_NATIVE_IMPORT_ERROR}" if _NATIVE_IMPORT_ERROR else ""
+        raise WorkGraphUnavailableError(
+            "Entroly Work Graph requires the native entroly_core extension. "
+            'Install it with `pip install "entroly[native]"` and retry' + detail
+        )
+    return _NATIVE_STATUS.module
 
 def _json_text(value: str | Mapping[str, Any] | list[Any]) -> str:
     if isinstance(value, str):
@@ -210,4 +247,38 @@ class WorkGraph:
         return bool(self._inner.verify_handoff_json(_json_text(receipt)))
 
 
-__all__ = ["WorkGraph", "WorkGraphUnavailableError"]
+def stable_node_id(kind: str, repo_id: str, key: str) -> str:
+    """Canonical identity for a graph-addressable artifact.
+
+    Computed by `entroly_engine::work_graph::stable_node_id`, the same function
+    the graph uses when it materializes a node, and the same one the WASM
+    binding exposes to Node as `workGraphNodeId`. One artifact therefore has one
+    id in every runtime.
+
+    This exists because the function was previously unreachable outside Rust.
+    `entroly/repository_intelligence` — the highest-fan-in module set in the
+    package — grew its own free-form ``symbol_id``, so a ``File`` in the work
+    graph and a ``FileRecord`` in repository intelligence described the same
+    artifact and could not be matched. Identity is a shared semantic; deriving
+    it twice guarantees two graphs that never join.
+
+    ``kind`` is a node-kind token such as ``repository``, ``file``, ``symbol``,
+    ``task`` or ``commit``; unknown tokens are rejected rather than hashed.
+    """
+    native = _require_native_module()
+    return str(native.work_graph_node_id(kind, repo_id, key))
+
+
+def stable_edge_id(from_id: str, kind: str, to_id: str) -> str:
+    """Canonical identity for an edge between two nodes.
+
+    See :func:`stable_node_id`. ``kind`` is an edge-kind token such as
+    ``contains``, ``defines``, ``imports`` or ``depends_on``.
+    """
+    native = _require_native_module()
+    return str(native.work_graph_edge_id(from_id, kind, to_id))
+
+
+__all__ = [
+    "stable_edge_id",
+    "stable_node_id","WorkGraph", "WorkGraphUnavailableError"]

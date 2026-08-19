@@ -2280,14 +2280,33 @@ fn confidence_for_context(source: &str, line: &str, rule: &SastRule) -> f64 {
 // ═══════════════════════════════════════════════════════════════════
 // CVSS-inspired aggregate risk score
 ///
-/// Formula inspired by CVSS v3.1 base score:
-///   risk = min(10, Σ(severity_weight × confidence × (1 + taint_bonus)) / scaling_factor)
+/// Severity-weighted, confidence-scaled, exponentially saturating:
+///
+///   raw   = Σ(severity_weight × confidence × taint_boost)   taint_boost = 1.3 or 1.0
+///   score = 10 · (1 − exp(−raw / 4))                        asymptote 10, never exceeds it
 ///
 /// Rationale:
-///   - Each Critical adds ~2.4 to the score
-///   - Each High adds ~1.3
 ///   - Confidence-weighted so low-confidence findings don't dominate
-///   - Capped at 10.0 (CVSS maximum)
+///   - Saturating rather than additive, so a long tail of Low findings cannot
+///     out-score a single Critical
+///
+/// The saturation is steep, and callers should know it. `Critical` weighs 9.5,
+/// so **one** Critical at full confidence already scores 9.07/10:
+///
+///   1 Critical  →  9.07      2 Critical  →  9.91
+///   3 Critical  →  9.99      4 Critical  → 10.00
+///   1 High      →  8.03      2 High      →  9.61
+///
+/// So this ranks "has a serious problem" against "does not", and does **not**
+/// rank two serious files against each other — a one-Critical file and a
+/// five-Critical file differ by less than a point. Anything needing that
+/// distinction should count findings by severity rather than read `risk_score`.
+///
+/// This block previously described `Σ(...) / scaling_factor` with "each Critical
+/// adds ~2.4" and "raw=4 (one Critical) → ~7.0". None of that matched: the code
+/// has always been exponential rather than a division, one Critical is raw 9.5
+/// rather than 4, and a saturating function has no fixed per-finding increment.
+/// The code is unchanged; only this description was wrong.
 // ═══════════════════════════════════════════════════════════════════
 fn compute_risk_score(findings: &[SastFinding]) -> f64 {
     if findings.is_empty() {

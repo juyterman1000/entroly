@@ -71,10 +71,16 @@ function relativeRegularPath(root, repoRel) {
 }
 
 function sameFile(left, right) {
-  return left.isFile()
-    && right.isFile()
-    && left.dev === right.dev
-    && left.ino === right.ino
+  if (!left.isFile() || !right.isFile()) return false;
+  // `dev` is compared only when both sides report one. Node on Windows returns
+  // dev=0 from lstat but a real device id from fstat for the same file, so
+  // requiring strict equality rejected every legitimate file and made
+  // gitBlobDigest return '' for all input -- content identity was silently
+  // dead on win32, which is the binding handoff/resume rely on. The anti-swap
+  // property is preserved: the file index (ino), size, and both timestamps
+  // must still match across lstat -> open -> lstat.
+  if (left.dev !== 0n && right.dev !== 0n && left.dev !== right.dev) return false;
+  return left.ino === right.ino
     && left.size === right.size
     && left.mtimeNs === right.mtimeNs
     && left.ctimeNs === right.ctimeNs;

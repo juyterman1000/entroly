@@ -77,12 +77,22 @@ def test_concurrent_agent_processes_merge_without_lost_work(
     _git(repo, "init", "-b", "main")
     _git(repo, "config", "user.email", "test@example.com")
     _git(repo, "config", "user.name", "Test")
-    (repo / "src").mkdir()
-    (repo / "src" / "auth.py").write_text("TOKEN = 1\n", encoding="utf-8")
-    _git(repo, "add", "src/auth.py")
+    # `src/auth` is a package here, not a module, and that matters. The
+    # engine's `paths_overlap` treats two scopes as overlapping only when they
+    # are equal or one is a parent of the other at a `/` boundary -- so
+    # `src/auth` does NOT overlap `src/auth.py`. That is correct: they are
+    # different paths, and a bare string prefix would also make `src/auth`
+    # collide with `src/authorization.py`. An earlier version of this test
+    # claimed `src/auth` against a fixture that only ever contained
+    # `src/auth.py`, so no conflict could be materialized and the assertion
+    # further down failed. The engine was right; the fixture was not.
+    (repo / "src" / "auth").mkdir(parents=True)
+    (repo / "src" / "auth" / "__init__.py").write_text("", encoding="utf-8")
+    (repo / "src" / "auth" / "tokens.py").write_text("TOKEN = 1\n", encoding="utf-8")
+    _git(repo, "add", "src/auth")
     _git(repo, "commit", "-m", "baseline")
     _git(repo, "checkout", "-b", "feature/shared-work")
-    (repo / "src" / "auth.py").write_text("TOKEN = 2\n", encoding="utf-8")
+    (repo / "src" / "auth" / "tokens.py").write_text("TOKEN = 2\n", encoding="utf-8")
 
     state_root = tmp_path / "shared-state"
     ctx = mp.get_context("spawn")
@@ -109,7 +119,7 @@ def test_concurrent_agent_processes_merge_without_lost_work(
                 str(state_root),
                 "codex",
                 "auth-tests",
-                "src/auth.py",
+                "src/auth/tokens.py",
                 1_001,
                 start,
                 results,

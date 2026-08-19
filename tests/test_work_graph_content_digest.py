@@ -31,8 +31,17 @@ def _repo(tmp_path: Path) -> Path:
     return repo
 
 
-def _observation(*changes: dict) -> dict:
-    return {"repo_id": "repo:test", "changes": [dict(change) for change in changes]}
+def _observation(**change: object) -> dict:
+    """Build a one-change repository observation from keyword fields.
+
+    The signature previously took positional change dicts (``*changes``) while
+    every one of the ten call sites passes a single change as keywords, so each
+    test raised ``TypeError: _observation() got an unexpected keyword argument
+    'path'`` before reaching its assertions. The whole content-digest contract
+    -- which handoff and resume depend on for worktree identity -- was
+    therefore unverified on the Python side rather than merely failing.
+    """
+    return {"repo_id": "repo:test", "changes": [dict(change)]}
 
 
 def test_same_bytes_produce_stable_digest_across_observations(tmp_path: Path) -> None:

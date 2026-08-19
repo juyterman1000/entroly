@@ -264,13 +264,19 @@ def _calls_the_contract(function_node) -> bool:
     )
 
 
-def _find_function(qualifier: str, name: str):
+def _find_function(qualifier: str, name: str, module: str = "entroly/server.py"):
+    """Locate a function by its enclosing scope, in whichever module holds it.
+
+    The module is a parameter because `EntrolyEngine` moved to
+    `entroly/engine.py` while `create_mcp_server` stayed in `entroly/server.py`.
+    Hard-coding one file made these wiring tests fail the moment the engine was
+    separated from the server -- correctly, since the guard they check had moved
+    with it.
+    """
     import ast
     from pathlib import Path
 
-    tree = ast.parse(
-        Path("entroly/server.py").read_text(encoding="utf-8", errors="replace")
-    )
+    tree = ast.parse(Path(module).read_text(encoding="utf-8", errors="replace"))
     for outer in ast.walk(tree):
         if getattr(outer, "name", None) != qualifier:
             continue
@@ -281,7 +287,7 @@ def _find_function(qualifier: str, name: str):
                 and inner is not outer
             ):
                 return inner
-    raise AssertionError(f"{qualifier}.{name} not found")
+    raise AssertionError(f"{qualifier}.{name} not found in {module}")
 
 
 def test_engine_optimize_context_is_wired_to_the_contract():
@@ -290,7 +296,9 @@ def test_engine_optimize_context_is_wired_to_the_contract():
     `EntrolyEngine.optimize_context` is the method the CLI, SDK and proxy use.
     It went without this guard while a same-named MCP handler had it.
     """
-    assert _calls_the_contract(_find_function("EntrolyEngine", "optimize_context"))
+    assert _calls_the_contract(
+        _find_function("EntrolyEngine", "optimize_context", "entroly/engine.py")
+    )
 
 
 def test_mcp_tool_handler_is_wired_to_the_contract():
@@ -390,7 +398,9 @@ def test_fast_path_return_is_wired_to_the_contract():
     """
     import ast
 
-    engine_method = _find_function("EntrolyEngine", "optimize_context")
+    engine_method = _find_function(
+        "EntrolyEngine", "optimize_context", "entroly/engine.py"
+    )
     for node in ast.walk(engine_method):
         if not isinstance(node, ast.If):
             continue
