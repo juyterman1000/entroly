@@ -19,7 +19,6 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-import sysconfig
 import tempfile
 import tomllib
 
@@ -33,6 +32,21 @@ def _run(argv: list[str], *, cwd: Path | None = None) -> None:
 
 def _output(argv: list[str]) -> str:
     return subprocess.check_output(argv, cwd=str(ROOT), text=True).strip()
+
+
+def _normalize_rust_toolchain() -> None:
+    """Use the runner's stable Rust toolchain without network ambiguity."""
+    rustup = shutil.which("rustup")
+    cargo = shutil.which("cargo")
+    if rustup:
+        _run([rustup, "toolchain", "install", "stable", "--profile", "minimal"])
+        _run([rustup, "default", "stable"])
+        cargo = shutil.which("cargo")
+    if not cargo:
+        raise RuntimeError(
+            "exact-head native bootstrap requires cargo/rustup on the CI runner"
+        )
+    _run([cargo, "--version"])
 
 
 def _target_scripts(python: str) -> Path:
@@ -70,6 +84,7 @@ def _pip(python: str, *args: str) -> None:
 
 
 def _build_and_install_core(python: str, work: Path) -> Path:
+    _normalize_rust_toolchain()
     _pip(python, "install", "--upgrade", "pip")
     _pip(python, "install", "maturin>=1.8,<2")
     maturin = _maturin_executable(python)
