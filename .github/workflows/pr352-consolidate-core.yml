@@ -46,9 +46,8 @@ jobs:
           set -euo pipefail
           python scripts/consolidate_pr352_core.py
 
-          # Correct only the exact promotion seams proven by the previous
-          # compiler run. Every replacement is count-guarded so branch drift
-          # fails closed instead of silently rewriting different code.
+          # Correct only exact seams proven by compiler/clippy runs. Every
+          # replacement is count-guarded so branch drift fails closed.
           python - <<'PY'
           from pathlib import Path
 
@@ -66,6 +65,16 @@ jobs:
                       f"coordination compiler-fix anchor changed: {old!r}: {found} != {expected}"
                   )
               text = text.replace(old, new)
+
+          # After promotion paths_overlap is intentionally only the naive
+          # falsification oracle used by tests. It is not production code.
+          old = "fn paths_overlap(left: &str, right: &str) -> bool {"
+          new = "#[cfg(test)]\nfn paths_overlap(left: &str, right: &str) -> bool {"
+          if text.count(old) != 1:
+              raise SystemExit(
+                  f"coordination test-oracle anchor changed: {text.count(old)}"
+              )
+          text = text.replace(old, new, 1)
 
           old = "        assert_eq!(candidate_pairs(&borrowed_scopes(&leases)), naive_pairs(&leases));"
           new = """        assert_eq!(
@@ -131,9 +140,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # work_graph.rs and engine_contracts.rs contain known pre-existing
-          # rustfmt debt outside these narrow fixes. Enforce rustfmt on the new
-          # production module; compile/clippy validate the integration wiring.
           rustfmt --edition 2021 --check entroly-engine/src/coordination_index.rs
           git diff --check
 
