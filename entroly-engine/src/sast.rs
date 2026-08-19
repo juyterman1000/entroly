@@ -2422,23 +2422,14 @@ pub fn scan_content(content: &str, source: &str) -> SastReport {
                 continue;
             }
 
-            // Privacy: redact line content for secret-category findings
-            // so that actual credentials are never exposed in SAST reports.
+            // Privacy invariant: once a line matches a secret-category rule,
+            // never echo *any* source bytes from that line. Even a truncated
+            // prefix can disclose a credential when the token begins the line,
+            // appears on the left-hand side, or is embedded in non-assignment
+            // syntax. Rule/category/path/line metadata already carries the
+            // debugging context without repeating secret material.
             let safe_content = if rule.category == "Hardcoded Secrets" {
-                let trimmed = line.trim();
-                if let Some(eq_pos) = trimmed.find('=') {
-                    // Show key name but redact value: "api_key = [REDACTED]"
-                    format!("{}= [REDACTED]", &trimmed[..eq_pos])
-                } else if trimmed.len() > 30 {
-                    // Find nearest valid UTF-8 boundary at or before byte 20
-                    let safe = (0..=20.min(trimmed.len()))
-                        .rev()
-                        .find(|&i| trimmed.is_char_boundary(i))
-                        .unwrap_or(0);
-                    format!("{}...[REDACTED]", &trimmed[..safe])
-                } else {
-                    "[REDACTED — secret detected]".to_string()
-                }
+                "[REDACTED — secret-bearing line]".to_string()
             } else {
                 line.trim().to_string()
             };
@@ -2535,22 +2526,44 @@ mod tests {
         let code = "password = \"hunter2\"";
         let report = scan(code, "auth.py");
         let finding = &report.findings[0];
-        assert!(
-            finding.line_content.contains("[REDACTED]"),
-            "Secret-category finding must redact line_content, got: {}",
-            finding.line_content
+        assert_eq!(
+            finding.line_content, "[REDACTED — secret-bearing line]",
+            "Secret-category finding must fully redact source bytes"
         );
         assert!(
             !finding.line_content.contains("hunter2"),
             "Actual secret value must not appear in line_content: {}",
             finding.line_content
         );
-        // Should still show the key name for debugging
-        assert!(
-            finding.line_content.contains("password"),
-            "Key name should be preserved for context: {}",
-            finding.line_content
-        );
+        assert_eq!(finding.line_content, "[REDACTED — secret-bearing line]");
+    }
+
+    #[test]
+    fn secret_findings_never_echo_source_bytes_at_any_position() {
+        let secret = "sk-proj-supersecret123456789";
+        let cases = [
+            format!("\"{secret}\" trailing diagnostic text"),
+            format!("prefix text \"{secret}\" trailing text"),
+            format!("prefix text ending with \"{secret}\""),
+            format!("\"{secret}\" = placeholder"),
+        ];
+        for code in cases {
+            let report = scan(&code, "leak.txt");
+            let finding = report
+                .findings
+                .iter()
+                .find(|finding| finding.rule_id == "SEC-003")
+                .expect("sk- token must still be detected");
+            assert_eq!(
+                finding.line_content, "[REDACTED — secret-bearing line]",
+                "secret findings must not retain source bytes"
+            );
+            let serialized = serde_json::to_string(&report).unwrap();
+            assert!(
+                !serialized.contains(secret),
+                "serialized SAST report leaked secret bytes: {serialized}"
+            );
+        }
     }
 
     #[test]
@@ -2567,10 +2580,9 @@ mod tests {
             "API key must not appear in SAST finding: {}",
             finding.line_content
         );
-        assert!(
-            finding.line_content.contains("[REDACTED]"),
-            "Finding must contain [REDACTED]: {}",
-            finding.line_content
+        assert_eq!(
+            finding.line_content, "[REDACTED — secret-bearing line]",
+            "API-key finding must fully redact source bytes"
         );
     }
 

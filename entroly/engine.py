@@ -20,7 +20,6 @@ differently from an MCP one.
 
 from __future__ import annotations
 import copy
-import gc
 import gzip
 import hashlib
 import inspect
@@ -974,14 +973,9 @@ class EntrolyEngine:
         if not self.config.use_persistent_index:
             logger.debug("Persistent index disabled by config (isolated/ephemeral engine)")
 
-        # GC freeze at startup: Python's cyclic GC causes ~500ms stalls on large
-        # heaps. Freeze all existing long-lived objects and disable automatic
-        # collection. We manually collect every N tool calls in advance_turn()
-        # to reclaim short-lived garbage without unpredictable pauses.
-        self._gc_collect_interval = 50  # collect every 50 turns
-        gc.collect()
-        gc.freeze()
-        gc.disable()
+        # Host GC policy is process-wide. Entroly deliberately leaves it
+        # untouched: a library must not freeze, disable, enable, or collect
+        # objects owned by the embedding application or its other threads.
 
     def _ensure_index_loaded(self) -> None:
         """Lazily load the persistent warm-start index on first use.
@@ -1048,10 +1042,6 @@ class EntrolyEngine:
 
     def advance_turn(self) -> None:
         """Advance the turn counter and apply Ebbinghaus decay."""
-        # Periodic GC amortization: frozen at init, collect every N turns
-        if self._turn_counter > 0 and self._turn_counter % self._gc_collect_interval == 0:
-            gc.collect()
-
         if self._use_rust:
             self._rust.advance_turn()
         else:
@@ -1078,40 +1068,31 @@ class EntrolyEngine:
         token_count: int = 0,
         is_pinned: bool = False,
     ) -> dict[str, Any]:
-        """Ingest a new context fragment."""
+        """Ingest a new context fragment without changing host GC policy."""
         # Lazy warm-start MUST run before the first mutation: load_index
         # replaces the fragment set, so it has to happen before any ingest or
         # it would wipe freshly-ingested fragments.
         self._ensure_index_loaded()
-        # GC freeze: disable the garbage collector during the tight Python→Rust
-        # dispatch to prevent unpredictable GC pauses. Manually collect after
-        # returning to amortize the cost at a safe boundary.
-        gc.disable()
+
         # Invalidate the fast-path's fragment cache: the Rust engine has
         # gained a new fragment, so any cached export_fragments() snapshot
         # is now stale.
         self._fragment_cache_dirty = True
-        try:
-            if self._use_rust:
-                # Enforce max_fragments cap on Rust engine (Rust doesn't enforce it)
-                if self._rust.fragment_count() >= self.config.max_fragments:
-                    return {
-                        "status": "rejected",
-                        "reason": "max_fragments cap reached",
-                        "max_fragments": self.config.max_fragments,
-                    }
-                result = self._rust.ingest(content, source, token_count, is_pinned)
-                # result is a dict from PyO3
-                if source:
-                    self._prefetch.record_access(source, self._rust.get_turn())
-                if self._checkpoint_mgr.should_auto_checkpoint():
-                    self._auto_checkpoint()
-                return dict(result)
-            else:
-                return self._ingest_python(content, source, token_count, is_pinned)
-        finally:
-            gc.enable()
-            gc.collect()
+        if self._use_rust:
+            # Enforce max_fragments cap on Rust engine (Rust doesn't enforce it)
+            if self._rust.fragment_count() >= self.config.max_fragments:
+                return {
+                    "status": "rejected",
+                    "reason": "max_fragments cap reached",
+                    "max_fragments": self.config.max_fragments,
+                }
+            result = self._rust.ingest(content, source, token_count, is_pinned)
+            if source:
+                self._prefetch.record_access(source, self._rust.get_turn())
+            if self._checkpoint_mgr.should_auto_checkpoint():
+                self._auto_checkpoint()
+            return dict(result)
+        return self._ingest_python(content, source, token_count, is_pinned)
 
     def remove_sources(self, sources: list[str]) -> dict[str, Any]:
         """Remove all live fragments for exact source identifiers.
@@ -1348,364 +1329,359 @@ class EntrolyEngine:
             "key_terms": analysis_dict.get("key_terms", []),
         } if query and analysis_dict else {}
 
-        # GC freeze: disable during hot Rust dispatch + final result assembly.
-        gc.disable()
-        try:
-            if self._use_rust and refined_query.strip():
-                # ── Query-conditioned selection via QCCR ──────────────────
-                # qccr.select (sentence-level BM25 + MMR + entity boost +
-                # anchor fallback) is the compressor validated by EVERY
-                # committed accuracy benchmark (needle/longbench/squad/bfcl/
-                # mmlu/gsm8k/truthfulqa). Routing the engine's query path
-                # through it makes the SHIPPED behaviour identical to the
-                # MEASURED behaviour across the SDK, MCP, and proxy — not just
-                # the CLI. Any failure falls back to the native knapsack so
-                # optimize_context never breaks.
-                try:
-                    from .qccr import select as qccr_select
-                    candidates = [dict(f) for f in self._rust.export_fragments()]
-                    def _fragment_tokens(fragment: dict[str, Any]) -> int:
-                        token_count = int(fragment.get("token_count") or 0)
-                        if token_count > 0:
-                            return token_count
-                        content = str(fragment.get("content") or "")
-                        return max(1, len(content) // 4) if content else 0
+        # Keep optimization inside Entroly's own allocation discipline;
+        # never mutate the embedding process's GC policy.
+        if self._use_rust and refined_query.strip():
+            # ── Query-conditioned selection via QCCR ──────────────────
+            # qccr.select (sentence-level BM25 + MMR + entity boost +
+            # anchor fallback) is the compressor validated by EVERY
+            # committed accuracy benchmark (needle/longbench/squad/bfcl/
+            # mmlu/gsm8k/truthfulqa). Routing the engine's query path
+            # through it makes the SHIPPED behaviour identical to the
+            # MEASURED behaviour across the SDK, MCP, and proxy — not just
+            # the CLI. Any failure falls back to the native knapsack so
+            # optimize_context never breaks.
+            try:
+                from .qccr import select as qccr_select
+                candidates = [dict(f) for f in self._rust.export_fragments()]
+                def _fragment_tokens(fragment: dict[str, Any]) -> int:
+                    token_count = int(fragment.get("token_count") or 0)
+                    if token_count > 0:
+                        return token_count
+                    content = str(fragment.get("content") or "")
+                    return max(1, len(content) // 4) if content else 0
 
-                    pinned = [f for f in candidates if f.get("is_pinned")]
-                    pinned_cap = token_budget // 2
-                    pinned_tokens = sum(_fragment_tokens(f) for f in pinned)
-                    if pinned_tokens > pinned_cap:
-                        def _pinned_priority(fragment: dict[str, Any]) -> float:
-                            relevance = (
-                                self.config.weight_recency
-                                * float(fragment.get("recency_score") or 0.0)
-                                + self.config.weight_frequency
-                                * float(fragment.get("frequency_score") or 0.0)
-                                + self.config.weight_semantic_sim
-                                * float(fragment.get("semantic_score") or 0.0)
-                                + self.config.weight_entropy
-                                * float(fragment.get("entropy_score") or 0.0)
-                            )
-                            return relevance * float(
-                                fragment.get("feedback_multiplier") or 1.0
-                            )
+                pinned = [f for f in candidates if f.get("is_pinned")]
+                pinned_cap = token_budget // 2
+                pinned_tokens = sum(_fragment_tokens(f) for f in pinned)
+                if pinned_tokens > pinned_cap:
+                    def _pinned_priority(fragment: dict[str, Any]) -> float:
+                        relevance = (
+                            self.config.weight_recency
+                            * float(fragment.get("recency_score") or 0.0)
+                            + self.config.weight_frequency
+                            * float(fragment.get("frequency_score") or 0.0)
+                            + self.config.weight_semantic_sim
+                            * float(fragment.get("semantic_score") or 0.0)
+                            + self.config.weight_entropy
+                            * float(fragment.get("entropy_score") or 0.0)
+                        )
+                        return relevance * float(
+                            fragment.get("feedback_multiplier") or 1.0
+                        )
 
-                        pinned.sort(key=_pinned_priority, reverse=True)
-                        exact_pinned = []
-                        pinned_tokens = 0
-                        for fragment in pinned:
-                            fragment_tokens = _fragment_tokens(fragment)
-                            if pinned_tokens + fragment_tokens <= pinned_cap:
-                                exact_pinned.append(fragment)
-                                pinned_tokens += fragment_tokens
-                    else:
-                        exact_pinned = pinned
+                    pinned.sort(key=_pinned_priority, reverse=True)
+                    exact_pinned = []
+                    pinned_tokens = 0
+                    for fragment in pinned:
+                        fragment_tokens = _fragment_tokens(fragment)
+                        if pinned_tokens + fragment_tokens <= pinned_cap:
+                            exact_pinned.append(fragment)
+                            pinned_tokens += fragment_tokens
+                else:
+                    exact_pinned = pinned
 
-                    exact_pinned_sources = {
-                        str(f.get("source") or "") for f in exact_pinned
+                exact_pinned_sources = {
+                    str(f.get("source") or "") for f in exact_pinned
+                }
+                qccr_candidates = [
+                    f for f in candidates
+                    if str(f.get("source") or "") not in exact_pinned_sources
+                ]
+                qccr_budget = max(0, token_budget - pinned_tokens)
+                selected = qccr_select(
+                    qccr_candidates,
+                    token_budget=qccr_budget,
+                    query=refined_query,
+                ) if qccr_budget else []
+                selected = [
+                    {
+                        **f,
+                        "id": f.get("id") or f.get("fragment_id"),
                     }
-                    qccr_candidates = [
-                        f for f in candidates
-                        if str(f.get("source") or "") not in exact_pinned_sources
-                    ]
-                    qccr_budget = max(0, token_budget - pinned_tokens)
-                    selected = qccr_select(
-                        qccr_candidates,
-                        token_budget=qccr_budget,
-                        query=refined_query,
-                    ) if qccr_budget else []
-                    selected = [
-                        {
-                            **f,
-                            "id": f.get("id") or f.get("fragment_id"),
-                        }
-                        for f in exact_pinned
-                    ] + selected
+                    for f in exact_pinned
+                ] + selected
 
-                    tokens_used = sum(
-                        _fragment_tokens(f) for f in selected if isinstance(f, dict)
-                    )
-                    total_available_tokens = sum(
-                        _fragment_tokens(f) for f in candidates if isinstance(f, dict)
-                    )
-                    tokens_saved = _honest_tokens_saved(
-                        selected, total_available_tokens - tokens_used
-                    )
-                    self._total_tokens_saved += tokens_saved
-                    selected_count = len(selected)
-                    total_relevance = round(sum(
-                        float(f.get("relevance", f.get("relevance_score", 0.0)) or 0.0)
-                        for f in selected if isinstance(f, dict)
-                    ), 4)
-                    optimization_stats = {
-                        "total_tokens": tokens_used,
-                        "selected_count": selected_count,
-                        "total_relevance": total_relevance,
-                        "effective_budget": token_budget,
-                        "budget_utilization": round(tokens_used / max(token_budget, 1), 4),
-                    }
-                    result = {
-                        "selected_fragments": selected,
-                        "selected": selected,
-                        "tokens_used": tokens_used,
-                        "total_tokens": tokens_used,
-                        "selected_count": selected_count,
-                        "total_relevance": total_relevance,
-                        "tokens_saved": tokens_saved,
-                        "tokens_saved_this_call": tokens_saved,
-                        "total_tokens_saved_session": self._total_tokens_saved,
-                        "optimization_stats": optimization_stats,
-                        "method": "qccr",
-                        "effective_budget": token_budget,
-                        "user_budget": token_budget,
-                        "budget_utilization": optimization_stats["budget_utilization"],
-                        "total_fragments": len(candidates),
-                        "selector": "qccr",
-                    }
-                except Exception:
-                    result = dict(self._rust.optimize(token_budget, refined_query))
-                    if "selected" in result and "selected_fragments" not in result:
-                        result["selected_fragments"] = result["selected"]
-                if refinement_info:
-                    result["query_refinement"] = refinement_info
-                if query_analysis:
-                    result["query_analysis"] = query_analysis
-            elif self._use_rust:
-                result = self._rust.optimize(token_budget, refined_query)
-                result = dict(result)
-                # Normalize key: Rust returns "selected", Python uses "selected_fragments"
+                tokens_used = sum(
+                    _fragment_tokens(f) for f in selected if isinstance(f, dict)
+                )
+                total_available_tokens = sum(
+                    _fragment_tokens(f) for f in candidates if isinstance(f, dict)
+                )
+                tokens_saved = _honest_tokens_saved(
+                    selected, total_available_tokens - tokens_used
+                )
+                self._total_tokens_saved += tokens_saved
+                selected_count = len(selected)
+                total_relevance = round(sum(
+                    float(f.get("relevance", f.get("relevance_score", 0.0)) or 0.0)
+                    for f in selected if isinstance(f, dict)
+                ), 4)
+                optimization_stats = {
+                    "total_tokens": tokens_used,
+                    "selected_count": selected_count,
+                    "total_relevance": total_relevance,
+                    "effective_budget": token_budget,
+                    "budget_utilization": round(tokens_used / max(token_budget, 1), 4),
+                }
+                result = {
+                    "selected_fragments": selected,
+                    "selected": selected,
+                    "tokens_used": tokens_used,
+                    "total_tokens": tokens_used,
+                    "selected_count": selected_count,
+                    "total_relevance": total_relevance,
+                    "tokens_saved": tokens_saved,
+                    "tokens_saved_this_call": tokens_saved,
+                    "total_tokens_saved_session": self._total_tokens_saved,
+                    "optimization_stats": optimization_stats,
+                    "method": "qccr",
+                    "effective_budget": token_budget,
+                    "user_budget": token_budget,
+                    "budget_utilization": optimization_stats["budget_utilization"],
+                    "total_fragments": len(candidates),
+                    "selector": "qccr",
+                }
+            except Exception:
+                result = dict(self._rust.optimize(token_budget, refined_query))
                 if "selected" in result and "selected_fragments" not in result:
                     result["selected_fragments"] = result["selected"]
-                if refinement_info:
-                    result["query_refinement"] = refinement_info
-                if query_analysis:
-                    result["query_analysis"] = query_analysis
-            else:
-                result = self._optimize_python(token_budget, refined_query)
-                if refinement_info:
-                    result["query_refinement"] = refinement_info
-                if query_analysis:
-                    result["query_analysis"] = query_analysis
+            if refinement_info:
+                result["query_refinement"] = refinement_info
+            if query_analysis:
+                result["query_analysis"] = query_analysis
+        elif self._use_rust:
+            result = self._rust.optimize(token_budget, refined_query)
+            result = dict(result)
+            # Normalize key: Rust returns "selected", Python uses "selected_fragments"
+            if "selected" in result and "selected_fragments" not in result:
+                result["selected_fragments"] = result["selected"]
+            if refinement_info:
+                result["query_refinement"] = refinement_info
+            if query_analysis:
+                result["query_analysis"] = query_analysis
+        else:
+            result = self._optimize_python(token_budget, refined_query)
+            if refinement_info:
+                result["query_refinement"] = refinement_info
+            if query_analysis:
+                result["query_analysis"] = query_analysis
 
-            # Normalize the public selection contract across QCCR, native,
-            # pure-Python, fast-path, and oversize-excerpt selectors. Several
-            # fallback paths returned real selected fragments while omitting
-            # ``selected_count`` (or leaving it at zero), which made agents and
-            # dashboards report an empty result despite receiving context.
-            selected_payload = result.get(
-                "selected_fragments", result.get("selected", [])
-            )
-            if isinstance(selected_payload, list):
-                result["selected_count"] = len(selected_payload)
-                optimization_stats = result.get("optimization_stats")
-                if isinstance(optimization_stats, dict):
-                    optimization_stats["selected_count"] = len(selected_payload)
+        # Normalize the public selection contract across QCCR, native,
+        # pure-Python, fast-path, and oversize-excerpt selectors. Several
+        # fallback paths returned real selected fragments while omitting
+        # ``selected_count`` (or leaving it at zero), which made agents and
+        # dashboards report an empty result despite receiving context.
+        selected_payload = result.get(
+            "selected_fragments", result.get("selected", [])
+        )
+        if isinstance(selected_payload, list):
+            result["selected_count"] = len(selected_payload)
+            optimization_stats = result.get("optimization_stats")
+            if isinstance(optimization_stats, dict):
+                optimization_stats["selected_count"] = len(selected_payload)
 
-            # ── engine_s6 edit-target reordering (post-selection) ──
-            # The knapsack picks WHICH fragments stay in budget; engine_s6
-            # then re-orders those by file-edit-target priority (source >
-            # test > non-source within a top-20 window, explicit-cue
-            # freeze, doc/test intent guards, test→source mirror) so the
-            # LLM sees the most plausible edit target first. Selection
-            # is unchanged — only order — so token budget, savings, and
-            # PRISM outcome math below remain correct. QCCR already applies
-            # this rerank before selection, so repeating it here wastes a full
-            # corpus scan. Recall-safe by construction (see file_localizer.py).
-            if (
-                refined_query
-                and result.get("selected_fragments")
-                and result.get("selector") != "qccr"
-            ):
-                try:
-                    from .file_localizer import localize_fragments
-                    result["selected_fragments"] = localize_fragments(
-                        result["selected_fragments"], refined_query,
-                    )
-                    # Keep the "selected" alias (Rust path) in sync so
-                    # downstream consumers reading either key get the
-                    # same reordered list.
-                    if "selected" in result:
-                        result["selected"] = result["selected_fragments"]
-                except Exception:  # noqa: BLE001 — never fail optimize
-                    pass
-
-            # ── Online PRISM: observe outcome and update weights live ──
-            # This is the key integration: after every optimize_context() call,
-            # compute an implicit reward from the result quality and update the
-            # Dirichlet posterior. Weights shift toward configurations that
-            # produce better budget utilization and selectivity.
+        # ── engine_s6 edit-target reordering (post-selection) ──
+        # The knapsack picks WHICH fragments stay in budget; engine_s6
+        # then re-orders those by file-edit-target priority (source >
+        # test > non-source within a top-20 window, explicit-cue
+        # freeze, doc/test intent guards, test→source mirror) so the
+        # LLM sees the most plausible edit target first. Selection
+        # is unchanged — only order — so token budget, savings, and
+        # PRISM outcome math below remain correct. QCCR already applies
+        # this rerank before selection, so repeating it here wastes a full
+        # corpus scan. Recall-safe by construction (see file_localizer.py).
+        if (
+            refined_query
+            and result.get("selected_fragments")
+            and result.get("selector") != "qccr"
+        ):
             try:
-                selected = result.get("selected_fragments", result.get("selected", []))
-                tokens_used = result.get("tokens_used",
-                    sum(f.get("token_count", 0) for f in selected if isinstance(f, dict)))
-                # Bug-fix: when the result dict lacks total_fragments AND
-                # fragment_count (Rust engine path doesn't surface them),
-                # fall back to the engine's live count via the public API.
-                # Prior fallback `max(len(selected), 1)` set select_rate=1.0
-                # always — far from the 0.4 optimum — collapsing reward to
-                # near zero and making crystallization structurally
-                # impossible from organic traffic.
-                total_frags = result.get("total_fragments",
-                    result.get("fragment_count", None))
-                if total_frags is None:
-                    try:
-                        if self._use_rust:
-                            total_frags = int(self._rust.fragment_count())
-                        else:
-                            total_frags = len(self._fragments)
-                    except Exception:
-                        total_frags = max(len(selected), 1)
-                total_frags = max(total_frags, len(selected), 1)
-
-                # ── Record features for the RL pruner ──────────────────
-                # For each selected fragment, capture scoring features so
-                # that a later record_success/failure call can perform the
-                # REINFORCE gradient step.  Without this, apply_feedback
-                # has no feature record and silently drops every signal.
-                try:
-                    for frag in (selected if isinstance(selected, list) else []):
-                        if not isinstance(frag, dict):
-                            continue
-                        fid = str(frag.get("id") or frag.get("fragment_id") or "")
-                        if not fid:
-                            continue
-                        self._pruner.record_fragment_features(
-                            fragment_id=fid,
-                            recency=float(frag.get("recency_score", frag.get("recency", 0.5))),
-                            relevance=float(frag.get("relevance_score", frag.get("relevance", 0.5))),
-                            complexity=float(frag.get("complexity", frag.get("token_count", 100)) / 500.0),
-                            was_selected=True,
-                        )
-                except Exception:
-                    pass  # Best-effort; never break optimize_context
-
-                reward = compute_implicit_reward(
-                    selected_count=len(selected),
-                    total_fragments=total_frags,
-                    tokens_used=tokens_used,
-                    query_present=bool(query),
-                    token_budget=token_budget,
+                from .file_localizer import localize_fragments
+                result["selected_fragments"] = localize_fragments(
+                    result["selected_fragments"], refined_query,
                 )
-                contributions = compute_contributions(
-                    selected if isinstance(selected, list) else [],
-                    total_frags,
-                )
+                # Keep the "selected" alias (Rust path) in sync so
+                # downstream consumers reading either key get the
+                # same reordered list.
+                if "selected" in result:
+                    result["selected"] = result["selected_fragments"]
+            except Exception:  # noqa: BLE001 — never fail optimize
+                pass
 
-                # Capture PRE-observe baseline + weights for crystallization.
-                # Using post-observe values would let the cluster contaminate
-                # its own baseline (false-positive bias) and would credit the
-                # weights that *resulted from* the reward rather than the
-                # weights that *earned* it.
-                pre_baseline = self._online_prism._reward_ema  # noqa: SLF001
-                pre_weights = self._online_prism.weights()
-
-                new_weights = self._online_prism.observe(reward, contributions)
-
-                # ── Reward-driven crystallization ─────────────────────
-                # Hoeffding-LCB gated detection of sustained-high-reward
-                # query clusters. When a cluster crosses the bound, fire
-                # the registered callback (typically SkillEngine.crystallize_skill).
-                # All bookkeeping is off the hot path: never blocks return.
+        # ── Online PRISM: observe outcome and update weights live ──
+        # This is the key integration: after every optimize_context() call,
+        # compute an implicit reward from the result quality and update the
+        # Dirichlet posterior. Weights shift toward configurations that
+        # produce better budget utilization and selectivity.
+        try:
+            selected = result.get("selected_fragments", result.get("selected", []))
+            tokens_used = result.get("tokens_used",
+                sum(f.get("token_count", 0) for f in selected if isinstance(f, dict)))
+            # Bug-fix: when the result dict lacks total_fragments AND
+            # fragment_count (Rust engine path doesn't surface them),
+            # fall back to the engine's live count via the public API.
+            # Prior fallback `max(len(selected), 1)` set select_rate=1.0
+            # always — far from the 0.4 optimum — collapsing reward to
+            # near zero and making crystallization structurally
+            # impossible from organic traffic.
+            total_frags = result.get("total_fragments",
+                result.get("fragment_count", None))
+            if total_frags is None:
                 try:
-                    if query and isinstance(selected, list):
-                        frag_ids = [
-                            str(f.get("id") or f.get("fragment_id") or f.get("source", ""))
-                            for f in selected if isinstance(f, dict)
-                        ]
-                        frag_ids = [fid for fid in frag_ids if fid]
-                        event = self._crystallizer.observe(
-                            query=query,
-                            reward=reward,
-                            weights=pre_weights,
-                            selected_fragment_ids=frag_ids,
-                            baseline_reward=pre_baseline,
-                        )
-                        if event is not None and self._crystallization_callback is not None:
-                            try:
-                                self._crystallization_callback(event)
-                                self._crystallized_count += 1
-                            except Exception as cb_err:
-                                logger.debug(
-                                    "crystallization callback error: %s", cb_err
-                                )
-                except Exception as cryst_err:
-                    logger.debug("crystallizer error: %s", cryst_err)
-
-                # ── P1: Count fragment selections for pin-candidate nudges ─
-                # Simple frequency counter: fragments that keep getting
-                # selected are worth pinning. No reward gating — selection
-                # frequency is the right signal (the fragment keeps appearing
-                # because the scoring pipeline considers it valuable).
-                try:
-                    if frag_ids:
-                        for fid in frag_ids:
-                            self._fragment_selection_counts[fid] = (
-                                self._fragment_selection_counts.get(fid, 0) + 1
-                            )
-                except Exception:
-                    pass
-
-                # Apply updated weights to the live engine
-                if self._online_prism._n >= 3:  # Wait for warmup
-                    w = self._online_prism.weights_tuple()
                     if self._use_rust:
-                        try:
-                            self._rust.set_weights(w[0], w[1], w[2], w[3])
-                        except Exception:
-                            pass  # Rust engine may not support set_weights
+                        total_frags = int(self._rust.fragment_count())
                     else:
-                        self.config.weight_recency = w[0]
-                        self.config.weight_frequency = w[1]
-                        self.config.weight_semantic_sim = w[2]
-                        self.config.weight_entropy = w[3]
+                        total_frags = len(self._fragments)
+                except Exception:
+                    total_frags = max(len(selected), 1)
+            total_frags = max(total_frags, len(selected), 1)
 
-                result["online_prism"] = {
-                    "reward": round(reward, 4),
-                    "implicit_advantage": round(reward - pre_baseline, 4),
-                    "contributions": {k: round(v, 4) for k, v in contributions.items()},
-                    "weights": {k: round(v, 4) for k, v in new_weights.items()},
-                    "n": self._online_prism._n,
-                    "phase": self._online_prism.stats()["phase"],
-                }
+            # ── Record features for the RL pruner ──────────────────
+            # For each selected fragment, capture scoring features so
+            # that a later record_success/failure call can perform the
+            # REINFORCE gradient step.  Without this, apply_feedback
+            # has no feature record and silently drops every signal.
+            try:
+                for frag in (selected if isinstance(selected, list) else []):
+                    if not isinstance(frag, dict):
+                        continue
+                    fid = str(frag.get("id") or frag.get("fragment_id") or "")
+                    if not fid:
+                        continue
+                    self._pruner.record_fragment_features(
+                        fragment_id=fid,
+                        recency=float(frag.get("recency_score", frag.get("recency", 0.5))),
+                        relevance=float(frag.get("relevance_score", frag.get("relevance", 0.5))),
+                        complexity=float(frag.get("complexity", frag.get("token_count", 100)) / 500.0),
+                        was_selected=True,
+                    )
+            except Exception:
+                pass  # Best-effort; never break optimize_context
 
-                # Crystallizer surface: observability for the meta-loop.
-                # Cheap to compute (locks are held briefly inside the
-                # crystallizer); useful for the dashboard and for users
-                # to understand when their patterns get frozen as skills.
-                cr_stats = self._crystallizer.stats()
-                result["crystallization"] = {
-                    "active_clusters": cr_stats["active_clusters"],
-                    "total_observations": cr_stats["total_observations"],
-                    "lifetime_crystallized": self._crystallized_count,
-                }
-            except Exception as e:
-                logger.debug("OnlinePrism observation error: %s", e)
-
-            # ── No-match contract ────────────────────────────────────────
-            # This is the engine method every non-MCP caller reaches: the CLI,
-            # the SDK, the proxy. The guard used to exist only on the MCP tool
-            # handler of the same name nested inside `create_mcp_server`, so a
-            # query matching nothing returned confident unrelated files
-            # everywhere except MCP. Verified before this line existed: a
-            # selection scoring `relevance: 0.0` with no query term in the
-            # delivered text came back as an ordinary success.
-            #
-            # `selector` is set to "qccr" by the query path above. QCCR's
-            # relevance is a match indicator (uniform 1.0 matched / 0.0 not),
-            # not a rank, so the variance discriminator cannot read it and is
-            # switched off for that path; `_evidence_backed` carries the signal
-            # instead. The native knapsack path does produce a real ranking, so
-            # it keeps the variance test.
-            apply_no_match_contract(
-                result,
-                query,
-                scores_are_ranked=result.get("selector") != "qccr",
+            reward = compute_implicit_reward(
+                selected_count=len(selected),
+                total_fragments=total_frags,
+                tokens_used=tokens_used,
+                query_present=bool(query),
+                token_budget=token_budget,
             )
-            return result
-        finally:
-            gc.enable()
-            gc.collect()
+            contributions = compute_contributions(
+                selected if isinstance(selected, list) else [],
+                total_frags,
+            )
 
+            # Capture PRE-observe baseline + weights for crystallization.
+            # Using post-observe values would let the cluster contaminate
+            # its own baseline (false-positive bias) and would credit the
+            # weights that *resulted from* the reward rather than the
+            # weights that *earned* it.
+            pre_baseline = self._online_prism._reward_ema  # noqa: SLF001
+            pre_weights = self._online_prism.weights()
+
+            new_weights = self._online_prism.observe(reward, contributions)
+
+            # ── Reward-driven crystallization ─────────────────────
+            # Hoeffding-LCB gated detection of sustained-high-reward
+            # query clusters. When a cluster crosses the bound, fire
+            # the registered callback (typically SkillEngine.crystallize_skill).
+            # All bookkeeping is off the hot path: never blocks return.
+            try:
+                if query and isinstance(selected, list):
+                    frag_ids = [
+                        str(f.get("id") or f.get("fragment_id") or f.get("source", ""))
+                        for f in selected if isinstance(f, dict)
+                    ]
+                    frag_ids = [fid for fid in frag_ids if fid]
+                    event = self._crystallizer.observe(
+                        query=query,
+                        reward=reward,
+                        weights=pre_weights,
+                        selected_fragment_ids=frag_ids,
+                        baseline_reward=pre_baseline,
+                    )
+                    if event is not None and self._crystallization_callback is not None:
+                        try:
+                            self._crystallization_callback(event)
+                            self._crystallized_count += 1
+                        except Exception as cb_err:
+                            logger.debug(
+                                "crystallization callback error: %s", cb_err
+                            )
+            except Exception as cryst_err:
+                logger.debug("crystallizer error: %s", cryst_err)
+
+            # ── P1: Count fragment selections for pin-candidate nudges ─
+            # Simple frequency counter: fragments that keep getting
+            # selected are worth pinning. No reward gating — selection
+            # frequency is the right signal (the fragment keeps appearing
+            # because the scoring pipeline considers it valuable).
+            try:
+                if frag_ids:
+                    for fid in frag_ids:
+                        self._fragment_selection_counts[fid] = (
+                            self._fragment_selection_counts.get(fid, 0) + 1
+                        )
+            except Exception:
+                pass
+
+            # Apply updated weights to the live engine
+            if self._online_prism._n >= 3:  # Wait for warmup
+                w = self._online_prism.weights_tuple()
+                if self._use_rust:
+                    try:
+                        self._rust.set_weights(w[0], w[1], w[2], w[3])
+                    except Exception:
+                        pass  # Rust engine may not support set_weights
+                else:
+                    self.config.weight_recency = w[0]
+                    self.config.weight_frequency = w[1]
+                    self.config.weight_semantic_sim = w[2]
+                    self.config.weight_entropy = w[3]
+
+            result["online_prism"] = {
+                "reward": round(reward, 4),
+                "implicit_advantage": round(reward - pre_baseline, 4),
+                "contributions": {k: round(v, 4) for k, v in contributions.items()},
+                "weights": {k: round(v, 4) for k, v in new_weights.items()},
+                "n": self._online_prism._n,
+                "phase": self._online_prism.stats()["phase"],
+            }
+
+            # Crystallizer surface: observability for the meta-loop.
+            # Cheap to compute (locks are held briefly inside the
+            # crystallizer); useful for the dashboard and for users
+            # to understand when their patterns get frozen as skills.
+            cr_stats = self._crystallizer.stats()
+            result["crystallization"] = {
+                "active_clusters": cr_stats["active_clusters"],
+                "total_observations": cr_stats["total_observations"],
+                "lifetime_crystallized": self._crystallized_count,
+            }
+        except Exception as e:
+            logger.debug("OnlinePrism observation error: %s", e)
+
+        # ── No-match contract ────────────────────────────────────────
+        # This is the engine method every non-MCP caller reaches: the CLI,
+        # the SDK, the proxy. The guard used to exist only on the MCP tool
+        # handler of the same name nested inside `create_mcp_server`, so a
+        # query matching nothing returned confident unrelated files
+        # everywhere except MCP. Verified before this line existed: a
+        # selection scoring `relevance: 0.0` with no query term in the
+        # delivered text came back as an ordinary success.
+        #
+        # `selector` is set to "qccr" by the query path above. QCCR's
+        # relevance is a match indicator (uniform 1.0 matched / 0.0 not),
+        # not a rank, so the variance discriminator cannot read it and is
+        # switched off for that path; `_evidence_backed` carries the signal
+        # instead. The native knapsack path does produce a real ranking, so
+        # it keeps the variance test.
+        apply_no_match_contract(
+            result,
+            query,
+            scores_are_ranked=result.get("selector") != "qccr",
+        )
+        return result
     def set_crystallization_callback(self, fn: Any) -> None:
         """Register a callback fired when a query cluster crystallizes.
 

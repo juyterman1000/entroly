@@ -687,6 +687,12 @@ struct WorkGraphDocument {
 pub struct WorkGraph {
     repo_id: String,
     events: Vec<WorkEvent>,
+    /// Derived membership index for the append-only event log. Never serialized.
+    /// Keeping this separate removes an O(N) scan from every long-session append.
+    event_ids: BTreeSet<String>,
+    /// SHA-256 state for the canonical commitment bytes through the open events array.
+    /// Derived runtime state only; persisted WorkGraphDocument remains unchanged.
+    commitment_hasher: Sha256,
     nodes: BTreeMap<String, WorkNode>,
     edges: BTreeMap<String, WorkEdge>,
     evidence: BTreeMap<String, EvidenceRef>,
@@ -703,6 +709,8 @@ impl WorkGraph {
         let mut graph = Self {
             repo_id,
             events: Vec::new(),
+            event_ids: BTreeSet::new(),
+            commitment_hasher: Sha256::new(),
             nodes: BTreeMap::new(),
             edges: BTreeMap::new(),
             evidence: BTreeMap::new(),
@@ -743,7 +751,7 @@ impl WorkGraph {
             }
         }
         let id = event.event_id.clone();
-        if self.events.iter().any(|existing| existing.event_id == id) {
+        if self.event_ids.contains(&id) {
             return Ok(id);
         }
         if self.events.len() >= MAX_EVENTS {
@@ -758,10 +766,11 @@ impl WorkGraph {
                 <= (event.observed_at_ms, event.event_id.as_str())
         });
         self.events.push(event.clone());
+        self.event_ids.insert(id.clone());
 
         let result = if append_in_order {
             self.apply_materialized(&event)
-                .and_then(|_| self.refresh_commitment())
+                .and_then(|_| self.append_commitment_event(&event))
         } else {
             self.rebuild()
         };
@@ -818,7 +827,7 @@ impl WorkGraph {
         }
         let before = self.events.len();
         let mut candidate = self.events.clone();
-        let mut existing: BTreeSet<String> = candidate.iter().map(|e| e.event_id.clone()).collect();
+        let mut existing = self.event_ids.clone();
         for event in &other.events {
             if existing.insert(event.event_id.clone()) {
                 candidate.push(event.clone());
@@ -1358,12 +1367,19 @@ impl WorkGraph {
                 .cmp(&b.observed_at_ms)
                 .then_with(|| a.event_id.cmp(&b.event_id))
         });
+        self.event_ids.clear();
         self.nodes.clear();
         self.edges.clear();
         self.evidence.clear();
         self.adjacency.clear();
         let events = self.events.clone();
         for event in &events {
+            if !self.event_ids.insert(event.event_id.clone()) {
+                return Err(WorkGraphError::InvalidInput(format!(
+                    "duplicate event id in work graph: {}",
+                    event.event_id
+                )));
+            }
             self.apply_materialized(event)?;
         }
         if self.nodes.len() > MAX_NODES {
@@ -1654,18 +1670,42 @@ impl WorkGraph {
         Ok(())
     }
 
+    fn commitment_prefix_hasher(repo_id: &str) -> Result<Sha256, WorkGraphError> {
+        let mut hasher = Sha256::new();
+        hasher.update(b"{\"schema_version\":");
+        hasher.update(WORK_GRAPH_SCHEMA_VERSION.to_string().as_bytes());
+        hasher.update(b",\"repo_id\":");
+        hasher.update(serde_json::to_vec(repo_id)?);
+        hasher.update(b",\"events\":[");
+        Ok(hasher)
+    }
+
+    fn finalize_commitment(hasher: &Sha256) -> String {
+        let mut final_hasher = hasher.clone();
+        final_hasher.update(b"]}");
+        format!("{:x}", final_hasher.finalize())
+    }
+
     fn refresh_commitment(&mut self) -> Result<(), WorkGraphError> {
-        #[derive(Serialize)]
-        struct Commitment<'a> {
-            schema_version: u32,
-            repo_id: &'a str,
-            events: &'a [WorkEvent],
+        let mut hasher = Self::commitment_prefix_hasher(&self.repo_id)?;
+        for (index, event) in self.events.iter().enumerate() {
+            if index > 0 {
+                hasher.update(b",");
+            }
+            hasher.update(serde_json::to_vec(event)?);
         }
-        self.graph_commitment = sha256_json(&Commitment {
-            schema_version: WORK_GRAPH_SCHEMA_VERSION,
-            repo_id: &self.repo_id,
-            events: &self.events,
-        })?;
+        self.graph_commitment = Self::finalize_commitment(&hasher);
+        self.commitment_hasher = hasher;
+        Ok(())
+    }
+
+    fn append_commitment_event(&mut self, event: &WorkEvent) -> Result<(), WorkGraphError> {
+        let event_bytes = serde_json::to_vec(event)?;
+        if self.events.len() > 1 {
+            self.commitment_hasher.update(b",");
+        }
+        self.commitment_hasher.update(event_bytes);
+        self.graph_commitment = Self::finalize_commitment(&self.commitment_hasher);
         Ok(())
     }
 
@@ -3474,6 +3514,75 @@ mod tests {
         assert_eq!(first, second);
         assert_eq!(graph.event_count(), 1);
         assert_eq!(graph.graph_commitment(), commitment);
+    }
+
+    fn canonical_full_graph_commitment(graph: &WorkGraph) -> String {
+        #[derive(Serialize)]
+        struct Commitment<'a> {
+            schema_version: u32,
+            repo_id: &'a str,
+            events: &'a [WorkEvent],
+        }
+        sha256_json(&Commitment {
+            schema_version: WORK_GRAPH_SCHEMA_VERSION,
+            repo_id: &graph.repo_id,
+            events: &graph.events,
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn incremental_commitment_matches_canonical_serde_bytes() {
+        let mut graph = WorkGraph::new("repo-1").unwrap();
+        assert_eq!(
+            graph.graph_commitment(),
+            canonical_full_graph_commitment(&graph)
+        );
+        for i in 0..512u64 {
+            let digest = format!("git-blob:{:040x}", i + 1);
+            graph
+                .observe_repository(passive_dirty_observation(&digest, 10_000 + i as i64))
+                .unwrap();
+            assert_eq!(
+                graph.graph_commitment(),
+                canonical_full_graph_commitment(&graph),
+                "incremental commitment diverged after append {i}"
+            );
+        }
+
+        let compact = graph.export_json(false).unwrap();
+        let restored = WorkGraph::from_json(&compact).unwrap();
+        assert_eq!(restored.graph_commitment(), graph.graph_commitment());
+        assert_eq!(
+            restored.graph_commitment(),
+            canonical_full_graph_commitment(&restored)
+        );
+    }
+
+    #[test]
+    fn derived_event_id_index_tracks_append_dedupe_and_import() {
+        let mut graph = WorkGraph::new("repo-1").unwrap();
+        for i in 0..2_048u64 {
+            let digest = format!("git-blob:{:040x}", i + 1);
+            graph
+                .observe_repository(passive_dirty_observation(&digest, 1_000 + i as i64))
+                .unwrap();
+        }
+        assert_eq!(graph.event_ids.len(), graph.events.len());
+        assert_eq!(graph.event_ids.len(), 2_048);
+
+        let duplicate = graph.events[1_024].clone();
+        let duplicate_id = duplicate.event_id.clone();
+        let before = graph.graph_commitment().to_string();
+        assert_eq!(graph.apply_event(duplicate).unwrap(), duplicate_id);
+        assert_eq!(graph.event_count(), 2_048);
+        assert_eq!(graph.event_ids.len(), 2_048);
+        assert_eq!(graph.graph_commitment(), before);
+
+        let restored = WorkGraph::from_json(&graph.export_json(false).unwrap()).unwrap();
+        assert_eq!(restored.event_ids.len(), restored.events.len());
+        assert_eq!(restored.event_ids, graph.event_ids);
+        assert_eq!(restored.graph_commitment(), graph.graph_commitment());
     }
 
     #[test]
