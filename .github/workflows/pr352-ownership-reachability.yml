@@ -1,0 +1,81 @@
+name: PR352 Ownership Reachability Repair
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pr352-ownership-reachability-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  repair:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'integration/workgraph-production-20260817'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: integration/workgraph-production-20260817
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Verify exact branch head has not raced
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/integration/workgraph-production-20260817)"
+
+      - name: Apply guarded ownership reachability repair
+        run: python scripts/pr352_fix_ownership_reachability.py
+
+      - name: Regenerate canonical ownership matrix
+        shell: bash
+        run: |
+          python scripts/ownership_matrix.py
+          python scripts/ownership_matrix.py --check
+          python scripts/ownership_matrix.py --summary
+
+      - name: Prove transitive ownership invariants
+        shell: bash
+        run: |
+          python - <<'PY'
+          from scripts import ownership_matrix as matrix
+          rows = {row.path: row for row in matrix.build_rows()}
+          for path in (
+              'entroly-engine/src/coordination_index.rs',
+              'entroly-engine/src/rnr.rs',
+          ):
+              row = rows[path]
+              assert row.migration_status == 'canonical', (path, row)
+              assert row.python_surface == 'entroly-core', (path, row)
+              assert row.wasm_node_surface == 'entroly-wasm', (path, row)
+          unknown = [row.path for row in rows.values() if row.canonical_owner == matrix.UNKNOWN]
+          assert not unknown, unknown
+          print('transitive ownership invariants proven')
+          PY
+
+      - name: Run persistent ownership and docs-sync regressions
+        shell: bash
+        run: |
+          python -m pip install pytest
+          python -m pytest tests/test_ownership_matrix.py tests/test_docs_code_sync.py -q
+
+      - name: Commit validated generator, regression, and generated matrix
+        shell: bash
+        run: |
+          if git diff --quiet -- scripts/ownership_matrix.py tests/test_ownership_matrix.py docs/OWNERSHIP_MATRIX.md; then
+            echo 'Ownership repair already present; nothing to commit.'
+            exit 0
+          fi
+          git config user.name 'juyterman1000'
+          git config user.email '208309368+juyterman1000@users.noreply.github.com'
+          git add scripts/ownership_matrix.py tests/test_ownership_matrix.py docs/OWNERSHIP_MATRIX.md
+          git commit -m 'fix(audit): model transitive Rust ownership reachability'
+          git push origin HEAD:integration/workgraph-production-20260817
