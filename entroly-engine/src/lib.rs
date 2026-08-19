@@ -61,6 +61,7 @@ pub mod semantic_dedup;
 pub mod simhash_wide;
 pub mod skeleton;
 pub mod trajectory;
+pub mod trust_engine;
 pub mod utilization;
 
 pub mod work_graph;
