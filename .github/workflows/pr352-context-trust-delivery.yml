@@ -42,7 +42,10 @@ jobs:
           test "$(git rev-parse HEAD)" = "$(git rev-parse origin/integration/workgraph-production-20260817)"
 
       - name: Apply guarded Context and Trust delivery integration
-        run: python scripts/pr352_integrate_context_trust_delivery.py
+        shell: bash
+        run: |
+          python scripts/pr352_integrate_context_trust_delivery.py
+          python scripts/pr352_fix_context_delivery_fixture.py
 
       - name: Format and validate changed Rust
         shell: bash
