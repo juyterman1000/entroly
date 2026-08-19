@@ -219,6 +219,18 @@ class WorkGraph:
     ) -> dict[str, Any]:
         return _json_value(str(self._inner.resume_json(workstream_id, max_evidence, pretty)))
 
+    def context_scope(
+        self,
+        workstream_id: str | None = None,
+        *,
+        max_evidence: int = 128,
+        pretty: bool = False,
+    ) -> dict[str, Any]:
+        """Bounded Rust-owned scope for Context/Trust decisions."""
+        return _json_value(
+            str(self._inner.context_scope_json(workstream_id, max_evidence, pretty))
+        )
+
     def coordination(self, now_ms: int, *, pretty: bool = False) -> dict[str, Any]:
         return _json_value(str(self._inner.coordination_json(now_ms, pretty)))
 

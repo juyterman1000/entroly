@@ -113,6 +113,17 @@ impl TrustEngine {
         file_criticality(path)
     }
 
+    /// Stable lowercase transport label for file criticality. Bindings call
+    /// this rather than duplicating enum-to-string policy in Python and WASM.
+    pub fn file_criticality_label(&self, path: &str) -> &'static str {
+        match self.file_criticality(path) {
+            Criticality::Normal => "normal",
+            Criticality::Important => "important",
+            Criticality::Critical => "critical",
+            Criticality::Safety => "safety",
+        }
+    }
+
     /// Detect content that the existing guardrail policy says must not be
     /// silently stripped from context.
     pub fn has_safety_signal(&self, content: &str) -> bool {
@@ -134,7 +145,9 @@ mod tests {
     fn invalid_profile_fails_closed() {
         let error = TrustEngine::try_new("rga").err().expect("must reject typo");
         assert_eq!(error.profile(), "rga");
-        assert!(error.to_string().contains("unsupported Trust Engine profile"));
+        assert!(error
+            .to_string()
+            .contains("unsupported Trust Engine profile"));
     }
 
     #[test]
@@ -160,7 +173,10 @@ mod tests {
         assert_eq!(assessment.status, expected);
         assert_eq!(assessment.support_density, direct.phi);
         assert_eq!(assessment.unsupported_fraction, direct.unsupported_fraction);
-        assert_eq!(assessment.contradiction_fraction, direct.contradiction_fraction);
+        assert_eq!(
+            assessment.contradiction_fraction,
+            direct.contradiction_fraction
+        );
         assert!(assessment.evidence_commitment.starts_with("sha256:"));
         assert_eq!(assessment.evidence_commitment.len(), 71);
     }
@@ -181,6 +197,7 @@ mod tests {
             engine.file_criticality("file:SECURITY.md"),
             file_criticality("file:SECURITY.md")
         );
+        assert_eq!(engine.file_criticality_label("file:SECURITY.md"), "safety");
         assert_eq!(
             engine.has_safety_signal("AWS_SECRET_ACCESS_KEY=example"),
             has_safety_signal("AWS_SECRET_ACCESS_KEY=example")

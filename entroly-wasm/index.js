@@ -12,6 +12,7 @@
 
 let WasmEntrolyEngine;
 let WasmWorkGraph;
+let WasmTrustEngine;
 let classifyQueryTransitionRust;
 let rewardWeightedOptimizeRust;
 let optimizeTaskProfilesRust;
@@ -20,6 +21,7 @@ function bindWasmExports(mod) {
   ({
     WasmEntrolyEngine,
     WasmWorkGraph,
+    WasmTrustEngine,
     classify_query_transition: classifyQueryTransitionRust,
     reward_weighted_optimize: rewardWeightedOptimizeRust,
     optimize_task_profiles: optimizeTaskProfilesRust,
@@ -42,6 +44,7 @@ try {
   bindWasmExports(require('./pkg/entroly_wasm'));
   if (
     !WasmWorkGraph ||
+    !WasmTrustEngine ||
     !classifyQueryTransitionRust ||
     !rewardWeightedOptimizeRust ||
     !optimizeTaskProfilesRust ||
@@ -71,6 +74,7 @@ const { ValueTracker, EVOLUTION_TAX_RATE, estimateCost } = require('./js/value_t
 const { exportPromoted: exportAgentSkills } = require('./js/agentskills_export');
 const { TelegramGateway, DiscordGateway, SlackGateway } = require('./js/gateways');
 const { VaultObserver } = require('./js/vault_observer');
+const { TrustEngine } = require('./js/trust_engine');
 const {
   WorkGraph,
   RepositoryDiscoveryError,
@@ -144,6 +148,9 @@ module.exports = {
   rewardWeightedOptimize,
   optimizeTaskProfiles,
   classifyLearningQuery,
+
+  // Shared Rust evidence-bounded Trust Engine.
+  TrustEngine,
 
   // Shared Rust AI Work Graph with Node-only repository/persistence glue.
   WorkGraph,

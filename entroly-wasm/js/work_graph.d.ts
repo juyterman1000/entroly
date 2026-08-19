@@ -66,6 +66,18 @@ export interface WorkGraphResumeView {
   evidence: WorkGraphEvidence[];
 }
 
+export interface WorkGraphContextScope {
+  repo_id: string;
+  graph_revision: number;
+  graph_commitment: string;
+  workstream_id: string;
+  task_ids: string[];
+  agent_ids: string[];
+  changed_paths: string[];
+  commit_ids: string[];
+  evidence_ids: string[];
+}
+
 export interface WorkGraphCoordinationConflict {
   lease_a: string;
   lease_b: string;
@@ -123,6 +135,7 @@ export class WorkGraph {
   snapshot(pretty?: boolean): Record<string, unknown>;
   unfinished(pretty?: boolean): WorkGraphWorkItem[];
   resume(workstreamId?: string | null, maxEvidence?: number, pretty?: boolean): WorkGraphResumeView;
+  contextScope(workstreamId?: string | null, maxEvidence?: number, pretty?: boolean): WorkGraphContextScope;
   coordination(nowMs?: number, pretty?: boolean): WorkGraphCoordinationReport;
   handoff(
     workstreamId: string,

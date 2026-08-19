@@ -38,6 +38,8 @@
     "js/distill.js",
     "js/federation.js",
     "js/evolution_daemon.js",
+    "js/trust_engine.js",
+    "js/trust_engine.d.ts",
     "js/work_graph.js",
     "js/work_graph.d.ts",
     "js/work_graph_repo.js",
@@ -57,7 +59,7 @@
     "health": "node js/cli.js health",
     "demo": "node js/cli.js demo",
     "autotune": "node js/cli.js autotune",
-    "test": "node test_wasm_e2e.js && node test_work_graph.js && node test_work_graph_repo.js && node test_work_graph_store.js && node test_work_graph_content_digest.js && node test_work_graph_continuity.js && node test_work_graph_root_exports.js"
+    "test": "node test_wasm_e2e.js && node test_work_graph.js && node test_work_graph_repo.js && node test_work_graph_store.js && node test_work_graph_content_digest.js && node test_work_graph_continuity.js && node test_context_trust_delivery.js && node test_work_graph_root_exports.js"
   },
   "keywords": [
     "entroly",

@@ -54,6 +54,7 @@ pub(crate) use entroly_engine::semantic_dedup;
 mod simhash_probe;
 pub(crate) use entroly_engine::skeleton;
 mod telemetry;
+mod trust_engine_bindings;
 pub(crate) use entroly_engine::trajectory;
 pub(crate) use entroly_engine::utilization;
 mod witness;
@@ -6371,6 +6372,7 @@ fn entroly_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<EntrolyEngine>()?;
     m.add_class::<PyDedupIndex>()?;
     work_graph_bindings::register(m)?;
+    trust_engine_bindings::register(m)?;
     // ── Entropy / Hashing
     m.add_function(wrap_pyfunction!(py_shannon_entropy, m)?)?;
     m.add_function(wrap_pyfunction!(py_normalized_entropy, m)?)?;
@@ -6432,8 +6434,14 @@ fn entroly_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(qccr::py_qccr_select, m)?)?;
     // ── Multi-Agent (additive — new classes, no existing API changes)
     m.add_class::<nkbe::NkbeAllocator>()?;
-    m.add_function(wrap_pyfunction!(work_graph_bindings::work_graph_node_id, m)?)?;
-    m.add_function(wrap_pyfunction!(work_graph_bindings::work_graph_edge_id, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        work_graph_bindings::work_graph_node_id,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        work_graph_bindings::work_graph_edge_id,
+        m
+    )?)?;
     m.add_class::<cognitive_bus::CognitiveBus>()?;
     // ── CogOps Epistemic Engine
     m.add_class::<cogops::CogOpsEngine>()?;

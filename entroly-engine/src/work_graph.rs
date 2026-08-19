@@ -19,6 +19,7 @@
 //! - persisted graph documents are integrity-checked on import.
 
 use crate::coordination_index::{candidate_pairs, CoordinationScope};
+use crate::engine_contracts::WorkScope;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -793,7 +794,8 @@ impl WorkGraph {
         if let Some(fingerprint) = passive_fingerprint {
             let source_ref = format!("repo-snapshot:{fingerprint}");
             if let Some(last) = self.events.last() {
-                if last.source_kind == EvidenceKind::RepositoryFact && last.source_ref == source_ref {
+                if last.source_kind == EvidenceKind::RepositoryFact && last.source_ref == source_ref
+                {
                     return Ok(last.event_id.clone());
                 }
             }
@@ -1056,6 +1058,33 @@ impl WorkGraph {
             serde_json::to_string_pretty(&view).map_err(Into::into)
         } else {
             serde_json::to_string(&view).map_err(Into::into)
+        }
+    }
+
+    /// Derive the bounded, text-light Context/Trust integration scope from the
+    /// exact Rust-owned resume view. Raw decision/failure prose and context
+    /// bytes remain in their owning stores and never become graph payload here.
+    pub fn context_scope(
+        &self,
+        workstream_id: Option<&str>,
+        max_evidence: usize,
+    ) -> Result<WorkScope, WorkGraphError> {
+        let view = self.resume(workstream_id, max_evidence)?;
+        WorkScope::from_resume(&view)
+            .map_err(|error| WorkGraphError::InvalidInput(error.to_string()))
+    }
+
+    pub fn context_scope_json(
+        &self,
+        workstream_id: Option<&str>,
+        max_evidence: usize,
+        pretty: bool,
+    ) -> Result<String, WorkGraphError> {
+        let scope = self.context_scope(workstream_id, max_evidence)?;
+        if pretty {
+            serde_json::to_string_pretty(&scope).map_err(Into::into)
+        } else {
+            serde_json::to_string(&scope).map_err(Into::into)
         }
     }
 
@@ -3001,10 +3030,8 @@ pub fn stable_node_id_for_token(
     repo_id: &str,
     key: &str,
 ) -> Result<String, WorkGraphError> {
-    let kind: NodeKind = serde_json::from_value(serde_json::Value::String(
-        kind_token.to_string(),
-    ))
-    .map_err(|_| WorkGraphError::InvalidInput(format!("unknown node kind: {kind_token}")))?;
+    let kind: NodeKind = serde_json::from_value(serde_json::Value::String(kind_token.to_string()))
+        .map_err(|_| WorkGraphError::InvalidInput(format!("unknown node kind: {kind_token}")))?;
     Ok(stable_node_id(kind, repo_id, key))
 }
 
@@ -3014,10 +3041,8 @@ pub fn stable_edge_id_for_token(
     kind_token: &str,
     to: &str,
 ) -> Result<String, WorkGraphError> {
-    let kind: EdgeKind = serde_json::from_value(serde_json::Value::String(
-        kind_token.to_string(),
-    ))
-    .map_err(|_| WorkGraphError::InvalidInput(format!("unknown edge kind: {kind_token}")))?;
+    let kind: EdgeKind = serde_json::from_value(serde_json::Value::String(kind_token.to_string()))
+        .map_err(|_| WorkGraphError::InvalidInput(format!("unknown edge kind: {kind_token}")))?;
     Ok(stable_edge_id(from, kind, to))
 }
 
@@ -3499,10 +3524,8 @@ mod tests {
     #[test]
     fn repeated_active_verification_is_never_collapsed() {
         let mut graph = WorkGraph::new("repo-1").unwrap();
-        let mut first = passive_dirty_observation(
-            "git-blob:1111111111111111111111111111111111111111",
-            1_000,
-        );
+        let mut first =
+            passive_dirty_observation("git-blob:1111111111111111111111111111111111111111", 1_000);
         first.verifications.push(VerificationObservation {
             verification_id: "test:repeat".to_string(),
             name: "focused test".to_string(),
@@ -3523,10 +3546,8 @@ mod tests {
     #[test]
     fn repeated_model_execution_is_never_collapsed() {
         let mut graph = WorkGraph::new("repo-1").unwrap();
-        let mut first = passive_dirty_observation(
-            "git-blob:1111111111111111111111111111111111111111",
-            1_000,
-        );
+        let mut first =
+            passive_dirty_observation("git-blob:1111111111111111111111111111111111111111", 1_000);
         first.model_executions.push(ModelExecutionObservation {
             execution_id: "exec:repeat".to_string(),
             provider: "provider".to_string(),
@@ -3819,7 +3840,6 @@ mod tests {
         assert!(paths_overlap("/src/auth/", "src/auth"));
         assert!(!paths_overlap("", "src/auth"));
     }
-
 
     #[test]
     fn event_merge_is_commutative_and_deduplicated() {

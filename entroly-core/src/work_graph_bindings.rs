@@ -122,6 +122,18 @@ impl PyWorkGraph {
             .map_err(py_err)
     }
 
+    #[pyo3(signature = (workstream_id = None, max_evidence = 128, pretty = false))]
+    fn context_scope_json(
+        &self,
+        workstream_id: Option<&str>,
+        max_evidence: usize,
+        pretty: bool,
+    ) -> PyResult<String> {
+        self.inner
+            .context_scope_json(workstream_id, max_evidence, pretty)
+            .map_err(py_err)
+    }
+
     #[pyo3(signature = (now_ms, pretty = false))]
     fn coordination_json(&self, now_ms: i64, pretty: bool) -> PyResult<String> {
         self.inner.coordination_json(now_ms, pretty).map_err(py_err)

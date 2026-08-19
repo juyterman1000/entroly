@@ -166,6 +166,12 @@ try:
 except ImportError:
     pass
 
+# Evidence-bounded Trust Engine — shared Rust truth with thin Python transport.
+try:
+    from .trust import TrustEngine, TrustEngineUnavailableError  # noqa: F401
+except ImportError:
+    pass
+
 # EICV — Evidence-Invariant Causal Verification.
 # Deterministic hallucination detector. See benchmarks/results/ for the
 # specific datasets, splits, and accuracy numbers achieved in our test

@@ -130,6 +130,18 @@ impl WasmWorkGraph {
             .map_err(js_err)
     }
 
+    #[wasm_bindgen(js_name = contextScopeJSON)]
+    pub fn context_scope_json(
+        &self,
+        workstream_id: Option<String>,
+        max_evidence: usize,
+        pretty: bool,
+    ) -> Result<String, JsValue> {
+        self.inner
+            .context_scope_json(workstream_id.as_deref(), max_evidence, pretty)
+            .map_err(js_err)
+    }
+
     #[wasm_bindgen(js_name = coordinationJSON)]
     pub fn coordination_json(&self, now_ms: f64, pretty: bool) -> Result<String, JsValue> {
         let now_ms = js_safe_i64(now_ms, "now_ms")?;

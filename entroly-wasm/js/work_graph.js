@@ -114,6 +114,15 @@ class WorkGraph {
     ));
   }
 
+  contextScope(workstreamId = null, maxEvidence = 128, pretty = false) {
+    const id = workstreamId == null ? undefined : String(workstreamId);
+    return fromJSONText(this._inner.contextScopeJSON(
+      id,
+      requireSafeInteger(maxEvidence, 'maxEvidence', { min: 0 }),
+      Boolean(pretty),
+    ));
+  }
+
   coordination(nowMs = Date.now(), pretty = false) {
     return fromJSONText(this._inner.coordinationJSON(
       requireSafeInteger(nowMs, 'nowMs'),
