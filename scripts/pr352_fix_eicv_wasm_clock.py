@@ -41,7 +41,7 @@ def main() -> int:
         '        #[cfg(not(target_arch = "wasm32"))]\n'
         "        let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;\n"
         '        #[cfg(target_arch = "wasm32")]\n'
-        "        let elapsed_ms = 0.0;\n",
+        "        let elapsed_ms: f64 = 0.0;\n",
         "EICV elapsed telemetry",
     )
     PATH.write_text(text, encoding="utf-8")
