@@ -24,7 +24,7 @@ Quick Setup (Claude Code)::
 
 """
 
-__version__ = "1.0.78"
+__version__ = "1.0.79"
 
 # Explicit repair for library users. The CLI restores a missing native engine
 # automatically, but an import path must never do that: installing a package
