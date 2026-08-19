@@ -109,6 +109,15 @@ ORCHESTRATION_IMPORTS = {
 # a candidate for Rust ownership and goes to the review queue.
 SEMANTIC_IMPORTS = {"math", "statistics", "heapq", "bisect", "itertools", "array", "decimal", "fractions"}
 
+# Engine primitives may deliberately remain internal until a calibrated consumer
+# needs them. Internal is an explicit ownership decision, not a delivery failure.
+ENGINE_INTERNAL_PRIMITIVES: dict[str, str] = {
+    "simhash_wide": (
+        "versioned internal SimHash estimator primitive; retained for calibrated "
+        "future consumers, with no public Python/npm contract today"
+    ),
+}
+
 
 @dataclass
 class Row:
@@ -283,6 +292,9 @@ def classify(path: str, ctx: dict) -> Row:
         if module == "lib":
             status = "canonical"
             note = "crate root"
+        elif module in ENGINE_INTERNAL_PRIMITIVES:
+            status = "internal"
+            note = ENGINE_INTERNAL_PRIMITIVES[module]
         elif not in_core and not in_wasm:
             status = "unexposed"
             if engine_users:

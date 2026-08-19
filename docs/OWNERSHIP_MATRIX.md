@@ -12,22 +12,22 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 
 | Outcome | Files |
 |---|---:|
-| `tests-fixtures-docs-packaging` | 1114 |
-| `python-host-orchestration` | 344 |
-| `node-host-orchestration` | 48 |
+| `tests-fixtures-docs-packaging` | 1119 |
+| `python-host-orchestration` | 345 |
+| `node-host-orchestration` | 50 |
 | `rust-semantic-owner` | 39 |
 | `review-required` | 29 |
-| `pyo3-binding` | 25 |
+| `pyo3-binding` | 26 |
 | `generated-build-artifact` | 16 |
-| `wasm-binding` | 6 |
-| **total** | **1621** |
+| `wasm-binding` | 7 |
+| **total** | **1631** |
 
 ## Actionable queues
 
 * **unknown ownership: 0** — must be zero for the section 24 gate.
 * **review-required: 29** — computation with no host or native signal.
 * **partial parity: 0** — engine modules reachable from one delivery runtime only.
-* **unexposed engine modules: 1** — reachable from no Python/npm delivery root after engine dependency closure.
+* **unexposed engine modules: 0** — reachable from no Python/npm delivery root after engine dependency closure.
 
 ### Review required
 
@@ -60,10 +60,6 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 * `entroly/verifiers/stave.py` — candidate Rust owner; classification needs a human decision
 * `entroly/witness_atomic.py` — candidate Rust owner; classification needs a human decision
 * `entroly/witness_features.py` — candidate Rust owner; classification needs a human decision
-
-### Unexposed
-
-* `entroly-engine/src/simhash_wide.rs` — reachable from no Python/npm delivery root and no engine semantic owner
 
 ## Full matrix
 
@@ -100,7 +96,8 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `.github/workflows/integration-workgraph-passive-dedupe.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.github/workflows/native-dogfood-diagnostic.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.github/workflows/onboarding-self-dogfood.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `.github/workflows/pr352-context-trust-delivery.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `.github/workflows/pr352-finalize-evidence.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `.github/workflows/pr352-release-1_0_79.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.github/workflows/public-trust.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.github/workflows/publish-core-wheels.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.github/workflows/publish-mcp-registry.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
@@ -660,6 +657,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `docs/releases/v1.0.76.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/releases/v1.0.77.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/releases/v1.0.78.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/releases/v1.0.79.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/reliable-event-delivery.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/repo_file_map.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/research/agent-memory-literature-map-2026-07.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
@@ -733,6 +731,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `entroly-core/src/qccr.rs` | PyO3 conversion/export | rust | orchestration | pyo3-binding | - | entroly_core | - | cargo test --lib / pytest | import entroly_core | canonical | medium | must stay transport-only |
 | `entroly-core/src/simhash_probe.rs` | PyO3 conversion/export | rust | orchestration | pyo3-binding | - | entroly_core | - | cargo test --lib / pytest | import entroly_core | canonical | medium | must stay transport-only |
 | `entroly-core/src/telemetry.rs` | PyO3 conversion/export | rust | orchestration | pyo3-binding | - | entroly_core | - | cargo test --lib / pytest | import entroly_core | canonical | medium | must stay transport-only |
+| `entroly-core/src/trust_engine_bindings.rs` | PyO3 conversion/export | rust | orchestration | pyo3-binding | - | entroly_core | - | cargo test --lib / pytest | import entroly_core | canonical | medium | must stay transport-only |
 | `entroly-core/src/witness.rs` | PyO3 conversion/export | rust | orchestration | pyo3-binding | - | entroly_core | - | cargo test --lib / pytest | import entroly_core | canonical | medium | must stay transport-only |
 | `entroly-core/src/work_graph_bindings.rs` | PyO3 conversion/export | rust | orchestration | pyo3-binding | - | entroly_core | - | cargo test --lib / pytest | import entroly_core | canonical | medium | must stay transport-only |
 | `entroly-core/tests/conftest.py` | python module | python | orchestration | python-host-orchestration | - | entroly-core.tests.conftest | - | pytest | - | canonical | low | no orchestration, native or computation signal; treated as glue |
@@ -772,7 +771,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `entroly-engine/src/rnr.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | rnr | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium | shared through engine dependency closure (Python transitively) |
 | `entroly-engine/src/sast.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | sast | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
 | `entroly-engine/src/semantic_dedup.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | semantic_dedup | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
-| `entroly-engine/src/simhash_wide.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | simhash_wide | - | - | cargo test --lib | - | unexposed | medium | reachable from no Python/npm delivery root and no engine semantic owner |
+| `entroly-engine/src/simhash_wide.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | simhash_wide | - | - | cargo test --lib | - | internal | medium | versioned internal SimHash estimator primitive; retained for calibrated future consumers, with no public Python/npm contract today |
 | `entroly-engine/src/skeleton.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | skeleton | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
 | `entroly-engine/src/trajectory.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | trajectory | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
 | `entroly-engine/src/trust_engine.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | trust_engine | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
@@ -807,6 +806,8 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `entroly-wasm/js/repo_map.js` | Node environment/integration glue | node | orchestration | node-host-orchestration | - | - | npm | npm test | npm package | canonical | medium |  |
 | `entroly-wasm/js/server.js` | Node environment/integration glue | node | orchestration | node-host-orchestration | - | - | npm | npm test | npm package | canonical | medium |  |
 | `entroly-wasm/js/skills.js` | Node environment/integration glue | node | orchestration | node-host-orchestration | - | - | npm | npm test | npm package | canonical | medium |  |
+| `entroly-wasm/js/trust_engine.d.ts` | Node environment/integration glue | node | orchestration | node-host-orchestration | - | - | npm | npm test | npm package | canonical | medium |  |
+| `entroly-wasm/js/trust_engine.js` | Node environment/integration glue | node | orchestration | node-host-orchestration | - | - | npm | npm test | npm package | canonical | medium |  |
 | `entroly-wasm/js/value_tracker.js` | Node environment/integration glue | node | orchestration | node-host-orchestration | - | - | npm | npm test | npm package | canonical | medium |  |
 | `entroly-wasm/js/vault.js` | Node environment/integration glue | node | orchestration | node-host-orchestration | - | - | npm | npm test | npm package | canonical | medium |  |
 | `entroly-wasm/js/vault_observer.js` | Node environment/integration glue | node | orchestration | node-host-orchestration | - | - | npm | npm test | npm package | canonical | medium |  |
@@ -826,9 +827,11 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `entroly-wasm/src/localization.rs` | wasm-bindgen conversion/export | rust | orchestration | wasm-binding | - | - | entroly-wasm | wasm-pack test | npm package | canonical | medium | must stay transport-only |
 | `entroly-wasm/src/nkbe_bindings.rs` | wasm-bindgen conversion/export | rust | orchestration | wasm-binding | - | - | entroly-wasm | wasm-pack test | npm package | canonical | medium | must stay transport-only |
 | `entroly-wasm/src/qccr.rs` | wasm-bindgen conversion/export | rust | orchestration | wasm-binding | - | - | entroly-wasm | wasm-pack test | npm package | canonical | medium | must stay transport-only |
+| `entroly-wasm/src/trust_engine_bindings.rs` | wasm-bindgen conversion/export | rust | orchestration | wasm-binding | - | - | entroly-wasm | wasm-pack test | npm package | canonical | medium | must stay transport-only |
 | `entroly-wasm/src/work_graph_bindings.rs` | wasm-bindgen conversion/export | rust | orchestration | wasm-binding | - | - | entroly-wasm | wasm-pack test | npm package | canonical | medium | must stay transport-only |
 | `entroly-wasm/test_app_sdk.js` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `entroly-wasm/test_autotune.js` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `entroly-wasm/test_context_trust_delivery.js` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `entroly-wasm/test_distill.js` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `entroly-wasm/test_federation_js.js` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `entroly-wasm/test_qccr_routing.js` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
@@ -1124,6 +1127,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `entroly/telemetry_collector.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.telemetry_collector | - | pytest | - | canonical | low |  |
 | `entroly/tool_schema_deferral.py` | python module | python | orchestration | python-host-orchestration | - | entroly.tool_schema_deferral | - | pytest | - | canonical | low | no orchestration, native or computation signal; treated as glue |
 | `entroly/tree_sitter_support.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.tree_sitter_support | - | pytest | yes | canonical | medium |  |
+| `entroly/trust.py` | python module | python | orchestration | python-host-orchestration | - | entroly.trust | - | pytest | yes | canonical | low | no orchestration, native or computation signal; treated as glue |
 | `entroly/universal_compress.py` | computation with no host or native signal | python | semantic? | review-required | - | entroly.universal_compress | - | pytest | yes | review-required | high | candidate Rust owner; classification needs a human decision |
 | `entroly/usage_ledger.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.usage_ledger | - | pytest | yes | canonical | medium |  |
 | `entroly/value_tracker.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.value_tracker | - | pytest | yes | canonical | medium |  |
@@ -1360,6 +1364,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `tests/test_context_receipts.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_context_scaffold.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_context_sessions.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_context_trust_delivery.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_contextbench_metrics.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_contextbench_runner_safety.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_contextbench_span_adapter.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
@@ -1394,6 +1399,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `tests/test_ecc.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_ece_integration.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_empty_context_guidance.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_engine_host_gc_policy.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_engine_isolation.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_escalation_breakthrough.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_event_delivery.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
