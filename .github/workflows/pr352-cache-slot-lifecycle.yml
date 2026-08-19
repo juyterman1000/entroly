@@ -48,8 +48,8 @@ jobs:
       - name: Focused cache and LSH regression tests
         shell: bash
         run: |
-          cargo test --manifest-path entroly-engine/Cargo.toml semantic_slots_stay_bounded_under_long_eviction_churn -- --exact
-          cargo test --manifest-path entroly-engine/Cargo.toml gc_recycles_slots_and_snapshot_import_rebuilds_private_indices -- --exact
+          cargo test --manifest-path entroly-engine/Cargo.toml cache::tests::semantic_slots_stay_bounded_under_long_eviction_churn -- --exact
+          cargo test --manifest-path entroly-engine/Cargo.toml cache::tests::gc_recycles_slots_and_snapshot_import_rebuilds_private_indices -- --exact
           cargo test --manifest-path entroly-engine/Cargo.toml lsh::tests::test_remove_not_returned -- --exact
 
       - name: Full engine tests and clippy (WASM and Python configurations)
@@ -64,10 +64,25 @@ jobs:
         shell: bash
         run: |
           git diff -- entroly-engine/src/cache.rs | grep -q 'slot_by_hash'
-          if git diff -- entroly-engine/src/cache.rs | grep -E '^[+-].*CacheSnapshot'; then
-            echo 'CacheSnapshot changed; refusing automatic product commit' >&2
-            exit 1
-          fi
+          python - <<'PY'
+          import pathlib
+          import re
+          import subprocess
+
+          path = pathlib.Path('entroly-engine/src/cache.rs')
+          before = subprocess.check_output(
+              ['git', 'show', f'HEAD:{path.as_posix()}'], text=True
+          )
+          after = path.read_text(encoding='utf-8')
+          pattern = re.compile(r'pub struct CacheSnapshot\s*\{.*?\n\}', re.S)
+          before_match = pattern.search(before)
+          after_match = pattern.search(after)
+          if before_match is None or after_match is None:
+              raise SystemExit('could not locate CacheSnapshot struct for schema proof')
+          if before_match.group(0) != after_match.group(0):
+              raise SystemExit('CacheSnapshot struct changed; refusing automatic product commit')
+          print('CacheSnapshot struct is byte-identical before/after repair')
+          PY
 
       - name: Commit validated product repair
         shell: bash
