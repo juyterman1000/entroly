@@ -28,6 +28,9 @@ from __future__ import annotations
 
 import contextlib
 import io
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -260,9 +263,35 @@ def test_importing_entroly_does_not_install_anything() -> None:
     Installing mid-import risks re-entrant imports, partially initialised state,
     and multiprocessing deadlock, so the SDK exposes `entroly.repair()` instead
     of healing implicitly.
+
+    Checked in a fresh interpreter on purpose. `_attempted_in_this_process` is a
+    module-level global, so asserting it in-process only proves that no *earlier
+    test in the session* called repair — which is a statement about test
+    ordering, not about import. In a job where the engine is genuinely absent
+    some earlier test legitimately repairs, the global stays set, and this test
+    fails while the invariant it names is perfectly intact. That is exactly what
+    happened on PR #352's head in the pure-Python fallback job.
+
+    A subprocess makes the assertion mean what the docstring says.
     """
     import entroly
 
     assert hasattr(entroly, "repair")
     assert hasattr(entroly, "native_engine_ready")
-    assert self_heal._attempted_in_this_process is False
+
+    probe = (
+        "import entroly, entroly.self_heal as sh, sys; "
+        "sys.exit(1 if sh._attempted_in_this_process else 0)"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        cwd=str(Path(__file__).resolve().parent.parent),
+    )
+    assert result.returncode == 0, (
+        "importing entroly attempted self-heal in a fresh interpreter:\n"
+        f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
+    )
+    assert result.stdout == "", f"import wrote to stdout: {result.stdout!r}"
