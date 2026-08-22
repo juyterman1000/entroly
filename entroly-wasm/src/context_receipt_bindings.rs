@@ -125,3 +125,121 @@ pub fn context_receipt_graph_ref_json(
 pub fn context_receipt_schema_version() -> u32 {
     CONTEXT_RECEIPT_SCHEMA_VERSION
 }
+
+// ── Recovery handles ──────────────────────────────────────────────────────
+//
+// The mirror of the PyO3 recovery surface. Same engine functions, so the two
+// runtimes agree on which claims are refused as well as on which ids are
+// produced — a contract that accepted different inputs in different runtimes
+// would not be one contract.
+
+use entroly_engine::engine_contracts::{
+    RecoveryDisposition, RecoveryHandle, RecoveryIntegrityState, RECOVERY_HANDLE_SCHEMA_VERSION,
+};
+
+fn parse_disposition(token: &str) -> Result<RecoveryDisposition, JsValue> {
+    match token {
+        "included" => Ok(RecoveryDisposition::Included),
+        "compressed" => Ok(RecoveryDisposition::Compressed),
+        "omitted_but_recoverable" => Ok(RecoveryDisposition::OmittedButRecoverable),
+        "omitted_and_unavailable" => Ok(RecoveryDisposition::OmittedAndUnavailable),
+        other => Err(JsValue::from_str(&format!(
+            "unknown recovery disposition {other:?}; expected one of included, \
+             compressed, omitted_but_recoverable, omitted_and_unavailable"
+        ))),
+    }
+}
+
+fn integrity_token(state: RecoveryIntegrityState) -> &'static str {
+    match state {
+        RecoveryIntegrityState::Verified => "verified",
+        RecoveryIntegrityState::CommitmentMismatch => "commitment_mismatch",
+        RecoveryIntegrityState::NotRecoverable => "not_recoverable",
+    }
+}
+
+/// Build a recovery handle and return it as canonical JSON.
+///
+/// Throws when a disposition promises recovery without the means to honour it.
+#[wasm_bindgen(js_name = recoveryHandleBuildJSON)]
+#[allow(clippy::too_many_arguments)]
+pub fn recovery_handle_build_json(
+    repository_id: &str,
+    receipt_id: &str,
+    disposition: &str,
+    source_ref: Option<String>,
+    source_commitment: Option<String>,
+    fragment_commitment: Option<String>,
+    byte_start: Option<f64>,
+    byte_end: Option<f64>,
+    version: Option<String>,
+    storage_locator: Option<String>,
+    observed_at_ms: Option<f64>,
+) -> Result<String, JsValue> {
+    // Byte offsets and timestamps arrive as f64. A truncated offset addresses
+    // different bytes than the caller meant, which is a different handle.
+    fn exact_u64(value: Option<f64>, name: &str) -> Result<u64, JsValue> {
+        const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
+        match value {
+            None => Ok(0),
+            Some(v)
+                if v.is_finite() && v.fract() == 0.0 && (0.0..=MAX_SAFE_INTEGER).contains(&v) =>
+            {
+                Ok(v as u64)
+            }
+            Some(_) => Err(JsValue::from_str(&format!(
+                "{name} must be a non-negative JavaScript-safe integer"
+            ))),
+        }
+    }
+    fn exact_i64(value: Option<f64>, name: &str) -> Result<i64, JsValue> {
+        const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
+        match value {
+            None => Ok(0),
+            Some(v) if v.is_finite() && v.fract() == 0.0 && v.abs() <= MAX_SAFE_INTEGER => {
+                Ok(v as i64)
+            }
+            Some(_) => Err(JsValue::from_str(&format!(
+                "{name} must be a finite JavaScript-safe integer"
+            ))),
+        }
+    }
+
+    let handle = RecoveryHandle::new(
+        repository_id.to_owned(),
+        receipt_id.to_owned(),
+        parse_disposition(disposition)?,
+        source_ref.unwrap_or_default(),
+        source_commitment.unwrap_or_default(),
+        fragment_commitment.unwrap_or_default(),
+        exact_u64(byte_start, "byte_start")?,
+        exact_u64(byte_end, "byte_end")?,
+        version.unwrap_or_default(),
+        storage_locator.unwrap_or_default(),
+        exact_i64(observed_at_ms, "observed_at_ms")?,
+    )
+    .map_err(js_err)?;
+    handle.to_json().map_err(js_err)
+}
+
+/// Parse and check a handle, returning its canonical JSON.
+#[wasm_bindgen(js_name = recoveryHandleVerifyJSON)]
+pub fn recovery_handle_verify_json(handle_json: &str) -> Result<String, JsValue> {
+    let handle = RecoveryHandle::from_json_verified(handle_json).map_err(js_err)?;
+    handle.to_json().map_err(js_err)
+}
+
+/// Check recovered bytes against the handle's commitment.
+///
+/// Returns `verified`, `commitment_mismatch` or `not_recoverable`.
+#[wasm_bindgen(js_name = recoveryHandleVerifyBytes)]
+pub fn recovery_handle_verify_bytes(handle_json: &str, payload: &[u8]) -> Result<String, JsValue> {
+    let handle = RecoveryHandle::from_json_verified(handle_json).map_err(js_err)?;
+    Ok(integrity_token(handle.verify_recovered(payload)).to_string())
+}
+
+/// Schema version this build implements for recovery handles.
+#[wasm_bindgen(js_name = recoveryHandleSchemaVersion)]
+pub fn recovery_handle_schema_version() -> u32 {
+    RECOVERY_HANDLE_SCHEMA_VERSION
+}

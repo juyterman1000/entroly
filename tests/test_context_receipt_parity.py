@@ -173,3 +173,105 @@ def test_invalid_input_is_rejected_rather_than_committed() -> None:
         )
 
     assert "repository_id" in str(exc_info.value)
+
+
+# ── Recovery handles ────────────────────────────────────────────────────────
+#
+# Section 9: "never call destructive omission recoverable", and "a recovery
+# operation must verify expected commitment before silently returning material".
+# Both are enforced in the engine, so both must behave identically here and in
+# Node. The fixture hashes itself rather than carrying a literal digest, so the
+# two runtimes agree by computing rather than by copying.
+
+import hashlib
+
+GOLDEN_HANDLE_ID = "rh_61e976bc425ad0de"
+FIXTURE_BODY = b"recoverable bytes"
+
+
+def _fixture_commitment() -> str:
+    return hashlib.sha256(FIXTURE_BODY).hexdigest()
+
+
+def _recoverable_handle() -> str:
+    return entroly_core.recovery_handle_build_json(
+        "repo:demo",
+        "cr_672457349ba403bc",
+        "omitted_but_recoverable",
+        "src/auth.py",
+        "sha256:source",
+        _fixture_commitment(),
+        0,
+        17,
+        "commit:abc123",
+        "",
+        1_700_000_000_000,
+    )
+
+
+def test_python_reproduces_the_golden_handle_id() -> None:
+    assert json.loads(_recoverable_handle())["handle_id"] == GOLDEN_HANDLE_ID
+
+
+def test_a_recovery_promise_without_a_commitment_is_refused() -> None:
+    """The refusal is the contract, not a validation nicety."""
+    with pytest.raises(Exception) as exc_info:
+        entroly_core.recovery_handle_build_json(
+            "repo:demo", "cr_x", "omitted_but_recoverable", "src/auth.py", "sha256:source"
+        )
+
+    assert "recover" in str(exc_info.value).lower()
+
+
+def test_a_recovery_promise_without_a_way_back_is_refused() -> None:
+    """A commitment says what the bytes were, not where to find them again."""
+    with pytest.raises(Exception) as exc_info:
+        entroly_core.recovery_handle_build_json(
+            "repo:demo", "cr_x", "omitted_but_recoverable",
+            "", "", _fixture_commitment(),
+        )
+
+    assert "recover" in str(exc_info.value).lower()
+
+
+def test_destructive_omission_is_expressible_without_evidence() -> None:
+    """If the honest state were hard to express, callers would overclaim."""
+    handle = entroly_core.recovery_handle_build_json(
+        "repo:demo", "cr_x", "omitted_and_unavailable"
+    )
+
+    assert json.loads(handle)["disposition"] == "omitted_and_unavailable"
+
+
+def test_recovered_bytes_are_verified_against_the_commitment() -> None:
+    handle = _recoverable_handle()
+
+    assert entroly_core.recovery_handle_verify_bytes(handle, FIXTURE_BODY) == "verified"
+    assert (
+        entroly_core.recovery_handle_verify_bytes(handle, b"different bytes")
+        == "commitment_mismatch"
+    )
+
+
+def test_an_unavailable_handle_has_nothing_to_verify() -> None:
+    handle = entroly_core.recovery_handle_build_json(
+        "repo:demo", "cr_x", "omitted_and_unavailable"
+    )
+
+    assert entroly_core.recovery_handle_verify_bytes(handle, b"anything") == "not_recoverable"
+
+
+def test_an_edited_handle_fails_closed() -> None:
+    edited = _recoverable_handle().replace("src/auth.py", "src/other.py")
+
+    with pytest.raises(Exception) as exc_info:
+        entroly_core.recovery_handle_verify_json(edited)
+
+    assert "handle_id" in str(exc_info.value)
+
+
+def test_an_unknown_disposition_is_rejected() -> None:
+    with pytest.raises(Exception) as exc_info:
+        entroly_core.recovery_handle_build_json("repo:demo", "cr_x", "probably_fine")
+
+    assert "disposition" in str(exc_info.value)

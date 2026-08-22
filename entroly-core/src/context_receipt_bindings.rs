@@ -134,5 +134,113 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(context_receipt_commitment, m)?)?;
     m.add_function(wrap_pyfunction!(context_receipt_graph_ref_json, m)?)?;
     m.add_function(wrap_pyfunction!(context_receipt_schema_version, m)?)?;
+    m.add_function(wrap_pyfunction!(recovery_handle_build_json, m)?)?;
+    m.add_function(wrap_pyfunction!(recovery_handle_verify_json, m)?)?;
+    m.add_function(wrap_pyfunction!(recovery_handle_verify_bytes, m)?)?;
+    m.add_function(wrap_pyfunction!(recovery_handle_schema_version, m)?)?;
     Ok(())
+}
+
+// ── Recovery handles ──────────────────────────────────────────────────────
+//
+// Kept in this module rather than a separate one: a recovery handle only exists
+// because a receipt promised material it did not deliver, so the two contracts
+// are one surface from a caller's point of view.
+
+use entroly_engine::engine_contracts::{
+    RecoveryDisposition, RecoveryHandle, RecoveryIntegrityState, RECOVERY_HANDLE_SCHEMA_VERSION,
+};
+
+fn parse_disposition(token: &str) -> PyResult<RecoveryDisposition> {
+    match token {
+        "included" => Ok(RecoveryDisposition::Included),
+        "compressed" => Ok(RecoveryDisposition::Compressed),
+        "omitted_but_recoverable" => Ok(RecoveryDisposition::OmittedButRecoverable),
+        "omitted_and_unavailable" => Ok(RecoveryDisposition::OmittedAndUnavailable),
+        other => Err(PyValueError::new_err(format!(
+            "unknown recovery disposition {other:?}; expected one of included, \
+             compressed, omitted_but_recoverable, omitted_and_unavailable"
+        ))),
+    }
+}
+
+fn integrity_token(state: RecoveryIntegrityState) -> &'static str {
+    match state {
+        RecoveryIntegrityState::Verified => "verified",
+        RecoveryIntegrityState::CommitmentMismatch => "commitment_mismatch",
+        RecoveryIntegrityState::NotRecoverable => "not_recoverable",
+    }
+}
+
+/// Build a recovery handle and return it as canonical JSON.
+///
+/// Raises when a disposition promises recovery without the means to honour it —
+/// that refusal is the contract, not a validation nicety.
+#[pyfunction]
+#[pyo3(signature = (
+    repository_id,
+    receipt_id,
+    disposition,
+    source_ref = String::new(),
+    source_commitment = String::new(),
+    fragment_commitment = String::new(),
+    byte_start = 0,
+    byte_end = 0,
+    version = String::new(),
+    storage_locator = String::new(),
+    observed_at_ms = 0,
+))]
+#[allow(clippy::too_many_arguments)]
+pub fn recovery_handle_build_json(
+    repository_id: String,
+    receipt_id: String,
+    disposition: &str,
+    source_ref: String,
+    source_commitment: String,
+    fragment_commitment: String,
+    byte_start: u64,
+    byte_end: u64,
+    version: String,
+    storage_locator: String,
+    observed_at_ms: i64,
+) -> PyResult<String> {
+    let handle = RecoveryHandle::new(
+        repository_id,
+        receipt_id,
+        parse_disposition(disposition)?,
+        source_ref,
+        source_commitment,
+        fragment_commitment,
+        byte_start,
+        byte_end,
+        version,
+        storage_locator,
+        observed_at_ms,
+    )
+    .map_err(contract_err)?;
+    handle.to_json().map_err(contract_err)
+}
+
+/// Parse and check a handle, returning its canonical JSON.
+#[pyfunction]
+pub fn recovery_handle_verify_json(handle_json: &str) -> PyResult<String> {
+    let handle = RecoveryHandle::from_json_verified(handle_json).map_err(contract_err)?;
+    handle.to_json().map_err(contract_err)
+}
+
+/// Check recovered bytes against the handle's commitment.
+///
+/// Returns `verified`, `commitment_mismatch` or `not_recoverable`. Recovered
+/// material may only be used on `verified` — the caller cannot get that answer
+/// without the bytes actually hashing to what was promised.
+#[pyfunction]
+pub fn recovery_handle_verify_bytes(handle_json: &str, payload: &[u8]) -> PyResult<String> {
+    let handle = RecoveryHandle::from_json_verified(handle_json).map_err(contract_err)?;
+    Ok(integrity_token(handle.verify_recovered(payload)).to_string())
+}
+
+/// Schema version this build implements for recovery handles.
+#[pyfunction]
+pub fn recovery_handle_schema_version() -> u32 {
+    RECOVERY_HANDLE_SCHEMA_VERSION
 }

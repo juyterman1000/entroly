@@ -116,3 +116,106 @@ function goldenReceipt(budgetTokens = 4096, selectedRefs = ['ref:alpha', 'ref:be
 }
 
 console.log('context receipt parity: node matches the cross-runtime golden vector');
+
+// ── Recovery handles ────────────────────────────────────────────────────────
+//
+// Section 9's two rules — "never call destructive omission recoverable" and
+// "verify the expected commitment before returning material" — are enforced in
+// the engine, so both runtimes must refuse the same claims as well as produce
+// the same ids. A contract that accepted different inputs in different runtimes
+// would not be one contract.
+
+const crypto = require('crypto');
+const {
+  recoveryHandleBuildJSON,
+  recoveryHandleVerifyJSON,
+  recoveryHandleVerifyBytes,
+} = require('./pkg/entroly_wasm.js');
+
+// Must equal engine_contracts::tests::GOLDEN_RECOVERY_HANDLE_ID.
+const GOLDEN_HANDLE_ID = 'rh_61e976bc425ad0de';
+const FIXTURE_BODY = Buffer.from('recoverable bytes');
+const fixtureCommitment = crypto.createHash('sha256').update(FIXTURE_BODY).digest('hex');
+
+function recoverableHandle() {
+  return recoveryHandleBuildJSON(
+    'repo:demo',
+    'cr_672457349ba403bc',
+    'omitted_but_recoverable',
+    'src/auth.py',
+    'sha256:source',
+    fixtureCommitment,
+    0,
+    17,
+    'commit:abc123',
+    null,
+    1700000000000,
+  );
+}
+
+// The recovery parity anchor.
+{
+  assert.strictEqual(JSON.parse(recoverableHandle()).handle_id, GOLDEN_HANDLE_ID,
+    'node handle id diverged from the cross-runtime golden vector');
+}
+
+// The refusals are the contract.
+{
+  assert.throws(
+    () => recoveryHandleBuildJSON('repo:demo', 'cr_x', 'omitted_but_recoverable',
+      'src/auth.py', 'sha256:source'),
+    /recover/i,
+    'a promise without a fragment commitment must be refused',
+  );
+  assert.throws(
+    () => recoveryHandleBuildJSON('repo:demo', 'cr_x', 'omitted_but_recoverable',
+      null, null, fixtureCommitment),
+    /recover/i,
+    'a promise without a way back must be refused',
+  );
+}
+
+// The honest state must always be reachable, or callers overclaim to get a handle.
+{
+  const gone = JSON.parse(recoveryHandleBuildJSON('repo:demo', 'cr_x', 'omitted_and_unavailable'));
+  assert.strictEqual(gone.disposition, 'omitted_and_unavailable');
+  assert.strictEqual(
+    recoveryHandleVerifyBytes(JSON.stringify(gone), Buffer.from('anything')),
+    'not_recoverable',
+  );
+}
+
+// Verification hashes the bytes rather than trusting the handle.
+{
+  const handle = recoverableHandle();
+  assert.strictEqual(recoveryHandleVerifyBytes(handle, FIXTURE_BODY), 'verified');
+  assert.strictEqual(
+    recoveryHandleVerifyBytes(handle, Buffer.from('different bytes')),
+    'commitment_mismatch',
+  );
+}
+
+// An edited handle fails closed.
+{
+  const edited = recoverableHandle().replace('src/auth.py', 'src/other.py');
+  assert.throws(() => recoveryHandleVerifyJSON(edited), /handle_id/);
+}
+
+// An unknown disposition is refused rather than defaulted.
+{
+  assert.throws(
+    () => recoveryHandleBuildJSON('repo:demo', 'cr_x', 'probably_fine'),
+    /disposition/,
+  );
+}
+
+// A fractional byte offset addresses different bytes than the caller meant.
+{
+  assert.throws(
+    () => recoveryHandleBuildJSON('repo:demo', 'cr_x', 'omitted_and_unavailable',
+      null, null, null, 1.5),
+    /JavaScript-safe integer/,
+  );
+}
+
+console.log('recovery handle parity: node matches the cross-runtime golden vector');
