@@ -257,3 +257,69 @@ correct real limitations in the original:
   converts the "dead code" reading in section 16 into a stated ownership
   decision, which is the right disposition — the point of flagging it was to
   force exactly that choice.
+
+---
+
+## 23. Master prompt section 24 — pre-change baseline, recorded
+
+Section 24 requires that "pre-change baseline behavior/tests were recorded so
+regressions are distinguishable from pre-existing failures". This is that record.
+
+**Method.** A detached worktree at `09a98a5b` — the merge-base of the audit
+branch with `integration/workgraph-production-20260817`, i.e. the exact state
+before any of this session's work. `entroly-core` was built *from that tree*
+rather than reusing a later engine, installed to an isolated prefix, and the full
+suite run under it. Anything else would compare a new engine against old tests.
+
+### Result: the baseline suite cannot be collected
+
+```
+ERROR tests/test_work_graph_entrypoints.py
+ERROR tests/test_work_graph_packaging.py
+!!!!!!!!! Interrupted: 2 errors during collection !!!!!!!!!
+1 warning, 2 errors in 109.10s
+```
+
+Cause, in both files:
+
+```
+import tomllib
+E   ModuleNotFoundError: No module named 'tomllib'
+```
+
+`tomllib` entered the standard library in Python 3.11. On Python 3.10 — which
+this project supports and which this environment runs — the import fails, pytest
+aborts collection, and **zero tests execute**. Not "some tests fail": the suite
+produces no result at all.
+
+### What this establishes
+
+This is finding **G1** from the beginning of this audit, seen from the other
+side. G1 was fixed by adding `tests/pyproject_compat.py`, a tomllib-free
+pyproject parser that both files now use. The baseline confirms that fix was
+load-bearing rather than cosmetic.
+
+Three things follow, and they are the reason section 24 asks for this:
+
+1. **Every test count reported in this document is downstream of that fix.** The
+   4,025-passed figure, the 470 engine tests, the 37 work-graph tests — none of
+   them were obtainable at the branch point on this interpreter. They are not
+   comparable to a baseline number because there is no baseline number.
+2. **No regression from this session can be confused with a pre-existing
+   failure**, because the prior state had no runnable test result on Python 3.10
+   to regress from. The distinguishability section 24 asks for is achieved
+   trivially, in the least satisfying way possible.
+3. **The branch point was not testable on the project's own supported minimum.**
+   That is a more interesting fact than any pass count. A suite that aborts
+   collection on a supported interpreter has been green only on interpreters
+   where it happened to import, and CI would have to be running 3.11+
+   exclusively for this to have gone unnoticed.
+
+### Honest limitation
+
+A baseline that produces zero results is a weak baseline. It bounds the claim in
+one direction only: nothing this session did *broke* a previously-passing test on
+Python 3.10, because no test previously ran on Python 3.10. It says nothing about
+Python 3.11+, where the baseline would collect and where a true before/after
+comparison is still missing. Recording that gap explicitly is better than
+implying the item is fully discharged.
