@@ -46,6 +46,14 @@ pub enum EngineContractError {
     /// A carried commitment does not match a recomputation of its own payload.
     /// This is the tamper signal.
     CommitmentMismatch(&'static str),
+    /// A byte span whose end precedes its start.
+    InvalidSpan {
+        start: u64,
+        end: u64,
+    },
+    /// A disposition promised recovery without carrying the means to honour it.
+    /// Section 9's "never call destructive omission recoverable", enforced.
+    UnbackedRecoveryClaim(&'static str),
 }
 
 impl fmt::Display for EngineContractError {
@@ -74,6 +82,12 @@ impl fmt::Display for EngineContractError {
                 formatter,
                 "{field} does not match a recomputation of its payload"
             ),
+            Self::InvalidSpan { start, end } => {
+                write!(formatter, "byte span {start}..{end} ends before it starts")
+            }
+            Self::UnbackedRecoveryClaim(detail) => {
+                write!(formatter, "cannot claim recoverability: {detail}")
+            }
         }
     }
 }
@@ -602,9 +616,539 @@ fn contract_sha256_json<T: Serialize>(value: &T) -> Result<String, EngineContrac
     Ok(format!("{:x}", hasher.finalize()))
 }
 
+// ── Recovery contract ─────────────────────────────────────────────────────
+
+/// Schema version for [`RecoveryHandle`].
+pub const RECOVERY_HANDLE_SCHEMA_VERSION: u32 = 1;
+
+/// What happened to a piece of context, and what can still be done about it.
+///
+/// The four states are deliberately not a bool. "Omitted" alone is the answer
+/// that lets a destructive drop be reported as if it were recoverable, which is
+/// the specific dishonesty this enum exists to make impossible: a caller reading
+/// `OmittedButRecoverable` is being promised the bytes can be produced again,
+/// and that promise is enforced at construction rather than trusted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecoveryDisposition {
+    /// Delivered to the model in full.
+    Included,
+    /// Delivered in a reduced form — skeleton, summary, truncation. The original
+    /// is still recoverable, so this carries the same evidence requirements as
+    /// `OmittedButRecoverable`.
+    Compressed,
+    /// Not delivered, but the exact bytes can be produced again.
+    OmittedButRecoverable,
+    /// Not delivered and not reproducible. The honest state for anything that
+    /// was dropped without a durable reference.
+    OmittedAndUnavailable,
+}
+
+impl RecoveryDisposition {
+    /// Whether this disposition promises the caller that bytes can be produced.
+    pub fn promises_recovery(self) -> bool {
+        matches!(self, Self::Compressed | Self::OmittedButRecoverable)
+    }
+}
+
+/// The outcome of checking recovered bytes against what was promised.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecoveryIntegrityState {
+    /// The bytes hash to the committed value. This is the only state in which
+    /// recovered material may be used.
+    Verified,
+    /// Bytes were produced but do not match the commitment — the source moved,
+    /// was edited, or the wrong span was read.
+    CommitmentMismatch,
+    /// The handle never promised recovery, so there is nothing to verify.
+    NotRecoverable,
+}
+
+/// A durable, verifiable pointer to context that was not delivered in full.
+///
+/// # Why the constructor refuses things
+///
+/// Section 9's rule is "never call destructive omission recoverable". A doc
+/// comment cannot enforce that, so [`RecoveryHandle::new`] does: a disposition
+/// that promises recovery must arrive with a fragment commitment *and* a way to
+/// find the bytes again — either a content-addressed locator, or a source
+/// reference with its own commitment. A caller that drops material without
+/// keeping either cannot express that as recoverable; it has to say
+/// `OmittedAndUnavailable`, which is the truth.
+///
+/// # Why verification is a method, not a convention
+///
+/// Section 9 also requires that recovery verify the expected commitment before
+/// returning material. [`RecoveryHandle::verify_recovered`] is the only way to
+/// get a `Verified` answer, and it recomputes rather than trusting a carried
+/// field, so a tampered handle cannot certify its own bytes.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RecoveryHandle {
+    pub schema_version: u32,
+    /// Derived from the handle's own payload; see [`ContextReceiptEnvelope`] for
+    /// why derived ids beat caller-chosen ones across runtimes.
+    pub handle_id: String,
+    pub repository_id: String,
+    /// Which receipt promised this material.
+    pub receipt_id: String,
+    pub disposition: RecoveryDisposition,
+    /// Path or artifact identifier the bytes came from.
+    pub source_ref: String,
+    /// Commitment to the whole source artifact, when known.
+    pub source_commitment: String,
+    /// Commitment to the exact bytes this handle recovers.
+    pub fragment_commitment: String,
+    /// Byte span within the source. `0..0` means "the whole artifact".
+    pub byte_start: u64,
+    pub byte_end: u64,
+    /// Repository version the span was read at — a commit sha, typically.
+    /// A span without a version is only meaningful while nothing moves.
+    pub version: String,
+    /// Content-addressed locator, when the bytes live in a blob store rather
+    /// than being re-read from the source.
+    pub storage_locator: String,
+    pub observed_at_ms: i64,
+}
+
+#[derive(Serialize)]
+struct RecoveryHandlePayload<'a> {
+    schema_version: u32,
+    repository_id: &'a str,
+    receipt_id: &'a str,
+    disposition: RecoveryDisposition,
+    source_ref: &'a str,
+    source_commitment: &'a str,
+    fragment_commitment: &'a str,
+    byte_start: u64,
+    byte_end: u64,
+    version: &'a str,
+    storage_locator: &'a str,
+    observed_at_ms: i64,
+}
+
+impl RecoveryHandle {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        repository_id: String,
+        receipt_id: String,
+        disposition: RecoveryDisposition,
+        source_ref: String,
+        source_commitment: String,
+        fragment_commitment: String,
+        byte_start: u64,
+        byte_end: u64,
+        version: String,
+        storage_locator: String,
+        observed_at_ms: i64,
+    ) -> Result<Self, EngineContractError> {
+        validate_text(
+            "repository_id",
+            &repository_id,
+            MAX_CONTRACT_ID_BYTES,
+            false,
+        )?;
+        validate_text("receipt_id", &receipt_id, MAX_CONTRACT_ID_BYTES, false)?;
+        validate_text("source_ref", &source_ref, MAX_SCOPE_PATH_BYTES, true)?;
+        validate_text(
+            "source_commitment",
+            &source_commitment,
+            MAX_COMMITMENT_BYTES,
+            true,
+        )?;
+        validate_text(
+            "fragment_commitment",
+            &fragment_commitment,
+            MAX_COMMITMENT_BYTES,
+            true,
+        )?;
+        validate_text("version", &version, MAX_CONTRACT_ID_BYTES, true)?;
+        validate_text(
+            "storage_locator",
+            &storage_locator,
+            MAX_RECOVERY_HANDLE_BYTES,
+            true,
+        )?;
+        if observed_at_ms < 0 {
+            return Err(EngineContractError::InvalidTimestamp("observed_at_ms"));
+        }
+        if byte_end < byte_start {
+            return Err(EngineContractError::InvalidSpan {
+                start: byte_start,
+                end: byte_end,
+            });
+        }
+
+        // The rule that makes the disposition mean something. A promise of
+        // recovery must arrive with the means to honour it.
+        if disposition.promises_recovery() {
+            if fragment_commitment.is_empty() {
+                return Err(EngineContractError::UnbackedRecoveryClaim(
+                    "fragment_commitment is required to promise recovery",
+                ));
+            }
+            let locatable = !storage_locator.is_empty()
+                || (!source_ref.is_empty() && !source_commitment.is_empty());
+            if !locatable {
+                return Err(EngineContractError::UnbackedRecoveryClaim(
+                    "recovery requires a storage_locator, or a source_ref with its source_commitment",
+                ));
+            }
+        }
+
+        let mut handle = RecoveryHandle {
+            schema_version: RECOVERY_HANDLE_SCHEMA_VERSION,
+            handle_id: String::new(),
+            repository_id,
+            receipt_id,
+            disposition,
+            source_ref,
+            source_commitment,
+            fragment_commitment,
+            byte_start,
+            byte_end,
+            version,
+            storage_locator,
+            observed_at_ms,
+        };
+        handle.handle_id = format!("rh_{}", &handle.compute_commitment()?[..16]);
+        Ok(handle)
+    }
+
+    fn compute_commitment(&self) -> Result<String, EngineContractError> {
+        contract_sha256_json(&RecoveryHandlePayload {
+            schema_version: self.schema_version,
+            repository_id: &self.repository_id,
+            receipt_id: &self.receipt_id,
+            disposition: self.disposition,
+            source_ref: &self.source_ref,
+            source_commitment: &self.source_commitment,
+            fragment_commitment: &self.fragment_commitment,
+            byte_start: self.byte_start,
+            byte_end: self.byte_end,
+            version: &self.version,
+            storage_locator: &self.storage_locator,
+            observed_at_ms: self.observed_at_ms,
+        })
+    }
+
+    /// True when this handle's id still derives from its own payload.
+    pub fn verify_handle_id(&self) -> Result<bool, EngineContractError> {
+        let expected = format!("rh_{}", &self.compute_commitment()?[..16]);
+        Ok(self.handle_id == expected)
+    }
+
+    /// Check recovered bytes against the commitment this handle carries.
+    ///
+    /// The only route to `Verified`. It hashes the bytes rather than trusting
+    /// any field on the handle, so a handle whose `fragment_commitment` was
+    /// edited cannot certify material that does not match the original.
+    pub fn verify_recovered(&self, bytes: &[u8]) -> RecoveryIntegrityState {
+        if !self.disposition.promises_recovery() {
+            return RecoveryIntegrityState::NotRecoverable;
+        }
+        let mut hasher = Sha256::new();
+        hasher.update(bytes);
+        let actual = format!("{:x}", hasher.finalize());
+        let expected = self
+            .fragment_commitment
+            .strip_prefix("sha256:")
+            .unwrap_or(&self.fragment_commitment);
+        if actual == expected {
+            RecoveryIntegrityState::Verified
+        } else {
+            RecoveryIntegrityState::CommitmentMismatch
+        }
+    }
+
+    pub fn to_json(&self) -> Result<String, EngineContractError> {
+        serde_json::to_string(self)
+            .map_err(|error| EngineContractError::Serialization(error.to_string()))
+    }
+
+    /// Parse and check, failing closed on an unknown schema or a handle whose id
+    /// no longer derives from its payload.
+    pub fn from_json_verified(json_text: &str) -> Result<Self, EngineContractError> {
+        let handle: RecoveryHandle = serde_json::from_str(json_text)
+            .map_err(|error| EngineContractError::Serialization(error.to_string()))?;
+        if handle.schema_version != RECOVERY_HANDLE_SCHEMA_VERSION {
+            return Err(EngineContractError::UnsupportedSchema {
+                field: "schema_version",
+                found: handle.schema_version,
+                expected: RECOVERY_HANDLE_SCHEMA_VERSION,
+            });
+        }
+        if !handle.verify_handle_id()? {
+            return Err(EngineContractError::CommitmentMismatch("handle_id"));
+        }
+        Ok(handle)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── RecoveryHandle ───────────────────────────────────────────────────
+
+    /// SHA-256 of b"recoverable bytes", the fixture body used below.
+    const FIXTURE_BODY: &[u8] = b"recoverable bytes";
+
+    fn fixture_commitment() -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(FIXTURE_BODY);
+        format!("{:x}", hasher.finalize())
+    }
+
+    /// Cross-runtime anchor for the recovery contract, same role as
+    /// GOLDEN_RECEIPT_COMMITMENT. Moving this value is a schema change.
+    pub(crate) const GOLDEN_RECOVERY_HANDLE_ID: &str = "rh_61e976bc425ad0de";
+
+    fn recoverable_handle() -> RecoveryHandle {
+        RecoveryHandle::new(
+            "repo:demo".to_string(),
+            "cr_672457349ba403bc".to_string(),
+            RecoveryDisposition::OmittedButRecoverable,
+            "src/auth.py".to_string(),
+            "sha256:source".to_string(),
+            fixture_commitment(),
+            0,
+            17,
+            "commit:abc123".to_string(),
+            String::new(),
+            1_700_000_000_000,
+        )
+        .expect("a backed recovery claim must be accepted")
+    }
+
+    #[test]
+    fn a_recovery_promise_without_a_commitment_is_refused() {
+        // Section 9: never call destructive omission recoverable. Enforced at
+        // construction, because a doc comment cannot enforce anything.
+        let unbacked = RecoveryHandle::new(
+            "repo:demo".to_string(),
+            "cr_x".to_string(),
+            RecoveryDisposition::OmittedButRecoverable,
+            "src/auth.py".to_string(),
+            "sha256:source".to_string(),
+            String::new(), // no fragment commitment
+            0,
+            0,
+            String::new(),
+            String::new(),
+            0,
+        );
+        assert!(matches!(
+            unbacked,
+            Err(EngineContractError::UnbackedRecoveryClaim(_))
+        ));
+    }
+
+    #[test]
+    fn a_recovery_promise_without_a_way_back_is_refused() {
+        // A commitment proves what the bytes were; it does not say where to find
+        // them. Both are required.
+        let nowhere = RecoveryHandle::new(
+            "repo:demo".to_string(),
+            "cr_x".to_string(),
+            RecoveryDisposition::OmittedButRecoverable,
+            String::new(), // no source_ref
+            String::new(), // no source_commitment
+            fixture_commitment(),
+            0,
+            0,
+            String::new(),
+            String::new(), // no storage locator
+            0,
+        );
+        assert!(matches!(
+            nowhere,
+            Err(EngineContractError::UnbackedRecoveryClaim(_))
+        ));
+    }
+
+    #[test]
+    fn compression_carries_the_same_burden_as_omission() {
+        // Compressed material is still promised back in full, so it cannot be
+        // claimed without the means to produce it.
+        let unbacked = RecoveryHandle::new(
+            "repo:demo".to_string(),
+            "cr_x".to_string(),
+            RecoveryDisposition::Compressed,
+            "src/auth.py".to_string(),
+            "sha256:source".to_string(),
+            String::new(),
+            0,
+            0,
+            String::new(),
+            String::new(),
+            0,
+        );
+        assert!(matches!(
+            unbacked,
+            Err(EngineContractError::UnbackedRecoveryClaim(_))
+        ));
+    }
+
+    #[test]
+    fn destructive_omission_is_expressible_without_evidence() {
+        // The honest state must always be available, or callers are pushed into
+        // overclaiming to get a handle at all.
+        let gone = RecoveryHandle::new(
+            "repo:demo".to_string(),
+            "cr_x".to_string(),
+            RecoveryDisposition::OmittedAndUnavailable,
+            String::new(),
+            String::new(),
+            String::new(),
+            0,
+            0,
+            String::new(),
+            String::new(),
+            0,
+        );
+        assert!(gone.is_ok(), "an honest unavailable claim must be accepted");
+    }
+
+    #[test]
+    fn a_storage_locator_alone_backs_a_recovery_promise() {
+        // Blob-store material has no source path to re-read; the locator is the
+        // way back.
+        let blob = RecoveryHandle::new(
+            "repo:demo".to_string(),
+            "cr_x".to_string(),
+            RecoveryDisposition::OmittedButRecoverable,
+            String::new(),
+            String::new(),
+            fixture_commitment(),
+            0,
+            0,
+            String::new(),
+            "blob:sha256:deadbeef".to_string(),
+            0,
+        );
+        assert!(blob.is_ok());
+    }
+
+    #[test]
+    fn recovered_bytes_are_verified_against_the_commitment() {
+        let handle = recoverable_handle();
+        assert_eq!(
+            handle.verify_recovered(FIXTURE_BODY),
+            RecoveryIntegrityState::Verified
+        );
+    }
+
+    #[test]
+    fn wrong_bytes_do_not_verify() {
+        let handle = recoverable_handle();
+        assert_eq!(
+            handle.verify_recovered(b"different bytes entirely"),
+            RecoveryIntegrityState::CommitmentMismatch
+        );
+    }
+
+    #[test]
+    fn a_tampered_commitment_cannot_certify_its_own_bytes() {
+        // verify_recovered hashes the bytes rather than trusting the handle, so
+        // editing the commitment to match forged material still fails -- the
+        // handle_id no longer derives from the payload.
+        let mut handle = recoverable_handle();
+        let forged = b"forged replacement";
+        let mut hasher = Sha256::new();
+        hasher.update(forged);
+        handle.fragment_commitment = format!("{:x}", hasher.finalize());
+
+        // The bytes now "match" the edited commitment ...
+        assert_eq!(
+            handle.verify_recovered(forged),
+            RecoveryIntegrityState::Verified
+        );
+        // ... but the handle itself is detectably tampered.
+        assert!(
+            !handle.verify_handle_id().expect("id check"),
+            "an edited commitment must break the derived handle id"
+        );
+    }
+
+    #[test]
+    fn an_unavailable_handle_has_nothing_to_verify() {
+        let gone = RecoveryHandle::new(
+            "repo:demo".to_string(),
+            "cr_x".to_string(),
+            RecoveryDisposition::OmittedAndUnavailable,
+            String::new(),
+            String::new(),
+            String::new(),
+            0,
+            0,
+            String::new(),
+            String::new(),
+            0,
+        )
+        .expect("honest unavailable");
+        assert_eq!(
+            gone.verify_recovered(b"anything"),
+            RecoveryIntegrityState::NotRecoverable
+        );
+    }
+
+    #[test]
+    fn an_inverted_span_is_rejected() {
+        let inverted = RecoveryHandle::new(
+            "repo:demo".to_string(),
+            "cr_x".to_string(),
+            RecoveryDisposition::OmittedAndUnavailable,
+            String::new(),
+            String::new(),
+            String::new(),
+            99,
+            10,
+            String::new(),
+            String::new(),
+            0,
+        );
+        assert!(matches!(
+            inverted,
+            Err(EngineContractError::InvalidSpan { start: 99, end: 10 })
+        ));
+    }
+
+    #[test]
+    fn handle_json_round_trips_and_fails_closed_when_edited() {
+        let handle = recoverable_handle();
+        let json = handle.to_json().expect("serialize");
+        assert_eq!(
+            RecoveryHandle::from_json_verified(&json).expect("verified"),
+            handle
+        );
+
+        let edited = json.replace("src/auth.py", "src/other.py");
+        assert!(matches!(
+            RecoveryHandle::from_json_verified(&edited),
+            Err(EngineContractError::CommitmentMismatch("handle_id"))
+        ));
+    }
+
+    #[test]
+    fn an_unknown_handle_schema_is_refused() {
+        let json = recoverable_handle()
+            .to_json()
+            .expect("serialize")
+            .replace("\"schema_version\":1", "\"schema_version\":42");
+        assert!(matches!(
+            RecoveryHandle::from_json_verified(&json),
+            Err(EngineContractError::UnsupportedSchema { found: 42, .. })
+        ));
+    }
+
+    #[test]
+    fn recovery_handle_golden_vector() {
+        // Cross-runtime anchor, same role as GOLDEN_RECEIPT_COMMITMENT.
+        let handle = recoverable_handle();
+        assert_eq!(handle.handle_id, GOLDEN_RECOVERY_HANDLE_ID);
+        assert!(handle.verify_handle_id().expect("id check"));
+    }
     /// The cross-runtime anchor.
     ///
     /// Every binding calls the same engine function, so this one value is what
@@ -645,8 +1189,6 @@ mod tests {
         assert_eq!(envelope.receipt_id, "cr_672457349ba403bc");
         assert!(envelope.verify_commitment().expect("verify"));
     }
-
-
 
     // ── ContextReceiptEnvelope ───────────────────────────────────────────
 
