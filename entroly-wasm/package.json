@@ -59,7 +59,7 @@
     "health": "node js/cli.js health",
     "demo": "node js/cli.js demo",
     "autotune": "node js/cli.js autotune",
-    "test": "node test_wasm_e2e.js && node test_work_graph.js && node test_work_graph_repo.js && node test_work_graph_store.js && node test_work_graph_content_digest.js && node test_work_graph_continuity.js && node test_context_trust_delivery.js && node test_work_graph_root_exports.js"
+    "test": "node test_wasm_e2e.js && node test_work_graph.js && node test_work_graph_repo.js && node test_work_graph_store.js && node test_work_graph_content_digest.js && node test_work_graph_continuity.js && node test_context_trust_delivery.js && node test_work_graph_root_exports.js && node test_context_receipt_parity.js"
   },
   "keywords": [
     "entroly",

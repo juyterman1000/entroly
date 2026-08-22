@@ -58,6 +58,7 @@ mod trust_engine_bindings;
 pub(crate) use entroly_engine::trajectory;
 pub(crate) use entroly_engine::utilization;
 mod witness;
+mod context_receipt_bindings;
 mod work_graph_bindings;
 // Cross-agent memory IPC primitives vendored from juyterman1000/AgentOS
 // (MIT-licensed, same author). Provides:
@@ -6371,6 +6372,7 @@ fn entroly_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ContextFragment>()?;
     m.add_class::<EntrolyEngine>()?;
     m.add_class::<PyDedupIndex>()?;
+    context_receipt_bindings::register(m)?;
     work_graph_bindings::register(m)?;
     trust_engine_bindings::register(m)?;
     // ── Entropy / Hashing

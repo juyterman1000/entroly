@@ -605,6 +605,48 @@ fn contract_sha256_json<T: Serialize>(value: &T) -> Result<String, EngineContrac
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// The cross-runtime anchor.
+    ///
+    /// Every binding calls the same engine function, so this one value is what
+    /// "byte-equal commitments across runtimes" means in practice: PyO3 and
+    /// WASM each assert it independently, and drift in either breaks its own
+    /// test rather than silently diverging from the other.
+    ///
+    /// Changing this value is a schema change. If a code change moves it, that
+    /// is either a bug or a deliberate version bump -- never an incidental edit.
+    pub(crate) const GOLDEN_RECEIPT_COMMITMENT: &str =
+        "672457349ba403bc885ea2104162fe212fb8e9bddf51a884df27d33c37a77c84";
+
+    fn golden_envelope() -> ContextReceiptEnvelope {
+        ContextReceiptEnvelope::new(
+            "repo:golden".to_string(),
+            "sha256:repo-golden".to_string(),
+            "sha256:graph-golden".to_string(),
+            "workstream:golden".to_string(),
+            "sha256:source-golden".to_string(),
+            vec!["ref:alpha".to_string(), "ref:beta".to_string()],
+            vec!["ref:omitted".to_string()],
+            vec!["ref:pinned".to_string()],
+            vec!["ref:recoverable".to_string()],
+            vec!["handle:alpha".to_string()],
+            vec!["evidence:alpha".to_string()],
+            4096,
+            "knapsack/v1".to_string(),
+            "exec:golden".to_string(),
+            1_700_000_000_000,
+        )
+        .expect("golden fixture must be valid")
+    }
+
+    #[test]
+    fn golden_vector_pins_the_cross_runtime_commitment() {
+        let envelope = golden_envelope();
+        assert_eq!(envelope.receipt_commitment, GOLDEN_RECEIPT_COMMITMENT);
+        assert_eq!(envelope.receipt_id, "cr_672457349ba403bc");
+        assert!(envelope.verify_commitment().expect("verify"));
+    }
+
+
 
     // ── ContextReceiptEnvelope ───────────────────────────────────────────
 

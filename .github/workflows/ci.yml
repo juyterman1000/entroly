@@ -226,6 +226,28 @@ jobs:
       - name: Test (host target)
         run: cargo test --manifest-path entroly-wasm/Cargo.toml --lib
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22.19.0"
+
+      # Cross-runtime parity has to gate on the exact head, and it did not.
+      # entroly-wasm's `npm test` runs only in deep-dogfood.yml, which is
+      # triggered on pull_request to main and had not run on this SHA at all --
+      # so the npm half of the shared semantics was ungated here while this job
+      # reported green for building the same crate.
+      #
+      # Scoped to the receipt parity check rather than the whole npm suite: the
+      # full suite belongs in deep-dogfood where it already lives, and this job
+      # only needs to prove that the runtime it builds still agrees with Rust
+      # and Python on the canonical commitment.
+      - name: Cross-runtime Context Receipt parity
+        working-directory: entroly-wasm
+        run: |
+          cargo install wasm-pack --locked
+          npm run build
+          node test_context_receipt_parity.js
+
       # Structural guard: re-adding a local copy of an engine module is exactly
       # how the two builds diverged before. Compilation alone will not catch it,
       # because a shadowing local `mod` is perfectly valid Rust.
