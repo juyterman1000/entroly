@@ -159,3 +159,101 @@ contract. Handoff/content digest checks remain bound to current repository conte
 
 PR #352 must remain draft until the connector-authored final SHA has all required normal CI
 and dogfood checks green. No older-SHA success satisfies that rule.
+
+---
+
+## 22. Finding reconciliation against integration head `f734516a`
+
+PR #356 merged on 2026-08-19 and 77 further commits landed on
+`integration/workgraph-production-20260817`. Several of them act directly on
+findings recorded in this document. This section states which are closed, which
+are not, and — where closed — whether the fix was verified rather than assumed.
+
+**Method.** Each finding re-checked against the shipping code at `f734516a`, not
+against commit messages. Where a finding carried a measurement, the measurement
+was re-run.
+
+### Closed and verified
+
+**G25 — cache semantic-index and slot-table leak. Fixed.**
+
+The repair matches the shape the finding specified: a `free_slots: Vec<usize>`
+free-list, a `slot_by_hash` reverse map so a removal can find its slot, and
+`semantic_index.remove(entry.query_simhash, slot)` on the removal path, with
+`allocate_semantic_slot` reusing a freed slot before extending the vector.
+
+Re-verified with the identical probe that produced the original measurement —
+`max_entries: 16`, 2,000 stores:
+
+| | `live_entries` | `slot_to_hash` |
+|---|---:|---:|
+| at the time of the finding | 16 | **343** |
+| at `f734516a` | 16 | **16** |
+
+Two regression tests were added, covering both paths the finding named:
+`semantic_slots_stay_bounded_under_long_eviction_churn` and
+`gc_recycles_slots_and_snapshot_import_rebuilds_private_indices` — the latter
+also covering the snapshot-import rebuild noted in section 20. An
+`assert_semantic_slot_invariants` helper asserts `slot_by_hash.len() ==
+entries.len()` and that slots and free-slots partition the table.
+`cargo test --lib cache`: 47 passed.
+
+**G29 — secret redaction leaked a line prefix. Fixed, more strongly than proposed.**
+
+The finding suggested delimiter-based truncation preserving the key name. The
+repair is unconditional full redaction:
+
+```rust
+let safe_content = if rule.category == "Hardcoded Secrets" {
+    "[REDACTED — secret-bearing line]".to_string()
+```
+
+with the reasoning that rule, category, path and line metadata already carry the
+debugging context. That removes the leak class entirely rather than narrowing it,
+which is the better call for a security scanner — the delimiter approach would
+still have depended on correctly identifying the delimiter in every syntax.
+
+### Partially closed
+
+**G8 — the published core cannot serve the Work Graph.** The tree is now at
+`entroly-core` 1.0.79 with `WorkGraph` exported, and a release candidate is
+staged. PyPI still serves **1.0.78**, which has no `WorkGraph` symbol. So the
+gap is prepared, not closed: until 1.0.79 publishes, the Work Graph surface
+remains undeliverable to installed users and the associated tests can only skip.
+
+### Still open at `f734516a`
+
+Verified individually against the shipping code:
+
+| Finding | Check | State |
+|---|---|---|
+| G19 — cost model adds dollars to seconds; `$0.01/token` literal wins the `max()` | all three sites unchanged (`cache.rs:110`, `:232`, `:888`) | open |
+| G21 — "Thompson Sampling" performs no sampling | `rand` still absent from `entroly-engine/Cargo.toml` | open |
+| G23 — "lazy greedy" is neither lazy nor faster | `_last_computed_at` still `// (structural, write-only)`; `select_victim_lazy` still dispatched above 64 entries | open |
+| G24 — hit predictor trained but never consulted | still exactly one `predict(` call site in production, inside `update()` | open |
+| G26 — taint matching is substring, not token | `lower.contains(var.as_str())` unchanged at `sast.rs:2163`, `:2189` | open |
+| G27 — Python docstrings scanned as code | `trimmed.len() > 3` gate unchanged at `sast.rs:2226` | open |
+| G31 — four K8S rules can never fire | `languages: &["k8s"]` unchanged; `detect_lang` still has no Kubernetes branch | open |
+
+That grouping is not arbitrary. The two closed findings were both mechanical
+defects with a single correct answer — a leak and an over-broad slice. The seven
+open ones are all cases where this document declined to change behaviour because
+the fix required a calibration decision, a labelled corpus, or a scoring policy.
+They remain open because they were correctly identified as decisions rather than
+repairs, and the decisions have not been made yet.
+
+### `scripts/ownership_matrix.py` was extended
+
+The generator added in this audit gained two things worth recording, because both
+correct real limitations in the original:
+
+* `engine_dependency_graph()` and `transitive_engine_references()` — the original
+  counted only *direct* references from `entroly-core` and `entroly-wasm`, so an
+  engine module reached only through another engine module was reported
+  unexposed. Reachability is now closed transitively from each delivery crate's
+  roots, which is the correct question.
+* `ENGINE_INTERNAL_PRIMITIVES`, carrying `simhash_wide` with an explicit note
+  that it is a retained internal primitive with no public contract today. That
+  converts the "dead code" reading in section 16 into a stated ownership
+  decision, which is the right disposition — the point of flagging it was to
+  force exactly that choice.
