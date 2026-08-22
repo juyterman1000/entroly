@@ -353,8 +353,14 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(receipt.selected_evidence_ids, vec!["evidence:git", "evidence:test"]);
-        assert_eq!(receipt.recovery_handles, vec!["recover:chunk-1", "recover:chunk-2"]);
+        assert_eq!(
+            receipt.selected_evidence_ids,
+            vec!["evidence:git", "evidence:test"]
+        );
+        assert_eq!(
+            receipt.recovery_handles,
+            vec!["recover:chunk-1", "recover:chunk-2"]
+        );
         let json = serde_json::to_string(&receipt).unwrap();
         assert!(!json.contains("selected_context"));
         assert!(!json.contains("omitted_context"));
@@ -374,7 +380,10 @@ mod tests {
             vec![],
             1,
         );
-        assert!(matches!(empty, Err(EngineContractError::EmptyField("receipt_id"))));
+        assert!(matches!(
+            empty,
+            Err(EngineContractError::EmptyField("receipt_id"))
+        ));
 
         let negative_time = ContextReceiptRef::new(
             "receipt:1".into(),

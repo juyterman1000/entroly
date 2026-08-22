@@ -124,9 +124,9 @@ mod tests {
 
     fn doc(seed: u64, words: usize) -> String {
         let vocab = [
-            "handler", "request", "timeout", "retry", "payment", "gateway", "session",
-            "token", "database", "encode", "decode", "commit", "buffer", "segment",
-            "manifest", "digest", "cursor", "batch",
+            "handler", "request", "timeout", "retry", "payment", "gateway", "session", "token",
+            "database", "encode", "decode", "commit", "buffer", "segment", "manifest", "digest",
+            "cursor", "batch",
         ];
         let mut state = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
         (0..words)
@@ -226,7 +226,10 @@ mod tests {
         // overlap, while both production-width options are separable. Sampling
         // noise does not guarantee 1024's finite fixture margin is strictly
         // greater than 256's, so monotonic fixture margins are not a valid test.
-        assert!(margins[0] < 0.0, "64-bit fixture should expose overlap: {margins:?}");
+        assert!(
+            margins[0] < 0.0,
+            "64-bit fixture should expose overlap: {margins:?}"
+        );
         assert!(
             margins[1] > 0.0 && margins[2] > 0.0,
             "256/1024-bit fixtures must separate populations: {margins:?}"

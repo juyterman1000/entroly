@@ -779,7 +779,11 @@ mod tests {
         bus.publish("writer", "observation", "payload text", 3, 99.0);
 
         let drained = bus.drain("reader", 10);
-        assert_eq!(drained.len(), 1, "subscriber should have received the event");
+        assert_eq!(
+            drained.len(),
+            1,
+            "subscriber should have received the event"
+        );
         assert_eq!(
             keys(&drained[0]),
             vec![

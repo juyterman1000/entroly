@@ -368,8 +368,14 @@ mod tests {
         // unsupported claim, strict mode deletes it wholesale, and the test
         // would pass for the wrong reason.
         let code = "fn handler() {\n    let x = parse()?;\n        emit(x);\n}";
-        let context = format!("The handler parses the payload and emits the result. {}", code);
-        let output = format!("The handler parses the payload and emits the result.\n\n{}", code);
+        let context = format!(
+            "The handler parses the payload and emits the result. {}",
+            code
+        );
+        let output = format!(
+            "The handler parses the payload and emits the result.\n\n{}",
+            code
+        );
 
         let s = EicvSuppressor::new("rag", "strict");
         let result = s.suppress(&context, &output);
