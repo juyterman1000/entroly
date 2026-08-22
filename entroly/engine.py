@@ -731,14 +731,55 @@ def apply_no_match_contract(
     result["total_tokens"] = result["tokens_used"]
     result["tokens_saved"] = 0
     result["tokens_saved_this_call"] = 0
-    result["status"] = "no_match"
-    result["no_match"] = {
-        "reason": (
+    considered_count = result.get("total_fragments", 0) or 0
+
+    # Two different situations reach this point and they need different answers.
+    #
+    # Normally the ranker saw candidates and none of them matched -- rephrasing
+    # is genuine advice. But when no candidate was offered at all, ranking never
+    # happened, and telling the user to rephrase blames their query for a
+    # capability that is absent. QCCR's candidate set comes from
+    # `_rust.export_fragments()`, which has no pure-Python equivalent, so a
+    # default install with no usable native engine produces zero candidates for
+    # *every* query and would otherwise be told, each time, to word it better.
+    no_candidates = considered_count == 0
+    engine_missing = no_candidates and _usable_core_absent()
+
+    if engine_missing:
+        reason = (
+            "no candidates were generated, because query-conditioned retrieval "
+            "requires the native engine and it is not available; returning "
+            "pinned evidence only rather than unrelated files"
+        )
+        remediation = (
+            'install the native engine with `pip install -U "entroly[native]"` '
+            "(or run `entroly repair`); no rewording of the query can produce a "
+            "match while candidate generation is unavailable"
+        )
+    elif no_candidates:
+        reason = (
+            "no candidates were offered to the ranker, so nothing could match; "
+            "returning pinned evidence only rather than unrelated files"
+        )
+        remediation = (
+            "run `entroly health` to confirm the repository is indexed; the "
+            "query was not the limiting factor here"
+        )
+    else:
+        reason = (
             "the ranker produced no discrimination for this query "
             "(flat score distribution) or the returned text shared "
             "no term with it; returning pinned evidence only rather "
             "than unrelated files"
-        ),
+        )
+        remediation = (
+            "rephrase with identifiers from the codebase, or run "
+            "`entroly health` to confirm the repository is indexed"
+        )
+
+    result["status"] = "no_match"
+    result["no_match"] = {
+        "reason": reason,
         "degenerate_ranking": degenerate,
         # Says which signal convicted. `false` here means the selection carried
         # no relevance at all and the lexical check decided on its own -- report
@@ -746,14 +787,31 @@ def apply_no_match_contract(
         "evidence_measured": evidence is not None,
         "lexical_match": lexical,
         "query": query,
-        "candidates_considered": result.get("total_fragments", 0),
+        "candidates_considered": considered_count,
         "pinned_retained": len(pinned),
-        "remediation": (
-            "rephrase with identifiers from the codebase, or run "
-            "`entroly health` to confirm the repository is indexed"
-        ),
+        # Separates "your query found nothing" from "this build cannot search".
+        # A consumer that only reads `reason` still gets the right story, but a
+        # machine consumer should not have to parse prose to tell them apart.
+        "candidate_generation_available": not engine_missing,
+        "remediation": remediation,
     }
     return result
+
+
+def _usable_core_absent() -> bool:
+    """True when this process has no native engine it is allowed to call.
+
+    Routed through `native_status.usable_core`, which is the single source of
+    truth for that question -- a bare `import entroly_core` here would re-create
+    the split it exists to prevent, where one module accepts a core the shared
+    gate has already refused.
+    """
+    try:
+        from .native_status import usable_core
+
+        return usable_core() is None
+    except Exception:  # pragma: no cover - defensive; absence is the safe answer
+        return True
 
 
 def _evidence_signal(selected: list) -> bool | None:

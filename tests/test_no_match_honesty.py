@@ -527,3 +527,78 @@ def test_tokenised_query_does_not_match_unrelated_code():
     frags = [{"source": "file:billing.py",
               "content": "def charge_card(customer, amount): ..."}]
     assert _selection_matches_query("parse_manifest decode_manifest", frags) is False
+
+
+# ── Why nothing matched: the verdict must name the real cause ──────────────
+#
+# QCCR's candidate set comes from `_rust.export_fragments()`, which has no
+# pure-Python equivalent. A default `pip install entroly` with no usable native
+# engine therefore produces zero candidates for *every* query, and the verdict
+# used to tell the user, each time, to reword it. Rewording cannot help when
+# candidate generation is absent, and blaming the query for a missing capability
+# is the kind of misattribution the no-match contract exists to prevent.
+
+
+def _unmatched(total_fragments: int) -> dict:
+    frag = {"content": "zzz unrelated", "token_count": 5, "relevance_score": 0.0}
+    return {
+        "selected_fragments": [frag],
+        "selected": [frag],
+        "total_fragments": total_fragments,
+    }
+
+
+def test_candidates_present_but_unmatched_still_advises_rephrasing():
+    """The original advice must survive where it is actually correct."""
+    from entroly.engine import apply_no_match_contract
+
+    verdict = apply_no_match_contract(_unmatched(12), "authentication flow")["no_match"]
+
+    assert verdict["candidates_considered"] == 12
+    assert verdict["candidate_generation_available"] is True
+    assert "rephrase" in verdict["remediation"]
+    assert "flat score distribution" in verdict["reason"]
+
+
+def test_zero_candidates_does_not_blame_the_query(monkeypatch):
+    """No candidates means ranking never happened, so wording is not the issue."""
+    import entroly.engine as engine_module
+    from entroly.engine import apply_no_match_contract
+
+    # Engine present, but nothing was offered to rank.
+    monkeypatch.setattr(engine_module, "_usable_core_absent", lambda: False)
+    verdict = apply_no_match_contract(_unmatched(0), "authentication flow")["no_match"]
+
+    assert verdict["candidates_considered"] == 0
+    assert verdict["candidate_generation_available"] is True
+    assert "rephrase" not in verdict["remediation"]
+    assert "not the limiting factor" in verdict["remediation"]
+
+
+def test_missing_native_engine_is_named_as_the_cause(monkeypatch):
+    """The case a default install actually hits."""
+    import entroly.engine as engine_module
+    from entroly.engine import apply_no_match_contract
+
+    monkeypatch.setattr(engine_module, "_usable_core_absent", lambda: True)
+    verdict = apply_no_match_contract(_unmatched(0), "authentication flow")["no_match"]
+
+    assert verdict["candidate_generation_available"] is False
+    assert "native engine" in verdict["reason"]
+    assert "entroly[native]" in verdict["remediation"]
+    assert "no rewording" in verdict["remediation"]
+    # A machine consumer must not have to parse prose to tell the cases apart.
+    assert verdict["candidates_considered"] == 0
+
+
+def test_engine_absence_is_only_claimed_when_candidates_are_zero(monkeypatch):
+    """A missing engine cannot explain a verdict that had candidates to rank."""
+    import entroly.engine as engine_module
+    from entroly.engine import apply_no_match_contract
+
+    monkeypatch.setattr(engine_module, "_usable_core_absent", lambda: True)
+    verdict = apply_no_match_contract(_unmatched(7), "authentication flow")["no_match"]
+
+    assert verdict["candidate_generation_available"] is True
+    assert "native engine" not in verdict["reason"]
+    assert "rephrase" in verdict["remediation"]
