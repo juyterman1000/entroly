@@ -323,3 +323,58 @@ Python 3.10, because no test previously ran on Python 3.10. It says nothing abou
 Python 3.11+, where the baseline would collect and where a true before/after
 comparison is still missing. Recording that gap explicitly is better than
 implying the item is fully discharged.
+
+### Checked — the 1.0.79 release ordering is enforced, not a hazard
+
+The Verdict section states that raising the minimum "so installs can no longer
+resolve to the published 1.0.78 core that lacks Work Graph symbols". That is
+accurate, and it raises an obvious question worth answering rather than leaving
+implicit, because the situation it creates looks alarming:
+
+```
+pyproject.toml (x3)          entroly-core>=1.0.79,<2
+entroly/pyproject.toml (x3)  entroly-core>=1.0.79,<2
+native_status.py             MIN_ENTROLY_CORE_VERSION = "1.0.79"
+PyPI                         entroly-core 1.0.78   (1.0.79 not published)
+```
+
+So at this moment no `entroly-core` satisfying the pin exists publicly, and a
+publish of `entroly` alone would break every install at dependency resolution.
+
+**It is sequenced correctly.** `entroly-publish.yml` declares:
+
+```yaml
+publish-core:
+  needs: [release-metadata, quality-gate, release-anchor]
+  uses: ./.github/workflows/publish-core-wheels.yml
+
+publish-pypi:
+  needs: [release-metadata, build-and-push, quality-gate, publish-core]
+```
+
+`publish-pypi` cannot start until `publish-core` completes, so the core wheels
+reach PyPI before the package that depends on them. The pre-publish state is
+therefore expected rather than broken, and the fail-closed direction is the right
+one: an unsatisfiable pin fails loudly at install time, where the alternative —
+a floor low enough to admit 1.0.78 — would silently install a core with no
+`WorkGraph` and defer the failure to first use.
+
+Recorded as a negative result. The concern was worth checking and is not a
+defect; leaving it unstated invites someone to re-raise it later from the same
+observation.
+
+### Note on this document's history
+
+The evidence artifact was rewritten during the integration. Sections 1–21 of the
+version this audit produced — the detailed G1–G32 findings, the section 19
+scenario map, the section 22 parity answers, the closure accounting — were
+replaced by the reconciled summary that now opens this file. That history remains
+in the branch: the findings are recoverable from the commits on
+`audit/pr352-deep-codebase-gate`, which merged in PR #356.
+
+The summary's closed-defects list is consistent with what was independently
+verified here — it names the Python 3.10 `tomllib` collection break (G1), the
+cache semantic-index slot growth (G25) and the SAST line-prefix leakage (G29),
+all three of which section 22 re-checked against the shipping code. It does not
+claim the seven findings section 22 lists as open, which is the correct
+disposition for them; section 22 supplies the record they would otherwise lack.
