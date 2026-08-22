@@ -60,10 +60,19 @@ jobs:
         with:
           python-version: "3.12"
 
+      # `pip install -e .` resolves entroly-core from PyPI, and a release
+      # candidate raises that minimum before the core is published -- so this
+      # job failed at dependency resolution, never reaching a test:
+      #
+      #   ERROR: No matching distribution found for entroly-core<2,>=1.0.79
+      #
+      # The canonical helper builds the native core from this same checkout
+      # first. Reused rather than reimplemented: this file already carried three
+      # different bootstrap strategies, and only the divergent one was broken.
       - name: Install Python bridge test dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e . pytest
+          python scripts/ci_install_exact_head.py --extra-package pytest
 
       - name: Test Python bridge contract
         run: pytest tests/test_openclaw_bridge.py -q
