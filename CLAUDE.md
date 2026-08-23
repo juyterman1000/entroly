@@ -206,7 +206,8 @@ python scripts/codebase_graph.py --json g.json
 python scripts/codebase_graph.py --check      # non-zero if anything is unreachable
 ```
 
-Measured on `entroly` at 1.0.70: **215 modules, 524 import edges, 113,382 lines.**
+Measured on the current `entroly` 1.0.79 checkout: **302 modules, 834 import
+edges, 153,730 lines.**
 
 ### Entry points are narrower than they look
 
@@ -218,30 +219,35 @@ Measured on `entroly` at 1.0.70: **215 modules, 524 import edges, 113,382 lines.
 | `entroly` | `entroly.docker_launcher_safe:launch` |
 | `entroly-memory` | `entroly.memory_cli:main` |
 | `entroly-compression-mcp` | `entroly.compression_mcp:main` |
+| `entroly-repository-mcp` | `entroly.repository_intelligence.mcp:main` |
+| `entroly-work` | `entroly.work_graph_cli:main` |
+| `entroly-work-graph-mcp` | `entroly.work_graph_mcp_server:main` |
 
 Plus `python -m entroly` (`entroly.__main__`) and `import entroly` / `entroly.sdk`.
-**Reachability must be computed from these**, not from `cli.py`. 180 of 215
-modules are reachable; the other 35 (~11.4k lines) are imported only by tests and
+**Reachability must be computed from these**, not from `cli.py`. 264 of 302
+modules are reachable; the other 38 (13,237 lines) are imported only by tests and
 benchmarks. Before promoting anything in that set to a README claim, give it a
 real product path — a test that imports a module directly does not prove a user
 can reach it.
 
 ### Architectural hubs (PageRank over imports)
 
-`path_safety`, `context_receipts.models`, `esg`, `vault`, `models.registry`,
-`compression_retrieval_store`, `ravs.events`, `ccr`. These are the
-highest-blast-radius files in the repo. `server.py`, `proxy.py` and `cli.py` have
-the widest fan-*out* (56/34/31 imports) but are near-leaves — little imports them.
+`repository_intelligence.models`, `context_receipts.models`, `path_safety`,
+`esg`, `compression_retrieval_store_secure`, `server`, `native_status`,
+`models.registry`, `tree_sitter_support`, and `vault` are the current
+highest-blast-radius modules by PageRank over static imports.
 
 ### Native boundary
 
-16 modules import `entroly_core` (PyO3). Each must keep a pure-Python fallback;
-`--json` lists them under `native_boundary`.
+17 modules import `entroly_core` (PyO3). Each must explicitly provide a
+semantically compatible fallback or fail closed behind the shared native
+capability gate; importability alone is not proof of compatibility. `--json`
+lists them under `native_boundary`.
 
 ### Known import cycles
 
-4 cycles; the largest spans 18 modules around `entroly/__init__` ↔ `auto_index`
-↔ `cache_aligner` ↔ `compression_retrieval_store_*`. Import order in that cluster
+7 cycles; the largest spans 30 modules around `entroly/__init__` ↔ `auto_index`
+↔ `cache_aligner` ↔ `compression_proxy_live` and the proxy stack. Import order in that cluster
 is load-bearing — prefer a function-local import over a new module-level one.
 
 ## Key Constraints

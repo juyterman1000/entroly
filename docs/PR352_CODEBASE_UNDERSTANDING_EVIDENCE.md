@@ -31,10 +31,16 @@ The 1.0.79 release synchronizer raised the public package and native-core minimu
 together, so installs can no longer resolve to the published 1.0.78 core that lacks
 Work Graph symbols.
 
+The PR #357 continuation audit began at remote/local base
+`281a1496213b451b4c927ce20f94d3d7cf4d0355`. Its verified product tranche is
+committed and pushed as `77e7106c438470c63584a88495a70255ffbd284e`.
+That product SHA is an implementation anchor; GitHub CI still has to certify the
+eventual final branch SHA after this evidence update.
+
 ## Repository inventory / ownership
 
 ```text
-tracked and classified     1631
+repository files classified 1638
 unknown ownership          0
 review-required            29
 partial Rust parity         0
@@ -393,22 +399,57 @@ bounded part of the master plan:
 | Section 8, ContextReceipt | Rust owns canonical construction, bounds, serialization, identity/commitment and verification. PyO3 and WASM are adapters, with Python and npm golden/parity/tamper tests. |
 | Section 9, RecoveryHandle | Rust owns recoverability and integrity semantics. Python and npm exercise the same golden contract and fail-closed verification behavior. |
 | Section 10, MemoryRecord | Rust owns provenance, evidence/trust/freshness admissibility, supersession/contradiction semantics, canonical identity and verified parsing. Verified memory requires evidence; incomplete producer provenance, empty commitments, invalid replay time and self-recommitted invalid payloads fail closed. Python and npm parity tests use the package delivery surfaces. |
+| P1 routing, execution and verification | Rust now owns bounded, canonical `RoutingDecision`, `ModelExecutionOutcome` and `VerificationRecord` contracts. Verified parsing rejects unknown fields and tampering. PyO3/Python and WASM/npm use the Rust builders and permanent golden anchors `route_66d4c04a18b4e70f`, `outcome_a130681ddd63dc84` and `verify_4e1487e3d6e73b36`. Provider HTTP remains host orchestration. |
+| P3 temporal Trust | A verification binds the exact outcome commitment and repository head. Freshness is recomputed against the current head, and explicit dependency invalidation propagates to derived verification. Stale or invalidated verification cannot upgrade a workstream; a current failed verification blocks it. |
+| P4 closed execution loop | `record_execution_chain` validates WorkScope/task/workstream, ContextReceipt linkage, route/outcome identity, exact repository head and verification time, then appends route, execution and verification materialization in one atomic WorkEvent. Durable Python and npm stores expose the same Rust-owned transition. |
+| P6 WorkContinuationProof | Rust owns explicit-handoff and evidence-bounded reconstructed continuation. Proof manifests auto-discover scoped receipt, memory, routing, outcome, verification and recovery commitments; caller-supplied values not evidenced by the selected workstream fail closed. Explicit CLI/MCP handoff returns the proof automatically, while npm provides an additive handoff-plus-proof operation. A reconstructed proof has no invented previous-agent identity or handoff commitment, records `unknown:previous-agent-intent`, is bound to the exact graph commitment/head and refuses completed work. Golden anchor: `continuation_53eba6ee3a52be48`. |
+| P9 explainability and replay | The append-only `WorkGraph` export is the deterministic replay bundle: it contains the ordered committed WorkEvents whose evidence operations carry ContextReceipt, memory, routing, execution, verification and policy references. `from_json` revalidates every event ID, bounds, references and the aggregate graph commitment before materialization; Python and npm round-trip/tamper tests exercise that delivery path. No hidden model reasoning is required. |
+| P9 verified outcome learning | Existing production RAVS `OutcomeBridge` accepts bounded external test/CI/user outcomes, rejects weak agent self-report, corrects the bounded `OnlinePrism` posterior and that posterior is consulted by context selection. The new canonical execution event makes the exact route/outcome/verification chain auditable without replacing this host-side learning loop. |
 | Section 12, G19 | Cache utility is expressed in dollars: tokens times dollars-per-token plus latency milliseconds times an explicit dollars-per-millisecond coefficient. Configured model prices drive eviction; the legacy serialized estimate cannot override them. |
 | Section 12, G21 | The production mechanism is documented and tested as deterministic Beta-posterior scoring. The public compatibility name remains, but the false stochastic/Thompson-sampling claim is removed rather than adding ornamental randomness. |
 | Section 12, G23 | The write-only generation state and false lazy-heap path are removed. Victim selection is an explicit deterministic direct scan, with the bounded tradeoff named and tested instead of claiming an unmeasured optimization. |
-| Section 12, G24 | The trained hit predictor is now consulted by production admission, combined with posterior and normalized cost signals, and a regression test proves that its prediction can change the decision. |
+| Section 12, G24 | The trained hit predictor is consulted by production admission, combined with posterior and normalized cost signals. Admission, later hits and unhit capacity eviction now use the same stored feature vector; lookup misses do not fabricate zero-valued entropy/cost labels. Regressions prove that the prediction changes admission and that a genuine non-reuse outcome changes the prediction. |
 | Section 13, G26/G27/G31 | Taint propagation uses identifier boundaries (including non-ASCII-safe traversal), Python docstrings are excluded as documentation rather than executable code, and Kubernetes manifests reach the Kubernetes rule set. |
-| Section 23, parity | ContextReceipt, RecoveryHandle and MemoryRecord have Rust golden anchors exercised through PyO3/Python and the npm package root/WASM surface, including errors and tampering. |
+| Section 23, parity | ContextReceipt, RecoveryHandle, MemoryRecord, RoutingDecision, ModelExecutionOutcome, VerificationRecord and WorkContinuationProof have Rust-owned semantics exercised through PyO3/Python and the npm package root/WASM surface, including golden identities, errors, bounds and tampering. |
+| Section 24, product UX | `entroly-work resume --to-agent AGENT` and the matching MCP `work_resume(to_agent=...)` operation reconstruct unfinished work and return its continuation proof without asking users to manually assemble graph nodes, commitments or a handoff. Explicit handoff returns the same flagship proof. MCP also records canonical context, memory and execution-chain contracts through bounded host orchestration into Rust-owned validation/state transitions. |
+| Large dirty repositories | One observation accepts up to 16,384 complete file changes and atomically splits it into deterministic events of at most 512 changes. Consecutive identical passive polls collapse without history scans, while A-to-B-to-A remains auditable. Context scopes expose bounded inline prefixes plus total counts and commitments to complete path/evidence sets. |
 
-This is not a declaration that the entire P0-P10 roadmap is complete. In
-particular, this focused PR does **not** claim final closure for canonical
-`RoutingDecision`/`ModelExecutionOutcome`, transitive temporal-evidence
-freshness, the full Work-to-Context-to-Execution-to-Trust loop, a first-class
-`WorkContinuationProof`, outcome intelligence or deterministic replay bundles.
-The repository already contains substantial continuity, concurrency, tamper,
-rename and stale-checkpoint coverage, but that is not the same as a measured,
-real-vendor certification of every Section 18 scenario A-J. Those items remain
-open until direct code, consumer and evaluation evidence closes them.
+The implementation closure is complete for the contracts and product paths
+listed above. It is not yet a production-release declaration. Three gates cannot
+truthfully be manufactured by source changes in a local checkout:
+
+1. GitHub CI and cross-OS packaging must run against the eventual exact final SHA;
+   source-level and local package checks do not substitute for those remote jobs.
+2. The real-provider Section 18 A-J certification needs the intended vendor
+   credentials and live endpoints. Local Claude-to-Codex and Codex-to-Claude
+   interrupted-agent simulations prove product semantics, not vendor availability.
+3. Release publication and downstream install checks must use artifacts built by
+   that same final SHA. Local clean-wheel and npm-tarball installation prove the
+   package shape but do not substitute for publication.
+
+Static package reachability currently reports 302 modules, 834 import edges,
+153,730 lines, 264 modules reachable from declared package entry points and 38
+direct-opt-in/test/benchmark modules (13,237 lines). Those 38 are not omitted from
+ownership: they are classified in the 1,638-file matrix. The static report is kept
+strict so a directly tested experimental module is never silently promoted to a
+normal-user product claim.
+
+## 25. Local validation evidence for the PR #357 continuation
+
+The product tests below cover commit `77e7106c`; the clean-install rows were run
+against locally built 1.0.79 artifacts from the same implementation lineage:
+
+| Surface | Result |
+|---|---|
+| Python full source suite | Pre-scale closure baseline: `4085 passed, 33 skipped, 3 xfailed`; post-scale focused Work Graph/performance suites pass and a final exact-head full rerun remains required |
+| Rust engine | `562 passed` with all features; Clippy clean with warnings denied |
+| PyO3 core | `112 passed, 5 ignored`, plus one doc test; Clippy clean |
+| WASM crate | `12 passed`; Clippy clean |
+| npm package | Full npm suite passed, including 42 E2E cases, WorkGraph persistence, parity, root exports and interrupted continuity |
+| Measured scale gate | Installed PyO3 path, 2,000-file initial observation plus 500 edits and 100 timestamp-changing passive polls: 504 events, zero poll growth, 0.7942 ms p95 append, 93.5014 ms import rebuild, 5,531,773-byte state; scope accounted for all 2,000 paths and 3,502 evidence IDs through bounded prefixes and full-set commitments |
+| Python clean install | Built `entroly-core` 1.0.79 and `entroly` 1.0.79 wheels, installed them in an isolated Python 3.10 environment, verified native readiness and WorkGraph construction; `pip check` reported no broken requirements |
+| npm clean install | Packed and installed the local npm tarball, loaded `entroly-wasm` 1.0.79, constructed WorkGraph and resolved every new package-root contract helper |
+| Ownership | 1,638 tracked/non-ignored repository files classified, zero unknown ownership; local `.codex/` task state excluded |
 
 The release rule remains unchanged: only checks attached to the final head can
 certify it; skipped, missing, stale and older-head results do not count as pass.
