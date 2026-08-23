@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from entroly import work_graph_repo
 from entroly.work_graph_repo import (
     RepositoryDiscoveryError,
     discover_repository_identity,
@@ -36,7 +37,11 @@ def _repo(tmp_path: Path) -> Path:
     return repo
 
 
-def test_identity_lookup_survives_full_observer_change_limit(tmp_path: Path) -> None:
+def test_identity_lookup_survives_full_observer_change_limit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(work_graph_repo, "_MAX_CHANGES", 512)
     repo = _repo(tmp_path)
     for index in range(513):
         (repo / f"untracked-{index}.txt").write_text("x\n")
