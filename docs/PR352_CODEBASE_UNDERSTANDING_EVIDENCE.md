@@ -412,6 +412,7 @@ bounded part of the master plan:
 | Section 13, G26/G27/G31 | Taint propagation uses identifier boundaries (including non-ASCII-safe traversal), Python docstrings are excluded as documentation rather than executable code, and Kubernetes manifests reach the Kubernetes rule set. |
 | Section 23, parity | ContextReceipt, RecoveryHandle, MemoryRecord, RoutingDecision, ModelExecutionOutcome, VerificationRecord and WorkContinuationProof have Rust-owned semantics exercised through PyO3/Python and the npm package root/WASM surface, including golden identities, errors, bounds and tampering. |
 | Section 24, product UX | `entroly-work resume --to-agent AGENT` and the matching MCP `work_resume(to_agent=...)` operation reconstruct unfinished work and return its continuation proof without asking users to manually assemble graph nodes, commitments or a handoff. Explicit handoff returns the same flagship proof. MCP also records canonical context, memory and execution-chain contracts through bounded host orchestration into Rust-owned validation/state transitions. |
+| Clean explicit work continuity | A clean explicitly claimed task remains resumable even when it has no changed paths or failures: Python CLI/MCP and npm use the selected workstream's stable task IDs as the evidence-backed continuation fallback. Exact installed-wheel and installed-tarball journeys both seal a non-empty continuation proof, while hostile or malformed collection shapes remain bounded and fail safe. |
 | Large dirty repositories | One observation accepts up to 16,384 complete file changes and atomically splits it into deterministic events of at most 512 changes. Consecutive identical passive polls collapse without history scans, while A-to-B-to-A remains auditable. Context scopes expose bounded inline prefixes plus total counts and commitments to complete path/evidence sets. |
 | Scenarios C/K/L, explicit handoff | A permanent production-store journey creates multi-file/multi-symbol work, attaches decision and passing-test evidence plus a recoverable ContextReceipt, seals a Claude-to-Codex handoff and continuation proof, then loads the same durable graph through an independent receiving store. The receiver verifies graph/content integrity and resumes the exact bounded work/evidence/recovery scope. Mutating the receipt fails self- and graph-verification; changing worktree bytes at the same Git head preserves the original artifact's self-integrity but makes graph-bound verification and proof construction fail closed. |
 | Scenario G, active symbols and rename lineage | The production Python store enriches exact worktree content identity, incrementally indexes the repository, and atomically projects the active changed files, their symbols, and one-hop import boundary into the Rust-owned Work Graph. `WorkScope` exposes bounded symbol IDs with total counts and full-set commitments. A rename records the new file as superseding the old file, preserves `renamed_to` lineage on the old node, keeps only the active new path in `changed_paths`, and exposes the current symbol rather than a stale predecessor. The persisted repository node carries the projection bounds, and a passive observation plus its scope projection is one idempotent poll group across export/import while A-to-B-to-A remains auditable. Direct Python and npm store updates now derive content digests themselves instead of depending on CLI/MCP wrappers. |
@@ -421,12 +422,21 @@ bounded part of the master plan:
 
 ### Deep Dogfood A-T certification matrix
 
-The focused executable matrix currently reports `97 passed, 1 skipped`; the
-skip is the Windows symlink-permission fixture, with the non-symlink security
-and durability cases passing. Rust and npm rows below also ran in their complete
-local suites (`564` Rust engine tests and the full npm suite including 42 E2E
-cases). Scenario T remains open until clean artifacts are rebuilt from the final
-candidate SHA.
+The focused executable matrix reports `97 passed, 1 skipped`; the skip is the
+Windows symlink-permission fixture, with the non-symlink security and durability
+cases passing. The complete exact-native Python suite reports `4059 passed, 50
+skipped, 3 xfailed`; Rust reports `564` engine tests, `112` core tests with five
+measurement probes ignored, and `12` WASM crate tests. The full npm suite passes
+all 42 engine E2E cases, Work Graph store/recovery/root-export contracts, every
+cross-runtime parity vector, and its 2,000-file performance gate.
+
+Scenario T's local package/user journey is complete. At exact package candidate
+`0edd95ed`, fresh Python/native wheels installed as version 1.0.79 with `pip
+check` clean, SDK and real MCP initialize/tools-list dogfood passing, and a clean
+claim producing both reconstructed and explicit Claude-to-Codex continuation
+proofs. The installed npm tarball proves runtime/root exports/types and the same
+clean-task handoff fallback. Later commits change only CI/test/evidence files;
+the final exact-SHA cross-platform CI matrix remains the independent merge gate.
 
 | Scenario | Status | Permanent evidence |
 |---|---|---|
@@ -449,7 +459,7 @@ candidate SHA.
 | Q, multiprocessing contention | Pass | `test_concurrent_agent_processes_merge_without_lost_work`, stale-lock recovery, and repeated eight-writer performance runs preserve all events. |
 | R, crash during persistence | Pass | Replace-boundary fault injection preserves the last committed state; failed writes leave no temporary debris and the store remains writable. |
 | S, compression/recovery | Pass | CLI cross-process compression recovery and recoverable-receipt tests verify original bytes, digests, locators, corruption rejection and unavailable-material errors. |
-| T, installed product journey | Pending final SHA | Earlier 1.0.79 wheel/npm clean installs passed; the final candidate must rebuild and install Python/native and npm artifacts after all remaining commits, then rely on exact-SHA cross-platform CI. |
+| T, installed product journey | Pass locally; final CI gate enforced | Fresh 1.0.79 Python/native wheels and npm tarball pass clean installs from outside the checkout. SDK, actual MCP protocol, CLI claim/resume/handoff, native import, npm Work Graph runtime, root exports and shipped types are exercised. A clean task seals a proof containing its stable task ID instead of failing with empty resumable state. Exact-SHA cross-platform CI remains required before merge. |
 
 The implementation closure is complete for the contracts and product paths
 listed above. It is not yet a production-release declaration. Three gates cannot
