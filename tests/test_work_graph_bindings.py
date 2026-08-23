@@ -163,6 +163,27 @@ def test_public_work_graph_records_execution_chain_and_seals_continuation(
     graph, _receipt_event = store.record_context_receipt(
         context_receipt, agent_id="claude", session_id="session-1"
     )
+    stale_receipt = json.loads(
+        entroly_core.context_receipt_build_json(
+            "repo:test",
+            "older-head",
+            graph.graph_commitment,
+            workstream_id,
+            "sha256:sources",
+            ["src/stream.rs#0:20"],
+            [],
+            [],
+            [],
+            [],
+            [],
+            512,
+            "work-scope/v1",
+            "execution:pending",
+            1_055,
+        )
+    )
+    with pytest.raises(ValueError, match="integrity mismatch"):
+        store.record_context_receipt(stale_receipt)
     memory = json.loads(
         entroly_core.memory_record_build_json(
             "repo:test",

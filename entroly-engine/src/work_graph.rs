@@ -1164,6 +1164,23 @@ impl WorkGraph {
                 actual: receipt.graph_commitment,
             });
         }
+        let repo_node_id = stable_node_id(NodeKind::Repository, &self.repo_id, &self.repo_id);
+        let current_repository_commitment = self
+            .nodes
+            .get(&repo_node_id)
+            .and_then(|node| attr_string(&node.attributes, "head_sha"))
+            .ok_or_else(|| {
+                WorkGraphError::InvalidInput(
+                    "cannot record a context receipt without a repository head commitment"
+                        .to_string(),
+                )
+            })?;
+        if receipt.repository_commitment != current_repository_commitment {
+            return Err(WorkGraphError::IntegrityMismatch {
+                expected: current_repository_commitment,
+                actual: receipt.repository_commitment,
+            });
+        }
         let workstream = self
             .nodes
             .get(&receipt.work_scope_id)
@@ -6058,6 +6075,34 @@ mod tests {
                 "session:1".into()
             ),
             Err(WorkGraphError::IntegrityMismatch { .. })
+        ));
+
+        let stale_receipt = ContextReceiptEnvelope::new(
+            "repo-1".into(),
+            "older-head".into(),
+            graph.graph_commitment().into(),
+            workstream_id.clone(),
+            "sha256:sources".into(),
+            vec!["src/auth.rs#0:20".into()],
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+            512,
+            "work-scope/v1".into(),
+            "execution:pending".into(),
+            1_150,
+        )
+        .unwrap();
+        assert!(matches!(
+            graph.record_context_receipt(
+                stale_receipt,
+                "agent:claude".into(),
+                "session:1".into()
+            ),
+            Err(WorkGraphError::IntegrityMismatch { expected, actual })
+                if expected == "abc" && actual == "older-head"
         ));
 
         let memory = MemoryRecord::new(

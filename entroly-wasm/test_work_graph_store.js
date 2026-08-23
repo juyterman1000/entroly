@@ -189,6 +189,20 @@ try {
   });
   assert(receiptWrite.graph.eventCount === beforeReceipt.eventCount + 1,
     'context receipt was not durably appended');
+  const staleReceipt = JSON.parse(contextReceiptBuildJSON(
+    store.repoId, 'older-head', receiptWrite.graph.graphCommitment, workstreamId,
+    'sha256:sources', JSON.stringify(['app.js#0:20']), JSON.stringify([]),
+    JSON.stringify([]), JSON.stringify([]), JSON.stringify([]),
+    JSON.stringify([]), 256, 'work-scope/v1', 'execution:pending', 3505,
+  ));
+  let staleReceiptRejected = false;
+  try {
+    store.recordContextReceipt(staleReceipt);
+  } catch (error) {
+    staleReceiptRejected = /integrity mismatch/.test(String(error));
+  }
+  assert(staleReceiptRejected,
+    'npm accepted a context receipt for a stale repository head');
 
   const memory = JSON.parse(memoryRecordBuildJSON(
     store.repoId, 'vault/auth-decision', 'observed', taskId, workstreamId,
