@@ -248,7 +248,7 @@ def patch_checkpoint() -> None:
         replacement,
         label="checkpoint._enforce_global_cap",
     )
-    old = '''    _AUTO_ID_RE = re.compile(r"^ckpt_[0-9a-f]{12}_(\d+)_")
+    old = r'''    _AUTO_ID_RE = re.compile(r"^ckpt_[0-9a-f]{12}_(\d+)_")
 
     def _peer_pid(self, name: str) -> int:
         """Owning pid from an auto-generated `ckpt_<hex12>_<pid>_...` name, else 0."""
@@ -260,7 +260,7 @@ def patch_checkpoint() -> None:
         except ValueError:
             return 0
 '''
-    new = '''    _AUTO_ID_RE = re.compile(r"^ckpt_([0-9a-f]{12})_(\d+)_")
+    new = r'''    _AUTO_ID_RE = re.compile(r"^ckpt_([0-9a-f]{12})_(\d+)_")
 
     @classmethod
     def _checkpoint_owner(cls, name: str) -> tuple[str, str, int] | None:

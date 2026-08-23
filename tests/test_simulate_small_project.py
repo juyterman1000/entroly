@@ -18,6 +18,7 @@ the value actually appears.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -58,13 +59,23 @@ def tiny_project(tmp_path: Path) -> Path:
 
 
 def _simulate(cwd: Path, *extra: str) -> dict:
+    pythonpath = os.pathsep.join(
+        part for part in (str(ROOT), os.environ.get("PYTHONPATH", "")) if part
+    )
     result = subprocess.run(
         [sys.executable, "-m", "entroly", "simulate", "--json", *extra],
         cwd=cwd,
         capture_output=True,
         text=True,
         timeout=300,
-        env={**__import__("os").environ, "ENTROLY_DISABLE_UPDATE_CHECK": "1"},
+        env={
+            **os.environ,
+            "ENTROLY_DISABLE_UPDATE_CHECK": "1",
+            # Exercise this checkout even when the developer also has an older
+            # non-editable Entroly release installed. CI happens to install the
+            # exact-head wheel first; local source runs need the same guarantee.
+            "PYTHONPATH": pythonpath,
+        },
     )
     assert result.returncode == 0, result.stderr[-2000:]
     start = result.stdout.find("{")
@@ -94,8 +105,14 @@ def test_small_project_still_selects_everything(tiny_project: Path):
 
 
 def test_forcing_a_smaller_budget_demonstrates_selection(tiny_project: Path):
-    """The command the CLI suggests must actually work."""
-    report = _simulate(tiny_project, "--budget", "30")
+    """A constrained, evidence-bearing query must still select context."""
+    report = _simulate(
+        tiny_project,
+        "--budget",
+        "30",
+        "--query",
+        "def login user pw token verify_password issue_session_token",
+    )
     assert report["budget_narrowed_to_demonstrate"] is False
     assert report["average_reduction_pct"] > 0, (
         f"--budget 30 should force real selection, got {report!r}"

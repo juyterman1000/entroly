@@ -31,6 +31,7 @@ _MAX_SCOPE_ITEMS = 256
 _MAX_EVIDENCE = 4096
 _MAX_TTL_SECONDS = 30 * 24 * 60 * 60
 _MAX_ID_CHARS = 512
+_MAX_CONTRACT_BYTES = 1024 * 1024
 
 
 def _project_root() -> Path:
@@ -86,6 +87,19 @@ def _bounded_id(value: object, name: str) -> str:
     if "\x00" in text:
         raise ValueError(f"{name} may not contain NUL")
     return text
+
+
+def _bounded_contract(value: str | dict[str, Any], name: str) -> str | dict[str, Any]:
+    if not isinstance(value, (str, dict)):
+        raise ValueError(f"{name} must be a JSON object or JSON text")
+    raw = value if isinstance(value, str) else json.dumps(
+        value, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+    )
+    if not raw.strip():
+        raise ValueError(f"{name} must not be empty")
+    if len(raw.encode("utf-8")) > _MAX_CONTRACT_BYTES:
+        raise ValueError(f"{name} exceeds {_MAX_CONTRACT_BYTES} bytes")
+    return value
 
 
 def _ttl_ms(ttl_seconds: float) -> int:
@@ -219,8 +233,9 @@ def work_resume(
     project: str = "",
     workstream_id: str = "",
     max_evidence: int = 128,
+    to_agent: str = "",
 ) -> dict[str, Any]:
-    """Refresh durable repo facts, then recover one unfinished workstream."""
+    """Refresh durable facts and recover work, optionally with a no-handoff proof."""
     try:
         if (
             not isinstance(max_evidence, int)
@@ -233,11 +248,23 @@ def work_resume(
         selected_workstream = str(workstream_id).strip()
         if len(selected_workstream) > _MAX_ID_CHARS or "\x00" in selected_workstream:
             raise ValueError(f"workstream_id may not exceed {_MAX_ID_CHARS} characters or contain NUL")
+        target_agent = str(to_agent).strip()
+        if target_agent:
+            target_agent = _bounded_id(target_agent, "to_agent")
         path = _project_path(project)
         store = _store_for_path(path)
         store.submit_observation(_passive_observation(path))
         view = store.resume(selected_workstream or None, max_evidence=max_evidence)
-        return _render_untrusted("work_resume", view)
+        payload: dict[str, Any] = {"resume": view}
+        if target_agent:
+            payload["continuation_proof"] = store.reconstructed_continuation_proof(
+                str(view["selected_workstream"]["node_id"]),
+                target_agent,
+                outstanding_work_refs=list(view.get("changed_paths", []))
+                + list(view.get("failures", [])),
+                created_at_ms=int(time.time() * 1000),
+            )
+        return _render_untrusted("work_resume", payload)
     except Exception as exc:
         return _error("work_resume", exc)
 
@@ -261,9 +288,113 @@ def work_handoff(
         # so the receipt is bound to what is actually on disk.
         store.submit_observation(_passive_observation(path))
         receipt = store.handoff(selected_workstream, source_agent, target_agent)
-        return _render_untrusted("work_handoff", receipt)
+        view = store.resume(selected_workstream, max_evidence=128)
+        proof = store.continuation_proof(
+            receipt,
+            outstanding_work_refs=list(view.get("changed_paths", []))
+            + list(view.get("failures", [])),
+            created_at_ms=int(time.time() * 1000),
+        )
+        return _render_untrusted(
+            "work_handoff",
+            {"handoff": receipt, "continuation_proof": proof},
+        )
     except Exception as exc:
         return _error("work_handoff", exc)
 
 
-__all__ = ["work_claim", "work_handoff", "work_resume", "work_state"]
+def work_record_context(
+    *,
+    receipt: str | dict[str, Any],
+    project: str = "",
+    agent_id: str = "",
+    session_id: str = "",
+) -> dict[str, Any]:
+    """Persist one verified canonical ContextReceipt in the shared graph."""
+    try:
+        bounded_receipt = _bounded_contract(receipt, "receipt")
+        path = _project_path(project)
+        store = _store_for_path(path)
+        graph, event_id = store.record_context_receipt(
+            bounded_receipt,
+            agent_id=str(agent_id),
+            session_id=str(session_id),
+        )
+        return _render_untrusted(
+            "work_record_context",
+            {"event_id": event_id, "summary": graph.summary()},
+        )
+    except Exception as exc:
+        return _error("work_record_context", exc)
+
+
+def work_record_memory(
+    *,
+    memory: str | dict[str, Any],
+    project: str = "",
+    now_ms: int = 0,
+    superseded_ids: list[str] | None = None,
+) -> dict[str, Any]:
+    """Persist one provenance-bearing canonical MemoryRecord."""
+    try:
+        bounded_memory = _bounded_contract(memory, "memory")
+        timestamp = int(now_ms or time.time() * 1000)
+        if timestamp < 0:
+            raise ValueError("now_ms must be non-negative")
+        superseded = _bounded_strings(superseded_ids, "superseded_ids")
+        path = _project_path(project)
+        store = _store_for_path(path)
+        graph, event_id = store.record_memory(
+            bounded_memory,
+            now_ms=timestamp,
+            superseded_ids=superseded,
+        )
+        return _render_untrusted(
+            "work_record_memory",
+            {"event_id": event_id, "summary": graph.summary()},
+        )
+    except Exception as exc:
+        return _error("work_record_memory", exc)
+
+
+def work_record_execution(
+    *,
+    route: str | dict[str, Any],
+    outcome: str | dict[str, Any],
+    verification: str | dict[str, Any],
+    project: str = "",
+    invalidated_commitments: list[str] | None = None,
+) -> dict[str, Any]:
+    """Atomically close route, execution and verification into Work Graph state."""
+    try:
+        bounded_route = _bounded_contract(route, "route")
+        bounded_outcome = _bounded_contract(outcome, "outcome")
+        bounded_verification = _bounded_contract(verification, "verification")
+        invalidated = _bounded_strings(
+            invalidated_commitments, "invalidated_commitments"
+        )
+        path = _project_path(project)
+        store = _store_for_path(path)
+        graph, event_id = store.record_execution_chain(
+            bounded_route,
+            bounded_outcome,
+            bounded_verification,
+            invalidated_commitments=invalidated,
+        )
+        return _render_untrusted(
+            "work_record_execution",
+            {"event_id": event_id, "summary": graph.summary()},
+        )
+    except Exception as exc:
+        return _error("work_record_execution", exc)
+
+
+__all__ = [
+    "work_claim",
+    "work_handoff",
+    "work_record_context",
+    "work_record_execution",
+    "work_record_memory",
+    "work_resume",
+    "work_state",
+]

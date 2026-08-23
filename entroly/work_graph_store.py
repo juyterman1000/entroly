@@ -321,6 +321,14 @@ class WorkGraphStore:
             self._save_unlocked(graph)
             return graph
 
+    def _mutate(self, operation: Any) -> tuple[WorkGraph, Any]:
+        """Apply one Rust-owned mutation and persist it under the same lock."""
+        with self.lock():
+            graph = self._load_unlocked()
+            result = operation(graph)
+            self._save_unlocked(graph)
+            return graph, result
+
     def update_repository(self, path: str | os.PathLike[str] = ".", **options: Any) -> WorkGraph:
         return self.submit_observation(discover_repository_observation(path, **options))
 
@@ -380,6 +388,66 @@ class WorkGraphStore:
 
     def resume(self, workstream_id: str | None = None, *, max_evidence: int = 128) -> dict[str, Any]:
         return self.load().resume(workstream_id, max_evidence=max_evidence)
+
+    def record_context_receipt(
+        self,
+        receipt: str | dict[str, Any],
+        *,
+        agent_id: str = "",
+        session_id: str = "",
+    ) -> tuple[WorkGraph, str]:
+        return self._mutate(
+            lambda graph: graph.record_context_receipt(
+                receipt, agent_id=agent_id, session_id=session_id
+            )
+        )
+
+    def record_memory(
+        self,
+        memory: str | dict[str, Any],
+        *,
+        now_ms: int,
+        superseded_ids: list[str] | None = None,
+    ) -> tuple[WorkGraph, str]:
+        return self._mutate(
+            lambda graph: graph.record_memory(
+                memory, now_ms=now_ms, superseded_ids=superseded_ids
+            )
+        )
+
+    def record_execution_chain(
+        self,
+        route: str | dict[str, Any],
+        outcome: str | dict[str, Any],
+        verification: str | dict[str, Any],
+        *,
+        invalidated_commitments: list[str] | None = None,
+    ) -> tuple[WorkGraph, str]:
+        return self._mutate(
+            lambda graph: graph.record_execution_chain(
+                route,
+                outcome,
+                verification,
+                invalidated_commitments=invalidated_commitments,
+            )
+        )
+
+    def continuation_proof(
+        self,
+        handoff: str | dict[str, Any],
+        **manifest: Any,
+    ) -> dict[str, Any]:
+        return self.load().continuation_proof(handoff, **manifest)
+
+    def reconstructed_continuation_proof(
+        self,
+        workstream_id: str,
+        to_agent: str,
+        **manifest: Any,
+    ) -> dict[str, Any]:
+        return self.load().reconstructed_continuation_proof(
+            workstream_id, to_agent, **manifest
+        )
 
     def handoff(
         self,

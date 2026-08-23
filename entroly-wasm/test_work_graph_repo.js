@@ -157,12 +157,9 @@ try {
   }
   const hugeIdentity = discoverRepositoryIdentity(hugeRepo);
   assert(hugeIdentity.repo_id.startsWith('git-root:'), 'identity-only lookup failed on huge dirty repo');
-  let partialRejected = false;
-  try { discoverRepositoryObservation(hugeRepo); }
-  catch (error) {
-    partialRejected = error instanceof RepositoryDiscoveryError && /partial Work Graph/.test(error.message);
-  }
-  assert(partialRejected, 'full observer did not fail closed above the change cap');
+  const hugeObservation = discoverRepositoryObservation(hugeRepo);
+  assert(hugeObservation.changes.length === 513,
+    'large dirty observation silently truncated changed paths');
 
   console.log('Work Graph npm Git discovery contract: PASS');
 } finally {

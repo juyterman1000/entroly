@@ -111,6 +111,38 @@ export interface WorkGraphHandoffReceipt {
   payload_commitment: string;
 }
 
+export interface WorkContinuationManifest {
+  context_receipt_commitments?: string[];
+  routing_commitments?: string[];
+  execution_outcome_commitments?: string[];
+  verification_commitments?: string[];
+  memory_commitments?: string[];
+  outstanding_work_refs?: string[];
+  recovery_handle_ids?: string[];
+  created_at_ms: number;
+}
+
+export interface WorkContinuationProof {
+  schema_version: number;
+  proof_id: string;
+  repository_id: string;
+  graph_revision: number;
+  graph_commitment: string;
+  workstream_id: string;
+  from_agent: string;
+  to_agent: string;
+  handoff_commitment: string;
+  context_receipt_commitments: string[];
+  routing_commitments: string[];
+  execution_outcome_commitments: string[];
+  verification_commitments: string[];
+  memory_commitments: string[];
+  outstanding_work_refs: string[];
+  recovery_handle_ids: string[];
+  created_at_ms: number;
+  proof_commitment: string;
+}
+
 export type WorkGraphObservation = Record<string, unknown> & {
   repo_id: string;
   observed_at_ms: number;
@@ -136,6 +168,31 @@ export class WorkGraph {
   unfinished(pretty?: boolean): WorkGraphWorkItem[];
   resume(workstreamId?: string | null, maxEvidence?: number, pretty?: boolean): WorkGraphResumeView;
   contextScope(workstreamId?: string | null, maxEvidence?: number, pretty?: boolean): WorkGraphContextScope;
+  recordContextReceipt(
+    receipt: string | Record<string, unknown>,
+    agentId?: string,
+    sessionId?: string,
+  ): string;
+  recordMemory(
+    memory: string | Record<string, unknown>,
+    nowMs?: number,
+    supersededIds?: string[],
+  ): string;
+  recordExecutionChain(
+    route: string | Record<string, unknown>,
+    outcome: string | Record<string, unknown>,
+    verification: string | Record<string, unknown>,
+    invalidatedCommitments?: string[],
+  ): string;
+  continuationProof(
+    handoff: string | WorkGraphHandoffReceipt,
+    manifest: WorkContinuationManifest,
+  ): WorkContinuationProof;
+  reconstructedContinuationProof(
+    workstreamId: string,
+    toAgent: string,
+    manifest: WorkContinuationManifest,
+  ): WorkContinuationProof;
   coordination(nowMs?: number, pretty?: boolean): WorkGraphCoordinationReport;
   handoff(
     workstreamId: string,

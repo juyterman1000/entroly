@@ -270,6 +270,15 @@ class WorkGraphStore {
     });
   }
 
+  mutate(operation) {
+    return this.withLock(() => {
+      const graph = this.loadUnlocked();
+      const result = operation(graph);
+      this.saveUnlocked(graph);
+      return { graph, result };
+    });
+  }
+
   updateRepository(repoPath = '.', options = {}) {
     return this.submitObservation(discoverRepositoryObservation(repoPath, options));
   }
@@ -320,6 +329,23 @@ class WorkGraphStore {
   coordination(nowMs = Date.now()) { return this.load().coordination(nowMs); }
   resume(workstreamId = null, maxEvidence = 128) {
     return this.load().resume(workstreamId, maxEvidence);
+  }
+  recordContextReceipt(receipt, options = {}) {
+    return this.mutate((graph) => graph.recordContextReceipt(receipt, options));
+  }
+  recordMemory(memory, nowMs, supersededIds = []) {
+    return this.mutate((graph) => graph.recordMemory(memory, nowMs, supersededIds));
+  }
+  recordExecutionChain(route, outcome, verification, invalidatedCommitments = []) {
+    return this.mutate((graph) => graph.recordExecutionChain(
+      route, outcome, verification, invalidatedCommitments,
+    ));
+  }
+  continuationProof(handoff, manifest) {
+    return this.load().continuationProof(handoff, manifest);
+  }
+  reconstructedContinuationProof(workstreamId, toAgent, manifest) {
+    return this.load().reconstructedContinuationProof(workstreamId, toAgent, manifest);
   }
   handoff(workstreamId, fromAgent, toAgent, generatedAtMs = Date.now()) {
     return this.load().handoff(workstreamId, fromAgent, toAgent, generatedAtMs);

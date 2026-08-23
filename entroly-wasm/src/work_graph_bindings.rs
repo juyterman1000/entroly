@@ -142,6 +142,75 @@ impl WasmWorkGraph {
             .map_err(js_err)
     }
 
+    #[wasm_bindgen(js_name = recordContextReceiptJSON)]
+    pub fn record_context_receipt_json(
+        &mut self,
+        receipt_json: &str,
+        agent_id: &str,
+        session_id: &str,
+    ) -> Result<String, JsValue> {
+        self.inner
+            .record_context_receipt_json(receipt_json, agent_id, session_id)
+            .map_err(js_err)
+    }
+
+    #[wasm_bindgen(js_name = recordMemoryJSON)]
+    pub fn record_memory_json(
+        &mut self,
+        memory_json: &str,
+        now_ms: f64,
+        superseded_ids_json: Option<String>,
+    ) -> Result<String, JsValue> {
+        self.inner
+            .record_memory_json(
+                memory_json,
+                js_safe_i64(now_ms, "now_ms")?,
+                superseded_ids_json.as_deref().unwrap_or("[]"),
+            )
+            .map_err(js_err)
+    }
+
+    #[wasm_bindgen(js_name = recordExecutionChainJSON)]
+    pub fn record_execution_chain_json(
+        &mut self,
+        route_json: &str,
+        outcome_json: &str,
+        verification_json: &str,
+        invalidated_commitments_json: Option<String>,
+    ) -> Result<String, JsValue> {
+        self.inner
+            .record_execution_chain_json(
+                route_json,
+                outcome_json,
+                verification_json,
+                invalidated_commitments_json.as_deref().unwrap_or("[]"),
+            )
+            .map_err(js_err)
+    }
+
+    #[wasm_bindgen(js_name = continuationProofJSON)]
+    pub fn continuation_proof_json(
+        &self,
+        handoff_json: &str,
+        manifest_json: &str,
+    ) -> Result<String, JsValue> {
+        self.inner
+            .continuation_proof_json(handoff_json, manifest_json)
+            .map_err(js_err)
+    }
+
+    #[wasm_bindgen(js_name = reconstructedContinuationProofJSON)]
+    pub fn reconstructed_continuation_proof_json(
+        &self,
+        workstream_id: &str,
+        to_agent: &str,
+        manifest_json: &str,
+    ) -> Result<String, JsValue> {
+        self.inner
+            .reconstructed_continuation_proof_json(workstream_id, to_agent, manifest_json)
+            .map_err(js_err)
+    }
+
     #[wasm_bindgen(js_name = coordinationJSON)]
     pub fn coordination_json(&self, now_ms: f64, pretty: bool) -> Result<String, JsValue> {
         let now_ms = js_safe_i64(now_ms, "now_ms")?;

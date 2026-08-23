@@ -85,7 +85,10 @@ impl CognitiveBus {
     /// `timestamp`, `emotional_tag`, `salience`, `is_spike`.
     #[pyo3(signature = (agent_id, limit=10))]
     pub fn drain(&mut self, py: Python<'_>, agent_id: &str, limit: usize) -> PyResult<PyObject> {
-        json_to_py(py, &serde_json::Value::Array(self.inner.drain(agent_id, limit)))
+        json_to_py(
+            py,
+            &serde_json::Value::Array(self.inner.drain(agent_id, limit)),
+        )
     }
 
     /// Hippocampus bridge shape: `content`, `source`, `salience`,

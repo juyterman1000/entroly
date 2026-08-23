@@ -2834,6 +2834,12 @@ class EntrolyEngine:
                 }
                 for f in selected
             ],
+            # The no-match contract must know whether this result represents a
+            # real subset or the complete candidate universe.  Omitting the
+            # count made the fallback look like it had generated zero
+            # candidates, so the guard could erase a valid all-fragment result
+            # as "no match" even though nothing had been displaced.
+            "total_fragments": len(fragments),
             "optimization_stats": stats,
             "total_tokens": stats["total_tokens"],
             "tokens_saved_this_call": max(0, tokens_saved),

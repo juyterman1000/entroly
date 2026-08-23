@@ -36,6 +36,18 @@ class FakeStore:
     def handoff(self, *args, **kwargs):
         return {"ok": True}
 
+    def reconstructed_continuation_proof(self, workstream, to_agent, **manifest):
+        return {
+            "workstream_id": workstream,
+            "to_agent": to_agent,
+            "from_agent": "",
+            "handoff_commitment": "",
+            "manifest": manifest,
+        }
+
+    def continuation_proof(self, handoff, **manifest):
+        return {"handoff": handoff, "manifest": manifest}
+
 
 def test_cli_claim_uses_user_statement(monkeypatch, capsys, tmp_path):
     fake = FakeStore()
@@ -76,6 +88,9 @@ def test_standalone_parser_exposes_all_work_actions():
         else:
             args = parser.parse_args([action])
         assert args.work_action == action
+
+    resume = parser.parse_args(["resume", "--to-agent", "codex"])
+    assert resume.to_agent == "codex"
 
 
 def test_cli_human_state_is_compact_and_not_raw_json(monkeypatch, capsys, tmp_path):
@@ -164,6 +179,30 @@ def test_cli_resume_fingerprints_repo_before_recovery(monkeypatch, tmp_path):
     assert fake.observation["changes"][0]["content_digest"] == "git-blob:abc"
 
 
+def test_cli_resume_can_emit_no_handoff_proof(monkeypatch, capsys, tmp_path):
+    fake = FakeStore()
+    monkeypatch.setattr(c, "_store_for_path", lambda _p: fake)
+    monkeypatch.setattr(c, "_passive_observation", lambda _path: {"repo_id": "repo:test"})
+    fake.resume = lambda *_args, **_kwargs: {
+        "selected_workstream": {"node_id": "workstream:1"},
+        "changed_paths": ["app.py"],
+        "failures": [],
+    }
+    args = SimpleNamespace(
+        work_action="resume",
+        json_output=True,
+        project=str(tmp_path),
+        workstream="",
+        max_evidence=32,
+        to_agent="codex",
+    )
+
+    assert c.run(args) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["continuation_proof"]["to_agent"] == "codex"
+    assert payload["continuation_proof"]["from_agent"] == ""
+
+
 def test_cli_resume_validates_before_store_or_repository_refresh(monkeypatch, tmp_path):
     calls = []
     monkeypatch.setattr(c, "_store_for_path", lambda _p: calls.append("store") or FakeStore())
@@ -209,7 +248,20 @@ def test_cli_handoff_fingerprints_repo_before_receipt(monkeypatch, tmp_path):
 
     monkeypatch.setattr(c, "enrich_worktree_content_digests", fingerprint)
     fake.submit_observation = lambda obs: calls.append("persist") or setattr(fake, "observation", obs) or FakeGraph()
-    fake.handoff = lambda *args, **kwargs: calls.append("handoff") or {"ok": True}
+    fake.handoff = lambda *args, **kwargs: calls.append("handoff") or {
+        "workstream_id": "workstream:1",
+        "from_agent": "claude",
+        "to_agent": "codex",
+    }
+    fake.resume = lambda *_args, **_kwargs: calls.append("resume") or {
+        "changed_paths": ["app.py"],
+        "failures": [],
+    }
+    original_proof = fake.continuation_proof
+    fake.continuation_proof = (
+        lambda handoff, **manifest: calls.append("proof")
+        or original_proof(handoff, **manifest)
+    )
     args = SimpleNamespace(
         work_action="handoff",
         json_output=True,
@@ -219,7 +271,7 @@ def test_cli_handoff_fingerprints_repo_before_receipt(monkeypatch, tmp_path):
         to_agent="codex",
     )
     assert c.run(args) == 0
-    assert calls == ["store", "observe", "fingerprint", "persist", "handoff"]
+    assert calls == ["store", "observe", "fingerprint", "persist", "handoff", "resume", "proof"]
     assert fake.observation["changes"][0]["content_digest"] == "git-blob:def"
 
 

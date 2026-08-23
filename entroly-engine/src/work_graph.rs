@@ -19,7 +19,11 @@
 //! - persisted graph documents are integrity-checked on import.
 
 use crate::coordination_index::{candidate_pairs, CoordinationScope};
-use crate::engine_contracts::WorkScope;
+use crate::engine_contracts::{
+    ContextReceiptEnvelope, ExecutionState, MemoryAdmissibility, MemoryRecord,
+    ModelExecutionOutcome, RoutingDecision, VerificationFreshness, VerificationRecord,
+    VerificationVerdict, WorkContinuationProof, WorkScope,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -30,6 +34,8 @@ use std::fmt;
 pub const WORK_GRAPH_SCHEMA_VERSION: u32 = 1;
 const MAX_EVENTS: usize = 50_000;
 const MAX_OPERATIONS_PER_EVENT: usize = 4_096;
+const MAX_CHANGES_PER_EVENT: usize = 512;
+const MAX_CHANGES_PER_OBSERVATION: usize = 16_384;
 const MAX_NODES: usize = 100_000;
 const MAX_EDGES: usize = 250_000;
 const MAX_EVIDENCE: usize = 250_000;
@@ -690,6 +696,10 @@ pub struct WorkGraph {
     /// Derived membership index for the append-only event log. Never serialized.
     /// Keeping this separate removes an O(N) scan from every long-session append.
     event_ids: BTreeSet<String>,
+    /// The most recent passive repository snapshot and its final event ID.
+    /// Only consecutive equal snapshots collapse: A -> B -> A remains an
+    /// auditable history, while UI polling stays O(1). Never serialized.
+    last_passive_snapshot: Option<(String, String)>,
     /// SHA-256 state for the canonical commitment bytes through the open events array.
     /// Derived runtime state only; persisted WorkGraphDocument remains unchanged.
     commitment_hasher: Sha256,
@@ -710,6 +720,7 @@ impl WorkGraph {
             repo_id,
             events: Vec::new(),
             event_ids: BTreeSet::new(),
+            last_passive_snapshot: None,
             commitment_hasher: Sha256::new(),
             nodes: BTreeMap::new(),
             edges: BTreeMap::new(),
@@ -780,6 +791,7 @@ impl WorkGraph {
             self.rebuild()?;
             return Err(error);
         }
+        self.refresh_last_passive_snapshot();
         Ok(id)
     }
 
@@ -798,17 +810,48 @@ impl WorkGraph {
                 actual: observation.repo_id.clone(),
             });
         }
-        let passive_fingerprint = passive_repository_snapshot_fingerprint(&observation)?;
-        let mut event = observation_to_event(&self.repo_id, observation)?;
-        if let Some(fingerprint) = passive_fingerprint {
-            let source_ref = format!("repo-snapshot:{fingerprint}");
-            if let Some(last) = self.events.last() {
-                if last.source_kind == EvidenceKind::RepositoryFact && last.source_ref == source_ref
-                {
-                    return Ok(last.event_id.clone());
+        if observation.changes.len() > MAX_CHANGES_PER_OBSERVATION {
+            return Err(WorkGraphError::LimitExceeded(format!(
+                "file changes per observation exceed {MAX_CHANGES_PER_OBSERVATION}"
+            )));
+        }
+        let passive_source_ref = passive_repository_snapshot_fingerprint(&observation)?
+            .map(|fingerprint| format!("repo-snapshot:{fingerprint}"));
+        if let (Some(source_ref), Some((last_source_ref, last_event_id))) =
+            (&passive_source_ref, &self.last_passive_snapshot)
+        {
+            if source_ref == last_source_ref {
+                return Ok(last_event_id.clone());
+            }
+        }
+
+        if observation.changes.len() > MAX_CHANGES_PER_EVENT {
+            let previous = self.clone();
+            let mut last_event_id = String::new();
+            for chunk in observation.changes.chunks(MAX_CHANGES_PER_EVENT) {
+                let mut bounded = observation.clone();
+                bounded.changes = chunk.to_vec();
+                match self.observe_repository_single(bounded, passive_source_ref.as_deref()) {
+                    Ok(event_id) => last_event_id = event_id,
+                    Err(error) => {
+                        *self = previous;
+                        return Err(error);
+                    }
                 }
             }
-            event.source_ref = source_ref;
+            return Ok(last_event_id);
+        }
+        self.observe_repository_single(observation, passive_source_ref.as_deref())
+    }
+
+    fn observe_repository_single(
+        &mut self,
+        observation: RepositoryObservation,
+        passive_source_ref: Option<&str>,
+    ) -> Result<String, WorkGraphError> {
+        let mut event = observation_to_event(&self.repo_id, observation)?;
+        if let Some(source_ref) = passive_source_ref {
+            event.source_ref = source_ref.to_string();
         }
         self.apply_event(event)
     }
@@ -1097,6 +1140,551 @@ impl WorkGraph {
         }
     }
 
+    /// Record a verified canonical Context Receipt as bounded graph evidence.
+    /// The receipt must have been produced against this exact graph revision;
+    /// recording it advances the graph, so a replay of the old receipt fails
+    /// closed instead of silently attaching stale context twice.
+    pub fn record_context_receipt(
+        &mut self,
+        receipt: ContextReceiptEnvelope,
+        agent_id: String,
+        session_id: String,
+    ) -> Result<String, WorkGraphError> {
+        if receipt.repository_id != self.repo_id {
+            return Err(WorkGraphError::RepoMismatch {
+                expected: self.repo_id.clone(),
+                actual: receipt.repository_id,
+            });
+        }
+        if receipt.graph_commitment != self.graph_commitment {
+            return Err(WorkGraphError::IntegrityMismatch {
+                expected: self.graph_commitment.clone(),
+                actual: receipt.graph_commitment,
+            });
+        }
+        let workstream = self
+            .nodes
+            .get(&receipt.work_scope_id)
+            .ok_or_else(|| WorkGraphError::UnknownNode(receipt.work_scope_id.clone()))?;
+        if workstream.kind != NodeKind::Workstream {
+            return Err(WorkGraphError::InvalidInput(
+                "context receipt work scope is not a workstream".to_string(),
+            ));
+        }
+        let event = context_receipt_event(&self.repo_id, receipt, agent_id, session_id)?;
+        self.apply_event(event)
+    }
+
+    pub fn record_context_receipt_json(
+        &mut self,
+        receipt_json: &str,
+        agent_id: &str,
+        session_id: &str,
+    ) -> Result<String, WorkGraphError> {
+        let receipt = ContextReceiptEnvelope::from_json_verified(receipt_json)
+            .map_err(|error| WorkGraphError::InvalidInput(error.to_string()))?;
+        self.record_context_receipt(receipt, agent_id.to_string(), session_id.to_string())
+    }
+
+    /// Record a provenance-bearing memory without treating its text or trust
+    /// label as verified work truth. Admissibility is computed by the canonical
+    /// memory contract and persisted as inspectable graph data.
+    pub fn record_memory(
+        &mut self,
+        memory: MemoryRecord,
+        now_ms: i64,
+        superseded_ids: BTreeSet<String>,
+    ) -> Result<String, WorkGraphError> {
+        if memory.repository_id != self.repo_id {
+            return Err(WorkGraphError::RepoMismatch {
+                expected: self.repo_id.clone(),
+                actual: memory.repository_id,
+            });
+        }
+        if !memory.workstream_id.is_empty() {
+            let node = self
+                .nodes
+                .get(&memory.workstream_id)
+                .ok_or_else(|| WorkGraphError::UnknownNode(memory.workstream_id.clone()))?;
+            if node.kind != NodeKind::Workstream {
+                return Err(WorkGraphError::InvalidInput(
+                    "memory scope is not a workstream".to_string(),
+                ));
+            }
+        }
+        if !memory.task_id.is_empty() {
+            let node = self
+                .nodes
+                .get(&memory.task_id)
+                .ok_or_else(|| WorkGraphError::UnknownNode(memory.task_id.clone()))?;
+            if node.kind != NodeKind::Task {
+                return Err(WorkGraphError::InvalidInput(
+                    "memory task scope is not a task".to_string(),
+                ));
+            }
+        }
+        let admissibility = memory.admissibility_in_set(now_ms, &superseded_ids);
+        let event = memory_record_event(&self.repo_id, memory, admissibility, now_ms)?;
+        self.apply_event(event)
+    }
+
+    pub fn record_memory_json(
+        &mut self,
+        memory_json: &str,
+        now_ms: i64,
+        superseded_ids_json: &str,
+    ) -> Result<String, WorkGraphError> {
+        let memory = MemoryRecord::from_json_verified(memory_json)
+            .map_err(|error| WorkGraphError::InvalidInput(error.to_string()))?;
+        let superseded: BTreeSet<String> = if superseded_ids_json.trim().is_empty() {
+            BTreeSet::new()
+        } else {
+            serde_json::from_str(superseded_ids_json)?
+        };
+        self.record_memory(memory, now_ms, superseded)
+    }
+
+    /// Append one verified route → execution → verification chain as a single
+    /// atomic Work Event. The contracts are parsed and commitment-checked by
+    /// the caller-facing JSON method below; this method additionally checks
+    /// their cross-contract identity and current repository version.
+    pub fn record_execution_chain(
+        &mut self,
+        route: RoutingDecision,
+        outcome: ModelExecutionOutcome,
+        verification: VerificationRecord,
+        invalidated_commitments: BTreeSet<String>,
+    ) -> Result<String, WorkGraphError> {
+        if route.repository_id != self.repo_id
+            || outcome.repository_id != self.repo_id
+            || verification.repository_id != self.repo_id
+        {
+            let actual = if route.repository_id != self.repo_id {
+                route.repository_id.clone()
+            } else if outcome.repository_id != self.repo_id {
+                outcome.repository_id.clone()
+            } else {
+                verification.repository_id.clone()
+            };
+            return Err(WorkGraphError::RepoMismatch {
+                expected: self.repo_id.clone(),
+                actual,
+            });
+        }
+        if !outcome.verify_route(&route) {
+            return Err(WorkGraphError::InvalidInput(
+                "model execution outcome does not match its routing decision".to_string(),
+            ));
+        }
+        if verification.subject_id != outcome.outcome_id
+            || verification.subject_commitment != outcome.outcome_commitment
+            || verification.observed_at_ms < outcome.completed_at_ms
+        {
+            return Err(WorkGraphError::InvalidInput(
+                "verification record does not bind the exact execution outcome".to_string(),
+            ));
+        }
+        let workstream = self
+            .nodes
+            .get(&route.workstream_id)
+            .ok_or_else(|| WorkGraphError::UnknownNode(route.workstream_id.clone()))?;
+        if workstream.kind != NodeKind::Workstream {
+            return Err(WorkGraphError::InvalidInput(
+                "execution chain target is not a workstream".to_string(),
+            ));
+        }
+        let task_matches = self
+            .connected_node_ids(&route.workstream_id, 1, MAX_SCOPE_ITEMS)
+            .contains(&route.task_id);
+        if !task_matches {
+            return Err(WorkGraphError::InvalidInput(
+                "routing decision task is not linked to its workstream".to_string(),
+            ));
+        }
+        let repo_node_id = stable_node_id(NodeKind::Repository, &self.repo_id, &self.repo_id);
+        let current_repository_commitment = self
+            .nodes
+            .get(&repo_node_id)
+            .and_then(|node| attr_string(&node.attributes, "head_sha"))
+            .ok_or_else(|| {
+                WorkGraphError::InvalidInput(
+                    "cannot record exact-version verification without a repository head commitment"
+                        .to_string(),
+                )
+            })?;
+        let event = execution_chain_event(
+            &self.repo_id,
+            route,
+            outcome,
+            verification,
+            &current_repository_commitment,
+            &invalidated_commitments,
+        )?;
+        self.apply_event(event)
+    }
+
+    pub fn record_execution_chain_json(
+        &mut self,
+        route_json: &str,
+        outcome_json: &str,
+        verification_json: &str,
+        invalidated_commitments_json: &str,
+    ) -> Result<String, WorkGraphError> {
+        let route = RoutingDecision::from_json_verified(route_json)
+            .map_err(|error| WorkGraphError::InvalidInput(error.to_string()))?;
+        let outcome = ModelExecutionOutcome::from_json_verified(outcome_json)
+            .map_err(|error| WorkGraphError::InvalidInput(error.to_string()))?;
+        let verification = VerificationRecord::from_json_verified(verification_json)
+            .map_err(|error| WorkGraphError::InvalidInput(error.to_string()))?;
+        let invalidated: BTreeSet<String> = if invalidated_commitments_json.trim().is_empty() {
+            BTreeSet::new()
+        } else {
+            serde_json::from_str(invalidated_commitments_json)?
+        };
+        self.record_execution_chain(route, outcome, verification, invalidated)
+    }
+
+    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
+    fn resolve_continuation_manifest(
+        &self,
+        node_ids: &BTreeSet<String>,
+        evidence_ids: &BTreeSet<String>,
+        context_receipt_commitments: Vec<String>,
+        routing_commitments: Vec<String>,
+        execution_outcome_commitments: Vec<String>,
+        verification_commitments: Vec<String>,
+        memory_commitments: Vec<String>,
+        recovery_handle_ids: Vec<String>,
+    ) -> Result<
+        (
+            Vec<String>,
+            Vec<String>,
+            Vec<String>,
+            Vec<String>,
+            Vec<String>,
+            Vec<String>,
+        ),
+        WorkGraphError,
+    > {
+        let mut receipts = BTreeSet::new();
+        let mut routes = BTreeSet::new();
+        let mut outcomes = BTreeSet::new();
+        let mut verifications = BTreeSet::new();
+        let mut memories = BTreeSet::new();
+
+        for evidence_id in evidence_ids {
+            let evidence = self.evidence.get(evidence_id).ok_or_else(|| {
+                WorkGraphError::InvalidInput(format!(
+                    "continuation evidence {evidence_id:?} is absent from the graph"
+                ))
+            })?;
+            if evidence.digest.is_empty() {
+                continue;
+            }
+            if evidence.source_ref.starts_with("context-receipt:") {
+                receipts.insert(evidence.digest.clone());
+            } else if evidence.source_ref.starts_with("routing:") {
+                routes.insert(evidence.digest.clone());
+            } else if evidence.source_ref.starts_with("execution:") {
+                outcomes.insert(evidence.digest.clone());
+            } else if evidence.source_ref.starts_with("verification:") {
+                verifications.insert(evidence.digest.clone());
+            } else if evidence.source_ref.starts_with("memory:") {
+                memories.insert(evidence.digest.clone());
+            }
+        }
+
+        let mut recovery_handles = BTreeSet::new();
+        for node_id in node_ids {
+            let Some(node) = self.nodes.get(node_id) else {
+                continue;
+            };
+            if let Some(Value::Array(values)) = node.attributes.get("recovery_handles") {
+                recovery_handles.extend(
+                    values
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .filter(|value| !value.is_empty())
+                        .map(ToOwned::to_owned),
+                );
+            }
+            if let Some(Value::String(value)) = node.attributes.get("recovery_handle") {
+                if !value.is_empty() {
+                    recovery_handles.insert(value.clone());
+                }
+            }
+        }
+
+        fn resolve(
+            field: &'static str,
+            supplied: Vec<String>,
+            discovered: BTreeSet<String>,
+        ) -> Result<Vec<String>, WorkGraphError> {
+            if supplied.is_empty() {
+                return Ok(discovered.into_iter().collect());
+            }
+            if let Some(unknown) = supplied
+                .iter()
+                .find(|value| !discovered.contains(value.as_str()))
+            {
+                return Err(WorkGraphError::InvalidInput(format!(
+                    "{field} contains a value not evidenced by this workstream: {unknown:?}"
+                )));
+            }
+            Ok(supplied)
+        }
+
+        Ok((
+            resolve(
+                "context_receipt_commitments",
+                context_receipt_commitments,
+                receipts,
+            )?,
+            resolve("routing_commitments", routing_commitments, routes)?,
+            resolve(
+                "execution_outcome_commitments",
+                execution_outcome_commitments,
+                outcomes,
+            )?,
+            resolve(
+                "verification_commitments",
+                verification_commitments,
+                verifications,
+            )?,
+            resolve("memory_commitments", memory_commitments, memories)?,
+            resolve("recovery_handle_ids", recovery_handle_ids, recovery_handles)?,
+        ))
+    }
+
+    /// Build a graph-bound continuation proof only after the ordinary handoff
+    /// receipt is verified against this exact materialization.
+    #[allow(clippy::too_many_arguments)]
+    pub fn continuation_proof(
+        &self,
+        handoff: &HandoffReceipt,
+        context_receipt_commitments: Vec<String>,
+        routing_commitments: Vec<String>,
+        execution_outcome_commitments: Vec<String>,
+        verification_commitments: Vec<String>,
+        memory_commitments: Vec<String>,
+        outstanding_work_refs: Vec<String>,
+        recovery_handle_ids: Vec<String>,
+        created_at_ms: i64,
+    ) -> Result<WorkContinuationProof, WorkGraphError> {
+        if !self.verify_handoff_receipt_against_graph(handoff)? {
+            return Err(WorkGraphError::IntegrityMismatch {
+                expected: self.graph_commitment.clone(),
+                actual: handoff.graph_commitment.clone(),
+            });
+        }
+        let node_ids = handoff.node_ids.iter().cloned().collect();
+        let evidence_ids = handoff.evidence_ids.iter().cloned().collect();
+        let (
+            context_receipt_commitments,
+            routing_commitments,
+            execution_outcome_commitments,
+            verification_commitments,
+            memory_commitments,
+            recovery_handle_ids,
+        ) = self.resolve_continuation_manifest(
+            &node_ids,
+            &evidence_ids,
+            context_receipt_commitments,
+            routing_commitments,
+            execution_outcome_commitments,
+            verification_commitments,
+            memory_commitments,
+            recovery_handle_ids,
+        )?;
+        WorkContinuationProof::new(
+            self.repo_id.clone(),
+            self.revision(),
+            self.graph_commitment.clone(),
+            handoff.workstream_id.clone(),
+            handoff.from_agent.clone(),
+            handoff.to_agent.clone(),
+            handoff.payload_commitment.clone(),
+            context_receipt_commitments,
+            routing_commitments,
+            execution_outcome_commitments,
+            verification_commitments,
+            memory_commitments,
+            outstanding_work_refs,
+            recovery_handle_ids,
+            created_at_ms,
+        )
+        .map_err(|error| WorkGraphError::InvalidInput(error.to_string()))
+    }
+
+    pub fn continuation_proof_json(
+        &self,
+        handoff_json: &str,
+        manifest_json: &str,
+    ) -> Result<String, WorkGraphError> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Manifest {
+            #[serde(default)]
+            context_receipt_commitments: Vec<String>,
+            #[serde(default)]
+            routing_commitments: Vec<String>,
+            #[serde(default)]
+            execution_outcome_commitments: Vec<String>,
+            #[serde(default)]
+            verification_commitments: Vec<String>,
+            #[serde(default)]
+            memory_commitments: Vec<String>,
+            #[serde(default)]
+            outstanding_work_refs: Vec<String>,
+            #[serde(default)]
+            recovery_handle_ids: Vec<String>,
+            created_at_ms: i64,
+        }
+        let handoff: HandoffReceipt = serde_json::from_str(handoff_json)?;
+        let manifest: Manifest = serde_json::from_str(manifest_json)?;
+        self.continuation_proof(
+            &handoff,
+            manifest.context_receipt_commitments,
+            manifest.routing_commitments,
+            manifest.execution_outcome_commitments,
+            manifest.verification_commitments,
+            manifest.memory_commitments,
+            manifest.outstanding_work_refs,
+            manifest.recovery_handle_ids,
+            manifest.created_at_ms,
+        )?
+        .to_json()
+        .map_err(|error| WorkGraphError::Serialization(error.to_string()))
+    }
+
+    /// Reconstruct a bounded continuation proof when an agent was interrupted
+    /// before it could seal a handoff.  The empty source/handoff fields are
+    /// deliberate evidence: previous-agent identity and intent are not
+    /// invented.  Resumable references still have to come from a caller-owned
+    /// manifest and the proof remains bound to this exact graph materialization.
+    #[allow(clippy::too_many_arguments)]
+    pub fn reconstructed_continuation_proof(
+        &self,
+        workstream_id: &str,
+        to_agent: &str,
+        context_receipt_commitments: Vec<String>,
+        routing_commitments: Vec<String>,
+        execution_outcome_commitments: Vec<String>,
+        verification_commitments: Vec<String>,
+        memory_commitments: Vec<String>,
+        mut outstanding_work_refs: Vec<String>,
+        recovery_handle_ids: Vec<String>,
+        created_at_ms: i64,
+    ) -> Result<WorkContinuationProof, WorkGraphError> {
+        validate_text("to_agent", to_agent, MAX_ID_LEN, false)?;
+        let workstream = self
+            .nodes
+            .get(workstream_id)
+            .ok_or_else(|| WorkGraphError::UnknownNode(workstream_id.to_string()))?;
+        if workstream.kind != NodeKind::Workstream {
+            return Err(WorkGraphError::InvalidInput(format!(
+                "continuation target {workstream_id:?} is not a workstream"
+            )));
+        }
+        if !workstream.status.is_unfinished() {
+            return Err(WorkGraphError::InvalidInput(
+                "cannot reconstruct continuation for finished work".to_string(),
+            ));
+        }
+        let related = self.connected_node_ids(workstream_id, 2, 20_000);
+        let mut related_evidence_ids = BTreeSet::new();
+        for node_id in &related {
+            if let Some(node) = self.nodes.get(node_id) {
+                related_evidence_ids.extend(node.evidence_ids.iter().cloned());
+            }
+        }
+        for edge in self.edges.values() {
+            if related.contains(&edge.from_node) && related.contains(&edge.to_node) {
+                related_evidence_ids.extend(edge.evidence_ids.iter().cloned());
+            }
+        }
+        let (
+            context_receipt_commitments,
+            routing_commitments,
+            execution_outcome_commitments,
+            verification_commitments,
+            memory_commitments,
+            recovery_handle_ids,
+        ) = self.resolve_continuation_manifest(
+            &related,
+            &related_evidence_ids,
+            context_receipt_commitments,
+            routing_commitments,
+            execution_outcome_commitments,
+            verification_commitments,
+            memory_commitments,
+            recovery_handle_ids,
+        )?;
+        // Preserve the uncertainty that an explicit handoff would otherwise
+        // resolve.  This is a bounded machine-readable fact, not invented prose.
+        outstanding_work_refs.push("unknown:previous-agent-intent".to_string());
+        WorkContinuationProof::new(
+            self.repo_id.clone(),
+            self.revision(),
+            self.graph_commitment.clone(),
+            workstream_id.to_string(),
+            String::new(),
+            to_agent.to_string(),
+            String::new(),
+            context_receipt_commitments,
+            routing_commitments,
+            execution_outcome_commitments,
+            verification_commitments,
+            memory_commitments,
+            outstanding_work_refs,
+            recovery_handle_ids,
+            created_at_ms,
+        )
+        .map_err(|error| WorkGraphError::InvalidInput(error.to_string()))
+    }
+
+    pub fn reconstructed_continuation_proof_json(
+        &self,
+        workstream_id: &str,
+        to_agent: &str,
+        manifest_json: &str,
+    ) -> Result<String, WorkGraphError> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Manifest {
+            #[serde(default)]
+            context_receipt_commitments: Vec<String>,
+            #[serde(default)]
+            routing_commitments: Vec<String>,
+            #[serde(default)]
+            execution_outcome_commitments: Vec<String>,
+            #[serde(default)]
+            verification_commitments: Vec<String>,
+            #[serde(default)]
+            memory_commitments: Vec<String>,
+            #[serde(default)]
+            outstanding_work_refs: Vec<String>,
+            #[serde(default)]
+            recovery_handle_ids: Vec<String>,
+            created_at_ms: i64,
+        }
+        let manifest: Manifest = serde_json::from_str(manifest_json)?;
+        self.reconstructed_continuation_proof(
+            workstream_id,
+            to_agent,
+            manifest.context_receipt_commitments,
+            manifest.routing_commitments,
+            manifest.execution_outcome_commitments,
+            manifest.verification_commitments,
+            manifest.memory_commitments,
+            manifest.outstanding_work_refs,
+            manifest.recovery_handle_ids,
+            manifest.created_at_ms,
+        )?
+        .to_json()
+        .map_err(|error| WorkGraphError::Serialization(error.to_string()))
+    }
+
     pub fn coordination_report(&self, now_ms: i64) -> CoordinationReport {
         #[derive(Clone)]
         struct Lease {
@@ -1368,6 +1956,7 @@ impl WorkGraph {
                 .then_with(|| a.event_id.cmp(&b.event_id))
         });
         self.event_ids.clear();
+        self.last_passive_snapshot = None;
         self.nodes.clear();
         self.edges.clear();
         self.evidence.clear();
@@ -1397,7 +1986,16 @@ impl WorkGraph {
                 "evidence count exceeds {MAX_EVIDENCE}"
             )));
         }
+        self.refresh_last_passive_snapshot();
         self.refresh_commitment()
+    }
+
+    fn refresh_last_passive_snapshot(&mut self) {
+        self.last_passive_snapshot = self.events.last().and_then(|event| {
+            (event.source_kind == EvidenceKind::RepositoryFact
+                && event.source_ref.starts_with("repo-snapshot:"))
+            .then(|| (event.source_ref.clone(), event.event_id.clone()))
+        });
     }
 
     fn apply_materialized(&mut self, event: &WorkEvent) -> Result<(), WorkGraphError> {
@@ -1956,6 +2554,673 @@ fn passive_repository_snapshot_fingerprint(
     Ok(Some(sha256_json(&semantic)?))
 }
 
+fn context_receipt_event(
+    repo_id: &str,
+    receipt: ContextReceiptEnvelope,
+    agent_id: String,
+    session_id: String,
+) -> Result<WorkEvent, WorkGraphError> {
+    validate_text("receipt agent_id", &agent_id, MAX_ID_LEN, true)?;
+    validate_text("receipt session_id", &session_id, MAX_ID_LEN, true)?;
+    let evidence = with_evidence_id(EvidenceRef {
+        evidence_id: String::new(),
+        kind: EvidenceKind::Receipt,
+        source_ref: format!("context-receipt:{}", receipt.receipt_id),
+        digest: receipt.receipt_commitment.clone(),
+        locator: receipt.source_commitment.clone(),
+        trust: TrustLevel::Verified,
+        observed_at_ms: receipt.created_at_ms,
+        attributes: BTreeMap::new(),
+    })?;
+    let receipt_node_id = stable_node_id(NodeKind::Receipt, repo_id, &receipt.receipt_id);
+    let mut attributes = BTreeMap::new();
+    attributes.insert(
+        "receipt_id".to_string(),
+        Value::String(receipt.receipt_id.clone()),
+    );
+    attributes.insert(
+        "receipt_commitment".to_string(),
+        Value::String(receipt.receipt_commitment.clone()),
+    );
+    attributes.insert(
+        "repository_commitment".to_string(),
+        Value::String(receipt.repository_commitment.clone()),
+    );
+    attributes.insert(
+        "source_commitment".to_string(),
+        Value::String(receipt.source_commitment.clone()),
+    );
+    attributes.insert(
+        "selected_refs".to_string(),
+        serde_json::to_value(&receipt.selected_refs)?,
+    );
+    attributes.insert(
+        "omitted_refs".to_string(),
+        serde_json::to_value(&receipt.omitted_refs)?,
+    );
+    attributes.insert(
+        "pinned_refs".to_string(),
+        serde_json::to_value(&receipt.pinned_refs)?,
+    );
+    attributes.insert(
+        "recoverable_refs".to_string(),
+        serde_json::to_value(&receipt.recoverable_refs)?,
+    );
+    attributes.insert(
+        "recovery_handles".to_string(),
+        serde_json::to_value(&receipt.recovery_handles)?,
+    );
+    attributes.insert(
+        "evidence_ids".to_string(),
+        serde_json::to_value(&receipt.evidence_ids)?,
+    );
+    attributes.insert(
+        "budget_tokens".to_string(),
+        Value::from(receipt.budget_tokens),
+    );
+    attributes.insert(
+        "selection_policy".to_string(),
+        Value::String(receipt.selection_policy.clone()),
+    );
+    attributes.insert(
+        "execution_id".to_string(),
+        Value::String(receipt.execution_id.clone()),
+    );
+    let operations = vec![
+        WorkOperation::AddEvidence {
+            evidence: evidence.clone(),
+        },
+        WorkOperation::UpsertNode {
+            node: WorkNode {
+                node_id: receipt_node_id.clone(),
+                kind: NodeKind::Receipt,
+                label: receipt.receipt_id.clone(),
+                trust: TrustLevel::Verified,
+                status: WorkStatus::Unknown,
+                status_trust: TrustLevel::Untrusted,
+                attributes,
+                evidence_ids: BTreeSet::from([evidence.evidence_id.clone()]),
+                updated_at_ms: receipt.created_at_ms,
+            },
+        },
+        edge_op(
+            &receipt_node_id,
+            &receipt.work_scope_id,
+            EdgeKind::PartOf,
+            TrustLevel::Verified,
+            receipt.created_at_ms,
+            std::slice::from_ref(&evidence.evidence_id),
+        ),
+        WorkOperation::AttachEvidence {
+            node_id: receipt.work_scope_id,
+            evidence_ids: BTreeSet::from([evidence.evidence_id.clone()]),
+        },
+    ];
+    Ok(WorkEvent {
+        event_id: String::new(),
+        observed_at_ms: receipt.created_at_ms,
+        source_kind: EvidenceKind::Receipt,
+        source_ref: format!("context-receipt:{}", receipt.receipt_id),
+        actor_id: agent_id,
+        session_id,
+        operations,
+    })
+}
+
+fn memory_record_event(
+    repo_id: &str,
+    memory: MemoryRecord,
+    admissibility: MemoryAdmissibility,
+    now_ms: i64,
+) -> Result<WorkEvent, WorkGraphError> {
+    let evidence = with_evidence_id(EvidenceRef {
+        evidence_id: String::new(),
+        kind: EvidenceKind::Memory,
+        source_ref: format!("memory:{}", memory.memory_id),
+        digest: memory.record_commitment.clone(),
+        locator: memory.content_reference.clone(),
+        trust: TrustLevel::Observed,
+        observed_at_ms: now_ms,
+        attributes: BTreeMap::new(),
+    })?;
+    let memory_node_id = stable_node_id(NodeKind::Memory, repo_id, &memory.memory_id);
+    let (status, status_trust) = match admissibility {
+        MemoryAdmissibility::Admissible => (WorkStatus::Unknown, TrustLevel::Untrusted),
+        MemoryAdmissibility::Contradicted => (WorkStatus::Blocked, TrustLevel::Observed),
+        MemoryAdmissibility::Superseded | MemoryAdmissibility::Expired => {
+            (WorkStatus::Abandoned, TrustLevel::Observed)
+        }
+        MemoryAdmissibility::Unsupported => (WorkStatus::NeedsVerification, TrustLevel::Observed),
+    };
+    let mut attributes = BTreeMap::new();
+    attributes.insert(
+        "memory_id".to_string(),
+        Value::String(memory.memory_id.clone()),
+    );
+    attributes.insert(
+        "record_commitment".to_string(),
+        Value::String(memory.record_commitment.clone()),
+    );
+    attributes.insert(
+        "content_reference".to_string(),
+        Value::String(memory.content_reference.clone()),
+    );
+    attributes.insert(
+        "content_commitment".to_string(),
+        Value::String(memory.content_commitment.clone()),
+    );
+    attributes.insert(
+        "admissibility".to_string(),
+        serde_json::to_value(admissibility)?,
+    );
+    attributes.insert(
+        "trust_state".to_string(),
+        serde_json::to_value(memory.trust_state)?,
+    );
+    attributes.insert(
+        "source_agent".to_string(),
+        Value::String(memory.source_agent.clone()),
+    );
+    attributes.insert(
+        "source_session".to_string(),
+        Value::String(memory.source_session.clone()),
+    );
+    attributes.insert(
+        "source_execution".to_string(),
+        Value::String(memory.source_execution.clone()),
+    );
+    attributes.insert(
+        "evidence_ids".to_string(),
+        serde_json::to_value(&memory.evidence_ids)?,
+    );
+    attributes.insert(
+        "supersedes".to_string(),
+        serde_json::to_value(&memory.supersedes)?,
+    );
+    attributes.insert(
+        "contradicted_by".to_string(),
+        serde_json::to_value(&memory.contradicted_by)?,
+    );
+    attributes.insert(
+        "valid_until_ms".to_string(),
+        Value::from(memory.valid_until_ms),
+    );
+    attributes.insert(
+        "recovery_handle".to_string(),
+        Value::String(memory.recovery_handle.clone()),
+    );
+
+    let mut operations = vec![
+        WorkOperation::AddEvidence {
+            evidence: evidence.clone(),
+        },
+        WorkOperation::UpsertNode {
+            node: WorkNode {
+                node_id: memory_node_id.clone(),
+                kind: NodeKind::Memory,
+                label: memory.content_reference.clone(),
+                trust: TrustLevel::Observed,
+                status,
+                status_trust,
+                attributes,
+                evidence_ids: BTreeSet::from([evidence.evidence_id.clone()]),
+                updated_at_ms: now_ms,
+            },
+        },
+    ];
+    if !memory.workstream_id.is_empty() {
+        operations.push(edge_op(
+            &memory_node_id,
+            &memory.workstream_id,
+            EdgeKind::PartOf,
+            TrustLevel::Observed,
+            now_ms,
+            std::slice::from_ref(&evidence.evidence_id),
+        ));
+    }
+    if !memory.task_id.is_empty() {
+        operations.push(edge_op(
+            &memory_node_id,
+            &memory.task_id,
+            EdgeKind::References,
+            TrustLevel::Observed,
+            now_ms,
+            std::slice::from_ref(&evidence.evidence_id),
+        ));
+    }
+    for superseded_id in &memory.supersedes {
+        let old_node_id = stable_node_id(NodeKind::Memory, repo_id, superseded_id);
+        operations.push(WorkOperation::UpsertNode {
+            node: WorkNode {
+                node_id: old_node_id.clone(),
+                kind: NodeKind::Memory,
+                label: superseded_id.clone(),
+                trust: TrustLevel::Observed,
+                status: WorkStatus::Abandoned,
+                status_trust: TrustLevel::Observed,
+                attributes: BTreeMap::new(),
+                evidence_ids: BTreeSet::from([evidence.evidence_id.clone()]),
+                updated_at_ms: now_ms,
+            },
+        });
+        operations.push(edge_op(
+            &memory_node_id,
+            &old_node_id,
+            EdgeKind::Supersedes,
+            TrustLevel::Observed,
+            now_ms,
+            std::slice::from_ref(&evidence.evidence_id),
+        ));
+    }
+    Ok(WorkEvent {
+        event_id: String::new(),
+        observed_at_ms: now_ms,
+        source_kind: EvidenceKind::Memory,
+        source_ref: format!("memory:{}", memory.memory_id),
+        actor_id: memory.source_agent,
+        session_id: memory.source_session,
+        operations,
+    })
+}
+
+fn execution_chain_event(
+    repo_id: &str,
+    route: RoutingDecision,
+    outcome: ModelExecutionOutcome,
+    verification: VerificationRecord,
+    current_repository_commitment: &str,
+    invalidated_commitments: &BTreeSet<String>,
+) -> Result<WorkEvent, WorkGraphError> {
+    let freshness = verification.freshness(
+        current_repository_commitment,
+        verification.observed_at_ms,
+        invalidated_commitments,
+    );
+    let verification_is_current = freshness == VerificationFreshness::Current;
+    let verification_is_decisive = verification_is_current
+        && matches!(
+            verification.verdict,
+            VerificationVerdict::Passed | VerificationVerdict::Failed
+        );
+    let verification_trust = if verification_is_decisive {
+        TrustLevel::Verified
+    } else {
+        TrustLevel::Observed
+    };
+
+    let route_evidence = with_evidence_id(EvidenceRef {
+        evidence_id: String::new(),
+        kind: EvidenceKind::RuntimeObservation,
+        source_ref: format!("routing:{}", route.routing_id),
+        digest: route.decision_commitment.clone(),
+        locator: route.policy_version.clone(),
+        trust: TrustLevel::Observed,
+        observed_at_ms: route.decided_at_ms,
+        attributes: BTreeMap::new(),
+    })?;
+    let outcome_evidence = with_evidence_id(EvidenceRef {
+        evidence_id: String::new(),
+        kind: EvidenceKind::RuntimeObservation,
+        source_ref: format!("execution:{}", outcome.outcome_id),
+        digest: outcome.outcome_commitment.clone(),
+        locator: outcome.response_commitment.clone(),
+        trust: TrustLevel::Observed,
+        observed_at_ms: outcome.completed_at_ms,
+        attributes: BTreeMap::new(),
+    })?;
+    let mut verification_evidence_attributes = BTreeMap::new();
+    verification_evidence_attributes
+        .insert("freshness".to_string(), serde_json::to_value(freshness)?);
+    verification_evidence_attributes.insert(
+        "verified_repository_commitment".to_string(),
+        Value::String(verification.verified_repository_commitment.clone()),
+    );
+    verification_evidence_attributes.insert(
+        "dependency_commitments".to_string(),
+        serde_json::to_value(&verification.dependency_commitments)?,
+    );
+    let verification_evidence = with_evidence_id(EvidenceRef {
+        evidence_id: String::new(),
+        kind: EvidenceKind::TestResult,
+        source_ref: format!("verification:{}", verification.verification_id),
+        digest: verification.record_commitment.clone(),
+        locator: verification.subject_id.clone(),
+        trust: verification_trust,
+        observed_at_ms: verification.observed_at_ms,
+        attributes: verification_evidence_attributes,
+    })?;
+
+    let route_node_id = stable_node_id(NodeKind::Decision, repo_id, &route.routing_id);
+    let execution_node_id = stable_node_id(NodeKind::ModelExecution, repo_id, &outcome.outcome_id);
+    let verification_node_id =
+        stable_node_id(NodeKind::Test, repo_id, &verification.verification_id);
+    let model_node_id = stable_node_id(
+        NodeKind::Model,
+        repo_id,
+        &format!("{}:{}:{}", route.provider, route.model, route.runtime),
+    );
+
+    let mut operations = vec![
+        WorkOperation::AddEvidence {
+            evidence: route_evidence.clone(),
+        },
+        WorkOperation::AddEvidence {
+            evidence: outcome_evidence.clone(),
+        },
+        WorkOperation::AddEvidence {
+            evidence: verification_evidence.clone(),
+        },
+    ];
+
+    let mut model_attributes = BTreeMap::new();
+    model_attributes.insert(
+        "provider".to_string(),
+        Value::String(route.provider.clone()),
+    );
+    model_attributes.insert("model".to_string(), Value::String(route.model.clone()));
+    model_attributes.insert("runtime".to_string(), Value::String(route.runtime.clone()));
+    operations.push(WorkOperation::UpsertNode {
+        node: WorkNode {
+            node_id: model_node_id.clone(),
+            kind: NodeKind::Model,
+            label: format!("{}:{}", route.provider, route.model),
+            trust: TrustLevel::Observed,
+            status: WorkStatus::Unknown,
+            status_trust: TrustLevel::Untrusted,
+            attributes: model_attributes,
+            evidence_ids: BTreeSet::from([route_evidence.evidence_id.clone()]),
+            updated_at_ms: route.decided_at_ms,
+        },
+    });
+
+    let mut route_attributes = BTreeMap::new();
+    route_attributes.insert(
+        "routing_id".to_string(),
+        Value::String(route.routing_id.clone()),
+    );
+    route_attributes.insert(
+        "decision_commitment".to_string(),
+        Value::String(route.decision_commitment.clone()),
+    );
+    route_attributes.insert(
+        "context_budget_tokens".to_string(),
+        Value::from(route.context_budget_tokens),
+    );
+    route_attributes.insert(
+        "policy_version".to_string(),
+        Value::String(route.policy_version.clone()),
+    );
+    route_attributes.insert(
+        "reason_codes".to_string(),
+        serde_json::to_value(&route.reason_codes)?,
+    );
+    route_attributes.insert(
+        "feature_commitments".to_string(),
+        serde_json::to_value(&route.feature_commitments)?,
+    );
+    route_attributes.insert(
+        "fallback_route_ids".to_string(),
+        serde_json::to_value(&route.fallback_route_ids)?,
+    );
+    route_attributes.insert(
+        "receipt_id".to_string(),
+        Value::String(route.receipt_id.clone()),
+    );
+    route_attributes.insert(
+        "evidence_ids".to_string(),
+        serde_json::to_value(&route.evidence_ids)?,
+    );
+    operations.push(WorkOperation::UpsertNode {
+        node: WorkNode {
+            node_id: route_node_id.clone(),
+            kind: NodeKind::Decision,
+            label: format!(
+                "route {} to {}:{}",
+                route.routing_id, route.provider, route.model
+            ),
+            trust: TrustLevel::Observed,
+            status: WorkStatus::Unknown,
+            status_trust: TrustLevel::Untrusted,
+            attributes: route_attributes,
+            evidence_ids: BTreeSet::from([route_evidence.evidence_id.clone()]),
+            updated_at_ms: route.decided_at_ms,
+        },
+    });
+
+    let (execution_status, execution_status_trust) = match outcome.state {
+        ExecutionState::Succeeded => (WorkStatus::Completed, TrustLevel::Observed),
+        ExecutionState::Failed => (WorkStatus::Blocked, TrustLevel::Observed),
+        ExecutionState::Cancelled => (WorkStatus::Abandoned, TrustLevel::Observed),
+        ExecutionState::Unknown => (WorkStatus::Unknown, TrustLevel::Untrusted),
+    };
+    let mut outcome_attributes = BTreeMap::new();
+    outcome_attributes.insert(
+        "outcome_id".to_string(),
+        Value::String(outcome.outcome_id.clone()),
+    );
+    outcome_attributes.insert(
+        "routing_id".to_string(),
+        Value::String(outcome.routing_id.clone()),
+    );
+    outcome_attributes.insert(
+        "outcome_commitment".to_string(),
+        Value::String(outcome.outcome_commitment.clone()),
+    );
+    outcome_attributes.insert("latency_ms".to_string(), Value::from(outcome.latency_ms));
+    outcome_attributes.insert(
+        "input_tokens".to_string(),
+        Value::from(outcome.input_tokens),
+    );
+    outcome_attributes.insert(
+        "output_tokens".to_string(),
+        Value::from(outcome.output_tokens),
+    );
+    outcome_attributes.insert(
+        "cost_micro_usd".to_string(),
+        Value::from(outcome.cost_micro_usd),
+    );
+    outcome_attributes.insert(
+        "verification_state".to_string(),
+        serde_json::to_value(outcome.verification_state)?,
+    );
+    outcome_attributes.insert(
+        "error_code".to_string(),
+        Value::String(outcome.error_code.clone()),
+    );
+    outcome_attributes.insert(
+        "evidence_ids".to_string(),
+        serde_json::to_value(&outcome.evidence_ids)?,
+    );
+    operations.push(WorkOperation::UpsertNode {
+        node: WorkNode {
+            node_id: execution_node_id.clone(),
+            kind: NodeKind::ModelExecution,
+            label: format!("{}:{} execution", outcome.provider, outcome.model),
+            trust: TrustLevel::Observed,
+            status: execution_status,
+            status_trust: execution_status_trust,
+            attributes: outcome_attributes,
+            evidence_ids: BTreeSet::from([outcome_evidence.evidence_id.clone()]),
+            updated_at_ms: outcome.completed_at_ms,
+        },
+    });
+
+    let verification_status = match (verification.verdict, freshness) {
+        (VerificationVerdict::Passed, VerificationFreshness::Current) => WorkStatus::Completed,
+        (VerificationVerdict::Failed, VerificationFreshness::Current) => WorkStatus::Blocked,
+        (VerificationVerdict::Passed | VerificationVerdict::Failed, _) => {
+            WorkStatus::NeedsVerification
+        }
+        _ => WorkStatus::Unknown,
+    };
+    let verification_status_trust = if verification_status == WorkStatus::Unknown {
+        TrustLevel::Untrusted
+    } else {
+        verification_trust
+    };
+    let mut verification_attributes = BTreeMap::new();
+    verification_attributes.insert(
+        "verification_id".to_string(),
+        Value::String(verification.verification_id.clone()),
+    );
+    verification_attributes.insert(
+        "record_commitment".to_string(),
+        Value::String(verification.record_commitment.clone()),
+    );
+    verification_attributes.insert(
+        "verified_repository_commitment".to_string(),
+        Value::String(verification.verified_repository_commitment.clone()),
+    );
+    verification_attributes.insert(
+        "verdict".to_string(),
+        serde_json::to_value(verification.verdict)?,
+    );
+    verification_attributes.insert("freshness".to_string(), serde_json::to_value(freshness)?);
+    verification_attributes.insert(
+        "dependency_commitments".to_string(),
+        serde_json::to_value(&verification.dependency_commitments)?,
+    );
+    verification_attributes.insert(
+        "evidence_ids".to_string(),
+        serde_json::to_value(&verification.evidence_ids)?,
+    );
+    operations.push(WorkOperation::UpsertNode {
+        node: WorkNode {
+            node_id: verification_node_id.clone(),
+            kind: NodeKind::Test,
+            label: format!("execution verification {}", verification.verification_id),
+            trust: verification_trust,
+            status: verification_status,
+            status_trust: verification_status_trust,
+            attributes: verification_attributes,
+            evidence_ids: BTreeSet::from([verification_evidence.evidence_id.clone()]),
+            updated_at_ms: verification.observed_at_ms,
+        },
+    });
+
+    for (from, to, kind, evidence_id, trust) in [
+        (
+            route.task_id.as_str(),
+            route_node_id.as_str(),
+            EdgeKind::RoutedTo,
+            route_evidence.evidence_id.as_str(),
+            TrustLevel::Observed,
+        ),
+        (
+            route_node_id.as_str(),
+            model_node_id.as_str(),
+            EdgeKind::RoutedTo,
+            route_evidence.evidence_id.as_str(),
+            TrustLevel::Observed,
+        ),
+        (
+            route_node_id.as_str(),
+            route.workstream_id.as_str(),
+            EdgeKind::PartOf,
+            route_evidence.evidence_id.as_str(),
+            TrustLevel::Observed,
+        ),
+        (
+            execution_node_id.as_str(),
+            route_node_id.as_str(),
+            EdgeKind::ProducedBy,
+            outcome_evidence.evidence_id.as_str(),
+            TrustLevel::Observed,
+        ),
+        (
+            execution_node_id.as_str(),
+            route.workstream_id.as_str(),
+            EdgeKind::PartOf,
+            outcome_evidence.evidence_id.as_str(),
+            TrustLevel::Observed,
+        ),
+        (
+            execution_node_id.as_str(),
+            verification_node_id.as_str(),
+            EdgeKind::VerifiedBy,
+            verification_evidence.evidence_id.as_str(),
+            verification_trust,
+        ),
+    ] {
+        operations.push(edge_op(
+            from,
+            to,
+            kind,
+            trust,
+            verification.observed_at_ms,
+            &[evidence_id.to_string()],
+        ));
+    }
+
+    if !route.receipt_id.is_empty() {
+        let receipt_node_id = stable_node_id(NodeKind::Receipt, repo_id, &route.receipt_id);
+        operations.push(WorkOperation::UpsertNode {
+            node: WorkNode {
+                node_id: receipt_node_id.clone(),
+                kind: NodeKind::Receipt,
+                label: route.receipt_id.clone(),
+                trust: TrustLevel::Observed,
+                status: WorkStatus::Unknown,
+                status_trust: TrustLevel::Untrusted,
+                attributes: BTreeMap::new(),
+                evidence_ids: BTreeSet::from([route_evidence.evidence_id.clone()]),
+                updated_at_ms: route.decided_at_ms,
+            },
+        });
+        operations.push(edge_op(
+            &route_node_id,
+            &receipt_node_id,
+            EdgeKind::References,
+            TrustLevel::Observed,
+            route.decided_at_ms,
+            std::slice::from_ref(&route_evidence.evidence_id),
+        ));
+    }
+
+    match (verification.verdict, freshness) {
+        (VerificationVerdict::Failed, VerificationFreshness::Current) => {
+            operations.push(WorkOperation::SetStatus {
+                node_id: route.workstream_id.clone(),
+                status: WorkStatus::Blocked,
+                trust: TrustLevel::Verified,
+                reason: "current exact-version execution verification failed".to_string(),
+                evidence_ids: BTreeSet::from([verification_evidence.evidence_id.clone()]),
+            });
+        }
+        (VerificationVerdict::Passed, VerificationFreshness::Current) => {
+            operations.push(WorkOperation::AttachEvidence {
+                node_id: route.workstream_id.clone(),
+                evidence_ids: BTreeSet::from([verification_evidence.evidence_id.clone()]),
+            });
+        }
+        (VerificationVerdict::Passed | VerificationVerdict::Failed, _) => {
+            operations.push(WorkOperation::SetStatus {
+                node_id: route.workstream_id.clone(),
+                status: WorkStatus::NeedsVerification,
+                trust: TrustLevel::Observed,
+                reason: "execution verification is stale or transitively invalidated".to_string(),
+                evidence_ids: BTreeSet::from([verification_evidence.evidence_id.clone()]),
+            });
+        }
+        _ => {
+            operations.push(WorkOperation::AttachEvidence {
+                node_id: route.workstream_id.clone(),
+                evidence_ids: BTreeSet::from([verification_evidence.evidence_id.clone()]),
+            });
+        }
+    }
+
+    Ok(WorkEvent {
+        event_id: String::new(),
+        observed_at_ms: verification.observed_at_ms,
+        source_kind: EvidenceKind::RuntimeObservation,
+        source_ref: format!("execution-chain:{}", outcome.outcome_id),
+        actor_id: String::new(),
+        session_id: String::new(),
+        operations,
+    })
+}
+
 fn observation_to_event(
     repo_id: &str,
     mut obs: RepositoryObservation,
@@ -1969,7 +3234,7 @@ fn observation_to_event(
     )?;
     validate_text("agent_id", &obs.agent_id, MAX_ID_LEN, true)?;
     validate_text("session_id", &obs.session_id, MAX_ID_LEN, true)?;
-    if obs.changes.len() > MAX_OPERATIONS_PER_EVENT / 2 {
+    if obs.changes.len() > MAX_CHANGES_PER_EVENT {
         return Err(WorkGraphError::LimitExceeded(
             "too many file changes in one observation".to_string(),
         ));
@@ -3631,6 +4896,57 @@ mod tests {
     }
 
     #[test]
+    fn large_dirty_observation_is_bounded_atomic_and_poll_idempotent() {
+        let mut graph = WorkGraph::new("repo-1").unwrap();
+        let mut observation = clean_observation();
+        observation.branch.name = "feature/large-dirty".into();
+        observation.branch.ahead_by = 1;
+        observation.changes = (0..2_000)
+            .map(|index| FileChangeObservation {
+                path: format!("src/module_{index:05}.rs"),
+                kind: FileChangeKind::Modified,
+                staged: false,
+                conflicted: false,
+                old_path: String::new(),
+                content_digest: format!("git-blob:{index:064x}"),
+            })
+            .collect();
+
+        graph.observe_repository(observation.clone()).unwrap();
+        assert_eq!(graph.event_count(), 4);
+        assert_eq!(graph.unfinished_work().len(), 1);
+        let commitment = graph.graph_commitment().to_string();
+
+        graph.observe_repository(observation.clone()).unwrap();
+        assert_eq!(graph.event_count(), 4);
+        assert_eq!(graph.graph_commitment(), commitment);
+
+        let mut restored = WorkGraph::from_json(&graph.export_json(false).unwrap()).unwrap();
+        restored.observe_repository(observation).unwrap();
+        assert_eq!(restored.event_count(), 4);
+        assert_eq!(restored.graph_commitment(), commitment);
+
+        let before = restored.export_json(false).unwrap();
+        let mut oversized = clean_observation();
+        oversized.changes = (0..=MAX_CHANGES_PER_OBSERVATION)
+            .map(|index| FileChangeObservation {
+                path: format!("oversized/{index:05}.rs"),
+                kind: FileChangeKind::Modified,
+                staged: false,
+                conflicted: false,
+                old_path: String::new(),
+                content_digest: format!("git-blob:{index:064x}"),
+            })
+            .collect();
+        assert!(matches!(
+            restored.observe_repository(oversized),
+            Err(WorkGraphError::LimitExceeded(message))
+                if message.contains("file changes per observation")
+        ));
+        assert_eq!(restored.export_json(false).unwrap(), before);
+    }
+
+    #[test]
     fn repeated_active_verification_is_never_collapsed() {
         let mut graph = WorkGraph::new("repo-1").unwrap();
         let mut first =
@@ -4280,5 +5596,350 @@ mod tests {
         assert!(!foreign
             .verify_handoff_receipt_against_graph(&receipt)
             .unwrap());
+    }
+
+    fn graph_with_execution_scope() -> (WorkGraph, String, String) {
+        let mut graph = WorkGraph::new("repo-1").unwrap();
+        let mut obs = clean_observation();
+        obs.task_hint = Some(TaskHint {
+            task_id: "execution-task".to_string(),
+            title: "Execute verified route".to_string(),
+            trust: TrustLevel::Observed,
+            explicit_status: WorkStatus::InProgress,
+            remaining_work: vec!["run model and verify output".to_string()],
+            source_kind: EvidenceKind::UserStatement,
+            source_ref: "user:task".to_string(),
+        });
+        obs.changes.push(FileChangeObservation {
+            path: "src/auth.rs".to_string(),
+            kind: FileChangeKind::Modified,
+            staged: false,
+            conflicted: false,
+            old_path: String::new(),
+            content_digest: "git-blob:1111111111111111111111111111111111111111".to_string(),
+        });
+        graph.observe_repository(obs).unwrap();
+        let item = graph.unfinished_work()[0].clone();
+        (graph, item.node_id, item.task_ids[0].clone())
+    }
+
+    fn execution_contracts(
+        workstream_id: &str,
+        task_id: &str,
+        verified_head: &str,
+    ) -> (RoutingDecision, ModelExecutionOutcome, VerificationRecord) {
+        let route = RoutingDecision::new(
+            "repo-1".into(),
+            task_id.into(),
+            workstream_id.into(),
+            "openai".into(),
+            "gpt-5".into(),
+            "responses-api".into(),
+            8_192,
+            "policy:v1".into(),
+            vec!["capability_match".into()],
+            vec!["sha256:features".into()],
+            vec![],
+            "cr_example".into(),
+            vec!["evidence:route".into()],
+            1_100,
+        )
+        .unwrap();
+        let outcome = ModelExecutionOutcome::new(
+            route.routing_id.clone(),
+            "repo-1".into(),
+            task_id.into(),
+            workstream_id.into(),
+            "openai".into(),
+            "gpt-5".into(),
+            "responses-api".into(),
+            "cr_example".into(),
+            "sha256:request".into(),
+            "sha256:response".into(),
+            ExecutionState::Succeeded,
+            crate::engine_contracts::OutcomeVerificationState::Passed,
+            100,
+            1_000,
+            100,
+            500,
+            String::new(),
+            vec!["evidence:outcome".into()],
+            1_200,
+        )
+        .unwrap();
+        let verification = VerificationRecord::new(
+            "repo-1".into(),
+            outcome.outcome_id.clone(),
+            outcome.outcome_commitment.clone(),
+            verified_head.into(),
+            VerificationVerdict::Passed,
+            vec!["evidence:test".into()],
+            vec!["sha256:source".into()],
+            1_300,
+            0,
+        )
+        .unwrap();
+        (route, outcome, verification)
+    }
+
+    #[test]
+    fn execution_chain_closes_work_context_execution_and_trust_atomically() {
+        let (mut graph, workstream_id, task_id) = graph_with_execution_scope();
+        let (route, outcome, verification) = execution_contracts(&workstream_id, &task_id, "abc");
+        graph
+            .record_execution_chain(
+                route.clone(),
+                outcome.clone(),
+                verification.clone(),
+                BTreeSet::new(),
+            )
+            .unwrap();
+
+        let snapshot: serde_json::Value =
+            serde_json::from_str(&graph.snapshot_json(false).unwrap()).unwrap();
+        let nodes = snapshot["nodes"].as_array().unwrap();
+        assert!(nodes.iter().any(|node| {
+            node["attributes"]["routing_id"] == serde_json::json!(route.routing_id)
+        }));
+        assert!(nodes.iter().any(|node| {
+            node["attributes"]["outcome_id"] == serde_json::json!(outcome.outcome_id)
+        }));
+        assert!(nodes.iter().any(|node| {
+            node["attributes"]["verification_id"] == serde_json::json!(verification.verification_id)
+                && node["attributes"]["freshness"] == "current"
+        }));
+        assert_ne!(
+            graph.unfinished_work()[0].status,
+            WorkStatus::NeedsVerification
+        );
+
+        let handoff = graph
+            .handoff_receipt(&workstream_id, "claude", "codex", 1_400)
+            .unwrap();
+        let proof = graph
+            .continuation_proof(
+                &handoff,
+                vec![],
+                vec![],
+                vec![],
+                vec![],
+                vec![],
+                vec!["run Linux CI".into()],
+                vec![],
+                1_500,
+            )
+            .unwrap();
+        assert_eq!(proof.routing_commitments, vec![route.decision_commitment]);
+        assert_eq!(
+            proof.execution_outcome_commitments,
+            vec![outcome.outcome_commitment]
+        );
+        assert_eq!(
+            proof.verification_commitments,
+            vec![verification.record_commitment]
+        );
+        assert_eq!(
+            proof.state_for_graph("repo-1", graph.revision(), graph.graph_commitment()),
+            crate::engine_contracts::ContinuationProofState::Valid
+        );
+    }
+
+    #[test]
+    fn interrupted_agent_gets_evidence_bounded_continuation_without_a_handoff() {
+        let (graph, workstream_id, _) = graph_with_execution_scope();
+        let proof = graph
+            .reconstructed_continuation_proof(
+                &workstream_id,
+                "agent:codex",
+                vec![],
+                vec![],
+                vec![],
+                vec![],
+                vec![],
+                vec!["run targeted tests".into()],
+                vec![],
+                1_500,
+            )
+            .unwrap();
+        assert!(proof.from_agent.is_empty());
+        assert!(proof.handoff_commitment.is_empty());
+        assert!(proof
+            .outstanding_work_refs
+            .contains(&"unknown:previous-agent-intent".to_string()));
+        assert_eq!(
+            proof.state_for_graph("repo-1", graph.revision(), graph.graph_commitment()),
+            crate::engine_contracts::ContinuationProofState::Valid
+        );
+
+        let completed = {
+            let mut graph = graph;
+            let evidence = with_evidence_id(EvidenceRef {
+                evidence_id: String::new(),
+                kind: EvidenceKind::TestResult,
+                source_ref: "test:complete".into(),
+                digest: "sha256:passing".into(),
+                locator: String::new(),
+                trust: TrustLevel::Verified,
+                observed_at_ms: 1_600,
+                attributes: BTreeMap::new(),
+            })
+            .unwrap();
+            graph
+                .apply_event(WorkEvent {
+                    event_id: String::new(),
+                    observed_at_ms: 1_600,
+                    source_kind: EvidenceKind::TestResult,
+                    source_ref: "test:complete".into(),
+                    actor_id: String::new(),
+                    session_id: String::new(),
+                    operations: vec![
+                        WorkOperation::AddEvidence {
+                            evidence: evidence.clone(),
+                        },
+                        WorkOperation::SetStatus {
+                            node_id: workstream_id.clone(),
+                            status: WorkStatus::Completed,
+                            trust: TrustLevel::Verified,
+                            reason: "verified complete".into(),
+                            evidence_ids: BTreeSet::from([evidence.evidence_id]),
+                        },
+                    ],
+                })
+                .unwrap();
+            graph
+        };
+        assert!(matches!(
+            completed.reconstructed_continuation_proof(
+                &workstream_id,
+                "agent:codex",
+                vec![], vec![], vec![], vec![], vec![], vec!["x".into()], vec![], 1_700,
+            ),
+            Err(WorkGraphError::InvalidInput(message)) if message.contains("finished work")
+        ));
+    }
+
+    #[test]
+    fn stale_or_transitively_invalidated_verification_cannot_upgrade_work() {
+        for (verified_head, invalidated) in [
+            ("older-head", BTreeSet::new()),
+            ("abc", BTreeSet::from(["sha256:source".to_string()])),
+        ] {
+            let (mut graph, workstream_id, task_id) = graph_with_execution_scope();
+            let (route, outcome, verification) =
+                execution_contracts(&workstream_id, &task_id, verified_head);
+            graph
+                .record_execution_chain(route, outcome, verification, invalidated)
+                .unwrap();
+            assert_eq!(
+                graph.unfinished_work()[0].status,
+                WorkStatus::NeedsVerification
+            );
+        }
+    }
+
+    #[test]
+    fn context_receipt_and_memory_become_bounded_graph_evidence() {
+        let (mut graph, workstream_id, task_id) = graph_with_execution_scope();
+        let receipt = ContextReceiptEnvelope::new(
+            "repo-1".into(),
+            "abc".into(),
+            graph.graph_commitment().into(),
+            workstream_id.clone(),
+            "sha256:sources".into(),
+            vec!["src/auth.rs#0:20".into()],
+            vec!["src/auth.rs#20:40".into()],
+            vec!["evidence:test".into()],
+            vec!["src/auth.rs#20:40".into()],
+            vec!["rh_example".into()],
+            vec!["evidence:test".into()],
+            512,
+            "work-scope/v1".into(),
+            "execution:pending".into(),
+            1_100,
+        )
+        .unwrap();
+        graph
+            .record_context_receipt(receipt.clone(), "agent:claude".into(), "session:1".into())
+            .unwrap();
+        assert!(graph
+            .snapshot_json(false)
+            .unwrap()
+            .contains(&receipt.receipt_id));
+        assert!(matches!(
+            graph.record_context_receipt(
+                receipt.clone(),
+                "agent:claude".into(),
+                "session:1".into()
+            ),
+            Err(WorkGraphError::IntegrityMismatch { .. })
+        ));
+
+        let memory = MemoryRecord::new(
+            "repo-1".into(),
+            task_id,
+            workstream_id.clone(),
+            "agent:claude".into(),
+            "session:1".into(),
+            "execution:1".into(),
+            "vault/auth-decision".into(),
+            "sha256:memory-content".into(),
+            vec!["evidence:test".into()],
+            TrustLevel::Observed,
+            1_200,
+            1_200,
+            0,
+            vec![],
+            vec![],
+            "rh_memory".into(),
+        )
+        .unwrap();
+        graph
+            .record_memory(memory.clone(), 1_300, BTreeSet::new())
+            .unwrap();
+        let snapshot = graph.snapshot_json(false).unwrap();
+        assert!(snapshot.contains(&memory.memory_id));
+        assert!(snapshot.contains("\"admissibility\":\"admissible\""));
+        assert!(!snapshot.contains("memory-content-bytes"));
+
+        let handoff = graph
+            .handoff_receipt(&workstream_id, "agent:claude", "agent:codex", 1_400)
+            .unwrap();
+        let proof = graph
+            .continuation_proof(
+                &handoff,
+                vec![],
+                vec![],
+                vec![],
+                vec![],
+                vec![],
+                vec!["run package tests".into()],
+                vec![],
+                1_500,
+            )
+            .unwrap();
+        assert_eq!(
+            proof.context_receipt_commitments,
+            vec![receipt.receipt_commitment]
+        );
+        assert_eq!(proof.memory_commitments, vec![memory.record_commitment]);
+        assert_eq!(
+            proof.recovery_handle_ids,
+            vec!["rh_example".to_string(), "rh_memory".to_string()]
+        );
+        assert!(matches!(
+            graph.continuation_proof(
+                &handoff,
+                vec!["sha256:invented".into()],
+                vec![],
+                vec![],
+                vec![],
+                vec![],
+                vec!["run package tests".into()],
+                vec![],
+                1_500,
+            ),
+            Err(WorkGraphError::InvalidInput(message))
+                if message.contains("not evidenced by this workstream")
+        ));
     }
 }

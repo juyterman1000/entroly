@@ -133,6 +133,11 @@ const {
   recoveryHandleVerifyBytes,
 } = wasm;
 
+const GOLDEN_ROUTING_ID = 'route_66d4c04a18b4e70f';
+const GOLDEN_OUTCOME_ID = 'outcome_a130681ddd63dc84';
+const GOLDEN_VERIFICATION_ID = 'verify_4e1487e3d6e73b36';
+const GOLDEN_CONTINUATION_ID = 'continuation_53eba6ee3a52be48';
+
 // Must equal engine_contracts::tests::GOLDEN_RECOVERY_HANDLE_ID.
 const GOLDEN_HANDLE_ID = 'rh_61e976bc425ad0de';
 const FIXTURE_BODY = Buffer.from('recoverable bytes');
@@ -292,3 +297,144 @@ function goldenMemory(evidenceIds = ['evidence:1']) {
 }
 
 console.log('memory record parity: node matches the cross-runtime golden vector');
+
+// ── Routing, execution, freshness and continuation ───────────────────────
+
+const {
+  routingDecisionBuildJSON,
+  routingDecisionVerifyJSON,
+  modelExecutionOutcomeBuildJSON,
+  modelExecutionOutcomeVerifyJSON,
+  verificationRecordBuildJSON,
+  verificationRecordVerifyJSON,
+  verificationRecordFreshness,
+  workContinuationProofBuildJSON,
+  workContinuationProofVerifyJSON,
+  workContinuationProofState,
+} = wasm;
+
+function routeContract() {
+  return routingDecisionBuildJSON(JSON.stringify({
+    repository_id: 'repo:demo',
+    task_id: 'task:auth',
+    workstream_id: 'workstream:1',
+    provider: 'openai',
+    model: 'gpt-5',
+    runtime: 'responses-api',
+    context_budget_tokens: 8192,
+    policy_version: 'policy:v1',
+    reason_codes: ['capability_match', 'lowest_verified_cost'],
+    feature_commitments: ['sha256:features'],
+    fallback_route_ids: [],
+    receipt_id: 'cr_672457349ba403bc',
+    evidence_ids: ['evidence:benchmark'],
+    decided_at_ms: 1700000000000,
+  }));
+}
+
+function outcomeContract() {
+  const route = JSON.parse(routeContract());
+  return modelExecutionOutcomeBuildJSON(JSON.stringify({
+    routing_id: route.routing_id,
+    repository_id: route.repository_id,
+    task_id: route.task_id,
+    workstream_id: route.workstream_id,
+    provider: route.provider,
+    model: route.model,
+    runtime: route.runtime,
+    receipt_id: route.receipt_id,
+    request_commitment: 'sha256:request',
+    response_commitment: 'sha256:response',
+    state: 'succeeded',
+    verification_state: 'passed',
+    latency_ms: 420,
+    input_tokens: 1200,
+    output_tokens: 240,
+    cost_micro_usd: 17500,
+    error_code: '',
+    evidence_ids: ['evidence:test'],
+    completed_at_ms: 1700000000500,
+  }));
+}
+
+function verificationContract() {
+  const outcome = JSON.parse(outcomeContract());
+  return verificationRecordBuildJSON(JSON.stringify({
+    repository_id: 'repo:demo',
+    subject_id: outcome.outcome_id,
+    subject_commitment: outcome.outcome_commitment,
+    verified_repository_commitment: 'sha256:head-a',
+    verdict: 'passed',
+    evidence_ids: ['evidence:test'],
+    dependency_commitments: ['sha256:source-a', 'sha256:config-a'],
+    observed_at_ms: 1700000000600,
+    valid_until_ms: 1700000001000,
+  }));
+}
+
+function continuationContract() {
+  const route = JSON.parse(routeContract());
+  const outcome = JSON.parse(outcomeContract());
+  const verification = JSON.parse(verificationContract());
+  return workContinuationProofBuildJSON(JSON.stringify({
+    repository_id: 'repo:demo',
+    graph_revision: 7,
+    graph_commitment: 'sha256:graph',
+    workstream_id: 'workstream:1',
+    from_agent: 'agent:claude',
+    to_agent: 'agent:codex',
+    handoff_commitment: 'sha256:handoff',
+    context_receipt_commitments: ['sha256:receipt'],
+    routing_commitments: [route.decision_commitment],
+    execution_outcome_commitments: [outcome.outcome_commitment],
+    verification_commitments: [verification.record_commitment],
+    memory_commitments: ['sha256:memory'],
+    outstanding_work_refs: ['run Linux CI'],
+    recovery_handle_ids: ['rh_61e976bc425ad0de'],
+    created_at_ms: 1700000000700,
+  }));
+}
+
+{
+  assert.strictEqual(JSON.parse(routeContract()).routing_id, GOLDEN_ROUTING_ID);
+  assert.strictEqual(JSON.parse(outcomeContract()).outcome_id, GOLDEN_OUTCOME_ID);
+  assert.strictEqual(JSON.parse(verificationContract()).verification_id, GOLDEN_VERIFICATION_ID);
+  assert.strictEqual(JSON.parse(continuationContract()).proof_id, GOLDEN_CONTINUATION_ID);
+  assert.strictEqual(routingDecisionVerifyJSON(routeContract()), routeContract());
+  assert.strictEqual(modelExecutionOutcomeVerifyJSON(outcomeContract()), outcomeContract());
+  assert.strictEqual(verificationRecordVerifyJSON(verificationContract()), verificationContract());
+  assert.strictEqual(workContinuationProofVerifyJSON(continuationContract()), continuationContract());
+  assert.strictEqual(
+    verificationRecordFreshness(
+      verificationContract(), 'sha256:head-a', 1700000000700, JSON.stringify([]),
+    ),
+    'current',
+  );
+  assert.strictEqual(
+    verificationRecordFreshness(
+      verificationContract(), 'sha256:head-b', 1700000000700, JSON.stringify([]),
+    ),
+    'stale',
+  );
+  assert.strictEqual(
+    verificationRecordFreshness(
+      verificationContract(), 'sha256:head-a', 1700000000700,
+      JSON.stringify(['sha256:config-a']),
+    ),
+    'invalidated',
+  );
+  assert.strictEqual(
+    workContinuationProofState(
+      continuationContract(), 'repo:demo', 7, 'sha256:graph',
+    ),
+    'valid',
+  );
+  assert.throws(
+    () => workContinuationProofVerifyJSON(
+      continuationContract().replace('agent:codex', 'agent:other'),
+    ),
+    /proof_commitment/,
+  );
+}
+
+console.log('routing/execution/freshness/continuation parity: node contract is verified');

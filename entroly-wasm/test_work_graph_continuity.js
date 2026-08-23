@@ -10,6 +10,7 @@ const {
 } = require('./js/work_graph_store');
 const {
   handoffRepository,
+  handoffRepositoryWithProof,
   resumeRepository,
 } = require('./js/work_graph_continuity');
 
@@ -60,6 +61,15 @@ try {
         to_agent: toAgent,
       };
     },
+    continuationProof(handoff, manifest) {
+      calls.push(['proof', handoff.workstream_id, manifest.created_at_ms]);
+      return {
+        workstream_id: handoff.workstream_id,
+        from_agent: handoff.from_agent,
+        to_agent: handoff.to_agent,
+        outstanding_work_refs: manifest.outstanding_work_refs,
+      };
+    },
   };
   WorkGraphStore.forRepository = (repoPath, options) => {
     calls.push(['store', repoPath, options]);
@@ -102,6 +112,25 @@ try {
     'handoff snapshot lacks content identity');
   assert(calls[0][0] === 'store' && calls[1][0] === 'persist' && calls[2][0] === 'handoff',
     'npm handoff did not run store -> fingerprinted persist -> handoff in order');
+
+  calls.length = 0;
+  submitted = null;
+  fakeStore.resume = (workstreamId, maxEvidence) => {
+    calls.push(['resume', workstreamId, maxEvidence]);
+    return { changed_paths: ['app.py'], failures: ['tests failed'] };
+  };
+  const bundle = handoffRepositoryWithProof(repo, {
+    workstreamId: 'workstream:1',
+    fromAgent: 'claude',
+    toAgent: 'codex',
+    generatedAtMs: 1235,
+  });
+  assert(bundle.handoff.to_agent === 'codex', 'complete handoff omitted receipt');
+  assert(bundle.continuation_proof.to_agent === 'codex', 'complete handoff omitted proof');
+  assert(bundle.continuation_proof.outstanding_work_refs.join(',') === 'app.py,tests failed',
+    'complete handoff omitted bounded outstanding work');
+  assert(calls.map((call) => call[0]).join(',') === 'store,persist,handoff,resume,proof',
+    'complete npm handoff did not seal one refreshed receipt and proof');
 
   calls.length = 0;
   rejected = false;

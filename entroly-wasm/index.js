@@ -53,7 +53,11 @@ try {
     !classifyLearningQueryRust ||
     !wasmExports.contextReceiptBuildJSON ||
     !wasmExports.recoveryHandleBuildJSON ||
-    !wasmExports.memoryRecordBuildJSON
+    !wasmExports.memoryRecordBuildJSON ||
+    !wasmExports.routingDecisionBuildJSON ||
+    !wasmExports.modelExecutionOutcomeBuildJSON ||
+    !wasmExports.verificationRecordBuildJSON ||
+    !wasmExports.workContinuationProofBuildJSON
   ) {
     // A source checkout can contain an older generated pkg/ directory. Treat
     // a missing Work Graph export exactly like any other stale native surface
@@ -95,6 +99,7 @@ const {
 const {
   MAX_RESUME_EVIDENCE,
   handoffRepository,
+  handoffRepositoryWithProof,
   resumeRepository,
 } = require('./js/work_graph_continuity');
 const {
@@ -104,6 +109,13 @@ const {
   renderContextReceipt,
   selectReceiptContext,
 } = require('./js/context_receipts');
+const {
+  continuationProofState,
+  createModelExecutionOutcome,
+  createRoutingDecision,
+  createVerificationRecord,
+  verificationFreshness,
+} = require('./js/continuity_contracts');
 const {
   createEntrolyMiddleware,
   optimizeAnthropicParams,
@@ -172,6 +184,7 @@ module.exports = {
   WorkGraphStateError,
   MAX_RESUME_EVIDENCE,
   handoffRepository,
+  handoffRepositoryWithProof,
   resumeRepository,
 
   // Configuration
@@ -231,4 +244,11 @@ module.exports = {
   createContextReceipt,
   renderContextReceipt,
   explainReceiptOmission,
+
+  // Canonical evidence-backed execution and continuation contracts.
+  continuationProofState,
+  createModelExecutionOutcome,
+  createRoutingDecision,
+  createVerificationRecord,
+  verificationFreshness,
 };

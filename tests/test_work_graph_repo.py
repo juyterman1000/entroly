@@ -134,12 +134,14 @@ def test_valid_default_branch_override_is_accepted(tmp_path: Path) -> None:
     assert observation["branch"]["base_ref"] == "refs/heads/main"
 
 
-def test_change_explosion_fails_closed_instead_of_returning_partial_state(tmp_path: Path) -> None:
+def test_large_dirty_repo_is_complete_instead_of_silently_truncated(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     for index in range(513):
         (repo / f"untracked-{index}.txt").write_text("x\n")
-    with pytest.raises(RepositoryDiscoveryError, match="partial Work Graph"):
-        discover_repository_observation(repo)
+    observation = discover_repository_observation(repo)
+    assert len(observation["changes"]) == 513
+    paths = {change["path"] for change in observation["changes"]}
+    assert {"untracked-0.txt", "untracked-512.txt"} <= paths
 
 
 def test_checkpoint_can_name_existing_git_work_but_not_resurrect_clean_repo(tmp_path: Path) -> None:

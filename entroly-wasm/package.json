@@ -32,6 +32,8 @@
     "js/value_tracker.js",
     "js/app_sdk.js",
     "js/context_receipts.js",
+    "js/continuity_contracts.js",
+    "js/continuity_contracts.d.ts",
     "js/agentskills_export.js",
     "js/gateways.js",
     "js/vault_observer.js",

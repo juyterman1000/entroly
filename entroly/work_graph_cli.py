@@ -284,10 +284,21 @@ def run(args: Any) -> int:
             # repository/checkpoint facts plus exact unstaged worktree identity
             # before Rust reconstructs the workstream.
             store.submit_observation(_passive_observation(project))
+            resume_view = store.resume(workstream or None, max_evidence=max_evidence)
             payload = {
                 "status": "ok",
-                "resume": store.resume(workstream or None, max_evidence=max_evidence),
+                "resume": resume_view,
             }
+            target_agent = str(getattr(args, "to_agent", "") or "").strip()
+            if target_agent:
+                target_agent = _required_id(target_agent, "--to-agent")
+                payload["continuation_proof"] = store.reconstructed_continuation_proof(
+                    str(resume_view["selected_workstream"]["node_id"]),
+                    target_agent,
+                    outstanding_work_refs=list(resume_view.get("changed_paths", []))
+                    + list(resume_view.get("failures", [])),
+                    created_at_ms=int(time.time() * 1000),
+                )
         elif action == "handoff":
             workstream = _required_id(args.workstream, "--workstream")
             source_agent = _required_id(args.from_agent, "--from-agent")
@@ -296,9 +307,17 @@ def run(args: Any) -> int:
             # A handoff receipt must commit to the latest durable worktree and
             # checkpoint facts, including exact unstaged worktree content identity.
             store.submit_observation(_passive_observation(project))
+            handoff = store.handoff(workstream, source_agent, target_agent)
+            resume_view = store.resume(workstream, max_evidence=128)
             payload = {
                 "status": "ok",
-                "handoff": store.handoff(workstream, source_agent, target_agent),
+                "handoff": handoff,
+                "continuation_proof": store.continuation_proof(
+                    handoff,
+                    outstanding_work_refs=list(resume_view.get("changed_paths", []))
+                    + list(resume_view.get("failures", [])),
+                    created_at_ms=int(time.time() * 1000),
+                ),
             }
         else:
             payload = {
@@ -337,6 +356,11 @@ def build_parser() -> argparse.ArgumentParser:
     resume = actions.add_parser("resume", help="Recover an unfinished workstream")
     resume.add_argument("--workstream", default="")
     resume.add_argument("--max-evidence", type=int, default=128)
+    resume.add_argument(
+        "--to-agent",
+        default="",
+        help="Also seal an evidence-bounded no-handoff continuation proof",
+    )
     handoff = actions.add_parser("handoff", help="Seal a graph-bound cross-agent handoff")
     handoff.add_argument("--workstream", required=True)
     handoff.add_argument("--from-agent", required=True)

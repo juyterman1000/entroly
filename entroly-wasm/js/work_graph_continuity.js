@@ -79,9 +79,38 @@ function handoffRepository(repoPath = '.', options = {}) {
   return store.handoff(workstreamId, fromAgent, toAgent, generatedAtMs);
 }
 
+function handoffRepositoryWithProof(repoPath = '.', options = {}) {
+  // Preserve the receipt-only API above for compatibility while making the
+  // complete continuation artifact available as one low-ceremony operation.
+  const workstreamId = requiredId(options.workstreamId, 'workstreamId');
+  const fromAgent = requiredId(options.fromAgent, 'fromAgent');
+  const toAgent = requiredId(options.toAgent, 'toAgent');
+  const storeOptions = options.storeOptions || {};
+  const repositoryOptions = options.repositoryOptions || {};
+  const generatedAtMs = options.generatedAtMs == null ? Date.now() : Number(options.generatedAtMs);
+  if (!Number.isSafeInteger(generatedAtMs)) {
+    throw new WorkGraphStateError('generatedAtMs must be a JavaScript-safe integer');
+  }
+
+  const store = WorkGraphStore.forRepository(repoPath, storeOptions);
+  store.submitObservation(passiveObservation(repoPath, repositoryOptions));
+  const handoff = store.handoff(workstreamId, fromAgent, toAgent, generatedAtMs);
+  const view = store.resume(workstreamId, 128);
+  const outstanding = [
+    ...(Array.isArray(view.changed_paths) ? view.changed_paths : []),
+    ...(Array.isArray(view.failures) ? view.failures : []),
+  ];
+  const continuationProof = store.continuationProof(handoff, {
+    outstanding_work_refs: outstanding,
+    created_at_ms: generatedAtMs,
+  });
+  return { handoff, continuation_proof: continuationProof };
+}
+
 module.exports = {
   MAX_RESUME_EVIDENCE,
   MAX_WORK_ID_CHARS,
   handoffRepository,
+  handoffRepositoryWithProof,
   resumeRepository,
 };

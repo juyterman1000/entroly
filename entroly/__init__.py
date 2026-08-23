@@ -540,7 +540,14 @@ except Exception:  # never let the guard break import
 # AI Work Graph — shared Rust temporal work-state engine. Python remains
 # orchestration-only; inference/trust/handoff semantics live in Rust.
 try:
-    from .work_graph import WorkGraph, WorkGraphUnavailableError  # noqa: F401
+    from .work_graph import (  # noqa: F401
+        WorkGraph,
+        WorkGraphUnavailableError,
+        create_model_execution_outcome,
+        create_routing_decision,
+        create_verification_record,
+        verification_freshness,
+    )
 except ImportError:
     pass
 

@@ -127,3 +127,4 @@ export * from "./js/work_graph";
 export * from "./js/work_graph_repo";
 export * from "./js/work_graph_store";
 export * from "./js/work_graph_continuity";
+export * from "./js/continuity_contracts";

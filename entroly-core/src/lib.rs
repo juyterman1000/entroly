@@ -57,8 +57,8 @@ mod telemetry;
 mod trust_engine_bindings;
 pub(crate) use entroly_engine::trajectory;
 pub(crate) use entroly_engine::utilization;
-mod witness;
 mod context_receipt_bindings;
+mod witness;
 mod work_graph_bindings;
 // Cross-agent memory IPC primitives vendored from juyterman1000/AgentOS
 // (MIT-licensed, same author). Provides:

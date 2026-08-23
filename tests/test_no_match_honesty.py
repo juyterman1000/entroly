@@ -602,3 +602,37 @@ def test_engine_absence_is_only_claimed_when_candidates_are_zero(monkeypatch):
     assert verdict["candidate_generation_available"] is True
     assert "native engine" not in verdict["reason"]
     assert "rephrase" in verdict["remediation"]
+
+
+def test_complete_fallback_selection_is_not_erased_as_no_match(monkeypatch):
+    """A fallback result that selected its whole universe displaced nothing."""
+    import entroly.engine as engine_module
+    from entroly.engine import apply_no_match_contract
+
+    monkeypatch.setattr(engine_module, "_usable_core_absent", lambda: True)
+    selected = [
+        {
+            "id": "a",
+            "source": "auth.py",
+            "content": "def login(): pass",
+            "token_count": 4,
+            "relevance": 0.5,
+        },
+        {
+            "id": "b",
+            "source": "billing.py",
+            "content": "def charge(): pass",
+            "token_count": 4,
+            "relevance": 0.5,
+        },
+    ]
+    result = {
+        "selected_fragments": selected,
+        "total_fragments": len(selected),
+        "tokens_used": 8,
+    }
+
+    verdict = apply_no_match_contract(result, "authentication flow")
+
+    assert verdict["selected_fragments"] == selected
+    assert "no_match" not in verdict

@@ -364,3 +364,315 @@ pub fn memory_record_verify_json(record_json: &str) -> Result<String, JsValue> {
 pub fn memory_record_schema_version() -> u32 {
     MEMORY_RECORD_SCHEMA_VERSION
 }
+
+// ── Routing, execution, temporal verification and continuation ───────────
+
+use entroly_engine::engine_contracts::{
+    ContinuationProofState, ExecutionState, ModelExecutionOutcome, OutcomeVerificationState,
+    RoutingDecision, VerificationFreshness, VerificationRecord, VerificationVerdict,
+    WorkContinuationProof,
+};
+use serde::Deserialize;
+
+fn parse_execution_state(token: &str) -> Result<ExecutionState, JsValue> {
+    match token {
+        "succeeded" => Ok(ExecutionState::Succeeded),
+        "failed" => Ok(ExecutionState::Failed),
+        "cancelled" => Ok(ExecutionState::Cancelled),
+        "unknown" => Ok(ExecutionState::Unknown),
+        other => Err(JsValue::from_str(&format!(
+            "unknown execution state {other:?}"
+        ))),
+    }
+}
+
+fn parse_outcome_verification(token: &str) -> Result<OutcomeVerificationState, JsValue> {
+    match token {
+        "passed" => Ok(OutcomeVerificationState::Passed),
+        "failed" => Ok(OutcomeVerificationState::Failed),
+        "skipped" => Ok(OutcomeVerificationState::Skipped),
+        "unknown" => Ok(OutcomeVerificationState::Unknown),
+        "stale" => Ok(OutcomeVerificationState::Stale),
+        other => Err(JsValue::from_str(&format!(
+            "unknown outcome verification state {other:?}"
+        ))),
+    }
+}
+
+fn parse_verification_verdict(token: &str) -> Result<VerificationVerdict, JsValue> {
+    match token {
+        "passed" => Ok(VerificationVerdict::Passed),
+        "failed" => Ok(VerificationVerdict::Failed),
+        "skipped" => Ok(VerificationVerdict::Skipped),
+        "unknown" => Ok(VerificationVerdict::Unknown),
+        other => Err(JsValue::from_str(&format!(
+            "unknown verification verdict {other:?}"
+        ))),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RoutingInput {
+    repository_id: String,
+    task_id: String,
+    workstream_id: String,
+    provider: String,
+    model: String,
+    runtime: String,
+    context_budget_tokens: u32,
+    policy_version: String,
+    #[serde(default)]
+    reason_codes: Vec<String>,
+    #[serde(default)]
+    feature_commitments: Vec<String>,
+    #[serde(default)]
+    fallback_route_ids: Vec<String>,
+    #[serde(default)]
+    receipt_id: String,
+    #[serde(default)]
+    evidence_ids: Vec<String>,
+    decided_at_ms: i64,
+}
+
+#[wasm_bindgen(js_name = routingDecisionBuildJSON)]
+pub fn routing_decision_build_json(input_json: &str) -> Result<String, JsValue> {
+    let input: RoutingInput = serde_json::from_str(input_json).map_err(js_err)?;
+    RoutingDecision::new(
+        input.repository_id,
+        input.task_id,
+        input.workstream_id,
+        input.provider,
+        input.model,
+        input.runtime,
+        input.context_budget_tokens,
+        input.policy_version,
+        input.reason_codes,
+        input.feature_commitments,
+        input.fallback_route_ids,
+        input.receipt_id,
+        input.evidence_ids,
+        input.decided_at_ms,
+    )
+    .and_then(|value| value.to_json())
+    .map_err(js_err)
+}
+
+#[wasm_bindgen(js_name = routingDecisionVerifyJSON)]
+pub fn routing_decision_verify_json(value_json: &str) -> Result<String, JsValue> {
+    RoutingDecision::from_json_verified(value_json)
+        .and_then(|value| value.to_json())
+        .map_err(js_err)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OutcomeInput {
+    routing_id: String,
+    repository_id: String,
+    task_id: String,
+    workstream_id: String,
+    provider: String,
+    model: String,
+    runtime: String,
+    #[serde(default)]
+    receipt_id: String,
+    #[serde(default)]
+    request_commitment: String,
+    #[serde(default)]
+    response_commitment: String,
+    state: String,
+    verification_state: String,
+    #[serde(default)]
+    latency_ms: u64,
+    #[serde(default)]
+    input_tokens: u64,
+    #[serde(default)]
+    output_tokens: u64,
+    #[serde(default)]
+    cost_micro_usd: u64,
+    #[serde(default)]
+    error_code: String,
+    #[serde(default)]
+    evidence_ids: Vec<String>,
+    completed_at_ms: i64,
+}
+
+#[wasm_bindgen(js_name = modelExecutionOutcomeBuildJSON)]
+pub fn model_execution_outcome_build_json(input_json: &str) -> Result<String, JsValue> {
+    let input: OutcomeInput = serde_json::from_str(input_json).map_err(js_err)?;
+    ModelExecutionOutcome::new(
+        input.routing_id,
+        input.repository_id,
+        input.task_id,
+        input.workstream_id,
+        input.provider,
+        input.model,
+        input.runtime,
+        input.receipt_id,
+        input.request_commitment,
+        input.response_commitment,
+        parse_execution_state(&input.state)?,
+        parse_outcome_verification(&input.verification_state)?,
+        input.latency_ms,
+        input.input_tokens,
+        input.output_tokens,
+        input.cost_micro_usd,
+        input.error_code,
+        input.evidence_ids,
+        input.completed_at_ms,
+    )
+    .and_then(|value| value.to_json())
+    .map_err(js_err)
+}
+
+#[wasm_bindgen(js_name = modelExecutionOutcomeVerifyJSON)]
+pub fn model_execution_outcome_verify_json(value_json: &str) -> Result<String, JsValue> {
+    ModelExecutionOutcome::from_json_verified(value_json)
+        .and_then(|value| value.to_json())
+        .map_err(js_err)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct VerificationInput {
+    repository_id: String,
+    subject_id: String,
+    subject_commitment: String,
+    verified_repository_commitment: String,
+    verdict: String,
+    #[serde(default)]
+    evidence_ids: Vec<String>,
+    #[serde(default)]
+    dependency_commitments: Vec<String>,
+    observed_at_ms: i64,
+    #[serde(default)]
+    valid_until_ms: i64,
+}
+
+#[wasm_bindgen(js_name = verificationRecordBuildJSON)]
+pub fn verification_record_build_json(input_json: &str) -> Result<String, JsValue> {
+    let input: VerificationInput = serde_json::from_str(input_json).map_err(js_err)?;
+    VerificationRecord::new(
+        input.repository_id,
+        input.subject_id,
+        input.subject_commitment,
+        input.verified_repository_commitment,
+        parse_verification_verdict(&input.verdict)?,
+        input.evidence_ids,
+        input.dependency_commitments,
+        input.observed_at_ms,
+        input.valid_until_ms,
+    )
+    .and_then(|value| value.to_json())
+    .map_err(js_err)
+}
+
+#[wasm_bindgen(js_name = verificationRecordVerifyJSON)]
+pub fn verification_record_verify_json(value_json: &str) -> Result<String, JsValue> {
+    VerificationRecord::from_json_verified(value_json)
+        .and_then(|value| value.to_json())
+        .map_err(js_err)
+}
+
+#[wasm_bindgen(js_name = verificationRecordFreshness)]
+pub fn verification_record_freshness(
+    value_json: &str,
+    current_repository_commitment: &str,
+    now_ms: f64,
+    invalidated_commitments_json: Option<String>,
+) -> Result<String, JsValue> {
+    let record = VerificationRecord::from_json_verified(value_json).map_err(js_err)?;
+    let invalidated: BTreeSet<String> =
+        id_list(invalidated_commitments_json)?.into_iter().collect();
+    let token = match record.freshness(
+        current_repository_commitment,
+        exact_ms(Some(now_ms), "now_ms")?,
+        &invalidated,
+    ) {
+        VerificationFreshness::Current => "current",
+        VerificationFreshness::Stale => "stale",
+        VerificationFreshness::Invalidated => "invalidated",
+        VerificationFreshness::Unknown => "unknown",
+    };
+    Ok(token.to_string())
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ContinuationInput {
+    repository_id: String,
+    graph_revision: u64,
+    graph_commitment: String,
+    workstream_id: String,
+    from_agent: String,
+    to_agent: String,
+    handoff_commitment: String,
+    #[serde(default)]
+    context_receipt_commitments: Vec<String>,
+    #[serde(default)]
+    routing_commitments: Vec<String>,
+    #[serde(default)]
+    execution_outcome_commitments: Vec<String>,
+    #[serde(default)]
+    verification_commitments: Vec<String>,
+    #[serde(default)]
+    memory_commitments: Vec<String>,
+    #[serde(default)]
+    outstanding_work_refs: Vec<String>,
+    #[serde(default)]
+    recovery_handle_ids: Vec<String>,
+    created_at_ms: i64,
+}
+
+#[wasm_bindgen(js_name = workContinuationProofBuildJSON)]
+pub fn work_continuation_proof_build_json(input_json: &str) -> Result<String, JsValue> {
+    let input: ContinuationInput = serde_json::from_str(input_json).map_err(js_err)?;
+    WorkContinuationProof::new(
+        input.repository_id,
+        input.graph_revision,
+        input.graph_commitment,
+        input.workstream_id,
+        input.from_agent,
+        input.to_agent,
+        input.handoff_commitment,
+        input.context_receipt_commitments,
+        input.routing_commitments,
+        input.execution_outcome_commitments,
+        input.verification_commitments,
+        input.memory_commitments,
+        input.outstanding_work_refs,
+        input.recovery_handle_ids,
+        input.created_at_ms,
+    )
+    .and_then(|value| value.to_json())
+    .map_err(js_err)
+}
+
+#[wasm_bindgen(js_name = workContinuationProofVerifyJSON)]
+pub fn work_continuation_proof_verify_json(value_json: &str) -> Result<String, JsValue> {
+    WorkContinuationProof::from_json_verified(value_json)
+        .and_then(|value| value.to_json())
+        .map_err(js_err)
+}
+
+#[wasm_bindgen(js_name = workContinuationProofState)]
+pub fn work_continuation_proof_state(
+    value_json: &str,
+    repository_id: &str,
+    graph_revision: f64,
+    graph_commitment: &str,
+) -> Result<String, JsValue> {
+    let proof = WorkContinuationProof::from_json_verified(value_json).map_err(js_err)?;
+    let graph_revision = exact_ms(Some(graph_revision), "graph_revision")?;
+    if graph_revision < 0 {
+        return Err(JsValue::from_str("graph_revision must be >= 0"));
+    }
+    let token = match proof.state_for_graph(repository_id, graph_revision as u64, graph_commitment)
+    {
+        ContinuationProofState::Valid => "valid",
+        ContinuationProofState::Stale => "stale",
+        ContinuationProofState::Invalid => "invalid",
+    };
+    Ok(token.to_string())
+}

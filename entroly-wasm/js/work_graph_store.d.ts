@@ -3,7 +3,14 @@ import type {
   WorkGraphCoordinationReport,
   WorkGraphHandoffReceipt,
   WorkGraphResumeView,
+  WorkContinuationManifest,
+  WorkContinuationProof,
 } from "./work_graph";
+import type {
+  ModelExecutionOutcome,
+  RoutingDecision,
+  VerificationRecord,
+} from "./continuity_contracts";
 import type { RepositoryDiscoveryOptions } from "./work_graph_repo";
 
 export interface WorkGraphStoreOptions {
@@ -45,6 +52,30 @@ export class WorkGraphStore {
   claimWork(path: string, options: WorkClaimOptions): { graph: WorkGraph; leaseId: string };
   coordination(nowMs?: number): WorkGraphCoordinationReport;
   resume(workstreamId?: string | null, maxEvidence?: number): WorkGraphResumeView;
+  recordContextReceipt(
+    receipt: string | Record<string, unknown>,
+    options?: { agentId?: string; sessionId?: string },
+  ): { graph: WorkGraph; result: string };
+  recordMemory(
+    memory: string | Record<string, unknown>,
+    nowMs: number,
+    supersededIds?: string[],
+  ): { graph: WorkGraph; result: string };
+  recordExecutionChain(
+    route: string | RoutingDecision,
+    outcome: string | ModelExecutionOutcome,
+    verification: string | VerificationRecord,
+    invalidatedCommitments?: string[],
+  ): { graph: WorkGraph; result: string };
+  continuationProof(
+    handoff: string | WorkGraphHandoffReceipt,
+    manifest: WorkContinuationManifest,
+  ): WorkContinuationProof;
+  reconstructedContinuationProof(
+    workstreamId: string,
+    toAgent: string,
+    manifest: WorkContinuationManifest,
+  ): WorkContinuationProof;
   handoff(
     workstreamId: string,
     fromAgent: string,

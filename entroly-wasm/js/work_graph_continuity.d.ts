@@ -1,4 +1,8 @@
-import type { WorkGraphHandoffReceipt, WorkGraphResumeView } from "./work_graph";
+import type {
+  WorkContinuationProof,
+  WorkGraphHandoffReceipt,
+  WorkGraphResumeView,
+} from "./work_graph";
 import type { RepositoryDiscoveryOptions } from "./work_graph_repo";
 import type { WorkGraphStoreOptions } from "./work_graph_store";
 
@@ -36,3 +40,15 @@ export function handoffRepository(
   repoPath: string | undefined,
   options: HandoffRepositoryOptions,
 ): WorkGraphHandoffReceipt;
+
+/**
+ * Refresh durable facts once and return both the compatibility handoff receipt
+ * and the Rust-verified complete continuation proof.
+ */
+export function handoffRepositoryWithProof(
+  repoPath: string | undefined,
+  options: HandoffRepositoryOptions,
+): {
+  handoff: WorkGraphHandoffReceipt;
+  continuation_proof: WorkContinuationProof;
+};

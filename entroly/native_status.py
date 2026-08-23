@@ -29,6 +29,14 @@ WORK_GRAPH_SYMBOLS = (
     # the capability, not an optional extra.
     "work_graph_node_id",
     "work_graph_edge_id",
+    # The production continuity surface is the complete context/execution/
+    # trust chain. A core with the original WorkGraph class but without these
+    # canonical contracts would otherwise pass the capability probe and fail
+    # only after a handoff tried to record an execution.
+    "routing_decision_build_json",
+    "model_execution_outcome_build_json",
+    "verification_record_build_json",
+    "work_continuation_proof_build_json",
 )
 
 RELEASE_NATIVE_SYMBOLS = QCCR_SYMBOLS + (

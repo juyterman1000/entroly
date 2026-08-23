@@ -13,6 +13,12 @@ for (const name of [
   'discoverRepositoryObservation',
   'resumeRepository',
   'handoffRepository',
+  'handoffRepositoryWithProof',
+  'createRoutingDecision',
+  'createModelExecutionOutcome',
+  'createVerificationRecord',
+  'verificationFreshness',
+  'continuationProofState',
 ]) {
   assert(typeof pkg[name] === 'function', `missing npm root Work Graph export: ${name}`);
 }

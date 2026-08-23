@@ -21,6 +21,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -72,13 +73,32 @@ class Mock(BaseHTTPRequestHandler):
         pass
 
 
+class MockServer(ThreadingHTTPServer):
+    # ThreadingHTTPServer inherits TCPServer's five-connection listen backlog.
+    # A 12-way proxy burst can overflow that synthetic limit on Linux before
+    # the accept thread gets scheduled, producing an upstream connection error
+    # and a misleading proxy 502. Real provider front doors do not have a
+    # five-request backlog; keep the test focused on proxy concurrency.
+    request_queue_size = 128
+    daemon_threads = True
+
+
 def main():
-    httpd = ThreadingHTTPServer(("127.0.0.1", MOCK), Mock)
+    httpd = MockServer(("127.0.0.1", MOCK), Mock)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     proxy = subprocess.Popen(
         [BIN, "proxy", "--port", str(PROXY), "--upstream", f"http://127.0.0.1:{MOCK}", "--budget", "80"],
         stderr=subprocess.PIPE,
+        text=True,
     )
+    proxy_stderr = []
+
+    def drain_proxy_stderr():
+        assert proxy.stderr is not None
+        proxy_stderr.extend(line.rstrip() for line in proxy.stderr)
+
+    stderr_thread = threading.Thread(target=drain_proxy_stderr, daemon=True)
+    stderr_thread.start()
     time.sleep(1.5)
     try:
         # health
@@ -156,17 +176,32 @@ def main():
                 f"http://127.0.0.1:{PROXY}/v1/messages", data=payload,
                 headers={"Content-Type": "application/json"},
             )
-            return urllib.request.urlopen(rq, timeout=15).status
+            try:
+                return urllib.request.urlopen(rq, timeout=15).status, ""
+            except urllib.error.HTTPError as exc:
+                return exc.code, exc.read().decode(errors="replace")
         with concurrent.futures.ThreadPoolExecutor(max_workers=12) as ex:
-            codes = list(ex.map(one, range(12)))
-        assert all(c == 200 for c in codes), f"all parallel requests must succeed: {codes}"
+            responses = list(ex.map(one, range(12)))
+        assert all(code == 200 for code, _ in responses), (
+            f"all parallel requests must succeed: {responses}"
+        )
         print("concurrency: 12/12 parallel requests OK")
 
         print("PASS: total-budget compress + header forward + SSE stream + concurrency")
         return 0
     finally:
+        failed = sys.exc_info()[0] is not None
         proxy.terminate()
         httpd.shutdown()
+        try:
+            proxy.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proxy.kill()
+            proxy.wait(timeout=5)
+        stderr_thread.join(timeout=2)
+        if failed and proxy_stderr:
+            print("--- entroly-rs stderr ---", file=sys.stderr)
+            print("\n".join(proxy_stderr[-200:]), file=sys.stderr)
 
 
 if __name__ == "__main__":

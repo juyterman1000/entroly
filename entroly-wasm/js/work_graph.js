@@ -123,6 +123,44 @@ class WorkGraph {
     ));
   }
 
+  recordContextReceipt(receipt, agentId = '', sessionId = '') {
+    return this._inner.recordContextReceiptJSON(
+      toJSONText(receipt), String(agentId), String(sessionId),
+    );
+  }
+
+  recordMemory(memory, nowMs = Date.now(), supersededIds = []) {
+    return this._inner.recordMemoryJSON(
+      toJSONText(memory),
+      requireSafeInteger(nowMs, 'nowMs'),
+      toJSONText(supersededIds),
+    );
+  }
+
+  recordExecutionChain(route, outcome, verification, invalidatedCommitments = []) {
+    return this._inner.recordExecutionChainJSON(
+      toJSONText(route),
+      toJSONText(outcome),
+      toJSONText(verification),
+      toJSONText(invalidatedCommitments),
+    );
+  }
+
+  continuationProof(handoff, manifest) {
+    return fromJSONText(this._inner.continuationProofJSON(
+      toJSONText(handoff),
+      toJSONText(manifest),
+    ));
+  }
+
+  reconstructedContinuationProof(workstreamId, toAgent, manifest) {
+    return fromJSONText(this._inner.reconstructedContinuationProofJSON(
+      String(workstreamId),
+      String(toAgent),
+      toJSONText(manifest),
+    ));
+  }
+
   coordination(nowMs = Date.now(), pretty = false) {
     return fromJSONText(this._inner.coordinationJSON(
       requireSafeInteger(nowMs, 'nowMs'),

@@ -345,3 +345,154 @@ def test_an_edited_memory_fails_closed() -> None:
         entroly_core.memory_record_verify_json(edited)
 
     assert "record_commitment" in str(exc_info.value)
+
+
+# ── Routing, execution, freshness and continuation ────────────────────────
+
+GOLDEN_ROUTING_ID = "route_66d4c04a18b4e70f"
+GOLDEN_OUTCOME_ID = "outcome_a130681ddd63dc84"
+GOLDEN_VERIFICATION_ID = "verify_4e1487e3d6e73b36"
+GOLDEN_CONTINUATION_ID = "continuation_53eba6ee3a52be48"
+
+
+def _route() -> str:
+    return entroly_core.routing_decision_build_json(
+        "repo:demo",
+        "task:auth",
+        "workstream:1",
+        "openai",
+        "gpt-5",
+        "responses-api",
+        8192,
+        "policy:v1",
+        ["capability_match", "lowest_verified_cost"],
+        ["sha256:features"],
+        [],
+        "cr_672457349ba403bc",
+        ["evidence:benchmark"],
+        1_700_000_000_000,
+    )
+
+
+def _outcome() -> str:
+    route = json.loads(_route())
+    return entroly_core.model_execution_outcome_build_json(
+        route["routing_id"],
+        route["repository_id"],
+        route["task_id"],
+        route["workstream_id"],
+        route["provider"],
+        route["model"],
+        route["runtime"],
+        route["receipt_id"],
+        "sha256:request",
+        "sha256:response",
+        "succeeded",
+        "passed",
+        420,
+        1200,
+        240,
+        17_500,
+        "",
+        ["evidence:test"],
+        1_700_000_000_500,
+    )
+
+
+def _verification() -> str:
+    outcome = json.loads(_outcome())
+    return entroly_core.verification_record_build_json(
+        "repo:demo",
+        outcome["outcome_id"],
+        outcome["outcome_commitment"],
+        "sha256:head-a",
+        "passed",
+        ["evidence:test"],
+        ["sha256:source-a", "sha256:config-a"],
+        1_700_000_000_600,
+        1_700_000_001_000,
+    )
+
+
+def _continuation() -> str:
+    route = json.loads(_route())
+    outcome = json.loads(_outcome())
+    verification = json.loads(_verification())
+    return entroly_core.work_continuation_proof_build_json(
+        "repo:demo",
+        7,
+        "sha256:graph",
+        "workstream:1",
+        "agent:claude",
+        "agent:codex",
+        "sha256:handoff",
+        ["sha256:receipt"],
+        [route["decision_commitment"]],
+        [outcome["outcome_commitment"]],
+        [verification["record_commitment"]],
+        ["sha256:memory"],
+        ["run Linux CI"],
+        ["rh_61e976bc425ad0de"],
+        1_700_000_000_700,
+    )
+
+
+def test_routing_execution_and_continuation_contracts_round_trip() -> None:
+    assert json.loads(_route())["routing_id"] == GOLDEN_ROUTING_ID
+    assert json.loads(_outcome())["outcome_id"] == GOLDEN_OUTCOME_ID
+    assert json.loads(_verification())["verification_id"] == GOLDEN_VERIFICATION_ID
+    assert json.loads(_continuation())["proof_id"] == GOLDEN_CONTINUATION_ID
+    assert entroly_core.routing_decision_verify_json(_route()) == _route()
+    assert (
+        entroly_core.model_execution_outcome_verify_json(_outcome()) == _outcome()
+    )
+    assert (
+        entroly_core.verification_record_verify_json(_verification())
+        == _verification()
+    )
+    assert (
+        entroly_core.work_continuation_proof_verify_json(_continuation())
+        == _continuation()
+    )
+
+
+def test_temporal_verification_fails_closed_on_head_or_dependency_change() -> None:
+    assert (
+        entroly_core.verification_record_freshness(
+            _verification(), "sha256:head-a", 1_700_000_000_700
+        )
+        == "current"
+    )
+    assert (
+        entroly_core.verification_record_freshness(
+            _verification(), "sha256:head-b", 1_700_000_000_700
+        )
+        == "stale"
+    )
+    assert (
+        entroly_core.verification_record_freshness(
+            _verification(),
+            "sha256:head-a",
+            1_700_000_000_700,
+            ["sha256:config-a"],
+        )
+        == "invalidated"
+    )
+
+
+def test_continuation_proof_is_graph_bound_and_tamper_evident() -> None:
+    assert (
+        entroly_core.work_continuation_proof_state(
+            _continuation(), "repo:demo", 7, "sha256:graph"
+        )
+        == "valid"
+    )
+    assert (
+        entroly_core.work_continuation_proof_state(
+            _continuation(), "repo:demo", 8, "sha256:new-graph"
+        )
+        == "stale"
+    )
+    edited = _continuation().replace("agent:codex", "agent:other")
+    with pytest.raises(Exception, match="proof_commitment"):
+        entroly_core.work_continuation_proof_verify_json(edited)

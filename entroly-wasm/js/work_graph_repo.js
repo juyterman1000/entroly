@@ -9,7 +9,7 @@ const zlib = require('zlib');
 const { execFileSync } = require('child_process');
 
 const MAX_GIT_OUTPUT_BYTES = 8 * 1024 * 1024;
-const MAX_CHANGES = 512;
+const MAX_CHANGES = 16384;
 const MAX_COMMITS = 20;
 const MAX_CHECKPOINT_BYTES = 32 * 1024 * 1024;
 

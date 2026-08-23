@@ -54,6 +54,9 @@ pub enum EngineContractError {
     /// A disposition promised recovery without carrying the means to honour it.
     /// Section 9's "never call destructive omission recoverable", enforced.
     UnbackedRecoveryClaim(&'static str),
+    /// Fields are individually well formed but describe an impossible or
+    /// internally inconsistent product transition.
+    InvalidContract(&'static str),
 }
 
 impl fmt::Display for EngineContractError {
@@ -88,6 +91,7 @@ impl fmt::Display for EngineContractError {
             Self::UnbackedRecoveryClaim(detail) => {
                 write!(formatter, "cannot claim recoverability: {detail}")
             }
+            Self::InvalidContract(detail) => write!(formatter, "invalid contract: {detail}"),
         }
     }
 }
@@ -134,6 +138,31 @@ fn canonical_ids(
     canonical_strings(field, values, max_items, MAX_CONTRACT_ID_BYTES)
 }
 
+fn canonical_bounded_strings(
+    field: &'static str,
+    values: impl IntoIterator<Item = String>,
+    max_items: usize,
+    max_bytes: usize,
+) -> Result<(Vec<String>, usize, String), EngineContractError> {
+    let mut unique = BTreeSet::new();
+    for value in values {
+        validate_text(field, &value, max_bytes, false)?;
+        unique.insert(value);
+    }
+    let total = unique.len();
+    let mut hasher = Sha256::new();
+    for value in &unique {
+        hasher.update((value.len() as u64).to_be_bytes());
+        hasher.update(value.as_bytes());
+    }
+    let commitment = format!("sha256:{:x}", hasher.finalize());
+    Ok((
+        unique.into_iter().take(max_items).collect(),
+        total,
+        commitment,
+    ))
+}
+
 fn evidence_ids(evidence: &[EvidenceRef]) -> Result<Vec<String>, EngineContractError> {
     canonical_ids(
         "evidence_ids",
@@ -154,18 +183,33 @@ pub struct WorkScope {
     pub graph_commitment: String,
     pub workstream_id: String,
     pub task_ids: Vec<String>,
+    pub task_ids_total: usize,
+    pub task_ids_commitment: String,
     pub agent_ids: Vec<String>,
+    pub agent_ids_total: usize,
+    pub agent_ids_commitment: String,
     pub changed_paths: Vec<String>,
+    /// Total canonical paths represented by this scope. `changed_paths` is a
+    /// deterministic bounded prefix when this count exceeds its length.
+    pub changed_paths_total: usize,
+    /// Commitment to the complete canonical path set, including any paths that
+    /// do not fit in the bounded inline prefix.
+    pub changed_paths_commitment: String,
     pub commit_ids: Vec<String>,
+    pub commit_ids_total: usize,
+    pub commit_ids_commitment: String,
     pub evidence_ids: Vec<String>,
+    pub evidence_ids_total: usize,
+    pub evidence_ids_commitment: String,
 }
 
 impl WorkScope {
     /// Derive a deterministic integration scope from a Rust-owned resume view.
     ///
     /// This never interprets labels or prose. It only canonicalizes IDs/paths
-    /// already selected by the Work Graph and fails closed if the bounded
-    /// integration envelope would be exceeded.
+    /// already selected by the Work Graph. Malformed members fail closed;
+    /// oversized collections expose a deterministic prefix plus total and
+    /// full-set commitment.
     pub fn from_resume(resume: &ResumeView) -> Result<Self, EngineContractError> {
         validate_text("repo_id", &resume.repo_id, MAX_CONTRACT_ID_BYTES, false)?;
         validate_text(
@@ -190,29 +234,59 @@ impl WorkScope {
         let mut evidence = resume.selected_workstream.evidence_ids.clone();
         evidence.extend(evidence_ids(&resume.evidence)?);
 
+        let (task_ids, task_ids_total, task_ids_commitment) = canonical_bounded_strings(
+            "task_ids",
+            resume.selected_workstream.task_ids.clone(),
+            MAX_SCOPE_ITEMS,
+            MAX_CONTRACT_ID_BYTES,
+        )?;
+        let (agent_ids, agent_ids_total, agent_ids_commitment) = canonical_bounded_strings(
+            "agent_ids",
+            resume.selected_workstream.agent_ids.clone(),
+            MAX_SCOPE_ITEMS,
+            MAX_CONTRACT_ID_BYTES,
+        )?;
+        let (changed_paths, changed_paths_total, changed_paths_commitment) =
+            canonical_bounded_strings(
+                "changed_paths",
+                changed_paths,
+                MAX_SCOPE_ITEMS,
+                MAX_SCOPE_PATH_BYTES,
+            )?;
+        let (commit_ids, commit_ids_total, commit_ids_commitment) = canonical_bounded_strings(
+            "commit_ids",
+            commits,
+            MAX_SCOPE_ITEMS,
+            MAX_CONTRACT_ID_BYTES,
+        )?;
+        let (evidence_ids, evidence_ids_total, evidence_ids_commitment) =
+            canonical_bounded_strings(
+                "evidence_ids",
+                evidence,
+                MAX_SCOPE_ITEMS,
+                MAX_CONTRACT_ID_BYTES,
+            )?;
+
         Ok(Self {
             repo_id: resume.repo_id.clone(),
             graph_revision: resume.graph_revision,
             graph_commitment: resume.graph_commitment.clone(),
             workstream_id: resume.selected_workstream.node_id.clone(),
-            task_ids: canonical_ids(
-                "task_ids",
-                resume.selected_workstream.task_ids.clone(),
-                MAX_SCOPE_ITEMS,
-            )?,
-            agent_ids: canonical_ids(
-                "agent_ids",
-                resume.selected_workstream.agent_ids.clone(),
-                MAX_SCOPE_ITEMS,
-            )?,
-            changed_paths: canonical_strings(
-                "changed_paths",
-                changed_paths,
-                MAX_SCOPE_ITEMS,
-                MAX_SCOPE_PATH_BYTES,
-            )?,
-            commit_ids: canonical_ids("commit_ids", commits, MAX_SCOPE_ITEMS)?,
-            evidence_ids: canonical_ids("evidence_ids", evidence, MAX_SCOPE_ITEMS)?,
+            task_ids,
+            task_ids_total,
+            task_ids_commitment,
+            agent_ids,
+            agent_ids_total,
+            agent_ids_commitment,
+            changed_paths,
+            changed_paths_total,
+            changed_paths_commitment,
+            commit_ids,
+            commit_ids_total,
+            commit_ids_commitment,
+            evidence_ids,
+            evidence_ids_total,
+            evidence_ids_commitment,
         })
     }
 }
@@ -1201,6 +1275,943 @@ impl MemoryRecord {
     }
 }
 
+// ── Evidence-backed routing and execution ────────────────────────────────
+
+pub const ROUTING_DECISION_SCHEMA_VERSION: u32 = 1;
+pub const MODEL_EXECUTION_OUTCOME_SCHEMA_VERSION: u32 = 1;
+pub const VERIFICATION_RECORD_SCHEMA_VERSION: u32 = 1;
+pub const WORK_CONTINUATION_PROOF_SCHEMA_VERSION: u32 = 1;
+
+const MAX_REASON_BYTES: usize = 2_048;
+const MAX_ERROR_CODE_BYTES: usize = 512;
+
+/// A deterministic, inspectable route choice. It records policy inputs by
+/// bounded reason/feature commitments, never an opaque Python-only score.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct RoutingDecision {
+    pub schema_version: u32,
+    pub routing_id: String,
+    pub repository_id: String,
+    pub task_id: String,
+    pub workstream_id: String,
+    pub provider: String,
+    pub model: String,
+    pub runtime: String,
+    pub context_budget_tokens: u32,
+    pub policy_version: String,
+    pub reason_codes: Vec<String>,
+    pub feature_commitments: Vec<String>,
+    pub fallback_route_ids: Vec<String>,
+    pub receipt_id: String,
+    pub evidence_ids: Vec<String>,
+    pub decided_at_ms: i64,
+    pub decision_commitment: String,
+}
+
+#[derive(Serialize)]
+struct RoutingDecisionPayload<'a> {
+    schema_version: u32,
+    repository_id: &'a str,
+    task_id: &'a str,
+    workstream_id: &'a str,
+    provider: &'a str,
+    model: &'a str,
+    runtime: &'a str,
+    context_budget_tokens: u32,
+    policy_version: &'a str,
+    reason_codes: &'a [String],
+    feature_commitments: &'a [String],
+    fallback_route_ids: &'a [String],
+    receipt_id: &'a str,
+    evidence_ids: &'a [String],
+    decided_at_ms: i64,
+}
+
+impl RoutingDecision {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        repository_id: String,
+        task_id: String,
+        workstream_id: String,
+        provider: String,
+        model: String,
+        runtime: String,
+        context_budget_tokens: u32,
+        policy_version: String,
+        reason_codes: Vec<String>,
+        feature_commitments: Vec<String>,
+        fallback_route_ids: Vec<String>,
+        receipt_id: String,
+        evidence_ids: Vec<String>,
+        decided_at_ms: i64,
+    ) -> Result<Self, EngineContractError> {
+        for (field, value) in [
+            ("repository_id", repository_id.as_str()),
+            ("task_id", task_id.as_str()),
+            ("workstream_id", workstream_id.as_str()),
+            ("provider", provider.as_str()),
+            ("model", model.as_str()),
+            ("runtime", runtime.as_str()),
+            ("policy_version", policy_version.as_str()),
+        ] {
+            validate_text(field, value, MAX_CONTRACT_ID_BYTES, false)?;
+        }
+        validate_text("receipt_id", &receipt_id, MAX_CONTRACT_ID_BYTES, true)?;
+        if decided_at_ms < 0 {
+            return Err(EngineContractError::InvalidTimestamp("decided_at_ms"));
+        }
+        let mut decision = Self {
+            schema_version: ROUTING_DECISION_SCHEMA_VERSION,
+            routing_id: String::new(),
+            repository_id,
+            task_id,
+            workstream_id,
+            provider,
+            model,
+            runtime,
+            context_budget_tokens,
+            policy_version,
+            reason_codes: canonical_strings(
+                "reason_codes",
+                reason_codes,
+                MAX_SCOPE_ITEMS,
+                MAX_REASON_BYTES,
+            )?,
+            feature_commitments: canonical_strings(
+                "feature_commitments",
+                feature_commitments,
+                MAX_SCOPE_ITEMS,
+                MAX_COMMITMENT_BYTES,
+            )?,
+            fallback_route_ids: canonical_ids(
+                "fallback_route_ids",
+                fallback_route_ids,
+                MAX_SCOPE_ITEMS,
+            )?,
+            receipt_id,
+            evidence_ids: canonical_ids("evidence_ids", evidence_ids, MAX_SCOPE_ITEMS)?,
+            decided_at_ms,
+            decision_commitment: String::new(),
+        };
+        decision.decision_commitment = decision.compute_commitment()?;
+        decision.routing_id = format!("route_{}", &decision.decision_commitment[..16]);
+        if decision
+            .fallback_route_ids
+            .iter()
+            .any(|item| item == &decision.routing_id)
+        {
+            return Err(EngineContractError::InvalidContract(
+                "a routing decision cannot fall back to itself",
+            ));
+        }
+        Ok(decision)
+    }
+
+    fn compute_commitment(&self) -> Result<String, EngineContractError> {
+        contract_sha256_json(&RoutingDecisionPayload {
+            schema_version: self.schema_version,
+            repository_id: &self.repository_id,
+            task_id: &self.task_id,
+            workstream_id: &self.workstream_id,
+            provider: &self.provider,
+            model: &self.model,
+            runtime: &self.runtime,
+            context_budget_tokens: self.context_budget_tokens,
+            policy_version: &self.policy_version,
+            reason_codes: &self.reason_codes,
+            feature_commitments: &self.feature_commitments,
+            fallback_route_ids: &self.fallback_route_ids,
+            receipt_id: &self.receipt_id,
+            evidence_ids: &self.evidence_ids,
+            decided_at_ms: self.decided_at_ms,
+        })
+    }
+
+    pub fn verify_commitment(&self) -> Result<bool, EngineContractError> {
+        let recomputed = self.compute_commitment()?;
+        Ok(self.decision_commitment == recomputed
+            && self.routing_id == format!("route_{}", &recomputed[..16]))
+    }
+
+    pub fn to_json(&self) -> Result<String, EngineContractError> {
+        serde_json::to_string(self)
+            .map_err(|error| EngineContractError::Serialization(error.to_string()))
+    }
+
+    pub fn from_json_verified(json_text: &str) -> Result<Self, EngineContractError> {
+        let decision: Self = serde_json::from_str(json_text)
+            .map_err(|error| EngineContractError::Serialization(error.to_string()))?;
+        if decision.schema_version != ROUTING_DECISION_SCHEMA_VERSION {
+            return Err(EngineContractError::UnsupportedSchema {
+                field: "schema_version",
+                found: decision.schema_version,
+                expected: ROUTING_DECISION_SCHEMA_VERSION,
+            });
+        }
+        if !decision.verify_commitment()? {
+            return Err(EngineContractError::CommitmentMismatch(
+                "decision_commitment",
+            ));
+        }
+        let rebuilt = Self::new(
+            decision.repository_id.clone(),
+            decision.task_id.clone(),
+            decision.workstream_id.clone(),
+            decision.provider.clone(),
+            decision.model.clone(),
+            decision.runtime.clone(),
+            decision.context_budget_tokens,
+            decision.policy_version.clone(),
+            decision.reason_codes.clone(),
+            decision.feature_commitments.clone(),
+            decision.fallback_route_ids.clone(),
+            decision.receipt_id.clone(),
+            decision.evidence_ids.clone(),
+            decision.decided_at_ms,
+        )?;
+        if rebuilt != decision {
+            return Err(EngineContractError::CommitmentMismatch(
+                "decision_commitment",
+            ));
+        }
+        Ok(rebuilt)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecutionState {
+    Succeeded,
+    Failed,
+    Cancelled,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum OutcomeVerificationState {
+    Passed,
+    Failed,
+    Skipped,
+    Unknown,
+    Stale,
+}
+
+/// The durable result of one routed model execution. Cost, timing and token
+/// facts remain integer-valued so every runtime commits to identical bytes.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ModelExecutionOutcome {
+    pub schema_version: u32,
+    pub outcome_id: String,
+    pub routing_id: String,
+    pub repository_id: String,
+    pub task_id: String,
+    pub workstream_id: String,
+    pub provider: String,
+    pub model: String,
+    pub runtime: String,
+    pub receipt_id: String,
+    pub request_commitment: String,
+    pub response_commitment: String,
+    pub state: ExecutionState,
+    pub verification_state: OutcomeVerificationState,
+    pub latency_ms: u64,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cost_micro_usd: u64,
+    pub error_code: String,
+    pub evidence_ids: Vec<String>,
+    pub completed_at_ms: i64,
+    pub outcome_commitment: String,
+}
+
+#[derive(Serialize)]
+struct ModelExecutionOutcomePayload<'a> {
+    schema_version: u32,
+    routing_id: &'a str,
+    repository_id: &'a str,
+    task_id: &'a str,
+    workstream_id: &'a str,
+    provider: &'a str,
+    model: &'a str,
+    runtime: &'a str,
+    receipt_id: &'a str,
+    request_commitment: &'a str,
+    response_commitment: &'a str,
+    state: ExecutionState,
+    verification_state: OutcomeVerificationState,
+    latency_ms: u64,
+    input_tokens: u64,
+    output_tokens: u64,
+    cost_micro_usd: u64,
+    error_code: &'a str,
+    evidence_ids: &'a [String],
+    completed_at_ms: i64,
+}
+
+impl ModelExecutionOutcome {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        routing_id: String,
+        repository_id: String,
+        task_id: String,
+        workstream_id: String,
+        provider: String,
+        model: String,
+        runtime: String,
+        receipt_id: String,
+        request_commitment: String,
+        response_commitment: String,
+        state: ExecutionState,
+        verification_state: OutcomeVerificationState,
+        latency_ms: u64,
+        input_tokens: u64,
+        output_tokens: u64,
+        cost_micro_usd: u64,
+        error_code: String,
+        evidence_ids: Vec<String>,
+        completed_at_ms: i64,
+    ) -> Result<Self, EngineContractError> {
+        for (field, value) in [
+            ("routing_id", routing_id.as_str()),
+            ("repository_id", repository_id.as_str()),
+            ("task_id", task_id.as_str()),
+            ("workstream_id", workstream_id.as_str()),
+            ("provider", provider.as_str()),
+            ("model", model.as_str()),
+            ("runtime", runtime.as_str()),
+        ] {
+            validate_text(field, value, MAX_CONTRACT_ID_BYTES, false)?;
+        }
+        for (field, value) in [
+            ("receipt_id", receipt_id.as_str()),
+            ("request_commitment", request_commitment.as_str()),
+            ("response_commitment", response_commitment.as_str()),
+        ] {
+            validate_text(field, value, MAX_COMMITMENT_BYTES, true)?;
+        }
+        validate_text("error_code", &error_code, MAX_ERROR_CODE_BYTES, true)?;
+        if completed_at_ms < 0 {
+            return Err(EngineContractError::InvalidTimestamp("completed_at_ms"));
+        }
+        if verification_state == OutcomeVerificationState::Passed
+            && state != ExecutionState::Succeeded
+        {
+            return Err(EngineContractError::InvalidContract(
+                "a non-successful execution cannot carry passed verification",
+            ));
+        }
+        if state == ExecutionState::Succeeded && !error_code.is_empty() {
+            return Err(EngineContractError::InvalidContract(
+                "a successful execution cannot carry an error code",
+            ));
+        }
+        let mut outcome = Self {
+            schema_version: MODEL_EXECUTION_OUTCOME_SCHEMA_VERSION,
+            outcome_id: String::new(),
+            routing_id,
+            repository_id,
+            task_id,
+            workstream_id,
+            provider,
+            model,
+            runtime,
+            receipt_id,
+            request_commitment,
+            response_commitment,
+            state,
+            verification_state,
+            latency_ms,
+            input_tokens,
+            output_tokens,
+            cost_micro_usd,
+            error_code,
+            evidence_ids: canonical_ids("evidence_ids", evidence_ids, MAX_SCOPE_ITEMS)?,
+            completed_at_ms,
+            outcome_commitment: String::new(),
+        };
+        outcome.outcome_commitment = outcome.compute_commitment()?;
+        outcome.outcome_id = format!("outcome_{}", &outcome.outcome_commitment[..16]);
+        Ok(outcome)
+    }
+
+    fn compute_commitment(&self) -> Result<String, EngineContractError> {
+        contract_sha256_json(&ModelExecutionOutcomePayload {
+            schema_version: self.schema_version,
+            routing_id: &self.routing_id,
+            repository_id: &self.repository_id,
+            task_id: &self.task_id,
+            workstream_id: &self.workstream_id,
+            provider: &self.provider,
+            model: &self.model,
+            runtime: &self.runtime,
+            receipt_id: &self.receipt_id,
+            request_commitment: &self.request_commitment,
+            response_commitment: &self.response_commitment,
+            state: self.state,
+            verification_state: self.verification_state,
+            latency_ms: self.latency_ms,
+            input_tokens: self.input_tokens,
+            output_tokens: self.output_tokens,
+            cost_micro_usd: self.cost_micro_usd,
+            error_code: &self.error_code,
+            evidence_ids: &self.evidence_ids,
+            completed_at_ms: self.completed_at_ms,
+        })
+    }
+
+    pub fn verify_commitment(&self) -> Result<bool, EngineContractError> {
+        let recomputed = self.compute_commitment()?;
+        Ok(self.outcome_commitment == recomputed
+            && self.outcome_id == format!("outcome_{}", &recomputed[..16]))
+    }
+
+    pub fn to_json(&self) -> Result<String, EngineContractError> {
+        serde_json::to_string(self)
+            .map_err(|error| EngineContractError::Serialization(error.to_string()))
+    }
+
+    pub fn from_json_verified(json_text: &str) -> Result<Self, EngineContractError> {
+        let outcome: Self = serde_json::from_str(json_text)
+            .map_err(|error| EngineContractError::Serialization(error.to_string()))?;
+        if outcome.schema_version != MODEL_EXECUTION_OUTCOME_SCHEMA_VERSION {
+            return Err(EngineContractError::UnsupportedSchema {
+                field: "schema_version",
+                found: outcome.schema_version,
+                expected: MODEL_EXECUTION_OUTCOME_SCHEMA_VERSION,
+            });
+        }
+        if !outcome.verify_commitment()? {
+            return Err(EngineContractError::CommitmentMismatch(
+                "outcome_commitment",
+            ));
+        }
+        let rebuilt = Self::new(
+            outcome.routing_id.clone(),
+            outcome.repository_id.clone(),
+            outcome.task_id.clone(),
+            outcome.workstream_id.clone(),
+            outcome.provider.clone(),
+            outcome.model.clone(),
+            outcome.runtime.clone(),
+            outcome.receipt_id.clone(),
+            outcome.request_commitment.clone(),
+            outcome.response_commitment.clone(),
+            outcome.state,
+            outcome.verification_state,
+            outcome.latency_ms,
+            outcome.input_tokens,
+            outcome.output_tokens,
+            outcome.cost_micro_usd,
+            outcome.error_code.clone(),
+            outcome.evidence_ids.clone(),
+            outcome.completed_at_ms,
+        )?;
+        if rebuilt != outcome {
+            return Err(EngineContractError::CommitmentMismatch(
+                "outcome_commitment",
+            ));
+        }
+        Ok(rebuilt)
+    }
+
+    /// Cross-check the outcome against the exact route it claims to execute.
+    pub fn verify_route(&self, route: &RoutingDecision) -> bool {
+        self.routing_id == route.routing_id
+            && self.repository_id == route.repository_id
+            && self.task_id == route.task_id
+            && self.workstream_id == route.workstream_id
+            && self.provider == route.provider
+            && self.model == route.model
+            && self.runtime == route.runtime
+            && self.receipt_id == route.receipt_id
+            && self.completed_at_ms >= route.decided_at_ms
+    }
+}
+
+// ── Exact-version verification and transitive freshness ──────────────────
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum VerificationVerdict {
+    Passed,
+    Failed,
+    Skipped,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum VerificationFreshness {
+    Current,
+    Stale,
+    Invalidated,
+    Unknown,
+}
+
+/// Verification bound to an exact repository/content version and to every
+/// evidence commitment it transitively depends on.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct VerificationRecord {
+    pub schema_version: u32,
+    pub verification_id: String,
+    pub repository_id: String,
+    pub subject_id: String,
+    pub subject_commitment: String,
+    pub verified_repository_commitment: String,
+    pub verdict: VerificationVerdict,
+    pub evidence_ids: Vec<String>,
+    pub dependency_commitments: Vec<String>,
+    pub observed_at_ms: i64,
+    pub valid_until_ms: i64,
+    pub record_commitment: String,
+}
+
+#[derive(Serialize)]
+struct VerificationRecordPayload<'a> {
+    schema_version: u32,
+    repository_id: &'a str,
+    subject_id: &'a str,
+    subject_commitment: &'a str,
+    verified_repository_commitment: &'a str,
+    verdict: VerificationVerdict,
+    evidence_ids: &'a [String],
+    dependency_commitments: &'a [String],
+    observed_at_ms: i64,
+    valid_until_ms: i64,
+}
+
+impl VerificationRecord {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        repository_id: String,
+        subject_id: String,
+        subject_commitment: String,
+        verified_repository_commitment: String,
+        verdict: VerificationVerdict,
+        evidence_ids: Vec<String>,
+        dependency_commitments: Vec<String>,
+        observed_at_ms: i64,
+        valid_until_ms: i64,
+    ) -> Result<Self, EngineContractError> {
+        for (field, value, max) in [
+            (
+                "repository_id",
+                repository_id.as_str(),
+                MAX_CONTRACT_ID_BYTES,
+            ),
+            ("subject_id", subject_id.as_str(), MAX_CONTRACT_ID_BYTES),
+            (
+                "subject_commitment",
+                subject_commitment.as_str(),
+                MAX_COMMITMENT_BYTES,
+            ),
+            (
+                "verified_repository_commitment",
+                verified_repository_commitment.as_str(),
+                MAX_COMMITMENT_BYTES,
+            ),
+        ] {
+            validate_text(field, value, max, false)?;
+        }
+        if observed_at_ms < 0 {
+            return Err(EngineContractError::InvalidTimestamp("observed_at_ms"));
+        }
+        if valid_until_ms < 0 {
+            return Err(EngineContractError::InvalidTimestamp("valid_until_ms"));
+        }
+        if valid_until_ms > 0 && valid_until_ms < observed_at_ms {
+            return Err(EngineContractError::InvalidContract(
+                "verification validity ends before it was observed",
+            ));
+        }
+        if verdict == VerificationVerdict::Passed && evidence_ids.is_empty() {
+            return Err(EngineContractError::InvalidContract(
+                "passed verification requires evidence",
+            ));
+        }
+        let mut record = Self {
+            schema_version: VERIFICATION_RECORD_SCHEMA_VERSION,
+            verification_id: String::new(),
+            repository_id,
+            subject_id,
+            subject_commitment,
+            verified_repository_commitment,
+            verdict,
+            evidence_ids: canonical_ids("evidence_ids", evidence_ids, MAX_SCOPE_ITEMS)?,
+            dependency_commitments: canonical_strings(
+                "dependency_commitments",
+                dependency_commitments,
+                MAX_SCOPE_ITEMS,
+                MAX_COMMITMENT_BYTES,
+            )?,
+            observed_at_ms,
+            valid_until_ms,
+            record_commitment: String::new(),
+        };
+        record.record_commitment = record.compute_commitment()?;
+        record.verification_id = format!("verify_{}", &record.record_commitment[..16]);
+        Ok(record)
+    }
+
+    fn compute_commitment(&self) -> Result<String, EngineContractError> {
+        contract_sha256_json(&VerificationRecordPayload {
+            schema_version: self.schema_version,
+            repository_id: &self.repository_id,
+            subject_id: &self.subject_id,
+            subject_commitment: &self.subject_commitment,
+            verified_repository_commitment: &self.verified_repository_commitment,
+            verdict: self.verdict,
+            evidence_ids: &self.evidence_ids,
+            dependency_commitments: &self.dependency_commitments,
+            observed_at_ms: self.observed_at_ms,
+            valid_until_ms: self.valid_until_ms,
+        })
+    }
+
+    pub fn freshness(
+        &self,
+        current_repository_commitment: &str,
+        now_ms: i64,
+        invalidated_commitments: &BTreeSet<String>,
+    ) -> VerificationFreshness {
+        if now_ms < 0 || current_repository_commitment.is_empty() {
+            return VerificationFreshness::Unknown;
+        }
+        if self.verified_repository_commitment != current_repository_commitment
+            || (self.valid_until_ms > 0 && now_ms > self.valid_until_ms)
+        {
+            return VerificationFreshness::Stale;
+        }
+        if invalidated_commitments.contains(&self.subject_commitment)
+            || self
+                .dependency_commitments
+                .iter()
+                .any(|item| invalidated_commitments.contains(item))
+        {
+            return VerificationFreshness::Invalidated;
+        }
+        VerificationFreshness::Current
+    }
+
+    pub fn is_current_pass(
+        &self,
+        current_repository_commitment: &str,
+        now_ms: i64,
+        invalidated_commitments: &BTreeSet<String>,
+    ) -> bool {
+        self.verdict == VerificationVerdict::Passed
+            && self.freshness(
+                current_repository_commitment,
+                now_ms,
+                invalidated_commitments,
+            ) == VerificationFreshness::Current
+    }
+
+    pub fn verify_commitment(&self) -> Result<bool, EngineContractError> {
+        let recomputed = self.compute_commitment()?;
+        Ok(self.record_commitment == recomputed
+            && self.verification_id == format!("verify_{}", &recomputed[..16]))
+    }
+
+    pub fn to_json(&self) -> Result<String, EngineContractError> {
+        serde_json::to_string(self)
+            .map_err(|error| EngineContractError::Serialization(error.to_string()))
+    }
+
+    pub fn from_json_verified(json_text: &str) -> Result<Self, EngineContractError> {
+        let record: Self = serde_json::from_str(json_text)
+            .map_err(|error| EngineContractError::Serialization(error.to_string()))?;
+        if record.schema_version != VERIFICATION_RECORD_SCHEMA_VERSION {
+            return Err(EngineContractError::UnsupportedSchema {
+                field: "schema_version",
+                found: record.schema_version,
+                expected: VERIFICATION_RECORD_SCHEMA_VERSION,
+            });
+        }
+        if !record.verify_commitment()? {
+            return Err(EngineContractError::CommitmentMismatch("record_commitment"));
+        }
+        let rebuilt = Self::new(
+            record.repository_id.clone(),
+            record.subject_id.clone(),
+            record.subject_commitment.clone(),
+            record.verified_repository_commitment.clone(),
+            record.verdict,
+            record.evidence_ids.clone(),
+            record.dependency_commitments.clone(),
+            record.observed_at_ms,
+            record.valid_until_ms,
+        )?;
+        if rebuilt != record {
+            return Err(EngineContractError::CommitmentMismatch("record_commitment"));
+        }
+        Ok(rebuilt)
+    }
+}
+
+// ── Continuation proof ───────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ContinuationProofState {
+    Valid,
+    Stale,
+    Invalid,
+}
+
+/// A compact manifest binding graph, context, execution, verification and
+/// memory into one cross-agent continuation artifact.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct WorkContinuationProof {
+    pub schema_version: u32,
+    pub proof_id: String,
+    pub repository_id: String,
+    pub graph_revision: u64,
+    pub graph_commitment: String,
+    pub workstream_id: String,
+    pub from_agent: String,
+    pub to_agent: String,
+    pub handoff_commitment: String,
+    pub context_receipt_commitments: Vec<String>,
+    pub routing_commitments: Vec<String>,
+    pub execution_outcome_commitments: Vec<String>,
+    pub verification_commitments: Vec<String>,
+    pub memory_commitments: Vec<String>,
+    pub outstanding_work_refs: Vec<String>,
+    pub recovery_handle_ids: Vec<String>,
+    pub created_at_ms: i64,
+    pub proof_commitment: String,
+}
+
+#[derive(Serialize)]
+struct WorkContinuationProofPayload<'a> {
+    schema_version: u32,
+    repository_id: &'a str,
+    graph_revision: u64,
+    graph_commitment: &'a str,
+    workstream_id: &'a str,
+    from_agent: &'a str,
+    to_agent: &'a str,
+    handoff_commitment: &'a str,
+    context_receipt_commitments: &'a [String],
+    routing_commitments: &'a [String],
+    execution_outcome_commitments: &'a [String],
+    verification_commitments: &'a [String],
+    memory_commitments: &'a [String],
+    outstanding_work_refs: &'a [String],
+    recovery_handle_ids: &'a [String],
+    created_at_ms: i64,
+}
+
+impl WorkContinuationProof {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        repository_id: String,
+        graph_revision: u64,
+        graph_commitment: String,
+        workstream_id: String,
+        from_agent: String,
+        to_agent: String,
+        handoff_commitment: String,
+        context_receipt_commitments: Vec<String>,
+        routing_commitments: Vec<String>,
+        execution_outcome_commitments: Vec<String>,
+        verification_commitments: Vec<String>,
+        memory_commitments: Vec<String>,
+        outstanding_work_refs: Vec<String>,
+        recovery_handle_ids: Vec<String>,
+        created_at_ms: i64,
+    ) -> Result<Self, EngineContractError> {
+        for (field, value) in [
+            ("repository_id", repository_id.as_str()),
+            ("graph_commitment", graph_commitment.as_str()),
+            ("workstream_id", workstream_id.as_str()),
+            ("to_agent", to_agent.as_str()),
+        ] {
+            validate_text(field, value, MAX_COMMITMENT_BYTES, false)?;
+        }
+        // A continuation proof can be based on either an explicit handoff or
+        // evidence-bounded reconstruction after an interrupted agent.  Empty
+        // source/handoff fields are the canonical no-handoff representation;
+        // requiring both to agree prevents a caller from presenting a partial
+        // handoff as stronger evidence than it is.
+        if from_agent.is_empty() != handoff_commitment.is_empty() {
+            return Err(EngineContractError::InvalidContract(
+                "from_agent and handoff_commitment must both be present or both be absent",
+            ));
+        }
+        validate_text("from_agent", &from_agent, MAX_COMMITMENT_BYTES, true)?;
+        validate_text(
+            "handoff_commitment",
+            &handoff_commitment,
+            MAX_COMMITMENT_BYTES,
+            true,
+        )?;
+        if created_at_ms < 0 {
+            return Err(EngineContractError::InvalidTimestamp("created_at_ms"));
+        }
+        if context_receipt_commitments.is_empty()
+            && routing_commitments.is_empty()
+            && execution_outcome_commitments.is_empty()
+            && verification_commitments.is_empty()
+            && memory_commitments.is_empty()
+            && outstanding_work_refs.is_empty()
+        {
+            return Err(EngineContractError::InvalidContract(
+                "continuation proof contains no resumable product state",
+            ));
+        }
+        let mut proof = Self {
+            schema_version: WORK_CONTINUATION_PROOF_SCHEMA_VERSION,
+            proof_id: String::new(),
+            repository_id,
+            graph_revision,
+            graph_commitment,
+            workstream_id,
+            from_agent,
+            to_agent,
+            handoff_commitment,
+            context_receipt_commitments: canonical_strings(
+                "context_receipt_commitments",
+                context_receipt_commitments,
+                MAX_SCOPE_ITEMS,
+                MAX_COMMITMENT_BYTES,
+            )?,
+            routing_commitments: canonical_strings(
+                "routing_commitments",
+                routing_commitments,
+                MAX_SCOPE_ITEMS,
+                MAX_COMMITMENT_BYTES,
+            )?,
+            execution_outcome_commitments: canonical_strings(
+                "execution_outcome_commitments",
+                execution_outcome_commitments,
+                MAX_SCOPE_ITEMS,
+                MAX_COMMITMENT_BYTES,
+            )?,
+            verification_commitments: canonical_strings(
+                "verification_commitments",
+                verification_commitments,
+                MAX_SCOPE_ITEMS,
+                MAX_COMMITMENT_BYTES,
+            )?,
+            memory_commitments: canonical_strings(
+                "memory_commitments",
+                memory_commitments,
+                MAX_SCOPE_ITEMS,
+                MAX_COMMITMENT_BYTES,
+            )?,
+            outstanding_work_refs: canonical_strings(
+                "outstanding_work_refs",
+                outstanding_work_refs,
+                MAX_SCOPE_ITEMS,
+                MAX_SCOPE_PATH_BYTES,
+            )?,
+            recovery_handle_ids: canonical_ids(
+                "recovery_handle_ids",
+                recovery_handle_ids,
+                MAX_RECOVERY_HANDLES,
+            )?,
+            created_at_ms,
+            proof_commitment: String::new(),
+        };
+        proof.proof_commitment = proof.compute_commitment()?;
+        proof.proof_id = format!("continuation_{}", &proof.proof_commitment[..16]);
+        Ok(proof)
+    }
+
+    fn compute_commitment(&self) -> Result<String, EngineContractError> {
+        contract_sha256_json(&WorkContinuationProofPayload {
+            schema_version: self.schema_version,
+            repository_id: &self.repository_id,
+            graph_revision: self.graph_revision,
+            graph_commitment: &self.graph_commitment,
+            workstream_id: &self.workstream_id,
+            from_agent: &self.from_agent,
+            to_agent: &self.to_agent,
+            handoff_commitment: &self.handoff_commitment,
+            context_receipt_commitments: &self.context_receipt_commitments,
+            routing_commitments: &self.routing_commitments,
+            execution_outcome_commitments: &self.execution_outcome_commitments,
+            verification_commitments: &self.verification_commitments,
+            memory_commitments: &self.memory_commitments,
+            outstanding_work_refs: &self.outstanding_work_refs,
+            recovery_handle_ids: &self.recovery_handle_ids,
+            created_at_ms: self.created_at_ms,
+        })
+    }
+
+    pub fn verify_commitment(&self) -> Result<bool, EngineContractError> {
+        let recomputed = self.compute_commitment()?;
+        Ok(self.proof_commitment == recomputed
+            && self.proof_id == format!("continuation_{}", &recomputed[..16]))
+    }
+
+    pub fn state_for_graph(
+        &self,
+        repository_id: &str,
+        graph_revision: u64,
+        graph_commitment: &str,
+    ) -> ContinuationProofState {
+        if self.repository_id != repository_id {
+            return ContinuationProofState::Invalid;
+        }
+        if self.graph_revision != graph_revision || self.graph_commitment != graph_commitment {
+            return ContinuationProofState::Stale;
+        }
+        match self.verify_commitment() {
+            Ok(true) => ContinuationProofState::Valid,
+            _ => ContinuationProofState::Invalid,
+        }
+    }
+
+    pub fn to_json(&self) -> Result<String, EngineContractError> {
+        serde_json::to_string(self)
+            .map_err(|error| EngineContractError::Serialization(error.to_string()))
+    }
+
+    pub fn from_json_verified(json_text: &str) -> Result<Self, EngineContractError> {
+        let proof: Self = serde_json::from_str(json_text)
+            .map_err(|error| EngineContractError::Serialization(error.to_string()))?;
+        if proof.schema_version != WORK_CONTINUATION_PROOF_SCHEMA_VERSION {
+            return Err(EngineContractError::UnsupportedSchema {
+                field: "schema_version",
+                found: proof.schema_version,
+                expected: WORK_CONTINUATION_PROOF_SCHEMA_VERSION,
+            });
+        }
+        if !proof.verify_commitment()? {
+            return Err(EngineContractError::CommitmentMismatch("proof_commitment"));
+        }
+        let rebuilt = Self::new(
+            proof.repository_id.clone(),
+            proof.graph_revision,
+            proof.graph_commitment.clone(),
+            proof.workstream_id.clone(),
+            proof.from_agent.clone(),
+            proof.to_agent.clone(),
+            proof.handoff_commitment.clone(),
+            proof.context_receipt_commitments.clone(),
+            proof.routing_commitments.clone(),
+            proof.execution_outcome_commitments.clone(),
+            proof.verification_commitments.clone(),
+            proof.memory_commitments.clone(),
+            proof.outstanding_work_refs.clone(),
+            proof.recovery_handle_ids.clone(),
+            proof.created_at_ms,
+        )?;
+        if rebuilt != proof {
+            return Err(EngineContractError::CommitmentMismatch("proof_commitment"));
+        }
+        Ok(rebuilt)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2129,15 +3140,51 @@ mod tests {
     fn resume_scope_is_deterministic_bounded_and_text_light() {
         let scope = WorkScope::from_resume(&resume_fixture()).unwrap();
         assert_eq!(scope.task_ids, vec!["task:a", "task:b"]);
+        assert_eq!(scope.task_ids_total, 2);
         assert_eq!(scope.agent_ids, vec!["agent:claude", "agent:codex"]);
+        assert_eq!(scope.agent_ids_total, 2);
         assert_eq!(scope.changed_paths, vec!["src/auth.rs", "tests/auth.rs"]);
+        assert_eq!(scope.changed_paths_total, 2);
+        assert!(scope.changed_paths_commitment.starts_with("sha256:"));
         assert_eq!(scope.commit_ids, vec!["commit:1", "commit:2"]);
+        assert_eq!(scope.commit_ids_total, 2);
         assert_eq!(scope.evidence_ids, vec!["evidence:git", "evidence:test"]);
+        assert_eq!(scope.evidence_ids_total, 2);
 
         let json = serde_json::to_string(&scope).unwrap();
         assert!(!json.contains("secret decision prose"));
         assert!(!json.contains("failure prose"));
         assert!(!json.contains("display-name"));
+    }
+
+    #[test]
+    fn resume_scope_commits_to_paths_beyond_inline_bound() {
+        let mut resume = resume_fixture();
+        resume.selected_workstream.changed_paths.clear();
+        resume.changed_paths = (0..600).map(|index| format!("src/{index:04}.rs")).collect();
+
+        let scope = WorkScope::from_resume(&resume).unwrap();
+        assert_eq!(scope.changed_paths.len(), MAX_SCOPE_ITEMS);
+        assert_eq!(scope.changed_paths_total, 600);
+        assert_eq!(scope.changed_paths.first().unwrap(), "src/0000.rs");
+        assert_eq!(scope.changed_paths.last().unwrap(), "src/0511.rs");
+
+        resume.changed_paths.reverse();
+        let reordered = WorkScope::from_resume(&resume).unwrap();
+        assert_eq!(reordered.changed_paths, scope.changed_paths);
+        assert_eq!(
+            reordered.changed_paths_commitment,
+            scope.changed_paths_commitment
+        );
+
+        resume.changed_paths.push("src/0600.rs".into());
+        let changed = WorkScope::from_resume(&resume).unwrap();
+        assert_eq!(changed.changed_paths, scope.changed_paths);
+        assert_eq!(changed.changed_paths_total, 601);
+        assert_ne!(
+            changed.changed_paths_commitment,
+            scope.changed_paths_commitment
+        );
     }
 
     #[test]
@@ -2244,5 +3291,241 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    fn route_fixture() -> RoutingDecision {
+        RoutingDecision::new(
+            "repo:demo".into(),
+            "task:auth".into(),
+            "workstream:1".into(),
+            "openai".into(),
+            "gpt-5".into(),
+            "responses-api".into(),
+            8_192,
+            "policy:v1".into(),
+            vec!["capability_match".into(), "lowest_verified_cost".into()],
+            vec!["sha256:features".into()],
+            vec![],
+            "cr_672457349ba403bc".into(),
+            vec!["evidence:benchmark".into()],
+            1_700_000_000_000,
+        )
+        .unwrap()
+    }
+
+    fn outcome_fixture(route: &RoutingDecision) -> ModelExecutionOutcome {
+        ModelExecutionOutcome::new(
+            route.routing_id.clone(),
+            route.repository_id.clone(),
+            route.task_id.clone(),
+            route.workstream_id.clone(),
+            route.provider.clone(),
+            route.model.clone(),
+            route.runtime.clone(),
+            route.receipt_id.clone(),
+            "sha256:request".into(),
+            "sha256:response".into(),
+            ExecutionState::Succeeded,
+            OutcomeVerificationState::Passed,
+            420,
+            1_200,
+            240,
+            17_500,
+            String::new(),
+            vec!["evidence:test".into()],
+            route.decided_at_ms + 500,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn routing_and_execution_are_canonical_tamper_evident_and_linked() {
+        let route = route_fixture();
+        let reordered = RoutingDecision::new(
+            route.repository_id.clone(),
+            route.task_id.clone(),
+            route.workstream_id.clone(),
+            route.provider.clone(),
+            route.model.clone(),
+            route.runtime.clone(),
+            route.context_budget_tokens,
+            route.policy_version.clone(),
+            vec!["lowest_verified_cost".into(), "capability_match".into()],
+            route.feature_commitments.clone(),
+            vec![],
+            route.receipt_id.clone(),
+            route.evidence_ids.clone(),
+            route.decided_at_ms,
+        )
+        .unwrap();
+        assert_eq!(route, reordered);
+        assert_eq!(
+            RoutingDecision::from_json_verified(&route.to_json().unwrap()).unwrap(),
+            route
+        );
+
+        let outcome = outcome_fixture(&route);
+        assert!(outcome.verify_route(&route));
+        assert_eq!(
+            ModelExecutionOutcome::from_json_verified(&outcome.to_json().unwrap()).unwrap(),
+            outcome
+        );
+
+        let mut tampered: serde_json::Value =
+            serde_json::from_str(&outcome.to_json().unwrap()).unwrap();
+        tampered["cost_micro_usd"] = serde_json::json!(1);
+        assert!(matches!(
+            ModelExecutionOutcome::from_json_verified(&tampered.to_string()),
+            Err(EngineContractError::CommitmentMismatch(
+                "outcome_commitment"
+            ))
+        ));
+
+        let mut unknown: serde_json::Value =
+            serde_json::from_str(&route.to_json().unwrap()).unwrap();
+        unknown["uncommitted_policy_override"] = serde_json::json!(true);
+        assert!(matches!(
+            RoutingDecision::from_json_verified(&unknown.to_string()),
+            Err(EngineContractError::Serialization(_))
+        ));
+    }
+
+    #[test]
+    fn execution_refuses_impossible_success_and_verification_combinations() {
+        let route = route_fixture();
+        let invalid = ModelExecutionOutcome::new(
+            route.routing_id.clone(),
+            route.repository_id.clone(),
+            route.task_id.clone(),
+            route.workstream_id.clone(),
+            route.provider.clone(),
+            route.model.clone(),
+            route.runtime.clone(),
+            route.receipt_id.clone(),
+            String::new(),
+            String::new(),
+            ExecutionState::Failed,
+            OutcomeVerificationState::Passed,
+            1,
+            0,
+            0,
+            0,
+            "provider_error".into(),
+            vec![],
+            route.decided_at_ms + 1,
+        );
+        assert!(matches!(
+            invalid,
+            Err(EngineContractError::InvalidContract(_))
+        ));
+    }
+
+    #[test]
+    fn verification_freshness_is_exact_version_and_transitive() {
+        let record = VerificationRecord::new(
+            "repo:demo".into(),
+            "outcome:1".into(),
+            "sha256:outcome".into(),
+            "sha256:head-a".into(),
+            VerificationVerdict::Passed,
+            vec!["evidence:test".into()],
+            vec!["sha256:source-a".into(), "sha256:config-a".into()],
+            100,
+            200,
+        )
+        .unwrap();
+        assert!(record.is_current_pass("sha256:head-a", 150, &BTreeSet::new()));
+        assert_eq!(
+            record.freshness("sha256:head-b", 150, &BTreeSet::new()),
+            VerificationFreshness::Stale
+        );
+        assert_eq!(
+            record.freshness("sha256:head-a", 201, &BTreeSet::new()),
+            VerificationFreshness::Stale
+        );
+        assert_eq!(
+            record.freshness(
+                "sha256:head-a",
+                150,
+                &BTreeSet::from(["sha256:config-a".into()])
+            ),
+            VerificationFreshness::Invalidated
+        );
+    }
+
+    #[test]
+    fn continuation_proof_binds_the_complete_product_chain() {
+        let route = route_fixture();
+        let outcome = outcome_fixture(&route);
+        let proof = WorkContinuationProof::new(
+            route.repository_id.clone(),
+            7,
+            "sha256:graph".into(),
+            route.workstream_id.clone(),
+            "agent:claude".into(),
+            "agent:codex".into(),
+            "sha256:handoff".into(),
+            vec!["sha256:receipt".into()],
+            vec![route.decision_commitment.clone()],
+            vec![outcome.outcome_commitment.clone()],
+            vec!["sha256:verification".into()],
+            vec!["sha256:memory".into()],
+            vec!["tests still need Linux CI".into()],
+            vec!["rh_61e976bc425ad0de".into()],
+            outcome.completed_at_ms + 1,
+        )
+        .unwrap();
+        assert_eq!(
+            proof.state_for_graph("repo:demo", 7, "sha256:graph"),
+            ContinuationProofState::Valid
+        );
+        assert_eq!(
+            proof.state_for_graph("repo:demo", 8, "sha256:new-graph"),
+            ContinuationProofState::Stale
+        );
+        assert_eq!(
+            proof.state_for_graph("repo:foreign", 7, "sha256:graph"),
+            ContinuationProofState::Invalid
+        );
+    }
+
+    #[test]
+    fn routing_execution_freshness_and_continuation_golden_vectors() {
+        let route = route_fixture();
+        let outcome = outcome_fixture(&route);
+        let verification = VerificationRecord::new(
+            "repo:demo".into(),
+            outcome.outcome_id.clone(),
+            outcome.outcome_commitment.clone(),
+            "sha256:head-a".into(),
+            VerificationVerdict::Passed,
+            vec!["evidence:test".into()],
+            vec!["sha256:source-a".into(), "sha256:config-a".into()],
+            1_700_000_000_600,
+            1_700_000_001_000,
+        )
+        .unwrap();
+        let proof = WorkContinuationProof::new(
+            "repo:demo".into(),
+            7,
+            "sha256:graph".into(),
+            "workstream:1".into(),
+            "agent:claude".into(),
+            "agent:codex".into(),
+            "sha256:handoff".into(),
+            vec!["sha256:receipt".into()],
+            vec![route.decision_commitment.clone()],
+            vec![outcome.outcome_commitment.clone()],
+            vec![verification.record_commitment.clone()],
+            vec!["sha256:memory".into()],
+            vec!["run Linux CI".into()],
+            vec!["rh_61e976bc425ad0de".into()],
+            1_700_000_000_700,
+        )
+        .unwrap();
+        assert_eq!(route.routing_id, "route_66d4c04a18b4e70f");
+        assert_eq!(outcome.outcome_id, "outcome_a130681ddd63dc84");
+        assert_eq!(verification.verification_id, "verify_4e1487e3d6e73b36");
+        assert_eq!(proof.proof_id, "continuation_53eba6ee3a52be48");
     }
 }

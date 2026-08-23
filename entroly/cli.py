@@ -3194,7 +3194,8 @@ def _print_local_simulation(report: dict, *, title: str, include_perf: bool) -> 
         )
         print(
             f"  {C.GRAY}Try it on a larger repo, or force selection here with "
-            f"{C.RESET}--budget 30{C.GRAY}.{C.RESET}"
+            f'{C.RESET}--budget 30 --query "<a symbol or task in this repo>"'
+            f"{C.GRAY}.{C.RESET}"
         )
     else:
         print(f"  {C.GREEN}{C.BOLD}Average reduction: {avg:.1f}%{C.RESET}")

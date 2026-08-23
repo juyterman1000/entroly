@@ -65,10 +65,16 @@ def test_resume_transport_delegates_exactly_once(monkeypatch):
         project="subdir",
         workstream_id="w",
         max_evidence=9,
+        to_agent="codex",
     )
 
     assert calls == [
-        {"project": "subdir", "workstream_id": "w", "max_evidence": 9}
+        {
+            "project": "subdir",
+            "workstream_id": "w",
+            "max_evidence": 9,
+            "to_agent": "codex",
+        }
     ]
     assert '"workstream_id":"w"' in payload
     assert '"max_evidence":9' in payload
@@ -91,5 +97,45 @@ def test_resume_transport_preserves_helper_validation_error(monkeypatch):
     server.create_mcp_server()
     payload = registered["work_resume"](max_evidence=-1)
 
-    assert calls == [{"project": "", "workstream_id": "", "max_evidence": -1}]
+    assert calls == [
+        {"project": "", "workstream_id": "", "max_evidence": -1, "to_agent": ""}
+    ]
     assert '"error":"invalid_work_graph_request"' in payload
+
+
+def test_execution_transport_exposes_complete_product_loop(monkeypatch):
+    registered = _fake_fastmcp(monkeypatch)
+    calls = []
+
+    def record(**kwargs):
+        calls.append(kwargs)
+        return {"status": "ok", "kind": "work_record_execution"}
+
+    monkeypatch.setattr(server._work, "work_record_execution", record)
+    server.create_mcp_server()
+    expected_tools = {
+        "work_state",
+        "work_claim",
+        "work_resume",
+        "work_handoff",
+        "work_record_context",
+        "work_record_memory",
+        "work_record_execution",
+    }
+    assert expected_tools <= registered.keys()
+
+    payload = registered["work_record_execution"](
+        {"routing_id": "route_1"},
+        {"outcome_id": "outcome_1"},
+        {"verification_id": "verify_1"},
+        project="repo",
+        invalidated_commitments=["sha256:old"],
+    )
+    assert calls == [{
+        "route": {"routing_id": "route_1"},
+        "outcome": {"outcome_id": "outcome_1"},
+        "verification": {"verification_id": "verify_1"},
+        "project": "repo",
+        "invalidated_commitments": ["sha256:old"],
+    }]
+    assert '"kind":"work_record_execution"' in payload

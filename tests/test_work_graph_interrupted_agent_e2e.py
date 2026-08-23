@@ -27,9 +27,11 @@ def _require_native() -> None:
         pytest.skip(str(exc))
 
 
+@pytest.mark.parametrize("receiving_agent", ["claude", "codex"])
 def test_replacement_agent_recovers_work_when_previous_agent_never_used_entroly(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    receiving_agent: str,
 ) -> None:
     """Durable repo evidence alone must be enough to reconstruct interrupted work."""
 
@@ -53,7 +55,7 @@ def test_replacement_agent_recovers_work_when_previous_agent_never_used_entroly(
     monkeypatch.setenv("ENTROLY_DIR", str(state_root))
     assert not state_root.exists(), "fixture accidentally pre-created Entroly state"
 
-    recovered = work_resume(max_evidence=64)
+    recovered = work_resume(max_evidence=64, to_agent=receiving_agent)
 
     assert recovered["status"] == "ok", recovered
     assert recovered["kind"] == "work_resume"
@@ -62,4 +64,8 @@ def test_replacement_agent_recovers_work_when_previous_agent_never_used_entroly(
     # carry the durable changed-file fact needed by the replacement agent.
     assert "app.py" in recovered["context"]
     assert "feature/interrupted-auth" in recovered["context"]
+    assert '"from_agent":""' in recovered["context"]
+    assert '"handoff_commitment":""' in recovered["context"]
+    assert f'"to_agent":"{receiving_agent}"' in recovered["context"]
+    assert "unknown:previous-agent-intent" in recovered["context"]
     assert state_root.exists(), "explicit recovery did not persist shared Work Graph state"

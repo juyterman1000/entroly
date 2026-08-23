@@ -61,8 +61,17 @@ def _claim_worker(
         results.put(("error", agent, type(exc).__name__, str(exc)))
 
 
+@pytest.mark.parametrize(
+    ("second_scope", "expected_conflicts"),
+    [
+        pytest.param("src/billing", 0, id="non-overlapping-vendors"),
+        pytest.param("src/auth/tokens.py", 1, id="overlapping-vendors"),
+    ],
+)
 def test_concurrent_agent_processes_merge_without_lost_work(
     tmp_path: Path,
+    second_scope: str,
+    expected_conflicts: int,
 ) -> None:
     """Independent Claude/Codex-like processes must converge on one graph.
 
@@ -89,7 +98,9 @@ def test_concurrent_agent_processes_merge_without_lost_work(
     (repo / "src" / "auth").mkdir(parents=True)
     (repo / "src" / "auth" / "__init__.py").write_text("", encoding="utf-8")
     (repo / "src" / "auth" / "tokens.py").write_text("TOKEN = 1\n", encoding="utf-8")
-    _git(repo, "add", "src/auth")
+    (repo / "src" / "billing").mkdir(parents=True)
+    (repo / "src" / "billing" / "__init__.py").write_text("", encoding="utf-8")
+    _git(repo, "add", "src/auth", "src/billing")
     _git(repo, "commit", "-m", "baseline")
     _git(repo, "checkout", "-b", "feature/shared-work")
     (repo / "src" / "auth" / "tokens.py").write_text("TOKEN = 2\n", encoding="utf-8")
@@ -118,8 +129,8 @@ def test_concurrent_agent_processes_merge_without_lost_work(
                 str(repo),
                 str(state_root),
                 "codex",
-                "auth-tests",
-                "src/auth/tokens.py",
+                "second-workstream",
+                second_scope,
                 1_001,
                 start,
                 results,
@@ -162,10 +173,11 @@ def test_concurrent_agent_processes_merge_without_lost_work(
 
     report = graph.coordination(2_000)
     assert report["active_leases"] == 2
-    assert len(report["conflicts"]) == 1
-    conflict = report["conflicts"][0]
-    assert {conflict["agent_a"], conflict["agent_b"]} == {"claude", "codex"}
-    assert conflict["overlapping_paths"]
+    assert len(report["conflicts"]) == expected_conflicts
+    if expected_conflicts:
+        conflict = report["conflicts"][0]
+        assert {conflict["agent_a"], conflict["agent_b"]} == {"claude", "codex"}
+        assert conflict["overlapping_paths"]
 
     # Atomic persistence should leave no partial-write debris behind.
     assert not list(state_root.rglob(".state-*.tmp"))

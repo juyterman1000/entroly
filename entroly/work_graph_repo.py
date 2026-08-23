@@ -18,7 +18,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 _MAX_GIT_OUTPUT_BYTES = 8 * 1024 * 1024
-_MAX_CHANGES = 512
+_MAX_CHANGES = 16_384
 _MAX_COMMITS = 20
 
 

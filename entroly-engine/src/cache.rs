@@ -921,7 +921,17 @@ impl SubmodularEvictor {
         let mut victim: Option<(u64, f64)> = None;
         for entry in &entry_vec {
             let value = Self::entry_value(entry, &entry_vec, cost_model, current_turn, decay_gamma);
-            if victim.as_ref().is_none_or(|(_, lowest)| value < *lowest) {
+            // HashMap iteration order is deliberately randomized.  A value
+            // tie therefore needs an explicit stable key or replaying the same
+            // cache snapshot can evict a different entry in each process.
+            // ``total_cmp`` also gives serialized non-finite legacy values a
+            // defined order instead of silently treating them as equal.
+            if victim.as_ref().is_none_or(|(lowest_hash, lowest_value)| {
+                value
+                    .total_cmp(lowest_value)
+                    .then_with(|| entry.exact_hash.cmp(lowest_hash))
+                    == Ordering::Less
+            }) {
                 victim = Some((entry.exact_hash, value));
             }
         }
@@ -1037,11 +1047,13 @@ impl CausalInvalidator {
 
 /// Lightweight linear model predicting P(hit | features).
 ///
-/// Features: [context_entropy, fragment_count, query_length_norm, recompute_cost_norm]
+/// Features: [context_entropy, fragment_count, recompute_cost_norm, budget_norm]
 /// Updated via online SGD with learning rate decay.
 ///
-/// This bridges the gap between structured policy and learned prediction,
-/// providing the "last 5-10%" improvement over pure heuristics.
+/// Every feature is stored on ``CacheEntry`` so admission and later outcomes
+/// are evaluated in the same feature space. A lookup miss does not yet know
+/// the response cost or context entropy and therefore is not a valid negative
+/// training row; an admitted entry evicted without a hit is.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct HitPredictor {
     /// Weight vector (4 features + bias).
@@ -1078,14 +1090,14 @@ impl HitPredictor {
     pub fn features(
         context_entropy: f64,
         n_fragments: usize,
-        query_len: usize,
         response_tokens: u32,
+        effective_budget: u32,
     ) -> [f64; 4] {
         [
             context_entropy / 6.0,                    // normalized entropy
             (n_fragments as f64).ln().max(0.0) / 5.0, // log fragment count
-            (query_len as f64) / 500.0,               // normalized query length
             (response_tokens as f64) / 2000.0,        // normalized response cost
+            (effective_budget as f64) / 32_000.0,     // normalized context budget
         ]
     }
 
@@ -1411,9 +1423,9 @@ impl EgscCache {
             self.shift_detector.observe(true);
             let feats = HitPredictor::features(
                 entry.context_entropy,
-                fragment_ids.len(),
-                query.len(),
+                entry.fragment_ids.len(),
                 entry.response_tokens,
+                entry.effective_budget,
             );
             self.hit_predictor.update(&feats, true);
             return CacheLookup::ExactHit {
@@ -1461,9 +1473,9 @@ impl EgscCache {
                 self.shift_detector.observe(true);
                 let feats = HitPredictor::features(
                     entry.context_entropy,
-                    fragment_ids.len(),
-                    query.len(),
+                    entry.fragment_ids.len(),
                     entry.response_tokens,
+                    entry.effective_budget,
                 );
                 self.hit_predictor.update(&feats, true);
                 return CacheLookup::SemanticHit {
@@ -1490,8 +1502,11 @@ impl EgscCache {
                 self.thompson_gate.beta_fail *= 0.5;
             }
         }
-        let feats = HitPredictor::features(0.0, fragment_ids.len(), query.len(), 0);
-        self.hit_predictor.update(&feats, false);
+        // Do not manufacture a negative predictor row here. At lookup time the
+        // response and selected-context entropy do not exist yet, so the old
+        // zero-filled row occupied a different feature space from both store
+        // decisions and hits. Non-reuse is observed when a fully described,
+        // admitted entry reaches eviction without ever being hit.
         CacheLookup::Miss
     }
 
@@ -1532,6 +1547,22 @@ impl EgscCache {
             self.free_slots.push(slot);
         }
         true
+    }
+
+    /// Remove a capacity victim and record a genuine non-reuse outcome.
+    fn evict_entry(&mut self, hash: u64) -> bool {
+        if let Some(entry) = self.entries.get(&hash) {
+            if entry.hit_count == 0 {
+                let features = HitPredictor::features(
+                    entry.context_entropy,
+                    entry.fragment_ids.len(),
+                    entry.response_tokens,
+                    entry.effective_budget,
+                );
+                self.hit_predictor.update(&features, false);
+            }
+        }
+        self.remove_entry(hash)
     }
 
     fn allocate_semantic_slot(&mut self, hash: u64, query_fp: u64) {
@@ -1588,8 +1619,8 @@ impl EgscCache {
             let features = HitPredictor::features(
                 ctx_entropy,
                 fragment_ids.len(),
-                query.len(),
                 response_tokens,
+                effective_budget,
             );
             let predicted_p_hit = self.hit_predictor.predict(&features);
             let admit = self.thompson_gate.should_admit_scored(
@@ -1618,9 +1649,10 @@ impl EgscCache {
                     return false;
                 }
                 // Admit: evict the victim and recycle its semantic slot.
-                self.remove_entry(vh);
-                self.total_evictions += 1;
-                self.freq_admissions += 1;
+                if self.evict_entry(vh) {
+                    self.total_evictions += 1;
+                    self.freq_admissions += 1;
+                }
             }
         } else if self.entries.len() >= self.config.max_entries {
             self.evict_one();
@@ -1664,7 +1696,7 @@ impl EgscCache {
 
     fn evict_one(&mut self) {
         if let Some(hash) = self.find_victim() {
-            if self.remove_entry(hash) {
+            if self.evict_entry(hash) {
                 self.total_evictions += 1;
             }
         }
@@ -2248,6 +2280,56 @@ mod tests {
         assert!(likely.should_admit_scored(1.2, 3, 500, 1.0));
     }
 
+    #[test]
+    fn cache_miss_does_not_train_with_unknown_zero_features() {
+        let mut cache = EgscCache::new(EgscConfig::default());
+        assert!(matches!(
+            cache.lookup_with_budget("not cached", &fids(&["f1"]), 4_096),
+            CacheLookup::Miss
+        ));
+        assert_eq!(
+            cache.hit_predictor.updates, 0,
+            "a miss has no response or context entropy to label"
+        );
+    }
+
+    #[test]
+    fn unhit_capacity_victim_trains_predictor_in_admission_feature_space() {
+        let mut cache = EgscCache::new(EgscConfig {
+            max_entries: 1,
+            enable_entropy_gate: false,
+            enable_submodular_eviction: true,
+            ..Default::default()
+        });
+        let features = HitPredictor::features(0.0, 1, 200, 4_096);
+        let before = cache.hit_predictor.predict(&features);
+
+        assert!(cache.store_with_budget(
+            "first",
+            fids(&["f1"]),
+            &[(4.0, 100)],
+            "first response".into(),
+            200,
+            0,
+            4_096,
+        ));
+        assert!(cache.store_with_budget(
+            "second",
+            fids(&["f2"]),
+            &[(4.0, 100)],
+            "second response".into(),
+            200,
+            1,
+            4_096,
+        ));
+
+        assert_eq!(cache.hit_predictor.updates, 1);
+        assert!(
+            cache.hit_predictor.predict(&features) < before,
+            "an admitted entry evicted without a hit is a real non-reuse outcome"
+        );
+    }
+
     // ── Submodular Eviction ──
 
     #[test]
@@ -2304,6 +2386,41 @@ mod tests {
         let cm = CostModel::default();
         let victim = SubmodularEvictor::select_victim_map(&entries, &cm, 0);
         assert!(victim.is_some(), "Should find a victim in non-empty cache");
+    }
+
+    #[test]
+    fn submodular_map_ties_use_stable_hash_order() {
+        let make_entry = |hash| {
+            CacheEntry::new(
+                hash,
+                0xAAAAAAAA_AAAAAAAA,
+                fids(&["same-fragment"]),
+                "same response".into(),
+                100,
+                4.0,
+                0,
+            )
+        };
+        let cm = CostModel::default();
+
+        // Different maps have independent randomized hash seeds, and the
+        // insertion orders are deliberately reversed. Both must make the same
+        // replayable eviction decision when every value signal ties.
+        let mut forward = HashMap::new();
+        forward.insert(3, make_entry(3));
+        forward.insert(9, make_entry(9));
+        let mut reverse = HashMap::new();
+        reverse.insert(9, make_entry(9));
+        reverse.insert(3, make_entry(3));
+
+        assert_eq!(
+            SubmodularEvictor::select_victim_map(&forward, &cm, 0),
+            Some(3)
+        );
+        assert_eq!(
+            SubmodularEvictor::select_victim_map(&reverse, &cm, 0),
+            Some(3)
+        );
     }
 
     // ── Causal Invalidation ──

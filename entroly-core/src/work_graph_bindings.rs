@@ -134,6 +134,64 @@ impl PyWorkGraph {
             .map_err(py_err)
     }
 
+    fn record_context_receipt_json(
+        &mut self,
+        receipt_json: &str,
+        agent_id: &str,
+        session_id: &str,
+    ) -> PyResult<String> {
+        self.inner
+            .record_context_receipt_json(receipt_json, agent_id, session_id)
+            .map_err(py_err)
+    }
+
+    #[pyo3(signature = (memory_json, now_ms, superseded_ids_json = "[]"))]
+    fn record_memory_json(
+        &mut self,
+        memory_json: &str,
+        now_ms: i64,
+        superseded_ids_json: &str,
+    ) -> PyResult<String> {
+        self.inner
+            .record_memory_json(memory_json, now_ms, superseded_ids_json)
+            .map_err(py_err)
+    }
+
+    #[pyo3(signature = (route_json, outcome_json, verification_json, invalidated_commitments_json = "[]"))]
+    fn record_execution_chain_json(
+        &mut self,
+        route_json: &str,
+        outcome_json: &str,
+        verification_json: &str,
+        invalidated_commitments_json: &str,
+    ) -> PyResult<String> {
+        self.inner
+            .record_execution_chain_json(
+                route_json,
+                outcome_json,
+                verification_json,
+                invalidated_commitments_json,
+            )
+            .map_err(py_err)
+    }
+
+    fn continuation_proof_json(&self, handoff_json: &str, manifest_json: &str) -> PyResult<String> {
+        self.inner
+            .continuation_proof_json(handoff_json, manifest_json)
+            .map_err(py_err)
+    }
+
+    fn reconstructed_continuation_proof_json(
+        &self,
+        workstream_id: &str,
+        to_agent: &str,
+        manifest_json: &str,
+    ) -> PyResult<String> {
+        self.inner
+            .reconstructed_continuation_proof_json(workstream_id, to_agent, manifest_json)
+            .map_err(py_err)
+    }
+
     #[pyo3(signature = (now_ms, pretty = false))]
     fn coordination_json(&self, now_ms: i64, pretty: bool) -> PyResult<String> {
         self.inner.coordination_json(now_ms, pretty).map_err(py_err)

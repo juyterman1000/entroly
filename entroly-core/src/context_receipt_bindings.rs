@@ -142,6 +142,16 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(memory_record_admissibility, m)?)?;
     m.add_function(wrap_pyfunction!(memory_record_verify_json, m)?)?;
     m.add_function(wrap_pyfunction!(memory_record_schema_version, m)?)?;
+    m.add_function(wrap_pyfunction!(routing_decision_build_json, m)?)?;
+    m.add_function(wrap_pyfunction!(routing_decision_verify_json, m)?)?;
+    m.add_function(wrap_pyfunction!(model_execution_outcome_build_json, m)?)?;
+    m.add_function(wrap_pyfunction!(model_execution_outcome_verify_json, m)?)?;
+    m.add_function(wrap_pyfunction!(verification_record_build_json, m)?)?;
+    m.add_function(wrap_pyfunction!(verification_record_verify_json, m)?)?;
+    m.add_function(wrap_pyfunction!(verification_record_freshness, m)?)?;
+    m.add_function(wrap_pyfunction!(work_continuation_proof_build_json, m)?)?;
+    m.add_function(wrap_pyfunction!(work_continuation_proof_verify_json, m)?)?;
+    m.add_function(wrap_pyfunction!(work_continuation_proof_state, m)?)?;
     Ok(())
 }
 
@@ -369,4 +379,278 @@ pub fn memory_record_verify_json(record_json: &str) -> PyResult<String> {
 #[pyfunction]
 pub fn memory_record_schema_version() -> u32 {
     MEMORY_RECORD_SCHEMA_VERSION
+}
+
+// ── Routing, execution, temporal verification and continuation ───────────
+
+use entroly_engine::engine_contracts::{
+    ContinuationProofState, ExecutionState, ModelExecutionOutcome, OutcomeVerificationState,
+    RoutingDecision, VerificationFreshness, VerificationRecord, VerificationVerdict,
+    WorkContinuationProof,
+};
+
+fn parse_execution_state(token: &str) -> PyResult<ExecutionState> {
+    match token {
+        "succeeded" => Ok(ExecutionState::Succeeded),
+        "failed" => Ok(ExecutionState::Failed),
+        "cancelled" => Ok(ExecutionState::Cancelled),
+        "unknown" => Ok(ExecutionState::Unknown),
+        other => Err(PyValueError::new_err(format!(
+            "unknown execution state {other:?}"
+        ))),
+    }
+}
+
+fn parse_outcome_verification(token: &str) -> PyResult<OutcomeVerificationState> {
+    match token {
+        "passed" => Ok(OutcomeVerificationState::Passed),
+        "failed" => Ok(OutcomeVerificationState::Failed),
+        "skipped" => Ok(OutcomeVerificationState::Skipped),
+        "unknown" => Ok(OutcomeVerificationState::Unknown),
+        "stale" => Ok(OutcomeVerificationState::Stale),
+        other => Err(PyValueError::new_err(format!(
+            "unknown outcome verification state {other:?}"
+        ))),
+    }
+}
+
+fn parse_verification_verdict(token: &str) -> PyResult<VerificationVerdict> {
+    match token {
+        "passed" => Ok(VerificationVerdict::Passed),
+        "failed" => Ok(VerificationVerdict::Failed),
+        "skipped" => Ok(VerificationVerdict::Skipped),
+        "unknown" => Ok(VerificationVerdict::Unknown),
+        other => Err(PyValueError::new_err(format!(
+            "unknown verification verdict {other:?}"
+        ))),
+    }
+}
+
+fn freshness_token(value: VerificationFreshness) -> &'static str {
+    match value {
+        VerificationFreshness::Current => "current",
+        VerificationFreshness::Stale => "stale",
+        VerificationFreshness::Invalidated => "invalidated",
+        VerificationFreshness::Unknown => "unknown",
+    }
+}
+
+fn proof_state_token(value: ContinuationProofState) -> &'static str {
+    match value {
+        ContinuationProofState::Valid => "valid",
+        ContinuationProofState::Stale => "stale",
+        ContinuationProofState::Invalid => "invalid",
+    }
+}
+
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+pub fn routing_decision_build_json(
+    repository_id: String,
+    task_id: String,
+    workstream_id: String,
+    provider: String,
+    model: String,
+    runtime: String,
+    context_budget_tokens: u32,
+    policy_version: String,
+    reason_codes: Vec<String>,
+    feature_commitments: Vec<String>,
+    fallback_route_ids: Vec<String>,
+    receipt_id: String,
+    evidence_ids: Vec<String>,
+    decided_at_ms: i64,
+) -> PyResult<String> {
+    RoutingDecision::new(
+        repository_id,
+        task_id,
+        workstream_id,
+        provider,
+        model,
+        runtime,
+        context_budget_tokens,
+        policy_version,
+        reason_codes,
+        feature_commitments,
+        fallback_route_ids,
+        receipt_id,
+        evidence_ids,
+        decided_at_ms,
+    )
+    .and_then(|value| value.to_json())
+    .map_err(contract_err)
+}
+
+#[pyfunction]
+pub fn routing_decision_verify_json(value_json: &str) -> PyResult<String> {
+    RoutingDecision::from_json_verified(value_json)
+        .and_then(|value| value.to_json())
+        .map_err(contract_err)
+}
+
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+pub fn model_execution_outcome_build_json(
+    routing_id: String,
+    repository_id: String,
+    task_id: String,
+    workstream_id: String,
+    provider: String,
+    model: String,
+    runtime: String,
+    receipt_id: String,
+    request_commitment: String,
+    response_commitment: String,
+    state: &str,
+    verification_state: &str,
+    latency_ms: u64,
+    input_tokens: u64,
+    output_tokens: u64,
+    cost_micro_usd: u64,
+    error_code: String,
+    evidence_ids: Vec<String>,
+    completed_at_ms: i64,
+) -> PyResult<String> {
+    ModelExecutionOutcome::new(
+        routing_id,
+        repository_id,
+        task_id,
+        workstream_id,
+        provider,
+        model,
+        runtime,
+        receipt_id,
+        request_commitment,
+        response_commitment,
+        parse_execution_state(state)?,
+        parse_outcome_verification(verification_state)?,
+        latency_ms,
+        input_tokens,
+        output_tokens,
+        cost_micro_usd,
+        error_code,
+        evidence_ids,
+        completed_at_ms,
+    )
+    .and_then(|value| value.to_json())
+    .map_err(contract_err)
+}
+
+#[pyfunction]
+pub fn model_execution_outcome_verify_json(value_json: &str) -> PyResult<String> {
+    ModelExecutionOutcome::from_json_verified(value_json)
+        .and_then(|value| value.to_json())
+        .map_err(contract_err)
+}
+
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+pub fn verification_record_build_json(
+    repository_id: String,
+    subject_id: String,
+    subject_commitment: String,
+    verified_repository_commitment: String,
+    verdict: &str,
+    evidence_ids: Vec<String>,
+    dependency_commitments: Vec<String>,
+    observed_at_ms: i64,
+    valid_until_ms: i64,
+) -> PyResult<String> {
+    VerificationRecord::new(
+        repository_id,
+        subject_id,
+        subject_commitment,
+        verified_repository_commitment,
+        parse_verification_verdict(verdict)?,
+        evidence_ids,
+        dependency_commitments,
+        observed_at_ms,
+        valid_until_ms,
+    )
+    .and_then(|value| value.to_json())
+    .map_err(contract_err)
+}
+
+#[pyfunction]
+pub fn verification_record_verify_json(value_json: &str) -> PyResult<String> {
+    VerificationRecord::from_json_verified(value_json)
+        .and_then(|value| value.to_json())
+        .map_err(contract_err)
+}
+
+#[pyfunction]
+#[pyo3(signature = (value_json, current_repository_commitment, now_ms, invalidated_commitments = Vec::new()))]
+pub fn verification_record_freshness(
+    value_json: &str,
+    current_repository_commitment: &str,
+    now_ms: i64,
+    invalidated_commitments: Vec<String>,
+) -> PyResult<String> {
+    let record = VerificationRecord::from_json_verified(value_json).map_err(contract_err)?;
+    let invalidated = invalidated_commitments.into_iter().collect();
+    Ok(
+        freshness_token(record.freshness(current_repository_commitment, now_ms, &invalidated))
+            .to_string(),
+    )
+}
+
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+pub fn work_continuation_proof_build_json(
+    repository_id: String,
+    graph_revision: u64,
+    graph_commitment: String,
+    workstream_id: String,
+    from_agent: String,
+    to_agent: String,
+    handoff_commitment: String,
+    context_receipt_commitments: Vec<String>,
+    routing_commitments: Vec<String>,
+    execution_outcome_commitments: Vec<String>,
+    verification_commitments: Vec<String>,
+    memory_commitments: Vec<String>,
+    outstanding_work_refs: Vec<String>,
+    recovery_handle_ids: Vec<String>,
+    created_at_ms: i64,
+) -> PyResult<String> {
+    WorkContinuationProof::new(
+        repository_id,
+        graph_revision,
+        graph_commitment,
+        workstream_id,
+        from_agent,
+        to_agent,
+        handoff_commitment,
+        context_receipt_commitments,
+        routing_commitments,
+        execution_outcome_commitments,
+        verification_commitments,
+        memory_commitments,
+        outstanding_work_refs,
+        recovery_handle_ids,
+        created_at_ms,
+    )
+    .and_then(|value| value.to_json())
+    .map_err(contract_err)
+}
+
+#[pyfunction]
+pub fn work_continuation_proof_verify_json(value_json: &str) -> PyResult<String> {
+    WorkContinuationProof::from_json_verified(value_json)
+        .and_then(|value| value.to_json())
+        .map_err(contract_err)
+}
+
+#[pyfunction]
+pub fn work_continuation_proof_state(
+    value_json: &str,
+    repository_id: &str,
+    graph_revision: u64,
+    graph_commitment: &str,
+) -> PyResult<String> {
+    let proof = WorkContinuationProof::from_json_verified(value_json).map_err(contract_err)?;
+    Ok(
+        proof_state_token(proof.state_for_graph(repository_id, graph_revision, graph_commitment))
+            .to_string(),
+    )
 }

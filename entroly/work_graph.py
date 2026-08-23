@@ -231,6 +231,117 @@ class WorkGraph:
             str(self._inner.context_scope_json(workstream_id, max_evidence, pretty))
         )
 
+    def record_context_receipt(
+        self,
+        receipt: str | Mapping[str, Any],
+        *,
+        agent_id: str = "",
+        session_id: str = "",
+    ) -> str:
+        """Attach a canonical exact-graph Context Receipt as evidence."""
+        return str(
+            self._inner.record_context_receipt_json(
+                _json_text(receipt), agent_id, session_id
+            )
+        )
+
+    def record_memory(
+        self,
+        memory: str | Mapping[str, Any],
+        *,
+        now_ms: int,
+        superseded_ids: list[str] | None = None,
+    ) -> str:
+        """Attach a canonical provenance-bearing memory record."""
+        return str(
+            self._inner.record_memory_json(
+                _json_text(memory), now_ms, _json_text(superseded_ids or [])
+            )
+        )
+
+    def record_execution_chain(
+        self,
+        route: str | Mapping[str, Any],
+        outcome: str | Mapping[str, Any],
+        verification: str | Mapping[str, Any],
+        *,
+        invalidated_commitments: list[str] | None = None,
+    ) -> str:
+        """Append a committed route/execution/verification chain atomically."""
+        return str(
+            self._inner.record_execution_chain_json(
+                _json_text(route),
+                _json_text(outcome),
+                _json_text(verification),
+                _json_text(invalidated_commitments or []),
+            )
+        )
+
+    def continuation_proof(
+        self,
+        handoff: str | Mapping[str, Any],
+        *,
+        context_receipt_commitments: list[str] | None = None,
+        routing_commitments: list[str] | None = None,
+        execution_outcome_commitments: list[str] | None = None,
+        verification_commitments: list[str] | None = None,
+        memory_commitments: list[str] | None = None,
+        outstanding_work_refs: list[str] | None = None,
+        recovery_handle_ids: list[str] | None = None,
+        created_at_ms: int,
+    ) -> dict[str, Any]:
+        """Seal a graph-bound proof spanning context, execution and trust."""
+        manifest = {
+            "context_receipt_commitments": context_receipt_commitments or [],
+            "routing_commitments": routing_commitments or [],
+            "execution_outcome_commitments": execution_outcome_commitments or [],
+            "verification_commitments": verification_commitments or [],
+            "memory_commitments": memory_commitments or [],
+            "outstanding_work_refs": outstanding_work_refs or [],
+            "recovery_handle_ids": recovery_handle_ids or [],
+            "created_at_ms": created_at_ms,
+        }
+        return _json_value(
+            str(
+                self._inner.continuation_proof_json(
+                    _json_text(handoff), _json_text(manifest)
+                )
+            )
+        )
+
+    def reconstructed_continuation_proof(
+        self,
+        workstream_id: str,
+        to_agent: str,
+        *,
+        context_receipt_commitments: list[str] | None = None,
+        routing_commitments: list[str] | None = None,
+        execution_outcome_commitments: list[str] | None = None,
+        verification_commitments: list[str] | None = None,
+        memory_commitments: list[str] | None = None,
+        outstanding_work_refs: list[str] | None = None,
+        recovery_handle_ids: list[str] | None = None,
+        created_at_ms: int,
+    ) -> dict[str, Any]:
+        """Reconstruct a graph-bound proof without inventing prior-agent intent."""
+        manifest = {
+            "context_receipt_commitments": context_receipt_commitments or [],
+            "routing_commitments": routing_commitments or [],
+            "execution_outcome_commitments": execution_outcome_commitments or [],
+            "verification_commitments": verification_commitments or [],
+            "memory_commitments": memory_commitments or [],
+            "outstanding_work_refs": outstanding_work_refs or [],
+            "recovery_handle_ids": recovery_handle_ids or [],
+            "created_at_ms": created_at_ms,
+        }
+        return _json_value(
+            str(
+                self._inner.reconstructed_continuation_proof_json(
+                    workstream_id, to_agent, _json_text(manifest)
+                )
+            )
+        )
+
     def coordination(self, now_ms: int, *, pretty: bool = False) -> dict[str, Any]:
         return _json_value(str(self._inner.coordination_json(now_ms, pretty)))
 
@@ -291,6 +402,155 @@ def stable_edge_id(from_id: str, kind: str, to_id: str) -> str:
     return str(native.work_graph_edge_id(from_id, kind, to_id))
 
 
+def create_routing_decision(
+    *,
+    repository_id: str,
+    task_id: str,
+    workstream_id: str,
+    provider: str,
+    model: str,
+    runtime: str,
+    context_budget_tokens: int,
+    policy_version: str,
+    decided_at_ms: int,
+    reason_codes: list[str] | None = None,
+    feature_commitments: list[str] | None = None,
+    fallback_route_ids: list[str] | None = None,
+    receipt_id: str = "",
+    evidence_ids: list[str] | None = None,
+) -> dict[str, Any]:
+    """Create the canonical inspectable route contract in Rust."""
+    native = _require_native_module()
+    return _json_value(
+        str(
+            native.routing_decision_build_json(
+                repository_id,
+                task_id,
+                workstream_id,
+                provider,
+                model,
+                runtime,
+                context_budget_tokens,
+                policy_version,
+                reason_codes or [],
+                feature_commitments or [],
+                fallback_route_ids or [],
+                receipt_id,
+                evidence_ids or [],
+                decided_at_ms,
+            )
+        )
+    )
+
+
+def create_model_execution_outcome(
+    *,
+    routing_id: str,
+    repository_id: str,
+    task_id: str,
+    workstream_id: str,
+    provider: str,
+    model: str,
+    runtime: str,
+    state: str,
+    verification_state: str,
+    completed_at_ms: int,
+    receipt_id: str = "",
+    request_commitment: str = "",
+    response_commitment: str = "",
+    latency_ms: int = 0,
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+    cost_micro_usd: int = 0,
+    error_code: str = "",
+    evidence_ids: list[str] | None = None,
+) -> dict[str, Any]:
+    """Create the canonical result of one routed model execution."""
+    native = _require_native_module()
+    return _json_value(
+        str(
+            native.model_execution_outcome_build_json(
+                routing_id,
+                repository_id,
+                task_id,
+                workstream_id,
+                provider,
+                model,
+                runtime,
+                receipt_id,
+                request_commitment,
+                response_commitment,
+                state,
+                verification_state,
+                latency_ms,
+                input_tokens,
+                output_tokens,
+                cost_micro_usd,
+                error_code,
+                evidence_ids or [],
+                completed_at_ms,
+            )
+        )
+    )
+
+
+def create_verification_record(
+    *,
+    repository_id: str,
+    subject_id: str,
+    subject_commitment: str,
+    verified_repository_commitment: str,
+    verdict: str,
+    observed_at_ms: int,
+    valid_until_ms: int = 0,
+    evidence_ids: list[str] | None = None,
+    dependency_commitments: list[str] | None = None,
+) -> dict[str, Any]:
+    """Create exact-version verification with transitive dependencies."""
+    native = _require_native_module()
+    return _json_value(
+        str(
+            native.verification_record_build_json(
+                repository_id,
+                subject_id,
+                subject_commitment,
+                verified_repository_commitment,
+                verdict,
+                evidence_ids or [],
+                dependency_commitments or [],
+                observed_at_ms,
+                valid_until_ms,
+            )
+        )
+    )
+
+
+def verification_freshness(
+    record: str | Mapping[str, Any],
+    *,
+    current_repository_commitment: str,
+    now_ms: int,
+    invalidated_commitments: list[str] | None = None,
+) -> str:
+    """Return current, stale, invalidated, or unknown from Rust semantics."""
+    native = _require_native_module()
+    return str(
+        native.verification_record_freshness(
+            _json_text(record),
+            current_repository_commitment,
+            now_ms,
+            invalidated_commitments or [],
+        )
+    )
+
+
 __all__ = [
+    "create_model_execution_outcome",
+    "create_routing_decision",
+    "create_verification_record",
     "stable_edge_id",
-    "stable_node_id","WorkGraph", "WorkGraphUnavailableError"]
+    "stable_node_id",
+    "verification_freshness",
+    "WorkGraph",
+    "WorkGraphUnavailableError",
+]

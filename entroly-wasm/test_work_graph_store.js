@@ -9,6 +9,13 @@ const {
   WorkGraphStateError,
   WorkGraphStore,
 } = require('./js/work_graph_store');
+const {
+  contextReceiptBuildJSON,
+  createModelExecutionOutcome,
+  createRoutingDecision,
+  createVerificationRecord,
+  memoryRecordBuildJSON,
+} = require('./index');
 
 function assert(condition, message) {
   if (!condition) throw new Error(message || 'assertion failed');
@@ -155,6 +162,96 @@ try {
     badSourceRejected = error instanceof WorkGraphStateError;
   }
   assert(badSourceRejected, 'npm accepted an unsupported claim provenance');
+
+  // The product chain must be durable, not merely available on an in-memory
+  // WorkGraph instance. Each mutation is loaded, commitment-checked, appended,
+  // and atomically persisted under the store lock.
+  const selected = store.resume();
+  const workstreamId = selected.selected_workstream.node_id;
+  const taskId = selected.selected_workstream.task_ids[0];
+  const beforeReceipt = store.load();
+  const head = git(repo, 'rev-parse', 'HEAD');
+  const contextReceipt = JSON.parse(contextReceiptBuildJSON(
+    store.repoId, head, beforeReceipt.graphCommitment, workstreamId,
+    'sha256:sources', JSON.stringify(['app.js#0:20']), JSON.stringify([]),
+    JSON.stringify(['evidence:test']), JSON.stringify([]), JSON.stringify([]),
+    JSON.stringify(['evidence:test']), 256, 'work-scope/v1', 'execution:pending', 3500,
+  ));
+  const receiptWrite = store.recordContextReceipt(contextReceipt, {
+    agentId: 'codex', sessionId: 's3',
+  });
+  assert(receiptWrite.graph.eventCount === beforeReceipt.eventCount + 1,
+    'context receipt was not durably appended');
+
+  const memory = JSON.parse(memoryRecordBuildJSON(
+    store.repoId, 'vault/auth-decision', 'observed', taskId, workstreamId,
+    'codex', 's3', 'execution:pending', 'sha256:memory',
+    JSON.stringify(['evidence:test']), 3510, 3510,
+  ));
+  const memoryWrite = store.recordMemory(memory, 3520);
+  assert(memoryWrite.graph.eventCount === receiptWrite.graph.eventCount + 1,
+    'memory record was not durably appended');
+
+  const route = createRoutingDecision({
+    repository_id: store.repoId,
+    task_id: taskId,
+    workstream_id: workstreamId,
+    provider: 'openai',
+    model: 'gpt-5',
+    runtime: 'responses-api',
+    context_budget_tokens: 4096,
+    policy_version: 'policy:v1',
+    reason_codes: ['capability_match'],
+    feature_commitments: ['sha256:features'],
+    receipt_id: contextReceipt.receipt_id,
+    evidence_ids: ['evidence:route'],
+    decided_at_ms: 3530,
+  });
+  const outcome = createModelExecutionOutcome({
+    routing_id: route.routing_id,
+    repository_id: store.repoId,
+    task_id: taskId,
+    workstream_id: workstreamId,
+    provider: 'openai',
+    model: 'gpt-5',
+    runtime: 'responses-api',
+    receipt_id: contextReceipt.receipt_id,
+    request_commitment: 'sha256:request',
+    response_commitment: 'sha256:response',
+    state: 'succeeded',
+    verification_state: 'passed',
+    latency_ms: 25,
+    input_tokens: 100,
+    output_tokens: 20,
+    cost_micro_usd: 250,
+    evidence_ids: ['evidence:outcome'],
+    completed_at_ms: 3540,
+  });
+  const verification = createVerificationRecord({
+    repository_id: store.repoId,
+    subject_id: outcome.outcome_id,
+    subject_commitment: outcome.outcome_commitment,
+    verified_repository_commitment: head,
+    verdict: 'passed',
+    evidence_ids: ['evidence:test'],
+    dependency_commitments: ['sha256:source'],
+    observed_at_ms: 3550,
+  });
+  const executionWrite = store.recordExecutionChain(route, outcome, verification);
+  assert(executionWrite.graph.eventCount === memoryWrite.graph.eventCount + 1,
+    'execution chain was not durably appended');
+  assert(store.load().graphCommitment === executionWrite.graph.graphCommitment,
+    'durable execution chain commitment drifted on reload');
+
+  const reconstructed = store.reconstructedContinuationProof(workstreamId, 'claude', {
+    verification_commitments: [verification.record_commitment],
+    outstanding_work_refs: ['run package tests'],
+    created_at_ms: 3560,
+  });
+  assert(reconstructed.from_agent === '' && reconstructed.handoff_commitment === '',
+    'durable no-handoff reconstruction invented handoff evidence');
+  assert(reconstructed.outstanding_work_refs.includes('unknown:previous-agent-intent'),
+    'durable no-handoff reconstruction hid unknown intent');
 
   const document = JSON.parse(fs.readFileSync(store.statePath, 'utf8'));
   document.graph_commitment = '0'.repeat(64);
