@@ -85,6 +85,13 @@ try {
   const loaded = store.load();
   assert(loaded.graphCommitment === graph.graphCommitment, 'persisted commitment drift');
   assert(JSON.stringify(loaded.unfinished()) === JSON.stringify(graph.unfinished()), 'persisted state drift');
+  const passive = store.updateRepository(repo, { observedAtMs: 1100 });
+  const passiveEvents = passive.eventCount;
+  const repeatedPassive = store.updateRepository(repo, { observedAtMs: 1200 });
+  assert(repeatedPassive.eventCount === passiveEvents,
+    'store-level passive update amplified an identical content snapshot');
+  assert(repeatedPassive.graphCommitment === passive.graphCommitment,
+    'store-level passive update changed the graph commitment');
   if (process.platform !== 'win32') {
     assert((fs.statSync(store.statePath).mode & 0o777) === 0o600, 'state permissions are not private');
   }

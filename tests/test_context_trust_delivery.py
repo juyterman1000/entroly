@@ -108,6 +108,9 @@ def test_work_graph_context_scope_is_bounded_and_text_light() -> None:
     assert scope["graph_commitment"] == graph.graph_commitment
     assert scope["workstream_id"]
     assert "src/auth.py" in scope["changed_paths"]
+    assert scope["changed_paths_total"] == len(scope["changed_paths"])
+    assert scope["changed_paths_commitment"].startswith("sha256:")
+    assert scope["symbol_ids_total"] == len(scope["symbol_ids"])
     assert scope["task_ids"] == sorted(set(scope["task_ids"]))
     assert scope["agent_ids"] == sorted(set(scope["agent_ids"]))
     payload = json.dumps(scope, sort_keys=True)

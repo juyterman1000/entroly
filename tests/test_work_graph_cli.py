@@ -26,7 +26,7 @@ class FakeStore:
     def load(self):
         return FakeGraph()
 
-    def submit_observation(self, observation):
+    def submit_repository_observation(self, observation, *, repository_path=None):
         self.observation = observation
         return FakeGraph()
 
@@ -51,7 +51,13 @@ class FakeStore:
 
 def test_cli_claim_uses_user_statement(monkeypatch, capsys, tmp_path):
     fake = FakeStore()
+    fingerprinted = []
     monkeypatch.setattr(c, "_store_for_path", lambda _p: fake)
+    monkeypatch.setattr(
+        c,
+        "enrich_worktree_content_digests",
+        lambda path, observation: fingerprinted.append((path, observation)),
+    )
     monkeypatch.setattr(
         c,
         "discover_repository_observation",
@@ -75,6 +81,7 @@ def test_cli_claim_uses_user_statement(monkeypatch, capsys, tmp_path):
     )
     assert c.run(args) == 0
     assert fake.observation["task_hint"]["source_kind"] == "user_statement"
+    assert fingerprinted == [(tmp_path, fake.observation)]
 
 
 def test_standalone_parser_exposes_all_work_actions():
@@ -165,7 +172,9 @@ def test_cli_resume_fingerprints_repo_before_recovery(monkeypatch, tmp_path):
         return obs
 
     monkeypatch.setattr(c, "enrich_worktree_content_digests", fingerprint)
-    fake.submit_observation = lambda obs: calls.append("persist") or setattr(fake, "observation", obs) or FakeGraph()
+    fake.submit_repository_observation = lambda obs, repository_path=None: (
+        calls.append("persist") or setattr(fake, "observation", obs) or FakeGraph()
+    )
     fake.resume = lambda *args, **kwargs: calls.append("resume") or {"ok": True}
     args = SimpleNamespace(
         work_action="resume",
@@ -247,7 +256,9 @@ def test_cli_handoff_fingerprints_repo_before_receipt(monkeypatch, tmp_path):
         return obs
 
     monkeypatch.setattr(c, "enrich_worktree_content_digests", fingerprint)
-    fake.submit_observation = lambda obs: calls.append("persist") or setattr(fake, "observation", obs) or FakeGraph()
+    fake.submit_repository_observation = lambda obs, repository_path=None: (
+        calls.append("persist") or setattr(fake, "observation", obs) or FakeGraph()
+    )
     fake.handoff = lambda *args, **kwargs: calls.append("handoff") or {
         "workstream_id": "workstream:1",
         "from_agent": "claude",

@@ -238,7 +238,10 @@ def _claim(project: Path, args: Any) -> tuple[Any, str]:
         "expires_at_ms": now_ms + max(1, int(ttl * 1000)),
         "source_ref": f"work-lease:{lease_id}",
     }]
-    return store.submit_observation(observation), lease_id
+    enrich_worktree_content_digests(project, observation)
+    return store.submit_repository_observation(
+        observation, repository_path=project
+    ), lease_id
 
 
 def run(args: Any) -> int:
@@ -283,7 +286,9 @@ def run(args: Any) -> int:
             # Resume is an explicit recovery action: refresh bounded durable
             # repository/checkpoint facts plus exact unstaged worktree identity
             # before Rust reconstructs the workstream.
-            store.submit_observation(_passive_observation(project))
+            store.submit_repository_observation(
+                _passive_observation(project), repository_path=project
+            )
             resume_view = store.resume(workstream or None, max_evidence=max_evidence)
             payload = {
                 "status": "ok",
@@ -306,7 +311,9 @@ def run(args: Any) -> int:
             store = _store_for_path(project)
             # A handoff receipt must commit to the latest durable worktree and
             # checkpoint facts, including exact unstaged worktree content identity.
-            store.submit_observation(_passive_observation(project))
+            store.submit_repository_observation(
+                _passive_observation(project), repository_path=project
+            )
             handoff = store.handoff(workstream, source_agent, target_agent)
             resume_view = store.resume(workstream, max_evidence=128)
             payload = {

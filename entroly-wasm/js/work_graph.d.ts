@@ -33,6 +33,7 @@ export interface WorkGraphWorkItem {
   task_ids: string[];
   agent_ids: string[];
   changed_paths: string[];
+  symbol_ids: string[];
   commit_ids: string[];
   decision_ids: string[];
   failure_ids: string[];
@@ -72,10 +73,23 @@ export interface WorkGraphContextScope {
   graph_commitment: string;
   workstream_id: string;
   task_ids: string[];
+  task_ids_total: number;
+  task_ids_commitment: string;
   agent_ids: string[];
+  agent_ids_total: number;
+  agent_ids_commitment: string;
   changed_paths: string[];
+  changed_paths_total: number;
+  changed_paths_commitment: string;
+  symbol_ids: string[];
+  symbol_ids_total: number;
+  symbol_ids_commitment: string;
   commit_ids: string[];
+  commit_ids_total: number;
+  commit_ids_commitment: string;
   evidence_ids: string[];
+  evidence_ids_total: number;
+  evidence_ids_commitment: string;
 }
 
 export interface WorkGraphCoordinationConflict {

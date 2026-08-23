@@ -15,6 +15,7 @@ from entroly.work_graph_store import (
     WorkGraphStateError,
     WorkGraphStore,
 )
+from entroly.repository_intelligence.graph_identity import file_node_id
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -217,6 +218,85 @@ process.stdout.write(JSON.stringify({
     )
 
 
+def test_repository_update_projects_rename_lineage_and_active_symbols(
+    tmp_path: Path,
+) -> None:
+    """Scenario G is delivered through the production store update path."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-b", "main")
+    _git(repo, "config", "user.email", "test@example.com")
+    _git(repo, "config", "user.name", "Test")
+    source = repo / "src" / "old_name.py"
+    source.parent.mkdir()
+    source.write_text("def old_symbol():\n    return 1\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "initial")
+    _git(repo, "checkout", "-b", "feature/rename")
+    _git(repo, "mv", "src/old_name.py", "src/new_name.py")
+    renamed = repo / "src" / "new_name.py"
+    renamed.write_text("def new_symbol():\n    return 2\n", encoding="utf-8")
+
+    store = _store(repo, tmp_path / "state")
+    graph = store.update_repository(
+        repo,
+        agent_id="codex",
+        session_id="rename-session",
+        task_hint={
+            "task_id": "rename-task",
+            "title": "Rename the active symbol",
+            "trust": "observed",
+            "source_kind": "user_statement",
+            "source_ref": "test:rename",
+        },
+        observed_at_ms=1_000,
+    )
+
+    resume = graph.resume()
+    scope = graph.context_scope()
+    assert resume["changed_paths"] == ["src/new_name.py"]
+    assert scope["changed_paths"] == ["src/new_name.py"]
+    assert scope["symbol_ids_total"] == 1
+    assert len(scope["symbol_ids"]) == 1
+
+    snapshot = graph.snapshot()
+    nodes = {node["node_id"]: node for node in snapshot["nodes"]}
+    old_id = file_node_id(store.repo_id, "src/old_name.py")
+    new_id = file_node_id(store.repo_id, "src/new_name.py")
+    assert nodes[old_id]["attributes"]["renamed_to"] == "src/new_name.py"
+    assert any(
+        node["kind"] == "symbol" and node["label"] == "new_symbol"
+        for node in nodes.values()
+    )
+    assert any(
+        edge["from_node"] == new_id
+        and edge["to_node"] == old_id
+        and edge["kind"] == "supersedes"
+        for edge in snapshot["edges"]
+    )
+    repository = next(node for node in nodes.values() if node["kind"] == "repository")
+    projection = repository["attributes"]["active_scope_projection"]
+    assert projection["files_projected"] == 1
+    assert projection["symbols_dropped"] == 0
+    assert projection["truncated"] is False
+
+
+def test_passive_repository_scope_projection_does_not_amplify_polls(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path)
+    store = _store(repo, tmp_path / "state")
+
+    first = store.update_repository(repo, observed_at_ms=1_000)
+    first_events = first.event_count
+    first_commitment = first.graph_commitment
+    second = store.update_repository(repo, observed_at_ms=2_000)
+
+    assert first_events == 2
+    assert second.event_count == first_events
+    assert second.graph_commitment == first_commitment
+
+
 def test_parallel_agent_claims_surface_advisory_overlap(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     store = _store(repo, tmp_path / "state")
@@ -296,7 +376,12 @@ def test_claim_work_provenance_is_explicit_and_cannot_spoof_verified(tmp_path: P
         }
 
     monkeypatch.setattr(module, "discover_repository_observation", observe)
-    monkeypatch.setattr(store, "submit_observation", lambda observation: seen.append(observation) or observation)
+    monkeypatch.setattr(module, "enrich_worktree_content_digests", lambda *_args: None)
+    monkeypatch.setattr(
+        store,
+        "submit_repository_observation",
+        lambda observation, repository_path=None: seen.append(observation) or observation,
+    )
 
     _graph, _lease = store.claim_work(
         tmp_path,

@@ -6,6 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { WorkGraph } = require('./work_graph');
+const { enrichWorktreeContentDigests } = require('./work_graph_content_digest');
 const { discoverRepositoryIdentity, discoverRepositoryObservation } = require('./work_graph_repo');
 
 const DEFAULT_LOCK_TIMEOUT_MS = 5000;
@@ -280,7 +281,9 @@ class WorkGraphStore {
   }
 
   updateRepository(repoPath = '.', options = {}) {
-    return this.submitObservation(discoverRepositoryObservation(repoPath, options));
+    const observation = discoverRepositoryObservation(repoPath, options);
+    enrichWorktreeContentDigests(repoPath, observation);
+    return this.submitObservation(observation);
   }
 
   claimWork(repoPath, options = {}) {
@@ -323,6 +326,7 @@ class WorkGraphStore {
       expires_at_ms: nowMs + ttlMs,
       source_ref: `work-lease:${leaseId}`,
     }];
+    enrichWorktreeContentDigests(repoPath, observation);
     return { graph: this.submitObservation(observation), leaseId };
   }
 

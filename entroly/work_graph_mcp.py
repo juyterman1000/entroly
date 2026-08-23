@@ -217,7 +217,10 @@ def work_claim(
             "expires_at_ms": now_ms + ttl,
             "source_ref": f"work-lease:{lease_id}",
         }]
-        graph = store.submit_observation(observation)
+        enrich_worktree_content_digests(path, observation)
+        graph = store.submit_repository_observation(
+            observation, repository_path=path
+        )
         payload = {
             "lease_id": lease_id,
             "summary": graph.summary(),
@@ -253,7 +256,9 @@ def work_resume(
             target_agent = _bounded_id(target_agent, "to_agent")
         path = _project_path(project)
         store = _store_for_path(path)
-        store.submit_observation(_passive_observation(path))
+        store.submit_repository_observation(
+            _passive_observation(path), repository_path=path
+        )
         view = store.resume(selected_workstream or None, max_evidence=max_evidence)
         payload: dict[str, Any] = {"resume": view}
         if target_agent:
@@ -286,7 +291,9 @@ def work_handoff(
         # Explicit handoff is a state-sealing operation. Capture the latest
         # bounded Git/checkpoint facts plus exact worktree content identity first
         # so the receipt is bound to what is actually on disk.
-        store.submit_observation(_passive_observation(path))
+        store.submit_repository_observation(
+            _passive_observation(path), repository_path=path
+        )
         receipt = store.handoff(selected_workstream, source_agent, target_agent)
         view = store.resume(selected_workstream, max_evidence=128)
         proof = store.continuation_proof(

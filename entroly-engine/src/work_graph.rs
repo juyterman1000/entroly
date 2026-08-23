@@ -618,6 +618,8 @@ pub struct WorkItemView {
     #[serde(default)]
     pub changed_paths: Vec<String>,
     #[serde(default)]
+    pub symbol_ids: Vec<String>,
+    #[serde(default)]
     pub commit_ids: Vec<String>,
     #[serde(default)]
     pub decision_ids: Vec<String>,
@@ -1992,9 +1994,7 @@ impl WorkGraph {
 
     fn refresh_last_passive_snapshot(&mut self) {
         self.last_passive_snapshot = self.events.last().and_then(|event| {
-            (event.source_kind == EvidenceKind::RepositoryFact
-                && event.source_ref.starts_with("repo-snapshot:"))
-            .then(|| (event.source_ref.clone(), event.event_id.clone()))
+            passive_snapshot_group(event).map(|source_ref| (source_ref, event.event_id.clone()))
         });
     }
 
@@ -2358,9 +2358,14 @@ impl WorkGraph {
 
     fn work_item_view(&self, node: &WorkNode) -> WorkItemView {
         let related = self.connected_node_ids(&node.node_id, 2, 10_000);
+        // Symbols are one hop beyond the changed file. Keep all other work-item
+        // fields on the existing two-hop scope so imported boundary files are
+        // not mislabeled as changed paths.
+        let symbol_related = self.connected_node_ids(&node.node_id, 3, 10_000);
         let mut task_ids = BTreeSet::new();
         let mut agent_ids = BTreeSet::new();
         let mut changed_paths = BTreeSet::new();
+        let mut symbol_ids = BTreeSet::new();
         let mut commit_ids = BTreeSet::new();
         let mut decision_ids = BTreeSet::new();
         let mut failure_ids = BTreeSet::new();
@@ -2398,6 +2403,11 @@ impl WorkGraph {
                 _ => {}
             }
         }
+        for id in symbol_related {
+            if self.nodes.get(&id).map(|item| item.kind) == Some(NodeKind::Symbol) {
+                symbol_ids.insert(id);
+            }
+        }
         WorkItemView {
             node_id: node.node_id.clone(),
             kind: node.kind,
@@ -2408,6 +2418,7 @@ impl WorkGraph {
             task_ids: task_ids.into_iter().collect(),
             agent_ids: agent_ids.into_iter().collect(),
             changed_paths: changed_paths.into_iter().collect(),
+            symbol_ids: symbol_ids.into_iter().collect(),
             commit_ids: commit_ids.into_iter().collect(),
             decision_ids: decision_ids.into_iter().collect(),
             failure_ids: failure_ids.into_iter().collect(),
@@ -2505,6 +2516,21 @@ fn valid_passive_content_digest(change: &FileChangeObservation) -> bool {
         return false;
     };
     matches!(hex.len(), 40 | 64) && hex.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn passive_snapshot_group(event: &WorkEvent) -> Option<String> {
+    if event.source_kind != EvidenceKind::RepositoryFact
+        || !event.source_ref.starts_with("repo-snapshot:")
+    {
+        return None;
+    }
+    Some(
+        event
+            .source_ref
+            .strip_suffix(":scope")
+            .unwrap_or(&event.source_ref)
+            .to_string(),
+    )
 }
 
 fn passive_repository_snapshot_fingerprint(
@@ -3547,6 +3573,12 @@ fn observation_to_event(
             "change_kind".to_string(),
             serde_json::to_value(change.kind)?,
         );
+        if !change.old_path.is_empty() {
+            ev_attrs.insert(
+                "old_path".to_string(),
+                Value::String(change.old_path.clone()),
+            );
+        }
         let evidence = with_evidence_id(EvidenceRef {
             evidence_id: String::new(),
             kind: EvidenceKind::GitStatus,
@@ -3580,7 +3612,37 @@ fn observation_to_event(
                 updated_at_ms: obs.observed_at_ms,
             },
         });
-        let change_key = format!("{}:{:?}:{}", obs.branch.head_sha, change.kind, change.path);
+        if !change.old_path.is_empty() {
+            let old_file_id = stable_node_id(NodeKind::File, repo_id, &change.old_path);
+            let mut old_file_attrs = BTreeMap::new();
+            old_file_attrs.insert("path".to_string(), Value::String(change.old_path.clone()));
+            old_file_attrs.insert("renamed_to".to_string(), Value::String(change.path.clone()));
+            operations.push(WorkOperation::UpsertNode {
+                node: WorkNode {
+                    node_id: old_file_id.clone(),
+                    kind: NodeKind::File,
+                    label: change.old_path.clone(),
+                    trust: TrustLevel::Observed,
+                    status: WorkStatus::Unknown,
+                    status_trust: TrustLevel::Untrusted,
+                    attributes: old_file_attrs,
+                    evidence_ids: BTreeSet::from([evidence.evidence_id.clone()]),
+                    updated_at_ms: obs.observed_at_ms,
+                },
+            });
+            operations.push(edge_op(
+                &file_id,
+                &old_file_id,
+                EdgeKind::Supersedes,
+                TrustLevel::Observed,
+                obs.observed_at_ms,
+                std::slice::from_ref(&evidence.evidence_id),
+            ));
+        }
+        let change_key = format!(
+            "{}:{:?}:{}:{}",
+            obs.branch.head_sha, change.kind, change.old_path, change.path
+        );
         let change_id = stable_node_id(NodeKind::Change, repo_id, &change_key);
         let mut change_attrs = BTreeMap::new();
         change_attrs.insert("path".to_string(), Value::String(change.path.clone()));
@@ -4884,6 +4946,45 @@ mod tests {
     }
 
     #[test]
+    fn passive_snapshot_scope_event_is_one_idempotent_poll_group() {
+        let mut graph = WorkGraph::new("repo-1").unwrap();
+        let first =
+            passive_dirty_observation("git-blob:1111111111111111111111111111111111111111", 1_000);
+        graph.observe_repository(first.clone()).unwrap();
+        let snapshot_source = graph.events.last().unwrap().source_ref.clone();
+        graph
+            .apply_event(WorkEvent {
+                event_id: String::new(),
+                observed_at_ms: 1_000,
+                source_kind: EvidenceKind::RepositoryFact,
+                source_ref: format!("{snapshot_source}:scope"),
+                actor_id: String::new(),
+                session_id: String::new(),
+                operations: Vec::new(),
+            })
+            .unwrap();
+        assert_eq!(graph.event_count(), 2);
+
+        let mut repeated = first;
+        repeated.observed_at_ms = 2_000;
+        graph.observe_repository(repeated.clone()).unwrap();
+        assert_eq!(graph.event_count(), 2);
+
+        let mut restored = WorkGraph::from_json(&graph.export_json(false).unwrap()).unwrap();
+        repeated.observed_at_ms = 3_000;
+        restored.observe_repository(repeated).unwrap();
+        assert_eq!(restored.event_count(), 2);
+
+        restored
+            .observe_repository(passive_dirty_observation(
+                "git-blob:2222222222222222222222222222222222222222",
+                4_000,
+            ))
+            .unwrap();
+        assert_eq!(restored.event_count(), 3);
+    }
+
+    #[test]
     fn passive_snapshot_without_complete_digest_never_dedupes() {
         let mut graph = WorkGraph::new("repo-1").unwrap();
         graph
@@ -4893,6 +4994,91 @@ mod tests {
             .observe_repository(passive_dirty_observation("", 2_000))
             .unwrap();
         assert_eq!(graph.event_count(), 2);
+    }
+
+    #[test]
+    fn rename_lineage_keeps_new_symbol_scope_without_stale_changed_path() {
+        let mut graph = WorkGraph::new("repo-1").unwrap();
+        let mut observation = clean_observation();
+        observation.branch.name = "feature/rename".into();
+        observation.branch.ahead_by = 1;
+        observation.changes = vec![FileChangeObservation {
+            path: "src/new_name.rs".into(),
+            old_path: "src/old_name.rs".into(),
+            kind: FileChangeKind::Renamed,
+            staged: true,
+            conflicted: false,
+            content_digest: "git-blob:1111111111111111111111111111111111111111".into(),
+        }];
+        graph.observe_repository(observation).unwrap();
+
+        let new_file_id = stable_node_id(NodeKind::File, "repo-1", "src/new_name.rs");
+        let old_file_id = stable_node_id(NodeKind::File, "repo-1", "src/old_name.rs");
+        let symbol_id = stable_node_id(
+            NodeKind::Symbol,
+            "repo-1",
+            "src/new_name.rs::new_symbol::function",
+        );
+        graph
+            .apply_event(WorkEvent {
+                event_id: String::new(),
+                observed_at_ms: 1_100,
+                source_kind: EvidenceKind::RepositoryFact,
+                source_ref: "repository-intelligence:repo-1".into(),
+                actor_id: String::new(),
+                session_id: String::new(),
+                operations: vec![
+                    WorkOperation::UpsertNode {
+                        node: WorkNode {
+                            node_id: symbol_id.clone(),
+                            kind: NodeKind::Symbol,
+                            label: "new_symbol".into(),
+                            trust: TrustLevel::Observed,
+                            status: WorkStatus::Unknown,
+                            status_trust: TrustLevel::Untrusted,
+                            attributes: BTreeMap::from([
+                                ("path".into(), Value::String("src/new_name.rs".into())),
+                                (
+                                    "symbol_id".into(),
+                                    Value::String("src/new_name.rs::new_symbol::function".into()),
+                                ),
+                            ]),
+                            evidence_ids: BTreeSet::new(),
+                            updated_at_ms: 1_100,
+                        },
+                    },
+                    edge_op(
+                        &new_file_id,
+                        &symbol_id,
+                        EdgeKind::Defines,
+                        TrustLevel::Observed,
+                        1_100,
+                        &[],
+                    ),
+                ],
+            })
+            .unwrap();
+
+        let workstream_id = graph.unfinished_work()[0].node_id.clone();
+        let resume = graph.resume(Some(&workstream_id), 128).unwrap();
+        assert_eq!(resume.changed_paths, vec!["src/new_name.rs"]);
+        assert_eq!(
+            resume.selected_workstream.symbol_ids,
+            vec![symbol_id.clone()]
+        );
+        let scope = graph.context_scope(Some(&workstream_id), 128).unwrap();
+        assert_eq!(scope.changed_paths, vec!["src/new_name.rs"]);
+        assert_eq!(scope.symbol_ids, vec![symbol_id]);
+
+        assert_eq!(
+            attr_string(&graph.nodes[&old_file_id].attributes, "renamed_to"),
+            Some("src/new_name.rs".into())
+        );
+        assert!(graph.edges.values().any(|edge| {
+            edge.from_node == new_file_id
+                && edge.to_node == old_file_id
+                && edge.kind == EdgeKind::Supersedes
+        }));
     }
 
     #[test]

@@ -195,6 +195,9 @@ pub struct WorkScope {
     /// Commitment to the complete canonical path set, including any paths that
     /// do not fit in the bounded inline prefix.
     pub changed_paths_commitment: String,
+    pub symbol_ids: Vec<String>,
+    pub symbol_ids_total: usize,
+    pub symbol_ids_commitment: String,
     pub commit_ids: Vec<String>,
     pub commit_ids_total: usize,
     pub commit_ids_commitment: String,
@@ -253,6 +256,12 @@ impl WorkScope {
                 MAX_SCOPE_ITEMS,
                 MAX_SCOPE_PATH_BYTES,
             )?;
+        let (symbol_ids, symbol_ids_total, symbol_ids_commitment) = canonical_bounded_strings(
+            "symbol_ids",
+            resume.selected_workstream.symbol_ids.clone(),
+            MAX_SCOPE_ITEMS,
+            MAX_CONTRACT_ID_BYTES,
+        )?;
         let (commit_ids, commit_ids_total, commit_ids_commitment) = canonical_bounded_strings(
             "commit_ids",
             commits,
@@ -281,6 +290,9 @@ impl WorkScope {
             changed_paths,
             changed_paths_total,
             changed_paths_commitment,
+            symbol_ids,
+            symbol_ids_total,
+            symbol_ids_commitment,
             commit_ids,
             commit_ids_total,
             commit_ids_commitment,
@@ -3110,6 +3122,7 @@ mod tests {
                 task_ids: vec!["task:b".into(), "task:a".into(), "task:a".into()],
                 agent_ids: vec!["agent:codex".into(), "agent:claude".into()],
                 changed_paths: vec!["src/auth.rs".into()],
+                symbol_ids: vec!["symbol:auth".into()],
                 commit_ids: vec!["commit:2".into()],
                 decision_ids: vec![],
                 failure_ids: vec![],
@@ -3146,6 +3159,8 @@ mod tests {
         assert_eq!(scope.changed_paths, vec!["src/auth.rs", "tests/auth.rs"]);
         assert_eq!(scope.changed_paths_total, 2);
         assert!(scope.changed_paths_commitment.starts_with("sha256:"));
+        assert_eq!(scope.symbol_ids, vec!["symbol:auth"]);
+        assert_eq!(scope.symbol_ids_total, 1);
         assert_eq!(scope.commit_ids, vec!["commit:1", "commit:2"]);
         assert_eq!(scope.commit_ids_total, 2);
         assert_eq!(scope.evidence_ids, vec!["evidence:git", "evidence:test"]);

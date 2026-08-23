@@ -214,19 +214,24 @@ def project_repository_scope(
             )
         )
 
+    projection = {
+        "files_projected": len(selected),
+        "files_dropped": dropped_files,
+        "symbols_dropped": dropped_symbols,
+        "boundary_files": boundary_files,
+        "truncated": truncated,
+        "operation_count": len(operations),
+    }
+    # Persist the boundedness report on the repository node as well as returning
+    # it to the immediate caller. Production store callers cannot otherwise
+    # recover whether a historical active-scope projection was truncated.
+    operations[0]["node"]["attributes"]["active_scope_projection"] = projection
     return {
         "observed_at_ms": int(observed_at_ms),
         "source_kind": "repository_fact",
         "source_ref": f"repository_intelligence:{repo_id}",
         "operations": operations,
-        "projection": {
-            "files_projected": len(selected),
-            "files_dropped": dropped_files,
-            "symbols_dropped": dropped_symbols,
-            "boundary_files": boundary_files,
-            "truncated": truncated,
-            "operation_count": len(operations),
-        },
+        "projection": projection,
     }
 
 

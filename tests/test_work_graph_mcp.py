@@ -23,7 +23,7 @@ class FakeStore:
     def load(self):
         return FakeGraph()
 
-    def submit_observation(self, observation):
+    def submit_repository_observation(self, observation, *, repository_path=None):
         self.observation = observation
         return FakeGraph()
 
@@ -79,8 +79,14 @@ def test_mcp_state_is_fenced_as_untrusted(monkeypatch, tmp_path):
 
 def test_mcp_claim_records_agent_statement_and_lease(monkeypatch, tmp_path):
     fake = FakeStore()
+    fingerprinted = []
     monkeypatch.setenv("ENTROLY_SOURCE", str(tmp_path))
     monkeypatch.setattr(m, "_store_for_path", lambda _p: fake)
+    monkeypatch.setattr(
+        m,
+        "enrich_worktree_content_digests",
+        lambda path, observation: fingerprinted.append((path, observation)),
+    )
     monkeypatch.setattr(
         m,
         "discover_repository_observation",
@@ -97,6 +103,7 @@ def test_mcp_claim_records_agent_statement_and_lease(monkeypatch, tmp_path):
     assert fake.observation["agent_id"] if "agent_id" in fake.observation else True
     assert fake.observation["leases"][0]["agent_id"] == "codex"
     assert fake.observation["leases"][0]["scope_paths"] == ["src/auth"]
+    assert fingerprinted == [(tmp_path, fake.observation)]
 
 
 def test_mcp_resume_observes_fingerprints_persists_then_recovers(monkeypatch, tmp_path):
@@ -122,8 +129,10 @@ def test_mcp_resume_observes_fingerprints_persists_then_recovers(monkeypatch, tm
         return obs
 
     monkeypatch.setattr(m, "enrich_worktree_content_digests", fingerprint)
-    fake.submit_observation = (
-        lambda obs: calls.append("persist") or setattr(fake, "observation", obs) or FakeGraph()
+    fake.submit_repository_observation = (
+        lambda obs, repository_path=None: calls.append("persist")
+        or setattr(fake, "observation", obs)
+        or FakeGraph()
     )
     fake.resume = lambda *args, **kwargs: calls.append("resume") or {
         "workstream": args[0],
@@ -182,7 +191,9 @@ def test_mcp_handoff_fingerprints_latest_repo_before_sealing_receipt(monkeypatch
         return obs
 
     monkeypatch.setattr(m, "enrich_worktree_content_digests", fingerprint)
-    fake.submit_observation = lambda obs: calls.append("persist") or setattr(fake, "observation", obs) or FakeGraph()
+    fake.submit_repository_observation = lambda obs, repository_path=None: (
+        calls.append("persist") or setattr(fake, "observation", obs) or FakeGraph()
+    )
     fake.handoff = lambda workstream, source, target: calls.append("handoff") or {
         "workstream_id": workstream,
         "from_agent": source,

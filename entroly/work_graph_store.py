@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from .work_graph import WorkGraph
+from .work_graph_content_digest import enrich_worktree_content_digests
 from .work_graph_repo import discover_repository_identity, discover_repository_observation
 
 DEFAULT_LOCK_TIMEOUT_SECONDS = 5.0
@@ -311,15 +312,83 @@ class WorkGraphStore:
             return current
 
     def submit_observation(self, observation: dict[str, Any]) -> WorkGraph:
+        return self.submit_repository_observation(observation)
+
+    def submit_repository_observation(
+        self,
+        observation: dict[str, Any],
+        *,
+        repository_path: str | os.PathLike[str] | None = None,
+    ) -> WorkGraph:
+        """Persist an observation and its bounded active code scope atomically.
+
+        Repository parsing is host orchestration. Node/edge identities and graph
+        meaning remain Rust-owned through the canonical projection event.
+        """
         if observation.get("repo_id") != self.repo_id:
             raise WorkGraphStateError(
                 f"repository identity changed: expected {self.repo_id}, got {observation.get('repo_id')}"
             )
+        scope_event: dict[str, Any] | None = None
+        if repository_path is not None:
+            scope_event = self._active_repository_scope_event(repository_path, observation)
         with self.lock():
             graph = self._load_unlocked()
+            before = graph.event_count
             graph.observe_repository(observation)
+            if scope_event is not None and graph.event_count != before:
+                latest_event = graph.export_state()["events"][-1]
+                latest_source = str(latest_event.get("source_ref", ""))
+                if latest_source.startswith("repo-snapshot:"):
+                    scope_event["source_ref"] = f"{latest_source}:scope"
+                graph.apply_event(scope_event)
             self._save_unlocked(graph)
             return graph
+
+    def _active_repository_scope_event(
+        self,
+        repository_path: str | os.PathLike[str],
+        observation: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        active_paths = sorted({
+            str(change.get("path", ""))
+            for change in observation.get("changes", [])
+            if isinstance(change, dict)
+            and change.get("kind") != "deleted"
+            and str(change.get("path", ""))
+        })
+        if not active_paths:
+            return None
+
+        from .repository_intelligence.graph_projection import project_repository_scope
+        from .repository_intelligence.incremental import build_repository_index_incremental
+
+        index = build_repository_index_incremental(
+            repository_path,
+            cache_dir=self.repo_dir / "repository-intelligence",
+        )
+        records = [index.files[path] for path in active_paths if path in index.files]
+        if not records:
+            return None
+        selected_paths = {record.path for record in records}
+        symbols = {
+            path: index.symbols_for_path(path)
+            for path in sorted(selected_paths)
+        }
+        imports = [
+            (source, target)
+            for source in sorted(selected_paths)
+            for target in index.file_dependencies.get(source, ())
+        ]
+        event = project_repository_scope(
+            self.repo_id,
+            files=records,
+            symbols=symbols,
+            imports=imports,
+            observed_at_ms=int(observation.get("observed_at_ms", 0)),
+        )
+        event.pop("projection")
+        return event
 
     def _mutate(self, operation: Any) -> tuple[WorkGraph, Any]:
         """Apply one Rust-owned mutation and persist it under the same lock."""
@@ -330,7 +399,12 @@ class WorkGraphStore:
             return graph, result
 
     def update_repository(self, path: str | os.PathLike[str] = ".", **options: Any) -> WorkGraph:
-        return self.submit_observation(discover_repository_observation(path, **options))
+        observation = discover_repository_observation(path, **options)
+        enrich_worktree_content_digests(path, observation)
+        return self.submit_repository_observation(
+            observation,
+            repository_path=path,
+        )
 
     def claim_work(
         self,
@@ -380,7 +454,10 @@ class WorkGraphStore:
             "expires_at_ms": now_ms + ttl_ms,
             "source_ref": f"work-lease:{selected}",
         }]
-        return self.submit_observation(observation), selected
+        enrich_worktree_content_digests(path, observation)
+        return self.submit_repository_observation(
+            observation, repository_path=path
+        ), selected
 
     def coordination(self, *, now_ms: int | None = None) -> dict[str, Any]:
         timestamp = int(now_ms if now_ms is not None else time.time() * 1000)

@@ -143,6 +143,8 @@ def test_file_cap_is_reported_not_silent() -> None:
 
     assert payload["projection"]["files_projected"] == 3
     assert payload["projection"]["files_dropped"] == 7
+    repository = payload["operations"][0]["node"]
+    assert repository["attributes"]["active_scope_projection"] == payload["projection"]
 
 
 def test_symbol_cap_is_reported_not_silent() -> None:
