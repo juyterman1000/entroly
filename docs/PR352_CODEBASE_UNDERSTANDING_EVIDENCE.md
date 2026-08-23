@@ -412,6 +412,7 @@ bounded part of the master plan:
 | Section 13, G26/G27/G31 | Taint propagation uses identifier boundaries (including non-ASCII-safe traversal), Python docstrings are excluded as documentation rather than executable code, and Kubernetes manifests reach the Kubernetes rule set. |
 | Section 23, parity | ContextReceipt, RecoveryHandle, MemoryRecord, RoutingDecision, ModelExecutionOutcome, VerificationRecord and WorkContinuationProof have Rust-owned semantics exercised through PyO3/Python and the npm package root/WASM surface, including golden identities, errors, bounds and tampering. |
 | Section 24, product UX | `entroly-work resume --to-agent AGENT` and the matching MCP `work_resume(to_agent=...)` operation reconstruct unfinished work and return its continuation proof without asking users to manually assemble graph nodes, commitments or a handoff. Explicit handoff returns the same flagship proof. MCP also records canonical context, memory and execution-chain contracts through bounded host orchestration into Rust-owned validation/state transitions. |
+| Single installed MCP surface | The normal `entroly` MCP server registers the same seven Work Graph continuity tools as the focused `entroly-work-graph-mcp` entrypoint through one shared adapter. Repository-scoped attachment grants include the `continuity` scope by default, so `entroly attach create ...` exposes resume, handoff and the observable Work/Context/Trust event loop without requiring a second MCP configuration. |
 | Clean explicit work continuity | A clean explicitly claimed task remains resumable even when it has no changed paths or failures: Python CLI/MCP and npm use the selected workstream's stable task IDs as the evidence-backed continuation fallback. Exact installed-wheel and installed-tarball journeys both seal a non-empty continuation proof, while hostile or malformed collection shapes remain bounded and fail safe. |
 | Large dirty repositories | One observation accepts up to 16,384 complete file changes and atomically splits it into deterministic events of at most 512 changes. Consecutive identical passive polls collapse without history scans, while A-to-B-to-A remains auditable. Context scopes expose bounded inline prefixes plus total counts and commitments to complete path/evidence sets. |
 | Scenarios C/K/L, explicit handoff | A permanent production-store journey creates multi-file/multi-symbol work, attaches decision and passing-test evidence plus a recoverable ContextReceipt, seals a Claude-to-Codex handoff and continuation proof, then loads the same durable graph through an independent receiving store. The receiver verifies graph/content integrity and resumes the exact bounded work/evidence/recovery scope. Mutating the receipt fails self- and graph-verification; changing worktree bytes at the same Git head preserves the original artifact's self-integrity but makes graph-bound verification and proof construction fail closed. |
@@ -474,9 +475,9 @@ truthfully be manufactured by source changes in a local checkout:
    that same final SHA. Local clean-wheel and npm-tarball installation prove the
    package shape but do not substitute for publication.
 
-Static package reachability currently reports 302 modules, 834 import edges,
-153,730 lines, 264 modules reachable from declared package entry points and 38
-direct-opt-in/test/benchmark modules (13,237 lines). Those 38 are not omitted from
+Static package reachability currently reports 302 modules, 838 import edges,
+154,243 lines, 266 modules reachable from declared package entry points and 36
+direct-opt-in/test/benchmark modules (12,879 lines). Those 36 are not omitted from
 ownership: they are classified in the 1,640-file matrix. The static report is kept
 strict so a directly tested experimental module is never silently promoted to a
 normal-user product claim.

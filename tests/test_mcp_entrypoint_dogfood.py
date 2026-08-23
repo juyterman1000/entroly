@@ -249,6 +249,9 @@ def test_documented_entrypoint_lists_required_tools(
         "get_stats",
         "analyze_codebase_health",
         "smart_read",
+        "work_state",
+        "work_resume",
+        "work_handoff",
     } <= names
 
 

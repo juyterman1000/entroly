@@ -6218,7 +6218,16 @@ def main():
         "--scope",
         action="append",
         default=[],
-        choices=["observe", "context", "receipts", "verify", "remember", "record", "vault"],
+        choices=[
+            "observe",
+            "context",
+            "receipts",
+            "verify",
+            "continuity",
+            "remember",
+            "record",
+            "vault",
+        ],
         help="Allowed tool group; repeat to combine groups",
     )
     attach_create.add_argument("--install", action="store_true", help="Run the client MCP configuration command")

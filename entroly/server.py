@@ -454,6 +454,7 @@ def create_mcp_server(
             "Information-theoretic context optimization for AI coding agents. "
             "Knapsack-optimal token budgeting, Shannon entropy scoring, "
             "SimHash deduplication, predictive pre-fetch, and checkpoint/resume. "
+            "Use work_resume for evidence-backed cross-session or cross-vendor continuity. "
             "At the start of each task, call recall_relevant once with a concise "
             "task-derived query, top_k=3, and full=false before loading broader "
             "context. Use smart_read or optimize_context for substantial context."
@@ -3887,6 +3888,14 @@ def create_mcp_server(
             }, indent=2)
         except Exception as e:
             return json.dumps({"error": str(e)})
+
+    # The installed default MCP surface is the product convergence point. Keep
+    # the focused Work Graph entrypoint for compatibility, but do not require a
+    # user to configure a second server to get continuity after installing
+    # Entroly once.
+    from .work_graph_mcp_server import register_work_graph_tools
+
+    register_work_graph_tools(mcp)
 
     _apply_mcp_access_policy(
         mcp,
