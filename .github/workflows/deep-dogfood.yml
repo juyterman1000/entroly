@@ -351,11 +351,13 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
-          python -m pip list --format=freeze --exclude entroly \
+          python -m pip list --format=freeze \
+            --exclude entroly \
+            --exclude entroly-core \
             | LC_ALL=C sort > "$RUNNER_TEMP/pip-audit-requirements.txt"
           test -s "$RUNNER_TEMP/pip-audit-requirements.txt"
-          if grep -Eiq '^entroly([=<>!~ ]|$)' "$RUNNER_TEMP/pip-audit-requirements.txt"; then
-            echo "local editable project leaked into dependency audit manifest" >&2
+          if grep -Eiq '^entroly(-core)?([=<>!~ ]|$)' "$RUNNER_TEMP/pip-audit-requirements.txt"; then
+            echo "local exact-head project artifact leaked into dependency audit manifest" >&2
             exit 1
           fi
           cat "$RUNNER_TEMP/pip-audit-requirements.txt"
