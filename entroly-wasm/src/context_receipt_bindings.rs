@@ -243,3 +243,124 @@ pub fn recovery_handle_verify_bytes(handle_json: &str, payload: &[u8]) -> Result
 pub fn recovery_handle_schema_version() -> u32 {
     RECOVERY_HANDLE_SCHEMA_VERSION
 }
+
+// ── Provenance-bearing memory ─────────────────────────────────────────────
+
+use entroly_engine::engine_contracts::{
+    MemoryAdmissibility, MemoryRecord, MEMORY_RECORD_SCHEMA_VERSION,
+};
+use entroly_engine::work_graph::TrustLevel;
+use std::collections::BTreeSet;
+
+fn parse_trust(token: &str) -> Result<TrustLevel, JsValue> {
+    match token {
+        "untrusted" => Ok(TrustLevel::Untrusted),
+        "inferred" => Ok(TrustLevel::Inferred),
+        "observed" => Ok(TrustLevel::Observed),
+        "verified" => Ok(TrustLevel::Verified),
+        other => Err(JsValue::from_str(&format!(
+            "unknown trust level {other:?}; expected untrusted, inferred, observed or verified"
+        ))),
+    }
+}
+
+fn admissibility_token(verdict: MemoryAdmissibility) -> &'static str {
+    match verdict {
+        MemoryAdmissibility::Admissible => "admissible",
+        MemoryAdmissibility::Contradicted => "contradicted",
+        MemoryAdmissibility::Superseded => "superseded",
+        MemoryAdmissibility::Expired => "expired",
+        MemoryAdmissibility::Unsupported => "unsupported",
+    }
+}
+
+fn exact_ms(value: Option<f64>, name: &str) -> Result<i64, JsValue> {
+    const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
+    match value {
+        None => Ok(0),
+        Some(v) if v.is_finite() && v.fract() == 0.0 && v.abs() <= MAX_SAFE_INTEGER => Ok(v as i64),
+        Some(_) => Err(JsValue::from_str(&format!(
+            "{name} must be a finite JavaScript-safe integer"
+        ))),
+    }
+}
+
+fn id_list(value: Option<String>) -> Result<Vec<String>, JsValue> {
+    match value {
+        None => Ok(Vec::new()),
+        Some(text) if text.trim().is_empty() => Ok(Vec::new()),
+        Some(text) => serde_json::from_str(&text).map_err(js_err),
+    }
+}
+
+/// Build a memory record and return it as canonical JSON.
+#[wasm_bindgen(js_name = memoryRecordBuildJSON)]
+#[allow(clippy::too_many_arguments)]
+pub fn memory_record_build_json(
+    repository_id: &str,
+    content_reference: &str,
+    trust_state: &str,
+    task_id: Option<String>,
+    workstream_id: Option<String>,
+    source_agent: Option<String>,
+    source_session: Option<String>,
+    source_execution: Option<String>,
+    content_commitment: Option<String>,
+    evidence_ids_json: Option<String>,
+    created_at_ms: Option<f64>,
+    observed_at_ms: Option<f64>,
+    valid_until_ms: Option<f64>,
+    supersedes_json: Option<String>,
+    contradicted_by_json: Option<String>,
+    recovery_handle: Option<String>,
+) -> Result<String, JsValue> {
+    let record = MemoryRecord::new(
+        repository_id.to_owned(),
+        task_id.unwrap_or_default(),
+        workstream_id.unwrap_or_default(),
+        source_agent.unwrap_or_default(),
+        source_session.unwrap_or_default(),
+        source_execution.unwrap_or_default(),
+        content_reference.to_owned(),
+        content_commitment.unwrap_or_default(),
+        id_list(evidence_ids_json)?,
+        parse_trust(trust_state)?,
+        exact_ms(created_at_ms, "created_at_ms")?,
+        exact_ms(observed_at_ms, "observed_at_ms")?,
+        exact_ms(valid_until_ms, "valid_until_ms")?,
+        id_list(supersedes_json)?,
+        id_list(contradicted_by_json)?,
+        recovery_handle.unwrap_or_default(),
+    )
+    .map_err(js_err)?;
+    record.to_json().map_err(js_err)
+}
+
+/// May this memory be injected, and why.
+///
+/// No score parameter, by design — section 10's "do not let similarity score
+/// imply truth" is enforced by the signature in both runtimes alike.
+#[wasm_bindgen(js_name = memoryRecordAdmissibility)]
+pub fn memory_record_admissibility(
+    record_json: &str,
+    now_ms: f64,
+    superseded_ids_json: Option<String>,
+) -> Result<String, JsValue> {
+    let record = MemoryRecord::from_json_verified(record_json).map_err(js_err)?;
+    let superseded: BTreeSet<String> = id_list(superseded_ids_json)?.into_iter().collect();
+    let now = exact_ms(Some(now_ms), "now_ms")?;
+    Ok(admissibility_token(record.admissibility_in_set(now, &superseded)).to_string())
+}
+
+/// Parse and check a memory record, returning its canonical JSON.
+#[wasm_bindgen(js_name = memoryRecordVerifyJSON)]
+pub fn memory_record_verify_json(record_json: &str) -> Result<String, JsValue> {
+    let record = MemoryRecord::from_json_verified(record_json).map_err(js_err)?;
+    record.to_json().map_err(js_err)
+}
+
+/// Schema version this build implements for memory records.
+#[wasm_bindgen(js_name = memoryRecordSchemaVersion)]
+pub fn memory_record_schema_version() -> u32 {
+    MEMORY_RECORD_SCHEMA_VERSION
+}

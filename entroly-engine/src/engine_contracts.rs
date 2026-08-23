@@ -7,7 +7,7 @@
 //! source of context bytes. This module only defines the stable seam between
 //! those systems.
 
-use crate::work_graph::{EvidenceRef, ResumeView};
+use crate::work_graph::{EvidenceRef, ResumeView, TrustLevel};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
@@ -885,9 +885,534 @@ impl RecoveryHandle {
     }
 }
 
+
+// ── Provenance-bearing memory ─────────────────────────────────────────────
+
+/// Schema version for [`MemoryRecord`].
+pub const MEMORY_RECORD_SCHEMA_VERSION: u32 = 1;
+
+/// Why a memory may or may not be put in front of a model.
+///
+/// Returned with a reason so the decision is explainable rather than a bare
+/// bool — section 22 asks "why was this memory rejected?" and the answer has to
+/// exist somewhere other than a reader's head.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryAdmissibility {
+    /// May be injected.
+    Admissible,
+    /// Another record explicitly contradicts it. Contradiction outranks
+    /// everything: a contradicted memory is not merely stale, it is disputed.
+    Contradicted,
+    /// A later record supersedes it.
+    Superseded,
+    /// Past its stated validity horizon.
+    Expired,
+    /// The source is untrusted, or the claim is inferred with nothing
+    /// supporting it.
+    Unsupported,
+}
+
+/// A memory, described by where it came from rather than what it resembles.
+///
+/// # What this deliberately does not have
+///
+/// There is no similarity score, no relevance, no salience. Section 10's rule is
+/// "do not let similarity score imply truth", and the way to enforce that is not
+/// to warn about it — it is to make admissibility a function that cannot take a
+/// score as input. Ranking is a host concern and stays in `memory.py`, which
+/// already does it well with retention and importance; this contract answers a
+/// different question, and answering it needs different fields.
+///
+/// # What it holds instead
+///
+/// Provenance (which agent, session and execution produced it), a content
+/// *reference* and commitment rather than the content, the evidence that
+/// supports it, and the relations that can invalidate it: `supersedes` and
+/// `contradicted_by`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MemoryRecord {
+    pub schema_version: u32,
+    /// Derived from the record's own payload.
+    pub memory_id: String,
+    pub repository_id: String,
+    pub task_id: String,
+    pub workstream_id: String,
+    pub source_agent: String,
+    pub source_session: String,
+    pub source_execution: String,
+    /// A locator for the content, never the content itself. Memory that
+    /// embedded its own text would make the graph a second content store and
+    /// grow without bound.
+    pub content_reference: String,
+    pub content_commitment: String,
+    pub evidence_ids: Vec<String>,
+    pub trust_state: TrustLevel,
+    pub created_at_ms: i64,
+    pub observed_at_ms: i64,
+    /// `0` means "no stated horizon" — valid until something supersedes or
+    /// contradicts it. A record cannot be silently immortal *and* expiring.
+    pub valid_until_ms: i64,
+    pub supersedes: Vec<String>,
+    pub contradicted_by: Vec<String>,
+    /// How to recover the content if it is not already to hand.
+    pub recovery_handle: String,
+    pub record_commitment: String,
+}
+
+#[derive(Serialize)]
+struct MemoryRecordPayload<'a> {
+    schema_version: u32,
+    repository_id: &'a str,
+    task_id: &'a str,
+    workstream_id: &'a str,
+    source_agent: &'a str,
+    source_session: &'a str,
+    source_execution: &'a str,
+    content_reference: &'a str,
+    content_commitment: &'a str,
+    evidence_ids: &'a [String],
+    trust_state: TrustLevel,
+    created_at_ms: i64,
+    observed_at_ms: i64,
+    valid_until_ms: i64,
+    supersedes: &'a [String],
+    contradicted_by: &'a [String],
+    recovery_handle: &'a str,
+}
+
+impl MemoryRecord {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        repository_id: String,
+        task_id: String,
+        workstream_id: String,
+        source_agent: String,
+        source_session: String,
+        source_execution: String,
+        content_reference: String,
+        content_commitment: String,
+        evidence_ids: Vec<String>,
+        trust_state: TrustLevel,
+        created_at_ms: i64,
+        observed_at_ms: i64,
+        valid_until_ms: i64,
+        supersedes: Vec<String>,
+        contradicted_by: Vec<String>,
+        recovery_handle: String,
+    ) -> Result<Self, EngineContractError> {
+        validate_text(
+            "repository_id",
+            &repository_id,
+            MAX_CONTRACT_ID_BYTES,
+            false,
+        )?;
+        validate_text("task_id", &task_id, MAX_CONTRACT_ID_BYTES, true)?;
+        validate_text("workstream_id", &workstream_id, MAX_CONTRACT_ID_BYTES, true)?;
+        validate_text("source_agent", &source_agent, MAX_CONTRACT_ID_BYTES, true)?;
+        validate_text(
+            "source_session",
+            &source_session,
+            MAX_CONTRACT_ID_BYTES,
+            true,
+        )?;
+        validate_text(
+            "source_execution",
+            &source_execution,
+            MAX_CONTRACT_ID_BYTES,
+            true,
+        )?;
+        validate_text(
+            "content_reference",
+            &content_reference,
+            MAX_SCOPE_PATH_BYTES,
+            false,
+        )?;
+        validate_text(
+            "content_commitment",
+            &content_commitment,
+            MAX_COMMITMENT_BYTES,
+            true,
+        )?;
+        validate_text(
+            "recovery_handle",
+            &recovery_handle,
+            MAX_RECOVERY_HANDLE_BYTES,
+            true,
+        )?;
+        for (field, value) in [
+            ("created_at_ms", created_at_ms),
+            ("observed_at_ms", observed_at_ms),
+            ("valid_until_ms", valid_until_ms),
+        ] {
+            if value < 0 {
+                return Err(EngineContractError::InvalidTimestamp(field));
+            }
+        }
+
+        let mut record = MemoryRecord {
+            schema_version: MEMORY_RECORD_SCHEMA_VERSION,
+            memory_id: String::new(),
+            repository_id,
+            task_id,
+            workstream_id,
+            source_agent,
+            source_session,
+            source_execution,
+            content_reference,
+            content_commitment,
+            evidence_ids: canonical_ids("evidence_ids", evidence_ids, MAX_SCOPE_ITEMS)?,
+            trust_state,
+            created_at_ms,
+            observed_at_ms,
+            valid_until_ms,
+            supersedes: canonical_ids("supersedes", supersedes, MAX_SCOPE_ITEMS)?,
+            contradicted_by: canonical_ids("contradicted_by", contradicted_by, MAX_SCOPE_ITEMS)?,
+            recovery_handle,
+            record_commitment: String::new(),
+        };
+        record.record_commitment = record.compute_commitment()?;
+        record.memory_id = format!("mem_{}", &record.record_commitment[..16]);
+        Ok(record)
+    }
+
+    fn compute_commitment(&self) -> Result<String, EngineContractError> {
+        contract_sha256_json(&MemoryRecordPayload {
+            schema_version: self.schema_version,
+            repository_id: &self.repository_id,
+            task_id: &self.task_id,
+            workstream_id: &self.workstream_id,
+            source_agent: &self.source_agent,
+            source_session: &self.source_session,
+            source_execution: &self.source_execution,
+            content_reference: &self.content_reference,
+            content_commitment: &self.content_commitment,
+            evidence_ids: &self.evidence_ids,
+            trust_state: self.trust_state,
+            created_at_ms: self.created_at_ms,
+            observed_at_ms: self.observed_at_ms,
+            valid_until_ms: self.valid_until_ms,
+            supersedes: &self.supersedes,
+            contradicted_by: &self.contradicted_by,
+            recovery_handle: &self.recovery_handle,
+        })
+    }
+
+    /// May this memory be put in front of a model, and why.
+    ///
+    /// Deterministic and evidence-driven. Note the order: contradiction is
+    /// checked before expiry, because a disputed memory that also happens to be
+    /// fresh is still disputed, and reporting `Expired` for it would describe
+    /// the less important problem.
+    ///
+    /// Takes `now_ms` rather than reading a clock. A verdict that depends on
+    /// ambient time is not reproducible, and section 22 asks for replay.
+    pub fn admissibility(&self, now_ms: i64) -> MemoryAdmissibility {
+        if !self.contradicted_by.is_empty() {
+            return MemoryAdmissibility::Contradicted;
+        }
+        if self.valid_until_ms > 0 && now_ms > self.valid_until_ms {
+            return MemoryAdmissibility::Expired;
+        }
+        match self.trust_state {
+            TrustLevel::Untrusted => MemoryAdmissibility::Unsupported,
+            // An inference with nothing behind it is a guess. Requiring evidence
+            // here is what stops a plausible-sounding recollection from being
+            // injected as though it were observed.
+            TrustLevel::Inferred if self.evidence_ids.is_empty() => {
+                MemoryAdmissibility::Unsupported
+            }
+            _ => MemoryAdmissibility::Admissible,
+        }
+    }
+
+    /// Admissibility given the ids that later records supersede.
+    ///
+    /// Supersession is a property of the *set*, not of one record — a memory
+    /// cannot know it has been replaced. The caller supplies what the newer
+    /// records claim, and this reports the consequence.
+    pub fn admissibility_in_set(
+        &self,
+        now_ms: i64,
+        superseded_ids: &BTreeSet<String>,
+    ) -> MemoryAdmissibility {
+        if !self.contradicted_by.is_empty() {
+            return MemoryAdmissibility::Contradicted;
+        }
+        if superseded_ids.contains(&self.memory_id) {
+            return MemoryAdmissibility::Superseded;
+        }
+        self.admissibility(now_ms)
+    }
+
+    pub fn verify_commitment(&self) -> Result<bool, EngineContractError> {
+        let recomputed = self.compute_commitment()?;
+        Ok(recomputed == self.record_commitment
+            && self.memory_id == format!("mem_{}", &recomputed[..16]))
+    }
+
+    pub fn to_json(&self) -> Result<String, EngineContractError> {
+        serde_json::to_string(self)
+            .map_err(|error| EngineContractError::Serialization(error.to_string()))
+    }
+
+    pub fn from_json_verified(json_text: &str) -> Result<Self, EngineContractError> {
+        let record: MemoryRecord = serde_json::from_str(json_text)
+            .map_err(|error| EngineContractError::Serialization(error.to_string()))?;
+        if record.schema_version != MEMORY_RECORD_SCHEMA_VERSION {
+            return Err(EngineContractError::UnsupportedSchema {
+                field: "schema_version",
+                found: record.schema_version,
+                expected: MEMORY_RECORD_SCHEMA_VERSION,
+            });
+        }
+        if !record.verify_commitment()? {
+            return Err(EngineContractError::CommitmentMismatch("record_commitment"));
+        }
+        Ok(record)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── MemoryRecord ─────────────────────────────────────────────────────
+
+    /// Cross-runtime anchor for the memory contract.
+    pub(crate) const GOLDEN_MEMORY_ID: &str = "mem_a3b337c53411d1a5";
+
+    #[allow(clippy::too_many_arguments)]
+    fn memory(
+        trust: TrustLevel,
+        evidence: Vec<String>,
+        valid_until_ms: i64,
+        contradicted_by: Vec<String>,
+    ) -> MemoryRecord {
+        MemoryRecord::new(
+            "repo:demo".to_string(),
+            "task:auth".to_string(),
+            "workstream:1".to_string(),
+            "agent:claude".to_string(),
+            "session:1".to_string(),
+            "exec:1".to_string(),
+            "vault/beliefs/auth.md".to_string(),
+            "sha256:content".to_string(),
+            evidence,
+            trust,
+            1_700_000_000_000,
+            1_700_000_000_000,
+            valid_until_ms,
+            vec![],
+            contradicted_by,
+            String::new(),
+        )
+        .expect("valid memory record")
+    }
+
+    fn observed_memory() -> MemoryRecord {
+        memory(TrustLevel::Observed, vec!["evidence:1".to_string()], 0, vec![])
+    }
+
+    #[test]
+    fn memory_golden_vector() {
+        let record = observed_memory();
+        assert_eq!(record.memory_id, GOLDEN_MEMORY_ID);
+        assert!(record.verify_commitment().expect("verify"));
+    }
+
+    #[test]
+    fn observed_memory_is_admissible() {
+        assert_eq!(
+            observed_memory().admissibility(1_700_000_100_000),
+            MemoryAdmissibility::Admissible
+        );
+    }
+
+    #[test]
+    fn untrusted_memory_is_never_admissible() {
+        // Untrusted is the default for external statements. It must not reach a
+        // model regardless of how relevant it looks.
+        let record = memory(TrustLevel::Untrusted, vec!["evidence:1".to_string()], 0, vec![]);
+        assert_eq!(
+            record.admissibility(1_700_000_100_000),
+            MemoryAdmissibility::Unsupported
+        );
+    }
+
+    #[test]
+    fn an_inference_with_no_evidence_is_refused() {
+        // A plausible-sounding recollection with nothing behind it is a guess.
+        let guess = memory(TrustLevel::Inferred, vec![], 0, vec![]);
+        assert_eq!(
+            guess.admissibility(1_700_000_100_000),
+            MemoryAdmissibility::Unsupported
+        );
+    }
+
+    #[test]
+    fn an_inference_with_evidence_is_admissible() {
+        let backed = memory(TrustLevel::Inferred, vec!["evidence:1".to_string()], 0, vec![]);
+        assert_eq!(
+            backed.admissibility(1_700_000_100_000),
+            MemoryAdmissibility::Admissible
+        );
+    }
+
+    #[test]
+    fn expiry_is_honoured_but_zero_means_no_horizon() {
+        let expiring = memory(
+            TrustLevel::Observed,
+            vec!["evidence:1".to_string()],
+            1_700_000_050_000,
+            vec![],
+        );
+        assert_eq!(
+            expiring.admissibility(1_700_000_040_000),
+            MemoryAdmissibility::Admissible
+        );
+        assert_eq!(
+            expiring.admissibility(1_700_000_060_000),
+            MemoryAdmissibility::Expired
+        );
+
+        // 0 means "no stated horizon", not "expired at the epoch".
+        assert_eq!(
+            observed_memory().admissibility(i64::MAX),
+            MemoryAdmissibility::Admissible
+        );
+    }
+
+    #[test]
+    fn contradiction_outranks_freshness() {
+        // A disputed memory that is also perfectly fresh is still disputed.
+        // Reporting Expired for it would name the less important problem.
+        let disputed = memory(
+            TrustLevel::Verified,
+            vec!["evidence:1".to_string()],
+            1_700_000_050_000,
+            vec!["mem_other".to_string()],
+        );
+        assert_eq!(
+            disputed.admissibility(1_700_000_060_000),
+            MemoryAdmissibility::Contradicted,
+            "expiry must not mask a contradiction"
+        );
+        assert_eq!(
+            disputed.admissibility(1_700_000_040_000),
+            MemoryAdmissibility::Contradicted
+        );
+    }
+
+    #[test]
+    fn contradiction_outranks_verification() {
+        // Verified is the strongest trust level and still loses to a
+        // contradiction. Trust is not a licence to ignore conflicting evidence.
+        let disputed = memory(
+            TrustLevel::Verified,
+            vec!["evidence:1".to_string()],
+            0,
+            vec!["mem_other".to_string()],
+        );
+        assert_eq!(
+            disputed.admissibility(1_700_000_100_000),
+            MemoryAdmissibility::Contradicted
+        );
+    }
+
+    #[test]
+    fn supersession_is_a_property_of_the_set() {
+        // A record cannot know it has been replaced, so the caller supplies what
+        // newer records claim.
+        let record = observed_memory();
+        let mut superseded = BTreeSet::new();
+        assert_eq!(
+            record.admissibility_in_set(1_700_000_100_000, &superseded),
+            MemoryAdmissibility::Admissible
+        );
+
+        superseded.insert(record.memory_id.clone());
+        assert_eq!(
+            record.admissibility_in_set(1_700_000_100_000, &superseded),
+            MemoryAdmissibility::Superseded
+        );
+    }
+
+    #[test]
+    fn admissibility_takes_no_similarity_score() {
+        // Section 10: do not let similarity score imply truth. Enforced by the
+        // signature -- there is nowhere to put one. This test exists so that
+        // adding a score parameter later has to break something first.
+        let record = observed_memory();
+        let _: MemoryAdmissibility = record.admissibility(0);
+        let json = record.to_json().expect("serialize");
+        for scored_field in ["score", "similarity", "relevance", "salience", "importance"] {
+            assert!(
+                !json.contains(scored_field),
+                "memory contract leaked a ranking field: {scored_field}"
+            );
+        }
+    }
+
+    #[test]
+    fn memory_content_is_referenced_never_embedded() {
+        // Memory that embedded its own text would make graph state a second
+        // content store and grow without bound.
+        let record = observed_memory();
+        assert_eq!(record.content_reference, "vault/beliefs/auth.md");
+        let json = record.to_json().expect("serialize");
+        assert!(!json.contains("\"content\":"));
+    }
+
+    #[test]
+    fn a_tampered_memory_record_fails_closed() {
+        let json = observed_memory()
+            .to_json()
+            .expect("serialize")
+            .replace("agent:claude", "agent:someone");
+        assert!(matches!(
+            MemoryRecord::from_json_verified(&json),
+            Err(EngineContractError::CommitmentMismatch("record_commitment"))
+        ));
+    }
+
+    #[test]
+    fn an_unknown_memory_schema_is_refused() {
+        let json = observed_memory()
+            .to_json()
+            .expect("serialize")
+            .replace("\"schema_version\":1", "\"schema_version\":7");
+        assert!(matches!(
+            MemoryRecord::from_json_verified(&json),
+            Err(EngineContractError::UnsupportedSchema { found: 7, .. })
+        ));
+    }
+
+    #[test]
+    fn a_negative_validity_horizon_is_rejected() {
+        let bad = MemoryRecord::new(
+            "repo:demo".to_string(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            "vault/x.md".to_string(),
+            String::new(),
+            vec![],
+            TrustLevel::Observed,
+            0,
+            0,
+            -1,
+            vec![],
+            vec![],
+            String::new(),
+        );
+        assert_eq!(
+            bad,
+            Err(EngineContractError::InvalidTimestamp("valid_until_ms"))
+        );
+    }
 
     // ── RecoveryHandle ───────────────────────────────────────────────────
 

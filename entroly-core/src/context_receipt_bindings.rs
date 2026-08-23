@@ -138,6 +138,10 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(recovery_handle_verify_json, m)?)?;
     m.add_function(wrap_pyfunction!(recovery_handle_verify_bytes, m)?)?;
     m.add_function(wrap_pyfunction!(recovery_handle_schema_version, m)?)?;
+    m.add_function(wrap_pyfunction!(memory_record_build_json, m)?)?;
+    m.add_function(wrap_pyfunction!(memory_record_admissibility, m)?)?;
+    m.add_function(wrap_pyfunction!(memory_record_verify_json, m)?)?;
+    m.add_function(wrap_pyfunction!(memory_record_schema_version, m)?)?;
     Ok(())
 }
 
@@ -243,4 +247,126 @@ pub fn recovery_handle_verify_bytes(handle_json: &str, payload: &[u8]) -> PyResu
 #[pyfunction]
 pub fn recovery_handle_schema_version() -> u32 {
     RECOVERY_HANDLE_SCHEMA_VERSION
+}
+
+// ── Provenance-bearing memory ─────────────────────────────────────────────
+
+use entroly_engine::engine_contracts::{
+    MemoryAdmissibility, MemoryRecord, MEMORY_RECORD_SCHEMA_VERSION,
+};
+use entroly_engine::work_graph::TrustLevel;
+use std::collections::BTreeSet;
+
+fn parse_trust(token: &str) -> PyResult<TrustLevel> {
+    match token {
+        "untrusted" => Ok(TrustLevel::Untrusted),
+        "inferred" => Ok(TrustLevel::Inferred),
+        "observed" => Ok(TrustLevel::Observed),
+        "verified" => Ok(TrustLevel::Verified),
+        other => Err(PyValueError::new_err(format!(
+            "unknown trust level {other:?}; expected untrusted, inferred, observed or verified"
+        ))),
+    }
+}
+
+fn admissibility_token(verdict: MemoryAdmissibility) -> &'static str {
+    match verdict {
+        MemoryAdmissibility::Admissible => "admissible",
+        MemoryAdmissibility::Contradicted => "contradicted",
+        MemoryAdmissibility::Superseded => "superseded",
+        MemoryAdmissibility::Expired => "expired",
+        MemoryAdmissibility::Unsupported => "unsupported",
+    }
+}
+
+/// Build a memory record and return it as canonical JSON.
+#[pyfunction]
+#[pyo3(signature = (
+    repository_id,
+    content_reference,
+    trust_state,
+    task_id = String::new(),
+    workstream_id = String::new(),
+    source_agent = String::new(),
+    source_session = String::new(),
+    source_execution = String::new(),
+    content_commitment = String::new(),
+    evidence_ids = Vec::new(),
+    created_at_ms = 0,
+    observed_at_ms = 0,
+    valid_until_ms = 0,
+    supersedes = Vec::new(),
+    contradicted_by = Vec::new(),
+    recovery_handle = String::new(),
+))]
+#[allow(clippy::too_many_arguments)]
+pub fn memory_record_build_json(
+    repository_id: String,
+    content_reference: String,
+    trust_state: &str,
+    task_id: String,
+    workstream_id: String,
+    source_agent: String,
+    source_session: String,
+    source_execution: String,
+    content_commitment: String,
+    evidence_ids: Vec<String>,
+    created_at_ms: i64,
+    observed_at_ms: i64,
+    valid_until_ms: i64,
+    supersedes: Vec<String>,
+    contradicted_by: Vec<String>,
+    recovery_handle: String,
+) -> PyResult<String> {
+    let record = MemoryRecord::new(
+        repository_id,
+        task_id,
+        workstream_id,
+        source_agent,
+        source_session,
+        source_execution,
+        content_reference,
+        content_commitment,
+        evidence_ids,
+        parse_trust(trust_state)?,
+        created_at_ms,
+        observed_at_ms,
+        valid_until_ms,
+        supersedes,
+        contradicted_by,
+        recovery_handle,
+    )
+    .map_err(contract_err)?;
+    record.to_json().map_err(contract_err)
+}
+
+/// May this memory be injected, and why.
+///
+/// Takes `now_ms` and an optional set of superseded ids rather than reading a
+/// clock or a store: a verdict that depends on ambient state is not replayable.
+/// Note there is no score parameter — section 10's "do not let similarity score
+/// imply truth" is enforced by the signature, not by a warning.
+#[pyfunction]
+#[pyo3(signature = (record_json, now_ms, superseded_ids = Vec::new()))]
+pub fn memory_record_admissibility(
+    record_json: &str,
+    now_ms: i64,
+    superseded_ids: Vec<String>,
+) -> PyResult<String> {
+    let record = MemoryRecord::from_json_verified(record_json).map_err(contract_err)?;
+    let superseded: BTreeSet<String> = superseded_ids.into_iter().collect();
+    Ok(admissibility_token(record.admissibility_in_set(now_ms, &superseded)).to_string())
+}
+
+/// Parse and check a memory record, returning its canonical JSON.
+#[pyfunction]
+pub fn memory_record_verify_json(record_json: &str) -> PyResult<String> {
+    let record = MemoryRecord::from_json_verified(record_json).map_err(contract_err)?;
+    record.to_json().map_err(contract_err)
+}
+
+/// Schema version this build implements for memory records.
+#[pyfunction]
+pub fn memory_record_schema_version() -> u32 {
+    MEMORY_RECORD_SCHEMA_VERSION
 }
