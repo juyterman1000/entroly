@@ -40,7 +40,7 @@ eventual final branch SHA after this evidence update.
 ## Repository inventory / ownership
 
 ```text
-repository files classified 1638
+repository files classified 1640
 unknown ownership          0
 review-required            29
 partial Rust parity         0
@@ -419,6 +419,38 @@ bounded part of the master plan:
 | Scenario O, generated/vendor trees | Repository source discovery excludes VCS/cache/venv, `node_modules`, `vendor`, `dist`, `build`, Rust `target` and bytecode trees before file-budget accounting. A gauntlet fixture places 150 generated Python files across those trees under a two-file limit and still indexes exactly the two first-party source/test files without truncation. |
 | Scenario P, Python/Node convergence | One end-to-end test uses the real PyO3 and WASM stores against the same repository/state root: Python writes, Node verifies the exact prior commitment and appends a leased continuation, then Python reloads the Node commitment and byte-identical canonical export. The exact-head WASM CI job builds both runtimes and runs this test. |
 
+### Deep Dogfood A-T certification matrix
+
+The focused executable matrix currently reports `97 passed, 1 skipped`; the
+skip is the Windows symlink-permission fixture, with the non-symlink security
+and durability cases passing. Rust and npm rows below also ran in their complete
+local suites (`564` Rust engine tests and the full npm suite including 42 E2E
+cases). Scenario T remains open until clean artifacts are rebuilt from the final
+candidate SHA.
+
+| Scenario | Status | Permanent evidence |
+|---|---|---|
+| A, first-time dirty repo | Pass | `test_replacement_agent_recovers_unclaimed_interrupted_work_from_repo`; Rust `dirty_repo_creates_in_progress_workstream`. Changed artifacts are surfaced with no invented task prose. |
+| B, clean null control | Pass | `test_clean_repo_is_null_control` and `test_checkpoint_can_name_existing_git_work_but_not_resurrect_clean_repo`; matching Rust and npm null controls. |
+| C, explicit handoff | Pass | `test_receiving_agent_verifies_explicit_handoff_and_detects_later_edit` loads an independent receiver from durable state and verifies multi-file/symbol, decision, test, outstanding-work and recovery scope. |
+| D, interruption without handoff | Pass | Bidirectional receiver parameterization in `test_replacement_agent_recovers_work_when_previous_agent_never_used_entroly`, CLI recovery, and Rust `interrupted_agent_gets_evidence_bounded_continuation_without_a_handoff`. |
+| E, parallel non-overlap | Pass | Process-level `non-overlapping-vendors` case and Rust `disjoint_parallel_leases_produce_no_conflict`. |
+| F, parallel overlap | Pass | Process-level `overlapping-vendors` case and Rust `overlapping_parallel_leases_are_reported_but_not_locked`. |
+| G, rename and symbol continuity | Pass | Production-store rename/symbol test plus Rust lineage test; only the active new path enters scope. |
+| H, stale CI | Pass | Rust `stale_or_transitively_invalidated_verification_cannot_upgrade_work` and exact-version freshness contract. |
+| I, contradictory claim | Pass | Rust `contradicted_claim_never_becomes_trusted_fact` and `failing_verification_blocks_work`; both evidence items remain in the graph. |
+| J, tampered graph state | Pass | Rust `persisted_document_detects_tampering`, Python/Node durable-store tamper rejection, duplicate-event rejection and canonical import validation. |
+| K, tampered handoff | Pass | The explicit receiver journey plus Rust/Python/npm handoff integrity mutation tests fail self- and graph-verification. |
+| L, content changed after handoff | Pass | The explicit receiver journey changes exact worktree bytes without changing Git HEAD; the old sealed artifact remains self-consistent but graph verification and proof construction fail closed. |
+| M, recovered prompt injection | Pass | `test_mcp_state_is_fenced_as_untrusted` stores hostile instruction-like work text, returns an explicit data fence, and reports injection matches. |
+| N, large repository | Pass | Python/PyO3 and Node/WASM 2,000-file/500-edit/100-poll release gates, one-file active indexing, bounded symbol projection and contended durable writes. |
+| O, generated/vendor trees | Pass | `test_generated_and_vendor_trees_do_not_consume_source_graph_budget` proves 150 irrelevant files cannot drown a two-file first-party scope. |
+| P, Python/Node convergence | Pass | `test_python_node_same_repo_state_converges` compares the real PyO3/WASM store commitment and byte-identical canonical export across both write directions. |
+| Q, multiprocessing contention | Pass | `test_concurrent_agent_processes_merge_without_lost_work`, stale-lock recovery, and repeated eight-writer performance runs preserve all events. |
+| R, crash during persistence | Pass | Replace-boundary fault injection preserves the last committed state; failed writes leave no temporary debris and the store remains writable. |
+| S, compression/recovery | Pass | CLI cross-process compression recovery and recoverable-receipt tests verify original bytes, digests, locators, corruption rejection and unavailable-material errors. |
+| T, installed product journey | Pending final SHA | Earlier 1.0.79 wheel/npm clean installs passed; the final candidate must rebuild and install Python/native and npm artifacts after all remaining commits, then rely on exact-SHA cross-platform CI. |
+
 The implementation closure is complete for the contracts and product paths
 listed above. It is not yet a production-release declaration. Three gates cannot
 truthfully be manufactured by source changes in a local checkout:
@@ -435,7 +467,7 @@ truthfully be manufactured by source changes in a local checkout:
 Static package reachability currently reports 302 modules, 834 import edges,
 153,730 lines, 264 modules reachable from declared package entry points and 38
 direct-opt-in/test/benchmark modules (13,237 lines). Those 38 are not omitted from
-ownership: they are classified in the 1,638-file matrix. The static report is kept
+ownership: they are classified in the 1,640-file matrix. The static report is kept
 strict so a directly tested experimental module is never silently promoted to a
 normal-user product claim.
 
@@ -454,7 +486,7 @@ clean-install rows were run against locally built 1.0.79 artifacts:
 | Measured scale gate | Current Python source plus installed exact-head PyO3 core, 2,000-file initial observation/index plus 500 edits and 100 timestamp-changing passive polls: 504 events, zero poll growth, 1.5231 ms p95 append, 91.1969 ms import rebuild, 55.2266 ms resume, 16.0257 ms PyO3 summary p95, 27,649.8125 ms cold full index, 804.6548 ms one-file active incremental index, 6.2852 ms symbol projection, 323.8932 ms for eight contended durable writes, and a 5,531,773-byte state. Scope accounted for all 2,000 paths and 3,502 evidence IDs through bounded prefixes and full-set commitments. |
 | Python clean install | Built `entroly-core` 1.0.79 and `entroly` 1.0.79 wheels, installed them in an isolated Python 3.10 environment, verified native readiness and WorkGraph construction; `pip check` reported no broken requirements |
 | npm clean install | Packed and installed the local npm tarball, loaded `entroly-wasm` 1.0.79, constructed WorkGraph and resolved every new package-root contract helper |
-| Ownership | 1,638 tracked/non-ignored repository files classified, zero unknown ownership; local `.codex/` task state excluded |
+| Ownership | 1,640 tracked/non-ignored repository files classified, zero unknown ownership; local `.codex/` task state excluded |
 
 The release rule remains unchanged: only checks attached to the final head can
 certify it; skipped, missing, stale and older-head results do not count as pass.

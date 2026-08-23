@@ -13,7 +13,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 
 | Outcome | Files |
 |---|---:|
-| `tests-fixtures-docs-packaging` | 1121 |
+| `tests-fixtures-docs-packaging` | 1123 |
 | `python-host-orchestration` | 346 |
 | `node-host-orchestration` | 52 |
 | `rust-semantic-owner` | 39 |
@@ -21,7 +21,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `pyo3-binding` | 27 |
 | `generated-build-artifact` | 16 |
 | `wasm-binding` | 8 |
-| **total** | **1638** |
+| **total** | **1640** |
 
 ## Actionable queues
 
@@ -847,6 +847,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `entroly-wasm/test_work_graph.js` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `entroly-wasm/test_work_graph_content_digest.js` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `entroly-wasm/test_work_graph_continuity.js` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `entroly-wasm/test_work_graph_performance.js` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `entroly-wasm/test_work_graph_repo.js` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `entroly-wasm/test_work_graph_root_exports.js` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `entroly-wasm/test_work_graph_store.js` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
@@ -1683,6 +1684,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `tests/test_work_graph_cross_agent_recovery.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_work_graph_cross_language_digest_parity.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_work_graph_entrypoints.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_work_graph_explicit_handoff_e2e.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_work_graph_identity.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_work_graph_interrupted_agent.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_work_graph_interrupted_agent_e2e.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
