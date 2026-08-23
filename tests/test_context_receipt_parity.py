@@ -22,6 +22,7 @@ the Node suite for the parity claim to be complete.
 
 from __future__ import annotations
 
+import hashlib
 import json
 
 import pytest
@@ -183,8 +184,6 @@ def test_invalid_input_is_rejected_rather_than_committed() -> None:
 # Node. The fixture hashes itself rather than carrying a literal digest, so the
 # two runtimes agree by computing rather than by copying.
 
-import hashlib
-
 GOLDEN_HANDLE_ID = "rh_61e976bc425ad0de"
 FIXTURE_BODY = b"recoverable bytes"
 
@@ -275,3 +274,74 @@ def test_an_unknown_disposition_is_rejected() -> None:
         entroly_core.recovery_handle_build_json("repo:demo", "cr_x", "probably_fine")
 
     assert "disposition" in str(exc_info.value)
+
+
+# ── Provenance-bearing memory ────────────────────────────────────────────────
+
+GOLDEN_MEMORY_ID = "mem_a3b337c53411d1a5"
+
+
+def _golden_memory(*, trust: str = "observed", evidence: list[str] | None = None) -> str:
+    return entroly_core.memory_record_build_json(
+        "repo:demo",
+        "vault/beliefs/auth.md",
+        trust,
+        task_id="task:auth",
+        workstream_id="workstream:1",
+        source_agent="agent:claude",
+        source_session="session:1",
+        source_execution="exec:1",
+        content_commitment="sha256:content",
+        evidence_ids=["evidence:1"] if evidence is None else evidence,
+        created_at_ms=1_700_000_000_000,
+        observed_at_ms=1_700_000_000_000,
+    )
+
+
+def test_python_reproduces_the_golden_memory_id() -> None:
+    memory = json.loads(_golden_memory())
+
+    assert memory["memory_id"] == GOLDEN_MEMORY_ID
+    assert memory["schema_version"] == entroly_core.memory_record_schema_version()
+    assert entroly_core.memory_record_verify_json(_golden_memory()) == _golden_memory()
+
+
+def test_memory_admissibility_matches_the_engine_contract() -> None:
+    assert (
+        entroly_core.memory_record_admissibility(
+            _golden_memory(), 1_700_000_100_000
+        )
+        == "admissible"
+    )
+    unsupported = _golden_memory(trust="verified", evidence=[])
+    assert (
+        entroly_core.memory_record_admissibility(
+            unsupported, 1_700_000_100_000
+        )
+        == "unsupported"
+    )
+    assert entroly_core.memory_record_admissibility(_golden_memory(), -1) == "unsupported"
+
+
+def test_memory_requires_producer_provenance() -> None:
+    with pytest.raises(Exception) as exc_info:
+        entroly_core.memory_record_build_json(
+            "repo:demo",
+            "vault/beliefs/auth.md",
+            "observed",
+            source_session="session:1",
+            source_execution="exec:1",
+            content_commitment="sha256:content",
+            evidence_ids=["evidence:1"],
+        )
+
+    assert "source_agent" in str(exc_info.value)
+
+
+def test_an_edited_memory_fails_closed() -> None:
+    edited = _golden_memory().replace("agent:claude", "agent:someone")
+
+    with pytest.raises(Exception) as exc_info:
+        entroly_core.memory_record_verify_json(edited)
+
+    assert "record_commitment" in str(exc_info.value)

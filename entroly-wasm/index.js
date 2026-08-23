@@ -17,7 +17,9 @@ let classifyQueryTransitionRust;
 let rewardWeightedOptimizeRust;
 let optimizeTaskProfilesRust;
 let classifyLearningQueryRust;
+let wasmExports = {};
 function bindWasmExports(mod) {
+  wasmExports = mod;
   ({
     WasmEntrolyEngine,
     WasmWorkGraph,
@@ -48,7 +50,10 @@ try {
     !classifyQueryTransitionRust ||
     !rewardWeightedOptimizeRust ||
     !optimizeTaskProfilesRust ||
-    !classifyLearningQueryRust
+    !classifyLearningQueryRust ||
+    !wasmExports.contextReceiptBuildJSON ||
+    !wasmExports.recoveryHandleBuildJSON ||
+    !wasmExports.memoryRecordBuildJSON
   ) {
     // A source checkout can contain an older generated pkg/ directory. Treat
     // a missing Work Graph export exactly like any other stale native surface
@@ -141,6 +146,10 @@ function classifyLearningQuery(...args) {
 }
 
 module.exports = {
+  // The TypeScript surface re-exports the generated bindings. Mirror that at
+  // runtime so package-root imports and `index.d.ts` describe the same API.
+  ...wasmExports,
+
   // Core engine (wasm)
   EntrolyEngine: WasmEntrolyEngine,
   WasmEntrolyEngine,

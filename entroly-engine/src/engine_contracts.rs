@@ -885,7 +885,6 @@ impl RecoveryHandle {
     }
 }
 
-
 // ── Provenance-bearing memory ─────────────────────────────────────────────
 
 /// Schema version for [`MemoryRecord`].
@@ -1009,18 +1008,18 @@ impl MemoryRecord {
         )?;
         validate_text("task_id", &task_id, MAX_CONTRACT_ID_BYTES, true)?;
         validate_text("workstream_id", &workstream_id, MAX_CONTRACT_ID_BYTES, true)?;
-        validate_text("source_agent", &source_agent, MAX_CONTRACT_ID_BYTES, true)?;
+        validate_text("source_agent", &source_agent, MAX_CONTRACT_ID_BYTES, false)?;
         validate_text(
             "source_session",
             &source_session,
             MAX_CONTRACT_ID_BYTES,
-            true,
+            false,
         )?;
         validate_text(
             "source_execution",
             &source_execution,
             MAX_CONTRACT_ID_BYTES,
-            true,
+            false,
         )?;
         validate_text(
             "content_reference",
@@ -1032,7 +1031,7 @@ impl MemoryRecord {
             "content_commitment",
             &content_commitment,
             MAX_COMMITMENT_BYTES,
-            true,
+            false,
         )?;
         validate_text(
             "recovery_handle",
@@ -1108,6 +1107,9 @@ impl MemoryRecord {
     /// Takes `now_ms` rather than reading a clock. A verdict that depends on
     /// ambient time is not reproducible, and section 22 asks for replay.
     pub fn admissibility(&self, now_ms: i64) -> MemoryAdmissibility {
+        if now_ms < 0 {
+            return MemoryAdmissibility::Unsupported;
+        }
         if !self.contradicted_by.is_empty() {
             return MemoryAdmissibility::Contradicted;
         }
@@ -1116,10 +1118,10 @@ impl MemoryRecord {
         }
         match self.trust_state {
             TrustLevel::Untrusted => MemoryAdmissibility::Unsupported,
-            // An inference with nothing behind it is a guess. Requiring evidence
-            // here is what stops a plausible-sounding recollection from being
-            // injected as though it were observed.
-            TrustLevel::Inferred if self.evidence_ids.is_empty() => {
+            // An inference with nothing behind it is a guess, and a caller's
+            // `verified` label is not itself evidence. Requiring evidence here
+            // stops either from being injected as though it were established.
+            TrustLevel::Inferred | TrustLevel::Verified if self.evidence_ids.is_empty() => {
                 MemoryAdmissibility::Unsupported
             }
             _ => MemoryAdmissibility::Admissible,
@@ -1169,7 +1171,33 @@ impl MemoryRecord {
         if !record.verify_commitment()? {
             return Err(EngineContractError::CommitmentMismatch("record_commitment"));
         }
-        Ok(record)
+        // A checksum is not a substitute for schema validation: a caller can
+        // recompute an ordinary SHA-256 after constructing an invalid payload.
+        // Rebuild through the canonical constructor so transport cannot bypass
+        // required provenance, bounds, timestamp checks, or list
+        // canonicalisation.
+        let rebuilt = MemoryRecord::new(
+            record.repository_id.clone(),
+            record.task_id.clone(),
+            record.workstream_id.clone(),
+            record.source_agent.clone(),
+            record.source_session.clone(),
+            record.source_execution.clone(),
+            record.content_reference.clone(),
+            record.content_commitment.clone(),
+            record.evidence_ids.clone(),
+            record.trust_state,
+            record.created_at_ms,
+            record.observed_at_ms,
+            record.valid_until_ms,
+            record.supersedes.clone(),
+            record.contradicted_by.clone(),
+            record.recovery_handle.clone(),
+        )?;
+        if rebuilt != record {
+            return Err(EngineContractError::CommitmentMismatch("record_commitment"));
+        }
+        Ok(rebuilt)
     }
 }
 
@@ -1211,7 +1239,12 @@ mod tests {
     }
 
     fn observed_memory() -> MemoryRecord {
-        memory(TrustLevel::Observed, vec!["evidence:1".to_string()], 0, vec![])
+        memory(
+            TrustLevel::Observed,
+            vec!["evidence:1".to_string()],
+            0,
+            vec![],
+        )
     }
 
     #[test]
@@ -1233,7 +1266,12 @@ mod tests {
     fn untrusted_memory_is_never_admissible() {
         // Untrusted is the default for external statements. It must not reach a
         // model regardless of how relevant it looks.
-        let record = memory(TrustLevel::Untrusted, vec!["evidence:1".to_string()], 0, vec![]);
+        let record = memory(
+            TrustLevel::Untrusted,
+            vec!["evidence:1".to_string()],
+            0,
+            vec![],
+        );
         assert_eq!(
             record.admissibility(1_700_000_100_000),
             MemoryAdmissibility::Unsupported
@@ -1252,10 +1290,32 @@ mod tests {
 
     #[test]
     fn an_inference_with_evidence_is_admissible() {
-        let backed = memory(TrustLevel::Inferred, vec!["evidence:1".to_string()], 0, vec![]);
+        let backed = memory(
+            TrustLevel::Inferred,
+            vec!["evidence:1".to_string()],
+            0,
+            vec![],
+        );
         assert_eq!(
             backed.admissibility(1_700_000_100_000),
             MemoryAdmissibility::Admissible
+        );
+    }
+
+    #[test]
+    fn verified_memory_requires_evidence() {
+        let unsupported = memory(TrustLevel::Verified, vec![], 0, vec![]);
+        assert_eq!(
+            unsupported.admissibility(1_700_000_100_000),
+            MemoryAdmissibility::Unsupported
+        );
+    }
+
+    #[test]
+    fn an_invalid_replay_time_fails_closed() {
+        assert_eq!(
+            observed_memory().admissibility(-1),
+            MemoryAdmissibility::Unsupported
         );
     }
 
@@ -1394,11 +1454,11 @@ mod tests {
             "repo:demo".to_string(),
             String::new(),
             String::new(),
-            String::new(),
-            String::new(),
-            String::new(),
+            "agent:test".to_string(),
+            "session:test".to_string(),
+            "execution:test".to_string(),
             "vault/x.md".to_string(),
-            String::new(),
+            "sha256:content".to_string(),
             vec![],
             TrustLevel::Observed,
             0,
@@ -1411,6 +1471,78 @@ mod tests {
         assert_eq!(
             bad,
             Err(EngineContractError::InvalidTimestamp("valid_until_ms"))
+        );
+    }
+
+    #[test]
+    fn producer_provenance_and_content_commitment_are_required() {
+        let mut fields = [
+            (
+                "agent:test",
+                "session:test",
+                "execution:test",
+                "sha256:content",
+            ),
+            ("", "session:test", "execution:test", "sha256:content"),
+            ("agent:test", "", "execution:test", "sha256:content"),
+            ("agent:test", "session:test", "", "sha256:content"),
+            ("agent:test", "session:test", "execution:test", ""),
+        ];
+        let valid = fields[0];
+        assert!(MemoryRecord::new(
+            "repo:demo".into(),
+            String::new(),
+            String::new(),
+            valid.0.into(),
+            valid.1.into(),
+            valid.2.into(),
+            "vault/x.md".into(),
+            valid.3.into(),
+            vec!["evidence:1".into()],
+            TrustLevel::Verified,
+            0,
+            0,
+            0,
+            vec![],
+            vec![],
+            String::new(),
+        )
+        .is_ok());
+
+        for invalid in fields.iter_mut().skip(1) {
+            assert!(MemoryRecord::new(
+                "repo:demo".into(),
+                String::new(),
+                String::new(),
+                invalid.0.into(),
+                invalid.1.into(),
+                invalid.2.into(),
+                "vault/x.md".into(),
+                invalid.3.into(),
+                vec!["evidence:1".into()],
+                TrustLevel::Verified,
+                0,
+                0,
+                0,
+                vec![],
+                vec![],
+                String::new(),
+            )
+            .is_err());
+        }
+    }
+
+    #[test]
+    fn verified_parse_reapplies_constructor_invariants() {
+        let mut invalid = observed_memory();
+        invalid.source_agent.clear();
+        invalid.record_commitment = invalid.compute_commitment().expect("recompute");
+        invalid.memory_id = format!("mem_{}", &invalid.record_commitment[..16]);
+        let json = invalid.to_json().expect("serialize invalid record");
+
+        assert_eq!(
+            MemoryRecord::from_json_verified(&json),
+            Err(EngineContractError::EmptyField("source_agent"))
         );
     }
 

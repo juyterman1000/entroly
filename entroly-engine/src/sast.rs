@@ -2229,15 +2229,15 @@ fn propagate_taint(
     tainted
 }
 
-/// Bytes that can appear inside an identifier.
+/// Characters that can appear inside an identifier.
 ///
 /// `$` is deliberately excluded. `extract_assignment_lhs` strips a leading `$`
 /// from PHP variables, so the tainted set holds `user` for a `$user`
 /// assignment; treating `$` as part of an identifier would then stop `$user`
 /// from matching its own tainted name.
 #[inline]
-fn is_identifier_byte(b: u8) -> bool {
-    b.is_ascii_alphanumeric() || b == b'_'
+fn is_identifier_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
 }
 
 /// True when `needle` occurs in `haystack` as a whole identifier.
@@ -2256,17 +2256,29 @@ fn contains_identifier(haystack: &str, needle: &str) -> bool {
     if needle.is_empty() || needle.len() > haystack.len() {
         return false;
     }
-    let bytes = haystack.as_bytes();
     let mut from = 0usize;
     while let Some(offset) = haystack[from..].find(needle) {
         let start = from + offset;
         let end = start + needle.len();
-        let left_free = start == 0 || !is_identifier_byte(bytes[start - 1]);
-        let right_free = end >= bytes.len() || !is_identifier_byte(bytes[end]);
+        let left_free = haystack[..start]
+            .chars()
+            .next_back()
+            .is_none_or(|c| !is_identifier_char(c));
+        let right_free = haystack[end..]
+            .chars()
+            .next()
+            .is_none_or(|c| !is_identifier_char(c));
         if left_free && right_free {
             return true;
         }
-        from = start + 1;
+        // Advance by one character, not one byte. A byte step can land inside a
+        // multibyte identifier and make the next slice panic.
+        from = start
+            + haystack[start..]
+                .chars()
+                .next()
+                .map(char::len_utf8)
+                .unwrap_or(1);
         if from >= haystack.len() {
             break;
         }
@@ -2666,6 +2678,24 @@ mod tests {
         assert!(!contains_identifier("guid = uuid4()", "id"));
         assert!(!contains_identifier("max_retries = 3", "x"));
         assert!(!contains_identifier("def index():", "x"));
+    }
+
+    #[test]
+    fn unicode_identifier_boundaries_are_safe_and_exact() {
+        assert!(contains_identifier("self.变量", "变量"));
+        assert!(!contains_identifier("变量x", "变量"));
+
+        let report = scan_content(
+            "变量 = request.query\nother = 变量x\neval(other)",
+            "unicode.py",
+        );
+        assert!(
+            report
+                .findings
+                .iter()
+                .all(|finding| finding.rule_id != "PY-001"),
+            "a longer Unicode identifier must not inherit taint from its prefix"
+        );
     }
 
     #[test]

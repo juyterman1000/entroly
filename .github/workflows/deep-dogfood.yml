@@ -2,7 +2,9 @@ name: Deep Dogfood Runtime
 
 on:
   pull_request:
-    branches: [main]
+    branches:
+      - main
+      - "integration/**"
   workflow_dispatch:
 
 permissions:

@@ -16,11 +16,12 @@
 // record; it just cannot be the shared contract.
 
 const assert = require('assert');
+const wasm = require('./');
 const { contextReceiptBuildJSON,
         contextReceiptVerifyJSON,
         contextReceiptCommitment,
         contextReceiptGraphRefJSON,
-        contextReceiptSchemaVersion } = require('./pkg/entroly_wasm.js');
+        contextReceiptSchemaVersion } = wasm;
 
 // Must equal engine_contracts::tests::GOLDEN_RECEIPT_COMMITMENT.
 const GOLDEN_COMMITMENT =
@@ -130,7 +131,7 @@ const {
   recoveryHandleBuildJSON,
   recoveryHandleVerifyJSON,
   recoveryHandleVerifyBytes,
-} = require('./pkg/entroly_wasm.js');
+} = wasm;
 
 // Must equal engine_contracts::tests::GOLDEN_RECOVERY_HANDLE_ID.
 const GOLDEN_HANDLE_ID = 'rh_61e976bc425ad0de';
@@ -219,3 +220,75 @@ function recoverableHandle() {
 }
 
 console.log('recovery handle parity: node matches the cross-runtime golden vector');
+
+// ── Provenance-bearing memory ───────────────────────────────────────────────
+
+const {
+  memoryRecordBuildJSON,
+  memoryRecordAdmissibility,
+  memoryRecordVerifyJSON,
+  memoryRecordSchemaVersion,
+} = wasm;
+
+const GOLDEN_MEMORY_ID = 'mem_a3b337c53411d1a5';
+
+function goldenMemory(evidenceIds = ['evidence:1']) {
+  return memoryRecordBuildJSON(
+    'repo:demo',
+    'vault/beliefs/auth.md',
+    'observed',
+    'task:auth',
+    'workstream:1',
+    'agent:claude',
+    'session:1',
+    'exec:1',
+    'sha256:content',
+    JSON.stringify(evidenceIds),
+    1700000000000,
+    1700000000000,
+    0,
+    JSON.stringify([]),
+    JSON.stringify([]),
+    null,
+  );
+}
+
+{
+  const memory = JSON.parse(goldenMemory());
+  assert.strictEqual(memory.memory_id, GOLDEN_MEMORY_ID,
+    'node memory id diverged from the cross-runtime golden vector');
+  assert.strictEqual(memory.schema_version, memoryRecordSchemaVersion());
+  assert.strictEqual(memoryRecordVerifyJSON(goldenMemory()), goldenMemory());
+  assert.strictEqual(memoryRecordAdmissibility(goldenMemory(), 1700000100000), 'admissible');
+}
+
+// A caller cannot make an unsupported recollection trustworthy by choosing a
+// stronger label, and producer provenance is mandatory at construction.
+{
+  const unsupported = memoryRecordBuildJSON(
+    'repo:demo', 'vault/beliefs/auth.md', 'verified',
+    'task:auth', 'workstream:1', 'agent:claude', 'session:1', 'exec:1',
+    'sha256:content', JSON.stringify([]), 1700000000000, 1700000000000,
+  );
+  assert.strictEqual(
+    memoryRecordAdmissibility(unsupported, 1700000100000),
+    'unsupported',
+  );
+  assert.throws(
+    () => memoryRecordBuildJSON(
+      'repo:demo', 'vault/beliefs/auth.md', 'observed',
+      'task:auth', 'workstream:1', null, 'session:1', 'exec:1',
+      'sha256:content', JSON.stringify(['evidence:1']),
+    ),
+    /source_agent/,
+  );
+}
+
+// Invalid replay time and transport tampering both fail closed.
+{
+  assert.strictEqual(memoryRecordAdmissibility(goldenMemory(), -1), 'unsupported');
+  const edited = goldenMemory().replace('agent:claude', 'agent:someone');
+  assert.throws(() => memoryRecordVerifyJSON(edited), /record_commitment/);
+}
+
+console.log('memory record parity: node matches the cross-runtime golden vector');

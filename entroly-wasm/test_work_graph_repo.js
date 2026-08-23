@@ -100,10 +100,14 @@ try {
   assert(active.decisions[0].text === 'Preserve event order', 'checkpoint decision missing');
 
   const oldHome = process.env.HOME;
+  const oldUserProfile = process.env.USERPROFILE;
   const oldEntrolyDir = process.env.ENTROLY_DIR;
   const fakeHome = path.join(root, 'home');
   fs.mkdirSync(fakeHome);
   process.env.HOME = fakeHome;
+  // Node's os.homedir() reads USERPROFILE on Windows and HOME on Unix. Set
+  // both so this test controls the same API on every supported platform.
+  process.env.USERPROFILE = fakeHome;
   delete process.env.ENTROLY_DIR;
   try {
     const absentRoot = path.join(fakeHome, '.entroly');
@@ -129,6 +133,7 @@ try {
     assert(defaultCheckpoint.task_hint.title === 'Fix streaming', 'default checkpoint path parity failed');
   } finally {
     if (oldHome === undefined) delete process.env.HOME; else process.env.HOME = oldHome;
+    if (oldUserProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = oldUserProfile;
     if (oldEntrolyDir === undefined) delete process.env.ENTROLY_DIR; else process.env.ENTROLY_DIR = oldEntrolyDir;
   }
 
