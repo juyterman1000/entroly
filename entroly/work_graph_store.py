@@ -41,6 +41,36 @@ class WorkGraphStateError(WorkGraphStoreError):
     pass
 
 
+def continuation_outstanding_refs(view: dict[str, Any]) -> list[str]:
+    """Select bounded durable references for a continuation proof.
+
+    Changed paths and failures are the most actionable references. A clean
+    explicitly claimed task has neither, so its stable task IDs are the
+    evidence-backed fallback that prevents a valid handoff from becoming an
+    empty, non-resumable proof.
+    """
+    def string_values(value: Any) -> list[str]:
+        return value if isinstance(value, list) else []
+
+    selected = view.get("selected_workstream")
+    task_ids = selected.get("task_ids", []) if isinstance(selected, dict) else []
+    values = [
+        *string_values(view.get("changed_paths")),
+        *string_values(view.get("failures")),
+        *string_values(task_ids),
+    ]
+    refs: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if not isinstance(value, str):
+            continue
+        ref = value.strip()
+        if ref and ref not in seen:
+            seen.add(ref)
+            refs.append(ref)
+    return refs
+
+
 def _store_root() -> Path:
     configured = os.environ.get("ENTROLY_DIR")
     base = Path(configured).expanduser() if configured else Path.home() / ".entroly"
@@ -544,6 +574,7 @@ class WorkGraphStore:
 
 
 __all__ = [
+    "continuation_outstanding_refs",
     "WorkGraphLockTimeout",
     "WorkGraphStateError",
     "WorkGraphStore",

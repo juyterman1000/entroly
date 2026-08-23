@@ -212,6 +212,34 @@ def test_cli_resume_can_emit_no_handoff_proof(monkeypatch, capsys, tmp_path):
     assert payload["continuation_proof"]["from_agent"] == ""
 
 
+def test_cli_clean_claim_uses_task_id_in_continuation_proof(monkeypatch, capsys, tmp_path):
+    fake = FakeStore()
+    monkeypatch.setattr(c, "_store_for_path", lambda _p: fake)
+    monkeypatch.setattr(c, "_passive_observation", lambda _path: {"repo_id": "repo:test"})
+    fake.resume = lambda *_args, **_kwargs: {
+        "selected_workstream": {
+            "node_id": "workstream:1",
+            "task_ids": ["task:clean", "task:clean"],
+        },
+        "changed_paths": [],
+        "failures": [],
+    }
+    args = SimpleNamespace(
+        work_action="resume",
+        json_output=True,
+        project=str(tmp_path),
+        workstream="",
+        max_evidence=32,
+        to_agent="codex",
+    )
+
+    assert c.run(args) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["continuation_proof"]["manifest"]["outstanding_work_refs"] == [
+        "task:clean"
+    ]
+
+
 def test_cli_resume_validates_before_store_or_repository_refresh(monkeypatch, tmp_path):
     calls = []
     monkeypatch.setattr(c, "_store_for_path", lambda _p: calls.append("store") or FakeStore())

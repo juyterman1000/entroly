@@ -79,6 +79,21 @@ function handoffRepository(repoPath = '.', options = {}) {
   return store.handoff(workstreamId, fromAgent, toAgent, generatedAtMs);
 }
 
+function continuationOutstandingRefs(view) {
+  const safeView = view && typeof view === 'object' ? view : {};
+  const selected = safeView.selected_workstream && typeof safeView.selected_workstream === 'object'
+    ? safeView.selected_workstream
+    : {};
+  const values = [
+    ...(Array.isArray(safeView.changed_paths) ? safeView.changed_paths : []),
+    ...(Array.isArray(safeView.failures) ? safeView.failures : []),
+    ...(Array.isArray(selected.task_ids) ? selected.task_ids : []),
+  ];
+  return [...new Set(values
+    .filter((value) => typeof value === 'string' && value.trim())
+    .map((value) => value.trim()))];
+}
+
 function handoffRepositoryWithProof(repoPath = '.', options = {}) {
   // Preserve the receipt-only API above for compatibility while making the
   // complete continuation artifact available as one low-ceremony operation.
@@ -96,10 +111,7 @@ function handoffRepositoryWithProof(repoPath = '.', options = {}) {
   store.submitObservation(passiveObservation(repoPath, repositoryOptions));
   const handoff = store.handoff(workstreamId, fromAgent, toAgent, generatedAtMs);
   const view = store.resume(workstreamId, 128);
-  const outstanding = [
-    ...(Array.isArray(view.changed_paths) ? view.changed_paths : []),
-    ...(Array.isArray(view.failures) ? view.failures : []),
-  ];
+  const outstanding = continuationOutstandingRefs(view);
   const continuationProof = store.continuationProof(handoff, {
     outstanding_work_refs: outstanding,
     created_at_ms: generatedAtMs,

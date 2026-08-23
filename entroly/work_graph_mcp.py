@@ -20,6 +20,7 @@ from .work_graph import WorkGraphUnavailableError
 from .work_graph_content_digest import enrich_worktree_content_digests
 from .work_graph_repo import discover_repository_identity, discover_repository_observation
 from .work_graph_store import (
+    continuation_outstanding_refs,
     WorkGraphLockTimeout,
     WorkGraphStateError,
     WorkGraphStore,
@@ -265,8 +266,7 @@ def work_resume(
             payload["continuation_proof"] = store.reconstructed_continuation_proof(
                 str(view["selected_workstream"]["node_id"]),
                 target_agent,
-                outstanding_work_refs=list(view.get("changed_paths", []))
-                + list(view.get("failures", [])),
+                outstanding_work_refs=continuation_outstanding_refs(view),
                 created_at_ms=int(time.time() * 1000),
             )
         return _render_untrusted("work_resume", payload)
@@ -298,8 +298,7 @@ def work_handoff(
         view = store.resume(selected_workstream, max_evidence=128)
         proof = store.continuation_proof(
             receipt,
-            outstanding_work_refs=list(view.get("changed_paths", []))
-            + list(view.get("failures", [])),
+            outstanding_work_refs=continuation_outstanding_refs(view),
             created_at_ms=int(time.time() * 1000),
         )
         return _render_untrusted(

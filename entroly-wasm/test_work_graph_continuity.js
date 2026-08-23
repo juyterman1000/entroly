@@ -133,6 +133,24 @@ try {
     'complete npm handoff did not seal one refreshed receipt and proof');
 
   calls.length = 0;
+  fakeStore.resume = (workstreamId, maxEvidence) => {
+    calls.push(['resume', workstreamId, maxEvidence]);
+    return {
+      changed_paths: [],
+      failures: [],
+      selected_workstream: { task_ids: [' task:clean ', 'task:clean'] },
+    };
+  };
+  const cleanBundle = handoffRepositoryWithProof(repo, {
+    workstreamId: 'workstream:clean',
+    fromAgent: 'claude',
+    toAgent: 'codex',
+    generatedAtMs: 1236,
+  });
+  assert(cleanBundle.continuation_proof.outstanding_work_refs.join(',') === 'task:clean',
+    'clean claimed task did not remain resumable through its stable task ID');
+
+  calls.length = 0;
   rejected = false;
   try {
     handoffRepository(repo, {

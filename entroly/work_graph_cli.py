@@ -14,6 +14,7 @@ from .work_graph import WorkGraphUnavailableError
 from .work_graph_content_digest import enrich_worktree_content_digests
 from .work_graph_repo import discover_repository_identity, discover_repository_observation
 from .work_graph_store import (
+    continuation_outstanding_refs,
     WorkGraphLockTimeout,
     WorkGraphStateError,
     WorkGraphStore,
@@ -300,8 +301,7 @@ def run(args: Any) -> int:
                 payload["continuation_proof"] = store.reconstructed_continuation_proof(
                     str(resume_view["selected_workstream"]["node_id"]),
                     target_agent,
-                    outstanding_work_refs=list(resume_view.get("changed_paths", []))
-                    + list(resume_view.get("failures", [])),
+                    outstanding_work_refs=continuation_outstanding_refs(resume_view),
                     created_at_ms=int(time.time() * 1000),
                 )
         elif action == "handoff":
@@ -321,8 +321,7 @@ def run(args: Any) -> int:
                 "handoff": handoff,
                 "continuation_proof": store.continuation_proof(
                     handoff,
-                    outstanding_work_refs=list(resume_view.get("changed_paths", []))
-                    + list(resume_view.get("failures", [])),
+                    outstanding_work_refs=continuation_outstanding_refs(resume_view),
                     created_at_ms=int(time.time() * 1000),
                 ),
             }

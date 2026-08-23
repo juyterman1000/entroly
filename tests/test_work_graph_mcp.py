@@ -168,6 +168,26 @@ def test_mcp_resume_can_seal_no_handoff_continuation_proof(monkeypatch, tmp_path
     assert '"outstanding_work_refs":["app.py","tests failed"]' in result["context"]
 
 
+def test_mcp_clean_claim_uses_task_id_in_handoff_proof(monkeypatch, tmp_path):
+    fake = FakeStore()
+    monkeypatch.setenv("ENTROLY_SOURCE", str(tmp_path))
+    monkeypatch.setattr(m, "_store_for_path", lambda _p: fake)
+    monkeypatch.setattr(m, "_passive_observation", lambda _path: {"repo_id": "repo:test"})
+    fake.resume = lambda *_args, **_kwargs: {
+        "selected_workstream": {
+            "node_id": "workstream:1",
+            "task_ids": ["task:clean"],
+        },
+        "changed_paths": None,
+        "failures": [],
+    }
+
+    result = m.work_resume(to_agent="codex")
+
+    assert result["status"] == "ok"
+    assert '"outstanding_work_refs":["task:clean"]' in result["context"]
+
+
 def test_mcp_handoff_fingerprints_latest_repo_before_sealing_receipt(monkeypatch, tmp_path):
     fake = FakeStore()
     calls = []
