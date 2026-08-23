@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -127,6 +128,93 @@ def test_two_process_views_merge_against_latest_disk_state(tmp_path: Path) -> No
     final = first.load()
     assert final.event_count >= 2
     assert final.summary()["event_count"] == final.event_count
+
+
+def test_python_node_same_repo_state_converges(tmp_path: Path) -> None:
+    """Scenario P: Python writes, Node reads/writes, Python reads identically."""
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("cross-runtime convergence requires Node.js")
+    repository_root = Path(__file__).resolve().parents[1]
+    wasm_runtime = repository_root / "entroly-wasm" / "pkg" / "entroly_wasm.js"
+    if not wasm_runtime.is_file():
+        pytest.skip("cross-runtime convergence requires the locally built Wasm package")
+
+    repo = _repo(tmp_path)
+    state_root = tmp_path / "state"
+    store = _store(repo, state_root)
+    python_graph = store.update_repository(
+        repo,
+        agent_id="python-agent",
+        session_id="python-session",
+        task_hint={
+            "task_id": "python-step",
+            "title": "Python observed the repository",
+            "trust": "observed",
+            "source_kind": "user_statement",
+            "source_ref": "test:python-write",
+        },
+        observed_at_ms=1_000,
+    )
+
+    script = r"""
+const path = require('path');
+const input = JSON.parse(process.env.ENTROLY_XR_INPUT);
+const { WorkGraphStore } = require(path.join(
+  input.repositoryRoot, 'entroly-wasm', 'js', 'work_graph_store.js',
+));
+const store = new WorkGraphStore(input.repoId, {
+  root: input.stateRoot,
+  lockTimeoutMs: 5000,
+  staleLockMs: 120000,
+});
+const before = store.load();
+const write = store.claimWork(input.repoPath, {
+  agentId: 'node-agent',
+  sessionId: 'node-session',
+  taskTitle: 'Node continued the repository work',
+  taskId: 'node-step',
+  scopePaths: ['src/node-step.js'],
+  leaseId: 'python-node-convergence-lease',
+  observedAtMs: 2000,
+});
+process.stdout.write(JSON.stringify({
+  beforeCommitment: before.graphCommitment,
+  beforeEvents: before.eventCount,
+  afterCommitment: write.graph.graphCommitment,
+  afterEvents: write.graph.eventCount,
+  afterExport: write.graph.exportJSON(false),
+}));
+"""
+    payload = {
+        "repositoryRoot": str(repository_root),
+        "repoId": store.repo_id,
+        "repoPath": str(repo),
+        "stateRoot": str(state_root),
+    }
+    environment = os.environ.copy()
+    environment["ENTROLY_XR_INPUT"] = json.dumps(payload)
+    result = subprocess.run(
+        [node, "-e", script],
+        check=True,
+        text=True,
+        capture_output=True,
+        env=environment,
+        timeout=30,
+    )
+    node_state = json.loads(result.stdout)
+    assert node_state["beforeCommitment"] == python_graph.graph_commitment
+    assert node_state["beforeEvents"] == python_graph.event_count
+    assert node_state["afterEvents"] == python_graph.event_count + 1
+
+    final = store.load()
+    assert final.graph_commitment == node_state["afterCommitment"]
+    assert final.event_count == node_state["afterEvents"]
+    assert final.export_json() == node_state["afterExport"]
+    assert any(
+        item["label"] == "Node continued the repository work"
+        for item in final.unfinished()
+    )
 
 
 def test_parallel_agent_claims_surface_advisory_overlap(tmp_path: Path) -> None:

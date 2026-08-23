@@ -250,6 +250,23 @@ jobs:
           npm run build
           node test_context_receipt_parity.js
 
+      - name: Set up Python for shared-state convergence
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Python and Node converge on one Work Graph store
+        run: |
+          python -m venv .cross-runtime-venv
+          .cross-runtime-venv/bin/pip install maturin pytest --timeout 120 --retries 5
+          cd entroly-core
+          ../.cross-runtime-venv/bin/maturin develop --release
+          cd ..
+          .cross-runtime-venv/bin/pip install -e . --timeout 120 --retries 5
+          .cross-runtime-venv/bin/pytest \
+            tests/test_work_graph_store.py \
+            -q -k python_node_same_repo_state_converges
+
       # Structural guard: re-adding a local copy of an engine module is exactly
       # how the two builds diverged before. Compilation alone will not catch it,
       # because a shadowing local `mod` is perfectly valid Rust.
