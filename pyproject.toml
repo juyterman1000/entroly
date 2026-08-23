@@ -125,3 +125,9 @@ entroly-work-graph-mcp = "entroly.work_graph_mcp_server:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.hatch.build.targets.wheel]
+core-metadata-version = "2.4"
+
+[tool.hatch.build.targets.sdist]
+core-metadata-version = "2.4"

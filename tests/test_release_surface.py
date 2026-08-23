@@ -147,6 +147,13 @@ def test_mcp_registry_manifest_points_at_release_package() -> None:
     assert packages[0]["version"] == RELEASE_VERSION
 
 
+def test_hatch_artifacts_use_twine_supported_core_metadata() -> None:
+    """The build backend must not outrun the required release validator."""
+    for path in ("pyproject.toml", "entroly/pyproject.toml"):
+        text = (ROOT / path).read_text(encoding="utf-8")
+        assert text.count('core-metadata-version = "2.4"') == 2
+
+
 def test_mcp_registry_identity_is_canonical_and_non_squattable() -> None:
     manifest = _read_json("server.json")
     npm_manifest = _read_json("entroly/npm/package.json")
