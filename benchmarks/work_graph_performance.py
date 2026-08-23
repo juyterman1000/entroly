@@ -11,17 +11,25 @@ from __future__ import annotations
 
 import argparse
 import copy
+import concurrent.futures
 import hashlib
 import json
 import math
 import platform
 import statistics
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Callable
 
+from entroly.repository_intelligence.graph_projection import project_repository_scope
+from entroly.repository_intelligence.incremental import (
+    build_repository_index_incremental,
+    build_repository_scope_incremental,
+)
 from entroly.work_graph import WorkGraph
+from entroly.work_graph_store import WorkGraphStore
 
 SCHEMA = "entroly.work-graph-performance.v1"
 DEFAULT_FILES = 2_000
@@ -35,6 +43,11 @@ THRESHOLDS_MS = {
     "resume": 1_000.0,
     "context_scope": 1_000.0,
     "coordination": 1_000.0,
+    "initial_repository_index": 60_000.0,
+    "one_file_incremental_index": 5_000.0,
+    "symbol_scope_projection": 2_000.0,
+    "pyo3_summary_p95": 100.0,
+    "contended_store_writes": 10_000.0,
 }
 MAX_STATE_BYTES = 64 * 1024 * 1024
 
@@ -79,6 +92,113 @@ def _observation(*, files: int, observed_at_ms: int, digest_suffix: str) -> dict
     }
 
 
+def _cache_diagnostic(index: Any) -> str:
+    return next(
+        item for item in index.diagnostics if item.startswith("incremental-parse-cache")
+    )
+
+
+def _repository_delivery_measurements(
+    root: Path,
+    *,
+    files: int,
+) -> tuple[dict[str, float], dict[str, Any]]:
+    repository = root / "repository"
+    cache = root / "repository-cache"
+    repository.mkdir()
+    for index in range(files):
+        previous = f"module_{index - 1:05d}" if index else ""
+        imported = f"from {previous} import symbol_{index - 1:05d}\n" if previous else ""
+        (repository / f"module_{index:05d}.py").write_text(
+            f"{imported}def symbol_{index:05d}():\n    return {index}\n",
+            encoding="utf-8",
+        )
+
+    cold, initial_index_ms = _ms(
+        lambda: build_repository_index_incremental(repository, cache_dir=cache)
+    )
+    changed_index = files // 2
+    (repository / f"module_{changed_index:05d}.py").write_text(
+        f"def symbol_{changed_index:05d}():\n    return {changed_index + 1}\n",
+        encoding="utf-8",
+    )
+    changed_path = f"module_{changed_index:05d}.py"
+    warm, incremental_index_ms = _ms(
+        lambda: build_repository_scope_incremental(
+            repository,
+            [changed_path],
+            cache_dir=cache,
+        )
+    )
+
+    selected_paths = sorted(cold.files)[: min(files, 256)]
+    selected = [cold.files[path] for path in selected_paths]
+    symbols = {path: cold.symbols_for_path(path) for path in selected_paths}
+    imports = [
+        (source, target)
+        for source in selected_paths
+        for target in cold.file_dependencies.get(source, ())
+    ]
+    projected, projection_ms = _ms(
+        lambda: project_repository_scope(
+            "repo:repository-delivery-performance",
+            files=selected,
+            symbols=symbols,
+            imports=imports,
+            observed_at_ms=10_000,
+        )
+    )
+
+    incremental_diagnostic = _cache_diagnostic(warm)
+    return (
+        {
+            "initial_repository_index": initial_index_ms,
+            "one_file_incremental_index": incremental_index_ms,
+            "symbol_scope_projection": projection_ms,
+        },
+        {
+            "repository_files": len(cold.files),
+            "repository_symbols": len(cold.symbols),
+            "incremental_scope_files": len(warm.files),
+            "incremental_scope_catalog": next(
+                item
+                for item in warm.diagnostics
+                if item.startswith("active-repository-scope")
+            ),
+            "incremental_cache_diagnostic": incremental_diagnostic,
+            "projection_operations": projected["projection"]["operation_count"],
+            "projection_symbols_dropped": projected["projection"]["symbols_dropped"],
+            "cold_cache_diagnostic": _cache_diagnostic(cold),
+        },
+    )
+
+
+def _contended_store_measurement(root: Path, *, writers: int = 8) -> tuple[float, int]:
+    repo_id = "repo:work-graph-lock-performance"
+    store = WorkGraphStore(repo_id, root=root / "shared-store")
+
+    def write(index: int) -> None:
+        store.submit_observation({
+            "repo_id": repo_id,
+            "observed_at_ms": 20_000 + index,
+            "repository_label": "lock contention fixture",
+            "branch": {
+                "name": "feature/contention",
+                "head_sha": "head-contention",
+                "default_branch": "main",
+                "ahead_by": 1,
+            },
+            "changes": [_change(index, f"contention-{index}")],
+        })
+
+    def run() -> None:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=writers) as pool:
+            list(pool.map(write, range(writers)))
+
+    _, elapsed_ms = _ms(run)
+    return elapsed_ms, store.load().event_count
+
+
 def run_benchmark(
     *, files: int = DEFAULT_FILES,
     events: int = DEFAULT_EVENTS,
@@ -119,6 +239,14 @@ def run_benchmark(
         lambda: restored.context_scope(workstream_id, max_evidence=128)
     )
     coordination, coordination_ms = _ms(lambda: restored.coordination(10_000))
+    summary_calls = [_ms(restored.summary)[1] for _ in range(100)]
+
+    with tempfile.TemporaryDirectory(prefix="entroly-work-graph-performance-") as temp:
+        delivery_measurements, delivery_state = _repository_delivery_measurements(
+            Path(temp),
+            files=files,
+        )
+        contended_ms, contended_events = _contended_store_measurement(Path(temp))
 
     measurements = {
         "initial_large_observation": initial_ms,
@@ -131,6 +259,9 @@ def run_benchmark(
         "resume": resume_ms,
         "context_scope": context_ms,
         "coordination": coordination_ms,
+        "pyo3_summary_p95": _percentile(summary_calls, 0.95),
+        "contended_store_writes": contended_ms,
+        **delivery_measurements,
     }
     failures = [
         f"{name}={measurements[name]:.3f}ms exceeds {limit:.3f}ms"
@@ -161,6 +292,24 @@ def run_benchmark(
         failures.append("context scope has no full changed-path commitment")
     if scope.get("evidence_ids_total", 0) < len(scope.get("evidence_ids", [])):
         failures.append("context scope evidence total is smaller than its inline prefix")
+    if "misses=1 writes=1" not in str(
+        delivery_state["incremental_cache_diagnostic"]
+    ):
+        failures.append("one-file edit did not parse exactly its changed source")
+    if delivery_state["incremental_scope_files"] != 1:
+        failures.append("one-file edit parsed more than its active source scope")
+    if f"catalog={files}" not in str(delivery_state["incremental_scope_catalog"]):
+        failures.append("incremental dependency catalog omitted repository source paths")
+    if delivery_state["repository_files"] != files:
+        failures.append("repository index omitted measured first-party files")
+    if delivery_state["repository_symbols"] < files:
+        failures.append("repository index omitted measured symbols")
+    if delivery_state["projection_symbols_dropped"]:
+        failures.append("bounded active scope dropped measured symbols")
+    if contended_events != 8:
+        failures.append(
+            f"contended store preserved {contended_events} events instead of 8"
+        )
 
     return {
         "schema_version": SCHEMA,
@@ -182,6 +331,9 @@ def run_benchmark(
             "scope_evidence_inline": len(scope.get("evidence_ids", [])),
             "scope_evidence_total": scope.get("evidence_ids_total", 0),
             "coordination_conflicts": len(coordination.get("conflicts", [])),
+            "pyo3_summary_samples": len(summary_calls),
+            "contended_store_events": contended_events,
+            **delivery_state,
         },
         "thresholds_ms": THRESHOLDS_MS,
         "max_state_bytes": MAX_STATE_BYTES,

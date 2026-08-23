@@ -20,7 +20,7 @@ from .models import (
     Symbol,
     UnresolvedCall,
 )
-from .parsers import ParsedCall, ParsedFile, scan_repository
+from .parsers import ParsedCall, ParsedFile, scan_repository, scan_repository_scope
 from .workspace_dependencies import resolve_workspace_dependencies
 
 # Bumped because parser/import semantics and whole-index dependency resolution
@@ -598,6 +598,75 @@ def build_repository_index_incremental(
     return index
 
 
+def build_repository_scope_incremental(
+    root: str | os.PathLike[str],
+    paths: list[str] | tuple[str, ...] | set[str],
+    *,
+    cache_dir: str | os.PathLike[str],
+    limits: RepositoryLimits | None = None,
+) -> RepositoryIndex:
+    """Index active files and one-hop dependency paths without full source reads.
+
+    A repository-wide filename catalog is cheap and bounded; parsing and cache
+    I/O are restricted to ``paths``. This is the production edit path used by
+    Work Graph projection, while the full builder remains available for callers
+    that need repository-wide call/symbol analysis.
+    """
+    policy = limits or RepositoryLimits()
+    root_path = Path(root).expanduser().resolve(strict=True)
+    if not root_path.is_dir():
+        raise NotADirectoryError(root_path)
+    selected = {str(path).replace("\\", "/").strip("/") for path in paths if str(path)}
+    if len(selected) > policy.max_files:
+        raise ValueError(f"active repository scope exceeds {policy.max_files} paths")
+
+    cache = ContentAddressedParseCache(Path(cache_dir))
+    parsed, catalog, diagnostics = scan_repository_scope(
+        root_path,
+        selected,
+        policy,
+        load_cached=cache.load,
+        store_cached=cache.store,
+    )
+    parse_retention = cache.prune()
+
+    resolution_parsed = {
+        path: ParsedFile(
+            FileRecord(path, "unknown", "", 0, 0, False),
+            [],
+            set(),
+            {},
+            [],
+        )
+        for path in catalog
+    }
+    resolution_parsed.update(parsed)
+    dependencies = _merged_dependencies(resolution_parsed)
+    symbols = {
+        symbol.symbol_id: symbol
+        for path in sorted(parsed)
+        for symbol in sorted(parsed[path].symbols, key=lambda item: item.symbol_id)
+    }
+    calls, unresolved_calls = resolve_calls(parsed, symbols, policy)
+    diagnostics.extend((
+        cache.stats.diagnostic(),
+        parse_retention.diagnostic("incremental-parse-cache"),
+        f"active-repository-scope files={len(parsed)} catalog={len(catalog)}",
+    ))
+    return RepositoryIndex(
+        root=str(root_path),
+        files={path: parsed[path].record for path in sorted(parsed)},
+        symbols=symbols,
+        call_edges=calls,
+        unresolved_calls=unresolved_calls,
+        file_dependencies={
+            path: dependencies.get(path, ())
+            for path in sorted(parsed)
+        },
+        diagnostics=tuple(sorted(dict.fromkeys(diagnostics))),
+    )
+
+
 __all__ = [
     "CACHE_SCHEMA_VERSION",
     "INDEX_SNAPSHOT_SCHEMA_VERSION",
@@ -606,4 +675,5 @@ __all__ = [
     "IncrementalCacheStats",
     "IndexSnapshotStats",
     "build_repository_index_incremental",
+    "build_repository_scope_incremental",
 ]

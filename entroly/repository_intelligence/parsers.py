@@ -617,3 +617,97 @@ def scan_repository(
             parsed[relative_hint] = item
             total += size
     return dict(sorted(parsed.items())), diagnostics
+
+
+def scan_repository_scope(
+    root: Path,
+    paths: set[str],
+    limits: RepositoryLimits,
+    *,
+    load_cached: Callable[[str, str], ParsedFile | None] | None = None,
+    store_cached: Callable[[str, str, ParsedFile], None] | None = None,
+) -> tuple[dict[str, ParsedFile], tuple[str, ...], list[str]]:
+    """Parse only an active path set while cataloguing dependency targets.
+
+    The catalog walk reads no source bytes for out-of-scope files. It exists so
+    import resolution can still emit one-hop boundary paths without turning a
+    one-file edit into a whole-repository parse/cache reload.
+    """
+    selected = {normalize_relative(path) for path in paths if normalize_relative(path)}
+    parsed: dict[str, ParsedFile] = {}
+    catalog: list[str] = []
+    diagnostics: list[str] = []
+    total = 0
+    symbol_count = 0
+    catalog_full = False
+
+    for directory, dirnames, filenames in os.walk(root, followlinks=False):
+        dirnames[:] = sorted(name for name in dirnames if name not in IGNORED_DIRS)
+        for filename in sorted(filenames):
+            candidate = Path(directory) / filename
+            if candidate.suffix.lower() in NON_SOURCE_SUFFIXES:
+                continue
+            relative_hint = normalize_relative(candidate.relative_to(root))
+            path_language = language_for_path(relative_hint)
+            if path_language is None and relative_hint not in selected:
+                continue
+            try:
+                resolved = candidate.resolve(strict=True)
+                resolved.relative_to(root)
+                size = resolved.stat().st_size
+            except (OSError, RuntimeError, ValueError):
+                if relative_hint in selected:
+                    diagnostics.append(f"skipped unsafe or unreadable path: {relative_hint}")
+                continue
+            if size > limits.max_file_bytes:
+                if relative_hint in selected:
+                    diagnostics.append(
+                        f"skipped oversized file: {relative_hint} ({size} bytes)"
+                    )
+                continue
+            if len(catalog) >= limits.max_files:
+                diagnostics.append("repository catalog limit reached; dependency scope truncated")
+                catalog_full = True
+                break
+            catalog.append(relative_hint)
+            if relative_hint not in selected:
+                continue
+            if total + size > limits.max_total_bytes:
+                diagnostics.append("active repository scope byte limit reached")
+                continue
+            try:
+                raw = resolved.read_bytes()
+                text = raw.decode("utf-8", errors="surrogateescape")
+            except OSError as exc:
+                diagnostics.append(f"failed to read {relative_hint}: {type(exc).__name__}")
+                continue
+            if "\x00" in text:
+                continue
+            language = language_for_source(relative_hint, text) or path_language
+            if language is None:
+                if not _looks_like_source(relative_hint, text):
+                    continue
+                language = "unknown"
+            source_sha256 = hashlib.sha256(raw).hexdigest()
+            item = load_cached(relative_hint, source_sha256) if load_cached else None
+            if item is None:
+                if language == "python":
+                    item = _parse_python(relative_hint, text, raw)
+                else:
+                    item = _parse_parser_backed(relative_hint, text, raw, language)
+                if store_cached:
+                    store_cached(relative_hint, source_sha256, item)
+            remaining = max(0, limits.max_symbols - symbol_count)
+            if len(item.symbols) > remaining:
+                item.symbols[:] = item.symbols[:remaining]
+                diagnostics.append("symbol limit reached; remaining symbols omitted")
+            symbol_count += len(item.symbols)
+            parsed[relative_hint] = item
+            total += size
+        if catalog_full:
+            break
+
+    missing = selected - set(parsed)
+    for path in sorted(missing):
+        diagnostics.append(f"active source path not indexed: {path}")
+    return dict(sorted(parsed.items())), tuple(sorted(catalog)), diagnostics

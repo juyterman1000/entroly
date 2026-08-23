@@ -414,6 +414,7 @@ bounded part of the master plan:
 | Section 24, product UX | `entroly-work resume --to-agent AGENT` and the matching MCP `work_resume(to_agent=...)` operation reconstruct unfinished work and return its continuation proof without asking users to manually assemble graph nodes, commitments or a handoff. Explicit handoff returns the same flagship proof. MCP also records canonical context, memory and execution-chain contracts through bounded host orchestration into Rust-owned validation/state transitions. |
 | Large dirty repositories | One observation accepts up to 16,384 complete file changes and atomically splits it into deterministic events of at most 512 changes. Consecutive identical passive polls collapse without history scans, while A-to-B-to-A remains auditable. Context scopes expose bounded inline prefixes plus total counts and commitments to complete path/evidence sets. |
 | Scenario G, active symbols and rename lineage | The production Python store enriches exact worktree content identity, incrementally indexes the repository, and atomically projects the active changed files, their symbols, and one-hop import boundary into the Rust-owned Work Graph. `WorkScope` exposes bounded symbol IDs with total counts and full-set commitments. A rename records the new file as superseding the old file, preserves `renamed_to` lineage on the old node, keeps only the active new path in `changed_paths`, and exposes the current symbol rather than a stale predecessor. The persisted repository node carries the projection bounds, and a passive observation plus its scope projection is one idempotent poll group across export/import while A-to-B-to-A remains auditable. Direct Python and npm store updates now derive content digests themselves instead of depending on CLI/MCP wrappers. |
+| Scenario N, measured scale | The executable release gate now measures the full 2,000-file index, one-file active incremental index, bounded symbol/dependency projection, Rust event apply/rebuild/resume/context/coordination, PyO3 summary serialization, eight-way durable-store contention, passive-poll amplification and state size. Production active projection catalogues dependency targets without reading/parsing unchanged source. On the recorded Windows Python 3.10 run, the one-file path improved from 32,970.3747 ms to 804.6548 ms while cataloguing all 2,000 paths and parsing exactly one changed file; eight writers preserved all eight events in 323.8932 ms. |
 | Scenario O, generated/vendor trees | Repository source discovery excludes VCS/cache/venv, `node_modules`, `vendor`, `dist`, `build`, Rust `target` and bytecode trees before file-budget accounting. A gauntlet fixture places 150 generated Python files across those trees under a two-file limit and still indexes exactly the two first-party source/test files without truncation. |
 | Scenario P, Python/Node convergence | One end-to-end test uses the real PyO3 and WASM stores against the same repository/state root: Python writes, Node verifies the exact prior commitment and appends a leased continuation, then Python reloads the Node commitment and byte-identical canonical export. The exact-head WASM CI job builds both runtimes and runs this test. |
 
@@ -439,17 +440,17 @@ normal-user product claim.
 
 ## 25. Local validation evidence for the PR #357 continuation
 
-The product tests below cover commit `77e7106c`; the clean-install rows were run
-against locally built 1.0.79 artifacts from the same implementation lineage:
+The product tests below cover the current PR #357 implementation lineage; the
+clean-install rows were run against locally built 1.0.79 artifacts:
 
 | Surface | Result |
 |---|---|
 | Python full source suite | Pre-scale closure baseline: `4085 passed, 33 skipped, 3 xfailed`; post-scale focused Work Graph/performance suites pass and a final exact-head full rerun remains required |
-| Rust engine | `562 passed` with all features; Clippy clean with warnings denied |
+| Rust engine | `564 passed` with all features; Clippy clean with warnings denied |
 | PyO3 core | `112 passed, 5 ignored`, plus one doc test; Clippy clean |
 | WASM crate | `12 passed`; Clippy clean |
 | npm package | Full npm suite passed, including 42 E2E cases, WorkGraph persistence, parity, root exports and interrupted continuity |
-| Measured scale gate | Installed PyO3 path, 2,000-file initial observation plus 500 edits and 100 timestamp-changing passive polls: 504 events, zero poll growth, 0.7942 ms p95 append, 93.5014 ms import rebuild, 5,531,773-byte state; scope accounted for all 2,000 paths and 3,502 evidence IDs through bounded prefixes and full-set commitments |
+| Measured scale gate | Current Python source plus installed exact-head PyO3 core, 2,000-file initial observation/index plus 500 edits and 100 timestamp-changing passive polls: 504 events, zero poll growth, 1.5231 ms p95 append, 91.1969 ms import rebuild, 55.2266 ms resume, 16.0257 ms PyO3 summary p95, 27,649.8125 ms cold full index, 804.6548 ms one-file active incremental index, 6.2852 ms symbol projection, 323.8932 ms for eight contended durable writes, and a 5,531,773-byte state. Scope accounted for all 2,000 paths and 3,502 evidence IDs through bounded prefixes and full-set commitments. |
 | Python clean install | Built `entroly-core` 1.0.79 and `entroly` 1.0.79 wheels, installed them in an isolated Python 3.10 environment, verified native readiness and WorkGraph construction; `pip check` reported no broken requirements |
 | npm clean install | Packed and installed the local npm tarball, loaded `entroly-wasm` 1.0.79, constructed WorkGraph and resolved every new package-root contract helper |
 | Ownership | 1,638 tracked/non-ignored repository files classified, zero unknown ownership; local `.codex/` task state excluded |

@@ -11,6 +11,7 @@ import hashlib
 import math
 import os
 import socket
+import stat
 import tempfile
 import time
 import uuid
@@ -166,14 +167,17 @@ class WorkGraphStore:
 
     def _stale_lock(self) -> bool:
         try:
-            stat = self.lock_path.lstat()
+            lock_stat = self.lock_path.lstat()
         except FileNotFoundError:
             return False
         except OSError:
             return False
-        if self.lock_path.is_symlink() or not self.lock_path.is_file():
+        # Validate the captured lstat result. Re-querying with is_symlink() and
+        # is_file() races a normal owner unlinking the lock between calls and
+        # can turn a safe release into a spurious unsafe-path failure.
+        if stat.S_ISLNK(lock_stat.st_mode) or not stat.S_ISREG(lock_stat.st_mode):
             raise WorkGraphStateError(f"unsafe Work Graph lock path: {self.lock_path}")
-        first = stat.st_mtime
+        first = lock_stat.st_mtime
         if self._filesystem_now() - first < self.stale_lock_seconds:
             return False
         time.sleep(DEFAULT_LOCK_SETTLE_SECONDS)
@@ -361,10 +365,11 @@ class WorkGraphStore:
             return None
 
         from .repository_intelligence.graph_projection import project_repository_scope
-        from .repository_intelligence.incremental import build_repository_index_incremental
+        from .repository_intelligence.incremental import build_repository_scope_incremental
 
-        index = build_repository_index_incremental(
+        index = build_repository_scope_incremental(
             repository_path,
+            active_paths,
             cache_dir=self.repo_dir / "repository-intelligence",
         )
         records = [index.files[path] for path in active_paths if path in index.files]
