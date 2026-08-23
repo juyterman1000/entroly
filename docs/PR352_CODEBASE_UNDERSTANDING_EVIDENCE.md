@@ -378,3 +378,37 @@ cache semantic-index slot growth (G25) and the SAST line-prefix leakage (G29),
 all three of which section 22 re-checked against the shipping code. It does not
 claim the seven findings section 22 lists as open, which is the correct
 disposition for them; section 22 supplies the record they would otherwise lack.
+
+---
+
+## 24. PR #357 focused closure against the master plan
+
+Section 22 is intentionally a snapshot of `f734516a`; its findings must not be
+read as the state of the later audit branch. PR #357 closes the following
+bounded part of the master plan:
+
+| Master-plan item | Exact closure in PR #357 |
+|---|---|
+| P0 exact-head truth | CI and Deep Dogfood now run for `integration/**` pull requests. Candidate CI builds and installs the exact-head native core. The dependency audit excludes only the two local exact-head project artifacts (`entroly` and `entroly-core`) while continuing to audit the complete pinned third-party environment. |
+| Section 8, ContextReceipt | Rust owns canonical construction, bounds, serialization, identity/commitment and verification. PyO3 and WASM are adapters, with Python and npm golden/parity/tamper tests. |
+| Section 9, RecoveryHandle | Rust owns recoverability and integrity semantics. Python and npm exercise the same golden contract and fail-closed verification behavior. |
+| Section 10, MemoryRecord | Rust owns provenance, evidence/trust/freshness admissibility, supersession/contradiction semantics, canonical identity and verified parsing. Verified memory requires evidence; incomplete producer provenance, empty commitments, invalid replay time and self-recommitted invalid payloads fail closed. Python and npm parity tests use the package delivery surfaces. |
+| Section 12, G19 | Cache utility is expressed in dollars: tokens times dollars-per-token plus latency milliseconds times an explicit dollars-per-millisecond coefficient. Configured model prices drive eviction; the legacy serialized estimate cannot override them. |
+| Section 12, G21 | The production mechanism is documented and tested as deterministic Beta-posterior scoring. The public compatibility name remains, but the false stochastic/Thompson-sampling claim is removed rather than adding ornamental randomness. |
+| Section 12, G23 | The write-only generation state and false lazy-heap path are removed. Victim selection is an explicit deterministic direct scan, with the bounded tradeoff named and tested instead of claiming an unmeasured optimization. |
+| Section 12, G24 | The trained hit predictor is now consulted by production admission, combined with posterior and normalized cost signals, and a regression test proves that its prediction can change the decision. |
+| Section 13, G26/G27/G31 | Taint propagation uses identifier boundaries (including non-ASCII-safe traversal), Python docstrings are excluded as documentation rather than executable code, and Kubernetes manifests reach the Kubernetes rule set. |
+| Section 23, parity | ContextReceipt, RecoveryHandle and MemoryRecord have Rust golden anchors exercised through PyO3/Python and the npm package root/WASM surface, including errors and tampering. |
+
+This is not a declaration that the entire P0-P10 roadmap is complete. In
+particular, this focused PR does **not** claim final closure for canonical
+`RoutingDecision`/`ModelExecutionOutcome`, transitive temporal-evidence
+freshness, the full Work-to-Context-to-Execution-to-Trust loop, a first-class
+`WorkContinuationProof`, outcome intelligence or deterministic replay bundles.
+The repository already contains substantial continuity, concurrency, tamper,
+rename and stale-checkpoint coverage, but that is not the same as a measured,
+real-vendor certification of every Section 18 scenario A-J. Those items remain
+open until direct code, consumer and evaluation evidence closes them.
+
+The release rule remains unchanged: only checks attached to the final head can
+certify it; skipped, missing, stale and older-head results do not count as pass.
