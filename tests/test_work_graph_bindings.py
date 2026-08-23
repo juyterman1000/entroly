@@ -130,7 +130,7 @@ def test_missing_native_binding_has_actionable_install_guidance(monkeypatch) -> 
 def test_public_work_graph_records_execution_chain_and_seals_continuation(
     tmp_path: Path,
 ) -> None:
-    import entroly_core
+    entroly_core = pytest.importorskip("entroly_core")
     from entroly.work_graph_store import WorkGraphStore
 
     graph = _graph()
