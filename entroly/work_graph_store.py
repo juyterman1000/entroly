@@ -222,6 +222,24 @@ class WorkGraphStore:
             fd = os.open(self.lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
         except FileExistsError:
             return False
+        except PermissionError as exc:
+            # Windows reports a contended lock as PermissionError, not
+            # FileExistsError. Releasing is `lock_path.unlink()`, and unlinking a
+            # name that still has an open handle leaves it *delete-pending*:
+            # O_CREAT|O_EXCL against a delete-pending name fails EACCES. Since
+            # PermissionError subclasses OSError rather than FileExistsError, the
+            # clause below turned an ordinary release/acquire overlap into a hard
+            # failure. `scripts/work_graph_soak.py` measured 281 of them against
+            # 475 writes in 120s across seven processes; the two-process race in
+            # `tests/test_work_graph_multiprocess.py` cannot reach it, because it
+            # takes one lock each and never overlaps a release.
+            #
+            # Contention, not failure: retry like any other contended acquire.
+            # POSIX does not reach this branch for contention, so it stays a hard
+            # error there -- a genuine permission problem must not spin.
+            if os.name == "nt":
+                return False
+            raise WorkGraphStoreError(f"cannot acquire Work Graph lock: {exc}") from exc
         except OSError as exc:
             raise WorkGraphStoreError(f"cannot acquire Work Graph lock: {exc}") from exc
         try:
