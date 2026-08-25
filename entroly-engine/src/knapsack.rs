@@ -433,7 +433,24 @@ fn soft_bisection_select(
         })
         .collect();
 
-    with_probs.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    // Ties break on fragment id, and the score comparison is a total order.
+    //
+    // `sort_unstable_by` does not preserve input order for equal elements, and
+    // `partial_cmp(..).unwrap_or(Equal)` reported every tie -- and every NaN --
+    // as equal. So when two fragments scored identically and only one fit in
+    // the remaining budget, which one survived was decided by the sort's
+    // partitioning of whatever order the input arrived in, not by this
+    // algorithm. Two processes could then select differently from identical
+    // input: `scripts/onboarding_self_dogfood.py` caught exactly that, reporting
+    // total_tokens_saved 85459 against 85453 for one repository, one budget and
+    // one code path. Six tokens is one boundary fragment.
+    //
+    // `total_cmp` also removes the NaN-equals-everything case, which made the
+    // comparator non-transitive and left the resulting order unspecified.
+    with_probs.sort_unstable_by(|a, b| {
+        b.1.total_cmp(&a.1)
+            .then_with(|| fragments[a.0].fragment_id.cmp(&fragments[b.0].fragment_id))
+    });
 
     // Hard budget enforcement via greedy fill.
     let mut selected = Vec::with_capacity(with_probs.len());
@@ -571,7 +588,13 @@ fn knapsack_greedy(
         .iter()
         .map(|&(idx, rel)| (idx, rel / fragments[idx].token_count.max(1) as f64))
         .collect();
-    density.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    // Total order, ties broken on fragment id -- see the note in
+    // `knapsack_soft_bisection`. Density ties are more likely here, not less:
+    // equal-relevance fragments of equal length produce byte-identical ratios.
+    density.sort_unstable_by(|a, b| {
+        b.1.total_cmp(&a.1)
+            .then_with(|| fragments[a.0].fragment_id.cmp(&fragments[b.0].fragment_id))
+    });
 
     let mut selected = Vec::new();
     let mut remaining = budget;
@@ -622,6 +645,96 @@ mod tests {
 
     fn no_feedback() -> HashMap<String, f64> {
         HashMap::new()
+    }
+
+
+    /// Selection must not depend on the order the caller supplied fragments in.
+    ///
+    /// The selection sorts compared a float score with no secondary key, so
+    /// equally-scored fragments were left in whatever relative order the sort
+    /// happened to produce from the incoming sequence. That makes the result a
+    /// function of input order, and input order is not a constant: upstream
+    /// assembles candidates through maps and merges whose iteration order Rust
+    /// seeds per process. `scripts/onboarding_self_dogfood.py` observed the
+    /// consequence -- total_tokens_saved 85459 against 85453 for one
+    /// repository, one budget and one code path. Six tokens is one boundary
+    /// fragment changing sides.
+    ///
+    /// Every fragment here scores and costs identically, so the budget boundary
+    /// is decided purely by the tie-break. Breaking on `fragment_id` rather than
+    /// on position makes the outcome invariant to permutation, which is the
+    /// property that actually holds across processes.
+    #[test]
+    fn selection_is_invariant_to_input_order_when_scores_tie() {
+        let mk = |id: usize| {
+            let mut f = ContextFragment::new(
+                format!("frag-{id:02}"),
+                "identical content".into(),
+                100,
+                "".into(),
+            );
+            // Identical on every scoring axis: guarantees an exact tie.
+            f.recency_score = 0.5;
+            f.frequency_score = 0.5;
+            f.semantic_score = 0.5;
+            f.entropy_score = 0.5;
+            f
+        };
+
+        let weights = ScoringWeights::default();
+        let budget = 1000; // exactly ten of twenty-four fragments fit
+
+        // Soft bisection only. The exact DP below 0.05 reconstructs its
+        // selection by walking the table, so among equal-value items it keeps
+        // whichever the table reached first -- a positional choice this fix
+        // does not touch and cannot claim. Asserting invariance there would be
+        // asserting a property the code does not have.
+        for temperature in [0.5_f64] {
+            let ascending: Vec<ContextFragment> = (0..24).map(mk).collect();
+            let baseline = knapsack_optimize(
+                &ascending,
+                budget,
+                &weights,
+                &no_feedback(),
+                temperature,
+            );
+            let mut expected: Vec<String> = baseline
+                .selected_indices
+                .iter()
+                .map(|&i| ascending[i].fragment_id.clone())
+                .collect();
+            expected.sort();
+            assert_eq!(expected.len(), 10, "budget must bind at ten fragments");
+
+            // Same set of fragments, different orders. A deterministic selector
+            // must choose the same fragments every time.
+            let permutations: [Vec<usize>; 3] = [
+                (0..24).rev().collect(),
+                (0..24).map(|i| (i * 7) % 24).collect(),
+                (0..24).map(|i| (i * 5 + 3) % 24).collect(),
+            ];
+            for perm in permutations {
+                let shuffled: Vec<ContextFragment> = perm.iter().map(|&i| mk(i)).collect();
+                let got = knapsack_optimize(
+                    &shuffled,
+                    budget,
+                    &weights,
+                    &no_feedback(),
+                    temperature,
+                );
+                let mut ids: Vec<String> = got
+                    .selected_indices
+                    .iter()
+                    .map(|&i| shuffled[i].fragment_id.clone())
+                    .collect();
+                ids.sort();
+                assert_eq!(
+                    ids, expected,
+                    "input order changed the selection (temperature {temperature})"
+                );
+                assert_eq!(got.total_tokens, baseline.total_tokens);
+            }
+        }
     }
 
     #[test]
