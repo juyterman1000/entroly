@@ -856,20 +856,41 @@ def cmd_health(args):
 
 
 def cmd_autotune(args):
-    """entroly autotune — optimize engine hyperparameters."""
+    """entroly autotune — optimize engine hyperparameters.
+
+    Writes only to the resolved Entroly data directory, and only when a
+    mutation actually beat the baseline.
+
+    Previously it resolved ``Path(dirname(__file__)).parent / "bench" /
+    "tuning_config.json"`` -- the installed package (or the source checkout)
+    rather than the user's data directory -- then printed the *relative* string
+    ``bench/tuning_config.json``, which resolves to nothing from the directory
+    the user ran the command in. It also called ``save_config`` unconditionally,
+    so a run reporting "0/3 improvements kept" and an unchanged score still left
+    a file behind. Measured: a 3-iteration run created
+    ``<checkout>/bench/tuning_config.json`` and nothing under ``ENTROLY_DIR``.
+    """
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "bench"))
+
+    # Both branches target the same file: the project-scoped config under the
+    # resolved Entroly data directory. This is also the path the runtime loader
+    # reads first (`entroly.config.tuning_config_candidates`), so an autotuned
+    # config now actually takes effect -- `bench/tuning_config.json` is only a
+    # last-resort development fallback there.
+    config_path = _writable_tuning_config_path()
 
     # Handle --rollback
     if getattr(args, "rollback", False):
         print(f"\n{C.CYAN}{C.BOLD}  Entroly Autotune -- Rollback{C.RESET}\n")
         try:
             from bench.autotune import rollback_config
-            config_path = Path(os.path.dirname(__file__)).parent / "bench" / "tuning_config.json"
             result = rollback_config(config_path)
             if result["status"] == "no_backup_found":
-                print(f"  {C.RED}No backup found -- nothing to roll back.{C.RESET}\n")
+                print(f"  {C.RED}No backup found -- nothing to roll back.{C.RESET}")
+                print(f"  {C.GRAY}Looked next to: {config_path}{C.RESET}\n")
                 return 1
             print(f"  {C.GREEN}Restored from:{C.RESET} {result['restored_from']}")
+            print(f"  {C.GREEN}Active config:{C.RESET} {config_path}")
             print(f"  {C.GREEN}{C.BOLD}Rollback complete.{C.RESET} Previous config is now active.\n")
             return 0
         except ImportError:
@@ -881,14 +902,39 @@ def cmd_autotune(args):
     print(f"  {C.GRAY}Running {args.iterations} iterations of mutation-based optimization...{C.RESET}\n")
 
     try:
-        from bench.autotune import autotune
-        result = autotune(iterations=args.iterations)
+        from bench.autotune import autotune, save_config, snapshot_config
+
+        # Search in a scratch copy so the tuning loop's own bookkeeping writes
+        # (baseline repair, per-improvement saves, its snapshot) never touch the
+        # user's active config. Only a measured improvement is promoted.
+        with tempfile.TemporaryDirectory(prefix="entroly-autotune-") as _staging:
+            staging_path = Path(_staging) / "tuning_config.json"
+            if config_path.exists():
+                shutil.copyfile(config_path, staging_path)
+            result = autotune(iterations=args.iterations, config_path=staging_path)
+            improvements = int(result.get("improvements", 0) or 0)
+            if improvements > 0:
+                config_path.parent.mkdir(parents=True, exist_ok=True)
+                backup = snapshot_config(config_path)
+                save_config(json.loads(staging_path.read_text(encoding="utf-8")), config_path)
+            else:
+                backup = None
+
         # composite_score = 0.50·recall + 0.25·precision + 0.25·context_efficiency
         # on bench/cases.json. Range [0, 1]; higher is better.
         print(f"\n  {C.GREEN}{C.BOLD}Best composite score: {result.get('final_score', 0):.4f} / 1.0{C.RESET}")
         print(f"  {C.GRAY}= 0.50·recall + 0.25·precision + 0.25·efficiency on bench/cases.json{C.RESET}")
-        print(f"  {C.GRAY}Config saved to bench/tuning_config.json{C.RESET}")
-        print(f"  {C.GRAY}To undo: entroly autotune --rollback{C.RESET}\n")
+        if improvements > 0:
+            print(f"  {C.GREEN}Config written:{C.RESET} {config_path}")
+            if backup:
+                print(f"  {C.GRAY}Previous config backed up to {backup}{C.RESET}")
+            print(f"  {C.GRAY}To undo: entroly autotune --rollback{C.RESET}\n")
+        else:
+            print(
+                f"  {C.YELLOW}No config written.{C.RESET}{C.GRAY} "
+                f"0/{result.get('iterations', args.iterations)} mutations beat the "
+                f"baseline, so {config_path} is unchanged.{C.RESET}\n"
+            )
         return 0
     except ImportError:
         # The bench/ harness (autotune.py, cases.json) is a development tool and
@@ -1156,27 +1202,52 @@ def cmd_benchmark(args):
     # capped at what actually exists. Claiming savings vs. the whole repo
     # (7M+ tokens) is marketing, not measurement.
     baseline = min(total, 32_000)
+    # Name the baseline that was actually used. `min(total, 32_000)` is the 32K
+    # dump only on repositories bigger than 32K; on everything smaller it is the
+    # repo total, and the fixed "vs. 32K dump" label reported a comparison that
+    # never happened -- a 4,520-token fixture was scored against 4,520 tokens
+    # while the headline claimed 32,000.
+    baseline_label = "32K dump" if baseline >= 32_000 else f"repo total, {baseline:,} tokens"
     budget = getattr(args, "budget", 4096)
     compare_baseline = getattr(args, "compare_baseline", False)
-    print(f"  Codebase: {total:,} total tokens  |  Naive baseline: {baseline:,} tokens (32K dump or repo total)\n")
+    print(f"  Codebase: {total:,} total tokens  |  Naive baseline: {baseline:,} tokens ({baseline_label})\n")
     if compare_baseline:
-        print(f"  {C.GRAY}Comparing current selector output against the deterministic 32K baseline.{C.RESET}\n")
+        print(f"  {C.GRAY}Comparing current selector output against the deterministic {baseline:,}-token baseline.{C.RESET}\n")
     print(f"  {'Query':<45} {'Baseline':>9} {'Entroly':>8} {'Saved':>6}")
     print(f"  {'-'*45} {'-'*9} {'-'*8} {'-'*6}")
 
     total_saved = 0
+    empty_selections = 0
+    empty_reason = ""
     for q in queries:
         engine.advance_turn()
         opt = engine.optimize_context(token_budget=budget, query=q)
         selected = opt.get("selected_fragments", []) or opt.get("selected", [])
         used = sum(f.get("token_count", 0) for f in selected)
-        saved = max(baseline - used, 0)
+        # Returning nothing is not the optimum. `max(baseline - used, 0)` scored
+        # an empty selection as a full saving, so three queries that each
+        # selected 0 tokens headlined "100%". Withholding all context saves no
+        # tokens the user asked to spend -- it fails to answer. Same rule as
+        # `verify_claims` and `_run_local_simulation`: no selection, no credit.
+        saved = max(baseline - used, 0) if selected else 0
         pct = (saved * 100) // max(baseline, 1)
         total_saved += saved
-        print(f"  {q:<45} {baseline:>9,} {used:>7,} {pct:>5}%")
+        note = ""
+        if not selected:
+            empty_selections += 1
+            note = f"  {C.YELLOW}no context selected{C.RESET}"
+            if not empty_reason:
+                empty_reason = str((opt.get("no_match") or {}).get("reason") or "")
+        print(f"  {q:<45} {baseline:>9,} {used:>7,} {pct:>5}%{note}")
 
     avg_pct = (total_saved * 100) // max(baseline * len(queries), 1)
-    print(f"\n  {C.GREEN}{C.BOLD}Average reduction vs. 32K dump: {avg_pct}%{C.RESET}")
+    print(f"\n  {C.GREEN}{C.BOLD}Average reduction vs. {baseline_label}: {avg_pct}%{C.RESET}")
+    if empty_selections:
+        reason = empty_reason or "the selector returned no fragments"
+        print(
+            f"  {C.YELLOW}{empty_selections}/{len(queries)} queries selected no context "
+            f"and are scored 0%{C.RESET}{C.GRAY} -- {reason}.{C.RESET}"
+        )
     print(f"  {C.GRAY}Budget: {budget:,} tokens. Selector picks whole fragments; no byte-truncation.{C.RESET}\n")
 
 
@@ -3475,6 +3546,14 @@ def cmd_share(args):
     BUDGET = 4096
     BUDGET_RELAXED = 8192  # 2× for stability measurement
     BASELINE_PER_QUERY = min(total_tokens_raw, 32_000)
+    # `min(..., 32_000)` is a 32K dump only above 32K. Below it the baseline is
+    # the repository itself, and the hardcoded "32K baseline" labels priced a
+    # 4,520-token comparison as if it had been 32,000 -- off by 7x on the dollar
+    # figure the report card leads with.
+    BASELINE_LABEL = (
+        "32K dump" if BASELINE_PER_QUERY >= 32_000
+        else f"repo total, {BASELINE_PER_QUERY:,} tokens"
+    )
 
     # --- Context Score: geometric mean of three defined quantities per query ---
     # Stability(q) = Jaccard(selection@B, selection@2B). A well-ordered selector
@@ -3519,7 +3598,11 @@ def cmd_share(args):
         sel_2b = opt_2b.get("selected_fragments", [])
 
         tokens_used = sum(f.get("token_count", 0) for f in sel_b)
-        saved = max(0, BASELINE_PER_QUERY - tokens_used)
+        # Same rule as `benchmark` and `verify_claims`: an empty selection is
+        # not a full saving. Without the guard, a repository whose vocabulary
+        # misses all three probe queries printed "100% smaller" and a dollar
+        # figure for having returned nothing at all.
+        saved = max(0, BASELINE_PER_QUERY - tokens_used) if sel_b else 0
         total_saved += saved
         pct = (saved * 100) // max(BASELINE_PER_QUERY, 1)
 
@@ -3536,10 +3619,27 @@ def cmd_share(args):
 
     avg_pct = (total_saved * 100) // max(BASELINE_PER_QUERY * len(sample_queries), 1)
 
-    # Geometric mean. A single 0 on any axis zeros the score — by design.
+    # Geometric mean over every PER-QUERY factor. A single 0 on any axis zeros
+    # the score — by design, and mathematically identical to the geometric mean
+    # itself (log 0 = -inf).
+    #
+    # What was not by design: the report card printed the formula as
+    # "(stab·cov·respect)^⅓" directly above the three *averaged* components, so
+    # a reader was invited to recompute it and got a different answer. Measured:
+    # stability 1.00, coverage 0.12, respect 1.00 printed next to a score of 0,
+    # where (1.00·0.12·1.00)^⅓ = 49. The averages hide that one query scored 0
+    # on an axis. The zeroing rule is now named in the output, with the axis and
+    # the query count that triggered it, so the printed number is derivable from
+    # the printed evidence.
     import math as _math
+    _AXES = (("stability", stabilities), ("coverage", coverages), ("respect", respects))
     factors = stabilities + coverages + respects
-    if any(f <= 0 for f in factors):
+    zeroed_axes = [
+        (name, sum(1 for v in values if v <= 0))
+        for name, values in _AXES
+        if any(v <= 0 for v in values)
+    ]
+    if zeroed_axes:
         context_score = 0
     else:
         log_sum = sum(_math.log(f) for f in factors)
@@ -3583,6 +3683,7 @@ def cmd_share(args):
         lifetime_tokens=lifetime_tokens,
         lifetime_cost=lifetime_cost,
         lifetime_requests=lifetime_requests,
+        baseline_label=BASELINE_LABEL,
     )
 
     out_path = Path(args.output) if hasattr(args, "output") and args.output else Path("entroly-report.html")
@@ -3590,19 +3691,35 @@ def cmd_share(args):
         out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(html, encoding="utf-8")
 
+    n_q = len(sample_queries)
     print(f"\n  {C.GREEN}{C.BOLD}Context Report Card{C.RESET}")
     print("  ┌─────────────────────────────────────────────────────┐")
     print(f"  │  {C.BOLD}PROJECT:{C.RESET}  {project_name:<42s}│")
     print(f"  │  {C.BOLD}CONTEXT SCORE:{C.RESET}  {C.GREEN}{context_score}/100{C.RESET}  "
-          f"{C.GRAY}(stab·cov·respect)^⅓{C.RESET}      │")
-    print(f"  │    {C.GRAY}stability {avg_stability:.2f}  coverage {avg_coverage:.2f}  respect {avg_respect:.2f}{C.RESET}   │")
+          f"{C.GRAY}(∏ over {n_q} queries of stab·cov·respect)^(1/{3 * n_q}){C.RESET}")
+    print(f"  │    {C.GRAY}mean stability {avg_stability:.2f}  coverage {avg_coverage:.2f}  respect {avg_respect:.2f}{C.RESET}")
+    if zeroed_axes:
+        detail = ", ".join(f"{name} = 0 on {n} of {n_q}" for name, n in zeroed_axes)
+        print(f"  │    {C.YELLOW}score forced to 0:{C.RESET} {detail}")
+        print(f"  │    {C.GRAY}any single per-query factor of 0 zeroes the product; the")
+        print(f"  │    {C.GRAY}means above are not enough to recompute the score.{C.RESET}")
     print(f"  │  {C.BOLD}PER-QUERY:{C.RESET}  ~{avg_selected_frags} frags, {avg_tokens_used:,} tokens (from {files_indexed:,} files)")
-    print(f"  │  {C.BOLD}TOKENS vs 32K DUMP:{C.RESET}  {C.GREEN}{avg_pct}%{C.RESET} smaller")
-    print(f"  │  {C.BOLD}MODELED / QUERY:{C.RESET}  {C.GREEN}${per_query_savings_usd:.4f}{C.RESET} (32K baseline, GPT-4o rate)   │")
+    print(f"  │  {C.BOLD}TOKENS vs BASELINE:{C.RESET}  {C.GREEN}{avg_pct}%{C.RESET} smaller ({BASELINE_LABEL})")
+    print(f"  │  {C.BOLD}MODELED / QUERY:{C.RESET}  {C.GREEN}${per_query_savings_usd:.4f}{C.RESET} ({BASELINE_LABEL}, GPT-4o rate)")
     print("  └─────────────────────────────────────────────────────┘")
     print(f"\n  {C.GREEN}Report saved:{C.RESET} {out_path.resolve()}")
-    print(f"\n  {C.CYAN}Share it!{C.RESET} Post your Context Score on Twitter/LinkedIn.")
-    print(f"  {C.GRAY}\"My codebase scores {context_score}/100 on Entroly. What's yours?\"{C.RESET}\n")
+    # Do not ask a user to publish a number the same screen just contradicted.
+    # A zeroed score means at least one axis measured 0 on at least one query;
+    # that is a diagnostic, not a boast.
+    if context_score > 0:
+        print(f"\n  {C.CYAN}Share it!{C.RESET} Post your Context Score on Twitter/LinkedIn.")
+        print(f"  {C.GRAY}\"My codebase scores {context_score}/100 on Entroly. What's yours?\"{C.RESET}\n")
+    else:
+        print(
+            f"\n  {C.YELLOW}Not ready to share.{C.RESET}{C.GRAY} A 0 means an axis "
+            f"measured 0 on at least one probe query -- fix that before "
+            f"publishing the score.{C.RESET}\n"
+        )
 
 
 def _generate_report_html(
@@ -3621,8 +3738,14 @@ def _generate_report_html(
     lifetime_tokens: int = 0,
     lifetime_cost: float = 0.0,
     lifetime_requests: int = 0,
+    baseline_label: str = "32K dump",
 ) -> str:
-    """Generate a beautiful, shareable HTML report card."""
+    """Generate a beautiful, shareable HTML report card.
+
+    ``baseline_label`` names the baseline the percentages and the dollar figure
+    were actually computed against. The template used to hardcode "32K", which
+    was only true on repositories larger than 32,000 tokens.
+    """
     # Build query rows
     query_rows = ""
     for qr in query_results:
@@ -3652,7 +3775,7 @@ def _generate_report_html(
 <title>Entroly Context Report — {project_name}</title>
 <meta name="description" content="{project_name} scores {context_score}/100 on Entroly Context Score. {avg_reduction}% token reduction, {files:,} files optimized.">
 <meta property="og:title" content="{project_name} — Context Score {context_score}/100">
-<meta property="og:description" content="{avg_reduction}% smaller than a 32K naive dump. {files:,} files indexed, ~{avg_selected_frags} selected per query. Powered by Entroly.">
+<meta property="og:description" content="{avg_reduction}% smaller than a naive dump ({baseline_label}). {files:,} files indexed, ~{avg_selected_frags} selected per query. Powered by Entroly.">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="{project_name} — Context Score {context_score}/100 | Entroly">
@@ -3722,11 +3845,11 @@ body{{background:#09090b;color:#fafafa;font-family:'Inter',system-ui,sans-serif;
     </div>
     <div class="stat">
       <div class="stat-val">{avg_tokens_used:,}</div>
-      <div class="stat-label">Tokens / Query<br><span style="font-size:10px;text-transform:none">{avg_reduction}% &lt; 32K dump</span></div>
+      <div class="stat-label">Tokens / Query<br><span style="font-size:10px;text-transform:none">{avg_reduction}% &lt; baseline ({baseline_label})</span></div>
     </div>
     <div class="stat">
       <div class="stat-val">${per_query_savings_usd:.4f}</div>
-      <div class="stat-label">Modeled / Query<br><span style="font-size:10px;text-transform:none">32K baseline · GPT-4o rate</span></div>
+      <div class="stat-label">Modeled / Query<br><span style="font-size:10px;text-transform:none">{baseline_label} · GPT-4o rate</span></div>
     </div>
   </div>
 

@@ -266,6 +266,49 @@ def _run_memory_cli() -> None:
     sys.exit(int(rc or 0))
 
 
+def _native_engine_installed() -> bool:
+    """Report whether a usable native ``entroly_core`` is already importable."""
+    try:
+        from entroly.native_status import native_status  # noqa: PLC0415
+
+        return bool(native_status().ok)
+    except Exception:
+        return False
+
+
+def _docker_unavailable_message() -> str:
+    """Explain the Docker outage without prescribing an install already done.
+
+    The previous text listed three options of which two printed a byte-identical
+    command (``ENTROLY_NO_DOCKER=1 entroly serve``), and the one difference
+    between them -- "install the native Rust engine" -- was printed
+    unconditionally, including on machines where ``entroly_core`` was already
+    loaded and healthy. Telling a user to install what they have is how a real
+    remedy stops being read.
+    """
+    lines = [
+        "[entroly] Docker is not running, and `entroly serve` uses Docker by default.",
+        "",
+        "Options:",
+        "  1. Start Docker Desktop (or the Docker daemon) and try again",
+    ]
+    if _native_engine_installed():
+        lines += [
+            "  2. Serve without Docker on the native engine already installed here:",
+            "       ENTROLY_NO_DOCKER=1 entroly serve",
+        ]
+    else:
+        lines += [
+            "  2. Serve without Docker on the pure-Python engine (slower, and",
+            "     query-conditioned retrieval is unavailable):",
+            "       ENTROLY_NO_DOCKER=1 entroly serve",
+            "  3. Install the native Rust engine first, then serve without Docker:",
+            '       pip install -U "entroly[native]"',
+            "       ENTROLY_NO_DOCKER=1 entroly serve",
+        ]
+    return "\n".join(lines) + "\n"
+
+
 def launch() -> None:
     """Main entry point — docker launch or native fallback.
 
@@ -285,16 +328,26 @@ def launch() -> None:
         _run_native()
         return
 
-    # --help/--version → show help without Docker
+    # `memory` is not a subcommand of the canonical CLI parser, so it owns its
+    # own `--help` and has to be routed before the help scan below.
+    if len(sys.argv) > 1 and sys.argv[1] == "memory":
+        _run_memory_cli()
+        return
+
+    # --help/--version → show help without Docker.
+    #
+    # Position matters here. This used to test only ``sys.argv[1]``, so
+    # ``entroly --help`` worked while ``entroly serve --help`` -- the one
+    # subcommand routed through Docker below -- fell through to the daemon
+    # probe and exited 1 with "Docker is not running". Asking a program how to
+    # use it must never depend on a container being up. None of the flags any
+    # subcommand accepts takes a value, so scanning the whole tail cannot
+    # swallow an argument that legitimately reads "--help".
     _help_flags = {"--help", "-h", "--version", "-V"}
-    if len(sys.argv) > 1 and sys.argv[1] in _help_flags:
+    if any(arg in _help_flags for arg in sys.argv[1:]):
         from entroly.cli import main as cli_main
 
         cli_main()
-        return
-
-    if len(sys.argv) > 1 and sys.argv[1] == "memory":
-        _run_memory_cli()
         return
 
     # The canonical CLI owns command discovery and validation. Routing every
@@ -313,19 +366,7 @@ def launch() -> None:
 
     # Check Docker is installed and running
     if not _docker_available():
-        print(
-            "[entroly] Docker is not running.\n"
-            "\n"
-            "Options:\n"
-            "  1. Start Docker Desktop (or the Docker daemon) and try again\n"
-            "  2. Install the native Rust engine:\n"
-            "       pip install entroly[native]\n"
-            "     Then run with:\n"
-            "       ENTROLY_NO_DOCKER=1 entroly serve\n"
-            "  3. Use the Python fallback engine (slower):\n"
-            "       ENTROLY_NO_DOCKER=1 entroly serve\n",
-            file=sys.stderr,
-        )
+        print(_docker_unavailable_message(), file=sys.stderr)
         sys.exit(1)
 
     # Pull the image matching the installed package (with TTL caching + retry)
