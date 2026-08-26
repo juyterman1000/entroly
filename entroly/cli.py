@@ -2986,7 +2986,14 @@ def _load_local_simulation_engine(max_files: int | None = None):
         if index["status"] == "indexed":
             return engine, index["files_indexed"], index["total_tokens"], index["status"]
         if index["status"] == "skipped":
-            files_indexed = index.get("existing_fragments", 0)
+            # `auto_index` already returns a real file count on the warm path.
+            # Substituting `existing_fragments` here discarded it for a
+            # fragment count, which is why the warm path could report more
+            # files than the repository holds. Fall back to the fragment count
+            # only if an older cache entry predates the file count.
+            files_indexed = index.get("files_indexed")
+            if not files_indexed:
+                files_indexed = index.get("existing_fragments", 0)
             if getattr(engine, "_use_rust", False):
                 stats = engine._rust.stats()
                 total_tokens = stats.get("session", {}).get("total_tokens_tracked", 0)
