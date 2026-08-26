@@ -149,6 +149,32 @@ def test_limits_are_explicit(tmp_path: Path) -> None:
     assert "repository limits reached; index truncated" in result.diagnostics
 
 
+def test_generated_and_vendor_trees_do_not_consume_source_graph_budget(
+    tmp_path: Path,
+) -> None:
+    """Scenario O keeps first-party source visible under generated-tree load."""
+    _write(tmp_path, "src/app.py", "def app():\n    return 1\n")
+    _write(tmp_path, "tests/test_app.py", "def test_app():\n    assert True\n")
+    ignored_roots = ("vendor", "node_modules", "dist", "build", "target", "__pycache__")
+    for root in ignored_roots:
+        for index in range(25):
+            _write(
+                tmp_path,
+                f"{root}/generated_{index:03}.py",
+                f"def generated_{index}():\n    return {index}\n",
+            )
+
+    result = build_repository_index(tmp_path, limits=RepositoryLimits(max_files=2))
+
+    assert set(result.files) == {"src/app.py", "tests/test_app.py"}
+    assert "repository limits reached; index truncated" not in result.diagnostics
+    assert all(
+        not path.startswith(f"{root}/")
+        for path in result.files
+        for root in ignored_roots
+    )
+
+
 def test_escaping_symlink_is_ignored(tmp_path: Path) -> None:
     outside = tmp_path.parent / f"{tmp_path.name}-outside.py"
     outside.write_text("def secret():\n    return 1\n", encoding="utf-8")

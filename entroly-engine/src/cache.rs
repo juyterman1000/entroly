@@ -2,13 +2,13 @@
 //!
 //! A benchmark-grade LLM response cache with five independently novel contributions:
 //!
-//!   1. **Thompson Sampling Admission** with adaptive Rényi order α —
-//!      stochastic admission via Beta posterior sampling, where the entropy
-//!      order α is learned online via gradient descent on hit-rate.
+//!   1. **Deterministic Beta-Posterior Admission** with adaptive Rényi order α.
+//!      Posterior confidence, entropy and a learned hit probability are combined
+//!      without ambient randomness so decisions can be replayed exactly.
 //!
-//!   2. **Cost-Aware Submodular Diversity Eviction** — lazy greedy evaluation
-//!      with time-decay and hybrid cost model: U = P(hit) × (recompute_cost +
-//!      latency_saved) − memory_cost. Matroid-aware cluster diversity.
+//!   2. **Cost-Aware Diversity Eviction** — exact value evaluation with
+//!      time-decay and a unit-consistent dollar model: U = P(hit) ×
+//!      (recompute_usd + latency_usd) − memory_usd.
 //!
 //!   3. **Causal DAG Transitive Invalidation** — reverse BFS through the
 //!      dependency graph with depth-weighted exponential decay. Cascade
@@ -29,7 +29,7 @@ use crate::dedup::{hamming_distance, simhash};
 use crate::lsh::LshIndex;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 
 // ═══════════════════════════════════════════════════════════════════════
 // Data Structures
@@ -107,7 +107,7 @@ impl CacheEntry {
             created_at: current_turn,
             last_hit_at: current_turn,
             tokens_saved: 0,
-            recompute_cost: response_tokens as f64 * 0.01, // default: $0.01/token
+            recompute_cost: response_tokens as f64 * CostModel::default().cost_per_token,
             cascade_count: 0,
             successes: 0,
             failures: 0,
@@ -139,12 +139,12 @@ impl CacheEntry {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// Contribution 1: Thompson Sampling + Adaptive α + Streaming Entropy
+// Contribution 1: Deterministic Beta Posterior + Adaptive α + Streaming Entropy
 // ═══════════════════════════════════════════════════════════════════════
 
 /// Hybrid cost model for cache utility estimation.
 ///
-/// U(entry) = P(hit) × (recompute_tokens × cost_per_token + latency_ms) − size_penalty
+/// U(entry) = P(hit) × (recompute_usd + latency_usd) − memory_usd
 ///
 /// This optimizes *real-world cost savings*, not abstract hit rate.
 /// Default pricing is GPT-4o output ($0.000015/token) — the most common
@@ -155,7 +155,12 @@ pub struct CostModel {
     pub cost_per_token: f64,
     /// Average latency saved per cache hit (ms). Default: 2000ms.
     pub latency_saved_ms: f64,
-    /// Memory cost per cached entry (normalized). Default: 0.001.
+    /// Explicit dollar value assigned to one millisecond of avoided latency.
+    /// Defaults to zero: latency is useful, but it is not money until an
+    /// operator supplies a conversion rate.
+    #[serde(default)]
+    pub latency_value_per_ms: f64,
+    /// Memory cost per cached entry (dollars). Default: $0.001.
     pub memory_cost_per_entry: f64,
 }
 
@@ -166,6 +171,7 @@ impl Default for CostModel {
         CostModel {
             cost_per_token: 0.000015,
             latency_saved_ms: 2000.0,
+            latency_value_per_ms: 0.0,
             memory_cost_per_entry: 0.001,
         }
     }
@@ -228,8 +234,8 @@ impl CostModel {
     /// Compute the expected utility of caching an entry.
     #[inline]
     pub fn utility(&self, p_hit: f64, response_tokens: u32, _entry_size_bytes: usize) -> f64 {
-        let recompute_value =
-            response_tokens as f64 * self.cost_per_token + self.latency_saved_ms * 0.001;
+        let recompute_value = response_tokens as f64 * self.cost_per_token
+            + self.latency_saved_ms * self.latency_value_per_ms;
         p_hit * recompute_value - self.memory_cost_per_entry
     }
 }
@@ -440,7 +446,7 @@ impl Default for FrequencySketch {
 /// Monitors the running hit-rate EMA and detects sudden drops (negative shift)
 /// that indicate a distribution change. When triggered:
 ///   1. Halves the frequency sketch (forget old frequencies)
-///   2. Softens the Thompson gate (explore more)
+///   2. Softens the posterior gate (explore more)
 ///   3. Temporarily widens admission
 ///
 /// Reference: Page (1954) — "Continuous inspection schemes"
@@ -646,15 +652,18 @@ impl Default for AdaptiveAlpha {
     }
 }
 
-/// Thompson Sampling Admission Gate.
+/// Deterministic Beta-posterior admission gate.
 ///
-/// Instead of hard-thresholding H_α > τ, we sample from a Beta posterior:
-///   p_admit ~ Beta(α_succ + prior, β_fail + prior)
-///   ADMIT if H_α(context) · p_admit > 0.5
+/// The historical type name is retained for snapshot/API compatibility. No
+/// random sample is drawn: the posterior mean and variance form a replayable
+/// confidence score, which is combined with entropy, predicted hit probability
+/// and unit-consistent cost utility.
 ///
 /// This naturally balances exploration (uncertain entries get admitted
 /// to learn their value) vs exploitation (known-bad patterns rejected).
 #[derive(Clone, Debug, Serialize, Deserialize)]
+/// Legacy public name retained for snapshot compatibility. This is a
+/// deterministic Beta-posterior gate, not a Thompson sampler.
 pub struct ThompsonGate {
     /// Beta posterior: successes (admitted entries that got hits).
     pub alpha_succ: f64,
@@ -709,7 +718,7 @@ impl ThompsonGate {
         crate::entropy::renyi_entropy_alpha(&scores, alpha)
     }
 
-    /// Thompson sampling admission decision.
+    /// Admission decision with a neutral learned hit probability.
     ///
     /// Returns (admit: bool, context_entropy: f64).
     pub fn should_admit(
@@ -717,8 +726,6 @@ impl ThompsonGate {
         fragment_entropies: &[(f64, u32)],
         response_tokens: u32,
     ) -> (bool, f64) {
-        self.total_decisions += 1;
-
         // Compute entropy — use sketch for large contexts, exact for small
         let h = if fragment_entropies.len() > 20 {
             self.context_entropy_sketch(fragment_entropies)
@@ -726,38 +733,55 @@ impl ThompsonGate {
             Self::context_entropy_exact(fragment_entropies, self.adaptive_alpha.alpha)
         };
 
-        // Sample from Beta posterior (deterministic approximation using mean + variance)
-        // p_admit = E[Beta(α, β)] + noise proportional to Var[Beta(α, β)]
+        let admit = self.should_admit_scored(h, fragment_entropies.len(), response_tokens, 0.5);
+        (admit, h)
+    }
+
+    /// Replayable admission using the cache's learned P(hit) prediction.
+    fn should_admit_scored(
+        &mut self,
+        context_entropy: f64,
+        fragment_count: usize,
+        response_tokens: u32,
+        predicted_p_hit: f64,
+    ) -> bool {
+        self.total_decisions += 1;
+
         let total = self.alpha_succ + self.beta_fail;
         let mean = self.alpha_succ / total;
         let variance = (self.alpha_succ * self.beta_fail) / (total * total * (total + 1.0));
 
-        // Use a deterministic Thompson approximation:
-        // admission_score = mean + sqrt(variance) * entropy_signal
+        // Deterministic posterior confidence: high-entropy contexts receive the
+        // exploration allowance without introducing an unreplayable RNG.
         // High entropy context → explore more (admit more readily)
         // Normalize by renyi_max(n) = log₂(n) for scale-invariant admission.
         // 3-fragment and 300-fragment contexts are on the same [0,1] scale.
-        let h_max = crate::entropy::renyi_max(fragment_entropies.len());
+        let h_max = crate::entropy::renyi_max(fragment_count);
         let entropy_signal = if h_max > 0.0 {
-            (h / h_max).clamp(0.0, 2.0)
+            (context_entropy / h_max).clamp(0.0, 2.0)
         } else {
             0.0
         };
-        let p_admit = (mean + variance.sqrt() * entropy_signal).clamp(0.0, 1.0);
+        let posterior_score = (mean + variance.sqrt() * entropy_signal).clamp(0.0, 1.0);
 
-        // Cost-aware: high-cost entries should be admitted more readily
-        let cost_bonus = self
+        // Convert dollar utility to a bounded signal relative to 1,000 default-
+        // priced output tokens. Unlike the old path, this never adds seconds to
+        // dollars and the learned predictor is consulted before the decision.
+        const COST_REFERENCE_USD: f64 = 0.015;
+        let predicted_p_hit = predicted_p_hit.clamp(0.0, 1.0);
+        let expected_utility = self
             .cost_model
-            .utility(mean, response_tokens, 0)
-            .clamp(0.0, 1.0);
+            .utility(predicted_p_hit, response_tokens, 0)
+            .max(0.0);
+        let cost_signal = 1.0 - (-expected_utility / COST_REFERENCE_USD).exp();
 
-        let admission_score = 0.6 * p_admit + 0.4 * cost_bonus;
+        let admission_score = posterior_score * (0.5 + 0.5 * predicted_p_hit) + 0.15 * cost_signal;
         let admit = admission_score > 0.35;
 
         if admit {
             self.total_admitted += 1;
         }
-        (admit, h)
+        admit
     }
 
     /// Update posterior after observing whether an admitted entry was hit.
@@ -796,45 +820,16 @@ impl Default for ThompsonGate {
 // Contribution 2: Cost-Aware Submodular Diversity Eviction
 // ═══════════════════════════════════════════════════════════════════════
 
-/// Heap entry for lazy greedy eviction (lazy greedy).
-#[derive(Clone)]
-struct LazyHeapEntry {
-    hash: u64,
-    marginal: f64,
-    _last_computed_at: u32, // generation counter (structural, write-only)
-}
-
-impl PartialEq for LazyHeapEntry {
-    fn eq(&self, other: &Self) -> bool {
-        self.hash == other.hash
-    }
-}
-impl Eq for LazyHeapEntry {}
-
-// Min-heap by marginal (we want to evict the MINIMUM marginal entry)
-impl PartialOrd for LazyHeapEntry {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-impl Ord for LazyHeapEntry {
-    fn cmp(&self, other: &Self) -> Ordering {
-        // Reverse ordering: smallest marginal at top of BinaryHeap
-        other
-            .marginal
-            .partial_cmp(&self.marginal)
-            .unwrap_or(Ordering::Equal)
-    }
-}
-
-/// Submodular diversity-based cache eviction with lazy greedy evaluation.
+/// Diversity-based cache eviction with exact value evaluation.
 ///
 /// f(S) = Σ_{i∈S} utility(eᵢ) · diversity(eᵢ, S\{i})
 /// where utility incorporates cost model and time decay.
 ///
-/// Lazy evaluation (lazy greedy): maintain a max-heap of marginals,
-/// only recompute when a candidate reaches the heap top.
-/// Amortized O(n log n) per eviction vs O(n²) naive.
+/// Each entry's diversity term compares it with every peer, so exact victim
+/// selection is O(n²). A previous implementation put the already-computed
+/// values in a heap and called that "lazy greedy"; it still performed every
+/// pairwise comparison and added heap overhead. The direct scan is both honest
+/// and cheaper for the one-victim decision required here.
 pub struct SubmodularEvictor;
 
 impl SubmodularEvictor {
@@ -881,11 +876,12 @@ impl SubmodularEvictor {
         let recency = (-decay_gamma * effective_age).exp();
 
         // Cost signal — expensive-to-recompute items are valuable
-        // Uses both the cost model estimate and the stored recompute_cost
-        let model_cost = cost_model
+        // One unit-consistent source of truth. `recompute_cost` remains on the
+        // serialized entry for backward compatibility but no longer overrides
+        // the configured per-model price with a hard-coded $0.01/token value.
+        let cost_value = cost_model
             .utility(entry.quality_score, entry.response_tokens, 0)
             .max(0.0);
-        let cost_value = model_cost.max(entry.recompute_cost);
 
         // Diversity bonus — unique entries get a small boost
         let max_sim = others
@@ -910,10 +906,8 @@ impl SubmodularEvictor {
             * dag_factor
     }
 
-    /// Lazy greedy victim selection (lazy greedy).
-    ///
-    /// Returns the hash of the entry with LOWEST value to evict.
-    pub fn select_victim_lazy(
+    /// Return the hash of the lowest-value entry in a map.
+    pub fn select_victim_map(
         entries: &HashMap<u64, CacheEntry>,
         cost_model: &CostModel,
         current_turn: u32,
@@ -923,21 +917,25 @@ impl SubmodularEvictor {
         }
 
         let entry_vec: Vec<&CacheEntry> = entries.values().collect();
-        let mut heap: BinaryHeap<LazyHeapEntry> = BinaryHeap::new();
         let decay_gamma = 0.02;
-
-        // Initialize heap with entry values (min-heap: lowest value at top)
+        let mut victim: Option<(u64, f64)> = None;
         for entry in &entry_vec {
             let value = Self::entry_value(entry, &entry_vec, cost_model, current_turn, decay_gamma);
-            heap.push(LazyHeapEntry {
-                hash: entry.exact_hash,
-                marginal: value,
-                _last_computed_at: 0,
-            });
+            // HashMap iteration order is deliberately randomized.  A value
+            // tie therefore needs an explicit stable key or replaying the same
+            // cache snapshot can evict a different entry in each process.
+            // ``total_cmp`` also gives serialized non-finite legacy values a
+            // defined order instead of silently treating them as equal.
+            if victim.as_ref().is_none_or(|(lowest_hash, lowest_value)| {
+                value
+                    .total_cmp(lowest_value)
+                    .then_with(|| entry.exact_hash.cmp(lowest_hash))
+                    == Ordering::Less
+            }) {
+                victim = Some((entry.exact_hash, value));
+            }
         }
-
-        // Pop minimum value (lowest-value entry gets evicted)
-        heap.peek().map(|e| e.hash)
+        victim.map(|(hash, _)| hash)
     }
 
     /// Simple O(n²) victim selection (fallback for small caches).
@@ -1049,11 +1047,13 @@ impl CausalInvalidator {
 
 /// Lightweight linear model predicting P(hit | features).
 ///
-/// Features: [context_entropy, fragment_count, query_length_norm, recompute_cost_norm]
+/// Features: [context_entropy, fragment_count, recompute_cost_norm, budget_norm]
 /// Updated via online SGD with learning rate decay.
 ///
-/// This bridges the gap between structured policy and learned prediction,
-/// providing the "last 5-10%" improvement over pure heuristics.
+/// Every feature is stored on ``CacheEntry`` so admission and later outcomes
+/// are evaluated in the same feature space. A lookup miss does not yet know
+/// the response cost or context entropy and therefore is not a valid negative
+/// training row; an admitted entry evicted without a hit is.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct HitPredictor {
     /// Weight vector (4 features + bias).
@@ -1090,14 +1090,14 @@ impl HitPredictor {
     pub fn features(
         context_entropy: f64,
         n_fragments: usize,
-        query_len: usize,
         response_tokens: u32,
+        effective_budget: u32,
     ) -> [f64; 4] {
         [
             context_entropy / 6.0,                    // normalized entropy
             (n_fragments as f64).ln().max(0.0) / 5.0, // log fragment count
-            (query_len as f64) / 500.0,               // normalized query length
             (response_tokens as f64) / 2000.0,        // normalized response cost
+            (effective_budget as f64) / 32_000.0,     // normalized context budget
         ]
     }
 
@@ -1206,8 +1206,12 @@ pub struct EgscCache {
     exact_index: HashMap<u64, u64>,
     semantic_index: LshIndex,
     entries: HashMap<u64, CacheEntry>,
+    // Private in-memory semantic-index bookkeeping. These are rebuilt
+    // from live entries on import and are deliberately not persisted.
     slot_to_hash: Vec<u64>,
-    /// Thompson sampling admission gate.
+    slot_by_hash: HashMap<u64, usize>,
+    free_slots: Vec<usize>,
+    /// Deterministic Beta-posterior admission gate.
     thompson_gate: ThompsonGate,
     /// Linear bandit hit predictor.
     hit_predictor: HitPredictor,
@@ -1285,6 +1289,8 @@ impl EgscCache {
             semantic_index: LshIndex::new(),
             entries: HashMap::with_capacity(config.max_entries),
             slot_to_hash: Vec::with_capacity(config.max_entries),
+            slot_by_hash: HashMap::with_capacity(config.max_entries),
+            free_slots: Vec::new(),
             thompson_gate: ThompsonGate::new(),
             hit_predictor: HitPredictor::new(),
             freq_sketch: FrequencySketch::new(),
@@ -1417,9 +1423,9 @@ impl EgscCache {
             self.shift_detector.observe(true);
             let feats = HitPredictor::features(
                 entry.context_entropy,
-                fragment_ids.len(),
-                query.len(),
+                entry.fragment_ids.len(),
                 entry.response_tokens,
+                entry.effective_budget,
             );
             self.hit_predictor.update(&feats, true);
             return CacheLookup::ExactHit {
@@ -1467,9 +1473,9 @@ impl EgscCache {
                 self.shift_detector.observe(true);
                 let feats = HitPredictor::features(
                     entry.context_entropy,
-                    fragment_ids.len(),
-                    query.len(),
+                    entry.fragment_ids.len(),
                     entry.response_tokens,
+                    entry.effective_budget,
                 );
                 self.hit_predictor.update(&feats, true);
                 return CacheLookup::SemanticHit {
@@ -1496,12 +1502,15 @@ impl EgscCache {
                 self.thompson_gate.beta_fail *= 0.5;
             }
         }
-        let feats = HitPredictor::features(0.0, fragment_ids.len(), query.len(), 0);
-        self.hit_predictor.update(&feats, false);
+        // Do not manufacture a negative predictor row here. At lookup time the
+        // response and selected-context entropy do not exist yet, so the old
+        // zero-filled row occupied a different feature space from both store
+        // decisions and hits. Non-reuse is observed when a fully described,
+        // admitted entry reaches eviction without ever being hit.
         CacheLookup::Miss
     }
 
-    /// Store with TinyLFU frequency-gated admission + Thompson sampling.
+    /// Store with TinyLFU frequency-gated, replayable posterior admission.
     #[cfg(test)]
     pub fn store(
         &mut self,
@@ -1521,6 +1530,53 @@ impl EgscCache {
             current_turn,
             0,
         )
+    }
+
+    /// Remove one live entry and all of its private lookup-index state.
+    ///
+    /// Semantic slots are recycled instead of appended forever. This keeps
+    /// lookup memory/latency bounded by the cache high-water mark while
+    /// leaving CacheSnapshot unchanged (indices are rebuilt on import).
+    fn remove_entry(&mut self, hash: u64) -> bool {
+        let Some(entry) = self.entries.remove(&hash) else {
+            return false;
+        };
+        self.exact_index.remove(&hash);
+        if let Some(slot) = self.slot_by_hash.remove(&hash) {
+            self.semantic_index.remove(entry.query_simhash, slot);
+            self.free_slots.push(slot);
+        }
+        true
+    }
+
+    /// Remove a capacity victim and record a genuine non-reuse outcome.
+    fn evict_entry(&mut self, hash: u64) -> bool {
+        if let Some(entry) = self.entries.get(&hash) {
+            if entry.hit_count == 0 {
+                let features = HitPredictor::features(
+                    entry.context_entropy,
+                    entry.fragment_ids.len(),
+                    entry.response_tokens,
+                    entry.effective_budget,
+                );
+                self.hit_predictor.update(&features, false);
+            }
+        }
+        self.remove_entry(hash)
+    }
+
+    fn allocate_semantic_slot(&mut self, hash: u64, query_fp: u64) {
+        let slot = if let Some(slot) = self.free_slots.pop() {
+            debug_assert!(slot < self.slot_to_hash.len());
+            self.slot_to_hash[slot] = hash;
+            slot
+        } else {
+            let slot = self.slot_to_hash.len();
+            self.slot_to_hash.push(hash);
+            slot
+        };
+        self.slot_by_hash.insert(hash, slot);
+        self.semantic_index.insert(query_fp, slot);
     }
 
     /// Budget-aware store used by the engine so exact hits respect the budget that produced them.
@@ -1547,11 +1603,32 @@ impl EgscCache {
         self.freq_sketch.increment(eh);
         let new_freq = self.freq_sketch.estimate(eh);
 
-        // Thompson sampling admission (entropy gate)
+        let ctx_entropy = if fragment_entropies.len() > 20 {
+            self.thompson_gate
+                .context_entropy_sketch(fragment_entropies)
+        } else {
+            ThompsonGate::context_entropy_exact(
+                fragment_entropies,
+                self.thompson_gate.adaptive_alpha.alpha,
+            )
+        };
+
+        // Deterministic posterior admission. The trained predictor is consulted
+        // before the decision rather than being updated and then ignored.
         if self.config.enable_entropy_gate {
-            let (admit, _entropy) = self
-                .thompson_gate
-                .should_admit(fragment_entropies, response_tokens);
+            let features = HitPredictor::features(
+                ctx_entropy,
+                fragment_ids.len(),
+                response_tokens,
+                effective_budget,
+            );
+            let predicted_p_hit = self.hit_predictor.predict(&features);
+            let admit = self.thompson_gate.should_admit_scored(
+                ctx_entropy,
+                fragment_entropies.len(),
+                response_tokens,
+                predicted_p_hit,
+            );
             if !admit {
                 self.total_rejections += 1;
                 return false;
@@ -1571,25 +1648,15 @@ impl EgscCache {
                     self.total_rejections += 1;
                     return false;
                 }
-                // Admit: evict the victim
-                self.entries.remove(&vh);
-                self.exact_index.remove(&vh);
-                self.total_evictions += 1;
-                self.freq_admissions += 1;
+                // Admit: evict the victim and recycle its semantic slot.
+                if self.evict_entry(vh) {
+                    self.total_evictions += 1;
+                    self.freq_admissions += 1;
+                }
             }
         } else if self.entries.len() >= self.config.max_entries {
             self.evict_one();
         }
-
-        let ctx_entropy = if fragment_entropies.len() > 20 {
-            self.thompson_gate
-                .context_entropy_sketch(fragment_entropies)
-        } else {
-            ThompsonGate::context_entropy_exact(
-                fragment_entropies,
-                self.thompson_gate.adaptive_alpha.alpha,
-            )
-        };
 
         let entry = CacheEntry::new_with_budget(
             eh,
@@ -1602,9 +1669,7 @@ impl EgscCache {
             current_turn,
         );
         self.exact_index.insert(eh, eh);
-        let slot = self.slot_to_hash.len();
-        self.slot_to_hash.push(eh);
-        self.semantic_index.insert(query_fp, slot);
+        self.allocate_semantic_slot(eh, query_fp);
         self.entries.insert(eh, entry);
         self.total_admissions += 1;
         true
@@ -1616,22 +1681,11 @@ impl EgscCache {
             return None;
         }
         if self.config.enable_submodular_eviction {
-            if self.entries.len() > 64 {
-                SubmodularEvictor::select_victim_lazy(
-                    &self.entries,
-                    &self.thompson_gate.cost_model,
-                    self.current_turn,
-                )
-            } else {
-                let refs: Vec<&CacheEntry> = self.entries.values().collect();
-                let hashes: Vec<u64> = self.entries.keys().copied().collect();
-                SubmodularEvictor::select_victim(
-                    &refs,
-                    &self.thompson_gate.cost_model,
-                    self.current_turn,
-                )
-                .and_then(|i| hashes.get(i).copied())
-            }
+            SubmodularEvictor::select_victim_map(
+                &self.entries,
+                &self.thompson_gate.cost_model,
+                self.current_turn,
+            )
         } else {
             self.entries
                 .iter()
@@ -1642,9 +1696,9 @@ impl EgscCache {
 
     fn evict_one(&mut self) {
         if let Some(hash) = self.find_victim() {
-            self.entries.remove(&hash);
-            self.exact_index.remove(&hash);
-            self.total_evictions += 1;
+            if self.evict_entry(hash) {
+                self.total_evictions += 1;
+            }
         }
     }
 
@@ -1706,8 +1760,7 @@ impl EgscCache {
             .map(|(&h, _)| h)
             .collect();
         for hash in &to_remove {
-            self.entries.remove(hash);
-            self.exact_index.remove(hash);
+            self.remove_entry(*hash);
         }
         (before - self.entries.len()) as u32
     }
@@ -1717,6 +1770,8 @@ impl EgscCache {
         self.exact_index.clear();
         self.semantic_index.clear();
         self.slot_to_hash.clear();
+        self.slot_by_hash.clear();
+        self.free_slots.clear();
         self.adaptive_thresholds.clear();
     }
 
@@ -1828,7 +1883,7 @@ impl EgscCache {
     /// Import cache state from a JSON snapshot string.
     ///
     /// Rebuilds all indices from the deserialized entries.
-    /// Learned parameters (Thompson gate, hit predictor, frequency sketch,
+    /// Learned parameters (posterior gate, hit predictor, frequency sketch,
     /// shift detector, adaptive thresholds) are all restored.
     ///
     /// Returns the number of entries restored.
@@ -1841,6 +1896,8 @@ impl EgscCache {
         self.exact_index.clear();
         self.semantic_index.clear();
         self.slot_to_hash.clear();
+        self.slot_by_hash.clear();
+        self.free_slots.clear();
 
         // Restore entries and rebuild indices
         let entry_count = snapshot.entries.len();
@@ -1850,6 +1907,7 @@ impl EgscCache {
             // Rebuild semantic index: slot = current len, push hash, insert fp→slot
             let slot = self.slot_to_hash.len();
             self.slot_to_hash.push(hash);
+            self.slot_by_hash.insert(hash, slot);
             self.semantic_index.insert(entry.query_simhash, slot);
             // Store entry
             self.entries.insert(hash, entry);
@@ -1907,10 +1965,107 @@ mod tests {
         ids.iter().map(|id| (id.clone(), 0u32)).collect()
     }
 
-    // ── Thompson Gate ──
+    fn churn_config(max_entries: usize) -> EgscConfig {
+        EgscConfig {
+            max_entries,
+            enable_entropy_gate: false,
+            enable_submodular_eviction: false,
+            ..Default::default()
+        }
+    }
+
+    fn store_churn_entry(cache: &mut EgscCache, index: usize) {
+        assert!(cache.store_with_budget(
+            &format!("query-{index}"),
+            fids(&[&format!("fragment-{index}")]),
+            &[],
+            format!("response-{index}"),
+            32,
+            index as u32,
+            512,
+        ));
+    }
+
+    fn assert_semantic_slot_invariants(cache: &EgscCache) {
+        assert_eq!(cache.slot_by_hash.len(), cache.entries.len());
+        assert_eq!(
+            cache.slot_by_hash.len() + cache.free_slots.len(),
+            cache.slot_to_hash.len(),
+            "every allocated slot must be either live or reusable"
+        );
+        for (&hash, &slot) in &cache.slot_by_hash {
+            assert!(slot < cache.slot_to_hash.len());
+            assert_eq!(cache.slot_to_hash[slot], hash);
+            assert!(cache.entries.contains_key(&hash));
+        }
+    }
 
     #[test]
-    fn test_thompson_admits_high_entropy() {
+    fn semantic_slots_stay_bounded_under_long_eviction_churn() {
+        let mut cache = EgscCache::new(churn_config(8));
+        for index in 0..2_000 {
+            store_churn_entry(&mut cache, index);
+            assert!(cache.len() <= 8);
+            assert!(
+                cache.slot_to_hash.len() <= 8,
+                "semantic slots grew beyond live cache capacity at iteration {index}: {}",
+                cache.slot_to_hash.len()
+            );
+            assert_semantic_slot_invariants(&cache);
+        }
+
+        // No LSH candidate may point at an evicted hash after long churn.
+        for index in 0..2_000 {
+            for slot in cache
+                .semantic_index
+                .query(simhash(&format!("query-{index}")))
+            {
+                let hash = cache.slot_to_hash[slot];
+                assert!(cache.entries.contains_key(&hash));
+                assert_eq!(cache.slot_by_hash.get(&hash), Some(&slot));
+            }
+        }
+    }
+
+    #[test]
+    fn gc_recycles_slots_and_snapshot_import_rebuilds_private_indices() {
+        let mut cache = EgscCache::new(churn_config(4));
+        for index in 0..4 {
+            store_churn_entry(&mut cache, index);
+        }
+        let high_water = cache.slot_to_hash.len();
+        let victim = *cache
+            .entries
+            .keys()
+            .next()
+            .expect("expected live cache entry");
+        cache.entries.get_mut(&victim).unwrap().quality_score = 0.0;
+        assert_eq!(cache.gc(0.1), 1);
+        assert_eq!(cache.free_slots.len(), 1);
+        assert_semantic_slot_invariants(&cache);
+
+        store_churn_entry(&mut cache, 100);
+        assert_eq!(
+            cache.slot_to_hash.len(),
+            high_water,
+            "GC slot must be reused"
+        );
+        assert!(cache.free_slots.is_empty());
+        assert_semantic_slot_invariants(&cache);
+
+        let snapshot = cache.export_cache().expect("snapshot export");
+        let mut restored = EgscCache::new(churn_config(1));
+        let restored_count = restored.import_cache(&snapshot).expect("snapshot import");
+        assert_eq!(restored_count, cache.len());
+        assert_eq!(restored.slot_to_hash.len(), restored.len());
+        assert!(restored.free_slots.is_empty());
+        assert_semantic_slot_invariants(&restored);
+    }
+
+    // ── Deterministic Beta-posterior gate ──
+
+    #[test]
+    fn test_posterior_gate_admits_high_entropy() {
         let mut gate = ThompsonGate::new();
         // High-entropy multi-fragment context
         let entropies = vec![(5.0, 500), (4.8, 300), (5.2, 200)];
@@ -1921,7 +2076,7 @@ mod tests {
     }
 
     #[test]
-    fn test_thompson_posterior_updates() {
+    fn test_posterior_gate_updates() {
         let mut gate = ThompsonGate::new();
         let initial_alpha = gate.alpha_succ;
         gate.observe_outcome(true);
@@ -1938,7 +2093,7 @@ mod tests {
     }
 
     #[test]
-    fn test_thompson_posterior_decay() {
+    fn test_posterior_gate_decays_old_observations() {
         let mut gate = ThompsonGate::new();
         // Pump up the posterior past the 500 decay threshold
         for _ in 0..600 {
@@ -2053,6 +2208,48 @@ mod tests {
         assert!(high_p > low_p, "Higher P(hit) should yield higher utility");
     }
 
+    #[test]
+    fn cost_model_never_adds_time_directly_to_dollars() {
+        let model = CostModel::default();
+        let expected = 0.5 * (1_000.0 * model.cost_per_token) - model.memory_cost_per_entry;
+        assert!((model.utility(0.5, 1_000, 0) - expected).abs() < f64::EPSILON);
+
+        let valued_latency = CostModel {
+            latency_value_per_ms: 0.000_001,
+            ..model.clone()
+        };
+        assert!(valued_latency.utility(0.5, 1_000, 0) > expected);
+    }
+
+    #[test]
+    fn configured_model_price_reaches_eviction_value() {
+        let mut entry = CacheEntry::new(1, 0, fids(&["f1"]), "response".into(), 800, 4.0, 0);
+        entry.recompute_cost = 1_000_000.0; // legacy snapshot value must not dominate
+        let entries = vec![&entry];
+        let cheap = SubmodularEvictor::entry_value(
+            &entry,
+            &entries,
+            &CostModel::for_model("gemini-flash"),
+            0,
+            0.02,
+        );
+        let expensive = SubmodularEvictor::entry_value(
+            &entry,
+            &entries,
+            &CostModel::for_model("claude-3-opus"),
+            0,
+            0.02,
+        );
+        assert!(
+            expensive > cheap,
+            "per-model pricing must affect eviction value"
+        );
+        assert!(
+            expensive < 10.0,
+            "legacy recompute_cost must not override the model"
+        );
+    }
+
     // ── Hit Predictor (Linear Bandit) ──
 
     #[test]
@@ -2071,6 +2268,65 @@ mod tests {
         assert!(
             p_good > p_bad,
             "Predictor should learn: good={p_good:.3} > bad={p_bad:.3}"
+        );
+    }
+
+    #[test]
+    fn learned_hit_probability_changes_admission() {
+        let mut unlikely = ThompsonGate::new();
+        let mut likely = ThompsonGate::new();
+
+        assert!(!unlikely.should_admit_scored(1.2, 3, 500, 0.0));
+        assert!(likely.should_admit_scored(1.2, 3, 500, 1.0));
+    }
+
+    #[test]
+    fn cache_miss_does_not_train_with_unknown_zero_features() {
+        let mut cache = EgscCache::new(EgscConfig::default());
+        assert!(matches!(
+            cache.lookup_with_budget("not cached", &fids(&["f1"]), 4_096),
+            CacheLookup::Miss
+        ));
+        assert_eq!(
+            cache.hit_predictor.updates, 0,
+            "a miss has no response or context entropy to label"
+        );
+    }
+
+    #[test]
+    fn unhit_capacity_victim_trains_predictor_in_admission_feature_space() {
+        let mut cache = EgscCache::new(EgscConfig {
+            max_entries: 1,
+            enable_entropy_gate: false,
+            enable_submodular_eviction: true,
+            ..Default::default()
+        });
+        let features = HitPredictor::features(0.0, 1, 200, 4_096);
+        let before = cache.hit_predictor.predict(&features);
+
+        assert!(cache.store_with_budget(
+            "first",
+            fids(&["f1"]),
+            &[(4.0, 100)],
+            "first response".into(),
+            200,
+            0,
+            4_096,
+        ));
+        assert!(cache.store_with_budget(
+            "second",
+            fids(&["f2"]),
+            &[(4.0, 100)],
+            "second response".into(),
+            200,
+            1,
+            4_096,
+        ));
+
+        assert_eq!(cache.hit_predictor.updates, 1);
+        assert!(
+            cache.hit_predictor.predict(&features) < before,
+            "an admitted entry evicted without a hit is a real non-reuse outcome"
         );
     }
 
@@ -2113,7 +2369,7 @@ mod tests {
     }
 
     #[test]
-    fn test_submodular_lazy_finds_victim() {
+    fn test_submodular_map_scan_finds_victim() {
         let mut entries = HashMap::new();
         for i in 0..10u64 {
             let e = CacheEntry::new(
@@ -2128,8 +2384,43 @@ mod tests {
             entries.insert(i, e);
         }
         let cm = CostModel::default();
-        let victim = SubmodularEvictor::select_victim_lazy(&entries, &cm, 0);
+        let victim = SubmodularEvictor::select_victim_map(&entries, &cm, 0);
         assert!(victim.is_some(), "Should find a victim in non-empty cache");
+    }
+
+    #[test]
+    fn submodular_map_ties_use_stable_hash_order() {
+        let make_entry = |hash| {
+            CacheEntry::new(
+                hash,
+                0xAAAAAAAA_AAAAAAAA,
+                fids(&["same-fragment"]),
+                "same response".into(),
+                100,
+                4.0,
+                0,
+            )
+        };
+        let cm = CostModel::default();
+
+        // Different maps have independent randomized hash seeds, and the
+        // insertion orders are deliberately reversed. Both must make the same
+        // replayable eviction decision when every value signal ties.
+        let mut forward = HashMap::new();
+        forward.insert(3, make_entry(3));
+        forward.insert(9, make_entry(9));
+        let mut reverse = HashMap::new();
+        reverse.insert(9, make_entry(9));
+        reverse.insert(3, make_entry(3));
+
+        assert_eq!(
+            SubmodularEvictor::select_victim_map(&forward, &cm, 0),
+            Some(3)
+        );
+        assert_eq!(
+            SubmodularEvictor::select_victim_map(&reverse, &cm, 0),
+            Some(3)
+        );
     }
 
     // ── Causal Invalidation ──
@@ -2254,7 +2545,7 @@ mod tests {
     }
 
     #[test]
-    fn test_thompson_rejects_trivial() {
+    fn test_posterior_gate_rejects_trivial() {
         let mut cache = EgscCache::new(EgscConfig {
             enable_entropy_gate: true,
             ..Default::default()
@@ -2273,7 +2564,7 @@ mod tests {
             1,
         );
         // With a very conservative gate and tiny entropy, should likely reject
-        // (Thompson sampling is stochastic, so we check stats pattern)
+        // The posterior gate is deterministic; verify the learned state pattern.
         let stats = cache.stats();
         assert!(
             stats.total_admissions + stats.total_rejections > 0,
@@ -3112,7 +3403,7 @@ mod tests {
         eprintln!("║  Final α (Rényi):  {:.4}", stats.adaptive_alpha);
         eprintln!("║  Shifts detected:  {}", stats.shifts_detected);
         eprintln!(
-            "║  Thompson α/β:     {:.1}/{:.1}",
+            "║  Posterior α/β:    {:.1}/{:.1}",
             stats.thompson_alpha, stats.thompson_beta
         );
         eprintln!("╚══════════════════════════════════════════════════════════╝");
@@ -3511,7 +3802,7 @@ mod tests {
         let (full_hits, _) = run_egsc_workload(&queries, cache_size);
         let full_rate = full_hits as f64 / n as f64;
 
-        // Ablation 1: No entropy gate (Thompson always admits)
+        // Ablation 1: no posterior/entropy gate (always admits)
         let mut no_gate = EgscCache::new(EgscConfig {
             max_entries: cache_size,
             enable_entropy_gate: false,

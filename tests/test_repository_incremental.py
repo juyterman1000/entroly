@@ -5,6 +5,7 @@ from pathlib import Path
 
 from entroly.repository_intelligence.incremental import (
     build_repository_index_incremental,
+    build_repository_scope_incremental,
 )
 from entroly.repository_intelligence.service import RepositoryIntelligenceService
 
@@ -65,6 +66,35 @@ def test_incremental_cache_invalidates_only_changed_file(tmp_path: Path) -> None
     assert "hits=1 misses=1 writes=1" in _cache_diagnostic(changed)
     source = next(symbol for symbol in changed.symbols.values() if symbol.name == "source")
     assert source.evidence_sha256
+
+
+def test_active_scope_indexes_one_file_with_repository_dependency_catalog(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "repo"
+    cache = tmp_path / "cache"
+    _write(root, "a.py", "def source():\n    return 1\n")
+    _write(
+        root,
+        "b.py",
+        "from a import source\ndef caller():\n    return source()\n",
+    )
+    _write(root, "c.py", "def untouched():\n    return 3\n")
+
+    scoped = build_repository_scope_incremental(root, ["b.py"], cache_dir=cache)
+
+    assert set(scoped.files) == {"b.py"}
+    assert {symbol.name for symbol in scoped.symbols.values()} == {"caller"}
+    assert scoped.file_dependencies == {"b.py": ("a.py",)}
+    assert "hits=0 misses=1 writes=1" in _cache_diagnostic(scoped)
+    assert "active-repository-scope files=1 catalog=3" in scoped.diagnostics
+
+    repeated = build_repository_scope_incremental(root, ["b.py"], cache_dir=cache)
+    assert "hits=1 misses=0 writes=0" in _cache_diagnostic(repeated)
+    first_payload = scoped.to_dict()
+    repeated_payload = repeated.to_dict()
+    first_payload["diagnostics"] = repeated_payload["diagnostics"] = []
+    assert repeated_payload == first_payload
 
 
 def test_corrupt_cache_entry_fails_open_and_is_rebuilt(tmp_path: Path) -> None:

@@ -48,11 +48,11 @@ jobs:
           python-version: ${{ matrix.python-version }}
           allow-prereleases: true
 
-      - name: Install source journey surface
+      - name: Install exact-head journey surface
         shell: bash
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[test,proxy]" pytest-timeout psutil
+          python scripts/ci_install_exact_head.py --extras test,proxy \
+            --extra-package pytest-timeout --extra-package psutil
           python -m pip check
 
       - name: Exercise onboarding and CLI journeys
@@ -99,11 +99,9 @@ jobs:
       - name: Build and install wheel in an isolated environment
         shell: bash
         run: |
-          python -m pip install --upgrade pip build
-          python -m build --wheel
           python -m venv "$RUNNER_TEMP/entroly-user"
-          "$RUNNER_TEMP/entroly-user/bin/python" -m pip install --upgrade pip
-          "$RUNNER_TEMP/entroly-user/bin/python" -m pip install dist/*.whl
+          python scripts/ci_install_exact_head.py \
+            --python "$RUNNER_TEMP/entroly-user/bin/python" --mode wheel
           "$RUNNER_TEMP/entroly-user/bin/python" -m pip check
           "$RUNNER_TEMP/entroly-user/bin/python" -c "import httpx, starlette, uvicorn; import entroly.container_proxy, entroly.docker_launcher_safe"
           "$RUNNER_TEMP/entroly-user/bin/entroly" --version

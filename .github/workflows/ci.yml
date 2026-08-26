@@ -4,7 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches:
+      - main
+      - "integration/**"
 
 env:
   PIP_RETRIES: 10
@@ -60,10 +62,19 @@ jobs:
         with:
           python-version: "3.12"
 
+      # `pip install -e .` resolves entroly-core from PyPI, and a release
+      # candidate raises that minimum before the core is published -- so this
+      # job failed at dependency resolution, never reaching a test:
+      #
+      #   ERROR: No matching distribution found for entroly-core<2,>=1.0.79
+      #
+      # The canonical helper builds the native core from this same checkout
+      # first. Reused rather than reimplemented: this file already carried three
+      # different bootstrap strategies, and only the divergent one was broken.
       - name: Install Python bridge test dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e . pytest
+          python scripts/ci_install_exact_head.py --extra-package pytest
 
       - name: Test Python bridge contract
         run: pytest tests/test_openclaw_bridge.py -q
@@ -216,6 +227,44 @@ jobs:
 
       - name: Test (host target)
         run: cargo test --manifest-path entroly-wasm/Cargo.toml --lib
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22.19.0"
+
+      # Cross-runtime parity has to gate on the exact head, and it did not.
+      # entroly-wasm's `npm test` runs only in deep-dogfood.yml, which is
+      # triggered on pull_request to main and had not run on this SHA at all --
+      # so the npm half of the shared semantics was ungated here while this job
+      # reported green for building the same crate.
+      #
+      # Scoped to the receipt parity check rather than the whole npm suite: the
+      # full suite belongs in deep-dogfood where it already lives, and this job
+      # only needs to prove that the runtime it builds still agrees with Rust
+      # and Python on the canonical commitment.
+      - name: Cross-runtime Context Receipt parity
+        working-directory: entroly-wasm
+        run: |
+          cargo install wasm-pack --locked
+          npm run build
+          node test_context_receipt_parity.js
+
+      - name: Set up Python for shared-state convergence
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Python and Node converge on one Work Graph store
+        run: |
+          python -m venv .cross-runtime-venv
+          .cross-runtime-venv/bin/python scripts/ci_install_exact_head.py \
+            --python .cross-runtime-venv/bin/python \
+            --mode editable \
+            --extras test
+          .cross-runtime-venv/bin/python -m pytest \
+            tests/test_work_graph_store.py \
+            -q -k python_node_same_repo_state_converges
 
       # Structural guard: re-adding a local copy of an engine module is exactly
       # how the two builds diverged before. Compilation alone will not catch it,

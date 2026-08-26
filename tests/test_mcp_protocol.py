@@ -183,6 +183,10 @@ def test_mcp_list_tools(mcp_server):
         assert "entroly_retrieve" in tool_names, (
             f"Expected reversible CCR tool, got: {tool_names}"
         )
+        for continuity_tool in ("work_state", "work_resume", "work_handoff"):
+            assert continuity_tool in tool_names, (
+                f"Expected Work Graph continuity tool {continuity_tool}, got: {tool_names}"
+            )
         for receipt_tool in (
             "create_context_receipt",
             "create_context_receipt_from_path",

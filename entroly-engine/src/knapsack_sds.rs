@@ -47,7 +47,10 @@ use std::collections::HashMap;
 ///   Skeleton  → signatures + structure (70% info, 20% tokens)
 ///   Belief    → vault knowledge graph summary (50% info, 10-15% tokens)
 ///   Reference → file path only (15% info, 2% tokens)
-#[derive(Debug, Clone, Copy, PartialEq)]
+// `Ord` is derived so resolution can act as a stable tie-break key when two
+// candidates score identically; see the candidate sort in `sds_select`. The
+// sibling `conversation_pruner::Resolution` already derives it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Resolution {
     /// Full content — maximum information, maximum tokens
     Full,
@@ -357,8 +360,14 @@ pub fn ios_select(
                 (i, score)
             })
             .collect();
-        scored_pinned
-            .sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        // Total order, ties broken on fragment id. Pinned selection runs
+        // against a hard cap, so a tie at the cap boundary decides which
+        // critical evidence is pinned and which is dropped -- the last place
+        // that should depend on sort partitioning. See `knapsack.rs`.
+        scored_pinned.sort_unstable_by(|a, b| {
+            b.1.total_cmp(&a.1)
+                .then_with(|| fragments[a.0].fragment_id.cmp(&fragments[b.0].fragment_id))
+        });
 
         for &(i, score) in &scored_pinned {
             let tc = fragments[i].token_count;
@@ -591,10 +600,25 @@ pub fn ios_select(
 
     // Pre-sort candidates by base_value/cost density for faster convergence
     // (The diversity penalty will reorder, but this is a good initial ordering)
+    //
+    // "Initial ordering only" is not a reason to leave it unordered on ties.
+    // The greedy loop below consumes this order, and the subtractive diversity
+    // penalty is computed against what has already been selected -- so which of
+    // two equally dense candidates is considered first changes what the other
+    // one is penalised against, and the divergence compounds rather than
+    // washing out. The key is (frag_idx, resolution) because one fragment
+    // appears once per resolution in this multiple-choice knapsack, so frag_idx
+    // alone is not unique. See `knapsack.rs` for the defect this fixes.
     candidates.sort_unstable_by(|a, b| {
         let da = a.base_value / a.token_cost.max(1) as f64;
         let db = b.base_value / b.token_cost.max(1) as f64;
-        db.partial_cmp(&da).unwrap_or(std::cmp::Ordering::Equal)
+        db.total_cmp(&da)
+            .then_with(|| {
+                fragments[a.frag_idx]
+                    .fragment_id
+                    .cmp(&fragments[b.frag_idx].fragment_id)
+            })
+            .then_with(|| a.resolution.cmp(&b.resolution))
     });
 
     loop {

@@ -9,9 +9,11 @@ import textwrap
 import zipfile
 from pathlib import Path
 
+from pyproject_compat import read_project_metadata
+
 
 ROOT = Path(__file__).resolve().parents[1]
-RELEASE_VERSION = "1.0.78"
+RELEASE_VERSION = "1.0.79"
 HOMEBREW_FORMULA_VERSION = "1.0.78"
 HOMEBREW_FORMULA_URL = (
     "https://files.pythonhosted.org/packages/dc/ca/09fb67eef6cc9afabe48771ca1"
@@ -29,53 +31,15 @@ def _read_json(path: str) -> dict:
 def _read_project_metadata(path: str) -> dict[str, object]:
     """Read the small pyproject surface guarded by these tests.
 
-    Python 3.10 does not ship ``tomllib``. Keeping this parser local avoids
-    making the release guard depend on an extra test dependency.
+    The parser itself now lives in ``tests/pyproject_compat`` so that the Work
+    Graph packaging guards can share it instead of importing ``tomllib``, which
+    is Python 3.11+ and aborts collection for the whole suite on 3.10. One
+    implementation, three call sites.
     """
-    metadata: dict[str, object] = {
-        "optional-dependencies": {},
-    }
-    current_section = ""
-    current_list_key: str | None = None
-
-    for raw_line in (ROOT / path).read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("[") and line.endswith("]"):
-            current_section = line.strip("[]")
-            current_list_key = None
-            continue
-        if current_section == "project" and line.startswith("version"):
-            metadata["version"] = line.split("=", 1)[1].strip().strip('"')
-            continue
-        if current_section == "project" and line.startswith("readme"):
-            metadata["readme"] = line.split("=", 1)[1].strip().strip('"')
-            continue
-        if current_section == "project" and line.startswith("dependencies"):
-            current_list_key = "dependencies"
-            metadata[current_list_key] = []
-            continue
-        if (
-            current_section == "project.optional-dependencies"
-            and "=" in line
-            and not line.startswith('"')
-        ):
-            key = line.split("=", 1)[0].strip()
-            current_list_key = key
-            metadata["optional-dependencies"][key] = []
-            continue
-        if current_list_key and line.startswith('"'):
-            value = line.rstrip(",").strip().strip('"')
-            if current_section == "project":
-                metadata[current_list_key].append(value)
-            elif current_section == "project.optional-dependencies":
-                metadata["optional-dependencies"][current_list_key].append(value)
-
-    return metadata
+    return read_project_metadata(path)
 
 
-def test_public_package_versions_are_1_0_78() -> None:
+def test_public_package_versions_are_1_0_79() -> None:
     assert _read_project_metadata("pyproject.toml")["version"] == RELEASE_VERSION
     assert _read_project_metadata("entroly/pyproject.toml")["version"] == RELEASE_VERSION
     assert _read_json("entroly/npm/package.json")["version"] == RELEASE_VERSION
@@ -183,6 +147,13 @@ def test_mcp_registry_manifest_points_at_release_package() -> None:
     assert packages[0]["version"] == RELEASE_VERSION
 
 
+def test_hatch_artifacts_use_twine_supported_core_metadata() -> None:
+    """The build backend must not outrun the required release validator."""
+    for path in ("pyproject.toml", "entroly/pyproject.toml"):
+        text = (ROOT / path).read_text(encoding="utf-8")
+        assert text.count('core-metadata-version = "2.4"') == 2
+
+
 def test_mcp_registry_identity_is_canonical_and_non_squattable() -> None:
     manifest = _read_json("server.json")
     npm_manifest = _read_json("entroly/npm/package.json")
@@ -215,14 +186,35 @@ def test_mcp_registry_identity_is_canonical_and_non_squattable() -> None:
     assert actual == expected
 
 
-def test_native_engine_is_optional_for_first_time_install() -> None:
+def test_native_engine_ships_with_first_time_install() -> None:
+    """A first-time `pip install entroly` must include the native engine.
+
+    This assertion used to read `not any(dep.startswith("entroly-core") ...)`.
+    Shipping the engine as an extra meant the command in the README, the
+    quickstart, and every integration doc produced an install where
+    query-conditioned selection (QCCR) never runs: it is gated on the native
+    module in `EntrolyEngine.optimize_context`, and its candidate set comes
+    from `self._rust.export_fragments()`, which has no pure-Python equivalent.
+
+    Measured consequence: three unrelated queries, including the nonsense
+    control "banana bicycle weather forecast tuna sandwich", returned a
+    byte-identical 23 fragments / 7,588 tokens and the same "76.29% saved",
+    because that figure is baseline-minus-budget arithmetic that nothing about
+    the query can move. Every accuracy benchmark in this repo measures the QCCR
+    path, so the default install did not run the code that was benchmarked.
+
+    The `native` and `full` extras are retained as compatibility aliases for
+    install instructions already in the wild; they now resolve to the same
+    thing as a plain install. See also
+    test_memory_package_metadata.test_root_pyproject_requires_native_engine.
+    """
     for path in ("pyproject.toml", "entroly/pyproject.toml"):
         project = _read_project_metadata(path)
         hard_deps = project["dependencies"]
         native_deps = project["optional-dependencies"]["native"]
         full_deps = project["optional-dependencies"]["full"]
 
-        assert not any(dep.startswith("entroly-core") for dep in hard_deps)
+        assert f"entroly-core>={RELEASE_VERSION},<2" in hard_deps
         assert f"entroly-core>={RELEASE_VERSION},<2" in native_deps
         assert f"entroly-core>={RELEASE_VERSION},<2" in full_deps
 

@@ -16,6 +16,7 @@ pub(crate) use entroly_engine::bm25;
 pub(crate) use entroly_engine::cache;
 pub(crate) use entroly_engine::causal;
 pub(crate) use entroly_engine::channel;
+#[path = "cognitive_bus_bindings.rs"]
 mod cognitive_bus;
 pub mod cogops;
 /// Pure-Rust text compression entry point for the standalone binary.
@@ -35,7 +36,9 @@ pub(crate) use entroly_engine::knapsack;
 pub(crate) use entroly_engine::knapsack_sds;
 pub(crate) use entroly_engine::learning;
 pub(crate) use entroly_engine::lsh;
+#[path = "nkbe_bindings.rs"]
 mod nkbe;
+mod py_json;
 pub(crate) use entroly_engine::prism;
 /// Single-binary HTTP proxy (transform is pure; server gated by `proxy` feature).
 pub mod proxy;
@@ -51,9 +54,12 @@ pub(crate) use entroly_engine::semantic_dedup;
 mod simhash_probe;
 pub(crate) use entroly_engine::skeleton;
 mod telemetry;
+mod trust_engine_bindings;
 pub(crate) use entroly_engine::trajectory;
 pub(crate) use entroly_engine::utilization;
+mod context_receipt_bindings;
 mod witness;
+mod work_graph_bindings;
 // Cross-agent memory IPC primitives vendored from juyterman1000/AgentOS
 // (MIT-licensed, same author). Provides:
 //   - ipc:         SimHash Conditional-Entropy IPC bus (SCHIPC)
@@ -346,7 +352,7 @@ impl EntrolyEngine {
     #[pyo3(signature = (
         w_recency=0.30, w_frequency=0.25, w_semantic=0.25, w_entropy=0.20,
         decay_half_life=15, min_relevance=0.05,
-        hamming_threshold=3, exploration_rate=0.1, max_fragments=10000,
+        hamming_threshold=3, exploration_rate=0.0, max_fragments=10000,
         enable_ios=true, enable_ios_diversity=true, enable_ios_multi_resolution=true,
         ios_skeleton_info_factor=0.70, ios_belief_info_factor=0.50, ios_reference_info_factor=0.15, ios_diversity_floor=0.10
     ))]
@@ -6366,6 +6372,9 @@ fn entroly_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ContextFragment>()?;
     m.add_class::<EntrolyEngine>()?;
     m.add_class::<PyDedupIndex>()?;
+    context_receipt_bindings::register(m)?;
+    work_graph_bindings::register(m)?;
+    trust_engine_bindings::register(m)?;
     // ── Entropy / Hashing
     m.add_function(wrap_pyfunction!(py_shannon_entropy, m)?)?;
     m.add_function(wrap_pyfunction!(py_normalized_entropy, m)?)?;
@@ -6427,6 +6436,14 @@ fn entroly_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(qccr::py_qccr_select, m)?)?;
     // ── Multi-Agent (additive — new classes, no existing API changes)
     m.add_class::<nkbe::NkbeAllocator>()?;
+    m.add_function(wrap_pyfunction!(
+        work_graph_bindings::work_graph_node_id,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        work_graph_bindings::work_graph_edge_id,
+        m
+    )?)?;
     m.add_class::<cognitive_bus::CognitiveBus>()?;
     // ── CogOps Epistemic Engine
     m.add_class::<cogops::CogOpsEngine>()?;

@@ -228,6 +228,7 @@ The MCP server exposes tools across these groups:
 
 | Family | Examples |
 |---|---|
+| Work continuity | `work_state`, `work_claim`, `work_resume`, `work_handoff`, `work_record_context`, `work_record_memory`, `work_record_execution` |
 | Context memory | `remember_fragment`, `optimize_context`, `recall_relevant`, `entroly_retrieve` |
 | Context Receipts | `create_context_receipt`, `render_context_receipt`, `explain_receipt_omission`, `recover_receipt_omission` |
 | Outcome learning | `record_outcome`, `record_test_result`, `record_command_exit`, `record_ci_result`, `record_edit_outcome` |

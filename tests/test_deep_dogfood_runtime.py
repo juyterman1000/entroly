@@ -34,12 +34,15 @@ def _installed_entroly_executable() -> str:
     was not installed.
     """
 
+    script_name = "entroly.exe" if os.name == "nt" else "entroly"
+    candidate = Path(sys.executable).with_name(script_name)
+    if candidate.is_file():
+        return str(candidate)
+
     executable = shutil.which("entroly")
     if executable:
         return executable
 
-    script_name = "entroly.exe" if os.name == "nt" else "entroly"
-    candidate = Path(sys.executable).with_name(script_name)
     assert candidate.is_file(), (
         "The documented `entroly` console entry point is not installed. "
         f"PATH lookup failed and no script exists beside {sys.executable!r}."

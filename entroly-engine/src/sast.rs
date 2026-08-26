@@ -1919,6 +1919,59 @@ fn detect_lang(source: &str) -> Option<&'static str> {
     }
 }
 
+/// Does this path carry YAML, by extension?
+fn is_yaml_path(source: &str) -> bool {
+    let lower = source.to_lowercase();
+    lower.ends_with(".yaml") || lower.ends_with(".yml")
+}
+
+/// Number of leading lines inspected when sniffing for a Kubernetes manifest.
+///
+/// Bounded so a large YAML file is not read twice in full. A manifest declares
+/// `apiVersion` and `kind` in its first few keys; a file that has not shown both
+/// within this window is not one.
+const K8S_SNIFF_LINES: usize = 64;
+
+/// Recognise a Kubernetes manifest by content rather than extension.
+///
+/// `detect_lang` maps extensions, and `.yaml` is generic — Helm values, CI
+/// definitions and OpenAPI specs share it. So the four `K8S-*` rules declared a
+/// `k8s` language token that `detect_lang` could never emit, and `rule_applies`
+/// rejected them for every file. Four rules, one Critical and two High covering
+/// privileged containers, hostPath mounts, running as UID 0 and privilege
+/// escalation, could not fire at all.
+///
+/// A manifest is identified by the two keys the Kubernetes API requires of every
+/// object: `apiVersion` and `kind`. Both must appear at the start of a line so a
+/// passing mention inside a string or comment does not qualify the file.
+fn is_kubernetes_manifest(content: &str) -> bool {
+    let mut has_api_version = false;
+    let mut has_kind = false;
+    for line in content.lines().take(K8S_SNIFF_LINES) {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("apiVersion:") {
+            has_api_version = true;
+        } else if trimmed.starts_with("kind:") {
+            has_kind = true;
+        }
+        if has_api_version && has_kind {
+            return true;
+        }
+    }
+    false
+}
+
+/// Language for a file, using content only where the extension cannot decide.
+fn detect_lang_for_scan(source: &str, content: &str) -> Option<&'static str> {
+    if let Some(lang) = detect_lang(source) {
+        return Some(lang);
+    }
+    if is_yaml_path(source) && is_kubernetes_manifest(content) {
+        return Some("k8s");
+    }
+    None
+}
+
 fn rule_applies(rule: &SastRule, lang: Option<&str>) -> bool {
     if rule.languages.is_empty() {
         return true;
@@ -1936,8 +1989,12 @@ fn rule_applies(rule: &SastRule, lang: Option<&str>) -> bool {
             if l == "c" && rule.languages.contains(&"cpp") {
                 return true;
             }
-            // Bash is a superset of sh
-            if l == "bash" && rule.languages.contains(&"sh") {
+            // `.sh`, `.bash` and `.zsh` all detect as "sh", so a rule declaring
+            // "bash" is reached through the shell token rather than a separate
+            // one. The previous bridge tested `l == "bash"`, which detect_lang
+            // never produces, and was written in the opposite direction to its
+            // own comment.
+            if l == "sh" && rule.languages.contains(&"bash") {
                 return true;
             }
             // Vue/Svelte SFCs embed JavaScript — JS/TS rules apply
@@ -2160,7 +2217,9 @@ fn propagate_taint(
             continue;
         }
         // Check if any tainted variable appears on the RHS
-        let rhs_tainted = tainted.iter().any(|var| lower.contains(var.as_str()));
+        let rhs_tainted = tainted
+            .iter()
+            .any(|var| contains_identifier(&lower, var.as_str()));
         if rhs_tainted {
             if let Some(lhs) = extract_assignment_lhs(line) {
                 tainted.insert(lhs);
@@ -2168,6 +2227,63 @@ fn propagate_taint(
         }
     }
     tainted
+}
+
+/// Characters that can appear inside an identifier.
+///
+/// `$` is deliberately excluded. `extract_assignment_lhs` strips a leading `$`
+/// from PHP variables, so the tainted set holds `user` for a `$user`
+/// assignment; treating `$` as part of an identifier would then stop `$user`
+/// from matching its own tainted name.
+#[inline]
+fn is_identifier_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
+/// True when `needle` occurs in `haystack` as a whole identifier.
+///
+/// Taint propagation used a bare `contains`, which made a tainted variable
+/// named `id` — exactly what `let id = req.query.id` produces — mark every line
+/// holding those two characters: `width`, `validate`, `provider`, `guid`. With
+/// a short name in the tainted set the whole file read as tainted, which turned
+/// the taint-aware rules into pattern-only rules carrying none of the precision
+/// the module header credits them with.
+///
+/// Boundary matching keeps the intended behaviour and drops the accidents:
+/// `id` matches `id` and `self.id` and `$id`, and does not match `userid`,
+/// `user_id` or `validate`.
+fn contains_identifier(haystack: &str, needle: &str) -> bool {
+    if needle.is_empty() || needle.len() > haystack.len() {
+        return false;
+    }
+    let mut from = 0usize;
+    while let Some(offset) = haystack[from..].find(needle) {
+        let start = from + offset;
+        let end = start + needle.len();
+        let left_free = haystack[..start]
+            .chars()
+            .next_back()
+            .is_none_or(|c| !is_identifier_char(c));
+        let right_free = haystack[end..]
+            .chars()
+            .next()
+            .is_none_or(|c| !is_identifier_char(c));
+        if left_free && right_free {
+            return true;
+        }
+        // Advance by one character, not one byte. A byte step can land inside a
+        // multibyte identifier and make the next slice panic.
+        from = start
+            + haystack[start..]
+                .chars()
+                .next()
+                .map(char::len_utf8)
+                .unwrap_or(1);
+        if from >= haystack.len() {
+            break;
+        }
+    }
+    false
 }
 
 /// Check if a line refers to any tainted variable.
@@ -2183,10 +2299,10 @@ fn line_is_tainted(
             return true;
         }
     }
-    // Tainted variable appears in this line
+    // Tainted variable appears in this line, as a whole identifier
     tainted_vars
         .iter()
-        .any(|var| line_lower.contains(var.as_str()))
+        .any(|var| contains_identifier(line_lower, var.as_str()))
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -2194,41 +2310,69 @@ fn line_is_tainted(
 // ═══════════════════════════════════════════════════════════════════
 
 /// Detect if a line is inside a comment block.
+/// The two Python triple-quote delimiters, checked in a fixed order.
+const TRIPLE_QUOTES: [&str; 2] = ["\"\"\"", "'''"];
+
 struct CommentTracker {
     in_block_comment: bool,
+    /// Which delimiter opened the current block. `None` means a C-style `/* */`
+    /// block; `Some(d)` means a Python triple-quoted string closed by `d`.
+    ///
+    /// Tracking this matters: a `"""` block must not be closed by a `'''`, and
+    /// the previous implementation closed on either.
+    block_delimiter: Option<&'static str>,
 }
 
 impl CommentTracker {
     fn new() -> Self {
         CommentTracker {
             in_block_comment: false,
+            block_delimiter: None,
         }
     }
 
     fn update_and_check(&mut self, line: &str) -> bool {
         let trimmed = line.trim();
 
-        // Block comment start/end
         if self.in_block_comment {
-            if trimmed.contains("*/") || trimmed.starts_with("\"\"\"") || trimmed.starts_with("'''")
-            {
+            // Close on the delimiter that opened the block, anywhere in the
+            // line. Docstrings routinely end as `    ...text."""`, which a
+            // `starts_with` test never sees.
+            let closed = match self.block_delimiter {
+                Some(delimiter) => trimmed.contains(delimiter),
+                None => trimmed.contains("*/"),
+            };
+            if closed {
                 self.in_block_comment = false;
+                self.block_delimiter = None;
             }
-            return true; // Inside block comment
+            return true;
         }
 
-        // Start of block comment
-        if trimmed.starts_with("/*") || trimmed.starts_with("/**") {
+        // C-style block comment. `/**` already starts with `/*`.
+        if trimmed.starts_with("/*") {
             self.in_block_comment = !trimmed.contains("*/");
+            self.block_delimiter = None;
             return true;
         }
-        if (trimmed.starts_with("\"\"\"") || trimmed.starts_with("'''"))
-            && trimmed.len() > 3
-            && !trimmed[3..].contains("\"\"\"")
-            && !trimmed[3..].contains("'''")
-        {
-            self.in_block_comment = true;
-            return true;
+
+        // Python triple-quoted string.
+        //
+        // The previous form required `trimmed.len() > 3`, so a bare `"""` on
+        // its own line — the canonical docstring opener — failed the test, the
+        // block was never entered, and every line of the docstring body was
+        // scanned as executable code. It also inspected both delimiters in the
+        // remainder, so `"""it's here"""` could be misread.
+        for delimiter in TRIPLE_QUOTES {
+            if let Some(rest) = trimmed.strip_prefix(delimiter) {
+                // A one-line docstring closes on the same line; anything else
+                // opens a block that later lines continue.
+                if !rest.contains(delimiter) {
+                    self.in_block_comment = true;
+                    self.block_delimiter = Some(delimiter);
+                }
+                return true;
+            }
         }
 
         // Single-line comment
@@ -2280,14 +2424,33 @@ fn confidence_for_context(source: &str, line: &str, rule: &SastRule) -> f64 {
 // ═══════════════════════════════════════════════════════════════════
 // CVSS-inspired aggregate risk score
 ///
-/// Formula inspired by CVSS v3.1 base score:
-///   risk = min(10, Σ(severity_weight × confidence × (1 + taint_bonus)) / scaling_factor)
+/// Severity-weighted, confidence-scaled, exponentially saturating:
+///
+///   raw   = Σ(severity_weight × confidence × taint_boost)   taint_boost = 1.3 or 1.0
+///   score = 10 · (1 − exp(−raw / 4))                        asymptote 10, never exceeds it
 ///
 /// Rationale:
-///   - Each Critical adds ~2.4 to the score
-///   - Each High adds ~1.3
 ///   - Confidence-weighted so low-confidence findings don't dominate
-///   - Capped at 10.0 (CVSS maximum)
+///   - Saturating rather than additive, so a long tail of Low findings cannot
+///     out-score a single Critical
+///
+/// The saturation is steep, and callers should know it. `Critical` weighs 9.5,
+/// so **one** Critical at full confidence already scores 9.07/10:
+///
+///   1 Critical  →  9.07      2 Critical  →  9.91
+///   3 Critical  →  9.99      4 Critical  → 10.00
+///   1 High      →  8.03      2 High      →  9.61
+///
+/// So this ranks "has a serious problem" against "does not", and does **not**
+/// rank two serious files against each other — a one-Critical file and a
+/// five-Critical file differ by less than a point. Anything needing that
+/// distinction should count findings by severity rather than read `risk_score`.
+///
+/// This block previously described `Σ(...) / scaling_factor` with "each Critical
+/// adds ~2.4" and "raw=4 (one Critical) → ~7.0". None of that matched: the code
+/// has always been exponential rather than a division, one Critical is raw 9.5
+/// rather than 4, and a saturating function has no fixed per-finding increment.
+/// The code is unchanged; only this description was wrong.
 // ═══════════════════════════════════════════════════════════════════
 fn compute_risk_score(findings: &[SastFinding]) -> f64 {
     if findings.is_empty() {
@@ -2316,8 +2479,11 @@ fn compute_risk_score(findings: &[SastFinding]) -> f64 {
 ///
 /// This is the primary entry point. Call once per `ingest()`.
 pub fn scan_content(content: &str, source: &str) -> SastReport {
-    let lang = detect_lang(source);
-    let is_non_code = is_non_code_file(source);
+    let lang = detect_lang_for_scan(source, content);
+    // A recognised Kubernetes manifest is `.yaml`, which `is_non_code_file`
+    // treats as prose. Its structural rules are the whole point of scanning it,
+    // so the non-code suppression must not apply once it is identified.
+    let is_non_code = is_non_code_file(source) && lang != Some("k8s");
     let lines: Vec<&str> = content.lines().collect();
 
     // Taint analysis: one pass to collect sources, one to propagate
@@ -2403,23 +2569,14 @@ pub fn scan_content(content: &str, source: &str) -> SastReport {
                 continue;
             }
 
-            // Privacy: redact line content for secret-category findings
-            // so that actual credentials are never exposed in SAST reports.
+            // Privacy invariant: once a line matches a secret-category rule,
+            // never echo *any* source bytes from that line. Even a truncated
+            // prefix can disclose a credential when the token begins the line,
+            // appears on the left-hand side, or is embedded in non-assignment
+            // syntax. Rule/category/path/line metadata already carries the
+            // debugging context without repeating secret material.
             let safe_content = if rule.category == "Hardcoded Secrets" {
-                let trimmed = line.trim();
-                if let Some(eq_pos) = trimmed.find('=') {
-                    // Show key name but redact value: "api_key = [REDACTED]"
-                    format!("{}= [REDACTED]", &trimmed[..eq_pos])
-                } else if trimmed.len() > 30 {
-                    // Find nearest valid UTF-8 boundary at or before byte 20
-                    let safe = (0..=20.min(trimmed.len()))
-                        .rev()
-                        .find(|&i| trimmed.is_char_boundary(i))
-                        .unwrap_or(0);
-                    format!("{}...[REDACTED]", &trimmed[..safe])
-                } else {
-                    "[REDACTED — secret detected]".to_string()
-                }
+                "[REDACTED — secret-bearing line]".to_string()
             } else {
                 line.trim().to_string()
             };
@@ -2493,6 +2650,224 @@ pub fn scan_content(content: &str, source: &str) -> SastReport {
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// Python's two triple-quote delimiters, as test fixtures.
+    const DQ: &str = "\"\"\"";
+    const SQ: &str = "'''";
+
+    // ── Plane 5 blockers: G26 / G27 / G31 ────────────────────────────────
+
+    #[test]
+    fn taint_matches_whole_identifiers_only() {
+        // G26. A bare `contains` let a tainted `id` -- which `let id =
+        // req.query.id` produces -- mark every line holding those two
+        // characters.
+        assert!(contains_identifier("id = 1", "id"));
+        assert!(contains_identifier("self.id", "id"));
+        assert!(contains_identifier("f(id)", "id"));
+        assert!(
+            contains_identifier("$id", "id"),
+            "PHP sigil must not block a match"
+        );
+        assert!(contains_identifier("id", "id"));
+
+        assert!(!contains_identifier("userid = 1", "id"));
+        assert!(!contains_identifier("user_id = 1", "id"));
+        assert!(!contains_identifier("validate(user)", "id"));
+        assert!(!contains_identifier("provider.connect()", "id"));
+        assert!(!contains_identifier("width = 10", "id"));
+        assert!(!contains_identifier("guid = uuid4()", "id"));
+        assert!(!contains_identifier("max_retries = 3", "x"));
+        assert!(!contains_identifier("def index():", "x"));
+    }
+
+    #[test]
+    fn unicode_identifier_boundaries_are_safe_and_exact() {
+        assert!(contains_identifier("self.变量", "变量"));
+        assert!(!contains_identifier("变量x", "变量"));
+
+        let report = scan_content(
+            "变量 = request.query\nother = 变量x\neval(other)",
+            "unicode.py",
+        );
+        assert!(
+            report
+                .findings
+                .iter()
+                .all(|finding| finding.rule_id != "PY-001"),
+            "a longer Unicode identifier must not inherit taint from its prefix"
+        );
+    }
+
+    #[test]
+    fn a_short_tainted_name_does_not_taint_the_whole_file() {
+        // The end-to-end consequence of G26, at the level callers see.
+        let lines = vec![
+            "id = request.args.get(1)",
+            "width = 10",
+            "validate(user)",
+            "provider.connect()",
+        ];
+        let direct = collect_taint_sources(&lines);
+        let tainted = propagate_taint(&lines, &direct);
+        assert!(
+            tainted.contains("id"),
+            "the assignment itself must be tainted"
+        );
+
+        for (index, line) in lines.iter().enumerate().skip(1) {
+            assert!(
+                !line_is_tainted(&line.to_lowercase(), &tainted, &direct, index),
+                "unrelated line falsely tainted: {line}"
+            );
+        }
+    }
+
+    #[test]
+    fn python_docstrings_are_recognised_as_comments() {
+        // G27. The canonical opener is a bare triple quote on its own line,
+        // which the previous `trimmed.len() > 3` gate excluded -- so the body
+        // was scanned as executable code.
+        let mut tracker = CommentTracker::new();
+        assert!(!tracker.update_and_check("def handler(req):"));
+        assert!(tracker.update_and_check(DQ));
+        assert!(tracker.update_and_check("    Uses eval(user_input) as an example."));
+        assert!(tracker.update_and_check(DQ));
+        assert!(!tracker.update_and_check("    return 1"));
+    }
+
+    #[test]
+    fn one_line_docstrings_do_not_open_a_block() {
+        let mut tracker = CommentTracker::new();
+        let single = format!("{DQ}Summary line.{DQ}");
+        assert!(tracker.update_and_check(&single));
+        assert!(
+            !tracker.update_and_check("dangerous = eval(payload)"),
+            "a one-line docstring must not swallow the code beneath it"
+        );
+    }
+
+    #[test]
+    fn a_docstring_closes_only_on_its_own_delimiter() {
+        let mut tracker = CommentTracker::new();
+        assert!(tracker.update_and_check(DQ));
+        assert!(
+            tracker.update_and_check(SQ),
+            "wrong delimiter must not close the block"
+        );
+        assert!(tracker.update_and_check("still inside the docstring"));
+        assert!(tracker.update_and_check(DQ), "own delimiter closes it");
+        assert!(!tracker.update_and_check("code_again = 1"));
+    }
+
+    #[test]
+    fn a_docstring_closing_mid_line_is_recognised() {
+        // Docstrings routinely end as `    ...text.QQQ`, which the previous
+        // `starts_with` exit test never saw.
+        let mut tracker = CommentTracker::new();
+        assert!(tracker.update_and_check(DQ));
+        assert!(tracker.update_and_check(&format!("    trailing text.{DQ}")));
+        assert!(!tracker.update_and_check("after = 1"));
+    }
+
+    #[test]
+    fn docstring_prose_no_longer_produces_findings() {
+        // The point of G27, measured through the public entry point.
+        let source = format!(
+            "def handler(req):\n    {DQ}\n    Never call eval(user_input) here.\n    {DQ}\n    return 1\n"
+        );
+        let report = scan_content(&source, "handler.py");
+        assert!(
+            report.findings.iter().all(|f| f.line_number != 3),
+            "prose inside a docstring produced a finding: {:?}",
+            report.findings
+        );
+    }
+
+    #[test]
+    fn kubernetes_manifests_are_detected_by_content() {
+        // G31. `.yaml` is generic, so the four K8S rules declared a token
+        // detect_lang could never emit and were unreachable for every file.
+        let manifest = "apiVersion: v1\nkind: Pod\nspec:\n  containers:\n    - name: app\n";
+        assert!(is_kubernetes_manifest(manifest));
+        assert_eq!(
+            detect_lang_for_scan("deploy/pod.yaml", manifest),
+            Some("k8s")
+        );
+
+        // A YAML file that is not a manifest must stay undetected.
+        let workflow = "name: CI\non:\n  push:\n    branches: [main]\n";
+        assert!(!is_kubernetes_manifest(workflow));
+        assert_eq!(
+            detect_lang_for_scan(".github/workflows/ci.yml", workflow),
+            None
+        );
+    }
+
+    #[test]
+    fn privileged_container_is_now_reported() {
+        let manifest = concat!(
+            "apiVersion: v1\n",
+            "kind: Pod\n",
+            "spec:\n",
+            "  containers:\n",
+            "    - name: app\n",
+            "      securityContext:\n",
+            "        privileged: true\n"
+        );
+        let report = scan_content(manifest, "deploy/pod.yaml");
+        assert!(
+            report.findings.iter().any(|f| f.rule_id == "K8S-001"),
+            "K8S-001 still cannot fire: {:?}",
+            report
+                .findings
+                .iter()
+                .map(|f| &f.rule_id)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn every_declared_rule_language_is_reachable() {
+        // Guards the class rather than the instance: a rule keyed to a token no
+        // detector can emit is dead, and nothing else would say so.
+        let reachable: HashSet<&str> = [
+            "c",
+            "cpp",
+            "cs",
+            "css",
+            "dockerfile",
+            "go",
+            "html",
+            "java",
+            "js",
+            "php",
+            "py",
+            "rb",
+            "rs",
+            "sh",
+            "svelte",
+            "swift",
+            "tf",
+            "ts",
+            "vue",
+            "k8s",
+            "bash",
+            "hcl",
+        ]
+        .into_iter()
+        .collect();
+
+        for rule in RULES {
+            for lang in rule.languages {
+                assert!(
+                    reachable.contains(lang),
+                    "rule {} declares language {:?}, which no detector produces",
+                    rule.id,
+                    lang
+                );
+            }
+        }
+    }
 
     fn scan(code: &str, file: &str) -> SastReport {
         scan_content(code, file)
@@ -2516,22 +2891,44 @@ mod tests {
         let code = "password = \"hunter2\"";
         let report = scan(code, "auth.py");
         let finding = &report.findings[0];
-        assert!(
-            finding.line_content.contains("[REDACTED]"),
-            "Secret-category finding must redact line_content, got: {}",
-            finding.line_content
+        assert_eq!(
+            finding.line_content, "[REDACTED — secret-bearing line]",
+            "Secret-category finding must fully redact source bytes"
         );
         assert!(
             !finding.line_content.contains("hunter2"),
             "Actual secret value must not appear in line_content: {}",
             finding.line_content
         );
-        // Should still show the key name for debugging
-        assert!(
-            finding.line_content.contains("password"),
-            "Key name should be preserved for context: {}",
-            finding.line_content
-        );
+        assert_eq!(finding.line_content, "[REDACTED — secret-bearing line]");
+    }
+
+    #[test]
+    fn secret_findings_never_echo_source_bytes_at_any_position() {
+        let secret = "sk-proj-supersecret123456789";
+        let cases = [
+            format!("\"{secret}\" trailing diagnostic text"),
+            format!("prefix text \"{secret}\" trailing text"),
+            format!("prefix text ending with \"{secret}\""),
+            format!("\"{secret}\" = placeholder"),
+        ];
+        for code in cases {
+            let report = scan(&code, "leak.txt");
+            let finding = report
+                .findings
+                .iter()
+                .find(|finding| finding.rule_id == "SEC-003")
+                .expect("sk- token must still be detected");
+            assert_eq!(
+                finding.line_content, "[REDACTED — secret-bearing line]",
+                "secret findings must not retain source bytes"
+            );
+            let serialized = serde_json::to_string(&report).unwrap();
+            assert!(
+                !serialized.contains(secret),
+                "serialized SAST report leaked secret bytes: {serialized}"
+            );
+        }
     }
 
     #[test]
@@ -2548,10 +2945,9 @@ mod tests {
             "API key must not appear in SAST finding: {}",
             finding.line_content
         );
-        assert!(
-            finding.line_content.contains("[REDACTED]"),
-            "Finding must contain [REDACTED]: {}",
-            finding.line_content
+        assert_eq!(
+            finding.line_content, "[REDACTED — secret-bearing line]",
+            "API-key finding must fully redact source bytes"
         );
     }
 

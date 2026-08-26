@@ -212,7 +212,11 @@ pub fn extract_key_terms(query: &str, fragment_summaries: &[String], top_n: usiz
 /// Score the vagueness of a query.
 ///
 /// Algorithm:
-///   vagueness = generic_verb_ratio × 0.5 + short_penalty × 0.3 − specificity_bonus × 0.2
+///   vagueness = generic_verb_ratio × 0.5 + short_penalty × 0.3 − specificity_bonus × 0.7
+///
+/// The specificity coefficient is 0.7, not the 0.2 this comment claimed until now.
+/// The code is the behaviour and was left alone; only the description was wrong, by a
+/// factor of 3.5 in how strongly a technical term pulls a query out of refinement.
 ///
 ///   - `generic_verb_ratio`: fraction of tokens that are generic verbs ("fix", "help", "add")
 ///   - `short_penalty`: queries with < 4 meaningful tokens score high vagueness
@@ -262,7 +266,7 @@ pub fn compute_vagueness(query: &str) -> (f64, String) {
 
     let reason = if raw >= 0.6 {
         format!(
-            "Query is vague: {} of {} tokens are generic verbs ({:.0}%%). \
+            "Query is vague: {} of {} tokens are generic verbs ({:.0}%). \
              Add specific symbol names, error messages, or CWE ids.",
             generic_count,
             n,

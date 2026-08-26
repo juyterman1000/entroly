@@ -27,7 +27,6 @@ pub(crate) use entroly_engine::bm25;
 pub(crate) use entroly_engine::cache;
 pub(crate) use entroly_engine::causal;
 pub(crate) use entroly_engine::channel;
-mod cognitive_bus;
 pub(crate) use entroly_engine::conversation_pruner;
 pub(crate) use entroly_engine::dedup;
 pub(crate) use entroly_engine::depgraph;
@@ -41,10 +40,12 @@ pub(crate) use entroly_engine::hierarchical;
 pub(crate) use entroly_engine::knapsack;
 pub(crate) use entroly_engine::knapsack_sds;
 pub(crate) use entroly_engine::learning;
+mod cognitive_bus_bindings;
+mod context_receipt_bindings;
 mod localization;
 pub(crate) use entroly_engine::lsh;
-mod nkbe;
 pub(crate) use entroly_engine::prism;
+mod nkbe_bindings;
 mod qccr;
 pub(crate) use entroly_engine::query;
 pub(crate) use entroly_engine::query_persona;
@@ -55,6 +56,8 @@ pub(crate) use entroly_engine::semantic_dedup;
 pub(crate) use entroly_engine::skeleton;
 pub(crate) use entroly_engine::trajectory;
 pub(crate) use entroly_engine::utilization;
+mod trust_engine_bindings;
+mod work_graph_bindings;
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -378,7 +381,7 @@ impl WasmEntrolyEngine {
             id_counter: 0,
             max_fragments: 10000,
             total_explorations: 0,
-            exploration_rate: 0.1,
+            exploration_rate: 0.0,
             rng_state: instance_id | 1,
             last_optimization: None,
             lsh_index: lsh::LshIndex::new(),

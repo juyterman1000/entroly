@@ -34,6 +34,13 @@ entroly verify-claims
 entroly simulate
 ```
 
+One disclosure, because it will be asked: if the native engine is missing,
+`simulate` installs it from PyPI before measuring. Without it, selection never
+reads the query, so the percentage would be decided by the token budget rather
+than by anything the tool did. It is a package install — no code or prompts
+leave the machine — and `ENTROLY_NO_SELF_HEAL=1` disables it, in which case the
+figure is reported labelled as unearned rather than withheld.
+
 `verify-claims` performs bounded installation, compression, receipt, recovery,
 and routing checks. `simulate` estimates context reduction on the repository
 without calling a model.
