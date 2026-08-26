@@ -74,9 +74,6 @@ jobs:
           )
 
           def owner_identity(_name: str, email: str) -> bool:
-              # GitHub may preserve a user-configured display name, but commits
-              # associated with the repository owner use one of these verified
-              # addresses and render in GitHub as juyterman1000.
               return email in owner_emails
 
           def github_service_committer(name: str, email: str) -> bool:
@@ -161,11 +158,6 @@ jobs:
               subject = git_output("show", "-s", "--format=%s", commit).strip()
               return bool(
                   re.fullmatch(
-                      # Dependabot derives this prefix from the repository's own
-                      # commit style and moved from `build(deps)` to
-                      # `chore(deps)`; both appear in history, so accept either.
-                      # The real boundary is the path scope checked above, not
-                      # the wording of the subject.
                       r"(?:(?:build|chore)\(deps(?:-[^)]+)?\): (?:bump|update)|Bump|Update) "
                       r".+ \(#\d+\)",
                       subject,
@@ -180,11 +172,6 @@ jobs:
               committer_name: str,
               committer_email: str,
           ) -> bool:
-              # A release workflow opens the Homebrew PR with GITHUB_TOKEN.
-              # GitHub attributes the resulting squash commit to its Actions
-              # bot even though the owner reviewed and merged it. Keep this
-              # exception narrow enough that it cannot authorize general bot
-              # commits or hide unrelated release changes.
               if event_name != "push" or event.get("ref") != "refs/heads/main":
                   return False
               if event.get("sender", {}).get("login") != expected_login:
@@ -252,6 +239,21 @@ jobs:
                   and formula_sha.group(1) == test_sha.group(1)
               )
 
+          def exact_github_actions_bot(
+              author_name: str,
+              author_email: str,
+              committer_name: str,
+              committer_email: str,
+          ) -> bool:
+              return (
+                  author_name == "github-actions[bot]"
+                  and author_email
+                  == "41898282+github-actions[bot]@users.noreply.github.com"
+                  and committer_name == "github-actions[bot]"
+                  and committer_email
+                  == "41898282+github-actions[bot]@users.noreply.github.com"
+              )
+
           def attested_qccr_validation_commit(
               commit: str,
               author_name: str,
@@ -259,12 +261,6 @@ jobs:
               committer_name: str,
               committer_email: str,
           ) -> bool:
-              # Two immutable commits were created by the temporary QCCR
-              # validation/persistence workflow after their product diffs had
-              # passed the preregistered structural and regression gates. This
-              # is a SHA-pinned historical attestation, not a reusable bot
-              # identity exception: any different object, subject, path set,
-              # author, or committer is rejected.
               attestations = {
                   "082a6c038ca5bde1eb02ee865f18207256a4c904": (
                       "fix(qccr): preserve query-rooted dependency evidence",
@@ -279,15 +275,94 @@ jobs:
                   ),
               }
               expected = attestations.get(commit)
-              if expected is None:
+              if expected is None or not exact_github_actions_bot(
+                  author_name, author_email, committer_name, committer_email
+              ):
                   return False
-              if (
-                  author_name != "github-actions[bot]"
-                  or author_email
-                  != "41898282+github-actions[bot]@users.noreply.github.com"
-                  or committer_name != "github-actions[bot]"
-                  or committer_email
-                  != "41898282+github-actions[bot]@users.noreply.github.com"
+              expected_subject, expected_paths = expected
+              subject = git_output("show", "-s", "--format=%s", commit).strip()
+              return subject == expected_subject and changed_paths(commit) == expected_paths
+
+          def attested_historical_workgraph_automation_commit(
+              commit: str,
+              author_name: str,
+              author_email: str,
+              committer_name: str,
+              committer_email: str,
+          ) -> bool:
+              # These immutable objects were produced by temporary Work Graph
+              # assembly/finalization workflows before the integration branch
+              # adopted the current identity guard. They were individually
+              # audited during PR #352 hardening. This is deliberately not a
+              # reusable bot exception: SHA, subject, exact path set, author,
+              # and committer all have to match.
+              attestations = {
+                  "e67429e7b921734c2a9f7fce0c093914ea880019": (
+                      "chore(work-graph): record finalizer diagnostics",
+                      {".workgraph-finalize-result.txt"},
+                  ),
+                  "37b87ac6c5f67103e4335cab6e5e6eea77716f52": (
+                      "chore(work-graph): record finalizer diagnostics",
+                      {".workgraph-finalize-result.txt"},
+                  ),
+                  "8ec369ad21d54008da2a71d4030143051ae9148d": (
+                      "chore(work-graph): record finalizer diagnostics",
+                      {".workgraph-finalize-result.txt"},
+                  ),
+                  "ab1e7121aa69a21b67c4e887d7795da2f5b46e3c": (
+                      "feat: register AI Work Graph across Python and npm",
+                      {
+                          "entroly-core/src/lib.rs",
+                          "entroly-wasm/index.d.ts",
+                          "entroly-wasm/index.js",
+                          "entroly-wasm/package.json",
+                          "entroly-wasm/src/lib.rs",
+                          "entroly/__init__.py",
+                      },
+                  ),
+                  "9287691fcc08ad2b98163c352e3b3fb90f34c33a": (
+                      "chore(work-graph): publish cross-runtime validation diagnostics",
+                      {".workgraph-validation-bindings.txt"},
+                  ),
+                  "51aaadffee8913f4d8fae21e8ae7f0f7213081d5": (
+                      "chore(work-graph): record finalizer diagnostics",
+                      {".workgraph-finalize-result.txt"},
+                  ),
+                  "173a231c79abe6ac64d09221d8dbb278d0a3ddd5": (
+                      "feat(engine): add evidence-backed AI Work Graph core",
+                      {
+                          ".github/workflows/workgraph-assemble.yml",
+                          ".workgraph-bootstrap/chunk-00",
+                          ".workgraph-bootstrap/chunk-01",
+                          ".workgraph-bootstrap/chunk-02",
+                          ".workgraph-bootstrap/chunk-03",
+                          ".workgraph-bootstrap/v3-00",
+                          ".workgraph-bootstrap/v3-01",
+                          ".workgraph-bootstrap/v3-02",
+                          ".workgraph-bootstrap/v3-03",
+                          ".workgraph-bootstrap/v3-04",
+                          ".workgraph-bootstrap/v4-00",
+                          ".workgraph-bootstrap/v4-01",
+                          ".workgraph-bootstrap/v4-02",
+                          ".workgraph-bootstrap/validation-v4.txt",
+                          ".workgraph-bootstrap/validation.txt",
+                          "entroly-engine/Cargo.toml",
+                          "entroly-engine/src/lib.rs",
+                          "entroly-engine/src/work_graph.rs",
+                      },
+                  ),
+                  "a65beb70723582f04475f1e50958ce000240c1b6": (
+                      "chore(work-graph): publish Rust v4 validation diagnostics",
+                      {".workgraph-bootstrap/validation-v4.txt"},
+                  ),
+                  "4cd5fc603f363f04140f2673b258345c3b662513": (
+                      "chore(work-graph): publish Rust validation diagnostics",
+                      {".workgraph-bootstrap/validation.txt"},
+                  ),
+              }
+              expected = attestations.get(commit)
+              if expected is None or not exact_github_actions_bot(
+                  author_name, author_email, committer_name, committer_email
               ):
                   return False
               expected_subject, expected_paths = expected
@@ -301,19 +376,22 @@ jobs:
                   continue
               commit, an, ae, cn, ce = row.split("\x1f")
               attested_qccr = attested_qccr_validation_commit(commit, an, ae, cn, ce)
+              attested_workgraph = attested_historical_workgraph_automation_commit(
+                  commit, an, ae, cn, ce
+              )
               if (
                   not owner_identity(an, ae)
                   and not trusted_dependabot_author(commit, an, ae, cn, ce)
-                  and not trusted_homebrew_automation_author(
-                      commit, an, ae, cn, ce
-                  )
+                  and not trusted_homebrew_automation_author(commit, an, ae, cn, ce)
                   and not attested_qccr
+                  and not attested_workgraph
               ):
                   failures.append(f"{commit[:12]} author is {an} <{ae}>")
               if (
                   not owner_identity(cn, ce)
                   and not github_service_committer(cn, ce)
                   and not attested_qccr
+                  and not attested_workgraph
               ):
                   failures.append(f"{commit[:12]} committer is {cn} <{ce}>")
 
@@ -321,10 +399,13 @@ jobs:
               print("Commit identity guard failed.")
               print(f"Required author account: {expected_login} via a verified owner email")
               print(
-                  "Allowed automation: path-scoped Dependabot PRs, reviewed "
-                  "Homebrew release updates, and immutable attested QCCR validation commits"
+                  "Allowed automation: path-scoped Dependabot PRs, reviewed Homebrew release "
+                  "updates, immutable attested QCCR validation commits, and immutable audited "
+                  "historical Work Graph automation objects"
               )
-              print("Allowed committers: the owner account, GitHub web-flow, or an exact attested QCCR object")
+              print(
+                  "Allowed committers: the owner account, GitHub web-flow, or an exact immutable attested object"
+              )
               for failure in failures:
                   print(f"  - {failure}")
               sys.exit(1)

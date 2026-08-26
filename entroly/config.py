@@ -107,9 +107,11 @@ class EntrolyConfig:
     weight_entropy: float = 0.20
     """How much to weight information density (Shannon entropy)."""
 
-    exploration_rate: float = 0.10
+    exploration_rate: float = 0.0
     """Knapsack exploration rate — fraction of budget spent exploring
-    lower-ranked fragments (epsilon-greedy). Tuned by `entroly autotune`."""
+    lower-ranked fragments (epsilon-greedy). The shipped default is 0 so
+    selection is reproducible; autotune or explicit config may opt into
+    non-zero exploration."""
 
     # ── Ebbinghaus Decay ────────────────────────────────────────────────
     decay_half_life_turns: int = 15

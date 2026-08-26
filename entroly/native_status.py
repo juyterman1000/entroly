@@ -9,12 +9,36 @@ from importlib import metadata
 from types import ModuleType
 
 
-MIN_ENTROLY_CORE_VERSION = "1.0.78"
+MIN_ENTROLY_CORE_VERSION = "1.0.79"
 QCCR_SYMBOLS = (
     "py_qccr_expand_query",
     "py_qccr_rank_files",
     "py_qccr_select",
 )
+# The Work Graph binding is a distinct capability from QCCR: a core can satisfy
+# MIN_ENTROLY_CORE_VERSION and still predate `WorkGraph`, which is exactly the
+# state of the published entroly-core 1.0.78 -- version_ok is True and the
+# symbol is absent. Checking the version alone would let `pip install entroly`
+# resolve to a core that cannot run the Work Graph while reporting a healthy
+# engine, the same silent capability loss QCCR gating exists to prevent.
+WORK_GRAPH_SYMBOLS = (
+    "WorkGraph",
+    # Canonical node/edge identity. A core carrying WorkGraph but not these
+    # cannot address artifacts the way the graph does, which is how a second
+    # free-form id scheme grew in the Python layer. Treat identity as part of
+    # the capability, not an optional extra.
+    "work_graph_node_id",
+    "work_graph_edge_id",
+    # The production continuity surface is the complete context/execution/
+    # trust chain. A core with the original WorkGraph class but without these
+    # canonical contracts would otherwise pass the capability probe and fail
+    # only after a handoff tried to record an execution.
+    "routing_decision_build_json",
+    "model_execution_outcome_build_json",
+    "verification_record_build_json",
+    "work_continuation_proof_build_json",
+)
+
 RELEASE_NATIVE_SYMBOLS = QCCR_SYMBOLS + (
     "extract_skeleton",
     "py_compress_block",

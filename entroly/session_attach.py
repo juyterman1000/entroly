@@ -58,6 +58,17 @@ TOOL_SCOPES: dict[str, frozenset[str]] = {
             "verify_provenance",
         }
     ),
+    "continuity": frozenset(
+        {
+            "work_state",
+            "work_claim",
+            "work_resume",
+            "work_handoff",
+            "work_record_context",
+            "work_record_memory",
+            "work_record_execution",
+        }
+    ),
     "verify": frozenset(
         {
             "verify_response",
@@ -99,7 +110,7 @@ TOOL_SCOPES: dict[str, frozenset[str]] = {
         }
     ),
 }
-DEFAULT_SCOPES = ("observe", "context", "receipts", "verify")
+DEFAULT_SCOPES = ("observe", "context", "receipts", "verify", "continuity")
 
 
 class AttachmentError(RuntimeError):

@@ -1,0 +1,678 @@
+//! wasm-bindgen boundary for the canonical Context Receipt envelope.
+//!
+//! The mirror of `entroly-core/src/context_receipt_bindings.rs`. Both call the
+//! same `entroly_engine::engine_contracts` functions and neither decides
+//! identity, canonicalisation or commitment, so a Node caller and a Python
+//! caller given equivalent input produce a byte-identical `receipt_commitment`.
+//!
+//! That is what turns "npm agents can participate in Work Graph continuity"
+//! into "any supported runtime can prove what evidence it received".
+
+use entroly_engine::engine_contracts::{ContextReceiptEnvelope, CONTEXT_RECEIPT_SCHEMA_VERSION};
+use wasm_bindgen::prelude::*;
+
+fn js_err(error: impl std::fmt::Display) -> JsValue {
+    JsValue::from_str(&error.to_string())
+}
+
+/// Build a canonical receipt envelope and return it as canonical JSON.
+///
+/// Reference lists arrive as JSON arrays rather than `Box<[JsString]>` so there
+/// is one decoding path shared with the other bindings here, and so an empty
+/// list is expressed the same way in both runtimes.
+#[wasm_bindgen(js_name = contextReceiptBuildJSON)]
+#[allow(clippy::too_many_arguments)]
+pub fn context_receipt_build_json(
+    repository_id: &str,
+    repository_commitment: &str,
+    graph_commitment: &str,
+    work_scope_id: &str,
+    source_commitment: Option<String>,
+    selected_refs_json: Option<String>,
+    omitted_refs_json: Option<String>,
+    pinned_refs_json: Option<String>,
+    recoverable_refs_json: Option<String>,
+    recovery_handles_json: Option<String>,
+    evidence_ids_json: Option<String>,
+    budget_tokens: Option<u32>,
+    selection_policy: Option<String>,
+    execution_id: Option<String>,
+    created_at_ms: Option<f64>,
+) -> Result<String, JsValue> {
+    fn refs(value: Option<String>) -> Result<Vec<String>, JsValue> {
+        match value {
+            None => Ok(Vec::new()),
+            Some(text) if text.trim().is_empty() => Ok(Vec::new()),
+            Some(text) => serde_json::from_str(&text).map_err(js_err),
+        }
+    }
+
+    // JavaScript numbers are f64. Reject anything that is not an exact
+    // integer instead of silently truncating a timestamp into a different
+    // receipt — a truncated millisecond is a different commitment.
+    let created_at_ms = match created_at_ms {
+        None => 0,
+        Some(value) => {
+            const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
+            if !value.is_finite() || value.fract() != 0.0 || value.abs() > MAX_SAFE_INTEGER {
+                return Err(JsValue::from_str(
+                    "created_at_ms must be a finite JavaScript-safe integer",
+                ));
+            }
+            value as i64
+        }
+    };
+
+    let envelope = ContextReceiptEnvelope::new(
+        repository_id.to_owned(),
+        repository_commitment.to_owned(),
+        graph_commitment.to_owned(),
+        work_scope_id.to_owned(),
+        source_commitment.unwrap_or_default(),
+        refs(selected_refs_json)?,
+        refs(omitted_refs_json)?,
+        refs(pinned_refs_json)?,
+        refs(recoverable_refs_json)?,
+        refs(recovery_handles_json)?,
+        refs(evidence_ids_json)?,
+        budget_tokens.unwrap_or(0),
+        selection_policy.unwrap_or_default(),
+        execution_id.unwrap_or_default(),
+        created_at_ms,
+    )
+    .map_err(js_err)?;
+    envelope.to_json().map_err(js_err)
+}
+
+/// Parse and verify an envelope, returning its canonical JSON.
+///
+/// Fails closed on a commitment that does not recompute and on an unrecognised
+/// schema version — a caller cannot obtain an unverified envelope here.
+#[wasm_bindgen(js_name = contextReceiptVerifyJSON)]
+pub fn context_receipt_verify_json(receipt_json: &str) -> Result<String, JsValue> {
+    let envelope = ContextReceiptEnvelope::from_json_verified(receipt_json).map_err(js_err)?;
+    envelope.to_json().map_err(js_err)
+}
+
+/// The commitment carried by a verified envelope.
+#[wasm_bindgen(js_name = contextReceiptCommitment)]
+pub fn context_receipt_commitment(receipt_json: &str) -> Result<String, JsValue> {
+    let envelope = ContextReceiptEnvelope::from_json_verified(receipt_json).map_err(js_err)?;
+    Ok(envelope.receipt_commitment)
+}
+
+/// Project a verified envelope into the Work Graph reference form, as JSON.
+#[wasm_bindgen(js_name = contextReceiptGraphRefJSON)]
+pub fn context_receipt_graph_ref_json(
+    receipt_json: &str,
+    workstream_id: &str,
+    agent_id: &str,
+    session_id: &str,
+) -> Result<String, JsValue> {
+    let envelope = ContextReceiptEnvelope::from_json_verified(receipt_json).map_err(js_err)?;
+    let graph_ref = envelope
+        .to_graph_ref(
+            workstream_id.to_owned(),
+            agent_id.to_owned(),
+            session_id.to_owned(),
+        )
+        .map_err(js_err)?;
+    serde_json::to_string(&graph_ref).map_err(js_err)
+}
+
+/// Schema version this build implements.
+#[wasm_bindgen(js_name = contextReceiptSchemaVersion)]
+pub fn context_receipt_schema_version() -> u32 {
+    CONTEXT_RECEIPT_SCHEMA_VERSION
+}
+
+// ── Recovery handles ──────────────────────────────────────────────────────
+//
+// The mirror of the PyO3 recovery surface. Same engine functions, so the two
+// runtimes agree on which claims are refused as well as on which ids are
+// produced — a contract that accepted different inputs in different runtimes
+// would not be one contract.
+
+use entroly_engine::engine_contracts::{
+    RecoveryDisposition, RecoveryHandle, RecoveryIntegrityState, RECOVERY_HANDLE_SCHEMA_VERSION,
+};
+
+fn parse_disposition(token: &str) -> Result<RecoveryDisposition, JsValue> {
+    match token {
+        "included" => Ok(RecoveryDisposition::Included),
+        "compressed" => Ok(RecoveryDisposition::Compressed),
+        "omitted_but_recoverable" => Ok(RecoveryDisposition::OmittedButRecoverable),
+        "omitted_and_unavailable" => Ok(RecoveryDisposition::OmittedAndUnavailable),
+        other => Err(JsValue::from_str(&format!(
+            "unknown recovery disposition {other:?}; expected one of included, \
+             compressed, omitted_but_recoverable, omitted_and_unavailable"
+        ))),
+    }
+}
+
+fn integrity_token(state: RecoveryIntegrityState) -> &'static str {
+    match state {
+        RecoveryIntegrityState::Verified => "verified",
+        RecoveryIntegrityState::CommitmentMismatch => "commitment_mismatch",
+        RecoveryIntegrityState::NotRecoverable => "not_recoverable",
+    }
+}
+
+/// Build a recovery handle and return it as canonical JSON.
+///
+/// Throws when a disposition promises recovery without the means to honour it.
+#[wasm_bindgen(js_name = recoveryHandleBuildJSON)]
+#[allow(clippy::too_many_arguments)]
+pub fn recovery_handle_build_json(
+    repository_id: &str,
+    receipt_id: &str,
+    disposition: &str,
+    source_ref: Option<String>,
+    source_commitment: Option<String>,
+    fragment_commitment: Option<String>,
+    byte_start: Option<f64>,
+    byte_end: Option<f64>,
+    version: Option<String>,
+    storage_locator: Option<String>,
+    observed_at_ms: Option<f64>,
+) -> Result<String, JsValue> {
+    // Byte offsets and timestamps arrive as f64. A truncated offset addresses
+    // different bytes than the caller meant, which is a different handle.
+    fn exact_u64(value: Option<f64>, name: &str) -> Result<u64, JsValue> {
+        const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
+        match value {
+            None => Ok(0),
+            Some(v)
+                if v.is_finite() && v.fract() == 0.0 && (0.0..=MAX_SAFE_INTEGER).contains(&v) =>
+            {
+                Ok(v as u64)
+            }
+            Some(_) => Err(JsValue::from_str(&format!(
+                "{name} must be a non-negative JavaScript-safe integer"
+            ))),
+        }
+    }
+    fn exact_i64(value: Option<f64>, name: &str) -> Result<i64, JsValue> {
+        const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
+        match value {
+            None => Ok(0),
+            Some(v) if v.is_finite() && v.fract() == 0.0 && v.abs() <= MAX_SAFE_INTEGER => {
+                Ok(v as i64)
+            }
+            Some(_) => Err(JsValue::from_str(&format!(
+                "{name} must be a finite JavaScript-safe integer"
+            ))),
+        }
+    }
+
+    let handle = RecoveryHandle::new(
+        repository_id.to_owned(),
+        receipt_id.to_owned(),
+        parse_disposition(disposition)?,
+        source_ref.unwrap_or_default(),
+        source_commitment.unwrap_or_default(),
+        fragment_commitment.unwrap_or_default(),
+        exact_u64(byte_start, "byte_start")?,
+        exact_u64(byte_end, "byte_end")?,
+        version.unwrap_or_default(),
+        storage_locator.unwrap_or_default(),
+        exact_i64(observed_at_ms, "observed_at_ms")?,
+    )
+    .map_err(js_err)?;
+    handle.to_json().map_err(js_err)
+}
+
+/// Parse and check a handle, returning its canonical JSON.
+#[wasm_bindgen(js_name = recoveryHandleVerifyJSON)]
+pub fn recovery_handle_verify_json(handle_json: &str) -> Result<String, JsValue> {
+    let handle = RecoveryHandle::from_json_verified(handle_json).map_err(js_err)?;
+    handle.to_json().map_err(js_err)
+}
+
+/// Check recovered bytes against the handle's commitment.
+///
+/// Returns `verified`, `commitment_mismatch` or `not_recoverable`.
+#[wasm_bindgen(js_name = recoveryHandleVerifyBytes)]
+pub fn recovery_handle_verify_bytes(handle_json: &str, payload: &[u8]) -> Result<String, JsValue> {
+    let handle = RecoveryHandle::from_json_verified(handle_json).map_err(js_err)?;
+    Ok(integrity_token(handle.verify_recovered(payload)).to_string())
+}
+
+/// Schema version this build implements for recovery handles.
+#[wasm_bindgen(js_name = recoveryHandleSchemaVersion)]
+pub fn recovery_handle_schema_version() -> u32 {
+    RECOVERY_HANDLE_SCHEMA_VERSION
+}
+
+// ── Provenance-bearing memory ─────────────────────────────────────────────
+
+use entroly_engine::engine_contracts::{
+    MemoryAdmissibility, MemoryRecord, MEMORY_RECORD_SCHEMA_VERSION,
+};
+use entroly_engine::work_graph::TrustLevel;
+use std::collections::BTreeSet;
+
+fn parse_trust(token: &str) -> Result<TrustLevel, JsValue> {
+    match token {
+        "untrusted" => Ok(TrustLevel::Untrusted),
+        "inferred" => Ok(TrustLevel::Inferred),
+        "observed" => Ok(TrustLevel::Observed),
+        "verified" => Ok(TrustLevel::Verified),
+        other => Err(JsValue::from_str(&format!(
+            "unknown trust level {other:?}; expected untrusted, inferred, observed or verified"
+        ))),
+    }
+}
+
+fn admissibility_token(verdict: MemoryAdmissibility) -> &'static str {
+    match verdict {
+        MemoryAdmissibility::Admissible => "admissible",
+        MemoryAdmissibility::Contradicted => "contradicted",
+        MemoryAdmissibility::Superseded => "superseded",
+        MemoryAdmissibility::Expired => "expired",
+        MemoryAdmissibility::Unsupported => "unsupported",
+    }
+}
+
+fn exact_ms(value: Option<f64>, name: &str) -> Result<i64, JsValue> {
+    const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
+    match value {
+        None => Ok(0),
+        Some(v) if v.is_finite() && v.fract() == 0.0 && v.abs() <= MAX_SAFE_INTEGER => Ok(v as i64),
+        Some(_) => Err(JsValue::from_str(&format!(
+            "{name} must be a finite JavaScript-safe integer"
+        ))),
+    }
+}
+
+fn id_list(value: Option<String>) -> Result<Vec<String>, JsValue> {
+    match value {
+        None => Ok(Vec::new()),
+        Some(text) if text.trim().is_empty() => Ok(Vec::new()),
+        Some(text) => serde_json::from_str(&text).map_err(js_err),
+    }
+}
+
+/// Build a memory record and return it as canonical JSON.
+#[wasm_bindgen(js_name = memoryRecordBuildJSON)]
+#[allow(clippy::too_many_arguments)]
+pub fn memory_record_build_json(
+    repository_id: &str,
+    content_reference: &str,
+    trust_state: &str,
+    task_id: Option<String>,
+    workstream_id: Option<String>,
+    source_agent: Option<String>,
+    source_session: Option<String>,
+    source_execution: Option<String>,
+    content_commitment: Option<String>,
+    evidence_ids_json: Option<String>,
+    created_at_ms: Option<f64>,
+    observed_at_ms: Option<f64>,
+    valid_until_ms: Option<f64>,
+    supersedes_json: Option<String>,
+    contradicted_by_json: Option<String>,
+    recovery_handle: Option<String>,
+) -> Result<String, JsValue> {
+    let record = MemoryRecord::new(
+        repository_id.to_owned(),
+        task_id.unwrap_or_default(),
+        workstream_id.unwrap_or_default(),
+        source_agent.unwrap_or_default(),
+        source_session.unwrap_or_default(),
+        source_execution.unwrap_or_default(),
+        content_reference.to_owned(),
+        content_commitment.unwrap_or_default(),
+        id_list(evidence_ids_json)?,
+        parse_trust(trust_state)?,
+        exact_ms(created_at_ms, "created_at_ms")?,
+        exact_ms(observed_at_ms, "observed_at_ms")?,
+        exact_ms(valid_until_ms, "valid_until_ms")?,
+        id_list(supersedes_json)?,
+        id_list(contradicted_by_json)?,
+        recovery_handle.unwrap_or_default(),
+    )
+    .map_err(js_err)?;
+    record.to_json().map_err(js_err)
+}
+
+/// May this memory be injected, and why.
+///
+/// No score parameter, by design — section 10's "do not let similarity score
+/// imply truth" is enforced by the signature in both runtimes alike.
+#[wasm_bindgen(js_name = memoryRecordAdmissibility)]
+pub fn memory_record_admissibility(
+    record_json: &str,
+    now_ms: f64,
+    superseded_ids_json: Option<String>,
+) -> Result<String, JsValue> {
+    let record = MemoryRecord::from_json_verified(record_json).map_err(js_err)?;
+    let superseded: BTreeSet<String> = id_list(superseded_ids_json)?.into_iter().collect();
+    let now = exact_ms(Some(now_ms), "now_ms")?;
+    Ok(admissibility_token(record.admissibility_in_set(now, &superseded)).to_string())
+}
+
+/// Parse and check a memory record, returning its canonical JSON.
+#[wasm_bindgen(js_name = memoryRecordVerifyJSON)]
+pub fn memory_record_verify_json(record_json: &str) -> Result<String, JsValue> {
+    let record = MemoryRecord::from_json_verified(record_json).map_err(js_err)?;
+    record.to_json().map_err(js_err)
+}
+
+/// Schema version this build implements for memory records.
+#[wasm_bindgen(js_name = memoryRecordSchemaVersion)]
+pub fn memory_record_schema_version() -> u32 {
+    MEMORY_RECORD_SCHEMA_VERSION
+}
+
+// ── Routing, execution, temporal verification and continuation ───────────
+
+use entroly_engine::engine_contracts::{
+    ContinuationProofState, ExecutionState, ModelExecutionOutcome, OutcomeVerificationState,
+    RoutingDecision, VerificationFreshness, VerificationRecord, VerificationVerdict,
+    WorkContinuationProof,
+};
+use serde::Deserialize;
+
+fn parse_execution_state(token: &str) -> Result<ExecutionState, JsValue> {
+    match token {
+        "succeeded" => Ok(ExecutionState::Succeeded),
+        "failed" => Ok(ExecutionState::Failed),
+        "cancelled" => Ok(ExecutionState::Cancelled),
+        "unknown" => Ok(ExecutionState::Unknown),
+        other => Err(JsValue::from_str(&format!(
+            "unknown execution state {other:?}"
+        ))),
+    }
+}
+
+fn parse_outcome_verification(token: &str) -> Result<OutcomeVerificationState, JsValue> {
+    match token {
+        "passed" => Ok(OutcomeVerificationState::Passed),
+        "failed" => Ok(OutcomeVerificationState::Failed),
+        "skipped" => Ok(OutcomeVerificationState::Skipped),
+        "unknown" => Ok(OutcomeVerificationState::Unknown),
+        "stale" => Ok(OutcomeVerificationState::Stale),
+        other => Err(JsValue::from_str(&format!(
+            "unknown outcome verification state {other:?}"
+        ))),
+    }
+}
+
+fn parse_verification_verdict(token: &str) -> Result<VerificationVerdict, JsValue> {
+    match token {
+        "passed" => Ok(VerificationVerdict::Passed),
+        "failed" => Ok(VerificationVerdict::Failed),
+        "skipped" => Ok(VerificationVerdict::Skipped),
+        "unknown" => Ok(VerificationVerdict::Unknown),
+        other => Err(JsValue::from_str(&format!(
+            "unknown verification verdict {other:?}"
+        ))),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RoutingInput {
+    repository_id: String,
+    task_id: String,
+    workstream_id: String,
+    provider: String,
+    model: String,
+    runtime: String,
+    context_budget_tokens: u32,
+    policy_version: String,
+    #[serde(default)]
+    reason_codes: Vec<String>,
+    #[serde(default)]
+    feature_commitments: Vec<String>,
+    #[serde(default)]
+    fallback_route_ids: Vec<String>,
+    #[serde(default)]
+    receipt_id: String,
+    #[serde(default)]
+    evidence_ids: Vec<String>,
+    decided_at_ms: i64,
+}
+
+#[wasm_bindgen(js_name = routingDecisionBuildJSON)]
+pub fn routing_decision_build_json(input_json: &str) -> Result<String, JsValue> {
+    let input: RoutingInput = serde_json::from_str(input_json).map_err(js_err)?;
+    RoutingDecision::new(
+        input.repository_id,
+        input.task_id,
+        input.workstream_id,
+        input.provider,
+        input.model,
+        input.runtime,
+        input.context_budget_tokens,
+        input.policy_version,
+        input.reason_codes,
+        input.feature_commitments,
+        input.fallback_route_ids,
+        input.receipt_id,
+        input.evidence_ids,
+        input.decided_at_ms,
+    )
+    .and_then(|value| value.to_json())
+    .map_err(js_err)
+}
+
+#[wasm_bindgen(js_name = routingDecisionVerifyJSON)]
+pub fn routing_decision_verify_json(value_json: &str) -> Result<String, JsValue> {
+    RoutingDecision::from_json_verified(value_json)
+        .and_then(|value| value.to_json())
+        .map_err(js_err)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OutcomeInput {
+    routing_id: String,
+    repository_id: String,
+    task_id: String,
+    workstream_id: String,
+    provider: String,
+    model: String,
+    runtime: String,
+    #[serde(default)]
+    receipt_id: String,
+    #[serde(default)]
+    request_commitment: String,
+    #[serde(default)]
+    response_commitment: String,
+    state: String,
+    verification_state: String,
+    #[serde(default)]
+    latency_ms: u64,
+    #[serde(default)]
+    input_tokens: u64,
+    #[serde(default)]
+    output_tokens: u64,
+    #[serde(default)]
+    cost_micro_usd: u64,
+    #[serde(default)]
+    error_code: String,
+    #[serde(default)]
+    evidence_ids: Vec<String>,
+    completed_at_ms: i64,
+}
+
+#[wasm_bindgen(js_name = modelExecutionOutcomeBuildJSON)]
+pub fn model_execution_outcome_build_json(input_json: &str) -> Result<String, JsValue> {
+    let input: OutcomeInput = serde_json::from_str(input_json).map_err(js_err)?;
+    ModelExecutionOutcome::new(
+        input.routing_id,
+        input.repository_id,
+        input.task_id,
+        input.workstream_id,
+        input.provider,
+        input.model,
+        input.runtime,
+        input.receipt_id,
+        input.request_commitment,
+        input.response_commitment,
+        parse_execution_state(&input.state)?,
+        parse_outcome_verification(&input.verification_state)?,
+        input.latency_ms,
+        input.input_tokens,
+        input.output_tokens,
+        input.cost_micro_usd,
+        input.error_code,
+        input.evidence_ids,
+        input.completed_at_ms,
+    )
+    .and_then(|value| value.to_json())
+    .map_err(js_err)
+}
+
+#[wasm_bindgen(js_name = modelExecutionOutcomeVerifyJSON)]
+pub fn model_execution_outcome_verify_json(value_json: &str) -> Result<String, JsValue> {
+    ModelExecutionOutcome::from_json_verified(value_json)
+        .and_then(|value| value.to_json())
+        .map_err(js_err)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct VerificationInput {
+    repository_id: String,
+    subject_id: String,
+    subject_commitment: String,
+    verified_repository_commitment: String,
+    verdict: String,
+    #[serde(default)]
+    evidence_ids: Vec<String>,
+    #[serde(default)]
+    dependency_commitments: Vec<String>,
+    observed_at_ms: i64,
+    #[serde(default)]
+    valid_until_ms: i64,
+}
+
+#[wasm_bindgen(js_name = verificationRecordBuildJSON)]
+pub fn verification_record_build_json(input_json: &str) -> Result<String, JsValue> {
+    let input: VerificationInput = serde_json::from_str(input_json).map_err(js_err)?;
+    VerificationRecord::new(
+        input.repository_id,
+        input.subject_id,
+        input.subject_commitment,
+        input.verified_repository_commitment,
+        parse_verification_verdict(&input.verdict)?,
+        input.evidence_ids,
+        input.dependency_commitments,
+        input.observed_at_ms,
+        input.valid_until_ms,
+    )
+    .and_then(|value| value.to_json())
+    .map_err(js_err)
+}
+
+#[wasm_bindgen(js_name = verificationRecordVerifyJSON)]
+pub fn verification_record_verify_json(value_json: &str) -> Result<String, JsValue> {
+    VerificationRecord::from_json_verified(value_json)
+        .and_then(|value| value.to_json())
+        .map_err(js_err)
+}
+
+#[wasm_bindgen(js_name = verificationRecordFreshness)]
+pub fn verification_record_freshness(
+    value_json: &str,
+    current_repository_commitment: &str,
+    now_ms: f64,
+    invalidated_commitments_json: Option<String>,
+) -> Result<String, JsValue> {
+    let record = VerificationRecord::from_json_verified(value_json).map_err(js_err)?;
+    let invalidated: BTreeSet<String> =
+        id_list(invalidated_commitments_json)?.into_iter().collect();
+    let token = match record.freshness(
+        current_repository_commitment,
+        exact_ms(Some(now_ms), "now_ms")?,
+        &invalidated,
+    ) {
+        VerificationFreshness::Current => "current",
+        VerificationFreshness::Stale => "stale",
+        VerificationFreshness::Invalidated => "invalidated",
+        VerificationFreshness::Unknown => "unknown",
+    };
+    Ok(token.to_string())
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ContinuationInput {
+    repository_id: String,
+    graph_revision: u64,
+    graph_commitment: String,
+    workstream_id: String,
+    from_agent: String,
+    to_agent: String,
+    handoff_commitment: String,
+    #[serde(default)]
+    context_receipt_commitments: Vec<String>,
+    #[serde(default)]
+    routing_commitments: Vec<String>,
+    #[serde(default)]
+    execution_outcome_commitments: Vec<String>,
+    #[serde(default)]
+    verification_commitments: Vec<String>,
+    #[serde(default)]
+    memory_commitments: Vec<String>,
+    #[serde(default)]
+    outstanding_work_refs: Vec<String>,
+    #[serde(default)]
+    recovery_handle_ids: Vec<String>,
+    created_at_ms: i64,
+}
+
+#[wasm_bindgen(js_name = workContinuationProofBuildJSON)]
+pub fn work_continuation_proof_build_json(input_json: &str) -> Result<String, JsValue> {
+    let input: ContinuationInput = serde_json::from_str(input_json).map_err(js_err)?;
+    WorkContinuationProof::new(
+        input.repository_id,
+        input.graph_revision,
+        input.graph_commitment,
+        input.workstream_id,
+        input.from_agent,
+        input.to_agent,
+        input.handoff_commitment,
+        input.context_receipt_commitments,
+        input.routing_commitments,
+        input.execution_outcome_commitments,
+        input.verification_commitments,
+        input.memory_commitments,
+        input.outstanding_work_refs,
+        input.recovery_handle_ids,
+        input.created_at_ms,
+    )
+    .and_then(|value| value.to_json())
+    .map_err(js_err)
+}
+
+#[wasm_bindgen(js_name = workContinuationProofVerifyJSON)]
+pub fn work_continuation_proof_verify_json(value_json: &str) -> Result<String, JsValue> {
+    WorkContinuationProof::from_json_verified(value_json)
+        .and_then(|value| value.to_json())
+        .map_err(js_err)
+}
+
+#[wasm_bindgen(js_name = workContinuationProofState)]
+pub fn work_continuation_proof_state(
+    value_json: &str,
+    repository_id: &str,
+    graph_revision: f64,
+    graph_commitment: &str,
+) -> Result<String, JsValue> {
+    let proof = WorkContinuationProof::from_json_verified(value_json).map_err(js_err)?;
+    let graph_revision = exact_ms(Some(graph_revision), "graph_revision")?;
+    if graph_revision < 0 {
+        return Err(JsValue::from_str("graph_revision must be >= 0"));
+    }
+    let token = match proof.state_for_graph(repository_id, graph_revision as u64, graph_commitment)
+    {
+        ContinuationProofState::Valid => "valid",
+        ContinuationProofState::Stale => "stale",
+        ContinuationProofState::Invalid => "invalid",
+    };
+    Ok(token.to_string())
+}

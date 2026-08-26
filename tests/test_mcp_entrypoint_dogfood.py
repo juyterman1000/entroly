@@ -13,6 +13,7 @@ import os
 import queue
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -158,7 +159,9 @@ def _tool_payload(response: dict) -> dict:
 
 @pytest.fixture(scope="module")
 def installed_mcp() -> subprocess.Popen[str]:
-    executable = shutil.which("entroly")
+    script_name = "entroly.exe" if os.name == "nt" else "entroly"
+    adjacent = Path(sys.executable).with_name(script_name)
+    executable = str(adjacent) if adjacent.is_file() else shutil.which("entroly")
     assert executable, "installed console script `entroly` was not found on PATH"
 
     with tempfile.TemporaryDirectory(prefix="entroly-entrypoint-dogfood-") as raw:
@@ -246,6 +249,9 @@ def test_documented_entrypoint_lists_required_tools(
         "get_stats",
         "analyze_codebase_health",
         "smart_read",
+        "work_state",
+        "work_resume",
+        "work_handoff",
     } <= names
 
 

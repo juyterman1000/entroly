@@ -62,12 +62,11 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Create test environment
+      - name: Create exact-head test environment
         run: |
           python -m venv .venv
-          .venv/bin/pip install --upgrade pip
-          .venv/bin/pip install maturin ruff --timeout 120 --retries 5
-          .venv/bin/pip install -e '.[test]' --timeout 120 --retries 5
+          .venv/bin/python scripts/ci_install_exact_head.py \
+            --python .venv/bin/python --extras test --extra-package ruff
 
       - name: Rust format and QCCR unit tests
         run: |

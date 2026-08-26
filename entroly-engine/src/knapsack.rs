@@ -2,19 +2,25 @@
 //!
 //! # Differentiable Soft Bisection (primary path, τ ≥ 0.05)
 //!
-//! Find threshold th* via 30-step bisection such that:
+//! Find the dual variable λ* via 30-step bisection such that:
 //!
-//!   f(th) = Σᵢ σ((sᵢ − th) / τ) · tokensᵢ  −  B  =  0
+//!   g(λ) = Σᵢ σ((sᵢ − λ·cᵢ) / τ) · cᵢ  −  B  =  0
 //!
-//! where sᵢ = w^T · featuresᵢ (pre-softcap linear score, same as REINFORCE).
-//! f is strictly monotone decreasing in th, so bisection always converges.
+//! where sᵢ = w^T · featuresᵢ (pre-softcap linear score, same as REINFORCE) and
+//! cᵢ = tokensᵢ. g is strictly monotone decreasing in λ, so bisection always
+//! converges.
 //!
-//! th* is the **exact Lagrange multiplier** for the token-budget constraint under
+//! λ* is the **exact Lagrange multiplier** for the token-budget constraint under
 //! the continuous KKT relaxation of the 0/1 knapsack — a principled dual variable,
-//! not a heuristic threshold.
+//! not a heuristic threshold. Note that it multiplies the *cost*: λ carries units
+//! of value-per-token, so `sᵢ − λ·cᵢ` is a reduced cost. A constant score offset
+//! `sᵢ − th` is a different rule and is only equivalent when every cᵢ is equal;
+//! this header described that weaker form until now, while all three call sites
+//! have always computed `σ((sᵢ − λ·cᵢ)/τ)`.
 //!
-//! After bisection, sort fragments by p_i = σ((sᵢ − th*) / τ) descending and
-//! greedily fill the *hard* budget (context windows are hard limits).
+//! After bisection, sort fragments by p_i = σ((sᵢ − λ*·cᵢ) / τ) descending —
+//! equivalently by reduced cost, the LP-duality ordering — and greedily fill the
+//! *hard* budget (context windows are hard limits).
 //!
 //! Complexity: O(30 · N) bisection + O(N log N) sort = O(N log N).
 //!   ≈ 33× faster than the O(N × Q=1000) DP table for N=500.
@@ -22,8 +28,11 @@
 //! Train/test consistency: the same linear score sᵢ and the same σ(·/τ) appear
 //! in the REINFORCE backward pass → no train/test mismatch.
 //!
-//! Convergence: as τ → 0, p_i → I(sᵢ > th*) and the greedy fill recovers the
-//! exact density-sorted greedy. The objective here is linear (Σ sᵢ·xᵢ), i.e.
+//! Convergence: as τ → 0, p_i → I(sᵢ > λ*·cᵢ) = I(sᵢ/cᵢ > λ*), so the greedy
+//! fill recovers the exact density-sorted greedy — which is the ordering the
+//! ½-approximation below refers to. (Under the `sᵢ − th` form it would instead
+//! recover a *score*-sorted greedy, a different and weaker algorithm; that is why
+//! the distinction is worth stating.) The objective here is linear (Σ sᵢ·xᵢ), i.e.
 //! modular, so density-greedy on a knapsack gives the ½-approximation of
 //! Dantzig-style rounding — NOT (1-1/e), which requires a submodular
 //! objective. If redundancy/diversity terms are added to the score (making
@@ -424,7 +433,24 @@ fn soft_bisection_select(
         })
         .collect();
 
-    with_probs.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    // Ties break on fragment id, and the score comparison is a total order.
+    //
+    // `sort_unstable_by` does not preserve input order for equal elements, and
+    // `partial_cmp(..).unwrap_or(Equal)` reported every tie -- and every NaN --
+    // as equal. So when two fragments scored identically and only one fit in
+    // the remaining budget, which one survived was decided by the sort's
+    // partitioning of whatever order the input arrived in, not by this
+    // algorithm. Two processes could then select differently from identical
+    // input: `scripts/onboarding_self_dogfood.py` caught exactly that, reporting
+    // total_tokens_saved 85459 against 85453 for one repository, one budget and
+    // one code path. Six tokens is one boundary fragment.
+    //
+    // `total_cmp` also removes the NaN-equals-everything case, which made the
+    // comparator non-transitive and left the resulting order unspecified.
+    with_probs.sort_unstable_by(|a, b| {
+        b.1.total_cmp(&a.1)
+            .then_with(|| fragments[a.0].fragment_id.cmp(&fragments[b.0].fragment_id))
+    });
 
     // Hard budget enforcement via greedy fill.
     let mut selected = Vec::with_capacity(with_probs.len());
@@ -562,7 +588,13 @@ fn knapsack_greedy(
         .iter()
         .map(|&(idx, rel)| (idx, rel / fragments[idx].token_count.max(1) as f64))
         .collect();
-    density.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    // Total order, ties broken on fragment id -- see the note in
+    // `knapsack_soft_bisection`. Density ties are more likely here, not less:
+    // equal-relevance fragments of equal length produce byte-identical ratios.
+    density.sort_unstable_by(|a, b| {
+        b.1.total_cmp(&a.1)
+            .then_with(|| fragments[a.0].fragment_id.cmp(&fragments[b.0].fragment_id))
+    });
 
     let mut selected = Vec::new();
     let mut remaining = budget;
@@ -613,6 +645,96 @@ mod tests {
 
     fn no_feedback() -> HashMap<String, f64> {
         HashMap::new()
+    }
+
+
+    /// Selection must not depend on the order the caller supplied fragments in.
+    ///
+    /// The selection sorts compared a float score with no secondary key, so
+    /// equally-scored fragments were left in whatever relative order the sort
+    /// happened to produce from the incoming sequence. That makes the result a
+    /// function of input order, and input order is not a constant: upstream
+    /// assembles candidates through maps and merges whose iteration order Rust
+    /// seeds per process. `scripts/onboarding_self_dogfood.py` observed the
+    /// consequence -- total_tokens_saved 85459 against 85453 for one
+    /// repository, one budget and one code path. Six tokens is one boundary
+    /// fragment changing sides.
+    ///
+    /// Every fragment here scores and costs identically, so the budget boundary
+    /// is decided purely by the tie-break. Breaking on `fragment_id` rather than
+    /// on position makes the outcome invariant to permutation, which is the
+    /// property that actually holds across processes.
+    #[test]
+    fn selection_is_invariant_to_input_order_when_scores_tie() {
+        let mk = |id: usize| {
+            let mut f = ContextFragment::new(
+                format!("frag-{id:02}"),
+                "identical content".into(),
+                100,
+                "".into(),
+            );
+            // Identical on every scoring axis: guarantees an exact tie.
+            f.recency_score = 0.5;
+            f.frequency_score = 0.5;
+            f.semantic_score = 0.5;
+            f.entropy_score = 0.5;
+            f
+        };
+
+        let weights = ScoringWeights::default();
+        let budget = 1000; // exactly ten of twenty-four fragments fit
+
+        // Soft bisection only. The exact DP below 0.05 reconstructs its
+        // selection by walking the table, so among equal-value items it keeps
+        // whichever the table reached first -- a positional choice this fix
+        // does not touch and cannot claim. Asserting invariance there would be
+        // asserting a property the code does not have.
+        for temperature in [0.5_f64] {
+            let ascending: Vec<ContextFragment> = (0..24).map(mk).collect();
+            let baseline = knapsack_optimize(
+                &ascending,
+                budget,
+                &weights,
+                &no_feedback(),
+                temperature,
+            );
+            let mut expected: Vec<String> = baseline
+                .selected_indices
+                .iter()
+                .map(|&i| ascending[i].fragment_id.clone())
+                .collect();
+            expected.sort();
+            assert_eq!(expected.len(), 10, "budget must bind at ten fragments");
+
+            // Same set of fragments, different orders. A deterministic selector
+            // must choose the same fragments every time.
+            let permutations: [Vec<usize>; 3] = [
+                (0..24).rev().collect(),
+                (0..24).map(|i| (i * 7) % 24).collect(),
+                (0..24).map(|i| (i * 5 + 3) % 24).collect(),
+            ];
+            for perm in permutations {
+                let shuffled: Vec<ContextFragment> = perm.iter().map(|&i| mk(i)).collect();
+                let got = knapsack_optimize(
+                    &shuffled,
+                    budget,
+                    &weights,
+                    &no_feedback(),
+                    temperature,
+                );
+                let mut ids: Vec<String> = got
+                    .selected_indices
+                    .iter()
+                    .map(|&i| shuffled[i].fragment_id.clone())
+                    .collect();
+                ids.sort();
+                assert_eq!(
+                    ids, expected,
+                    "input order changed the selection (temperature {temperature})"
+                );
+                assert_eq!(got.total_tokens, baseline.total_tokens);
+            }
+        }
     }
 
     #[test]

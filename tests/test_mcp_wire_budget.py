@@ -19,12 +19,12 @@ hitting it rather than by CI. These tests are that audit.
 
 from __future__ import annotations
 
-NEWLINE = chr(10)
-TAB_CHAR = chr(9)
-
 import json
 
 import pytest
+
+NEWLINE = chr(10)
+TAB_CHAR = chr(9)
 
 # The MCP result cap is ~25k tokens; at ~4 chars/token that is ~100k characters,
 # beyond which the response is rejected before the agent sees any of it. The

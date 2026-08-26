@@ -111,6 +111,7 @@ impl EicvAnalyzer {
     ///
     /// Returns an [`EicvCertificate`] with the fused phi score and decision.
     pub fn verify(&self, evidence: &str, claim: &str) -> EicvCertificate {
+        #[cfg(not(target_arch = "wasm32"))]
         let start = std::time::Instant::now();
 
         // Step 0: Atomic decomposition
@@ -178,7 +179,10 @@ impl EicvAnalyzer {
             0.0
         };
 
+        #[cfg(not(target_arch = "wasm32"))]
         let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
+        #[cfg(target_arch = "wasm32")]
+        let elapsed_ms: f64 = 0.0;
 
         // Evidence hash (simple djb2 to avoid pulling sha2 crate)
         let evidence_hash = format!("{:016x}", djb2_hash(evidence));

@@ -1636,12 +1636,19 @@ def _auto_index(
             logger.debug("batch_ingest unavailable, falling back to per-file ingest")
             try:
                 for content, source, tokens in batch:
-                    engine.ingest_fragment(
+                    ingest_result = engine.ingest_fragment(
                         content=content, source=source,
                         token_count=tokens, is_pinned=False,
                     )
-                    indexed += 1
-                    total_tokens += tokens
+                    # Match ``batch_ingest`` accounting: duplicates and
+                    # rejected rows are processed, but they are not part of
+                    # the live index and therefore cannot contribute to the
+                    # baseline used by simulate/perf savings arithmetic.
+                    if ingest_result.get("status") == "ingested":
+                        indexed += 1
+                        total_tokens += int(
+                            ingest_result.get("token_count", tokens) or tokens
+                        )
             except Exception:
                 if force_snapshot is not None:
                     engine.restore_index_state(force_snapshot)
@@ -1653,12 +1660,15 @@ def _auto_index(
     else:
         try:
             for content, source, tokens in batch:
-                engine.ingest_fragment(
+                ingest_result = engine.ingest_fragment(
                     content=content, source=source,
                     token_count=tokens, is_pinned=False,
                 )
-                indexed += 1
-                total_tokens += tokens
+                if ingest_result.get("status") == "ingested":
+                    indexed += 1
+                    total_tokens += int(
+                        ingest_result.get("token_count", tokens) or tokens
+                    )
         except Exception:
             if force_snapshot is not None:
                 engine.restore_index_state(force_snapshot)

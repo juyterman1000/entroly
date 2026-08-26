@@ -9,7 +9,7 @@ Tests added here:
   P-01  CONTEXT EFFICIENCY METRIC    optimize() exposes bounded efficiency
   P-02  TOP-K RECALL                 k caps, k=0, k > corpus
   P-03  MCP SERVER TOOL LAYER        ingest_fragment / optimize_context / recall_tool via Python layer
-  P-04  GC FREEZE STATE              gc is disabled after engine __init__; re-enabled after optimize
+  P-04  HOST GC OWNERSHIP            engine construction/use preserves caller GC policy
   P-05  AUTOTUNE CONFIG I/O          json round-trip, weight normalization, bounds
   P-06  DAEMON CONTROL               enabled / disabled flag respected
   P-07  UNICODE + BINARY-LIKE        non-ASCII content ingested and recalled
@@ -183,21 +183,43 @@ def main():
         ok("server tool layer (unexpected error)", False, str(e))
 
 
-    # ─── P-04: GC Freeze State ───────────────────────────────────────────────────
-    section("P-04  GC FREEZE STATE")
-    # GC is disabled by EntrolyEngine.__init__ (server.py) at startup
-    # Cannot re-test __init__ here without reinitializing, but we can verify
-    # the pattern manually:
-    gc.enable()
-    gc.isenabled()
-    gc.disable()
+    # ─── P-04: Host GC ownership ─────────────────────────────────────────────────
+    section("P-04  HOST GC OWNERSHIP")
+    from entroly.config import EntrolyConfig as PythonConfig
+    from entroly.engine import EntrolyEngine as PythonEngine
+
+    original_gc = gc.isenabled()
     try:
-        _ = [x * x for x in range(1000)]  # no GC during tight loop
+        for expected in (True, False):
+            if expected:
+                gc.enable()
+            else:
+                gc.disable()
+            py_engine = PythonEngine(
+                PythonConfig(
+                    checkpoint_dir=Path(test_state.name) / f"gc-{expected}",
+                    use_persistent_index=False,
+                )
+            )
+            ok(
+                f"engine construction preserves GC enabled={expected}",
+                gc.isenabled() is expected,
+            )
+            py_engine.ingest_fragment("def gc_policy_probe(): return 1", "gc_policy.py", 8)
+            ok(
+                f"ingest preserves GC enabled={expected}",
+                gc.isenabled() is expected,
+            )
+            py_engine.advance_turn()
+            ok(
+                f"advance_turn preserves GC enabled={expected}",
+                gc.isenabled() is expected,
+            )
     finally:
-        gc.enable()
-        gc.collect()
-    ok("manual gc.disable/enable cycle works correctly", gc.isenabled())
-    ok("gc.freeze does not raise on non-empty heap", True)  # structural
+        if original_gc:
+            gc.enable()
+        else:
+            gc.disable()
 
 
     # ─── P-05: Autotune Config I/O ───────────────────────────────────────────────

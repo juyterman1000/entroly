@@ -23,8 +23,10 @@ rather than merely unnecessary:
 
 from __future__ import annotations
 
+import io
 import json
 import re
+import tokenize
 from pathlib import Path
 
 import pytest
@@ -83,12 +85,46 @@ def test_toml_manifest_matches_master_version(relative: str) -> None:
     )
 
 
+def _code_without_comments(path: Path) -> str:
+    """Return `path`'s source with comment tokens removed.
+
+    Scanning raw text conflates two different things: a version *constant*,
+    which must track the master version, and a version *mentioned in prose*,
+    which records what was true of some earlier release.
+
+    This module's own docstring already draws that line for files -- historical
+    records "state which version something was measured or released at;
+    rewriting them would falsify provenance". The same applies inside a file.
+    `native_status.py` explains that published entroly-core 1.0.78 reports
+    `version_ok` while predating `WorkGraph`; rewriting that to 1.0.79 would
+    make the comment false and lose the reason the gate exists.
+
+    Tokenizing rather than stripping from the first `#` keeps a `#` inside a
+    string literal intact, so a version in real code is still caught.
+    """
+    source = path.read_text(encoding="utf-8")
+    kept: list[str] = []
+    try:
+        for token in tokenize.generate_tokens(io.StringIO(source).readline):
+            if token.type != tokenize.COMMENT:
+                kept.append(token.string)
+    except (tokenize.TokenError, IndentationError):  # pragma: no cover - defensive
+        return source
+    return "\n".join(kept)
+
+
 def test_native_status_matches_master_version() -> None:
-    text = (ROOT / "entroly" / "native_status.py").read_text(encoding="utf-8")
-    found = set(re.findall(r"1\.0\.[0-9]+", text))
+    """The native gate's version constants must track the master version.
+
+    Comments are excluded deliberately -- see `_code_without_comments`. String
+    literals are not: a user-facing install hint such as
+    `Install entroly-core>=X` is a surface someone acts on, so it stays in scope.
+    """
+    path = ROOT / "entroly" / "native_status.py"
+    found = set(re.findall(r"1\.0\.[0-9]+", _code_without_comments(path)))
     stale = {v for v in found if v != MASTER}
     assert not stale, (
-        f"entroly/native_status.py references {sorted(stale)}, master is {MASTER}"
+        f"entroly/native_status.py references {sorted(stale)} in code, master is {MASTER}"
     )
 
 

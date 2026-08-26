@@ -58,7 +58,20 @@ jobs:
         run: python scripts/apply_round7_runtime_fixes.py
 
       - name: Install focused test dependencies
-        run: python -m pip install -e ".[test]" ruff
+        # `pip install -e ".[test]"` cannot bootstrap this branch. The root
+        # package requires `entroly-core>=1.0.79` so an install can never
+        # resolve a published core that predates the Work Graph, and 1.0.79 is
+        # not on PyPI until the release publishes -- `publish-core` runs before
+        # `publish-pypi`, which is the correct order. A candidate therefore has
+        # to BUILD the exact-head core rather than resolve it externally.
+        #
+        # Certifying a candidate and sequencing a release are different
+        # problems. Lowering the floor would solve this one by admitting a core
+        # with no WorkGraph symbols, which is the failure the floor exists to
+        # prevent. Use the same helper every other workflow uses instead.
+        run: |
+          python scripts/ci_install_exact_head.py --mode editable --extras test
+          python -m pip install ruff
 
       - name: Focused regression suite
         run: >-

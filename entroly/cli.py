@@ -56,7 +56,7 @@ from pathlib import Path
 try:
     from entroly import __version__
 except ImportError:
-    __version__ = "1.0.78"
+    __version__ = "1.0.79"
 
 from entroly.config import (
     load_active_tuning_config as _load_active_tuning_config,
@@ -663,7 +663,9 @@ def cmd_serve(args):
             force=True,
         )
 
-    # Import and run
+    # Engine repair is not done here: `server.main()` does it, which also covers
+    # bare `entroly` under an MCP host (piped stdin routes through
+    # `_docker_launcher._run_native()` and never reaches this subcommand).
     from entroly.server import main
     main()
 
@@ -948,6 +950,10 @@ def cmd_proxy(args):
     # Gap #28: --bypass flag sets env var consumed by proxy
     if getattr(args, "bypass", False):
         os.environ["ENTROLY_BYPASS"] = "1"
+
+    rc = _auto_repair_for_service("proxy")
+    if rc is not None:
+        sys.exit(rc)
 
     try:
         from entroly.auto_index import auto_index, start_incremental_watcher
@@ -2902,7 +2908,15 @@ def cmd_demo(args):
     ``demo``, ``simulate``, and ``perf`` must measure the same indexed
     surface. A separate auto-index path previously bypassed the file cap
     and could spend minutes ingesting a large repository before printing.
+
+    This is the command most likely to be someone's first contact with
+    Entroly, and it reports dollars as well as tokens, so a degraded engine
+    here produces both an unearned percentage and an unearned cost figure.
+    Repair runs before anything is measured.
     """
+    rc = _auto_repair_before_measuring(args)
+    if rc is not None:
+        sys.exit(rc)
     report = _run_local_simulation(args)
     if getattr(args, "json", False):
         print(json.dumps(report, indent=2))
@@ -2988,9 +3002,33 @@ def _load_local_simulation_engine(max_files: int | None = None):
         auto_index_module.MAX_FILES = old_max_files
 
 
+def _query_conditioned_selection_active(engine) -> bool:
+    """True when the query actually influences which fragments are selected.
+
+    Query-conditioned selection (QCCR) is gated on the native engine in
+    ``EntrolyEngine.optimize_context``: its candidate set comes from
+    ``self._rust.export_fragments()``, which has no pure-Python equivalent. When
+    the gate is closed the optimizer still returns fragments and still fills the
+    budget -- it just never reads the query. Measured on this repo, three
+    unrelated questions (including a nonsense control) produced a byte-identical
+    23 fragments / 7,588 tokens / "76.29% saved".
+
+    A percentage that is identical for every possible question is not a saving
+    the tool earned, so callers must be able to tell the two modes apart.
+    """
+    if not getattr(engine, "_use_rust", False):
+        return False
+    try:
+        from .qccr import _HAS_RUST
+    except Exception:
+        return False
+    return bool(_HAS_RUST)
+
+
 def _run_local_simulation(args) -> dict:
     max_files = int(getattr(args, "max_files", 100) or 0)
     engine, files_indexed, total_tokens, index_status = _load_local_simulation_engine(max_files)
+    query_conditioned = _query_conditioned_selection_active(engine)
     budget = int(getattr(args, "budget", 4096) or 4096)
     queries = _simulation_queries(args)
     baseline = int(getattr(args, "baseline", 0) or 0)
@@ -3055,11 +3093,17 @@ def _run_local_simulation(args) -> dict:
             "p95": round(latencies_sorted[p95_idx], 2) if latencies_sorted else 0.0,
             "max": round(max(latencies_ms), 2) if latencies_ms else 0.0,
         },
+        "query_conditioned_selection": query_conditioned,
+        "selection_engine": "qccr-native" if query_conditioned else "python-fallback-unranked",
         "limitations": [
             "No LLM call was made; quality is not judged here.",
             "Savings are estimated against the stated local baseline, not your provider bill.",
             "Provider cache discounts, output tokens, and retries are excluded.",
-        ],
+        ] + ([] if query_conditioned else [
+            "The native engine is unavailable, so selection did not read the query: "
+            "these figures are budget arithmetic and are NOT a measured saving. "
+            'Install it with: pip install -U "entroly[native]"',
+        ]),
     }
 
 
@@ -3076,14 +3120,42 @@ def _print_local_simulation(report: dict, *, title: str, include_perf: bool) -> 
         f"  {C.BOLD}Baseline:{C.RESET} {report['baseline_tokens_per_query']:,} "
         f"tokens/query  {C.BOLD}Budget:{C.RESET} {report['budget']:,} tokens"
     )
+    # Without the native engine the optimizer never reads the query, so every
+    # question returns the same fragments and the same percentage. Automatic
+    # repair (self_heal) normally prevents anyone seeing this at all; it is
+    # reached when repair is disabled, blocked, or offline.
+    #
+    # The figure is still shown rather than withheld -- a first run that reports
+    # nothing is worthless to the user -- but it is labelled in the same block
+    # as the number, because on its own it is `(baseline - selected_tokens) /
+    # baseline`: decided by the budget, identical for every possible question,
+    # and silent about whether the answer-bearing evidence survived. A claim and
+    # its caveat have to travel together or the caveat does not exist.
+    degraded = not report.get("query_conditioned_selection", True)
+    if degraded:
+        print()
+        print(
+            f"  {C.RED}{C.BOLD}Relevance ranking is OFF -- native engine not "
+            f"installed.{C.RESET}"
+        )
+        print(
+            f"  {C.YELLOW}Selection did not read your query, so every question "
+            f"returns the same fragments{C.RESET}"
+        )
+        print(
+            f"  {C.YELLOW}and the same percentage. The numbers below are budget "
+            f"arithmetic, not a measured saving.{C.RESET}"
+        )
+        print(f'  {C.BOLD}Fix:{C.RESET} pip install -U "entroly[native]"')
     print()
     for row in report["queries"]:
         print(f"    {C.CYAN}Q:{C.RESET} {row['query'][:80]}")
+        suffix = f" {C.GRAY}[unearned]{C.RESET}" if degraded else ""
         print(
             f"       {row['selected_fragments']} fragments, "
             f"{row['selected_tokens']:,} tokens "
             f"({row['reduction_pct']:.1f}% fewer; "
-            f"{row['tokens_saved']:,} tokens saved)"
+            f"{row['tokens_saved']:,} tokens saved){suffix}"
         )
         if include_perf:
             print(f"       latency: {row['latency_ms']:.2f} ms")
@@ -3098,7 +3170,13 @@ def _print_local_simulation(report: dict, *, title: str, include_perf: bool) -> 
     # Gating on fit alone printed "there is nothing to save yet" directly under
     # "1,104 tokens saved".
     nothing_saved = report.get("budget_narrowed_to_demonstrate") and avg <= 0.0
-    if nothing_saved:
+    if degraded:
+        print(
+            f"  {C.YELLOW}{C.BOLD}Average reduction: {avg:.1f}%{C.RESET} "
+            f"{C.RED}-- unearned{C.RESET}{C.GRAY}: selection was unranked, so "
+            f"this is the budget, not a measured saving.{C.RESET}"
+        )
+    elif nothing_saved:
         # A project smaller than the budget has nothing to drop, so every query
         # honestly reports 0.0%. Printing that bare number is the most common
         # first run and reads as "this tool does nothing". Say what actually
@@ -3116,7 +3194,8 @@ def _print_local_simulation(report: dict, *, title: str, include_perf: bool) -> 
         )
         print(
             f"  {C.GRAY}Try it on a larger repo, or force selection here with "
-            f"{C.RESET}--budget 30{C.GRAY}.{C.RESET}"
+            f'{C.RESET}--budget 30 --query "<a symbol or task in this repo>"'
+            f"{C.GRAY}.{C.RESET}"
         )
     else:
         print(f"  {C.GREEN}{C.BOLD}Average reduction: {avg:.1f}%{C.RESET}")
@@ -3135,8 +3214,113 @@ def _print_local_simulation(report: dict, *, title: str, include_perf: bool) -> 
 from .cli_recover import cmd_compress, cmd_recover  # noqa: E402
 
 
+def _auto_repair_before_measuring(args) -> int | None:
+    """Restore the native engine before measuring anything.
+
+    Runs *before* the simulation rather than after a disappointing result: the
+    check is a cheap import probe, and repairing first means the user sees one
+    correct run instead of a wrong one followed by a right one.
+
+    Returns an exit code when the caller must stop because the command was
+    re-executed in a repaired interpreter, or None to continue in-process.
+
+    This performs a network install. `ENTROLY_NO_SELF_HEAL=1` disables it; every
+    failure path falls through to the labelled report in
+    `_print_local_simulation` rather than raising.
+    """
+    from . import self_heal
+
+    if self_heal.native_engine_ready():
+        return None
+    if self_heal.disabled() or self_heal.already_healed():
+        return None
+
+    # --json must stay machine-parseable, so progress goes to stderr there.
+    quiet = bool(getattr(args, "json", False))
+    stream = sys.stderr if quiet else sys.stdout
+    print(
+        f"\n  {C.YELLOW}Native engine missing -- selection cannot read your "
+        f"query. Repairing first...{C.RESET}",
+        file=stream,
+    )
+
+    outcome = self_heal.repair_native()
+    for name, ok, detail in outcome.steps:
+        mark = f"{C.GREEN}ok{C.RESET}" if ok else f"{C.RED}failed{C.RESET}"
+        print(f"  {name}: {mark} ({detail})", file=stream)
+
+    if outcome.needs_reexec:
+        print(
+            f"  {C.GREEN}Engine installed. Re-running with it.{C.RESET}\n",
+            file=stream,
+        )
+        return self_heal.reexec_after_repair()
+
+    if outcome.blocked:
+        print(
+            f"  {C.GRAY}Continuing without it: {outcome.blocked_reason}.{C.RESET}\n",
+            file=stream,
+        )
+    return None
+
+
+def _auto_repair_for_service(label: str) -> int | None:
+    """Repair a degraded engine once, at service startup.
+
+    Long-lived surfaces (MCP server, HTTP proxy) must repair at boot and never
+    per request: a per-request install would fire concurrently under load.
+
+    All output goes to **stderr**. The MCP server speaks JSON-RPC over stdout,
+    so a single stray progress line there corrupts the protocol stream and the
+    client drops the connection.
+
+    Returns an exit code when the service was re-executed, else None.
+    """
+    from . import self_heal
+
+    if self_heal.native_engine_ready():
+        return None
+
+    # Repair being switched off must never make the degradation silent -- a
+    # long-lived service has no other place to report it.
+    if self_heal.disabled() or self_heal.already_healed():
+        print(
+            f"[entroly] WARNING: starting {label} without the native engine. "
+            f"Context selection will not read the query -- every request "
+            f"returns the same fragments. Install entroly-core, or unset "
+            f"{self_heal.ENV_DISABLE} to let Entroly install it.",
+            file=sys.stderr,
+        )
+        return None
+
+    print(
+        f"[entroly] {label}: native engine missing, so context selection would "
+        f"ignore the query. Repairing before start...",
+        file=sys.stderr,
+    )
+    outcome = self_heal.repair_native()
+    for name, ok, detail in outcome.steps:
+        print(
+            f"[entroly] {name}: {'ok' if ok else 'failed'} ({detail})",
+            file=sys.stderr,
+        )
+    if outcome.needs_reexec:
+        print(f"[entroly] engine installed; restarting {label}.", file=sys.stderr)
+        return self_heal.reexec_after_repair()
+    if outcome.blocked:
+        print(
+            f"[entroly] starting {label} without the native engine: "
+            f"{outcome.blocked_reason}. Selection will not read the query.",
+            file=sys.stderr,
+        )
+    return None
+
+
 def cmd_simulate(args):
     """entroly simulate -- local no-LLM savings estimate for this repo."""
+    rc = _auto_repair_before_measuring(args)
+    if rc is not None:
+        sys.exit(rc)
     report = _run_local_simulation(args)
     if getattr(args, "json", False):
         print(json.dumps(report, indent=2))
@@ -3146,6 +3330,9 @@ def cmd_simulate(args):
 
 def cmd_perf(args):
     """entroly perf -- local no-LLM savings and optimizer latency."""
+    rc = _auto_repair_before_measuring(args)
+    if rc is not None:
+        sys.exit(rc)
     report = _run_local_simulation(args)
     if getattr(args, "json", False):
         print(json.dumps(report, indent=2))
@@ -3676,7 +3863,7 @@ def cmd_doctor(args):
         # to compiling an ancient sdist. Bust the cache + upgrade pip
         # first — that fixes it without any compile.
         print(f"    {C.GRAY}Fix:  python -m pip install --no-cache-dir -U pip && "
-              f"python -m pip install --no-cache-dir -U \"entroly-core>=1.0.78\"{C.RESET}")
+              f"python -m pip install --no-cache-dir -U \"entroly-core>=1.0.79\"{C.RESET}")
         print(f"    {C.GRAY}(If pip still compiles from source and fails on "
               f"a new Python, your pip is too old to{C.RESET}")
         print(f"    {C.GRAY} match the abi3 wheel — upgrading pip is the "
@@ -4296,9 +4483,12 @@ def cmd_optimize(args):
     # head-to-head in quality_eval on code-retrieval tasks); fall back to
     # knapsack when there's no query to condition on.
     if selector == "auto":
-        # QCCR and DOPT need the Rust fragment export API. The default CLI
-        # install intentionally works without entroly-core, so the Python
-        # fallback must choose the selector that has a native Python path.
+        # QCCR and DOPT need the Rust fragment export API. entroly-core is now
+        # a hard dependency and `_auto_repair_before_measuring` restores it when
+        # it is missing, so the engine-less branch is no longer the default
+        # install -- it is the residue: a platform with no published wheel, or a
+        # run with ENTROLY_NO_SELF_HEAL=1. Keep the knapsack fallback for those,
+        # because it is the selector with a real pure-Python path.
         selector = "qccr" if task and getattr(engine, "_use_rust", False) else "knapsack"
     if selector in ("dopt", "qccr"):
         if not getattr(engine, "_use_rust", False):
@@ -4333,7 +4523,23 @@ def cmd_optimize(args):
                 "total_tokens": sum(f.get("token_count") or (len(f.get("content", "")) // 4) for f in selected),
                 "recommended_budget": budget,
                 "task_type": "",
+                "total_fragments": len(candidates),
             }
+            # This branch hand-builds its result instead of calling
+            # `optimize_context`, so it also has to apply the guard that lives
+            # there. Without this, the no-match contract ran only on the
+            # engine-less fallback above -- present where ranking does not
+            # happen, absent on the default path where it does.
+            #
+            # `scores_are_ranked=False`: QCCR's synthetic fragments carry a
+            # relevance that is a match *indicator*, not a rank -- measured at
+            # 1.0 for a matching query and 0.0 for a non-matching one, uniform
+            # across fragments. A spread test reads that as "degenerate" and
+            # would discard every successful selection, so it is disabled here
+            # and `_evidence_backed` (score > 0) carries that signal instead.
+            from entroly.server import apply_no_match_contract
+            apply_no_match_contract(opt, task, scores_are_ranked=False)
+            selected = opt.get("selected_fragments", [])
     else:
         opt = engine.optimize_context(token_budget=budget, query=task)
         selected = opt.get("selected_fragments", []) or opt.get("selected", [])
@@ -5650,7 +5856,7 @@ def cmd_docs(args):
         result = engine.compile_docs(target, max_files)
     except ImportError:
         print(f"  {C.RED}entroly_core not installed — docs compilation requires the Rust engine.{C.RESET}")
-        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.78\"{C.RESET}\n")
+        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.79\"{C.RESET}\n")
         return
 
     print(f"  {C.GREEN}Docs found:{C.RESET}      {result.get('docs_found', 0)}")
@@ -5693,7 +5899,7 @@ def cmd_finetune(args):
         result = engine.export_training_data(output, "jsonl")
     except ImportError:
         print(f"  {C.RED}entroly_core not installed — training export requires the Rust engine.{C.RESET}")
-        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.78\"{C.RESET}\n")
+        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.79\"{C.RESET}\n")
         return
 
     print(f"  {C.GREEN}Beliefs used:{C.RESET}     {result.get('beliefs_used', 0)}")
@@ -6012,7 +6218,16 @@ def main():
         "--scope",
         action="append",
         default=[],
-        choices=["observe", "context", "receipts", "verify", "remember", "record", "vault"],
+        choices=[
+            "observe",
+            "context",
+            "receipts",
+            "verify",
+            "continuity",
+            "remember",
+            "record",
+            "vault",
+        ],
         help="Allowed tool group; repeat to combine groups",
     )
     attach_create.add_argument("--install", action="store_true", help="Run the client MCP configuration command")

@@ -95,9 +95,10 @@ that safe to do:
 use — Claude Code, Cursor, Copilot and 30+ others — and runs in the background.
 
 **Do I need to pay for anything to try it?** No. The two commands in the
-[Install](#install) section below run entirely on your own machine, with no API
-key, and show you real numbers on your own project before you connect anything
-paid.
+[Install](#install) section below run on your own machine, with no API key, and
+show you real numbers on your own project before you connect anything paid.
+(They will install the native engine from PyPI if it is missing — see the note
+under [Install](#install).)
 
 ---
 ## Install
@@ -111,7 +112,7 @@ paid.
 | 🦀 **Rust** (source build) | `cd entroly-core && cargo build --release --bin entroly-rs --features proxy` | One self-contained program, no Python or Node needed |
 | 🍺 **Homebrew** | `brew install juyterman1000/entroly/entroly` | The command-line tool on macOS/Linux |
 | 🐳 **Docker** | `docker pull ghcr.io/juyterman1000/entroly:latest` | Runs in a container, nothing installed on your machine |
-**Now check that it worked — free, offline, no API key:**
+**Now check that it worked — free, no API key:**
 
 ```bash
 cd /your/repo
@@ -120,6 +121,14 @@ entroly simulate
 ```
 
 <sub>Both run locally. Neither one calls an AI or costs anything.</sub>
+
+<sub>One exception to "offline": if the native engine is missing, Entroly installs
+it from PyPI before measuring, because without it selection cannot read your
+query and any savings figure would be budget arithmetic rather than a measured
+result. That is the only outbound call these commands make, it is a package
+install and nothing about your code leaves the machine, and it does not happen
+when the engine is already present. Set `ENTROLY_NO_SELF_HEAL=1` to disable it —
+Entroly then reports the figure explicitly labelled as unearned.</sub>
 
 Extras (`entroly[proxy]`, `entroly[native]`, `entroly[full]`), the standalone
 Rust binary, and uninstall steps: [Engine & install options](docs/DETAILS.md#engine--install-options).
@@ -135,9 +144,21 @@ Rust binary, and uninstall steps: [Engine & install options](docs/DETAILS.md#eng
 | 🟢 **"I just want it on."** *(pip / Python user)* | `pip install -U entroly && entroly go` | Auto-detects your editor, wraps your agent, opens a dashboard showing tokens before and after |
 | **"I use Node, not Python."** *(npm user)* | `npm install -g entroly && entroly init` | Same engine, nothing Python required |
 | **"I want one binary, no runtime."** *(Rust user)* | `cargo build --release --bin entroly-rs --features proxy` (from `entroly-core/`) | A single native program with no dependencies |
-| **"I use Claude Code / Cursor / Windsurf / VS Code."** *(MCP user)* | `entroly attach create --client claude --project . --ttl 4h --install` (or `entroly init` for Cursor/VS Code) | Your editor gets compression, receipts, and recovery as built-in tools — access expires on its own, and you change zero code |
+| **"I use Claude Code / Cursor / Windsurf / VS Code."** *(MCP user)* | `entroly attach create --client claude --project . --ttl 4h --install` (or `entroly init` for Cursor/VS Code) | Your editor gets compression, receipts, exact recovery, and evidence-backed work continuity as built-in tools — access expires on its own, and you change zero code |
 | **"I'm building my own app in Python."** *(SDK user)* | `from entroly import compress, compress_messages, optimize` | Call it straight from your code, anywhere you assemble a prompt |
 | **"I have an API key and my own app."** *(proxy user)* | `entroly proxy` → point `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` / `GOOGLE_GEMINI_BASE_URL` at `localhost:9377` | Every request gets optimized on the way past — no code changes on your side |
+
+<sub>**Runaway-session rescue — automatic on the proxy, callable everywhere else.**
+When a long agent session approaches the provider's context limit, bulky tool
+output is compacted in flight: no manual `/compact`, the prompt prefix stays
+byte-stable so your warm provider cache survives, and every omitted span is
+recoverable. The proxy does it for you because it sees the outbound request.
+Anywhere else — pip, SDK, a provider-SDK wrapper, or an MCP host that passes its
+transcript — hand the conversation over and get the same policy:
+`from entroly import rescue_session`. `entroly capabilities` reports which
+protections apply to how you are running. See
+[session rescue](docs/session-rescue.md).</sub>
+
 **Why bother:** less unnecessary context reaches the model (lower bill, less
 distraction for the model), nothing is silently lost (every drop is
 recoverable and receipted), and you can prove it — `entroly verify-claims`
@@ -276,7 +297,7 @@ No. Entroly reads your files and decides what to send to the AI. It never edits,
 <details>
 <summary><b>Does my code get uploaded anywhere?</b></summary>
 <br>
-No. All selecting, compressing, and checking happens on your own machine. Entroly makes no outbound calls of its own — the only thing that leaves your computer is the request you were already sending to your AI provider, just smaller. There are no analytics on by default.
+No. All selecting, compressing, and checking happens on your own machine. Your code is never uploaded, and there are no analytics on by default. Entroly makes exactly one kind of outbound call of its own: if the native engine is missing it installs that package from PyPI, because without it selection cannot read your query. That is a package download — no code, prompts, or telemetry are sent — and `ENTROLY_NO_SELF_HEAL=1` turns it off. Otherwise the only thing that leaves your computer is the request you were already sending to your AI provider, just smaller.
 </details>
 
 <details>

@@ -47,7 +47,9 @@ pub fn kolmogorov_entropy(text: &str) -> f64 {
     let ratio = compressed.len() as f64 / raw as f64;
 
     // Clamp and scale to [0, 1]. Ratio is typically 0.10–0.95 for code.
-    // Scale: ratio 0.10 → score 0.0, ratio 0.80 → score 1.0
+    // Scale: ratio 0.10 → score 0.0, ratio 0.95 → score 1.0, matching the
+    // 0.10–0.95 range on the line above. This said 0.80 → 1.0, which the
+    // divisor never produced: at ratio 0.80 the score is 0.8235.
     ((ratio - 0.10) / 0.85).clamp(0.0, 1.0)
 }
 

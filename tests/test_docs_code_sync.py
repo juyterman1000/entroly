@@ -47,6 +47,13 @@ _INLINE_CODE_RE = re.compile(r"`([^`]+)`")
 _CMD_RE = re.compile(r"\bentroly ([a-z][a-z-]{2,})\b")
 _ENV_VAR_RE = re.compile(r"\bENTROLY_[A-Z0-9_]+\b")
 _MARKDOWN_LINK_TARGET_RE = re.compile(r"\]\([^\n)]*\)")
+# Generated inventories and architecture docs legitimately name files such as
+# `ENTROLY_VERIFIED_MAP.md`. Those are file literals, not configuration knobs.
+# Mask only compact backticked path/file tokens that contain a conventional
+# extension; assignments such as `ENTROLY_DIR=/tmp/x` therefore remain visible.
+_MARKDOWN_FILE_LITERAL_RE = re.compile(
+    r"`(?=[^`\n=]*\.[A-Za-z0-9][A-Za-z0-9._-]*`)[^`\n=]+`"
+)
 
 
 def _doc_texts() -> list[tuple[str, str]]:
@@ -92,8 +99,9 @@ def _code_spans(text: str) -> list[str]:
 
 
 def _documented_env_vars(text: str) -> set[str]:
-    """Return advertised env vars, excluding Markdown link destinations."""
+    """Return advertised env vars, excluding Markdown destinations/file names."""
     visible_text = _MARKDOWN_LINK_TARGET_RE.sub("]()", text)
+    visible_text = _MARKDOWN_FILE_LITERAL_RE.sub("``", visible_text)
     return set(_ENV_VAR_RE.findall(visible_text))
 
 
@@ -173,6 +181,16 @@ def test_env_var_scanner_ignores_markdown_link_destinations() -> None:
         "[verified map](architecture/ENTROLY_VERIFIED_MAP.md)."
     )
     assert _documented_env_vars(text) == {"ENTROLY_PORT"}
+
+
+def test_env_var_scanner_ignores_backticked_file_literals() -> None:
+    text = (
+        "Use `ENTROLY_PORT`; inventory files include "
+        "`docs/architecture/ENTROLY_VERIFIED_MAP.md` and "
+        "`ENTROLY_WIN_MASTER_PROMPT.md`. Keep "
+        "`ENTROLY_DIR=/tmp/entroly` configurable."
+    )
+    assert _documented_env_vars(text) == {"ENTROLY_PORT", "ENTROLY_DIR"}
 
 
 def test_documented_cli_subcommands_exist() -> None:

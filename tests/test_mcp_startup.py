@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import threading
 from types import SimpleNamespace
 
@@ -64,6 +65,45 @@ def test_passive_mcp_server_does_not_construct_evolution_daemon(
     assert mcp.instructions is not None
     assert "call recall_relevant once" in mcp.instructions
     assert not (project_dir / ".entroly").exists()
+
+
+def test_primary_mcp_surface_includes_work_graph_continuity(
+    monkeypatch,
+    tmp_path,
+):
+    project_dir = tmp_path / "project"
+    state_home = tmp_path / "home"
+    project_dir.mkdir()
+    state_home.mkdir()
+    monkeypatch.chdir(project_dir)
+    monkeypatch.setenv("HOME", str(state_home))
+    monkeypatch.setenv("USERPROFILE", str(state_home))
+    monkeypatch.setenv("ENTROLY_MCP_PASSIVE", "true")
+
+    calls = []
+
+    def resume(**kwargs):
+        calls.append(kwargs)
+        return {"status": "ok", "kind": "work_resume"}
+
+    monkeypatch.setattr(
+        "entroly.work_graph_mcp.work_resume",
+        resume,
+    )
+
+    mcp, _engine = server.create_mcp_server(allowed_tools={"work_resume"})
+    tools = mcp._tool_manager._tools
+
+    assert set(tools) == {"work_resume"}
+    assert "work_resume" in mcp.instructions
+    payload = tools["work_resume"].fn(to_agent="codex")
+    assert json.loads(payload)["kind"] == "work_resume"
+    assert calls == [{
+        "project": "",
+        "workstream_id": "",
+        "max_evidence": 128,
+        "to_agent": "codex",
+    }]
 
 
 def test_background_services_do_not_block_mcp_startup(monkeypatch):

@@ -13,8 +13,7 @@ pub fn qccr_rank_files(
     query: &str,
     overrides_json: &str,
 ) -> String {
-    let overrides: HashMap<String, f64> =
-        serde_json::from_str(overrides_json).unwrap_or_default();
+    let overrides: HashMap<String, f64> = serde_json::from_str(overrides_json).unwrap_or_default();
     let ranked = entroly_qccr::rank_files(&sources, &texts, query, &overrides);
     serde_json::to_string(&ranked).unwrap_or_else(|_| "[]".to_string())
 }
@@ -64,8 +63,16 @@ mod parity_tests {
             .map(|value| value.as_str().expect("source must be text").to_string())
             .collect();
         let unique: HashSet<&str> = sources.iter().map(String::as_str).collect();
-        assert_eq!(unique.len(), sources.len(), "source_order contains duplicates");
-        assert_eq!(unique.len(), files.len(), "source_order/files length mismatch");
+        assert_eq!(
+            unique.len(),
+            sources.len(),
+            "source_order contains duplicates"
+        );
+        assert_eq!(
+            unique.len(),
+            files.len(),
+            "source_order/files length mismatch"
+        );
         assert!(
             unique.iter().all(|source| files.contains_key(*source)),
             "source_order and files must name the same inputs"
@@ -99,8 +106,7 @@ mod parity_tests {
         for case in cases {
             let (sources, texts) = ordered_inputs(case);
             let query = case["query"].as_str().expect("query must be text");
-            let mut ranked =
-                entroly_qccr::rank_files(&sources, &texts, query, &HashMap::new());
+            let mut ranked = entroly_qccr::rank_files(&sources, &texts, query, &HashMap::new());
             ranked.sort_by(|left, right| {
                 right
                     .1

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "entroly"
-version = "1.0.78"
+version = "1.0.79"
 
 description = "Drop-in Context Assurance for AI agents: reduce avoidable token usage with evidence selection, receipts, exact recovery, and verification."
 readme = "README.md"
@@ -40,6 +40,11 @@ dependencies = [
     "httpx>=0.28.1",
     "starlette>=1.3.1",
     "uvicorn>=0.51.0",
+    # Required, not optional -- see the root pyproject.toml for the measurement.
+    # Query-conditioned selection (QCCR) is gated on this module, so an install
+    # without it fills the token budget without ever reading the query and
+    # reports an identical "saving" for every possible question.
+    "entroly-core>=1.0.79,<2",
 ]
 
 [project.optional-dependencies]
@@ -48,8 +53,10 @@ proxy = [
     "starlette>=1.3.1",
     "uvicorn>=0.51.0",
 ]
+# Compatibility alias: the native engine now ships with the base install, so
+# `entroly[native]` and a plain `entroly` resolve to the same thing.
 native = [
-    "entroly-core>=1.0.78,<2",
+    "entroly-core>=1.0.79,<2",
 ]
 receipt-proof = [
     "cryptography>=42",
@@ -62,7 +69,7 @@ images = [
 ]
 full = [
     "cryptography>=42",
-    "entroly-core>=1.0.78,<2",
+    "entroly-core>=1.0.79,<2",
     "httpx>=0.28.1",
     "starlette>=1.3.1",
     "uvicorn>=0.51.0",
@@ -88,3 +95,7 @@ entroly-repository-mcp = "entroly.repository_intelligence.mcp:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["entroly"]
+core-metadata-version = "2.4"
+
+[tool.hatch.build.targets.sdist]
+core-metadata-version = "2.4"

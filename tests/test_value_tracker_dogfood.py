@@ -74,7 +74,15 @@ def test_cross_process_writers_cannot_overwrite_each_others_totals(tmp_path: Pat
     workers = 4
     records_per_worker = 12
     processes: list[subprocess.Popen[str]] = []
-    env = {**os.environ, "ENTROLY_DISABLE_UPDATE_CHECK": "1"}
+    env = {
+        **os.environ,
+        "ENTROLY_DISABLE_UPDATE_CHECK": "1",
+        # This test proves serialized read/modify/write behavior, not the
+        # separately tested optional-telemetry timeout policy. A short default
+        # timeout can legitimately drop a starved event under a synchronized
+        # four-process burst before the lock ever admits it.
+        "ENTROLY_VALUE_LOCK_TIMEOUT": "30",
+    }
 
     for worker in range(workers):
         processes.append(
@@ -106,9 +114,13 @@ def test_cross_process_writers_cannot_overwrite_each_others_totals(tmp_path: Pat
     assert len(list(tmp_path.glob("ready-*"))) == workers
     (tmp_path / "start").write_text("start", encoding="utf-8")
 
+    process_logs = []
     for process in processes:
         stdout, stderr = process.communicate(timeout=45)
         assert process.returncode == 0, f"stdout={stdout}\nstderr={stderr}"
+        process_logs.append((stdout, stderr))
+
+    assert not any("telemetry event dropped" in stderr for _, stderr in process_logs)
 
     restored = ValueTracker(tmp_path)
     lifetime = restored.get_lifetime()

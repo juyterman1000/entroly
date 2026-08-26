@@ -39,29 +39,24 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install optional parser surface
+      - name: Install exact-head optional parser surface
+        # `benchmarks/results/language_symbol_coverage.json` is a byte-exact
+        # record of ONE grammar pack: it embeds
+        # `environment.tree_sitter_language_pack`, and the verify step below
+        # regenerates the payload and compares it byte for byte. The extra
+        # deliberately floats (`>=1.14.3,<2`) so users pick up grammar fixes,
+        # so every upstream release invalidates the published artifact with no
+        # change to this repository. 1.15.8 shipped 2026-08-23 and turned main
+        # red on the next push (a dependency bump unrelated to parsing).
+        #
+        # Pin the *verification* environment, not the user-facing range. Passed
+        # as --extra-package so pip resolves it in the same invocation as the
+        # editable install rather than installing a newer pack and downgrading.
+        # The artifact says results "must be regenerated and reviewed for a
+        # different grammar pack", so moving it is a reviewed decision. Bump
+        # this pin in the same commit that regenerates the artifact.
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[code-intelligence,test]"
-          # `benchmarks/results/language_symbol_coverage.json` is a byte-exact
-          # record of ONE grammar pack: it embeds
-          # `environment.tree_sitter_language_pack`, and the verify step below
-          # regenerates the whole payload and compares it byte for byte. The
-          # extra deliberately floats (`>=1.14.3,<2`) so users pick up grammar
-          # fixes, which means every upstream release silently invalidates the
-          # published artifact. 1.15.8 shipped on 2026-08-23 and turned main red
-          # on the very next push — a dependency bump that had nothing to do
-          # with parsing — because the gate resolved 1.15.8 against an artifact
-          # recorded under 1.14.3.
-          #
-          # So pin the *verification* environment, not the user-facing range.
-          # The artifact says results "must be regenerated and reviewed for a
-          # different grammar pack": moving it changes published coverage
-          # claims (C3, F#, Groovy, Nim and OCaml are recorded gaps), so that is
-          # a reviewed decision, not something CI absorbs on upstream's
-          # schedule. Bump this pin in the same commit that regenerates the
-          # artifact.
-          python -m pip install "tree-sitter-language-pack==1.14.3"
+          python scripts/ci_install_exact_head.py --extras code-intelligence,test             --extra-package "tree-sitter-language-pack==1.14.3"
 
       - name: Warm required grammars with explicit acquisition
         env:
