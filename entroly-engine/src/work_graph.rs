@@ -631,6 +631,27 @@ pub struct WorkItemView {
     pub evidence_ids: Vec<String>,
 }
 
+/// A claim, carried to the successor with the trust that qualifies it.
+///
+/// Claims were the one evidence kind `resume` never returned. They are also the
+/// kind most likely to say something a successor must not miss: a claim records
+/// what a previous agent asserted about the work, together with whether that
+/// assertion was grounded in evidence or merely inferred.
+///
+/// The trust level travels with the text on purpose. A bare string cannot
+/// distinguish "the tests prove this" from "the previous agent believed this",
+/// and presenting the second as the first is the fail-open direction for a
+/// system whose whole claim is evidence-bounded reconstruction.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ClaimView {
+    pub label: String,
+    pub trust: TrustLevel,
+    /// `grounded`, `contradicted`, `unverified`, ... as recorded on the node.
+    pub claim_state: Option<String>,
+    /// Caller-supplied risk weight, when one was recorded.
+    pub risk: Option<f64>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ResumeView {
     pub repo_id: String,
@@ -640,6 +661,15 @@ pub struct ResumeView {
     pub task_labels: Vec<String>,
     pub agents: Vec<String>,
     pub decisions: Vec<String>,
+    /// Claims scoped to the selected workstream, highest risk first.
+    ///
+    /// Added because they were being dropped entirely: a durable, engine-
+    /// verified claim reading "this work is INCOMPLETE" with risk 0.9 was
+    /// stored, correctly edged to its workstream, and then never shown to the
+    /// agent picking the work up. Found by handing a repository to a second
+    /// agent with no handoff and asking what it could reconstruct.
+    #[serde(default)]
+    pub claims: Vec<ClaimView>,
     pub failures: Vec<String>,
     pub verification: Vec<String>,
     pub changed_paths: Vec<String>,
@@ -1071,6 +1101,31 @@ impl WorkGraph {
             .filter(|n| n.kind == NodeKind::Decision)
             .map(|n| n.label.clone())
             .collect();
+        // Highest risk first: a successor reading a truncated view must see the
+        // most consequential assertion, not whichever traversal reached first.
+        // Unranked claims sort last rather than being treated as risk 0.
+        let mut claims: Vec<ClaimView> = related
+            .iter()
+            .filter_map(|id| self.nodes.get(id))
+            .filter(|n| n.kind == NodeKind::Claim)
+            .map(|n| ClaimView {
+                label: n.label.clone(),
+                trust: n.trust,
+                claim_state: n
+                    .attributes
+                    .get("claim_state")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string),
+                risk: n.attributes.get("risk").and_then(|v| v.as_f64()),
+            })
+            .collect();
+        claims.sort_by(|a, b| {
+            b.risk
+                .unwrap_or(f64::NEG_INFINITY)
+                .total_cmp(&a.risk.unwrap_or(f64::NEG_INFINITY))
+                .then_with(|| a.label.cmp(&b.label))
+        });
+
         let failures = related
             .iter()
             .filter_map(|id| self.nodes.get(id))
@@ -1093,6 +1148,7 @@ impl WorkGraph {
             task_labels,
             agents,
             decisions,
+            claims,
             failures,
             verification,
             changed_paths: selected.changed_paths,
@@ -5541,6 +5597,63 @@ mod tests {
         assert!(WorkGraph::verify_handoff_receipt(&receipt).unwrap());
         receipt.to_agent = "other".to_string();
         assert!(!WorkGraph::verify_handoff_receipt(&receipt).unwrap());
+    }
+
+    /// A successor must be shown the claims, ranked, with their trust.
+    ///
+    /// `resume` returned decisions, failures and verification and silently
+    /// omitted claims entirely. Handing a repository to a second agent with no
+    /// handoff surfaced the cost: a durable, engine-verified claim reading
+    /// "this work is INCOMPLETE" with risk 0.9 was stored, correctly edged to
+    /// its workstream, and never shown. The agent picking the work up had to
+    /// reconstruct the raw event log by hand to find it.
+    ///
+    /// Trust travels with the text because a bare string cannot separate "the
+    /// tests prove this" from "the previous agent believed this", and showing
+    /// the second as the first is the fail-open direction here.
+    #[test]
+    fn resume_surfaces_claims_ranked_by_risk_with_trust() {
+        let mut graph = WorkGraph::new("repo-1").unwrap();
+        let mut obs = clean_observation();
+        obs.task_hint = Some(TaskHint {
+            task_id: String::new(),
+            title: "Fix expired refresh".to_string(),
+            trust: TrustLevel::Observed,
+            source_kind: EvidenceKind::Checkpoint,
+            explicit_status: WorkStatus::InProgress,
+            remaining_work: vec![],
+            source_ref: "checkpoint".to_string(),
+        });
+        obs.claims.push(ClaimObservation {
+            claim_id: String::new(),
+            text: "low risk aside".to_string(),
+            state: ClaimState::Unsupported,
+            trust: TrustLevel::Inferred,
+            risk: 0.10,
+            source_ref: "agent".to_string(),
+            evidence_ids: vec![],
+        });
+        obs.claims.push(ClaimObservation {
+            claim_id: String::new(),
+            text: "this work is INCOMPLETE".to_string(),
+            state: ClaimState::Grounded,
+            trust: TrustLevel::Verified,
+            risk: 0.90,
+            source_ref: "pytest".to_string(),
+            evidence_ids: vec![],
+        });
+        graph.observe_repository(obs).unwrap();
+
+        let view = graph.resume(None, 128).unwrap();
+
+        assert_eq!(view.claims.len(), 2, "claims must reach the successor");
+        // Highest risk first: a truncated read must not lose the one that matters.
+        assert_eq!(view.claims[0].label, "this work is INCOMPLETE");
+        assert_eq!(view.claims[0].risk, Some(0.90));
+        assert_eq!(view.claims[0].trust, TrustLevel::Verified);
+        assert_eq!(view.claims[0].claim_state.as_deref(), Some("grounded"));
+        // The weaker claim keeps its weaker trust rather than being levelled up.
+        assert_eq!(view.claims[1].trust, TrustLevel::Inferred);
     }
 
     #[test]

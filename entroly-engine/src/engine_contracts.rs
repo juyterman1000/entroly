@@ -3132,6 +3132,7 @@ mod tests {
             task_labels: vec!["prose must not leak into scope".into()],
             agents: vec!["display-name".into()],
             decisions: vec!["secret decision prose".into()],
+            claims: vec![],
             failures: vec!["failure prose".into()],
             verification: vec!["verification prose".into()],
             changed_paths: vec!["tests/auth.rs".into(), "src/auth.rs".into()],
