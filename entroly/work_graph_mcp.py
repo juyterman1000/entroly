@@ -16,7 +16,15 @@ from pathlib import Path
 from typing import Any
 
 from .hardening import sanitize_injected_context
-from .work_graph import WorkGraphUnavailableError
+from .repository_intelligence import RepositoryIntelligenceService
+from .repository_intelligence.verified_context import verify_context_commitment
+from .work_graph import (
+    WorkGraphUnavailableError,
+    create_recovery_handle,
+    create_work_context_receipt,
+    verify_recovered_bytes,
+    verify_recovery_handle,
+)
 from .work_graph_content_digest import enrich_worktree_content_digests
 from .work_graph_repo import discover_repository_identity, discover_repository_observation
 from .work_graph_store import (
@@ -33,6 +41,7 @@ _MAX_EVIDENCE = 4096
 _MAX_TTL_SECONDS = 30 * 24 * 60 * 60
 _MAX_ID_CHARS = 512
 _MAX_CONTRACT_BYTES = 1024 * 1024
+_CONTEXT_SELECTION_POLICY = "repository-intelligence/verified-context-v1"
 
 
 def _project_root() -> Path:
@@ -58,6 +67,103 @@ def _passive_observation(path: Path) -> dict[str, Any]:
     """Capture a passive repo snapshot with fail-closed content identity."""
     observation = discover_repository_observation(path)
     return enrich_worktree_content_digests(path, observation)
+
+
+def _head_sha(observation: dict[str, Any]) -> str:
+    branch = observation.get("branch")
+    head = branch.get("head_sha") if isinstance(branch, dict) else None
+    if not isinstance(head, str) or not head:
+        raise ValueError("repository must have a committed HEAD for context receipts")
+    return head
+
+
+def _context_parts(context: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    if not verify_context_commitment(context):
+        raise ValueError("verified context commitment is invalid")
+    fragments = context.get("fragments")
+    descriptors = context.get("recoverable_fragments")
+    if (
+        not isinstance(fragments, list)
+        or not all(isinstance(item, dict) for item in fragments)
+        or not isinstance(descriptors, list)
+        or not all(isinstance(item, dict) for item in descriptors)
+    ):
+        raise ValueError("verified context has an invalid fragment shape")
+    return fragments, descriptors
+
+
+def _host_receipt_id(context: dict[str, Any]) -> str:
+    receipt = context.get("receipt")
+    commitment = receipt.get("context_sha256") if isinstance(receipt, dict) else None
+    if not isinstance(commitment, str) or len(commitment) != 64:
+        raise ValueError("verified context is missing its host commitment")
+    return f"vctx_{commitment}"
+
+
+def _context_contracts(
+    *,
+    context: dict[str, Any],
+    scope: dict[str, Any],
+    head_sha: str,
+    observed_at_ms: int,
+    pinned_refs: list[str] | None = None,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Project host context into existing canonical Rust contracts."""
+    fragments, descriptors = _context_parts(context)
+    for field in ("repo_id", "graph_commitment", "workstream_id"):
+        if not isinstance(scope.get(field), str):
+            raise ValueError(f"scope.{field} must be a string")
+    repository_id = _bounded_id(scope["repo_id"], "scope.repo_id")
+    graph_commitment = _bounded_id(
+        scope["graph_commitment"], "scope.graph_commitment"
+    )
+    workstream_id = _bounded_id(
+        scope["workstream_id"], "scope.workstream_id"
+    )
+    host_receipt_id = _host_receipt_id(context)
+    handles = [
+        create_recovery_handle(
+            repository_id=repository_id,
+            receipt_id=host_receipt_id,
+            disposition="omitted_but_recoverable",
+            source_ref=str(descriptor["path"]),
+            source_commitment=str(descriptor["source_sha256"]),
+            fragment_commitment=str(descriptor["fragment_sha256"]),
+            byte_start=int(descriptor["start_byte"]),
+            byte_end=int(descriptor["end_byte"]),
+            version=head_sha,
+            observed_at_ms=observed_at_ms,
+        )
+        for descriptor in descriptors
+    ]
+    retrieval = context.get("retrieval")
+    if not isinstance(retrieval, dict):
+        raise ValueError("verified context retrieval metadata is invalid")
+    evidence_ids = [
+        *(
+            str(item)
+            for item in scope.get("evidence_ids", [])
+            if isinstance(item, str) and item
+        ),
+        *(str(fragment["symbol_id"]) for fragment in fragments),
+    ]
+    canonical = create_work_context_receipt(
+        repository_id=repository_id,
+        repository_commitment=head_sha,
+        graph_commitment=graph_commitment,
+        work_scope_id=workstream_id,
+        source_commitment=str(context["receipt"]["context_sha256"]),
+        selected_refs=[str(fragment["context_ref"]) for fragment in fragments],
+        omitted_refs=[str(descriptor["context_ref"]) for descriptor in descriptors],
+        pinned_refs=pinned_refs or [],
+        recoverable_refs=[str(descriptor["context_ref"]) for descriptor in descriptors],
+        recovery_handles=[str(handle["handle_id"]) for handle in handles],
+        evidence_ids=evidence_ids,
+        budget_tokens=int(retrieval.get("token_budget", 0)),
+        selection_policy=_CONTEXT_SELECTION_POLICY,
+        created_at_ms=observed_at_ms,
+    )
+    return canonical, handles
 
 
 def _bounded_strings(values: list[str] | tuple[str, ...] | None, name: str) -> list[str]:
@@ -334,6 +440,176 @@ def work_record_context(
         return _error("work_record_context", exc)
 
 
+def work_compile_context(
+    *,
+    query: str,
+    project: str = "",
+    workstream_id: str = "",
+    agent_id: str = "",
+    session_id: str = "",
+    token_budget: int = 2_000,
+    max_hops: int = 2,
+    max_fragments: int = 24,
+) -> dict[str, Any]:
+    """Compile verified source context and record its canonical graph receipt."""
+    try:
+        selected_workstream = str(workstream_id).strip()
+        if selected_workstream:
+            selected_workstream = _bounded_id(
+                selected_workstream, "workstream_id"
+            )
+        path = _project_path(project)
+        observation = _passive_observation(path)
+        store = _store_for_path(path)
+        graph = store.submit_repository_observation(
+            observation, repository_path=path
+        )
+        scope = graph.context_scope(selected_workstream or None, max_evidence=128)
+        service = RepositoryIntelligenceService(path)
+        proposals = service.work_scope_proposals(scope)
+        context = service.context(
+            query,
+            token_budget=token_budget,
+            max_hops=max_hops,
+            max_fragments=max_fragments,
+            proposal_scores=proposals,
+            proposal_provider="rust-work-scope",
+        )
+        # Verify every source span after selection, then repeat the passive
+        # graph observation. Any changed commitment means the workspace raced
+        # compilation; record the observation, but refuse the context receipt.
+        service.validate_context(context)
+        confirmation = _passive_observation(path)
+        confirmed_graph = store.submit_repository_observation(
+            confirmation, repository_path=path
+        )
+        if confirmed_graph.graph_commitment != graph.graph_commitment:
+            raise ValueError("repository changed during context compilation; retry")
+        now_ms = int(time.time() * 1000)
+        canonical, handles = _context_contracts(
+            context=context,
+            scope=scope,
+            head_sha=_head_sha(confirmation),
+            observed_at_ms=now_ms,
+        )
+        recorded_graph, event_id = store.record_context_receipt(
+            canonical,
+            agent_id=str(agent_id),
+            session_id=str(session_id),
+        )
+        return _render_untrusted(
+            "work_compile_context",
+            {
+                "context": context,
+                "canonical_receipt": canonical,
+                "recovery_handles": handles,
+                "work_event_id": event_id,
+                "work_summary": recorded_graph.summary(),
+            },
+        )
+    except Exception as exc:
+        return _error("work_compile_context", exc)
+
+
+def work_context_fault(
+    *,
+    context: dict[str, Any],
+    context_ref: str,
+    recovery_handle: dict[str, Any],
+    project: str = "",
+    workstream_id: str = "",
+    agent_id: str = "",
+    session_id: str = "",
+    token_budget: int | None = None,
+) -> dict[str, Any]:
+    """Verify one recovery handle, fault in exact bytes, and record the receipt."""
+    try:
+        bounded_context = _bounded_contract(context, "context")
+        bounded_handle = _bounded_contract(recovery_handle, "recovery_handle")
+        if not isinstance(bounded_context, dict) or not isinstance(bounded_handle, dict):
+            raise ValueError("context and recovery_handle must be JSON objects")
+        selected_ref = _bounded_id(context_ref, "context_ref")
+        selected_workstream = str(workstream_id).strip()
+        if selected_workstream:
+            selected_workstream = _bounded_id(
+                selected_workstream, "workstream_id"
+            )
+        _fragments, descriptors = _context_parts(bounded_context)
+        matches = [
+            item for item in descriptors if item.get("context_ref") == selected_ref
+        ]
+        if len(matches) != 1:
+            raise ValueError("context_ref is not a unique committed omission")
+        descriptor = matches[0]
+        handle = verify_recovery_handle(bounded_handle)
+        expected_handle_fields = {
+            "receipt_id": _host_receipt_id(bounded_context),
+            "disposition": "omitted_but_recoverable",
+            "source_ref": descriptor["path"],
+            "source_commitment": descriptor["source_sha256"],
+            "fragment_commitment": descriptor["fragment_sha256"],
+            "byte_start": descriptor["start_byte"],
+            "byte_end": descriptor["end_byte"],
+        }
+        if any(handle.get(key) != value for key, value in expected_handle_fields.items()):
+            raise ValueError("recovery handle does not match the committed omission")
+
+        path = _project_path(project)
+        service = RepositoryIntelligenceService(path)
+        recovered = service.context_fault(
+            bounded_context,
+            selected_ref,
+            token_budget=token_budget,
+        )
+        target = next(
+            fragment for fragment in recovered["fragments"]
+            if fragment["context_ref"] == selected_ref
+        )
+        recovered_bytes = str(target["content"]).encode(
+            "utf-8", errors="surrogateescape"
+        )
+        if verify_recovered_bytes(handle, recovered_bytes) != "verified":
+            raise ValueError("recovered bytes do not match the recovery handle")
+
+        observation = _passive_observation(path)
+        if handle.get("version") != _head_sha(observation):
+            raise ValueError("recovery handle repository version is stale")
+        store = _store_for_path(path)
+        graph = store.submit_repository_observation(
+            observation, repository_path=path
+        )
+        service.validate_context(recovered)
+        scope = graph.context_scope(selected_workstream or None, max_evidence=128)
+        if handle.get("repository_id") != scope.get("repo_id"):
+            raise ValueError("recovery handle belongs to another repository")
+        now_ms = int(time.time() * 1000)
+        canonical, handles = _context_contracts(
+            context=recovered,
+            scope=scope,
+            head_sha=_head_sha(observation),
+            observed_at_ms=now_ms,
+            pinned_refs=[selected_ref],
+        )
+        recorded_graph, event_id = store.record_context_receipt(
+            canonical,
+            agent_id=str(agent_id),
+            session_id=str(session_id),
+        )
+        return _render_untrusted(
+            "work_context_fault",
+            {
+                "integrity_state": "verified",
+                "context": recovered,
+                "canonical_receipt": canonical,
+                "recovery_handles": handles,
+                "work_event_id": event_id,
+                "work_summary": recorded_graph.summary(),
+            },
+        )
+    except Exception as exc:
+        return _error("work_context_fault", exc)
+
+
 def work_record_memory(
     *,
     memory: str | dict[str, Any],
@@ -397,6 +673,8 @@ def work_record_execution(
 
 __all__ = [
     "work_claim",
+    "work_compile_context",
+    "work_context_fault",
     "work_handoff",
     "work_record_context",
     "work_record_execution",

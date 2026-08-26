@@ -228,7 +228,7 @@ The MCP server exposes tools across these groups:
 
 | Family | Examples |
 |---|---|
-| Work continuity | `work_state`, `work_claim`, `work_resume`, `work_handoff`, `work_record_context`, `work_record_memory`, `work_record_execution` |
+| Work continuity | `work_state`, `work_claim`, `work_resume`, `work_handoff`, `work_compile_context`, `work_context_fault`, `work_record_context`, `work_record_memory`, `work_record_execution` |
 | Context memory | `remember_fragment`, `optimize_context`, `recall_relevant`, `entroly_retrieve` |
 | Context Receipts | `create_context_receipt`, `render_context_receipt`, `explain_receipt_omission`, `recover_receipt_omission` |
 | Outcome learning | `record_outcome`, `record_test_result`, `record_command_exit`, `record_ci_result`, `record_edit_outcome` |
@@ -237,6 +237,13 @@ The MCP server exposes tools across these groups:
 | Multimodal/context intake | `ingest_diff`, `ingest_diagram`, `ingest_voice`, `smart_read` |
 | Knowledge vault | `compile_beliefs`, `verify_beliefs`, `vault_query`, `vault_search`, `sync_workspace_changes` |
 | Response verification | `verify_provenance`, `verify_and_repair`, `verify_response`, `eicv_verify_claim`, `eicv_suppress_hallucinations` |
+
+`work_compile_context` projects a bounded Rust-owned `WorkScope` through the
+verified repository index, emits content-free recovery handles for omitted
+source, and records the canonical receipt in the existing Work Graph.
+`work_context_fault` accepts only a committed omission and its matching handle,
+verifies the exact recovered bytes, evicts lower-ranked fragments when needed,
+and records a new receipt instead of mutating the prior working set.
 
 `smart_read` defaults to budget-aware automatic selection. Callers can instead
 request exact `full` text, `medium` or `low` summaries, a whole-file `diff`

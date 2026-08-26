@@ -10,9 +10,14 @@ from entroly.work_graph import (
     WorkGraph,
     WorkGraphUnavailableError,
     create_model_execution_outcome,
+    create_recovery_handle,
     create_routing_decision,
     create_verification_record,
+    create_work_context_receipt,
     verification_freshness,
+    verify_recovered_bytes,
+    verify_recovery_handle,
+    verify_work_context_receipt,
 )
 
 
@@ -73,6 +78,11 @@ def test_continuity_contracts_are_exported_from_python_package_root() -> None:
         "create_routing_decision",
         "create_model_execution_outcome",
         "create_verification_record",
+        "create_work_context_receipt",
+        "verify_work_context_receipt",
+        "create_recovery_handle",
+        "verify_recovery_handle",
+        "verify_recovered_bytes",
         "verification_freshness",
     ):
         assert callable(getattr(entroly, name, None)), name

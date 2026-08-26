@@ -5,7 +5,12 @@ import json
 import subprocess
 from pathlib import Path
 
-from entroly.repository_intelligence import RepositoryIntelligenceService
+import pytest
+
+from entroly.repository_intelligence import (
+    InvalidContextFault,
+    RepositoryIntelligenceService,
+)
 from entroly.repository_intelligence.verified_context import (
     verify_context_commitment,
     verify_symbol_graph_commitment,
@@ -148,6 +153,139 @@ def test_verified_context_uses_signature_resolution_under_tight_budget(tmp_path:
     assert fragment["resolution"] == "signature"
     assert fragment["content"].startswith("def expensive_operation")
     assert fragment["estimated_tokens"] <= 128
+    descriptor = payload["recoverable_fragments"][0]
+    assert descriptor["symbol_id"] == fragment["symbol_id"]
+    assert descriptor["omission_reason"] == "signature-only"
+    assert descriptor["context_ref"] != fragment["context_ref"]
+    assert "content" not in descriptor
+    assert verify_context_commitment(payload)
+
+
+def test_work_scope_changed_paths_drive_verified_context_ranking(tmp_path: Path) -> None:
+    _project(tmp_path)
+    service = RepositoryIntelligenceService(tmp_path)
+    proposals = service.work_scope_proposals({
+        "repo_id": "repo:test",
+        "changed_paths": ["payments/gateway.py"],
+        "symbol_ids": [],
+    })
+    payload = service.context(
+        "unrelated request",
+        token_budget=256,
+        max_hops=0,
+        max_fragments=1,
+        proposal_scores=proposals,
+        proposal_provider="rust-work-scope",
+    )
+
+    assert proposals
+    assert payload["fragments"][0]["qualified_name"] == "authorize"
+    assert payload["proposal_overlay"]["provider"] == "rust-work-scope"
+    assert payload["proposal_overlay"]["accepted"][0]["score"] == 0.85
+    assert verify_context_commitment(payload)
+
+
+def test_verified_context_commits_content_free_recovery_descriptors(
+    tmp_path: Path,
+) -> None:
+    _project(tmp_path)
+    payload = RepositoryIntelligenceService(tmp_path).context(
+        "charge_card authorize test_charge_card",
+        token_budget=512,
+        max_hops=2,
+        max_fragments=1,
+    )
+
+    assert payload["receipt"]["recoverable_fragment_count"] >= 1
+    descriptor = payload["recoverable_fragments"][0]
+    assert descriptor["omission_reason"] == "fragment-limit"
+    assert "content" not in descriptor
+    assert str(tmp_path) not in json.dumps(descriptor)
+    raw = (tmp_path / descriptor["path"]).read_bytes()
+    recovered = raw[descriptor["start_byte"]:descriptor["end_byte"]]
+    assert hashlib.sha256(raw).hexdigest() == descriptor["source_sha256"]
+    assert hashlib.sha256(recovered).hexdigest() == descriptor["fragment_sha256"]
+    assert descriptor["context_ref"].endswith(
+        "@sha256:" + descriptor["fragment_sha256"]
+    )
+    assert verify_context_commitment(payload)
+
+
+def test_context_fault_recovers_exact_source_and_commits_bounded_eviction(
+    tmp_path: Path,
+) -> None:
+    assignments = "\n".join(f"    value_{index} = {index}" for index in range(12))
+    _write(
+        tmp_path,
+        "workers.py",
+        f"def alpha_worker():\n{assignments}\n    return value_11\n\n"
+        f"def beta_worker():\n{assignments}\n    return value_11\n",
+    )
+    service = RepositoryIntelligenceService(tmp_path)
+    parent = service.context(
+        "alpha_worker beta_worker",
+        token_budget=128,
+        max_hops=0,
+        max_fragments=1,
+    )
+    parent_sha256 = parent["receipt"]["context_sha256"]
+    selected_ref = parent["fragments"][0]["context_ref"]
+    descriptor = next(
+        item for item in parent["recoverable_fragments"]
+        if item["symbol_id"] != parent["fragments"][0]["symbol_id"]
+    )
+
+    recovered = service.context_fault(parent, descriptor["context_ref"])
+
+    assert parent["receipt"]["context_sha256"] == parent_sha256
+    assert recovered["receipt"]["context_sha256"] != parent_sha256
+    assert recovered["context_fault"] == {
+        "status": "exact-source-recovered",
+        "parent_context_sha256": parent_sha256,
+        "recovered_ref": descriptor["context_ref"],
+        "evicted_refs": [selected_ref],
+    }
+    assert recovered["retrieval"]["estimated_tokens"] <= 128
+    target = next(
+        item for item in recovered["fragments"]
+        if item["context_ref"] == descriptor["context_ref"]
+    )
+    raw = (tmp_path / target["path"]).read_bytes()
+    assert raw[target["start_byte"]:target["end_byte"]] == target["content"].encode()
+    assert target["resolution"] == "full"
+    assert target["selection_path"][-1] == "context-fault"
+    assert selected_ref in {
+        item["context_ref"] for item in recovered["recoverable_fragments"]
+    }
+    assert verify_context_commitment(parent)
+    assert verify_context_commitment(recovered)
+
+
+def test_context_fault_rejects_tampered_receipt_and_stale_source(tmp_path: Path) -> None:
+    _project(tmp_path)
+    service = RepositoryIntelligenceService(tmp_path)
+    parent = service.context(
+        "charge_card authorize",
+        token_budget=512,
+        max_hops=1,
+        max_fragments=1,
+    )
+    context_ref = parent["recoverable_fragments"][0]["context_ref"]
+    parent["recoverable_fragments"][0]["fragment_sha256"] = "0" * 64
+    with pytest.raises(InvalidContextFault, match="commitment is invalid"):
+        service.context_fault(parent, context_ref)
+
+    current = service.context(
+        "charge_card authorize",
+        token_budget=512,
+        max_hops=1,
+        max_fragments=1,
+    )
+    current_ref = current["recoverable_fragments"][0]["context_ref"]
+    stale_path = current["recoverable_fragments"][0]["path"]
+    _write(tmp_path, stale_path, "def replaced():\n    return False\n")
+    with pytest.raises(InvalidContextFault, match="source is not current"):
+        service.context_fault(current, current_ref)
 
 
 def test_verified_context_can_include_bounded_local_git_history(tmp_path: Path) -> None:

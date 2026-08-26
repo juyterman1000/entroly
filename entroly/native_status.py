@@ -37,6 +37,11 @@ WORK_GRAPH_SYMBOLS = (
     "model_execution_outcome_build_json",
     "verification_record_build_json",
     "work_continuation_proof_build_json",
+    "context_receipt_build_json",
+    "context_receipt_verify_json",
+    "recovery_handle_build_json",
+    "recovery_handle_verify_json",
+    "recovery_handle_verify_bytes",
 )
 
 RELEASE_NATIVE_SYMBOLS = QCCR_SYMBOLS + (

@@ -118,6 +118,8 @@ def test_execution_transport_exposes_complete_product_loop(monkeypatch):
         "work_claim",
         "work_resume",
         "work_handoff",
+        "work_compile_context",
+        "work_context_fault",
         "work_record_context",
         "work_record_memory",
         "work_record_execution",

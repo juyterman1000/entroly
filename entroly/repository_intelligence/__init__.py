@@ -49,9 +49,10 @@ __all__ = [
     "WorkspaceDependencyGraph", "resolve_workspace_dependencies",
     "analyze_change_impact",
     "build_repository_index", "localize_tests", "InvalidChangedPaths",
-    "InvalidContextQuery", "InvalidSymbolQuery",
+    "InvalidContextFault", "InvalidContextQuery", "InvalidSymbolQuery",
     "RepositoryIntelligenceError", "RepositoryIntelligenceService",
-    "UnknownChangedPaths", "build_symbol_graph", "build_verified_context",
+    "UnknownChangedPaths", "apply_context_fault", "build_symbol_graph",
+    "build_verified_context",
     "build_repository_index_incremental", "build_verified_program_graph",
     "build_verified_interprocedural_flow",
     "build_verified_program_slice",
@@ -62,6 +63,7 @@ __all__ = [
     "verify_interprocedural_flow_commitment",
     "verify_program_slice_commitment",
     "verify_runtime_overlay_commitment",
+    "validate_context_sources",
     "verify_semantic_overlay_commitment",
     "verify_repository_map_commitment",
     "build_verified_code_health", "verify_code_health_commitment",
@@ -151,6 +153,7 @@ def build_repository_index(
 
 from .service import (  # noqa: E402
     InvalidChangedPaths,
+    InvalidContextFault,
     InvalidContextQuery,
     InvalidSymbolQuery,
     RepositoryIntelligenceError,
@@ -230,8 +233,10 @@ from .verified_move import (  # noqa: E402
     build_verified_file_move_plan,
 )
 from .verified_context import (  # noqa: E402
+    apply_context_fault,
     build_symbol_graph,
     build_verified_context,
+    validate_context_sources,
     verify_context_commitment,
     verify_symbol_graph_commitment,
 )

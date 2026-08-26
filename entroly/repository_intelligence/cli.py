@@ -53,6 +53,14 @@ def _parser() -> argparse.ArgumentParser:
     context.add_argument("--include-history", action="store_true")
     context.add_argument("--max-history-commits", type=int, default=20)
 
+    context_fault = subcommands.add_parser(
+        "context-fault",
+        help="recover one committed omission into a new bounded context receipt",
+    )
+    context_fault.add_argument("--context-json", required=True)
+    context_fault.add_argument("--context-ref", required=True)
+    context_fault.add_argument("--token-budget", type=int)
+
     program_slice = subcommands.add_parser(
         "slice",
         help="build a proof-carrying partial slice with control and value flow",
@@ -315,6 +323,20 @@ def run(argv: Sequence[str] | None = None) -> tuple[int, dict[str, object]]:
                 max_history_commits=args.max_history_commits,
             )
             payload["command"] = "context"
+            return 0, payload
+        if args.command == "context-fault":
+            context_path = Path(args.context_json).expanduser().resolve(strict=True)
+            if context_path.stat().st_size > 16 * 1024 * 1024:
+                raise ValueError("context JSON must be at most 16 MiB")
+            raw_context = json.loads(context_path.read_text(encoding="utf-8"))
+            if not isinstance(raw_context, dict):
+                raise ValueError("context JSON must contain an object")
+            payload = service.context_fault(
+                raw_context,
+                args.context_ref,
+                token_budget=args.token_budget,
+            )
+            payload["command"] = "context-fault"
             return 0, payload
         if args.command == "slice":
             proposals: list[dict[str, object]] = []

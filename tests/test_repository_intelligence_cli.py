@@ -119,16 +119,28 @@ def test_tests_ranks_directly_related_test(tmp_path: Path) -> None:
     assert payload["candidates"][0]["path"] == "tests/test_api.py"
 
 
-def test_context_returns_verified_partial_graph(tmp_path: Path) -> None:
+def test_context_returns_verified_partial_graph(tmp_path: Path, plan_dir: Path) -> None:
     _project(tmp_path)
     code, payload = run([
         "--root", str(tmp_path), "context", "--query", "execute",
-        "--token-budget", "512",
+        "--token-budget", "512", "--max-fragments", "1",
     ])
     assert code == 0
     assert payload["schema_version"] == "entroly.verified-code-context.v1"
     assert payload["command"] == "context"
     assert payload["fragments"][0]["qualified_name"] == "execute"
+    descriptor = payload["recoverable_fragments"][0]
+    context_path = plan_dir / "context.json"
+    context_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    fault_code, faulted = run([
+        "--root", str(tmp_path), "context-fault",
+        "--context-json", str(context_path),
+        "--context-ref", descriptor["context_ref"],
+    ])
+    assert fault_code == 0
+    assert faulted["command"] == "context-fault"
+    assert faulted["context_fault"]["recovered_ref"] == descriptor["context_ref"]
 
 
 def test_slice_returns_verified_context_control_and_cross_function_flow(

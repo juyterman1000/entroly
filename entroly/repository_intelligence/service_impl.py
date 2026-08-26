@@ -31,7 +31,12 @@ from .verified_refactor import (
     build_verified_rename_plan,
     build_verified_safe_delete_plan,
 )
-from .verified_context import build_symbol_graph, build_verified_context
+from .verified_context import (
+    apply_context_fault,
+    build_symbol_graph,
+    build_verified_context,
+    validate_context_sources,
+)
 from .verified_slice import build_verified_program_slice
 from .verified_health import (
     VERIFIED_HEALTH_SCHEMA_VERSION,
@@ -127,6 +132,10 @@ class TooManyChangedPaths(RepositoryIntelligenceError):
 
 class InvalidContextQuery(RepositoryIntelligenceError):
     code = "invalid_context_query"
+
+
+class InvalidContextFault(RepositoryIntelligenceError):
+    code = "invalid_context_fault"
 
 
 class InvalidSymbolQuery(RepositoryIntelligenceError):
@@ -418,6 +427,99 @@ class RepositoryIntelligenceService:
         )
         payload["generation"] = generation
         return payload
+
+    def work_scope_proposals(
+        self,
+        scope: Mapping[str, object],
+    ) -> list[dict[str, object]]:
+        """Map a bounded Rust WorkScope back to indexed symbol identities."""
+        if not isinstance(scope, Mapping):
+            raise InvalidContextQuery("work scope must be an object")
+        repo_id = scope.get("repo_id")
+        changed_paths = scope.get("changed_paths", [])
+        graph_symbol_ids = scope.get("symbol_ids", [])
+        if (
+            not isinstance(repo_id, str)
+            or not repo_id
+            or not isinstance(changed_paths, list)
+            or len(changed_paths) > 256
+            or not all(isinstance(item, str) for item in changed_paths)
+            or not isinstance(graph_symbol_ids, list)
+            or len(graph_symbol_ids) > 256
+            or not all(isinstance(item, str) for item in graph_symbol_ids)
+        ):
+            raise InvalidContextQuery("work scope identity fields are invalid")
+        normalized_paths = {
+            normalized
+            for item in changed_paths
+            if (normalized := _strict_relative(item)) is not None
+        }
+        selected_graph_ids = set(graph_symbol_ids)
+        index, _digest, _generation = self._snapshot()
+        scores: dict[str, float] = {}
+        for symbol in index.symbols.values():
+            if symbol.path in normalized_paths:
+                scores[symbol.symbol_id] = 0.85
+        if selected_graph_ids:
+            from .graph_identity import symbol_node_id
+
+            for symbol in index.symbols.values():
+                if symbol_node_id(repo_id, symbol.symbol_id) in selected_graph_ids:
+                    scores[symbol.symbol_id] = 1.0
+        return [
+            {"symbol_id": symbol_id, "score": score}
+            for symbol_id, score in sorted(
+                scores.items(), key=lambda item: (-item[1], item[0])
+            )
+        ]
+
+    def context_fault(
+        self,
+        context: Mapping[str, object],
+        context_ref: str,
+        *,
+        token_budget: int | None = None,
+    ) -> dict[str, object]:
+        """Recover one committed omission into a new bounded working set."""
+        if not isinstance(context, Mapping):
+            raise InvalidContextFault("context must be an object")
+        if not isinstance(context_ref, str) or not context_ref.strip():
+            raise InvalidContextFault("context_ref must not be empty")
+        index, digest, generation = self._snapshot()
+        try:
+            payload = apply_context_fault(
+                self.root,
+                index,
+                context,
+                context_ref.strip(),
+                index_digest=digest,
+                token_budget=token_budget,
+            )
+        except ValueError as exc:
+            raise InvalidContextFault(str(exc)) from None
+        payload["generation"] = generation
+        return payload
+
+    def validate_context(self, context: Mapping[str, object]) -> dict[str, object]:
+        """Verify a receipt and every carried source reference without mutation."""
+        if not isinstance(context, Mapping):
+            raise InvalidContextFault("context must be an object")
+        index, digest, generation = self._snapshot()
+        try:
+            validate_context_sources(
+                self.root,
+                index,
+                context,
+                index_digest=digest,
+            )
+        except ValueError as exc:
+            raise InvalidContextFault(str(exc)) from None
+        return {
+            "status": "verified-current",
+            "index_digest": digest,
+            "generation": generation,
+            "context_sha256": context["receipt"]["context_sha256"],  # type: ignore[index]
+        }
 
     def program_slice(
         self,

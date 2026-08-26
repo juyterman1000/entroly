@@ -544,9 +544,14 @@ try:
         WorkGraph,
         WorkGraphUnavailableError,
         create_model_execution_outcome,
+        create_recovery_handle,
         create_routing_decision,
         create_verification_record,
+        create_work_context_receipt,
         verification_freshness,
+        verify_recovered_bytes,
+        verify_recovery_handle,
+        verify_work_context_receipt,
     )
 except ImportError:
     pass

@@ -64,6 +64,8 @@ TOOL_SCOPES: dict[str, frozenset[str]] = {
             "work_claim",
             "work_resume",
             "work_handoff",
+            "work_compile_context",
+            "work_context_fault",
             "work_record_context",
             "work_record_memory",
             "work_record_execution",
