@@ -305,10 +305,20 @@ class BeliefArtifact:
         # is untrusted input: an entity of "x\nclaim_id: FORGED" rewrote the
         # claim_id -- the identifier the append-only ledger is cross-referenced
         # by. Every scalar is flattened to one line before it is written.
+        # An unsourced belief must not be rendered as though it cited a source
+        # named "unknown". A reader -- human or machine -- cannot tell that
+        # apart from a real citation, so a belief carrying `status: verified`
+        # and `confidence: 0.99` was stored looking sourced when nothing backed
+        # it. CLAUDE.md requires every write to carry sources; inventing one is
+        # the fail-open direction.
+        #
+        # An explicit empty list says the same thing truthfully. Frontmatter
+        # parsing is unaffected: `_parse_frontmatter` skips list-item lines, so
+        # these entries were never read back into the parsed mapping anyway.
         sources_yaml = (
             "\n".join(f"  - {_yaml_scalar(s)}" for s in self.sources)
             if self.sources
-            else "  - unknown"
+            else "  []"
         )
         derived_yaml = (
             "\n".join(f"  - {_yaml_scalar(d)}" for d in self.derived_from)

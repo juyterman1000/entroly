@@ -535,6 +535,24 @@ def _load_cells_from_log(log_path: str) -> dict[str, dict[str, Any]]:
                 if evt_type not in ("test", "build", "lint", "typecheck", "format",
                                     "other", "test_result", "ci_result", "command_exit"):
                     continue
+                # Invariant 1 in `events.py`: `include_in_default_training=False`
+                # marks an event whose value is unverified self-report -- the
+                # canonical case being an agent reporting its own success. Such
+                # events are recorded for completeness and excluded from default
+                # labeling.
+                #
+                # This loader never read the flag, so the exclusion existed only
+                # on the `derive_label` path and not on the one that actually
+                # builds the posterior. Twelve self-reported passes carried a
+                # cell to ci_lo 0.951 and authorised routing to the cheapest
+                # model: an agent could mint the evidence that downgraded its
+                # own review. `derive_label` returns "unknown" for the identical
+                # event, so the guard was already correct and simply bypassed.
+                #
+                # An absent flag means an event predating it, treated as
+                # admissible; only an explicit False excludes.
+                if evt.get("include_in_default_training") is False:
+                    continue
                 cell_key = f"{evt_type}/{tool}" if tool != evt_type else evt_type
                 cell = counts.setdefault(cell_key, {"pass": 0, "fail": 0})
                 if value in success_vals:
@@ -545,12 +563,22 @@ def _load_cells_from_log(log_path: str) -> dict[str, dict[str, Any]]:
         logger.warning("Failed to load RAVS cells: %s", e)
         return {}
 
-    total_pass = sum(c["pass"] for c in counts.values())
-    total_fail = sum(c["fail"] for c in counts.values())
-    total_obs = total_pass + total_fail
-    global_mean = total_pass / max(total_obs, 1)
-    alpha_0 = max(global_mean * 2.0, 0.1)
-    beta_0 = max((1 - global_mean) * 2.0, 0.1)
+    # Jeffreys prior, Beta(1/2, 1/2): the standard uninformative choice for a
+    # proportion, and independent of the data it is applied to.
+    #
+    # The prior here was estimated from the same log it then scored, and
+    # collapsed under exactly the case that should be treated most carefully.
+    # With no failures anywhere, `global_mean` is 1.0, so `beta_0` fell to its
+    # 0.1 floor while `alpha_0` was 2.0 -- a prior mean of 0.952 before a single
+    # observation. Two passes were then enough to clear a `ci_threshold` of
+    # 0.80, which made the threshold decorative and left `min_samples` as the
+    # only real gate. Under Jeffreys the same crossing needs eight.
+    #
+    # A confidence bound whose prior is fitted to the evidence is not a
+    # confidence bound, and this one failed open: it routed to the cheapest
+    # model on the thinnest possible record.
+    alpha_0 = 0.5
+    beta_0 = 0.5
 
     cells: dict[str, dict[str, Any]] = {}
     for key, c in counts.items():
