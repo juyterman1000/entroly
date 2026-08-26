@@ -1120,16 +1120,45 @@ def _compress_code(content: str, target_ratio: float) -> str:
     paths.
     """
     target_tokens = max(50, int((len(content) // 4) * target_ratio))
+    native = None
     try:
         from entroly_core import py_compress_block
-        return py_compress_block(
+
+        native = py_compress_block(
             "assistant", content, target_tokens, "skeleton", None,
         )
     except ImportError:
-        # Rust engine not available — use universal compressor with the
-        # correct content_type so it picks the code-specific compactor.
-        compressed, _, _ = universal_compress(content, target_ratio, "code")
-        return compressed
+        native = None
+
+    # `py_compress_block` compresses one *conversation block* -- note the
+    # "assistant" role it is handed. Given a whole source file it does not
+    # skeletonize: it returns a head fragment, a literal "[...]", and a tail
+    # fragment, sized independently of both the file and `target_tokens`.
+    #
+    # Measured over the 56 files in `entroly/` larger than 2 KB, at ratio 0.3:
+    # the native result is a median of 3% of the requested size and never more
+    # than 25%. `cli.py` compresses 302,338 characters to 84. Output stops
+    # growing with input entirely -- 67 KB and 21 MB both return ~100
+    # characters -- so loss is unbounded in the size of the input.
+    #
+    # It is also not merely lossy, it is misleading: joining a head to a tail
+    # across an elided middle yields text that reads as contiguous. On distinct
+    # handlers it returned `handler_0000`'s signature attached to
+    # `handler_2599`'s return statement, so a reader is told handler_0000
+    # returns route 2599. Manufacturing a plausible false fact is worse than
+    # dropping the content, and this is the SDK's public entry point.
+    #
+    # `universal_compress(..., "code")` is measurably correct on the same
+    # inputs -- keep 0.3007 for ratio 0.3, 0.1001 for 0.1, whole signatures
+    # kept intact with no splicing -- and is already the surface every
+    # non-native install runs, so it is the better-tested path of the two.
+    # Prefer it, and keep the native result only when it plausibly honored the
+    # budget rather than collapsing to a fixed-size excerpt.
+    if native is not None and len(native) >= (len(content) * target_ratio) * 0.25:
+        return native
+
+    compressed, _, _ = universal_compress(content, target_ratio, "code")
+    return compressed
 
 
 # ── Verification SDK ─────────────────────────────────────────────────
