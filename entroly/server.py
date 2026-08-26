@@ -1767,8 +1767,39 @@ def create_mcp_server(
         try:
             from .sdk import context_receipt_from_path as _context_receipt_from_path
 
+            # Containment, matching `prepare_proof_guided_context` below.
+            #
+            # This tool passed `path` straight through, while every other
+            # path-taking tool on this server -- smart_read,
+            # export_training_data, coverage_gaps, compile_docs,
+            # prefetch_related, prepare_proof_guided_context -- rejects escapes.
+            # `../secret.txt`, `../../` and a bare `..` each read files outside
+            # the project root, and the directory form made that a bulk read
+            # ranked by an attacker-chosen query.
+            #
+            # It is reachable from the default MCP server and from the
+            # `receipts` attach scope, whose name reads as audit-oriented.
+            #
+            # The ingester's extension allowlist bounds what can be read, but an
+            # allowlist is not a path guard: it was never meant to be the
+            # boundary, and it says nothing about directories the tool should
+            # not have been pointed at in the first place.
+            project_root = Path(
+                os.environ.get("ENTROLY_SOURCE", os.getcwd())
+            ).resolve()
+            candidate = Path(path).expanduser()
+            if not candidate.is_absolute():
+                candidate = project_root / candidate
+            candidate = candidate.resolve()
+            try:
+                candidate.relative_to(project_root)
+            except ValueError as exc:
+                raise ValueError(
+                    f"path must remain within the project root: {path}"
+                ) from exc
+
             receipt = _context_receipt_from_path(
-                path,
+                str(candidate),
                 query=query,
                 budget=token_budget,
                 chunk_tokens=chunk_tokens,
