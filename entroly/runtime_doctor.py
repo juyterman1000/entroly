@@ -109,8 +109,28 @@ def runtime_doctor(
     checks.extend(_configuration_checks(data_dir))
 
     native = capabilities.get("engine", {}).get("native", {})
-    if native.get("available"):
-        checks.append(_check("native_engine", "pass", "available"))
+    # `runtime_capabilities` emits installed/healthy/version/missing_symbol_count
+    # and has no "available" key, so this branch could never be taken: the JSON
+    # report warned "pure_python_fallback" on every machine, including ones
+    # where `entroly doctor` and `entroly capabilities` both correctly showed
+    # the native engine loaded. Anyone gating CI on `doctor --json` saw a
+    # permanent false warning.
+    #
+    # `healthy` is the right key rather than `installed`: a core that imports
+    # but is missing Work Graph symbols is installed and unusable, and calling
+    # that a pass is the fail-open direction.
+    if native.get("healthy"):
+        version = native.get("version")
+        detail = f"available ({version})" if version else "available"
+        checks.append(_check("native_engine", "pass", detail))
+    elif native.get("installed"):
+        missing = int(native.get("missing_symbol_count") or 0)
+        detail = (
+            f"installed_but_unhealthy ({missing} missing symbols)"
+            if missing
+            else "installed_but_unhealthy"
+        )
+        checks.append(_check("native_engine", "warning", detail))
     else:
         checks.append(_check("native_engine", "warning", "pure_python_fallback"))
 

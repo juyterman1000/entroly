@@ -1616,19 +1616,33 @@ def _auto_index(
     # O(N) entropy: fixed 50-fragment sample, not growing window.
     # Single GIL acquisition for the whole batch.
     indexed = 0
+    fragments_ingested = 0
     total_tokens = 0
 
     if engine._use_rust and batch:
         try:
             r = engine._rust.batch_ingest(batch)
             engine._fragment_cache_dirty = True
-            indexed = int(r.get("ingested", 0))
+            # `ingested` counts FRAGMENTS, and a file yields more than one, so
+            # returning it as `files_indexed` reported more files than the
+            # repository contains: "Auto-indexed 1799 files" against 1525
+            # indexable ones, and 188 against an explicit cap of 120. The
+            # debug line below already compared it to `len(batch)` -- fragments
+            # over files -- which is where the mismatch was visible all along.
+            #
+            # This number is printed to users, returned by `simulate`/`perf`
+            # `--json` and by `verify-claims`, and published as the headline in
+            # the CI dogfood evidence artifact, so it overstated coverage
+            # everywhere at once.
+            fragments_ingested = int(r.get("ingested", 0))
+            indexed = len(batch)
             total_tokens = int(r.get("total_tokens", 0))
             p1 = r.get('phase1_ms', '?')
             p2 = r.get('phase2_ms', '?')
             p3 = r.get('phase3_ms', '?')
             logger.debug(
-                f"batch_ingest: {indexed}/{len(batch)} in {r.get('duration_ms', 0)}ms "
+                f"batch_ingest: {fragments_ingested} fragments from {len(batch)} files "
+                f"in {r.get('duration_ms', 0)}ms "
                 f"(P1={p1}ms P2={p2}ms P3={p3}ms, {r.get('duplicates', 0)} dups)"
             )
         except AttributeError:
@@ -1754,6 +1768,9 @@ def _auto_index(
     return {
         "status": "error" if persistence.get("status") == "error" else "indexed",
         "files_indexed": indexed,
+        # Kept distinct from `files_indexed` on purpose: conflating the two is
+        # what produced counts larger than the repository.
+        "fragments_ingested": fragments_ingested,
         "total_tokens": total_tokens,
         "beliefs_attached": beliefs_attached,
         "duration_s": round(elapsed, 2),

@@ -87,10 +87,45 @@ def run(output: str | None = None, max_files: int = 120) -> int:
     optimize_ms = (time.perf_counter() - t1) * 1000
     selected = opt.get("selected_fragments", []) or opt.get("selected", [])
     used = int(opt.get("total_tokens") or sum(int(f.get("token_count", 0) or 0) for f in selected))
-    savings = (1 - used / tokens) * 100 if tokens > 0 and used <= tokens else 0.0
+    # Selecting nothing saves nothing. The old expression returned 100% when
+    # `used` was 0, so the first command a new user is told to run headlined a
+    # perfect score for having returned no context at all. `cmd_simulate`
+    # already scores the identical event as 0.0%; two commands in one product
+    # must not give opposite answers to "we returned nothing".
+    savings = (1 - used / tokens) * 100 if selected and tokens > 0 and used <= tokens else 0.0
     print(f"  selected={len(selected)} tokens={used:,} savings={savings:.1f}% latency={optimize_ms:.1f}ms")
+
+    # A deliberate no-match is not a failure. The engine refuses to return
+    # files that share no term with the query rather than padding the budget
+    # with unrelated content -- the fail-closed direction, and the right one.
+    # It says so explicitly, with a reason and a remediation.
+    #
+    # This smoke test ignored that and asserted only `len(selected) > 0`, so a
+    # correctly-behaving engine produced a bare `[FAIL] Optimization returned
+    # fragments -- 0 fragments` on any repository whose vocabulary happens not
+    # to overlap the fixed probe query below. Reproduced on a clean 13-file
+    # project: `feature_3` and `payload` each select 12 fragments; only the
+    # generic English probe returns none.
+    #
+    # Zero fragments WITHOUT that signal is still a failure, which is the case
+    # this check exists for.
+    no_match = opt.get("no_match") or {}
+    declared_no_match = bool(no_match) or opt.get("status") == "no_match"
+    if declared_no_match:
+        reason = str(no_match.get("reason") or "engine reported no lexical match")
+        remediation = str(no_match.get("remediation") or "")
+        print(f"  no match: {reason}")
+        if remediation:
+            print(f"  remediation: {remediation}")
+
     check("OPT-1", "Selected context within budget", used <= 8000, f"{used:,}/8,000 tokens")
-    check("OPT-2", "Optimization returned fragments", len(selected) > 0 or files == 0, f"{len(selected)} fragments")
+    check(
+        "OPT-2",
+        "Optimization returned fragments or explained why not",
+        len(selected) > 0 or files == 0 or declared_no_match,
+        f"{len(selected)} fragments"
+        + (" (engine declared no match)" if declared_no_match and not selected else ""),
+    )
     # This command is a new-user smoke test, not the release latency benchmark.
     # Full timing comparisons live in bench/. Keep the bound loose enough for
     # cold Windows filesystems and Python fallback paths while still catching
