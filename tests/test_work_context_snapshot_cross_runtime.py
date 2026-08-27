@@ -28,6 +28,8 @@ if verified_context_snapshot_verify_bytes is None:
 
 
 NODE = shutil.which("node")
+ROOT = Path(__file__).resolve().parents[1]
+WASM_BINDING = ROOT / "entroly-wasm" / "pkg" / "entroly_wasm.js"
 
 
 def _write(root: Path, path: str, text: str) -> None:
@@ -36,7 +38,10 @@ def _write(root: Path, path: str, text: str) -> None:
     target.write_text(text, encoding="utf-8")
 
 
-@pytest.mark.skipif(NODE is None, reason="Node.js is required for cross-runtime parity")
+@pytest.mark.skipif(
+    NODE is None or not WASM_BINDING.is_file(),
+    reason="Node.js and the exact-head WASM build are required for parity",
+)
 def test_python_node_context_snapshot_bytes_roundtrip(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -90,7 +95,7 @@ def test_python_node_context_snapshot_bytes_roundtrip(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="commitment is invalid"):
         verified_context_snapshot_verify_bytes(bytes(tampered_for_python), digest)
 
-    root = Path(__file__).resolve().parents[1]
+    root = ROOT
     node_module = root / "entroly-wasm" / "js" / "work_context_snapshot_store.js"
     graph_module = root / "entroly-wasm" / "js" / "work_graph_store.js"
     script = r"""
