@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from entroly_core import verified_context_snapshot_verify_bytes
 
 from entroly.repository_intelligence import RepositoryIntelligenceService
 from entroly.repository_intelligence.verified_context import verify_context_commitment
@@ -69,23 +70,38 @@ def test_python_node_context_snapshot_bytes_roundtrip(tmp_path: Path) -> None:
     assert b'"score":1.0' in raw
     assert raw == raw.decode("ascii").encode("ascii")
 
+    # The PyO3 binding must expose the exact same Rust verifier used by WASM.
+    assert verified_context_snapshot_verify_bytes(raw, digest) == digest
+    tampered_for_python = bytearray(raw)
+    marker_offset = tampered_for_python.index(b"snowman")
+    tampered_for_python[marker_offset] = ord("S")
+    with pytest.raises(ValueError, match="commitment is invalid"):
+        verified_context_snapshot_verify_bytes(bytes(tampered_for_python), digest)
+
     root = Path(__file__).resolve().parents[1]
     node_module = root / "entroly-wasm" / "js" / "work_context_snapshot_store.js"
     graph_module = root / "entroly-wasm" / "js" / "work_graph_store.js"
     script = r"""
 const fs = require('fs');
+const path = require('path');
 const { WorkGraphStore } = require(process.argv[1]);
 const {
   WorkContextSnapshotError,
   WorkContextSnapshotStore,
   verifyCanonicalSnapshotBytes,
 } = require(process.argv[2]);
+const { verifiedContextSnapshotVerifyBytes } = require(
+  path.join(process.cwd(), 'pkg', 'entroly_wasm'),
+);
 
 const sourcePath = process.argv[3];
 const targetRoot = process.argv[4];
 const repoId = process.argv[5];
 const expected = process.argv[6];
 const raw = fs.readFileSync(sourcePath);
+if (verifiedContextSnapshotVerifyBytes(raw, expected) !== expected) {
+  throw new Error('raw WASM verifier returned a different commitment');
+}
 const verified = verifyCanonicalSnapshotBytes(raw, expected);
 const store = new WorkContextSnapshotStore(new WorkGraphStore(repoId, { root: targetRoot }));
 const token = store.putCanonicalBytes(raw, expected);
@@ -97,6 +113,11 @@ const marker = Buffer.from('snowman \\u2603', 'ascii');
 const offset = tampered.indexOf(marker);
 if (offset < 0) throw new Error('Unicode parity marker missing');
 tampered[offset] = tampered[offset] === 0x73 ? 0x74 : 0x73;
+let rawWasmTamperRejected = false;
+try { verifiedContextSnapshotVerifyBytes(tampered, expected); }
+catch (_) { rawWasmTamperRejected = true; }
+if (!rawWasmTamperRejected) throw new Error('raw WASM verifier accepted tampered snapshot');
+
 let tamperRejected = false;
 try { verifyCanonicalSnapshotBytes(tampered, expected); }
 catch (error) { tamperRejected = error instanceof WorkContextSnapshotError; }
