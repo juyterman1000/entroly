@@ -1,18 +1,20 @@
 'use strict';
 
+// Host persistence mechanics only. The v1 verified-context commitment rules
+// live in entroly-engine and are reached here through the generated WASM
+// binding. This file owns repository isolation, bounds, atomic persistence and
+// byte preservation; it does not define what makes a context snapshot valid.
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { verifiedContextSnapshotVerifyBytes } = require('../pkg/entroly_wasm');
 const { WorkGraphStateError, WorkGraphStore } = require('./work_graph_store');
 
 const CONTEXT_SNAPSHOT_TOKEN_PREFIX = 'wctx1.';
-const CONTEXT_SCHEMA_VERSION = 'entroly.verified-code-context.v1';
-const CONTEXT_COMMITMENT_SCOPE = 'payload-excluding-generation-command-and-context-sha256';
 const DEFAULT_MAX_CONTEXT_BYTES = 512 * 1024;
 const DEFAULT_MAX_SNAPSHOTS = 8192;
 const DEFAULT_MAX_TOTAL_BYTES = 256 * 1024 * 1024;
 const DIGEST_RE = /^[0-9a-f]{64}$/;
-const VOLATILE_FIELDS = new Set(['generation', 'command']);
 
 class WorkContextSnapshotError extends WorkGraphStateError {}
 
@@ -48,10 +50,6 @@ function fsyncDirectory(target) {
   }
 }
 
-function sha256(bytes) {
-  return crypto.createHash('sha256').update(bytes).digest('hex');
-}
-
 function asBuffer(value) {
   if (Buffer.isBuffer(value)) return Buffer.from(value);
   if (value instanceof Uint8Array) return Buffer.from(value);
@@ -59,96 +57,36 @@ function asBuffer(value) {
   throw new WorkContextSnapshotError('context snapshot must be bytes or UTF-8 text');
 }
 
-function countContextShaKeys(root) {
-  let count = 0;
-  const stack = [root];
-  while (stack.length) {
-    const value = stack.pop();
-    if (!value || typeof value !== 'object') continue;
-    if (Array.isArray(value)) {
-      for (const child of value) stack.push(child);
-      continue;
-    }
-    if (Object.prototype.hasOwnProperty.call(value, 'context_sha256')) count += 1;
-    for (const child of Object.values(value)) stack.push(child);
-  }
-  return count;
-}
-
 /**
- * Verify a Python v1 verified-code-context snapshot without reserialising it.
+ * Verify exact snapshot bytes through the Rust semantic kernel.
  *
- * Python seals the context by hashing compact, sorted, ensure_ascii JSON after
- * removing `generation`, `command` and `receipt.context_sha256`. The snapshot
- * store has already removed the two volatile top-level fields, so the exact
- * seal preimage is the stored byte stream with that one receipt field removed.
- * Working on bytes is intentional: JSON.parse/stringify would turn `1.0` into
- * `1`, which would make a legitimate Python commitment impossible to verify.
+ * The byte stream is intentionally not normalized or reserialized before
+ * verification. Python v1 commits its compact ensure-ASCII representation and
+ * valid number lexemes such as `1.0` must survive a Python -> Node -> Python
+ * handoff byte-for-byte.
  */
-function verifyCanonicalSnapshotBytes(value, expectedCommitment = null, maxBytes = DEFAULT_MAX_CONTEXT_BYTES) {
+function verifyCanonicalSnapshotBytes(
+  value,
+  expectedCommitment,
+  maxBytes = DEFAULT_MAX_CONTEXT_BYTES,
+) {
   const bytes = asBuffer(value);
   positiveInteger(maxBytes, 'maxBytes', 1024);
   if (bytes.length > maxBytes) {
     throw new WorkContextSnapshotError(`context snapshot exceeds ${maxBytes} bytes`);
   }
-  for (const byte of bytes) {
-    if (byte >= 0x80) {
-      throw new WorkContextSnapshotError('context snapshot is not canonical ASCII JSON');
-    }
+  const expected = String(expectedCommitment || '');
+  try {
+    const commitment = verifiedContextSnapshotVerifyBytes(bytes, expected);
+    // Parsing is presentation only and happens after Rust has accepted the exact
+    // bytes. The parsed object is never reserialized for commitment verification.
+    const payload = JSON.parse(bytes.toString('ascii'));
+    return { payload, commitment, bytes };
+  } catch (error) {
+    if (error instanceof WorkContextSnapshotError) throw error;
+    const detail = error && error.message ? error.message : String(error);
+    throw new WorkContextSnapshotError(detail);
   }
-
-  let payload;
-  try { payload = JSON.parse(bytes.toString('ascii')); }
-  catch (error) {
-    throw new WorkContextSnapshotError(`context snapshot is not valid JSON: ${error.message}`);
-  }
-  if (!payload || Array.isArray(payload) || typeof payload !== 'object') {
-    throw new WorkContextSnapshotError('context snapshot root must be an object');
-  }
-  if (payload.schema_version !== CONTEXT_SCHEMA_VERSION) {
-    throw new WorkContextSnapshotError('unsupported context snapshot schema');
-  }
-  for (const field of VOLATILE_FIELDS) {
-    if (Object.prototype.hasOwnProperty.call(payload, field)) {
-      throw new WorkContextSnapshotError('context snapshot contains volatile host metadata');
-    }
-  }
-  if (!payload.receipt || typeof payload.receipt !== 'object' || Array.isArray(payload.receipt)) {
-    throw new WorkContextSnapshotError('context snapshot is missing its receipt');
-  }
-  if (payload.receipt.commitment_scope !== CONTEXT_COMMITMENT_SCOPE) {
-    throw new WorkContextSnapshotError('unsupported context snapshot commitment scope');
-  }
-  const digest = payload.receipt.context_sha256;
-  if (typeof digest !== 'string' || !DIGEST_RE.test(digest)) {
-    throw new WorkContextSnapshotError('context snapshot is missing a valid context commitment');
-  }
-  if (expectedCommitment != null && digest !== String(expectedCommitment)) {
-    throw new WorkContextSnapshotError('context snapshot does not match the expected commitment');
-  }
-  if (countContextShaKeys(payload) !== 1) {
-    throw new WorkContextSnapshotError('context snapshot has an ambiguous context_sha256 field');
-  }
-
-  const field = Buffer.from(`\"context_sha256\":\"${digest}\"`, 'ascii');
-  const first = bytes.indexOf(field);
-  if (first < 0 || bytes.indexOf(field, first + 1) >= 0) {
-    throw new WorkContextSnapshotError('context snapshot commitment field is not canonical');
-  }
-  let removeStart = first;
-  let removeEnd = first + field.length;
-  if (bytes[removeEnd] === 0x2c) { // comma after property
-    removeEnd += 1;
-  } else if (removeStart > 0 && bytes[removeStart - 1] === 0x2c) {
-    removeStart -= 1;
-  } else {
-    throw new WorkContextSnapshotError('context snapshot commitment field is not a JSON property');
-  }
-  const preimage = Buffer.concat([bytes.subarray(0, removeStart), bytes.subarray(removeEnd)]);
-  if (sha256(preimage) !== digest) {
-    throw new WorkContextSnapshotError('context snapshot commitment is invalid');
-  }
-  return { payload, commitment: digest, bytes };
 }
 
 class WorkContextSnapshotStore {
@@ -333,8 +271,6 @@ class WorkContextSnapshotStore {
 
 module.exports = {
   CONTEXT_SNAPSHOT_TOKEN_PREFIX,
-  CONTEXT_SCHEMA_VERSION,
-  CONTEXT_COMMITMENT_SCOPE,
   DEFAULT_MAX_CONTEXT_BYTES,
   DEFAULT_MAX_SNAPSHOTS,
   DEFAULT_MAX_TOTAL_BYTES,
