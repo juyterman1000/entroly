@@ -104,8 +104,8 @@ class _Engine:
         self.resolution_outcomes.append((resolutions, success))
 
 
-def _proxy():
-    proxy = PromptCompilerProxy(_Engine(), ProxyConfig(witness_mode="audit"))
+def _proxy(witness_mode="strict"):
+    proxy = PromptCompilerProxy(_Engine(), ProxyConfig(witness_mode=witness_mode))
     proxy._witness_analyzer = _Analyzer()
     proxy._enable_distill = False
     proxy._enable_passive_feedback = False
@@ -187,6 +187,22 @@ def test_prepare_auto_recovery_is_bounded_to_one_retry():
     assert first is not None
     assert "return token == 'known'" in json.dumps(first[0])
     assert second is None
+
+
+def test_audit_mode_never_prepares_a_billable_retry():
+    proxy = _proxy("audit")
+    fragment = _recoverable_fragment()
+
+    retry = proxy._prepare_auto_recovery_retry(
+        {"model": "test", "messages": [{"role": "user", "content": "fix auth"}]},
+        "openai",
+        "fix auth",
+        [fragment],
+        _Result(rejected=True),
+        recovery_depth=0,
+    )
+
+    assert retry is None
 
 
 def test_build_recovery_context_enforces_strict_token_cap():
@@ -381,6 +397,55 @@ def test_non_streaming_verification_retry_recovers_exact_context():
     assert proxy._auto_recovery_succeeded == 1
     assert proxy._auto_recovery_failed == 0
     assert proxy.engine.resolution_outcomes == [(["skeleton"], False)]
+
+
+def test_non_streaming_audit_mode_sends_exactly_one_upstream_request():
+    proxy = _proxy("audit")
+    fragment = _recoverable_fragment()
+    requests = []
+
+    def respond(request):
+        requests.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": "Use invented_auth_check(token).",
+                        }
+                    }
+                ]
+            },
+        )
+
+    async def run():
+        proxy._client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+        try:
+            return await proxy._forward_response(
+                "https://example.test/v1/chat/completions",
+                {},
+                {
+                    "model": "test",
+                    "messages": [{"role": "user", "content": "fix auth"}],
+                },
+                witness_context="fix auth",
+                provider="openai",
+                recoverable_fragments=[fragment],
+            )
+        finally:
+            await proxy._client.aclose()
+
+    response = asyncio.run(run())
+
+    assert len(requests) == 1
+    assert json.loads(response.body)["choices"][0]["message"]["content"] == (
+        "Use invented_auth_check(token)."
+    )
+    assert "X-Entroly-Recovery-Attempted" not in response.headers
+    assert proxy._auto_recovery_attempted == 0
 
 
 def test_non_streaming_recovery_does_not_claim_unverified_retry():

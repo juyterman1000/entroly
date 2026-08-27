@@ -89,6 +89,13 @@ class TestSymbolManifest:
             + len(small_manifest.builtins)
         )
 
+    def test_builtin_value_type_methods_have_auditable_provenance(self):
+        from entroly.verifiers.symbol_resolution import _collect_builtins
+
+        names = _collect_builtins()
+        assert {"get", "items", "append", "split", "join"} <= names
+        assert "fetchAuthSessionFromBlockchain" not in names
+
     def test_imports_are_not_added_to_manifest(self, tmp_path):
         """The critical bug-class: imports must NOT contribute to manifest.
 
@@ -207,6 +214,21 @@ def helper():
         r = verifier.verify(code)
         assert r.passed(), f"legit code failed: H={r.h_score}, unresolved={r.unresolved_symbols()}"
 
+    def test_builtin_container_and_text_methods_pass_without_sentinels(self):
+        from entroly.verifiers.symbol_resolution import _collect_builtins
+
+        manifest = SymbolManifest(builtins=_collect_builtins())
+        verifier = SymbolVerifier(manifest=manifest, ngram_model=None)
+        result = verifier.verify(
+            "payload = {}\n"
+            "items = []\n"
+            "items.append(payload.get('key', '').strip().split(':'))\n"
+        )
+
+        assert result.passed()
+        assert result.n_unresolved == 0
+        assert all(j.provenance == "builtins" for j in result.judgments)
+
     def test_invented_import_fails(self, verifier):
         code = """
 from quantumtorch.advanced import HyperbolicSVM
@@ -262,6 +284,19 @@ class TestDeterminism:
         r2 = verifier.verify(code)
         assert math.isclose(r1.h_score, r2.h_score, rel_tol=1e-12)
         assert len(r1.judgments) == len(r2.judgments)
+
+    def test_repeated_legitimate_symbol_does_not_saturate_score(self, verifier):
+        single = verifier.verify("compress('x')")
+        repeated = verifier.verify("\n".join(["compress('x')"] * 100))
+
+        assert math.isclose(single.h_score, repeated.h_score, rel_tol=1e-12)
+
+    def test_one_fabricated_symbol_is_not_diluted_by_grounded_repetitions(self, verifier):
+        code = "\n".join(["compress('x')"] * 100 + ["fabricated_chain_api()"])
+        result = verifier.verify(code)
+
+        assert not result.passed()
+        assert result.h_score > 0.99
 
 
 # ── Performance budget ───────────────────────────────────────────────
