@@ -340,6 +340,15 @@ class EntityResolver:
 # Architecture Synthesizer & Diagram Generator
 # ══════════════════════════════════════════════════════════════════════
 
+def _module_entity(file_path: str, fallback: str) -> str:
+    try:
+        path = Path(file_path)
+        stem = path.with_suffix("").as_posix().strip("./")
+        return stem or fallback
+    except (ValueError, OSError):
+        return fallback
+
+
 def synthesize_module_map(
     file_path: str,
     entities: list[CodeEntity],
@@ -668,9 +677,10 @@ class BeliefCompiler:
             body_parts.extend(invariants)
 
         sources = [f"{file_path}:{e.line}" for e in module.entities[:10]]
+        entity = _module_entity(file_path, module.name)
 
         return BeliefArtifact(
-            entity=f"{module.name}",
+            entity=entity,
             title=f"Module: {module.name}",
             body="\n".join(body_parts),
             confidence=0.75,  # auto-compiled → moderate confidence

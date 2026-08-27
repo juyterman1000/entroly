@@ -26,7 +26,7 @@ calibration trick — see derivation in the docstring of `posterior_hallucinated
         sigmoid(surprisal − λ)     if σ_i in M
 
 The aggregate code-level score uses the independence assumption across
-symbol references:
+distinct symbol identities (repeated references to one name are correlated):
 
     H(C_hat) = 1 - prod_i (1 − P(θ_i=0|σ_i, K))**w_i
 
@@ -164,11 +164,30 @@ class SymbolManifest:
 
 
 def _collect_builtins() -> set[str]:
-    """Python builtins (print, len, dict, ...). Includes exceptions."""
+    """Python builtins and public members of the built-in value types.
+
+    Attribute verification is project-wide rather than receiver-type-aware in
+    v0.  Recording real runtime members here avoids false positives for
+    ``mapping.get`` and ``items.append`` without making those names unconditional
+    sentinels: they retain auditable ``builtins`` provenance and fabricated
+    method names still fail closed.
+    """
     out: set[str] = set()
     for name in dir(builtins):
         if not name.startswith("_"):
             out.add(name)
+    for value_type in (
+        bytearray,
+        bytes,
+        dict,
+        frozenset,
+        list,
+        memoryview,
+        set,
+        str,
+        tuple,
+    ):
+        out.update(name for name in dir(value_type) if not name.startswith("_"))
     out.add("__name__")
     out.add("__file__")
     out.add("__doc__")
@@ -644,13 +663,28 @@ class SymbolVerifier:
                 p_hallucinated=p_halu,
             ))
 
-        # Aggregate H(code) using independence assumption:
-        # H = 1 − Π (1 − p_i)^{w_i}
-        log_grounded = 0.0
+        # Repeated references to one symbol are correlated evidence, not
+        # independent Bernoulli trials.  Aggregate each distinct symbol once,
+        # retaining the strongest probability and importance observed for it.
+        # This prevents a legitimate helper called many times from driving the
+        # product to one, while a single fabricated symbol still fails closed.
+        unique: dict[str, tuple[float, float]] = {}
         for j in judgments:
-            p = min(max(j.p_hallucinated, 0.0), 1.0 - 1e-12)
-            log_grounded += j.ref.weight * math.log(1.0 - p)
-        h_score = 1.0 - math.exp(log_grounded) if judgments else 0.0
+            current = unique.get(j.ref.name)
+            candidate = (j.p_hallucinated, j.ref.weight)
+            if current is None:
+                unique[j.ref.name] = candidate
+            else:
+                unique[j.ref.name] = (
+                    max(current[0], candidate[0]),
+                    max(current[1], candidate[1]),
+                )
+
+        log_grounded = 0.0
+        for probability, weight in unique.values():
+            p = min(max(probability, 0.0), 1.0 - 1e-12)
+            log_grounded += weight * math.log(1.0 - p)
+        h_score = 1.0 - math.exp(log_grounded) if unique else 0.0
 
         return SymbolVerifierResult(
             code=source,
