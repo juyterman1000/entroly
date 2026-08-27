@@ -1,0 +1,80 @@
+name: PR367 Native Warm Start Parity
+
+on:
+  pull_request:
+    branches: [main]
+    paths: [.github/workflows/pr367-warm-start-parity.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'fix/codebase-intelligence-integrity'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: fix/codebase-intelligence-integrity
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Patch native derived-state reconstruction and parity test
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          rust = Path('entroly-core/src/lib.rs')
+          s = rust.read_text(encoding='utf-8')
+
+          def section(text, start_marker, end_marker, replacement, label):
+              a = text.find(start_marker)
+              if a < 0 or text.find(start_marker, a + 1) >= 0:
+                  raise SystemExit(f'{label}: start marker missing or non-unique')
+              b = text.find(end_marker, a + len(start_marker))
+              if b < 0:
+                  raise SystemExit(f'{label}: end marker missing')
+              return text[:a] + replacement + text[b:]
+
+          lsh_section = '''    /// Populate LSH tables from the current persisted slot order.\n    ///\n    /// `fragment_slot_ids` is part of the persisted index contract: LSH entries\n    /// refer to these slots, so a warm load must preserve the cold engine's slot\n    /// identity exactly. Dependency stubs deliberately have `has_simhash=false`\n    /// and must never enter LSH.\n    fn rebuild_lsh_from_slot_ids(&mut self) {\n        let entries: Vec<(u64, usize)> = self\n            .fragment_slot_ids\n            .iter()\n            .enumerate()\n            .filter_map(|(slot, id)| {\n                self.fragments\n                    .get(id)\n                    .filter(|fragment| fragment.has_simhash)\n                    .map(|fragment| (fragment.simhash, slot))\n            })\n            .collect();\n        self.lsh_index.clear();\n        for (fingerprint, slot) in entries {\n            self.lsh_index.insert(fingerprint, slot);\n        }\n    }\n\n    /// Rebuild the LSH index and slot list from the current fragment map.\n    ///\n    /// Called after mutations that invalidate slot identity. New slot assignment\n    /// is sorted by fragment ID for deterministic reconstruction; stubs remain in\n    /// the slot list but are excluded from LSH exactly as they are during ingest.\n    fn rebuild_lsh_index(&mut self) {\n        let mut ids: Vec<String> = self.fragments.keys().cloned().collect();\n        ids.sort_unstable();\n        self.fragment_slot_ids = ids;\n        self.rebuild_lsh_from_slot_ids();\n    }\n\n'''
+          s = section(
+              s,
+              '    /// Rebuild the LSH index and slot list from the current fragment map.\n',
+              '    /// Rebuild dependency and symbol state from the live fragment set.\n',
+              lsh_section,
+              'LSH rebuild helpers',
+          )
+
+          old_load = '''        self.total_duplicates_caught = snapshot.total_duplicates_caught;\n        self.gradient_temperature = snapshot.gradient_temperature;\n        self.gradient_norm_ema = snapshot.gradient_norm_ema;\n        // Rebuild dedup index from loaded fragments\n        for frag in self.fragments.values() {\n            self.dedup_index.insert(&frag.fragment_id, &frag.content);\n        }\n        Ok(n)\n'''
+          new_load = '''        self.total_duplicates_caught = snapshot.total_duplicates_caught;\n        self.gradient_temperature = snapshot.gradient_temperature;\n        self.gradient_norm_ema = snapshot.gradient_norm_ema;\n\n        // The persisted JSON owns canonical fragment + slot state only. Rebuild\n        // every derived selection structure from those canonical values so a\n        // warm process cannot select differently from the cold process that\n        // wrote the snapshot. Stubs are excluded from content-similarity indexes.\n        let dedup_threshold = self.dedup_index.hamming_threshold();\n        self.dedup_index = DedupIndex::new(dedup_threshold);\n        for frag in self.fragments.values().filter(|fragment| fragment.has_simhash) {\n            self.dedup_index.insert(&frag.fragment_id, &frag.content);\n        }\n\n        let slot_ids_are_complete = self.fragment_slot_ids.len() == self.fragments.len()\n            && self\n                .fragment_slot_ids\n                .iter()\n                .collect::<HashSet<_>>()\n                .len()\n                == self.fragment_slot_ids.len()\n            && self\n                .fragment_slot_ids\n                .iter()\n                .all(|id| self.fragments.contains_key(id));\n        if slot_ids_are_complete {\n            self.rebuild_lsh_from_slot_ids();\n        } else {\n            // Backward-compatible repair for an old/incomplete slot snapshot.\n            self.rebuild_lsh_index();\n        }\n        self.rebuild_dependency_graph();\n        self.last_optimization = None;\n        self.last_cache_feedback_eligible = false;\n        self.egsc_cache.clear();\n        Ok(n)\n'''
+          count = s.count(old_load)
+          if count != 1:
+              raise SystemExit(f'load_index tail: expected 1 anchor, found {count}')
+          s = s.replace(old_load, new_load, 1)
+          rust.write_text(s, encoding='utf-8')
+
+          test = Path('tests/test_warm_start.py')
+          ts = test.read_text(encoding='utf-8')
+          marker = 'def test_missing_index_loads_clean_no_crash(tmp_path: Path):\n'
+          if ts.count(marker) != 1:
+              raise SystemExit('warm-start test marker missing or non-unique')
+          addition = '''def test_persisted_index_roundtrip_preserves_native_selection(tmp_path: Path):\n    """Cold and warm native engines must select identically from one snapshot."""\n    cfg = EntrolyConfig(checkpoint_dir=tmp_path, use_persistent_index=True)\n    cold = EntrolyEngine(cfg)\n    _needs_rust(cold)\n    cold._rust.set_exploration_rate(0.0)\n\n    for i in range(96):\n        cold.ingest_fragment(\n            f"def helper_{i}(value):\\n    return value + {i}  # generic pipeline helper",\n            source=f"src/helpers/module_{i:03d}.py",\n        )\n    cold.ingest_fragment(\n        "def refresh_access_token(token, expiry):\\n"\n        "    if expiry <= now():\\n"\n        "        return rotate_refresh_token(token)\\n"\n        "    return token",\n        source="src/auth/token_refresh.py",\n    )\n\n    index_path = Path(tmp_path) / "index.json.gz"\n    cold._rust.persist_index(str(index_path))\n    query = "refresh access token expiry rotate token"\n    cold_recall = [dict(item) for item in cold._rust.recall(query, 12)]\n    cold_optimized = dict(cold._rust.optimize(700, query))\n\n    warm = EntrolyEngine(cfg)\n    _needs_rust(warm)\n    warm._rust.set_exploration_rate(0.0)\n    assert warm.wait_until_warm() is True\n    warm_recall = [dict(item) for item in warm._rust.recall(query, 12)]\n    warm_optimized = dict(warm._rust.optimize(700, query))\n\n    assert warm._rust.fragment_count() == cold._rust.fragment_count()\n    assert warm_recall == cold_recall\n    assert warm_optimized.get("total_tokens") == cold_optimized.get("total_tokens")\n    assert [dict(item) for item in warm_optimized.get("selected", [])] == [\n        dict(item) for item in cold_optimized.get("selected", [])\n    ]\n\n\n'''
+          ts = ts.replace(marker, addition + marker, 1)
+          test.write_text(ts, encoding='utf-8')
+          PY
+          cargo fmt --manifest-path entroly-core/Cargo.toml
+          python -m py_compile tests/test_warm_start.py
+          git diff --check
+          git diff --stat
+          grep -n 'rebuild_lsh_from_slot_ids\|slot_ids_are_complete' entroly-core/src/lib.rs
+      - name: Commit generated diff
+        run: |
+          rm -f .github/workflows/pr367-warm-start-parity.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --quiet && { echo 'no target diff' >&2; exit 1; }
+          git commit -m 'fix(core): restore cold-warm selection parity'
+          git push origin HEAD:fix/codebase-intelligence-integrity
