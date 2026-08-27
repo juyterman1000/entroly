@@ -58,6 +58,47 @@ def test_persistent_engine_constructs_fast_and_warm_restores_index(tmp_path: Pat
     assert e2._rust.fragment_count() == n
 
 
+def test_persisted_index_roundtrip_preserves_native_selection(tmp_path: Path):
+    """Cold and warm native engines must select identically from one snapshot."""
+    cfg = EntrolyConfig(checkpoint_dir=tmp_path, use_persistent_index=True)
+    cold = EntrolyEngine(cfg)
+    _needs_rust(cold)
+    cold._rust.set_exploration_rate(0.0)
+
+    for i in range(96):
+        cold.ingest_fragment(
+            f"def helper_{i}(value):\n    return value + {i}  # generic pipeline helper",
+            source=f"src/helpers/module_{i:03d}.py",
+        )
+    cold.ingest_fragment(
+        "def refresh_access_token(token, expiry):\n"
+        "    if expiry <= now():\n"
+        "        return rotate_refresh_token(token)\n"
+        "    return token",
+        source="src/auth/token_refresh.py",
+    )
+
+    index_path = Path(tmp_path) / "index.json.gz"
+    cold._rust.persist_index(str(index_path))
+    query = "refresh access token expiry rotate token"
+    cold_recall = [dict(item) for item in cold._rust.recall(query, 12)]
+    cold_optimized = dict(cold._rust.optimize(700, query))
+
+    warm = EntrolyEngine(cfg)
+    _needs_rust(warm)
+    warm._rust.set_exploration_rate(0.0)
+    assert warm.wait_until_warm() is True
+    warm_recall = [dict(item) for item in warm._rust.recall(query, 12)]
+    warm_optimized = dict(warm._rust.optimize(700, query))
+
+    assert warm._rust.fragment_count() == cold._rust.fragment_count()
+    assert warm_recall == cold_recall
+    assert warm_optimized.get("total_tokens") == cold_optimized.get("total_tokens")
+    assert [dict(item) for item in warm_optimized.get("selected", [])] == [
+        dict(item) for item in cold_optimized.get("selected", [])
+    ]
+
+
 def test_missing_index_loads_clean_no_crash(tmp_path: Path):
     # Empty checkpoint dir → first use finds no index, proceeds cleanly.
     e = EntrolyEngine(EntrolyConfig(checkpoint_dir=tmp_path, use_persistent_index=True))
