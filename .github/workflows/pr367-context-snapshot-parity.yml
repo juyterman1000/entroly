@@ -1,0 +1,36 @@
+name: PR367 Context Snapshot Parity
+
+on:
+  push:
+    branches: [pr367-context-snapshot-parity]
+
+permissions:
+  contents: read
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: pr367-context-snapshot-parity
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22.19.0'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Install exact-head Python/native package
+        run: python scripts/ci_install_exact_head.py --extras test
+      - name: Build exact-head WASM package
+        run: |
+          cargo install wasm-pack --locked
+          npm --prefix entroly-wasm run build
+      - name: Syntax check Node snapshot store
+        run: node --check entroly-wasm/js/work_context_snapshot_store.js
+      - name: Run Python-Node snapshot parity
+        run: pytest tests/test_work_context_snapshot_cross_runtime.py -q -rs
