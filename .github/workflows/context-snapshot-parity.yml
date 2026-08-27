@@ -65,8 +65,9 @@ jobs:
       - name: Run full npm package tests
         run: npm --prefix entroly-wasm test
       - name: Verify published tarball contains snapshot runtime and types
+        working-directory: entroly-wasm
         run: |
-          npm --prefix entroly-wasm pack --dry-run --json > "$RUNNER_TEMP/entroly-wasm-pack.json"
+          npm pack --dry-run --json > "$RUNNER_TEMP/entroly-wasm-pack.json"
           python - "$RUNNER_TEMP/entroly-wasm-pack.json" <<'PY'
           import json
           import sys
