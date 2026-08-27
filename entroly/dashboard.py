@@ -22,7 +22,7 @@ import logging
 import math
 import threading
 import time
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
@@ -1442,6 +1442,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
     """HTTP handler for the dashboard."""
 
     _MAX_CONTROL_BODY_BYTES = 64 * 1024
+    # Class-level default so the error path can read it even if a request
+    # fails before any instance attribute is set.
+    _response_started = False
 
     def log_message(self, format, *args):
         pass  # Suppress access logs
@@ -1472,6 +1475,29 @@ class DashboardHandler(BaseHTTPRequestHandler):
     }
 
     def do_GET(self):
+        # Every route answers, including the ones that fail.
+        #
+        # An unhandled exception propagated out of `finish_request`, the socket
+        # closed with no status line, and the browser reported
+        # `TypeError: Failed to fetch` -- a message naming no endpoint and no
+        # cause, so a subsystem that was merely unavailable looked like a dead
+        # dashboard. The panels already render "<panel> unavailable: <reason>";
+        # they were simply never given a reason.
+        #
+        # Intermittent by nature: only routes whose data source was momentarily
+        # unreadable raised, which is why the dashboard rendered correctly most
+        # of the time and blank occasionally.
+        try:
+            self._dispatch_get()
+        except Exception as exc:  # noqa: BLE001 - a failed panel must still reply
+            logger.warning("dashboard GET %s failed: %s", self.path, exc)
+            if not self._response_started:
+                self._send_json(500, {
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "path": self.path,
+                })
+
+    def _dispatch_get(self):
         parsed = urlparse(self.path)
         path = parsed.path
         # Static HTML
@@ -1720,6 +1746,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         Centralizing here is the only way headers (CORS, CSP, cache) stay
         in sync across handlers — every previous drift bug came from
         copy-pasted send_header blocks falling out of step."""
+        # Recorded before the status line goes out, so the error handler in
+        # do_GET can tell "nothing was written yet, send a 500" from "headers
+        # are already on the wire, a second status line would corrupt the
+        # response".
+        self._response_started = True
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         if no_cache:
@@ -1906,13 +1937,20 @@ def start_dashboard(
         existing_daemon._proxy_runtime = proxy_runtime
         existing_daemon._proxy_config = getattr(proxy_runtime, "config", None)
 
-    class _ReuseAddrHTTPServer(HTTPServer):
+    class _ReuseAddrHTTPServer(ThreadingHTTPServer):
+        # Was a hand-rolled `process_request` that started a thread on
+        # `finish_request` and stopped there. The stdlib equivalent wraps that
+        # call in try/except/finally and calls `shutdown_request` in the
+        # `finally`, so the hand-rolled version never closed the socket when a
+        # handler raised: the connection was dropped with no status line, the
+        # browser reported `TypeError: Failed to fetch`, and the descriptor
+        # leaked. It also skipped `handle_error`, so the traceback went to
+        # stderr unattributed to any route.
+        #
+        # ThreadingHTTPServer already provides per-request threads, so the
+        # non-blocking property that override existed for is retained.
         allow_reuse_address = True
-
-        def process_request(self, request, client_address):
-            """Handle each request in a new thread to avoid blocking."""
-            t = threading.Thread(target=self.finish_request, args=(request, client_address), daemon=True)
-            t.start()
+        daemon_threads = True
 
     server = _ReuseAddrHTTPServer(("127.0.0.1", port), DashboardHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=daemon)
