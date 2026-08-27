@@ -7,6 +7,8 @@ data before an agent consumes it.
 """
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import math
 import os
@@ -40,7 +42,12 @@ _MAX_SCOPE_ITEMS = 256
 _MAX_EVIDENCE = 4096
 _MAX_TTL_SECONDS = 30 * 24 * 60 * 60
 _MAX_ID_CHARS = 512
+_MAX_REF_BYTES = 4096
 _MAX_CONTRACT_BYTES = 1024 * 1024
+_CONTEXT_TOKEN_PREFIX = "vctx1."
+_MAX_CONTEXT_TOKEN_BYTES = ((_MAX_CONTRACT_BYTES + 2) // 3) * 4 + len(
+    _CONTEXT_TOKEN_PREFIX
+)
 _CONTEXT_SELECTION_POLICY = "repository-intelligence/verified-context-v1"
 
 
@@ -196,6 +203,18 @@ def _bounded_id(value: object, name: str) -> str:
     return text
 
 
+def _bounded_ref(value: object, name: str) -> str:
+    """Bound canonical source/reference strings by UTF-8 bytes, not ID length."""
+    text = str(value).strip()
+    if not text:
+        raise ValueError(f"{name} must not be empty")
+    if "\x00" in text:
+        raise ValueError(f"{name} may not contain NUL")
+    if len(text.encode("utf-8")) > _MAX_REF_BYTES:
+        raise ValueError(f"{name} may not exceed {_MAX_REF_BYTES} UTF-8 bytes")
+    return text
+
+
 def _bounded_contract(value: str | dict[str, Any], name: str) -> str | dict[str, Any]:
     if not isinstance(value, (str, dict)):
         raise ValueError(f"{name} must be a JSON object or JSON text")
@@ -207,6 +226,57 @@ def _bounded_contract(value: str | dict[str, Any], name: str) -> str | dict[str,
     if len(raw.encode("utf-8")) > _MAX_CONTRACT_BYTES:
         raise ValueError(f"{name} exceeds {_MAX_CONTRACT_BYTES} bytes")
     return value
+
+
+def _encode_context_token(context: dict[str, Any]) -> str:
+    """Encode exact committed context as an opaque, round-trippable MCP token."""
+    if not verify_context_commitment(context):
+        raise ValueError("verified context commitment is invalid")
+    raw = json.dumps(
+        context,
+        sort_keys=True,
+        ensure_ascii=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    if len(raw) > _MAX_CONTRACT_BYTES:
+        raise WorkGraphStateError(
+            f"context contract exceeds {_MAX_CONTRACT_BYTES} bytes"
+        )
+    token = _CONTEXT_TOKEN_PREFIX + base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+    if len(token.encode("ascii")) > _MAX_CONTEXT_TOKEN_BYTES:
+        raise WorkGraphStateError("encoded context token exceeds its bounded size")
+    return token
+
+
+def _decode_context_token(token: str) -> dict[str, Any]:
+    """Decode an MCP context token and re-verify its inner commitment."""
+    if not isinstance(token, str) or not token.startswith(_CONTEXT_TOKEN_PREFIX):
+        raise ValueError("context token has an unsupported format")
+    if len(token.encode("utf-8")) > _MAX_CONTEXT_TOKEN_BYTES:
+        raise ValueError("context token exceeds its bounded size")
+    encoded = token[len(_CONTEXT_TOKEN_PREFIX):]
+    if not encoded:
+        raise ValueError("context token payload is empty")
+    padded = encoded + ("=" * (-len(encoded) % 4))
+    try:
+        raw = base64.b64decode(
+            padded.encode("ascii"),
+            altchars=b"-_",
+            validate=True,
+        )
+    except (UnicodeEncodeError, binascii.Error, ValueError):
+        raise ValueError("context token is not valid base64url") from None
+    if len(raw) > _MAX_CONTRACT_BYTES:
+        raise ValueError("decoded context token exceeds its bounded size")
+    try:
+        context = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise ValueError("context token does not contain valid JSON") from None
+    if not isinstance(context, dict):
+        raise ValueError("context token must contain a JSON object")
+    if not verify_context_commitment(context):
+        raise ValueError("context token commitment is invalid")
+    return context
 
 
 def _ttl_ms(ttl_seconds: float) -> int:
@@ -239,6 +309,48 @@ def _render_untrusted(kind: str, payload: dict[str, Any]) -> dict[str, Any]:
             "invisible_chars_stripped": report.invisible_chars_stripped,
         },
     }
+
+
+def _render_context_result(
+    kind: str,
+    *,
+    context: dict[str, Any],
+    canonical_receipt: dict[str, Any],
+    recovery_handles: list[dict[str, Any]],
+    work_event_id: Any,
+    work_summary: dict[str, Any],
+    integrity_state: str = "",
+) -> dict[str, Any]:
+    """Separate exact machine context from sanitized model-facing source data."""
+    raw = json.dumps(
+        context,
+        sort_keys=True,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    if len(raw.encode("utf-8")) > _MAX_RENDER_BYTES:
+        raise WorkGraphStateError(
+            f"{kind} model context exceeds {_MAX_RENDER_BYTES} bytes; narrow the request"
+        )
+    fenced, report = sanitize_injected_context(raw, fence=True)
+    result: dict[str, Any] = {
+        "status": "ok",
+        "kind": kind,
+        "trust": "untrusted_retrieved_source_data",
+        "context_token": _encode_context_token(context),
+        "context_block": fenced,
+        "canonical_receipt": canonical_receipt,
+        "recovery_handles": recovery_handles,
+        "work_event_id": work_event_id,
+        "work_summary": work_summary,
+        "injection_scan": {
+            "matches": list(report.matches),
+            "invisible_chars_stripped": report.invisible_chars_stripped,
+        },
+    }
+    if integrity_state:
+        result["integrity_state"] = integrity_state
+    return result
 
 
 def _error(kind: str, exc: Exception) -> dict[str, Any]:
@@ -285,7 +397,7 @@ def work_claim(
     scope_symbols: list[str] | None = None,
     ttl_seconds: float = 900.0,
 ) -> dict[str, Any]:
-    """Record explicit agent work and an advisory lease in the shared graph."""
+    """Record explicit agent work plus a bounded advisory scope lease."""
     try:
         agent = _bounded_id(agent_id, "agent_id")
         title = str(task_title).strip()
@@ -394,9 +506,6 @@ def work_handoff(
         selected_workstream = _bounded_id(workstream_id, "workstream_id")
         path = _project_path(project)
         store = _store_for_path(path)
-        # Explicit handoff is a state-sealing operation. Capture the latest
-        # bounded Git/checkpoint facts plus exact worktree content identity first
-        # so the receipt is bound to what is actually on disk.
         store.submit_repository_observation(
             _passive_observation(path), repository_path=path
         )
@@ -475,9 +584,6 @@ def work_compile_context(
             proposal_scores=proposals,
             proposal_provider="rust-work-scope",
         )
-        # Verify every source span after selection, then repeat the passive
-        # graph observation. Any changed commitment means the workspace raced
-        # compilation; record the observation, but refuse the context receipt.
         service.validate_context(context)
         confirmation = _passive_observation(path)
         confirmed_graph = store.submit_repository_observation(
@@ -497,15 +603,13 @@ def work_compile_context(
             agent_id=str(agent_id),
             session_id=str(session_id),
         )
-        return _render_untrusted(
+        return _render_context_result(
             "work_compile_context",
-            {
-                "context": context,
-                "canonical_receipt": canonical,
-                "recovery_handles": handles,
-                "work_event_id": event_id,
-                "work_summary": recorded_graph.summary(),
-            },
+            context=context,
+            canonical_receipt=canonical,
+            recovery_handles=handles,
+            work_event_id=event_id,
+            work_summary=recorded_graph.summary(),
         )
     except Exception as exc:
         return _error("work_compile_context", exc)
@@ -513,7 +617,7 @@ def work_compile_context(
 
 def work_context_fault(
     *,
-    context: dict[str, Any],
+    context: dict[str, Any] | str,
     context_ref: str,
     recovery_handle: dict[str, Any],
     project: str = "",
@@ -524,11 +628,16 @@ def work_context_fault(
 ) -> dict[str, Any]:
     """Verify one recovery handle, fault in exact bytes, and record the receipt."""
     try:
-        bounded_context = _bounded_contract(context, "context")
+        if isinstance(context, str):
+            bounded_context = _decode_context_token(context)
+        else:
+            bounded_context = _bounded_contract(context, "context")
+            if not isinstance(bounded_context, dict):
+                raise ValueError("context must be a JSON object or context token")
         bounded_handle = _bounded_contract(recovery_handle, "recovery_handle")
-        if not isinstance(bounded_context, dict) or not isinstance(bounded_handle, dict):
-            raise ValueError("context and recovery_handle must be JSON objects")
-        selected_ref = _bounded_id(context_ref, "context_ref")
+        if not isinstance(bounded_handle, dict):
+            raise ValueError("recovery_handle must be a JSON object")
+        selected_ref = _bounded_ref(context_ref, "context_ref")
         selected_workstream = str(workstream_id).strip()
         if selected_workstream:
             selected_workstream = _bounded_id(
@@ -595,16 +704,14 @@ def work_context_fault(
             agent_id=str(agent_id),
             session_id=str(session_id),
         )
-        return _render_untrusted(
+        return _render_context_result(
             "work_context_fault",
-            {
-                "integrity_state": "verified",
-                "context": recovered,
-                "canonical_receipt": canonical,
-                "recovery_handles": handles,
-                "work_event_id": event_id,
-                "work_summary": recorded_graph.summary(),
-            },
+            context=recovered,
+            canonical_receipt=canonical,
+            recovery_handles=handles,
+            work_event_id=event_id,
+            work_summary=recorded_graph.summary(),
+            integrity_state="verified",
         )
     except Exception as exc:
         return _error("work_context_fault", exc)
