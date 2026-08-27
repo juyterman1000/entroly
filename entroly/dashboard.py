@@ -1175,14 +1175,16 @@ async function refreshContextSessions(query){
     const response=await fetch('/api/context/sessions?q='+encodeURIComponent(q));
     if(!response.ok)throw new Error('Session index returned '+response.status);
     const payload=await response.json(),sessions=payload.sessions||[];
+    panelClearStale(list);
     const diagnostics=(payload.diagnostics||[]).slice(0,2).map(item=>'<div class="context-diagnostic">'+escHtml(item.message||item.type)+'</div>').join('');
     if(!sessions.length){list.innerHTML=diagnostics+'<div class="empty">No context receipts found. Create a Context Receipt to make selection and omission decisions inspectable.</div>';document.getElementById('contextDetail').innerHTML='<div class="empty">Nothing is hidden: unreadable artifacts appear as diagnostics here.</div>';contextSelectedKey='';return;}
     list.innerHTML=diagnostics+sessions.map(s=>{
       const active=s.key===contextSelectedKey?' active':'';const valid=(s.integrity||{}).valid;
       return '<div class="context-row'+active+'" onclick="loadContextSession(\''+s.key+'\')"><div class="context-row-title">'+escHtml(s.session_id)+'</div><div class="context-row-query">'+escHtml(s.query||'No task recorded')+'</div><div class="context-row-meta"><span>'+s.turn_count+' turn'+(s.turn_count===1?'':'s')+'</span><span>'+fmt(s.selected_tokens||0)+' selected</span><span style="color:'+(valid?'var(--emerald)':'var(--rose)')+'">'+(valid?'verified':'integrity issue')+'</span></div></div>';
     }).join('');
+    panelSucceeded('contextList');
     if(!contextSelectedKey||!sessions.some(s=>s.key===contextSelectedKey))await loadContextSession(sessions[0].key);
-  }catch(error){list.innerHTML='<div class="context-diagnostic">Context session index unavailable: '+escHtml(error.message||error)+'</div>';}
+  }catch(error){panelFailed('contextList', list, 'Context session index', error);}
 }
 async function loadContextSession(key){
   contextSelectedKey=key;const detail=document.getElementById('contextDetail');detail.innerHTML='<div class="empty">Loading receipt proof…</div>';
@@ -1241,10 +1243,68 @@ function renderContextHealth(data){
       '<div class="context-protection"><b>Drift protection</b><span>Status: '+escHtml(drift.status||'unavailable')+'; source freshness '+escHtml(drift.source_freshness||'unavailable')+'. '+escHtml(drift.scope||'')+'</span></div>'+
     '</div>';
 }
+// A panel polled every 3s must not throw away correct data because one poll
+// failed. Replacing the contents on the first error is why a dashboard that
+// was right a moment ago went blank: a single transient fetch rejection wiped
+// a panel and reported "Failed to fetch", which names neither what broke nor
+// that the previous answer is still the best available one.
+//
+// Panels keep their last good render and are marked stale instead. The error
+// replaces content only when there is nothing to preserve, or when failures
+// persist long enough that the displayed data should no longer be trusted.
+const PANEL_FAILURES_BEFORE_BLANKING = 3;
+const panelState = {};
+
+function panelSucceeded(name){
+  panelState[name] = {failures: 0, everLoaded: true};
+}
+
+// Returns true when the caller should render the error, false when the last
+// good content should be left in place.
+function panelFailed(name, el, label, error){
+  const prior = panelState[name] || {failures: 0, everLoaded: false};
+  const failures = prior.failures + 1;
+  panelState[name] = {failures: failures, everLoaded: prior.everLoaded};
+  const message = escHtml((error && error.message) || error || 'unknown error');
+
+  if(!prior.everLoaded || failures >= PANEL_FAILURES_BEFORE_BLANKING){
+    if(el){
+      el.innerHTML = '<div class="context-diagnostic">' + label +
+        ' unavailable: ' + message +
+        (failures > 1 ? ' (' + failures + ' consecutive attempts)' : '') +
+        '</div>';
+    }
+    return true;
+  }
+  // Keep what is on screen, but say plainly that it is not fresh -- silently
+  // showing stale numbers would be the opposite failure.
+  if(el && !el.querySelector('.panel-stale')){
+    const note = document.createElement('div');
+    note.className = 'context-diagnostic panel-stale';
+    note.textContent = label + ' refresh failed (' + message +
+      '); showing the last good reading.';
+    el.prepend(note);
+  }
+  return false;
+}
+
+function panelClearStale(el){
+  if(!el){return;}
+  const note = el.querySelector('.panel-stale');
+  if(note){note.remove();}
+}
+
 async function refreshContextHealth(){
   const el=document.getElementById('contextHealth');
-  try{const response=await fetch('/api/context/health');if(!response.ok)throw new Error('Context health returned '+response.status);renderContextHealth(await response.json());}
-  catch(error){if(el)el.innerHTML='<div class="context-diagnostic">Context health unavailable: '+escHtml(error.message||error)+'</div>';}
+  try{
+    const response=await fetch('/api/context/health');
+    if(!response.ok)throw new Error('Context health returned '+response.status);
+    const payload=await response.json();
+    panelClearStale(el);
+    renderContextHealth(payload);
+    panelSucceeded('contextHealth');
+  }
+  catch(error){panelFailed('contextHealth', el, 'Context health', error);}
 }
 function renderWitness(d){
   const w=d.witness||{},el=document.getElementById('witness'),b=document.getElementById('wb');
