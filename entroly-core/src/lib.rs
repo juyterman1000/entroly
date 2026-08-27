@@ -4127,10 +4127,38 @@ impl EntrolyEngine {
         self.total_duplicates_caught = snapshot.total_duplicates_caught;
         self.gradient_temperature = snapshot.gradient_temperature;
         self.gradient_norm_ema = snapshot.gradient_norm_ema;
-        // Rebuild dedup index from loaded fragments
-        for frag in self.fragments.values() {
+
+        // The persisted JSON owns canonical fragment + slot state only. Rebuild
+        // every derived selection structure from those canonical values so a
+        // warm process cannot select differently from the cold process that
+        // wrote the snapshot. Stubs are excluded from content-similarity indexes.
+        let dedup_threshold = self.dedup_index.hamming_threshold();
+        self.dedup_index = DedupIndex::new(dedup_threshold);
+        for frag in self
+            .fragments
+            .values()
+            .filter(|fragment| fragment.has_simhash)
+        {
             self.dedup_index.insert(&frag.fragment_id, &frag.content);
         }
+
+        let slot_ids_are_complete = self.fragment_slot_ids.len() == self.fragments.len()
+            && self.fragment_slot_ids.iter().collect::<HashSet<_>>().len()
+                == self.fragment_slot_ids.len()
+            && self
+                .fragment_slot_ids
+                .iter()
+                .all(|id| self.fragments.contains_key(id));
+        if slot_ids_are_complete {
+            self.rebuild_lsh_from_slot_ids();
+        } else {
+            // Backward-compatible repair for an old/incomplete slot snapshot.
+            self.rebuild_lsh_index();
+        }
+        self.rebuild_dependency_graph();
+        self.last_optimization = None;
+        self.last_cache_feedback_eligible = false;
+        self.egsc_cache.clear();
         Ok(n)
     }
 
@@ -5223,21 +5251,40 @@ impl EntrolyEngine {
 // ═══════════════════════════════════════════════════════════════════
 
 impl EntrolyEngine {
+    /// Populate LSH tables from the current persisted slot order.
+    ///
+    /// `fragment_slot_ids` is part of the persisted index contract: LSH entries
+    /// refer to these slots, so a warm load must preserve the cold engine's slot
+    /// identity exactly. Dependency stubs deliberately have `has_simhash=false`
+    /// and must never enter LSH.
+    fn rebuild_lsh_from_slot_ids(&mut self) {
+        let entries: Vec<(u64, usize)> = self
+            .fragment_slot_ids
+            .iter()
+            .enumerate()
+            .filter_map(|(slot, id)| {
+                self.fragments
+                    .get(id)
+                    .filter(|fragment| fragment.has_simhash)
+                    .map(|fragment| (fragment.simhash, slot))
+            })
+            .collect();
+        self.lsh_index.clear();
+        for (fingerprint, slot) in entries {
+            self.lsh_index.insert(fingerprint, slot);
+        }
+    }
+
     /// Rebuild the LSH index and slot list from the current fragment map.
     ///
-    /// Called after batch eviction in advance_turn(). O(N) but infrequent.
+    /// Called after mutations that invalidate slot identity. New slot assignment
+    /// is sorted by fragment ID for deterministic reconstruction; stubs remain in
+    /// the slot list but are excluded from LSH exactly as they are during ingest.
     fn rebuild_lsh_index(&mut self) {
-        self.lsh_index.clear();
-        self.fragment_slot_ids.clear();
-        // Sort by fragment_id for deterministic slot assignment
         let mut ids: Vec<String> = self.fragments.keys().cloned().collect();
         ids.sort_unstable();
-        for (slot, id) in ids.iter().enumerate() {
-            if let Some(frag) = self.fragments.get(id) {
-                self.lsh_index.insert(frag.simhash, slot);
-            }
-            self.fragment_slot_ids.push(id.clone());
-        }
+        self.fragment_slot_ids = ids;
+        self.rebuild_lsh_from_slot_ids();
     }
 
     /// Rebuild dependency and symbol state from the live fragment set.
