@@ -93,12 +93,6 @@ WEIGHT_DECORATOR = 1.0          # @foo — high signal
 ALWAYS_GROUND = frozenset({
     "self", "cls", "args", "kwargs", "_", "__init__", "__str__", "__repr__",
     "main", "True", "False", "None",
-    "items", "keys", "values", "get", "pop", "update", "setdefault",
-    "append", "extend", "insert", "remove", "sort", "reverse", "copy",
-    "clear", "count", "index", "strip", "split", "join", "replace",
-    "startswith", "endswith", "lower", "upper", "format", "encode",
-    "decode", "read", "write", "close", "flush", "seek", "tell",
-    "add", "discard", "union", "intersection", "difference",
 })
 
 # Common dunder & magic methods — assume grounded.
@@ -650,12 +644,13 @@ class SymbolVerifier:
                 p_hallucinated=p_halu,
             ))
 
-        weighted_p = 0.0
-        total_weight = 0.0
+        # Aggregate H(code) using independence assumption:
+        # H = 1 − Π (1 − p_i)^{w_i}
+        log_grounded = 0.0
         for j in judgments:
-            weighted_p += j.ref.weight * j.p_hallucinated
-            total_weight += j.ref.weight
-        h_score = (weighted_p / total_weight) if total_weight > 0.0 else 0.0
+            p = min(max(j.p_hallucinated, 0.0), 1.0 - 1e-12)
+            log_grounded += j.ref.weight * math.log(1.0 - p)
+        h_score = 1.0 - math.exp(log_grounded) if judgments else 0.0
 
         return SymbolVerifierResult(
             code=source,

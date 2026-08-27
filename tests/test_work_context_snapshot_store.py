@@ -150,3 +150,21 @@ def test_snapshot_rejects_malformed_tokens_before_filesystem_lookup(tmp_path: Pa
     ):
         with pytest.raises(WorkContextSnapshotError):
             store.get_json(token)
+
+
+def test_snapshot_fails_closed_on_surrogateescaped_source_bytes(tmp_path: Path) -> None:
+    """Lone surrogate escapes cannot be represented by cross-runtime JSON.
+
+    Repository readers may use ``surrogateescape`` to retain undecodable source
+    bytes.  Persisting that host-only representation would make Python and Node
+    disagree, so the shared Rust verifier must reject it before any snapshot is
+    written.
+    """
+    store = _store(tmp_path)
+    marker = b"source-\xff-byte".decode("utf-8", errors="surrogateescape")
+    context = _context(marker)
+
+    with pytest.raises(WorkContextSnapshotError, match="not valid JSON"):
+        store.put_json(context)
+
+    assert list(store.context_dir.glob("*.json")) == []

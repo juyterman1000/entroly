@@ -4290,7 +4290,6 @@ class PromptCompilerProxy:
             or not self._witness_analyzer
             or not witness_result
             or not witness_result.flagged()
-            or self._witness_mode == "audit"
         ):
             return None
 
