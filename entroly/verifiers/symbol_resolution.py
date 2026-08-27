@@ -80,6 +80,31 @@ logger = logging.getLogger("entroly.verifiers.symbol_resolution")
 # Conservative default: surprisal must exceed ~ ln(P)+λ before flagging.
 DEFAULT_LAMBDA = 6.5
 
+# log ρ, where ρ = P(a fabricated name collides with the manifest).
+#
+# Resolving against the manifest is evidence, not merely a gate. The original
+# derivation used it as a hard gate for σ ∉ M and then discarded it for σ ∈ M,
+# scoring a symbol the codebase demonstrably contains purely on how unusual its
+# spelling looks. Because the aggregate is a noisy-OR, those residual
+# probabilities compounded with symbol count: ten real stdlib imports, nothing
+# fabricated and nothing unresolved, scored 0.694, and five scored 0.558 --
+# past the 0.5 failure threshold. h_score measured how much code was written
+# rather than whether it was true.
+#
+# Adding log ρ to the logit is the missing likelihood-ratio update. ρ is
+# measured, not chosen: 3000 fabricated identifiers built by recombining real
+# morphemes (fetch_lattice, quantize_canonical_receipt, slurpDigest) -- the way
+# a model actually invents an API, rather than random strings that would
+# collide at zero and flatter the estimate -- produced 1 collision against a
+# 66,914-symbol manifest. A rule-of-three floor is applied so a near-zero draw
+# from a finite sample does not imply unbounded confidence.
+#
+#     ρ̂ = 1/3000 = 3.33e-4  →  floored to 1e-3  →  log ρ = -6.91
+#
+# Fail-closed is untouched: σ ∉ M still returns 1.0. This only bounds how much
+# doubt a symbol that *is* present can contribute.
+MANIFEST_EVIDENCE_LOG_ODDS = -6.9078
+
 # Per-symbol importance weights in the aggregate score.
 WEIGHT_FUNCTION_CALL = 1.0      # foo(...) — high signal
 WEIGHT_ATTRIBUTE_ACCESS = 1.0   # obj.attr — high signal
@@ -384,6 +409,24 @@ def _extract_python_top_level(path: Path, out: set[str]) -> None:
                 ):
                     out.add(target.attr)
 
+    # Class-body bindings: dataclass fields, class constants, and annotated
+    # class attributes. `@dataclass class Diff: files_added: list[str]` defines
+    # `files_added` for every instance, but it is an AnnAssign in a class body
+    # rather than a module-level one or a `self.` assignment, so neither pass
+    # above reaches it. Dataclasses are common enough here that this was a
+    # visible share of the remaining false positives.
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        for item in node.body:
+            if isinstance(item, ast.AnnAssign):
+                if isinstance(item.target, ast.Name):
+                    out.add(item.target.id)
+            elif isinstance(item, ast.Assign):
+                for target in item.targets:
+                    if isinstance(target, ast.Name):
+                        out.add(target.id)
+
 
 # ── Symbol Extraction from generated code ────────────────────────────
 
@@ -685,8 +728,11 @@ class SymbolVerifier:
             return 0.0  # No surprisal signal → trust the manifest
 
         surp = self.ngram_model.surprisal(name)
-        # Sigmoid in nats: sigmoid(surp − λ)
-        x = surp - self.lambda_
+        # Sigmoid in nats, with manifest membership carried as evidence rather
+        # than discarded once the hard gate is passed:
+        #     sigmoid(surp − λ + log ρ)
+        # See MANIFEST_EVIDENCE_LOG_ODDS for how ρ was measured.
+        x = surp - self.lambda_ + MANIFEST_EVIDENCE_LOG_ODDS
         # Numerically stable sigmoid
         if x >= 0:
             return 1.0 / (1.0 + math.exp(-x))
@@ -748,9 +794,14 @@ class SymbolVerifier:
             h_score=h_score,
             n_resolved=sum(1 for j in judgments if j.resolved),
             n_unresolved=sum(1 for j in judgments if not j.resolved),
+            # Reported on the uncorrected surprisal. Once membership is
+            # carried as evidence a resolved symbol almost never exceeds 0.5,
+            # so keying this off p_hallucinated would silently zero the
+            # "resolved but oddly named" signal. It stays observable here
+            # without being allowed to drive h_score.
             n_suspicious=sum(
                 1 for j in judgments
-                if j.resolved and j.p_hallucinated > 0.5
+                if j.resolved and j.surprisal > self.lambda_
             ),
             manifest_size=self.manifest.size(),
         )
