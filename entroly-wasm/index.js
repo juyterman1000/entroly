@@ -52,6 +52,7 @@ try {
     !optimizeTaskProfilesRust ||
     !classifyLearningQueryRust ||
     !wasmExports.contextReceiptBuildJSON ||
+    !wasmExports.verifiedContextSnapshotVerifyBytes ||
     !wasmExports.recoveryHandleBuildJSON ||
     !wasmExports.memoryRecordBuildJSON ||
     !wasmExports.routingDecisionBuildJSON ||
