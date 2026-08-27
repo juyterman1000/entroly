@@ -203,3 +203,54 @@ class TestAutomaticTakeover:
             m["path"] == "later.py" and m["change"] == "appeared"
             for m in watcher.modifications()
         )
+
+
+class TestTakeoverCost:
+    """Takeover may be slow once. It may not be slow repeatedly.
+
+    Measured on this repository (~4.7k files): the cold call costs ~3.6s, of
+    which ~380ms is Git observation and content digests and the rest is the
+    Rust store. That cost is deliberate -- the trust gate has to be armed
+    before the first mutating call, so deferring takeover to a background
+    thread would risk `work_claim` arriving while nothing was armed yet, which
+    is the exact fail-open the gate exists to prevent.
+
+    What must not regress is the per-call cost. An absolute bound on the cold
+    path would be machine-dependent and flaky; the contract worth pinning is
+    that takeover is paid once.
+    """
+
+    def test_repeated_takeover_is_effectively_free(self, repo, monkeypatch):
+        import time
+
+        monkeypatch.setenv("ENTROLY_DIR", str(repo.parent / "state"))
+        monkeypatch.setenv("ENTROLY_SOURCE", str(repo))
+
+        session.start_session()          # pay the cold cost once
+
+        started = time.perf_counter()
+        for _ in range(200):
+            session.start_session()
+        elapsed_ms = (time.perf_counter() - started) * 1000
+
+        assert elapsed_ms < 50, (
+            f"200 cached takeovers took {elapsed_ms:.1f}ms; takeover is being "
+            "re-run per tool call rather than memoised"
+        )
+
+    def test_disabled_takeover_costs_nothing(self, repo, monkeypatch):
+        import time
+
+        monkeypatch.setenv("ENTROLY_DIR", str(repo.parent / "state"))
+        monkeypatch.setenv("ENTROLY_SOURCE", str(repo))
+        monkeypatch.setenv("ENTROLY_WORK_GRAPH_AUTOSTART", "0")
+
+        started = time.perf_counter()
+        summary = session.start_session(force=True)
+        elapsed_ms = (time.perf_counter() - started) * 1000
+
+        assert summary["attempted"] is False
+        assert elapsed_ms < 100, (
+            f"opting out still cost {elapsed_ms:.1f}ms; the opt-out must skip "
+            "observation entirely, not merely discard its result"
+        )
