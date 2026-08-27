@@ -7,12 +7,24 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from entroly_core import verified_context_snapshot_verify_bytes
 
 from entroly.repository_intelligence import RepositoryIntelligenceService
 from entroly.repository_intelligence.verified_context import verify_context_commitment
 from entroly.work_context_snapshot_store import WorkContextSnapshotStore
 from entroly.work_graph_store import WorkGraphStore
+
+entroly_core = pytest.importorskip(
+    "entroly_core",
+    reason="cross-runtime snapshot parity requires the exact-head native verifier",
+)
+verified_context_snapshot_verify_bytes = getattr(
+    entroly_core, "verified_context_snapshot_verify_bytes", None
+)
+if verified_context_snapshot_verify_bytes is None:
+    pytest.skip(
+        "installed native module lacks context snapshot verification",
+        allow_module_level=True,
+    )
 
 
 NODE = shutil.which("node")
