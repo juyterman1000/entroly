@@ -1,4 +1,4 @@
-name: PR367 Rust Snapshot Verifier Wiring
+name: PR367 NPM Snapshot Verifier Wiring
 
 on:
   push:
@@ -18,75 +18,44 @@ jobs:
         with:
           ref: pr367-context-snapshot-parity
           fetch-depth: 0
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-node@v7
         with:
-          python-version: '3.12'
+          node-version: '22.19.0'
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
-          components: rustfmt
-      - name: Apply source-anchored wiring only
+      - name: Require snapshot verifier in stale-WASM guard
         run: |
           python - <<'PY'
           from pathlib import Path
 
-          def replace_once(path: str, old: str, new: str) -> None:
-              target = Path(path)
-              text = target.read_text(encoding='utf-8')
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'{path}: expected exactly one wiring anchor, found {count}: {old!r}')
-              target.write_text(text.replace(old, new, 1), encoding='utf-8')
-
-          replace_once(
-              'entroly-engine/src/lib.rs',
-              'pub mod trust_engine;\npub mod utilization;',
-              'pub mod trust_engine;\npub mod verified_context_snapshot;\npub mod utilization;',
+          path = Path('entroly-wasm/index.js')
+          text = path.read_text(encoding='utf-8')
+          old = (
+              '    !wasmExports.contextReceiptBuildJSON ||\n'
+              '    !wasmExports.recoveryHandleBuildJSON ||'
           )
-          replace_once(
-              'entroly-wasm/src/lib.rs',
-              'mod context_receipt_bindings;\nmod localization;',
-              'mod context_receipt_bindings;\nmod context_snapshot_bindings;\nmod localization;',
+          new = (
+              '    !wasmExports.contextReceiptBuildJSON ||\n'
+              '    !wasmExports.verifiedContextSnapshotVerifyBytes ||\n'
+              '    !wasmExports.recoveryHandleBuildJSON ||'
           )
-          replace_once(
-              'entroly-core/src/lib.rs',
-              'mod context_receipt_bindings;\nmod witness;',
-              'mod context_receipt_bindings;\nmod context_snapshot_bindings;\nmod witness;',
-          )
-          replace_once(
-              'entroly-core/src/lib.rs',
-              '    context_receipt_bindings::register(m)?;\n    work_graph_bindings::register(m)?;',
-              '    context_receipt_bindings::register(m)?;\n    context_snapshot_bindings::register(m)?;\n    work_graph_bindings::register(m)?;',
-          )
-          replace_once(
-              'entroly-engine/src/verified_context_snapshot.rs',
-              '    let key = br#"\\"context_sha256\\""#;',
-              '    let key = br#""context_sha256""#;',
-          )
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f'expected exactly one stale-WASM anchor, found {count}')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
           PY
-      - name: Format exact changed Rust files
+      - name: Build current WASM and verify npm root
         run: |
-          cargo fmt --manifest-path entroly-engine/Cargo.toml --all -- --check || cargo fmt --manifest-path entroly-engine/Cargo.toml --all
-          cargo fmt --manifest-path entroly-wasm/Cargo.toml --all -- --check || cargo fmt --manifest-path entroly-wasm/Cargo.toml --all
-          cargo fmt --manifest-path entroly-core/Cargo.toml --all -- --check || cargo fmt --manifest-path entroly-core/Cargo.toml --all
-      - name: Test shared verifier in engine
-        run: cargo test --manifest-path entroly-engine/Cargo.toml verified_context_snapshot --lib
-      - name: Check WASM binding against shared engine
-        run: cargo check --manifest-path entroly-wasm/Cargo.toml --target wasm32-unknown-unknown
-      - name: Check PyO3 binding against shared engine
-        run: cargo check --manifest-path entroly-core/Cargo.toml
-      - name: Commit verified wiring
+          cargo install wasm-pack --locked
+          npm --prefix entroly-wasm run build
+          node entroly-wasm/test_work_graph_root_exports.js
+      - name: Commit verified npm guard
         run: |
           git config user.name 'Jupyterman'
           git config user.email 'fastrunner10090@gmail.com'
-          git add \
-            entroly-engine/src/lib.rs \
-            entroly-engine/src/verified_context_snapshot.rs \
-            entroly-wasm/src/lib.rs \
-            entroly-core/src/lib.rs
-          if git diff --cached --quiet; then
-            echo 'No wiring changes to commit.'
-            exit 0
-          fi
-          git commit -m 'feat: make context snapshot verification Rust-owned'
+          git add entroly-wasm/index.js
+          git commit -m 'fix(npm): rebuild when snapshot verifier binding is stale'
+          git fetch origin pr367-context-snapshot-parity
+          git rebase origin/pr367-context-snapshot-parity
           git push origin HEAD:pr367-context-snapshot-parity
