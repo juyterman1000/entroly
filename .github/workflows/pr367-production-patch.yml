@@ -1,0 +1,46 @@
+name: PR367 Guarded Production Patch
+
+on:
+  push:
+    branches:
+      - fix/codebase-intelligence-integrity
+    paths:
+      - scripts/pr367_apply_production_patch.py
+      - .github/workflows/pr367-production-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: fix/codebase-intelligence-integrity
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Apply audited exact-source patch
+        run: python scripts/pr367_apply_production_patch.py
+      - name: Verify Python syntax
+        run: python -m compileall -q entroly tests
+      - name: Normalize Rust formatting
+        run: cargo fmt --manifest-path entroly-core/Cargo.toml
+      - name: Ensure maintenance files self-removed
+        run: |
+          test ! -e scripts/pr367_apply_production_patch.py
+          test ! -e .github/workflows/pr367-production-patch.yml
+      - name: Commit guarded production changes
+        run: |
+          git config user.name 'entroly-ci'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'Patch produced no changes; refusing silent success.' >&2
+            exit 1
+          fi
+          git commit -m 'fix: harden context recovery and warm-start determinism'
+          git push origin HEAD:fix/codebase-intelligence-integrity
