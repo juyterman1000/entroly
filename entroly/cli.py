@@ -1388,7 +1388,7 @@ def is_telemetry_enabled() -> bool:
 
 def cmd_clean(args):
     """entroly clean — clear cached state (checkpoints, index, pull cache)."""
-    entroly_dir = Path.home() / ".entroly"
+    entroly_dir = _resolve_entroly_dir()
 
     if not entroly_dir.exists():
         print(f"  {C.GRAY}Nothing to clean -- {entroly_dir} does not exist.{C.RESET}")
@@ -3919,7 +3919,7 @@ def cmd_doctor(args):
 
     # 5. Check index freshness
     checks_total += 1
-    entroly_dir = Path.home() / ".entroly"
+    entroly_dir = _resolve_entroly_dir()
     checkpoint_dir = entroly_dir / "checkpoints"
     if checkpoint_dir.exists():
         checkpoint_files = list(checkpoint_dir.glob("*.json*"))
@@ -4207,7 +4207,7 @@ def cmd_digest(args):
             print(f"  {C.BOLD}Error rate:{C.RESET} {C.GREEN}0%{C.RESET}")
     else:
         # Fall back to checkpoint/stats file
-        stats_file = Path.home() / ".entroly" / "session_stats.json"
+        stats_file = _resolve_entroly_dir() / "session_stats.json"
         if stats_file.exists():
             try:
                 with open(stats_file) as f:
@@ -4229,7 +4229,7 @@ def cmd_migrate(args):
 
     from entroly import __version__ as current_version
 
-    entroly_dir = Path.home() / ".entroly"
+    entroly_dir = _resolve_entroly_dir()
     version_file = entroly_dir / ".version"
 
     # Check stored version
@@ -4637,7 +4637,7 @@ def cmd_optimize(args):
         print("\n".join(lines))
 
     # Save last optimization for feedback command
-    state_file = Path.home() / ".entroly" / "last_optimize.json"
+    state_file = _resolve_entroly_dir() / "last_optimize.json"
     try:
         state_file.parent.mkdir(parents=True, exist_ok=True)
         import json as _json
@@ -5288,7 +5288,7 @@ def cmd_feedback(args):
         return
 
     # Load the last optimization state
-    state_file = Path.home() / ".entroly" / "last_optimize.json"
+    state_file = _resolve_entroly_dir() / "last_optimize.json"
     if not state_file.exists():
         print(f"  {C.YELLOW}No previous optimization found.{C.RESET}")
         print(f"  Run {C.CYAN}entroly optimize --task \"...\" {C.RESET}first.")
@@ -5980,7 +5980,7 @@ def cmd_cache(args):
         from entroly.config import _project_checkpoint_dir
         ckpt_dir = _project_checkpoint_dir()
     except Exception:
-        ckpt_dir = Path.home() / ".entroly" / "checkpoints"
+        ckpt_dir = _resolve_entroly_dir() / "checkpoints"
 
     # On-disk footprint + freshness of the latest checkpoint
     ckpts: list[Path] = []
@@ -6119,7 +6119,7 @@ def cmd_ravs(args):
     # Resolve log path
     log_path = getattr(args, "log", None)
     if not log_path:
-        log_path = str(Path.home() / ".entroly" / "ravs" / "events.jsonl")
+        log_path = str(_resolve_entroly_dir() / "ravs" / "events.jsonl")
 
     # Parse --since
     since_ts: float | None = None
