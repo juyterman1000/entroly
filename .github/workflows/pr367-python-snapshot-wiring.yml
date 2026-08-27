@@ -92,8 +92,10 @@ jobs:
           )
           path.write_text(text, encoding='utf-8')
           PY
-      - name: Install exact-head native package
-        run: python scripts/ci_install_exact_head.py --extras test
+      - name: Install exact-head native package and lint tool
+        run: |
+          python scripts/ci_install_exact_head.py --extras test
+          python -m pip install ruff==0.12.9
       - name: Run focused snapshot and Work Graph tests
         run: |
           python -m ruff check entroly/work_context_snapshot_store.py
@@ -108,4 +110,6 @@ jobs:
             exit 0
           fi
           git commit -m 'refactor: make Python snapshot verification Rust-owned'
+          git fetch origin pr367-context-snapshot-parity
+          git rebase origin/pr367-context-snapshot-parity
           git push origin HEAD:pr367-context-snapshot-parity
