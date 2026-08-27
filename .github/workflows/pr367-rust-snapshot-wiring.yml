@@ -110,6 +110,10 @@ jobs:
           git config user.email 'fastrunner10090@gmail.com'
           git add entroly-engine/src/verified_context_snapshot.rs
           git commit -m 'fix(engine): enforce canonical snapshot hash placement'
+          # cargo fmt --all can touch unrelated tracked Rust files. The target
+          # verifier is already committed above; discard only remaining working
+          # tree noise before rebasing that exact tested commit.
+          git restore .
           git fetch origin pr367-context-snapshot-parity
           git rebase origin/pr367-context-snapshot-parity
           git push origin HEAD:pr367-context-snapshot-parity
