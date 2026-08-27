@@ -13,12 +13,18 @@ same value as ``source_commitment``; therefore another agent can reconstruct the
 short snapshot locator from durable receipt evidence instead of depending on a
 previous MCP response surviving verbatim.
 
+The verified-context commitment intentionally excludes volatile host metadata
+(``generation`` and ``command``). Those fields are stripped before persistence
+as well, so one commitment maps to one stable byte representation rather than
+multiple snapshots that merely differ in process-local metadata.
+
 The store deliberately reuses ``WorkGraphStore``'s repository directory and
 cross-process lock so context snapshots follow the same local isolation and
 persistence boundary without inventing another coordination protocol.
 """
 from __future__ import annotations
 
+import copy
 import json
 import os
 import stat
@@ -34,6 +40,7 @@ DEFAULT_MAX_CONTEXT_BYTES = 512 * 1024
 DEFAULT_MAX_SNAPSHOTS = 8_192
 DEFAULT_MAX_TOTAL_BYTES = 256 * 1024 * 1024
 _HEX = frozenset("0123456789abcdef")
+_VOLATILE_CONTEXT_FIELDS = frozenset({"generation", "command"})
 
 
 class WorkContextSnapshotError(WorkGraphStateError):
@@ -102,6 +109,20 @@ class WorkContextSnapshotStore:
             raise WorkContextSnapshotError("context snapshot commitment is invalid")
         return str(digest)
 
+    @staticmethod
+    def _stable_payload(payload: dict[str, Any]) -> dict[str, Any]:
+        """Return the exact semantic payload covered by ``context_sha256``.
+
+        The verified-context commitment excludes only process-local
+        ``generation``/``command`` fields. Persisting them under that commitment
+        would violate content-address uniqueness, so storage follows the same
+        scope exactly.
+        """
+        stable = copy.deepcopy(payload)
+        for field in _VOLATILE_CONTEXT_FIELDS:
+            stable.pop(field, None)
+        return stable
+
     def _canonical_bytes(self, payload: dict[str, Any]) -> bytes:
         try:
             raw = json.dumps(
@@ -162,6 +183,8 @@ class WorkContextSnapshotStore:
             raise WorkContextSnapshotError("context snapshot is not valid JSON") from exc
         if not isinstance(payload, dict):
             raise WorkContextSnapshotError("context snapshot root must be an object")
+        if any(field in payload for field in _VOLATILE_CONTEXT_FIELDS):
+            raise WorkContextSnapshotError("context snapshot contains volatile host metadata")
         # The store writes one canonical byte representation. A same-semantics
         # whitespace/key-order rewrite is still a storage mutation and is
         # rejected rather than silently normalized on read.
@@ -201,16 +224,23 @@ class WorkContextSnapshotStore:
         return count, total_bytes
 
     def put_json(self, payload: dict[str, Any]) -> str:
-        """Persist canonical bytes and return ``wctx1.<context_sha256>``."""
+        """Persist semantic context bytes and return ``wctx1.<context_sha256>``."""
         if not isinstance(payload, dict):
             raise ValueError("context snapshot payload must be an object")
         digest = self._context_commitment(payload)
-        raw = self._canonical_bytes(payload)
+        stable = self._stable_payload(payload)
+        if self._context_commitment(stable) != digest:
+            raise WorkContextSnapshotError("stable context snapshot changed its commitment")
+        raw = self._canonical_bytes(stable)
         target = self._path(digest)
         with self.graph_store.lock():
             _private_dir(self.context_dir)
             if target.exists() or target.is_symlink():
-                self._read_path_unlocked(target, digest)
+                existing = self._read_path_unlocked(target, digest)
+                if self._canonical_bytes(existing) != raw:
+                    raise WorkContextSnapshotError(
+                        "context commitment maps to conflicting stable snapshot bytes"
+                    )
                 return self.token_for_commitment(digest)
             count, total_bytes = self._snapshot_usage_unlocked()
             if count >= self.max_snapshots:
@@ -234,7 +264,11 @@ class WorkContextSnapshotStore:
                     os.fsync(handle.fileno())
                 fd = -1
                 if target.exists() or target.is_symlink():
-                    self._read_path_unlocked(target, digest)
+                    existing = self._read_path_unlocked(target, digest)
+                    if self._canonical_bytes(existing) != raw:
+                        raise WorkContextSnapshotError(
+                            "context commitment maps to conflicting stable snapshot bytes"
+                        )
                 else:
                     os.replace(temp_path, target)
                     if os.name == "posix":
