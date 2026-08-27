@@ -226,6 +226,19 @@ def _collect_stdlib_modules() -> set[str]:
         except Exception:
             pass
 
+    # `from __future__ import annotations` opens nearly every modern Python
+    # file in this repository, and `annotations` is not a module, a builtin,
+    # or anything the AST pass collects -- so every such file contributed a
+    # guaranteed unresolved symbol. These are language features, enumerated by
+    # the interpreter rather than hardcoded, so the set tracks the running
+    # Python instead of drifting.
+    try:
+        import __future__ as _future
+
+        out.update(_future.all_feature_names)
+    except Exception:
+        pass
+
     return out
 
 

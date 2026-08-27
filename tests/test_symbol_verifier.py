@@ -380,3 +380,24 @@ class TestManifestCoversRepositoryLayout:
         # never defines.
         assert "quantum_reconcile" in result.unresolved_symbols()
         assert not result.passed()
+
+
+class TestFutureFeatureNames:
+    def test_future_import_names_resolve(self, tmp_path):
+        """`from __future__ import annotations` opens most modern Python files.
+
+        `annotations` is not a module, not a builtin, and not anything the AST
+        pass collects, so before this every such file contributed a guaranteed
+        unresolved symbol -- one per file, repository-wide.
+        """
+        from entroly.verifiers.symbol_resolution import verify_code
+
+        (tmp_path / "mod.py").write_text("VALUE = 1\n", encoding="utf-8")
+        code = (
+            "from __future__ import annotations\n\n"
+            "def widen(value: str | None) -> str:\n"
+            "    return value or ''\n"
+        )
+        result = verify_code(code, repo_root=str(tmp_path))
+
+        assert "annotations" not in result.unresolved_symbols()
