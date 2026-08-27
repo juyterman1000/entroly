@@ -96,8 +96,6 @@ def create_repository_mcp_server(
             "call graphs. Paths are workspace-relative and absolute local paths "
             "are never returned. Source bytes are exposed only by the bounded "
             "verified-context tool, labeled untrusted, with exact hashes. All "
-            "omitted context can be faulted in only through its committed "
-            "context_ref, producing a new receipt and bounded working set. All "
             "operations are read-only except repository_rename_apply, which "
             "requires a prior committed preview, its exact plan hash, and an "
             "explicit acknowledgement that reference completeness is unproven."
@@ -173,22 +171,6 @@ def create_repository_mcp_server(
             ))
         except (OSError, RuntimeError, TypeError, ValueError) as exc:
             return _error(exc, "repository_verified_context")
-
-    @mcp.tool()
-    def repository_context_fault(
-        context: dict[str, object],
-        context_ref: str,
-        token_budget: int | None = None,
-    ) -> str:
-        """Recover one committed omission and return a new bounded receipt."""
-        try:
-            return _json(service.context_fault(
-                context,
-                context_ref,
-                token_budget=token_budget,
-            ))
-        except (OSError, RuntimeError, TypeError, ValueError) as exc:
-            return _error(exc, "repository_context_fault")
 
     @mcp.tool()
     def repository_program_slice(
