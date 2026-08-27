@@ -28,68 +28,72 @@ jobs:
 
           path = Path('entroly-engine/src/verified_context_snapshot.rs')
           text = path.read_text(encoding='utf-8')
-          old = '''    let mut remove_start = field_positions[0];
-    let mut remove_end = remove_start + field.len();
-    if bytes.get(remove_end) == Some(&b',') {
-'''
-          new = '''    let mut remove_start = field_positions[0];
-    let mut remove_end = remove_start + field.len();
-
-    // `context_sha256` is excluded from its own hash, so moving only this
-    // field could otherwise preserve the preimage. Python's producer writes
-    // sorted object keys; enforce the exact lexicographic successor (or final
-    // object position) so Node cannot accept a byte layout Python rejects.
-    let successor = receipt
-        .keys()
-        .filter(|key| key.as_str() > "context_sha256")
-        .min();
-    match successor {
-        Some(key) => {
-            if !key.is_ascii() || key.contains('"') || key.contains('\\\\') {
-                return Err(VerifiedContextSnapshotError::NonCanonicalCommitmentField);
-            }
-            let expected_suffix = format!(",\\\"{key}\\\":");
-            if !bytes[remove_end..].starts_with(expected_suffix.as_bytes()) {
-                return Err(VerifiedContextSnapshotError::NonCanonicalCommitmentField);
-            }
-        }
-        None => {
-            if bytes.get(remove_end) != Some(&b'}') {
-                return Err(VerifiedContextSnapshotError::NonCanonicalCommitmentField);
-            }
-        }
-    }
-
-    if bytes.get(remove_end) == Some(&b',') {
-'''
+          old = (
+              '    let mut remove_start = field_positions[0];\n'
+              '    let mut remove_end = remove_start + field.len();\n'
+              "    if bytes.get(remove_end) == Some(&b',') {\n"
+          )
+          new = (
+              '    let mut remove_start = field_positions[0];\n'
+              '    let mut remove_end = remove_start + field.len();\n'
+              '\n'
+              '    // `context_sha256` is excluded from its own hash, so moving only this\n'
+              "    // field could otherwise preserve the preimage. Python's producer writes\n"
+              '    // sorted object keys; enforce the exact lexicographic successor (or final\n'
+              '    // object position) so Node cannot accept a byte layout Python rejects.\n'
+              '    let successor = receipt\n'
+              '        .keys()\n'
+              '        .filter(|key| key.as_str() > "context_sha256")\n'
+              '        .min();\n'
+              '    match successor {\n'
+              '        Some(key) => {\n'
+              "            if !key.is_ascii() || key.contains('\"') || key.contains('\\\\') {\n"
+              '                return Err(VerifiedContextSnapshotError::NonCanonicalCommitmentField);\n'
+              '            }\n'
+              '            let expected_suffix = format!(",\\\"{key}\\\":");\n'
+              '            if !bytes[remove_end..].starts_with(expected_suffix.as_bytes()) {\n'
+              '                return Err(VerifiedContextSnapshotError::NonCanonicalCommitmentField);\n'
+              '            }\n'
+              '        }\n'
+              '        None => {\n'
+              "            if bytes.get(remove_end) != Some(&b'}') {\n"
+              '                return Err(VerifiedContextSnapshotError::NonCanonicalCommitmentField);\n'
+              '            }\n'
+              '        }\n'
+              '    }\n'
+              '\n'
+              "    if bytes.get(remove_end) == Some(&b',') {\n"
+          )
           if text.count(old) != 1:
               raise SystemExit(f'expected one commitment-removal anchor, found {text.count(old)}')
           text = text.replace(old, new, 1)
 
-          test_anchor = '''    #[test]
-    fn fails_closed_on_tamper_or_wrong_external_commitment() {
-'''
-          test_block = '''    #[test]
-    fn rejects_reordered_context_hash_field_even_when_preimage_is_unchanged() {
-        let (digest, bytes) = fixture();
-        let text = String::from_utf8(bytes).unwrap();
-        let canonical = format!(
-            "\\\"commitment_scope\\\":\\\"{}\\\",\\\"context_sha256\\\":\\\"{}\\\"",
-            VERIFIED_CONTEXT_COMMITMENT_SCOPE, digest,
-        );
-        let reordered = format!(
-            "\\\"context_sha256\\\":\\\"{}\\\",\\\"commitment_scope\\\":\\\"{}\\\"",
-            digest, VERIFIED_CONTEXT_COMMITMENT_SCOPE,
-        );
-        let mutated = text.replace(&canonical, &reordered);
-        assert_ne!(mutated, text);
-        assert_eq!(
-            verify_verified_context_snapshot_bytes(mutated.as_bytes(), &digest),
-            Err(VerifiedContextSnapshotError::NonCanonicalCommitmentField)
-        );
-    }
-
-'''
+          test_anchor = (
+              '    #[test]\n'
+              '    fn fails_closed_on_tamper_or_wrong_external_commitment() {\n'
+          )
+          test_block = (
+              '    #[test]\n'
+              '    fn rejects_reordered_context_hash_field_even_when_preimage_is_unchanged() {\n'
+              '        let (digest, bytes) = fixture();\n'
+              '        let text = String::from_utf8(bytes).unwrap();\n'
+              '        let canonical = format!(\n'
+              '            "\\\"commitment_scope\\\":\\\"{}\\\",\\\"context_sha256\\\":\\\"{}\\\"",\n'
+              '            VERIFIED_CONTEXT_COMMITMENT_SCOPE, digest,\n'
+              '        );\n'
+              '        let reordered = format!(\n'
+              '            "\\\"context_sha256\\\":\\\"{}\\\",\\\"commitment_scope\\\":\\\"{}\\\"",\n'
+              '            digest, VERIFIED_CONTEXT_COMMITMENT_SCOPE,\n'
+              '        );\n'
+              '        let mutated = text.replace(&canonical, &reordered);\n'
+              '        assert_ne!(mutated, text);\n'
+              '        assert_eq!(\n'
+              '            verify_verified_context_snapshot_bytes(mutated.as_bytes(), &digest),\n'
+              '            Err(VerifiedContextSnapshotError::NonCanonicalCommitmentField)\n'
+              '        );\n'
+              '    }\n'
+              '\n'
+          )
           if text.count(test_anchor) != 1:
               raise SystemExit(f'expected one test anchor, found {text.count(test_anchor)}')
           text = text.replace(test_anchor, test_block + test_anchor, 1)
