@@ -6,6 +6,8 @@ const path = require('path');
 const { WorkGraphStateError, WorkGraphStore } = require('./work_graph_store');
 
 const CONTEXT_SNAPSHOT_TOKEN_PREFIX = 'wctx1.';
+const CONTEXT_SCHEMA_VERSION = 'entroly.verified-code-context.v1';
+const CONTEXT_COMMITMENT_SCOPE = 'payload-excluding-generation-command-and-context-sha256';
 const DEFAULT_MAX_CONTEXT_BYTES = 512 * 1024;
 const DEFAULT_MAX_SNAPSHOTS = 8192;
 const DEFAULT_MAX_TOTAL_BYTES = 256 * 1024 * 1024;
@@ -57,13 +59,19 @@ function asBuffer(value) {
   throw new WorkContextSnapshotError('context snapshot must be bytes or UTF-8 text');
 }
 
-function countContextShaKeys(value) {
-  if (!value || typeof value !== 'object') return 0;
-  if (Array.isArray(value)) {
-    return value.reduce((count, item) => count + countContextShaKeys(item), 0);
+function countContextShaKeys(root) {
+  let count = 0;
+  const stack = [root];
+  while (stack.length) {
+    const value = stack.pop();
+    if (!value || typeof value !== 'object') continue;
+    if (Array.isArray(value)) {
+      for (const child of value) stack.push(child);
+      continue;
+    }
+    if (Object.prototype.hasOwnProperty.call(value, 'context_sha256')) count += 1;
+    for (const child of Object.values(value)) stack.push(child);
   }
-  let count = Object.prototype.hasOwnProperty.call(value, 'context_sha256') ? 1 : 0;
-  for (const child of Object.values(value)) count += countContextShaKeys(child);
   return count;
 }
 
@@ -97,6 +105,9 @@ function verifyCanonicalSnapshotBytes(value, expectedCommitment = null, maxBytes
   if (!payload || Array.isArray(payload) || typeof payload !== 'object') {
     throw new WorkContextSnapshotError('context snapshot root must be an object');
   }
+  if (payload.schema_version !== CONTEXT_SCHEMA_VERSION) {
+    throw new WorkContextSnapshotError('unsupported context snapshot schema');
+  }
   for (const field of VOLATILE_FIELDS) {
     if (Object.prototype.hasOwnProperty.call(payload, field)) {
       throw new WorkContextSnapshotError('context snapshot contains volatile host metadata');
@@ -104,6 +115,9 @@ function verifyCanonicalSnapshotBytes(value, expectedCommitment = null, maxBytes
   }
   if (!payload.receipt || typeof payload.receipt !== 'object' || Array.isArray(payload.receipt)) {
     throw new WorkContextSnapshotError('context snapshot is missing its receipt');
+  }
+  if (payload.receipt.commitment_scope !== CONTEXT_COMMITMENT_SCOPE) {
+    throw new WorkContextSnapshotError('unsupported context snapshot commitment scope');
   }
   const digest = payload.receipt.context_sha256;
   if (typeof digest !== 'string' || !DIGEST_RE.test(digest)) {
@@ -319,6 +333,8 @@ class WorkContextSnapshotStore {
 
 module.exports = {
   CONTEXT_SNAPSHOT_TOKEN_PREFIX,
+  CONTEXT_SCHEMA_VERSION,
+  CONTEXT_COMMITMENT_SCOPE,
   DEFAULT_MAX_CONTEXT_BYTES,
   DEFAULT_MAX_SNAPSHOTS,
   DEFAULT_MAX_TOTAL_BYTES,
