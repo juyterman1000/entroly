@@ -12,6 +12,7 @@ for (const name of [
   'WorkContextSnapshotStore',
   'WorkContextSnapshotError',
   'verifyCanonicalSnapshotBytes',
+  'verifiedContextSnapshotVerifyBytes',
   'discoverRepositoryIdentity',
   'discoverRepositoryObservation',
   'resumeRepository',
