@@ -1,5 +1,6 @@
 name: PR367 Context Snapshot Parity
 
+# Temporary isolated-branch gate. Deleted before PR #367 promotion.
 on:
   push:
     branches: [pr367-context-snapshot-parity]
