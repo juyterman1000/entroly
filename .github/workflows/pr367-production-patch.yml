@@ -31,8 +31,10 @@ jobs:
         run: python -m compileall -q entroly tests
       - name: Normalize Rust formatting
         run: cargo fmt --manifest-path entroly-core/Cargo.toml
-      - name: Ensure maintenance files self-removed
+      - name: Remove one-shot maintenance files
         run: |
+          rm -f scripts/pr367_apply_production_patch.py
+          rm -f .github/workflows/pr367-production-patch.yml
           test ! -e scripts/pr367_apply_production_patch.py
           test ! -e .github/workflows/pr367-production-patch.yml
       - name: Commit guarded production changes
