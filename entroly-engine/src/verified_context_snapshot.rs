@@ -167,6 +167,32 @@ pub fn verify_verified_context_snapshot_bytes(
     }
     let mut remove_start = field_positions[0];
     let mut remove_end = remove_start + field.len();
+
+    // `context_sha256` is excluded from its own hash, so moving only this
+    // field could otherwise preserve the preimage. Python's producer writes
+    // sorted object keys; enforce the exact lexicographic successor (or final
+    // object position) so Node cannot accept a byte layout Python rejects.
+    let successor = receipt
+        .keys()
+        .filter(|key| key.as_str() > "context_sha256")
+        .min();
+    match successor {
+        Some(key) => {
+            if !key.is_ascii() || key.contains('"') || key.contains('\\') {
+                return Err(VerifiedContextSnapshotError::NonCanonicalCommitmentField);
+            }
+            let expected_suffix = format!(",\"{key}\":");
+            if !bytes[remove_end..].starts_with(expected_suffix.as_bytes()) {
+                return Err(VerifiedContextSnapshotError::NonCanonicalCommitmentField);
+            }
+        }
+        None => {
+            if bytes.get(remove_end) != Some(&b'}') {
+                return Err(VerifiedContextSnapshotError::NonCanonicalCommitmentField);
+            }
+        }
+    }
+
     if bytes.get(remove_end) == Some(&b',') {
         remove_end += 1;
     } else if remove_start > 0 && bytes.get(remove_start - 1) == Some(&b',') {
@@ -213,6 +239,26 @@ mod tests {
         assert_eq!(
             verify_verified_context_snapshot_bytes(&bytes, &digest).unwrap(),
             digest
+        );
+    }
+
+    #[test]
+    fn rejects_reordered_context_hash_field_even_when_preimage_is_unchanged() {
+        let (digest, bytes) = fixture();
+        let text = String::from_utf8(bytes).unwrap();
+        let canonical = format!(
+            "\"commitment_scope\":\"{}\",\"context_sha256\":\"{}\"",
+            VERIFIED_CONTEXT_COMMITMENT_SCOPE, digest,
+        );
+        let reordered = format!(
+            "\"context_sha256\":\"{}\",\"commitment_scope\":\"{}\"",
+            digest, VERIFIED_CONTEXT_COMMITMENT_SCOPE,
+        );
+        let mutated = text.replace(&canonical, &reordered);
+        assert_ne!(mutated, text);
+        assert_eq!(
+            verify_verified_context_snapshot_bytes(mutated.as_bytes(), &digest),
+            Err(VerifiedContextSnapshotError::NonCanonicalCommitmentField)
         );
     }
 
