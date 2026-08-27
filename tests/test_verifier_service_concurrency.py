@@ -1,11 +1,29 @@
 from __future__ import annotations
 
+import math
+
+import pytest
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
 from entroly.verifiers.scope_analyzer import ReverseIndex
 from entroly.verifiers.service import VerifierService, _ServiceInstance
-from entroly.verifiers.symbol_resolution import SymbolManifest, SymbolVerifier
+from entroly.verifiers.symbol_resolution import (
+    MANIFEST_EVIDENCE_LOG_ODDS,
+    SymbolManifest,
+    SymbolVerifier,
+)
+
+
+def _expected_posterior(surprisal: float, lambda_used: float) -> float:
+    """The posterior this configuration should produce, derived not guessed.
+
+    Pinning the formula rather than a literal keeps the test meaningful when
+    the calibration constants move: it still fails if per-archetype lambda
+    stops being applied, which is what this test exists to guard.
+    """
+    x = surprisal - lambda_used + MANIFEST_EVIDENCE_LOG_ODDS
+    return 1.0 / (1.0 + math.exp(-x)) if x >= 0 else math.exp(x) / (1.0 + math.exp(x))
 
 
 class _FixedSurprisal:
@@ -60,13 +78,24 @@ def test_concurrent_archetypes_do_not_mutate_shared_lambda(
         outcomes = list(pool.map(run, archetypes))
 
     assert base_verifier.lambda_ == 42.0
+    strict_seen: list[float] = []
+    permissive_seen: list[float] = []
     for archetype, lambda_used, probability in outcomes:
         if archetype == "strict":
             assert lambda_used == 0.0
-            assert probability > 0.99
+            assert probability == pytest.approx(
+                _expected_posterior(7.0, 0.0), rel=1e-9
+            )
+            strict_seen.append(probability)
         else:
             assert lambda_used == 100.0
             assert probability < 0.01
+            permissive_seen.append(probability)
+
+    # The point of the two archetypes is that lambda actually reaches the
+    # posterior. Assert the separation directly rather than trusting a literal
+    # threshold, which previously encoded the pre-correction absolute value.
+    assert min(strict_seen) > max(permissive_seen) * 1000
 
 
 def test_snapshot_survives_invalidation_without_none_state(
