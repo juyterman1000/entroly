@@ -1,0 +1,111 @@
+name: PR367 Python Snapshot Verifier Wiring
+
+on:
+  push:
+    branches: [pr367-context-snapshot-parity]
+    paths:
+      - '.github/workflows/pr367-python-snapshot-wiring.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  wire-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: pr367-context-snapshot-parity
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Apply source-anchored Python convergence
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('entroly/work_context_snapshot_store.py')
+          text = path.read_text(encoding='utf-8')
+
+          def replace_once(old: str, new: str) -> None:
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one Python snapshot anchor, found {count}: {old!r}')
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              'from .repository_intelligence.verified_context import verify_context_commitment\n',
+              '',
+          )
+          replace_once(
+              'class WorkContextSnapshotError(WorkGraphStateError):\n'
+              '    """A context snapshot is malformed, unsafe, missing, or exceeds bounds."""\n\n\n',
+              'class WorkContextSnapshotError(WorkGraphStateError):\n'
+              '    """A context snapshot is malformed, unsafe, missing, or exceeds bounds."""\n\n\n'
+              'def _verify_snapshot_bytes(raw: bytes, expected_digest: str) -> None:\n'
+              '    """Delegate v1 snapshot commitment semantics to the Rust kernel."""\n'
+              '    try:\n'
+              '        from entroly_core import verified_context_snapshot_verify_bytes\n'
+              '    except (ImportError, AttributeError) as exc:\n'
+              '        raise WorkContextSnapshotError(\n'
+              '            "native context snapshot verifier is unavailable"\n'
+              '        ) from exc\n'
+              '    try:\n'
+              '        actual = verified_context_snapshot_verify_bytes(raw, expected_digest)\n'
+              '    except (TypeError, ValueError) as exc:\n'
+              '        raise WorkContextSnapshotError(str(exc)) from exc\n'
+              '    if actual != expected_digest:\n'
+              '        raise WorkContextSnapshotError(\n'
+              '            "native context snapshot verifier returned a different commitment"\n'
+              '        )\n\n\n',
+          )
+          replace_once(
+              '        if not verify_context_commitment(payload):\n'
+              '            raise WorkContextSnapshotError("context snapshot commitment is invalid")\n'
+              '        return str(digest)\n',
+              '        return str(digest)\n',
+          )
+          replace_once(
+              '        actual_digest = self._context_commitment(payload)\n'
+              '        if actual_digest != expected_digest:\n'
+              '            raise WorkContextSnapshotError(\n'
+              '                "context snapshot does not match its verified content address"\n'
+              '            )\n'
+              '        return payload\n',
+              '        _verify_snapshot_bytes(encoded, expected_digest)\n'
+              '        return payload\n',
+          )
+          replace_once(
+              '        digest = self._context_commitment(payload)\n'
+              '        stable = self._stable_payload(payload)\n'
+              '        if self._context_commitment(stable) != digest:\n'
+              '            raise WorkContextSnapshotError("stable context snapshot changed its commitment")\n'
+              '        raw = self._canonical_bytes(stable)\n',
+              '        digest = self._context_commitment(payload)\n'
+              '        stable = self._stable_payload(payload)\n'
+              '        raw = self._canonical_bytes(stable)\n'
+              '        _verify_snapshot_bytes(raw, digest)\n',
+          )
+          path.write_text(text, encoding='utf-8')
+          PY
+      - name: Install exact-head native package
+        run: python scripts/ci_install_exact_head.py --extras test
+      - name: Run focused snapshot and Work Graph tests
+        run: |
+          python -m ruff check entroly/work_context_snapshot_store.py
+          pytest tests/test_work_context_snapshot_store.py tests/test_work_graph_mcp.py -q
+      - name: Commit verified Python convergence
+        run: |
+          git config user.name 'Jupyterman'
+          git config user.email 'fastrunner10090@gmail.com'
+          git add entroly/work_context_snapshot_store.py
+          if git diff --cached --quiet; then
+            echo 'No Python convergence changes to commit.'
+            exit 0
+          fi
+          git commit -m 'refactor: make Python snapshot verification Rust-owned'
+          git push origin HEAD:pr367-context-snapshot-parity
