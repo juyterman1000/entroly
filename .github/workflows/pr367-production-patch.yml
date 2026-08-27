@@ -1,9 +1,9 @@
 name: PR367 Guarded Production Patch
 
 on:
-  push:
+  pull_request:
     branches:
-      - fix/codebase-intelligence-integrity
+      - main
     paths:
       - scripts/pr367_apply_production_patch.py
       - .github/workflows/pr367-production-patch.yml
@@ -13,7 +13,9 @@ permissions:
 
 jobs:
   apply:
-    if: github.actor != 'github-actions[bot]'
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'fix/codebase-intelligence-integrity'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
