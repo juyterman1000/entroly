@@ -97,6 +97,15 @@ const {
   WorkGraphStoreError,
 } = require('./js/work_graph_store');
 const {
+  CONTEXT_SNAPSHOT_TOKEN_PREFIX,
+  DEFAULT_MAX_CONTEXT_BYTES,
+  DEFAULT_MAX_SNAPSHOTS,
+  DEFAULT_MAX_TOTAL_BYTES,
+  WorkContextSnapshotError,
+  WorkContextSnapshotStore,
+  verifyCanonicalSnapshotBytes,
+} = require('./js/work_context_snapshot_store');
+const {
   MAX_RESUME_EVIDENCE,
   handoffRepository,
   handoffRepositoryWithProof,
@@ -182,6 +191,13 @@ module.exports = {
   WorkGraphStoreError,
   WorkGraphLockTimeout,
   WorkGraphStateError,
+  WorkContextSnapshotStore,
+  WorkContextSnapshotError,
+  verifyCanonicalSnapshotBytes,
+  CONTEXT_SNAPSHOT_TOKEN_PREFIX,
+  DEFAULT_MAX_CONTEXT_BYTES,
+  DEFAULT_MAX_SNAPSHOTS,
+  DEFAULT_MAX_TOTAL_BYTES,
   MAX_RESUME_EVIDENCE,
   handoffRepository,
   handoffRepositoryWithProof,
