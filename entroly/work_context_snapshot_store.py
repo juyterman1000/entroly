@@ -32,7 +32,6 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from .repository_intelligence.verified_context import verify_context_commitment
 from .work_graph_store import WorkGraphStore, WorkGraphStateError, _fsync_dir, _private_dir
 
 CONTEXT_SNAPSHOT_TOKEN_PREFIX = "wctx1."
@@ -45,6 +44,24 @@ _VOLATILE_CONTEXT_FIELDS = frozenset({"generation", "command"})
 
 class WorkContextSnapshotError(WorkGraphStateError):
     """A context snapshot is malformed, unsafe, missing, or exceeds bounds."""
+
+
+def _verify_snapshot_bytes(raw: bytes, expected_digest: str) -> None:
+    """Delegate v1 snapshot commitment semantics to the Rust kernel."""
+    try:
+        from entroly_core import verified_context_snapshot_verify_bytes
+    except (ImportError, AttributeError) as exc:
+        raise WorkContextSnapshotError(
+            "native context snapshot verifier is unavailable"
+        ) from exc
+    try:
+        actual = verified_context_snapshot_verify_bytes(raw, expected_digest)
+    except (TypeError, ValueError) as exc:
+        raise WorkContextSnapshotError(str(exc)) from exc
+    if actual != expected_digest:
+        raise WorkContextSnapshotError(
+            "native context snapshot verifier returned a different commitment"
+        )
 
 
 class WorkContextSnapshotStore:
@@ -105,8 +122,6 @@ class WorkContextSnapshotStore:
             raise WorkContextSnapshotError(
                 "context snapshot is missing a valid verified context commitment"
             )
-        if not verify_context_commitment(payload):
-            raise WorkContextSnapshotError("context snapshot commitment is invalid")
         return str(digest)
 
     @staticmethod
@@ -190,11 +205,7 @@ class WorkContextSnapshotStore:
         # rejected rather than silently normalized on read.
         if self._canonical_bytes(payload) != encoded:
             raise WorkContextSnapshotError("context snapshot bytes are not canonical")
-        actual_digest = self._context_commitment(payload)
-        if actual_digest != expected_digest:
-            raise WorkContextSnapshotError(
-                "context snapshot does not match its verified content address"
-            )
+        _verify_snapshot_bytes(encoded, expected_digest)
         return payload
 
     def _snapshot_usage_unlocked(self) -> tuple[int, int]:
@@ -229,9 +240,8 @@ class WorkContextSnapshotStore:
             raise ValueError("context snapshot payload must be an object")
         digest = self._context_commitment(payload)
         stable = self._stable_payload(payload)
-        if self._context_commitment(stable) != digest:
-            raise WorkContextSnapshotError("stable context snapshot changed its commitment")
         raw = self._canonical_bytes(stable)
+        _verify_snapshot_bytes(raw, digest)
         target = self._path(digest)
         with self.graph_store.lock():
             _private_dir(self.context_dir)
