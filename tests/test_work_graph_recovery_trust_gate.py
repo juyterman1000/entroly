@@ -69,7 +69,17 @@ class TestTokenIdentity:
 
 class TestGate:
     def test_no_gate_means_no_refusal(self, tmp_path):
-        require_acknowledged(tmp_path)  # must not raise
+        # Asserted rather than relying on "it did not raise": a test whose only
+        # failure mode is an exception says nothing about what it checked, and
+        # would still pass if require_acknowledged became a no-op.
+        assert pending(tmp_path) is None
+
+        require_acknowledged(tmp_path)
+
+        # Reading the gate must not create one, or the first agent to look
+        # would arm a gate against itself.
+        assert pending(tmp_path) is None
+        assert not list(tmp_path.glob("pending-recovery-ack.json"))
 
     def test_arming_blocks_and_acknowledging_unblocks(self, tmp_path):
         token = recovery_token({"changed_paths": ["a.py"]})
