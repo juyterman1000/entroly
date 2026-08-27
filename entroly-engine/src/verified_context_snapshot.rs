@@ -40,28 +40,42 @@ impl fmt::Display for VerifiedContextSnapshotError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NonAscii => write!(formatter, "context snapshot is not canonical ASCII JSON"),
-            Self::InvalidJson(detail) => write!(formatter, "context snapshot is not valid JSON: {detail}"),
+            Self::InvalidJson(detail) => {
+                write!(formatter, "context snapshot is not valid JSON: {detail}")
+            }
             Self::InvalidRoot => write!(formatter, "context snapshot root must be an object"),
             Self::UnsupportedSchema => write!(formatter, "unsupported context snapshot schema"),
             Self::VolatileMetadata => {
-                write!(formatter, "context snapshot contains volatile host metadata")
+                write!(
+                    formatter,
+                    "context snapshot contains volatile host metadata"
+                )
             }
             Self::MissingReceipt => write!(formatter, "context snapshot is missing its receipt"),
             Self::UnsupportedCommitmentScope => {
                 write!(formatter, "unsupported context snapshot commitment scope")
             }
             Self::InvalidCommitment => {
-                write!(formatter, "context snapshot is missing a valid context commitment")
+                write!(
+                    formatter,
+                    "context snapshot is missing a valid context commitment"
+                )
             }
             Self::ExpectedCommitmentMismatch => write!(
                 formatter,
                 "context snapshot does not match the expected commitment"
             ),
             Self::AmbiguousCommitmentField => {
-                write!(formatter, "context snapshot has an ambiguous context_sha256 field")
+                write!(
+                    formatter,
+                    "context snapshot has an ambiguous context_sha256 field"
+                )
             }
             Self::NonCanonicalCommitmentField => {
-                write!(formatter, "context snapshot commitment field is not canonical")
+                write!(
+                    formatter,
+                    "context snapshot commitment field is not canonical"
+                )
             }
             Self::CommitmentMismatch => write!(formatter, "context snapshot commitment is invalid"),
         }
@@ -112,9 +126,7 @@ pub fn verify_verified_context_snapshot_bytes(
         .as_object()
         .ok_or(VerifiedContextSnapshotError::InvalidRoot)?;
 
-    if root.get("schema_version").and_then(Value::as_str)
-        != Some(VERIFIED_CONTEXT_SCHEMA_VERSION)
-    {
+    if root.get("schema_version").and_then(Value::as_str) != Some(VERIFIED_CONTEXT_SCHEMA_VERSION) {
         return Err(VerifiedContextSnapshotError::UnsupportedSchema);
     }
     if root.contains_key("generation") || root.contains_key("command") {
@@ -142,7 +154,7 @@ pub fn verify_verified_context_snapshot_bytes(
     // Python's canonical snapshot has exactly one literal key with this name.
     // Counting the raw key token catches duplicate-key ambiguity that a normal
     // JSON parser would otherwise collapse before we could reject it.
-    let key = br#"\"context_sha256\""#;
+    let key = br#""context_sha256""#;
     let key_positions = find_all(bytes, key);
     if key_positions.len() != 1 {
         return Err(VerifiedContextSnapshotError::AmbiguousCommitmentField);
