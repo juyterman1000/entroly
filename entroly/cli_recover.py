@@ -159,6 +159,27 @@ def cmd_recover(args) -> int:
             f"{C.GREEN}  Recovered {reference.byte_length:,} bytes -> "
             f"{args.out_path}{C.RESET}"
         )
+        # The store already records what it holds, and that is not the same
+        # thing for every codec: `json` keeps the complete original, while
+        # `code` keeps only the bodies elided from a skeleton. Printing the
+        # note is the difference between a user knowing they hold a fragment
+        # and believing they have their file back -- recovered code bodies are
+        # not even syntactically valid alone, because the imports and function
+        # signatures stayed in the compressed skeleton.
+        if reference.note:
+            # The note alone, without a "combine with the compressed form"
+            # hint: that instruction is true for `code`, where the recovery is
+            # the elided bodies, and false for `json`, where the recovery is
+            # already the whole file. Printing it unconditionally would trade
+            # one misleading message for another.
+            detail = reference.note
+            if reference.item_count:
+                detail += f" ({reference.item_count:,} item(s))"
+            print(f"  {C.GRAY}{detail}{C.RESET}")
     else:
         sys.stdout.buffer.write(original.encode("utf-8", "surrogateescape"))
+        # stdout carries the bytes and has to stay pipeable, so the note goes
+        # to stderr rather than corrupting a redirect.
+        if reference.note:
+            print(reference.note, file=sys.stderr)
     return 0
