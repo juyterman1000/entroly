@@ -10,7 +10,7 @@ permissions:
 jobs:
   parity:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v6
         with:
@@ -34,3 +34,25 @@ jobs:
         run: node --check entroly-wasm/js/work_context_snapshot_store.js
       - name: Run Python-Node snapshot parity
         run: pytest tests/test_work_context_snapshot_cross_runtime.py -q -rs
+      - name: Run full npm package tests
+        run: npm --prefix entroly-wasm test
+      - name: Verify published tarball contains snapshot runtime and types
+        run: |
+          npm --prefix entroly-wasm pack --dry-run --json > "$RUNNER_TEMP/entroly-wasm-pack.json"
+          python - "$RUNNER_TEMP/entroly-wasm-pack.json" <<'PY'
+          import json
+          import sys
+
+          payload = json.load(open(sys.argv[1], encoding="utf-8"))
+          files = {entry["path"] for entry in payload[0]["files"]}
+          required = {
+              "js/work_context_snapshot_store.js",
+              "js/work_context_snapshot_store.d.ts",
+              "index.js",
+              "index.d.ts",
+          }
+          missing = sorted(required - files)
+          if missing:
+              raise SystemExit(f"npm tarball missing snapshot recovery surface: {missing}")
+          print("npm snapshot recovery tarball surface: PASS")
+          PY
