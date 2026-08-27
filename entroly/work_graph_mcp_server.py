@@ -139,7 +139,7 @@ def register_work_graph_tools(mcp: Any) -> Any:
 
     @mcp.tool()
     def work_context_fault(
-        context: dict[str, Any],
+        context: dict[str, Any] | str,
         context_ref: str,
         recovery_handle: dict[str, Any],
         project: str = "",
@@ -148,7 +148,7 @@ def register_work_graph_tools(mcp: Any) -> Any:
         session_id: str = "",
         token_budget: int | None = None,
     ) -> str:
-        """Fault in exact omitted code through its verified recovery handle."""
+        """Fault exact omitted code from a context token or verified context object."""
         return _json(
             _work.work_context_fault(
                 context=context,
