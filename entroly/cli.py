@@ -796,10 +796,36 @@ def cmd_health(args):
     from entroly.auto_index import auto_index
     from entroly.server import EntrolyEngine
 
-    print(f"\n{C.CYAN}{C.BOLD}  Entroly Health Analysis{C.RESET}\n")
+    # `doctor`, `simulate`, `perf`, `value`, `compress` and `verify-claims` all
+    # emit machine-readable output; health did not, so the one command whose
+    # whole output is a graded judgement was the one a script could not read.
+    json_output = bool(getattr(args, "json_output", False))
+    if not json_output:
+        print(f"\n{C.CYAN}{C.BOLD}  Entroly Health Analysis{C.RESET}\n")
 
     engine = EntrolyEngine()
     result = auto_index(engine)
+
+    if json_output:
+        # Reported rather than inferred: without the native engine there is no
+        # health analysis to emit, and returning an empty grade would read as
+        # a clean bill of health for a scan that never ran.
+        payload = {
+            "indexed": result.get("status") == "indexed",
+            "files_indexed": result.get("files_indexed", 0),
+            "total_tokens": result.get("total_tokens", 0),
+            "native_engine": bool(engine._use_rust),
+        }
+        if engine._use_rust:
+            engine.optimize_context(token_budget=128000, query="")
+            payload["health"] = _json.loads(engine._rust.analyze_health())
+            payload["security"] = _json.loads(engine._rust.security_report())
+        else:
+            payload["reason"] = (
+                "health analysis requires the native engine; none is available"
+            )
+        print(_json.dumps(payload, indent=2))
+        return 0
 
     if result["status"] == "indexed":
         print(f"  {C.GREEN}Indexed {result['files_indexed']} files ({result['total_tokens']:,} tokens){C.RESET}")
@@ -6283,6 +6309,10 @@ def main():
     health_parser.add_argument(
         "-v", "--verbose", action="store_true",
         help="Show details for each finding",
+    )
+    health_parser.add_argument(
+        "--json", dest="json_output", action="store_true",
+        help="Emit the health and security report as JSON",
     )
 
     # entroly autotune
