@@ -17,6 +17,13 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from .work_graph_path_policy import (
+    GENERATED as PATH_GENERATED,
+    ORDINARY as PATH_ORDINARY,
+    classify as classify_worktree_path,
+    sensitive_id as worktree_path_sensitive_id,
+)
+
 _MAX_GIT_OUTPUT_BYTES = 8 * 1024 * 1024
 _MAX_CHANGES = 16_384
 _MAX_COMMITS = 20
@@ -376,6 +383,54 @@ def _checkpoint_metadata(
     return checkpoint.checkpoint_id, dict(metadata)
 
 
+def _apply_path_policy(
+    changes: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Withhold secret-shaped names and drop machine-produced files.
+
+    Applied here rather than at the reporting edge so a path that must not be
+    disclosed never enters the observation at all, and therefore never reaches
+    the digest layer, the Rust event, or the persisted graph. Filtering only at
+    render time would leave the name durable on disk.
+
+    A sensitive path keeps its change record -- the agent needs to know a
+    guarded file moved, because that is exactly the kind of thing that
+    invalidates earlier work -- but carries a stable opaque id instead of a
+    name, and no digest, since a content digest of a small credential file is
+    itself an oracle.
+    """
+    kept: list[dict[str, Any]] = []
+    sensitive_ids: list[str] = []
+    generated_omitted = 0
+    matched: list[str] = []
+
+    for change in changes:
+        raw = str(change.get("path", ""))
+        classification, rule = classify_worktree_path(raw)
+        if classification == PATH_ORDINARY:
+            kept.append(change)
+            continue
+        matched.append(rule)
+        if classification == PATH_GENERATED:
+            generated_omitted += 1
+            continue
+        token = worktree_path_sensitive_id(raw)
+        if token not in sensitive_ids:
+            sensitive_ids.append(token)
+        redacted = dict(change)
+        redacted["path"] = token
+        redacted["redacted"] = True
+        redacted.pop("old_path", None)
+        kept.append(redacted)
+
+    disclosure = {
+        "generated_omitted": generated_omitted,
+        "sensitive_withheld": len(sensitive_ids),
+        "matched_rules": sorted(set(matched)),
+    }
+    return kept, disclosure
+
+
 def discover_repository_observation(
     path: str | os.PathLike[str] = ".",
     *,
@@ -409,7 +464,7 @@ def discover_repository_observation(
         git_dir
         and ((git_dir / "rebase-merge").exists() or (git_dir / "rebase-apply").exists())
     )
-    changes = _parse_status(root)
+    changes, path_disclosure = _apply_path_policy(_parse_status(root))
     commits = _branch_commits(root, base, ahead, int(max_commits))
     meaningful_git = bool(changes or ahead or merge_in_progress or rebase_in_progress)
 
@@ -469,6 +524,10 @@ def discover_repository_observation(
             "detached": not bool(branch_name),
         },
         "changes": changes,
+        # What the policy withheld, and under which rules. Recovery is only
+        # honest if the caller can tell "nothing else changed" apart from
+        # "9,000 vendored files changed and were dropped".
+        "path_disclosure": path_disclosure,
         "commits": commits,
         "verifications": [],
         "decisions": decisions,
