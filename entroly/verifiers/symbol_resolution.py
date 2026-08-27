@@ -279,8 +279,30 @@ def _collect_repo_symbols(
         if path is None:
             continue
         files_seen += 1
+        _record_module_identity(root, path, out)
         _extract_python_top_level(path, out)
     return out
+
+
+def _record_module_identity(root: Path, path: Path, out: set[str]) -> None:
+    """Add the importable names the repository's own layout defines.
+
+    `from ledger.accounts import Account` references two names the codebase
+    really does define -- `ledger` because a directory of that name holds an
+    `__init__.py`, and `accounts` because `accounts.py` exists. Neither is a
+    def, a class, or a module-level assignment, so the AST pass never saw
+    them and every intra-repo import scored as hallucinated.
+
+    This is not the case the "imports are not definitions" rule guards
+    against. That rule stops `from torch.nn import HyperbolicAttention`
+    grounding a name that only an external package could define. Here the
+    filesystem is the evidence: the name is grounded because a file or
+    package of that name is present in this repository.
+    """
+    if path.stem != "__init__":
+        out.add(path.stem)
+    for parent in path.parent.relative_to(root).parts:
+        out.add(parent)
 
 
 def _extract_python_top_level(path: Path, out: set[str]) -> None:
@@ -327,6 +349,27 @@ def _extract_python_top_level(path: Path, out: set[str]) -> None:
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             out.add(node.name)
+        # `self.entries = {}` defines an attribute just as much as a `def`
+        # does. Without it every `account.entries` read scored as
+        # hallucinated, which is most of what real code does with objects.
+        #
+        # Attribute names are collected repository-wide rather than per
+        # class because the manifest is name-based and carries no type
+        # information -- the same reason `Class.method` is already grounded
+        # for every receiver. That admits a fictional attribute if some
+        # unrelated class happens to define the same name, which is a real
+        # cost, but it is bounded by "some file in this repository assigns
+        # it" and is the difference between the verifier discriminating at
+        # all and rejecting every correct program.
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                if (
+                    isinstance(target, ast.Attribute)
+                    and isinstance(target.value, ast.Name)
+                    and target.value.id == "self"
+                ):
+                    out.add(target.attr)
 
 
 # ── Symbol Extraction from generated code ────────────────────────────

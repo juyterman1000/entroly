@@ -316,3 +316,67 @@ class TestPerformance:
             verifier.verify(code)
         avg_ms = (time.perf_counter() - t0) * 100  # /10 then *1000
         assert avg_ms < 100, f"verify avg {avg_ms:.1f}ms > 100ms budget"
+
+
+# ── Manifest completeness ────────────────────────────────────────────
+
+
+class TestManifestCoversRepositoryLayout:
+    """Names the repository's own layout defines must resolve.
+
+    `from ledger.accounts import Account` names a package and a module, and
+    `self.entries = {}` names an attribute. None of these is a def, a class,
+    or a module-level assignment, so the AST pass never collected them and
+    ordinary intra-repository code scored as unresolved.
+
+    This is distinct from the "imports are not definitions" rule, which stops
+    `from torch.nn import HyperbolicAttention` grounding a name only an
+    external package could define. Here the filesystem is the evidence.
+    """
+
+    @staticmethod
+    def _repo(tmp_path):
+        pkg = tmp_path / "ledger"
+        pkg.mkdir()
+        (pkg / "__init__.py").write_text("", encoding="utf-8")
+        (pkg / "accounts.py").write_text(
+            "class Account:\n"
+            "    def __init__(self, name):\n"
+            "        self.name = name\n"
+            "        self.entries = {}\n",
+            encoding="utf-8",
+        )
+        return tmp_path
+
+    def test_package_module_and_attribute_names_resolve(self, tmp_path):
+        from entroly.verifiers.symbol_resolution import verify_code
+
+        code = (
+            "from ledger.accounts import Account\n\n"
+            "def summarize(accounts):\n"
+            "    totals = {}\n"
+            "    for acct in accounts:\n"
+            "        for key, value in acct.entries.items():\n"
+            "            totals[key] = totals.get(key, 0) + value\n"
+            "    return totals\n"
+        )
+        result = verify_code(code, repo_root=str(self._repo(tmp_path)))
+
+        # `ledger` is a package directory, `entries` is a self-assigned
+        # attribute. Both are defined by this repository.
+        assert result.unresolved_symbols() == []
+
+    def test_a_fabricated_symbol_still_fails_closed(self, tmp_path):
+        from entroly.verifiers.symbol_resolution import verify_code
+
+        code = (
+            "from ledger.accounts import Account\n\n"
+            "def summarize(accounts):\n"
+            "    return quantum_reconcile(accounts)\n"
+        )
+        result = verify_code(code, repo_root=str(self._repo(tmp_path)))
+
+        # Widening the manifest must not ground something the repository
+        # never defines.
+        assert "quantum_reconcile" in result.unresolved_symbols()
+        assert not result.passed()
