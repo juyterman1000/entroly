@@ -277,7 +277,6 @@ def test_mcp_exposes_fixed_root_bounded_tools(tmp_path: Path, monkeypatch) -> No
         "repository_graph_snapshot_check",
         "repository_http_routes",
         "repository_code_health",
-        "repository_context_fault",
         "repository_rename_apply",
         "repository_rename_preview",
         "repository_safe_delete_apply",
@@ -308,20 +307,6 @@ def test_mcp_exposes_fixed_root_bounded_tools(tmp_path: Path, monkeypatch) -> No
     assert context["schema_version"] == "entroly.verified-code-context.v1"
     assert context["fragments"][0]["qualified_name"] == "execute"
     assert str(tmp_path) not in json.dumps(context)
-    bounded_context = json.loads(
-        mcp.tools["repository_verified_context"](
-            "execute invoke", token_budget=512, max_fragments=1
-        )
-    )
-    descriptor = bounded_context["recoverable_fragments"][0]
-    faulted = json.loads(
-        mcp.tools["repository_context_fault"](
-            bounded_context, descriptor["context_ref"]
-        )
-    )
-    assert faulted["context_fault"]["recovered_ref"] == descriptor["context_ref"]
-    assert faulted["receipt"]["context_fault_count"] == 1
-    assert str(tmp_path) not in json.dumps(faulted)
     program_slice = json.loads(mcp.tools["repository_program_slice"]("invoke"))
     assert program_slice["schema_version"] == "entroly.verified-program-slice.v1"
     assert program_slice["query_route"]["identity_status"] == "unique-exact"
