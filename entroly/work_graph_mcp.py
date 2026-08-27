@@ -7,8 +7,6 @@ data before an agent consumes it.
 """
 from __future__ import annotations
 
-import base64
-import binascii
 import json
 import math
 import os
@@ -18,6 +16,10 @@ from pathlib import Path
 from typing import Any
 
 from .hardening import sanitize_injected_context
+from .work_context_snapshot_store import (
+    CONTEXT_SNAPSHOT_TOKEN_PREFIX,
+    WorkContextSnapshotStore,
+)
 from .repository_intelligence import RepositoryIntelligenceService
 from .repository_intelligence.verified_context import verify_context_commitment
 from .work_graph import (
@@ -44,10 +46,7 @@ _MAX_TTL_SECONDS = 30 * 24 * 60 * 60
 _MAX_ID_CHARS = 512
 _MAX_REF_BYTES = 4096
 _MAX_CONTRACT_BYTES = 1024 * 1024
-_CONTEXT_TOKEN_PREFIX = "vctx1."
-_MAX_CONTEXT_TOKEN_BYTES = ((_MAX_CONTRACT_BYTES + 2) // 3) * 4 + len(
-    _CONTEXT_TOKEN_PREFIX
-)
+_CONTEXT_TOKEN_PREFIX = CONTEXT_SNAPSHOT_TOKEN_PREFIX
 _CONTEXT_SELECTION_POLICY = "repository-intelligence/verified-context-v1"
 
 
@@ -228,55 +227,31 @@ def _bounded_contract(value: str | dict[str, Any], name: str) -> str | dict[str,
     return value
 
 
-def _encode_context_token(context: dict[str, Any]) -> str:
-    """Encode exact committed context as an opaque, round-trippable MCP token."""
-    if not verify_context_commitment(context):
-        raise ValueError("verified context commitment is invalid")
-    raw = json.dumps(
-        context,
-        sort_keys=True,
-        ensure_ascii=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    if len(raw) > _MAX_CONTRACT_BYTES:
-        raise WorkGraphStateError(
-            f"context contract exceeds {_MAX_CONTRACT_BYTES} bytes"
-        )
-    token = _CONTEXT_TOKEN_PREFIX + base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
-    if len(token.encode("ascii")) > _MAX_CONTEXT_TOKEN_BYTES:
-        raise WorkGraphStateError("encoded context token exceeds its bounded size")
-    return token
+def _snapshot_store_for_graph(store: WorkGraphStore) -> WorkContextSnapshotStore:
+    """Use the same repository store/lock as Work Graph persistence."""
+    return WorkContextSnapshotStore(store)
 
 
-def _decode_context_token(token: str) -> dict[str, Any]:
-    """Decode an MCP context token and re-verify its inner commitment."""
-    if not isinstance(token, str) or not token.startswith(_CONTEXT_TOKEN_PREFIX):
-        raise ValueError("context token has an unsupported format")
-    if len(token.encode("utf-8")) > _MAX_CONTEXT_TOKEN_BYTES:
-        raise ValueError("context token exceeds its bounded size")
-    encoded = token[len(_CONTEXT_TOKEN_PREFIX):]
-    if not encoded:
-        raise ValueError("context token payload is empty")
-    padded = encoded + ("=" * (-len(encoded) % 4))
-    try:
-        raw = base64.b64decode(
-            padded.encode("ascii"),
-            altchars=b"-_",
-            validate=True,
-        )
-    except (UnicodeEncodeError, binascii.Error, ValueError):
-        raise ValueError("context token is not valid base64url") from None
-    if len(raw) > _MAX_CONTRACT_BYTES:
-        raise ValueError("decoded context token exceeds its bounded size")
-    try:
-        context = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        raise ValueError("context token does not contain valid JSON") from None
-    if not isinstance(context, dict):
-        raise ValueError("context token must contain a JSON object")
-    if not verify_context_commitment(context):
-        raise ValueError("context token commitment is invalid")
-    return context
+def _snapshot_token_from_receipt_id(receipt_id: object) -> str:
+    """Derive the parent snapshot locator committed by a RecoveryHandle."""
+    value = str(receipt_id or "")
+    prefix = "vctx_"
+    if not value.startswith(prefix):
+        raise ValueError("recovery handle receipt_id is not a verified context id")
+    return WorkContextSnapshotStore.token_for_commitment(value[len(prefix):])
+
+
+def _encode_context_token(context: dict[str, Any], store: WorkGraphStore) -> str:
+    """Persist exact committed context and return a short content-addressed token."""
+    return _snapshot_store_for_graph(store).put_json(context)
+
+
+def _decode_context_token(
+    token: str, store: WorkGraphStore | None = None
+) -> dict[str, Any]:
+    """Resolve a repository-scoped snapshot and re-verify its inner commitment."""
+    graph_store = store if store is not None else _store_for_path(_project_path())
+    return _snapshot_store_for_graph(graph_store).get_json(token)
 
 
 def _ttl_ms(ttl_seconds: float) -> int:
@@ -315,6 +290,7 @@ def _render_context_result(
     kind: str,
     *,
     context: dict[str, Any],
+    context_token: str,
     canonical_receipt: dict[str, Any],
     recovery_handles: list[dict[str, Any]],
     work_event_id: Any,
@@ -337,7 +313,7 @@ def _render_context_result(
         "status": "ok",
         "kind": kind,
         "trust": "untrusted_retrieved_source_data",
-        "context_token": _encode_context_token(context),
+        "context_token": context_token,
         "context_block": fenced,
         "canonical_receipt": canonical_receipt,
         "recovery_handles": recovery_handles,
@@ -598,6 +574,14 @@ def work_compile_context(
             head_sha=_head_sha(confirmation),
             observed_at_ms=now_ms,
         )
+        source_commitment = str(context["receipt"]["context_sha256"])
+        if canonical.get("source_commitment") != source_commitment:
+            raise WorkGraphStateError("canonical receipt lost source commitment")
+
+        # Persist exact host bytes before publishing their bounded receipt.
+        # A failed graph mutation can leave only a bounded content-addressed
+        # orphan; the graph can never point at missing recovery state.
+        context_token = _encode_context_token(context, store)
         recorded_graph, event_id = store.record_context_receipt(
             canonical,
             agent_id=str(agent_id),
@@ -606,6 +590,7 @@ def work_compile_context(
         return _render_context_result(
             "work_compile_context",
             context=context,
+            context_token=context_token,
             canonical_receipt=canonical,
             recovery_handles=handles,
             work_event_id=event_id,
@@ -628,21 +613,39 @@ def work_context_fault(
 ) -> dict[str, Any]:
     """Verify one recovery handle, fault in exact bytes, and record the receipt."""
     try:
-        if isinstance(context, str):
-            bounded_context = _decode_context_token(context)
-        else:
-            bounded_context = _bounded_contract(context, "context")
-            if not isinstance(bounded_context, dict):
-                raise ValueError("context must be a JSON object or context token")
         bounded_handle = _bounded_contract(recovery_handle, "recovery_handle")
         if not isinstance(bounded_handle, dict):
             raise ValueError("recovery_handle must be a JSON object")
+        handle = verify_recovery_handle(bounded_handle)
         selected_ref = _bounded_ref(context_ref, "context_ref")
         selected_workstream = str(workstream_id).strip()
         if selected_workstream:
             selected_workstream = _bounded_id(
                 selected_workstream, "workstream_id"
             )
+
+        path = _project_path(project)
+        store = _store_for_path(path)
+        observation = _passive_observation(path)
+        if handle.get("version") != _head_sha(observation):
+            raise ValueError("recovery handle repository version is stale")
+        graph = store.submit_repository_observation(
+            observation, repository_path=path
+        )
+        scope = graph.context_scope(selected_workstream or None, max_evidence=128)
+        if handle.get("repository_id") != scope.get("repo_id"):
+            raise ValueError("recovery handle belongs to another repository")
+
+        if isinstance(context, str):
+            expected_token = _snapshot_token_from_receipt_id(handle.get("receipt_id"))
+            if context != expected_token:
+                raise ValueError("context token does not match recovery handle parent")
+            bounded_context = _decode_context_token(context, store)
+        else:
+            bounded_context = _bounded_contract(context, "context")
+            if not isinstance(bounded_context, dict):
+                raise ValueError("context must be a JSON object or context token")
+
         _fragments, descriptors = _context_parts(bounded_context)
         matches = [
             item for item in descriptors if item.get("context_ref") == selected_ref
@@ -650,7 +653,6 @@ def work_context_fault(
         if len(matches) != 1:
             raise ValueError("context_ref is not a unique committed omission")
         descriptor = matches[0]
-        handle = verify_recovery_handle(bounded_handle)
         expected_handle_fields = {
             "receipt_id": _host_receipt_id(bounded_context),
             "disposition": "omitted_but_recoverable",
@@ -663,7 +665,6 @@ def work_context_fault(
         if any(handle.get(key) != value for key, value in expected_handle_fields.items()):
             raise ValueError("recovery handle does not match the committed omission")
 
-        path = _project_path(project)
         service = RepositoryIntelligenceService(path)
         recovered = service.context_fault(
             bounded_context,
@@ -679,26 +680,33 @@ def work_context_fault(
         )
         if verify_recovered_bytes(handle, recovered_bytes) != "verified":
             raise ValueError("recovered bytes do not match the recovery handle")
-
-        observation = _passive_observation(path)
-        if handle.get("version") != _head_sha(observation):
-            raise ValueError("recovery handle repository version is stale")
-        store = _store_for_path(path)
-        graph = store.submit_repository_observation(
-            observation, repository_path=path
-        )
         service.validate_context(recovered)
-        scope = graph.context_scope(selected_workstream or None, max_evidence=128)
-        if handle.get("repository_id") != scope.get("repo_id"):
+
+        # Re-observe after byte recovery so a concurrent edit/rebase cannot
+        # publish a receipt for a workspace different from the one recovered.
+        confirmation = _passive_observation(path)
+        if handle.get("version") != _head_sha(confirmation):
+            raise ValueError("recovery handle repository version became stale")
+        confirmed_graph = store.submit_repository_observation(
+            confirmation, repository_path=path
+        )
+        if confirmed_graph.graph_commitment != graph.graph_commitment:
+            raise ValueError("repository changed during context recovery; retry")
+        confirmed_scope = confirmed_graph.context_scope(
+            selected_workstream or None, max_evidence=128
+        )
+        if handle.get("repository_id") != confirmed_scope.get("repo_id"):
             raise ValueError("recovery handle belongs to another repository")
+
         now_ms = int(time.time() * 1000)
         canonical, handles = _context_contracts(
             context=recovered,
-            scope=scope,
-            head_sha=_head_sha(observation),
+            scope=confirmed_scope,
+            head_sha=_head_sha(confirmation),
             observed_at_ms=now_ms,
             pinned_refs=[selected_ref],
         )
+        context_token = _encode_context_token(recovered, store)
         recorded_graph, event_id = store.record_context_receipt(
             canonical,
             agent_id=str(agent_id),
@@ -707,6 +715,7 @@ def work_context_fault(
         return _render_context_result(
             "work_context_fault",
             context=recovered,
+            context_token=context_token,
             canonical_receipt=canonical,
             recovery_handles=handles,
             work_event_id=event_id,

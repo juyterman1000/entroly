@@ -332,6 +332,22 @@ def test_mcp_compiles_and_faults_context_through_real_rendered_contract(
 
     monkeypatch.setattr(m, "create_recovery_handle", recovery_handle)
     monkeypatch.setattr(m, "create_work_context_receipt", context_receipt)
+    snapshots = {}
+
+    class FakeSnapshotStore:
+        def put_json(self, payload):
+            token = m.WorkContextSnapshotStore.token_for_commitment(
+                payload["receipt"]["context_sha256"]
+            )
+            snapshots[token] = dict(payload)
+            return token
+
+        def get_json(self, token):
+            if token not in snapshots:
+                raise ValueError("context snapshot is unavailable")
+            return dict(snapshots[token])
+
+    monkeypatch.setattr(m, "_snapshot_store_for_graph", lambda _store: FakeSnapshotStore())
     monkeypatch.setattr(m, "verify_recovery_handle", lambda value: dict(value))
     monkeypatch.setattr(
         m,
@@ -353,6 +369,7 @@ def test_mcp_compiles_and_faults_context_through_real_rendered_contract(
     assert compiled["status"] == "ok"
     assert compiled["canonical_receipt"]["graph_commitment"] == "graph:test"
     assert compiled["context_token"].startswith(m._CONTEXT_TOKEN_PREFIX)
+    assert len(compiled["context_token"]) == len(m._CONTEXT_TOKEN_PREFIX) + 64
     assert "<entroly:retrieved-context>" in compiled["context_block"]
     assert compiled["injection_scan"]["matches"]
     assert compiled["injection_scan"]["invisible_chars_stripped"] >= 1
