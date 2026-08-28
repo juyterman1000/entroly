@@ -80,6 +80,31 @@ logger = logging.getLogger("entroly.verifiers.symbol_resolution")
 # Conservative default: surprisal must exceed ~ ln(P)+λ before flagging.
 DEFAULT_LAMBDA = 6.5
 
+# log ρ, where ρ = P(a fabricated name collides with the manifest).
+#
+# Resolving against the manifest is evidence, not merely a gate. The original
+# derivation used it as a hard gate for σ ∉ M and then discarded it for σ ∈ M,
+# scoring a symbol the codebase demonstrably contains purely on how unusual its
+# spelling looks. Because the aggregate is a noisy-OR, those residual
+# probabilities compounded with symbol count: ten real stdlib imports, nothing
+# fabricated and nothing unresolved, scored 0.694, and five scored 0.558 --
+# past the 0.5 failure threshold. h_score measured how much code was written
+# rather than whether it was true.
+#
+# Adding log ρ to the logit is the missing likelihood-ratio update. ρ is
+# measured, not chosen: 3000 fabricated identifiers built by recombining real
+# morphemes (fetch_lattice, quantize_canonical_receipt, slurpDigest) -- the way
+# a model actually invents an API, rather than random strings that would
+# collide at zero and flatter the estimate -- produced 1 collision against a
+# 66,914-symbol manifest. A rule-of-three floor is applied so a near-zero draw
+# from a finite sample does not imply unbounded confidence.
+#
+#     ρ̂ = 1/3000 = 3.33e-4  →  floored to 1e-3  →  log ρ = -6.91
+#
+# Fail-closed is untouched: σ ∉ M still returns 1.0. This only bounds how much
+# doubt a symbol that *is* present can contribute.
+MANIFEST_EVIDENCE_LOG_ODDS = -6.9078
+
 # Per-symbol importance weights in the aggregate score.
 WEIGHT_FUNCTION_CALL = 1.0      # foo(...) — high signal
 WEIGHT_ATTRIBUTE_ACCESS = 1.0   # obj.attr — high signal
@@ -226,6 +251,19 @@ def _collect_stdlib_modules() -> set[str]:
         except Exception:
             pass
 
+    # `from __future__ import annotations` opens nearly every modern Python
+    # file in this repository, and `annotations` is not a module, a builtin,
+    # or anything the AST pass collects -- so every such file contributed a
+    # guaranteed unresolved symbol. These are language features, enumerated by
+    # the interpreter rather than hardcoded, so the set tracks the running
+    # Python instead of drifting.
+    try:
+        import __future__ as _future
+
+        out.update(_future.all_feature_names)
+    except Exception:
+        pass
+
     return out
 
 
@@ -279,8 +317,30 @@ def _collect_repo_symbols(
         if path is None:
             continue
         files_seen += 1
+        _record_module_identity(root, path, out)
         _extract_python_top_level(path, out)
     return out
+
+
+def _record_module_identity(root: Path, path: Path, out: set[str]) -> None:
+    """Add the importable names the repository's own layout defines.
+
+    `from ledger.accounts import Account` references two names the codebase
+    really does define -- `ledger` because a directory of that name holds an
+    `__init__.py`, and `accounts` because `accounts.py` exists. Neither is a
+    def, a class, or a module-level assignment, so the AST pass never saw
+    them and every intra-repo import scored as hallucinated.
+
+    This is not the case the "imports are not definitions" rule guards
+    against. That rule stops `from torch.nn import HyperbolicAttention`
+    grounding a name that only an external package could define. Here the
+    filesystem is the evidence: the name is grounded because a file or
+    package of that name is present in this repository.
+    """
+    if path.stem != "__init__":
+        out.add(path.stem)
+    for parent in path.parent.relative_to(root).parts:
+        out.add(parent)
 
 
 def _extract_python_top_level(path: Path, out: set[str]) -> None:
@@ -327,6 +387,45 @@ def _extract_python_top_level(path: Path, out: set[str]) -> None:
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             out.add(node.name)
+        # `self.entries = {}` defines an attribute just as much as a `def`
+        # does. Without it every `account.entries` read scored as
+        # hallucinated, which is most of what real code does with objects.
+        #
+        # Attribute names are collected repository-wide rather than per
+        # class because the manifest is name-based and carries no type
+        # information -- the same reason `Class.method` is already grounded
+        # for every receiver. That admits a fictional attribute if some
+        # unrelated class happens to define the same name, which is a real
+        # cost, but it is bounded by "some file in this repository assigns
+        # it" and is the difference between the verifier discriminating at
+        # all and rejecting every correct program.
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                if (
+                    isinstance(target, ast.Attribute)
+                    and isinstance(target.value, ast.Name)
+                    and target.value.id == "self"
+                ):
+                    out.add(target.attr)
+
+    # Class-body bindings: dataclass fields, class constants, and annotated
+    # class attributes. `@dataclass class Diff: files_added: list[str]` defines
+    # `files_added` for every instance, but it is an AnnAssign in a class body
+    # rather than a module-level one or a `self.` assignment, so neither pass
+    # above reaches it. Dataclasses are common enough here that this was a
+    # visible share of the remaining false positives.
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        for item in node.body:
+            if isinstance(item, ast.AnnAssign):
+                if isinstance(item.target, ast.Name):
+                    out.add(item.target.id)
+            elif isinstance(item, ast.Assign):
+                for target in item.targets:
+                    if isinstance(target, ast.Name):
+                        out.add(target.id)
 
 
 # ── Symbol Extraction from generated code ────────────────────────────
@@ -629,8 +728,11 @@ class SymbolVerifier:
             return 0.0  # No surprisal signal → trust the manifest
 
         surp = self.ngram_model.surprisal(name)
-        # Sigmoid in nats: sigmoid(surp − λ)
-        x = surp - self.lambda_
+        # Sigmoid in nats, with manifest membership carried as evidence rather
+        # than discarded once the hard gate is passed:
+        #     sigmoid(surp − λ + log ρ)
+        # See MANIFEST_EVIDENCE_LOG_ODDS for how ρ was measured.
+        x = surp - self.lambda_ + MANIFEST_EVIDENCE_LOG_ODDS
         # Numerically stable sigmoid
         if x >= 0:
             return 1.0 / (1.0 + math.exp(-x))
@@ -692,9 +794,14 @@ class SymbolVerifier:
             h_score=h_score,
             n_resolved=sum(1 for j in judgments if j.resolved),
             n_unresolved=sum(1 for j in judgments if not j.resolved),
+            # Reported on the uncorrected surprisal. Once membership is
+            # carried as evidence a resolved symbol almost never exceeds 0.5,
+            # so keying this off p_hallucinated would silently zero the
+            # "resolved but oddly named" signal. It stays observable here
+            # without being allowed to drive h_score.
             n_suspicious=sum(
                 1 for j in judgments
-                if j.resolved and j.p_hallucinated > 0.5
+                if j.resolved and j.surprisal > self.lambda_
             ),
             manifest_size=self.manifest.size(),
         )

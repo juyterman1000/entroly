@@ -172,16 +172,37 @@ class TestPosteriorMath:
         p = verifier.posterior_hallucinated(ref)
         assert p < 0.1, f"P_halu={p} for legitimate 'compress' too high"
 
-    def test_resolved_high_surprisal_is_suspicious(self, verifier):
-        """Symbol in manifest BUT unusual character distribution → suspicious."""
-        # Add a high-surprisal name to the manifest to force the mixed case
+    def test_resolved_high_surprisal_is_reported_but_does_not_drive_the_score(
+        self, verifier
+    ):
+        """Odd spelling is observability, not evidence of fabrication.
+
+        This assertion used to require p > 0.3 for a symbol that is present in
+        the manifest but spelled unusually. Because the aggregate is a
+        noisy-OR, residual probabilities on symbols the codebase demonstrably
+        contains compounded with symbol count: ten real stdlib imports scored
+        0.694 and five scored 0.558, past the failure threshold, with nothing
+        fabricated and nothing unresolved.
+
+        The suspicion signal is not discarded -- it moves to `n_suspicious`,
+        which is keyed off raw surprisal. Both halves are pinned here so
+        neither can be lost.
+        """
         verifier.manifest.repo.add("zxqyvtbprwklm")
         from entroly.verifiers.symbol_resolution import SymbolReference
         ref = SymbolReference(
             name="zxqyvtbprwklm", kind="call", line=1, weight=1.0,
         )
+
         p = verifier.posterior_hallucinated(ref)
-        assert p > 0.3, f"P_halu={p} for high-surprisal symbol too low"
+        assert p < 0.1, (
+            f"P_halu={p}: a symbol the manifest contains must not carry the "
+            "doubt of one it does not"
+        )
+
+        # ...but the oddity is still surfaced.
+        result = verifier.verify("zxqyvtbprwklm()\n")
+        assert result.n_suspicious >= 1, "suspicion signal was lost, not moved"
 
     def test_dunder_methods_always_pass(self, verifier):
         from entroly.verifiers.symbol_resolution import SymbolReference
@@ -316,3 +337,141 @@ class TestPerformance:
             verifier.verify(code)
         avg_ms = (time.perf_counter() - t0) * 100  # /10 then *1000
         assert avg_ms < 100, f"verify avg {avg_ms:.1f}ms > 100ms budget"
+
+
+# ── Manifest completeness ────────────────────────────────────────────
+
+
+class TestManifestCoversRepositoryLayout:
+    """Names the repository's own layout defines must resolve.
+
+    `from ledger.accounts import Account` names a package and a module, and
+    `self.entries = {}` names an attribute. None of these is a def, a class,
+    or a module-level assignment, so the AST pass never collected them and
+    ordinary intra-repository code scored as unresolved.
+
+    This is distinct from the "imports are not definitions" rule, which stops
+    `from torch.nn import HyperbolicAttention` grounding a name only an
+    external package could define. Here the filesystem is the evidence.
+    """
+
+    @staticmethod
+    def _repo(tmp_path):
+        pkg = tmp_path / "ledger"
+        pkg.mkdir()
+        (pkg / "__init__.py").write_text("", encoding="utf-8")
+        (pkg / "accounts.py").write_text(
+            "class Account:\n"
+            "    def __init__(self, name):\n"
+            "        self.name = name\n"
+            "        self.entries = {}\n",
+            encoding="utf-8",
+        )
+        return tmp_path
+
+    def test_package_module_and_attribute_names_resolve(self, tmp_path):
+        from entroly.verifiers.symbol_resolution import verify_code
+
+        code = (
+            "from ledger.accounts import Account\n\n"
+            "def summarize(accounts):\n"
+            "    totals = {}\n"
+            "    for acct in accounts:\n"
+            "        for key, value in acct.entries.items():\n"
+            "            totals[key] = totals.get(key, 0) + value\n"
+            "    return totals\n"
+        )
+        result = verify_code(code, repo_root=str(self._repo(tmp_path)))
+
+        # `ledger` is a package directory, `entries` is a self-assigned
+        # attribute. Both are defined by this repository.
+        assert result.unresolved_symbols() == []
+
+    def test_a_fabricated_symbol_still_fails_closed(self, tmp_path):
+        from entroly.verifiers.symbol_resolution import verify_code
+
+        code = (
+            "from ledger.accounts import Account\n\n"
+            "def summarize(accounts):\n"
+            "    return quantum_reconcile(accounts)\n"
+        )
+        result = verify_code(code, repo_root=str(self._repo(tmp_path)))
+
+        # Widening the manifest must not ground something the repository
+        # never defines.
+        assert "quantum_reconcile" in result.unresolved_symbols()
+        assert not result.passed()
+
+
+class TestFutureFeatureNames:
+    def test_future_import_names_resolve(self, tmp_path):
+        """`from __future__ import annotations` opens most modern Python files.
+
+        `annotations` is not a module, not a builtin, and not anything the AST
+        pass collects, so before this every such file contributed a guaranteed
+        unresolved symbol -- one per file, repository-wide.
+        """
+        from entroly.verifiers.symbol_resolution import verify_code
+
+        (tmp_path / "mod.py").write_text("VALUE = 1\n", encoding="utf-8")
+        code = (
+            "from __future__ import annotations\n\n"
+            "def widen(value: str | None) -> str:\n"
+            "    return value or ''\n"
+        )
+        result = verify_code(code, repo_root=str(tmp_path))
+
+        assert "annotations" not in result.unresolved_symbols()
+
+
+class TestScoreDoesNotTrackCodeLength:
+    """h_score must answer "is anything fabricated", not "how much was written".
+
+    The aggregate is a noisy-OR over distinct symbols. While symbols the
+    manifest contains retained a residual probability, that product grew with
+    symbol count: five real stdlib imports scored 0.558 and ten scored 0.694,
+    both past the 0.5 failure threshold, with nothing fabricated and nothing
+    unresolved. Any sufficiently long correct program failed.
+    """
+
+    # Every name here is in the `small_manifest` fixture, so the only thing
+    # varying across the cases below is how many distinct symbols appear.
+    IMPORTS = [
+        "import json", "import math", "import os", "import sys", "import re",
+        "import numpy", "import requests", "import torch", "import pandas",
+        "import entroly",
+    ]
+
+    def _code(self, count: int) -> str:
+        return "\n".join(self.IMPORTS[:count]) + "\ndef handle(value):\n    return value\n"
+
+    def test_grounded_imports_do_not_accumulate_into_a_failure(self, verifier):
+        scores = {}
+        for count in (1, 2, 5, 10):
+            result = verifier.verify(self._code(count))
+            # Premise: nothing here is fabricated. If this trips, the fixture
+            # drifted and the length claim below would be measuring something
+            # else entirely.
+            assert result.unresolved_symbols() == [], (
+                f"fixture is not fully grounded at {count} imports: "
+                f"{result.unresolved_symbols()}"
+            )
+            scores[count] = result.h_score
+
+        assert all(score < 0.5 for score in scores.values()), (
+            f"grounded code failed verification purely on length: {scores}"
+        )
+        # Ten grounded imports must not cost meaningfully more than one.
+        assert scores[10] - scores[1] < 0.1, f"score still tracks length: {scores}"
+
+    def test_a_single_fabricated_symbol_still_fails_closed(self, verifier):
+        code = self._code(10).replace(
+            "return value", "return quantum_reconcile_ledger(value)"
+        )
+        result = verifier.verify(code)
+
+        assert "quantum_reconcile_ledger" in result.unresolved_symbols()
+        # Not exactly 1.0: the aggregate clamps each p to 1 - 1e-12 so the
+        # log term stays finite.
+        assert result.h_score > 0.999
+        assert not result.passed()
