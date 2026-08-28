@@ -2949,7 +2949,7 @@ class PromptCompilerProxy:
                 # Bayesian evidence without needing shell exit codes.
                 prev_routed = getattr(self, "_ravs_prev_routed", None)
                 if prev_routed and hasattr(self, "_ravs_prev_client"):
-                    prev_client, prev_arch, prev_model = prev_routed
+                    prev_client, prev_arch, prev_model, _ravs_prev_conf = prev_routed
                     if prev_client == client_key:
                         try:
                             from entroly_core import py_simhash
@@ -2982,6 +2982,21 @@ class PromptCompilerProxy:
                                             prev_arch, verdict, similarity,
                                         )
                                     except Exception:
+                                        pass
+                                    # Same outcome, second consumer: this is
+                                    # the only observed signal about a routed
+                                    # request, so it is also the calibration
+                                    # label. Without it the conformal
+                                    # controller has no producer and its
+                                    # certificate can never be earned.
+                                    try:
+                                        from .ravs.conformal import get_controller
+
+                                        get_controller().record(
+                                            confidence=_ravs_prev_conf,
+                                            diverged=(verdict == "fail"),
+                                        )
+                                    except Exception:  # noqa: BLE001
                                         pass
                         except (ImportError, Exception):
                             pass  # No simhash = no feedback, safe to skip
@@ -3104,7 +3119,10 @@ class PromptCompilerProxy:
 
                 # Store for next-request feedback attribution
                 if _ravs_swapped:
-                    self._ravs_prev_routed = (client_key, _ravs_archetype, _current_model)
+                    self._ravs_prev_routed = (
+                        client_key, _ravs_archetype, _current_model,
+                        float(getattr(decision, "confidence", 0.0) or 0.0),
+                    )
                 else:
                     self._ravs_prev_routed = None
             except Exception as e:

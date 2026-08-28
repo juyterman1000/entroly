@@ -210,3 +210,50 @@ class TestProxyGating:
 
         source = inspect.getsource(proxy)
         assert 'os.environ.get("ENTROLY_RAVS_ROUTER", "0") == "1"' in source
+
+
+class TestTheLoopIsClosed:
+    """A certificate with no producer can never be earned.
+
+    The first version of this module shipped a consumer and no writer: nothing
+    called record(), so n stayed 0 and the feature was inert. That is the same
+    defect as a dashboard field nothing increments, and it is pinned here.
+    """
+
+    def test_the_proxy_records_calibration_observations(self):
+        import inspect
+
+        from entroly import proxy
+
+        source = inspect.getsource(proxy)
+        assert "get_controller().record(" in source, (
+            "no producer: the certificate could never be earned"
+        )
+
+    def test_the_observation_is_paired_with_its_confidence(self):
+        """A label without the confidence it was observed at cannot calibrate."""
+        import inspect
+
+        from entroly import proxy
+
+        source = inspect.getsource(proxy)
+        assert "confidence=_ravs_prev_conf" in source
+        assert "_ravs_prev_conf = prev_routed" in source, (
+            "confidence must be carried from the decision to its outcome"
+        )
+
+    def test_the_docstring_does_not_claim_a_verifier_label(self):
+        """The label is behavioural feedback; claiming otherwise oversells it."""
+        from entroly.ravs import conformal
+
+        doc = conformal.__doc__ or ""
+        assert "behavioural proxy" in doc
+        assert "not a deterministic verifier" in doc
+
+    def test_the_bootstrap_limitation_is_documented(self):
+        from entroly.ravs import conformal
+
+        doc = conformal.__doc__ or ""
+        assert "circularity" in doc, (
+            "a user must be told the certificate cannot self-start"
+        )

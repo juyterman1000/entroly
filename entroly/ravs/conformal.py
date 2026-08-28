@@ -23,11 +23,38 @@ guarantees ``E[L_{n+1}(λ̂)] ≤ α`` on the next request.
 
 Here ``λ`` is the confidence a routing decision must clear before the swap is
 taken, and ``L_i(λ) = 1`` when request ``i`` would have been routed at ``λ``
-(its confidence cleared the bar) *and* the cheap model then diverged. Raising
-``λ`` routes strictly fewer requests, so ``L_i`` is non-increasing and (1)
-applies. Divergence is scored by the deterministic RAVS verifiers -- tests,
-lint, file reads -- so calibration costs no model calls and the label is an
-observation rather than a judgement.
+(its confidence cleared the bar) *and* the outcome was recorded as a failure.
+Raising ``λ`` routes strictly fewer requests, so ``L_i`` is non-increasing and
+(1) applies.
+
+What the label actually is
+--------------------------
+The bound is only as meaningful as the quantity being bounded, so it is worth
+being exact. The label is not a deterministic verifier result. The only outcome
+signal observable on the routing path is the proxy's implicit feedback: a
+routed request followed by a near-duplicate query is read as a failure (the
+user rephrased), a topic change as a success. That is a behavioural proxy,
+recorded elsewhere at ``source_strength=0.4``.
+
+So (1) bounds *the rate at which routed requests are followed by a rephrase*,
+not the rate of true quality divergence. Those correlate, and the first is
+observable while the second is not, but they are not the same and a reader
+deciding whether to accept ``α`` should know which one they are accepting.
+
+Bootstrapping
+-------------
+There is a circularity that no theorem removes: the label requires having
+routed, and routing requires a certificate. A cheap model's divergence cannot
+be estimated without ever running the cheap model. Calibration therefore
+accrues only while routing is on, which means the honest shape of this feature
+is *explicit opt-in to begin, automatic maintenance and revocation thereafter*
+-- a user who enables routing gets a threshold that tightens as evidence
+arrives and withdraws itself if outcomes degrade.
+
+Escaping that would need either a consented exploration budget (routing a small
+ε of low-risk traffic to gather evidence) or paying to run both models on a
+sample. Both are real options; neither is free, and neither is implemented
+here.
 
 The minimum sample size is not a tuning knob; it falls out of (1). At the
 most conservative threshold nothing is routed, so ``R̂_n = 0`` and the bound
