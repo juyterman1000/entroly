@@ -385,3 +385,48 @@ def test_cross_runtime_schema_contract(fresh_dir):
     assert receipt["provider_path"]["input_tokens_reduced"] == 500
     assert receipt["local_operations"]["tokens_reduced"] == 2200
     assert receipt["local_operations"]["dollar_claimed_usd"] == 0
+
+
+class TestSerialisationPreservesSmallMeasurements:
+    """Rounding for money must not erase physics.
+
+    _safe_json rounds every float to six decimal places, which suits dollars
+    and ratios but not the quantities the energy panel reports: a few hundred
+    tokens avoid ~1e-8 kWh. Serialised at six places that is 0.0, so a new
+    user's first requests would report exactly the nothing the dashboard
+    exists to disprove.
+    """
+
+    def test_a_small_non_zero_value_does_not_serialise_to_zero(self):
+        from entroly.dashboard import _safe_json
+
+        assert _safe_json(6.88e-9) != 0.0, (
+            "the first requests a user makes would report no energy saved"
+        )
+
+    def test_dollar_figures_are_unchanged(self):
+        """The narrow fix must not move any number that already displayed."""
+        from entroly.dashboard import _safe_json
+
+        for value in (0.75, 39.136125, 117.408375, 1.0, 0.000123):
+            assert _safe_json(value) == round(value, 6)
+
+    def test_zero_and_nan_still_collapse(self):
+        from entroly.dashboard import _safe_json
+
+        assert _safe_json(0.0) == 0.0
+        assert _safe_json(float("nan")) == 0.0
+
+    def test_energy_survives_the_api_boundary(self, tmp_path, monkeypatch):
+        """End to end: a tiny reduction still reaches the client as non-zero."""
+        monkeypatch.setenv("ENTROLY_DIR", str(tmp_path))
+        from entroly.dashboard import _safe_json
+        from entroly.value_tracker import ValueTracker
+
+        tracker = ValueTracker()
+        tracker.record(tokens_saved=50, source="mcp")
+        payload = _safe_json(tracker.get_lifetime())
+
+        assert payload["energy"]["kwh_avoided"] > 0.0, (
+            "measured, priced, then rounded away on the way to the browser"
+        )

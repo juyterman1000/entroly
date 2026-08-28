@@ -66,7 +66,18 @@ def record_request(entry: dict):
 
 
 def _safe_json(obj: Any) -> Any:
-    """Recursively convert to JSON-safe types."""
+    """Recursively convert to JSON-safe types.
+
+    Six decimal places suit money and ratios, which is all this carried when
+    it was written. It does not suit physical quantities: a few hundred tokens
+    avoid roughly 1e-8 kWh, and rounding that to six places serialises a real
+    measurement as ``0.0``. A new user's first requests would report exactly
+    the nothing this dashboard exists to disprove.
+
+    So the decimal rounding stays -- it keeps every existing dollar figure
+    byte-identical -- and only the case where it would erase a non-zero value
+    falls back to significant figures.
+    """
     if isinstance(obj, dict):
         return {str(k): _safe_json(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
@@ -74,7 +85,12 @@ def _safe_json(obj: Any) -> Any:
     if isinstance(obj, float):
         if obj != obj:  # NaN
             return 0.0
-        return round(obj, 6)
+        rounded = round(obj, 6)
+        if rounded == 0.0 and obj != 0.0 and math.isfinite(obj):
+            from .energy_value import _sig
+
+            return _sig(obj, 6)
+        return rounded
     return obj
 
 def _control_learning_snapshot(daemon: Any) -> dict:
@@ -2050,3 +2066,61 @@ def start_dashboard(
     thread.start()
     logger.info(f"Dashboard live at http://localhost:{port}")
     return server
+
+
+def dashboard_autostart_enabled() -> bool:
+    """On unless explicitly disabled."""
+    import os
+
+    return os.environ.get("ENTROLY_DASHBOARD_AUTOSTART", "1").strip() not in {
+        "0", "false", "no",
+    }
+
+
+def _port_already_serving(port: int, host: str = "127.0.0.1") -> bool:
+    """Whether something is already listening on ``port``.
+
+    Binding cannot answer this. ``_ReuseAddrHTTPServer`` sets
+    ``allow_reuse_address``, and on Windows ``SO_REUSEADDR`` lets a second
+    socket bind a port that is already bound -- the bind succeeds and which
+    socket receives a given connection is undefined. A dashboard started that
+    way would silently split requests with the proxy's, so presence is probed
+    by connecting rather than inferred from a bind that cannot fail.
+    """
+    import socket
+
+    try:
+        with socket.create_connection((host, port), timeout=0.25):
+            return True
+    except OSError:
+        return False
+
+
+def maybe_start_dashboard(engine: Any = None, port: int = 9378) -> Any | None:
+    """Start the dashboard if nothing is serving yet. Returns the server or None.
+
+    The MCP server is the most common install, and it was the one entry point
+    that never started a dashboard: it indexed, compressed, seeded beliefs and
+    blocked hallucinations, and the user saw none of it unless they separately
+    ran ``entroly dashboard``. Value that is measured but never displayed is
+    indistinguishable, to the person who installed it, from value that was
+    never produced.
+
+    Every failure here is swallowed. A dashboard is how the work is *seen*; it
+    is never worth failing the work itself, and on the MCP path an exception
+    escaping into the stdio handshake would take the whole session down.
+    """
+    if not dashboard_autostart_enabled():
+        return None
+    try:
+        if _port_already_serving(port):
+            logger.info(
+                "Dashboard already serving on %s; not starting a second one", port)
+            return None
+        return start_dashboard(engine=engine, port=port, daemon=True)
+    except OSError as exc:
+        # Lost a race for the port, or it is otherwise unavailable.
+        logger.info("Dashboard not started on %s: %s", port, exc)
+    except Exception as exc:  # noqa: BLE001 - a missing panel must not end a session
+        logger.warning("Dashboard autostart failed (non-fatal): %s", exc)
+    return None
