@@ -30,7 +30,7 @@ import os
 import random
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -445,8 +445,28 @@ class VaultManager:
     # â”€â”€ Belief Operations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     def write_belief(self, artifact: BeliefArtifact) -> dict[str, Any]:
-        """Write a belief artifact to the vault."""
+        """Write a belief artifact to the vault.
+
+        A belief citing nothing cannot be ``verified``. Verified is a claim
+        about evidence, and an empty ``sources`` list means there was none to
+        check, so the status is downgraded here rather than taken on trust.
+
+        The belief is kept, not rejected. Losing a claim because its provenance
+        was never attached would be worse than holding it at a lower status.
+        What must not happen is ``coverage_index`` counting it toward
+        ``verified`` -- that is how a claim with no evidence ended up inside a
+        number the vault asserts about its own trustworthiness.
+
+        Retraction cannot cover this case. ``mark_beliefs_ungrounded`` retracts
+        a belief whose every cited source is gone and deliberately skips one
+        that cites nothing, because there is nothing to resolve against. So an
+        unsourced ``verified`` belief was written as verified, never retracted,
+        and counted as verified.
+        """
         self.ensure_structure()
+
+        if not artifact.sources and artifact.status == "verified":
+            artifact = replace(artifact, status="unsupported")
 
         # Sanitize entity for filename. The mapping is many-to-one, so if the
         # preferred name is already held by a *different* entity, fall back to

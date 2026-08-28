@@ -6716,7 +6716,13 @@ def main():
 
     recover_parser = subparsers.add_parser(
         "recover",
-        help="Recover the exact original bytes for a recovery digest",
+        # Not "the exact original bytes". What a digest recovers depends on the
+        # codec that produced it: `json` stores the complete original, `code`
+        # stores the bodies elided from a skeleton. Both are exact for what
+        # they hold, but only one is the whole file, and promising the file
+        # made a partial recovery look like a corrupt one.
+        help="Recover the exact bytes a recovery digest commits to "
+             "(a whole file, or the parts elided from its compressed form)",
     )
     recover_parser.add_argument(
         "digest", help="Recovery digest from a compress receipt (sha256:...)",
