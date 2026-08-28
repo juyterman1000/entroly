@@ -94,3 +94,9 @@ jobs:
         with:
           tag_name: ${{ steps.release.outputs.tag }}
           files: dist/*
+          # This action PATCHes the release with whatever it is given, and its
+          # `draft` input defaults to false. Omitting it would publish the draft
+          # from whichever matrix target finished first, re-exposing the empty
+          # release this draft-first flow exists to prevent. The caller's
+          # finalize-release job owns the transition to published.
+          draft: true

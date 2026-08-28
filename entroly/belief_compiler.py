@@ -717,9 +717,10 @@ class BeliefCompiler:
             body_parts.extend(invariants)
 
         sources = [f"{file_path}:{e.line}" for e in module.entities[:10]]
+        entity = _module_entity(file_path, module.name)
 
         return BeliefArtifact(
-            entity=_module_entity(file_path, module.name),
+            entity=entity,
             title=f"Module: {module.name}",
             body="\n".join(body_parts),
             confidence=0.75,  # auto-compiled → moderate confidence

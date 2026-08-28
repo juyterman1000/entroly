@@ -767,6 +767,39 @@ jobs:
     with:
       tag: ${{ needs.release-metadata.outputs.tag }}
 
+  # The release stays a draft until every platform archive is attached, so the
+  # visible release is either complete or absent -- never a Latest tag that
+  # resolves to an empty download page.
+  #
+  # Deliberately NOT `if: always()`. The matrix runs fail-fast:false so one bad
+  # target does not cancel the others, but a release missing a platform is still
+  # a broken release: needing publish-binaries means any target failing leaves
+  # the draft unpublished for a human to inspect.
+  finalize-release:
+    needs: [release-metadata, github-release, publish-binaries]
+    if: needs.release-metadata.outputs.should_publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish the release once its binaries exist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.release-metadata.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # Re-assert the contract rather than trusting the upstream job: this is
+          # the last gate before the release becomes user-visible.
+          asset_count="$(gh release view "${RELEASE_TAG}" --json assets \
+            --jq '.assets | length')"
+          if [[ "$asset_count" -eq 0 ]]; then
+            echo "Refusing to publish ${RELEASE_TAG}: it carries no assets." >&2
+            exit 1
+          fi
+          echo "${RELEASE_TAG} carries ${asset_count} asset(s); publishing."
+          gh release edit "${RELEASE_TAG}" --draft=false --latest
+
   # Create a release only after the source and native implementation pass.
   # External registries remain independently retryable and idempotent.
   github-release:
@@ -798,7 +831,17 @@ jobs:
           if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
             echo "Release ${RELEASE_TAG} already exists at verified source ${RELEASE_SHA}; skipping."
           else
+            # Created as a draft on purpose. A draft is invisible to users and
+            # never becomes "Latest", so a run that dies between here and the
+            # binary upload leaves nothing for a user to find. `finalize-release`
+            # publishes it only once every platform archive is attached.
+            #
+            # v1.0.79 is what this prevents: the run was cancelled after this
+            # job succeeded and before publish-binaries uploaded anything, which
+            # left a published Latest release carrying zero assets while the
+            # previous release still had all eight.
             gh release create "${RELEASE_TAG}" \
+              --draft \
               --title "v${RELEASE_VERSION}" \
               --target "${GITHUB_SHA}" \
               --generate-notes

@@ -287,7 +287,7 @@ def launch() -> None:
 
     # --help/--version → show help without Docker
     _help_flags = {"--help", "-h", "--version", "-V"}
-    if len(sys.argv) > 1 and sys.argv[1] in _help_flags:
+    if _help_flags & set(sys.argv[1:]):
         from entroly.cli import main as cli_main
 
         cli_main()
