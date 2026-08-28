@@ -36,7 +36,7 @@
   "source": "git ls-tree -r 1ecf1e093348, sorted"
  },
  "environment": {
-  "entroly_version": "1.0.79",
+  "entroly_version": "1.0.69",
   "platform": "Windows-10-10.0.26200-SP0",
   "python": "3.10.0"
  },
@@ -4026,7 +4026,7 @@
    "fragment_digest_valid": 1,
    "fragments": 1,
    "language": "Markdown",
-   "path": "docs/marketing/entroly_vs_headroom_seo.md",
+   "path": "docs/marketing/entroly_vs_external_adapter_seo.md",
    "sha256": "2ed475a97b260bb9eb545e0857c5a555da8d32bc9c74be1fd62a659161812000",
    "source_digest_valid": 1,
    "verbatim": 1
@@ -13324,7 +13324,7 @@
  "headline_eligible": true,
  "implementation": {
   "backend": "default",
-  "commit": "7e454d20c85c37bd21684529bf70cdf11a1bf4d8"
+  "commit": "a116a475a7d56f97e31fe1f4b8ccc99fdb254fa4"
  },
  "languages": {
   "CSS": {

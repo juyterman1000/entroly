@@ -3,7 +3,7 @@
  "benchmark_module": "benchmarks/receipt_fragment_fidelity.py",
  "claim_scope": "Exact recovery and independent source-span verification through the public Python SDK on two pinned source files.",
  "environment": {
-  "entroly_version": "1.0.79",
+  "entroly_version": "1.0.69",
   "platform": "Windows-10-10.0.26200-SP0",
   "python": "3.10.0"
  },
@@ -142,7 +142,7 @@
  "harness_sha256": "5ad5191796369fbda80673a8ec7d72ff6ee4b793503c352ba8a80505436983cc",
  "headline_eligible": true,
  "implementation": {
-  "commit": "7e454d20c85c37bd21684529bf70cdf11a1bf4d8"
+  "commit": "a116a475a7d56f97e31fe1f4b8ccc99fdb254fa4"
  },
  "inputs": {
   "budget": 900,
