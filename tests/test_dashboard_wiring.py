@@ -252,14 +252,45 @@ def test_modeled_banked_value_calculator(tokens, rate, expected):
 
 
 def test_dashboard_labels_banked_value_separately_from_realized_savings():
+    """Modeled value may be added to realized value, never disguised as it.
+
+    The hero shows one total, because a user running both the proxy and the
+    MCP server otherwise saw the smaller of two true numbers and no sum. That
+    is only defensible while the reader can still tell the parts apart, so the
+    modeled lane keeps its own wording and its own rate control inside the
+    total rather than being absorbed by it.
+    """
     from entroly.dashboard import DASHBOARD_HTML
 
-    assert "BANKED FUTURE VALUE" in DASHBOARD_HTML
     assert "Banked Future Value" in DASHBOARD_HTML
+    assert "banked future value" in DASHBOARD_HTML
     assert "modeled future value, not realized savings" in DASHBOARD_HTML
     assert "USD per 1M input tokens" in DASHBOARD_HTML
     assert "bankedUsdPerMillion" in DASHBOARD_HTML
     assert "if(raw===null)return 1" in DASHBOARD_HTML
+
+
+def test_dashboard_total_is_itemised_rather_than_a_bare_number():
+    """A total with no visible composition is a claim, not a report."""
+    from entroly.dashboard import DASHBOARD_HTML
+
+    assert "TOTAL VALUE BANKED" in DASHBOARD_HTML
+    for lane in ("provider requests", "model routing", "banked future value"):
+        assert lane in DASHBOARD_HTML, f"the total hides its {lane} component"
+    assert "not an invoice" in DASHBOARD_HTML, (
+        "a dollar total must say it is modeled, not billed"
+    )
+
+
+def test_dashboard_total_sums_every_priced_lane():
+    """The headline must not silently drop a lane that carries real value.
+
+    Regression: the hero showed provider savings OR local savings, so routing
+    savings never reached the headline at all no matter how large they grew.
+    """
+    from entroly.dashboard import DASHBOARD_HTML
+
+    assert "const totalUsd=realCost+bankedLocalUsd+routingUsd;" in DASHBOARD_HTML
 
 
 _NODE = shutil.which("node")

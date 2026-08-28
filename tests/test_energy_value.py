@@ -127,3 +127,64 @@ class TestReceiptIntegration:
         # Prefill is avoided wherever the tokens were removed, so the energy
         # figure spans both channels even though their dollar treatment differs.
         assert tracker.get_value_receipt()["energy"]["tokens_saved"] == 1_000_000
+
+
+class TestEnergyReachesTheDashboard:
+    """Deriving kWh is worthless if the number never leaves the module.
+
+    The energy figure is computed on read from token totals rather than
+    accumulated on write, so these pin the two properties that choice buys:
+    it always agrees with the tokens beside it, and a failure to derive it
+    costs the kWh line rather than the dollar totals.
+    """
+
+    def _tracker(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("ENTROLY_DIR", str(tmp_path))
+        from entroly.value_tracker import ValueTracker
+
+        return ValueTracker()
+
+    def test_lifetime_carries_energy(self, tmp_path, monkeypatch):
+        tracker = self._tracker(tmp_path, monkeypatch)
+        tracker.record(tokens_saved=250_000, model="claude-sonnet-4",
+                       source="provider")
+
+        energy = tracker.get_lifetime().get("energy")
+        assert energy, "the dashboard cannot render a kWh line that isn't sent"
+        assert energy["kwh_avoided"] > 0
+        assert energy["measured"] is False, "modeled figures must say so"
+
+    def test_energy_spans_every_token_lane(self, tmp_path, monkeypatch):
+        """Provider, local and unclassified tokens all avoid the same prefill."""
+        tracker = self._tracker(tmp_path, monkeypatch)
+        tracker.record(tokens_saved=100_000, model="claude-sonnet-4",
+                       source="provider")
+        tracker.record(tokens_saved=60_000, source="mcp")
+        tracker.record(tokens_saved=40_000, source="unclassified")
+
+        lifetime = tracker.get_lifetime()
+        counted = (
+            lifetime.get("provider_tokens_saved", 0)
+            + lifetime.get("local_tokens_reduced", 0)
+            + lifetime.get("unclassified_tokens_reduced", 0)
+        )
+        assert lifetime["energy"]["tokens_saved"] == counted, (
+            "energy must be derived from the same tokens shown as dollars"
+        )
+
+    def test_a_failure_to_derive_energy_does_not_lose_the_totals(
+        self, tmp_path, monkeypatch
+    ):
+        tracker = self._tracker(tmp_path, monkeypatch)
+        tracker.record(tokens_saved=250_000, model="claude-sonnet-4",
+                       source="provider")
+
+        def explode(*_a, **_k):
+            raise RuntimeError("no")
+
+        monkeypatch.setattr("entroly.energy_value.energy_for_tokens", explode)
+
+        lifetime = tracker.get_lifetime()
+        assert lifetime.get("provider_tokens_saved") == 250_000, (
+            "a missing kWh line must not take the dollar figures with it"
+        )

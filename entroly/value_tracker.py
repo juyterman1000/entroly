@@ -1001,9 +1001,30 @@ class ValueTracker:
             self._save_activity()
 
     def get_lifetime(self) -> dict[str, Any]:
-        """Return lifetime cumulative stats."""
+        """Return lifetime cumulative stats, with energy derived on read.
+
+        Energy is computed here rather than accumulated on write because it is
+        a pure function of tokens already counted. Storing it would create a
+        second copy that could drift from the token totals it is derived from,
+        and would freeze the assumptions at the moment of writing -- a user who
+        corrects the model size later expects their history to be restated, not
+        left mixed.
+        """
         with self._lock:
-            return dict(self._data.get("lifetime", {}))
+            lifetime = dict(self._data.get("lifetime", {}))
+
+        tokens = (
+            int(lifetime.get("provider_tokens_saved", 0) or 0)
+            + int(lifetime.get("local_tokens_reduced", 0) or 0)
+            + int(lifetime.get("unclassified_tokens_reduced", 0) or 0)
+        )
+        try:
+            from .energy_value import energy_for_tokens
+
+            lifetime["energy"] = energy_for_tokens(tokens)
+        except Exception:  # noqa: BLE001 - a missing kWh line must not cost the totals
+            pass
+        return lifetime
 
     def get_daily(self, last_n: int = 30) -> list[dict[str, Any]]:
         """Return last N days of daily stats, sorted ascending."""

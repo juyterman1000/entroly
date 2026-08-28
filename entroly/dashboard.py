@@ -958,15 +958,48 @@ function renderHero(d){
   const sparkBars=heroSparkData.map(v=>'<div class="hbar" style="height:'+Math.max(3,v/mx*44)+'px;"></div>').join('');
   const sparkHTML=heroSparkData.length>0?'<div class="hero-spark">'+sparkBars+'</div>':'';
 
-  // Prefer realized provider value. When only local reductions exist, show
-  // their user-priced future value without adding it to provider savings.
-  const bigNum=hasRealizedValue?'$'+realCost.toFixed(2):(hasBankedValue?'$'+bankedUsd(localTokens).toFixed(2):fmt(frags));
-  const bigLabel=hasRealizedValue?'MODELED API COST AVOIDED':(hasBankedValue?'BANKED FUTURE VALUE':'FRAGMENTS READY');
-  const subtitle=hasRealizedValue
-    ?`<b>${fmt(realTokens)}</b> input tokens reduced across <b>${realReqs}</b> provider-bound request${realReqs!==1?'s':''}`
-    :(hasBankedValue
-      ?`<b>${fmt(localTokens)}</b> local tokens banked at <b>$${bankedUsdPerMillion.toFixed(2)}/M</b> · modeled future value, not realized savings`
-      :`Indexed and ready · <span style="opacity:.7">point your AI tool to <code>http://localhost:9377/v1</code> to start saving on real requests</span>`);
+  // One bottom line, with the lines that produced it shown directly beneath.
+  // Previously the hero displayed provider savings OR local savings, never
+  // the sum, so a user running both saw the smaller of two true numbers and
+  // no total at all. A total is only honest if its composition is visible, so
+  // every component is itemised below with how it was derived: provider cost
+  // is priced from published per-model rates, local reductions at the user's
+  // own rate, routing from the price gap between the model asked for and the
+  // model used. None of them is an invoice, and the label says so.
+  const routingUsd=lt.routing_saved_usd||0;
+  const bankedLocalUsd=bankedUsd(localTokens);
+  const totalUsd=realCost+bankedLocalUsd+routingUsd;
+  const hasAnyValue=totalUsd>0||hasRealizedValue||hasBankedValue;
+
+  // Realized and modeled lanes are itemised separately and keep their own
+  // wording. Summing them is only defensible while the reader can still see
+  // which part came from a provider-bound request and which is priced at a
+  // rate the user chose, so the distinction survives inside the total rather
+  // than being flattened by it.
+  const lanes=[];
+  if(realCost>0||realTokens>0)lanes.push('<b>$'+realCost.toFixed(2)+'</b> provider requests · '+fmt(realTokens)+' tokens over '+realReqs+' request'+(realReqs!==1?'s':''));
+  if(routingUsd>0)lanes.push('<b>$'+routingUsd.toFixed(2)+'</b> model routing');
+  if(bankedLocalUsd>0)lanes.push('<b>$'+bankedLocalUsd.toFixed(2)+'</b> banked future value · '+fmt(localTokens)+' local tokens at $'+bankedUsdPerMillion.toFixed(2)+'/M, <i>modeled future value, not realized savings</i>');
+
+  // Electricity is the same reduction expressed in the other unit that
+  // matters. Derived from tokens already counted, so it cannot disagree with
+  // the dollar figure above it.
+  const en=lt.energy||{};
+  const kwh=en.kwh_avoided||0;
+  const energyLine=kwh>0
+    ?'<div style="margin-top:8px;font-size:12px;color:var(--dim)">⚡ <b>'+
+      (kwh>=0.01?kwh.toFixed(2)+' kWh':(kwh*1000).toFixed(2)+' Wh')+
+      '</b> of prefill electricity not drawn <span style="opacity:.65">· modeled from '+
+      (en.assumptions&&en.assumptions.model_params_billions||70)+'B params, stated assumptions</span></div>'
+    :'';
+
+  const bigNum=hasAnyValue?'$'+totalUsd.toFixed(2):fmt(frags);
+  const bigLabel=hasAnyValue?'TOTAL VALUE BANKED':'FRAGMENTS READY';
+  const subtitle=hasAnyValue
+    ?lanes.join(' &nbsp;·&nbsp; ')+
+      '<div style="margin-top:6px;font-size:11px;opacity:.6">modeled from published rates and measured token counts — not an invoice</div>'+
+      energyLine
+    :`Indexed and ready · <span style="opacity:.7">point your AI tool to <code>http://localhost:9377/v1</code> to start saving on real requests</span>`;
 
   document.getElementById('hero').innerHTML=`
     <div class="hero-impact">
