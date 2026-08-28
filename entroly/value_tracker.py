@@ -1159,11 +1159,34 @@ class ValueTracker:
                     lifetime.get("local_tokens_reduced", 0) or 0
                 ),
                 "active_days": local_days,
+                # Left at 0.0 deliberately. This field has always meant
+                # "verified against observed provider usage", and a local
+                # reduction is not that. Repurposing it would silently change
+                # the meaning of a number already published in receipts.
                 "dollar_claimed_usd": 0.0,
+                # Priced separately rather than left blank. Tokens are a
+                # commodity with a public rate, so a reduction that never
+                # reached an invoice still avoided buying that input at
+                # replacement cost -- the basis inventory is normally valued
+                # on. Reporting nothing understated a real measurement;
+                # reporting it as a verified saving would overstate it. The
+                # field name carries the basis so neither reading is available.
+                "modeled_value_at_list_usd": round(
+                    estimate_cost(
+                        int(lifetime.get("local_tokens_reduced", 0) or 0),
+                        model="",
+                        kind="input",
+                    ),
+                    6,
+                ),
+                "pricing_basis": "default_catalog_input_rate",
                 "evidence": (
-                    "SDK, MCP, npm, and other local reductions. Entroly does not "
-                    "claim dollar savings because it cannot prove the output was "
-                    "sent to a paid provider."
+                    "SDK, MCP, npm, and other local reductions. The token counts "
+                    "are measured. The dollar figure applies the default catalog "
+                    "input rate to them and is a replacement-cost model, not an "
+                    "invoice: Entroly cannot prove this output reached a paid "
+                    "provider, so it is reported apart from provider-bound "
+                    "savings and never added to them."
                 ),
             },
             "legacy_unclassified": {
