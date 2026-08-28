@@ -1372,9 +1372,27 @@ def auto_index(
     """Serialize the full index lifecycle with incremental reconciliation."""
     mutation_lock = getattr(engine, "_index_mutation_lock", None)
     if mutation_lock is None:
-        return _auto_index(engine, project_dir, force)
-    with mutation_lock:
-        return _auto_index(engine, project_dir, force)
+        result = _auto_index(engine, project_dir, force)
+    else:
+        with mutation_lock:
+            result = _auto_index(engine, project_dir, force)
+
+    # Seed the belief vault from the tree that was just walked. The dashboard
+    # otherwise shows an empty panel telling the user to run compile_beliefs --
+    # a product that knows the next step and asks someone else to take it.
+    #
+    # Started after the lock is released and on its own thread, so indexing
+    # neither waits for it nor holds the mutation lock while it runs. It skips
+    # an unchanged tree, so repeated indexing in one session compiles once.
+    # Fail-open by construction: start_autoseed never raises, and a vault that
+    # cannot be written costs a panel rather than the session.
+    try:
+        from .belief_autoseed import start_autoseed
+
+        start_autoseed(project_dir)
+    except Exception as exc:  # noqa: BLE001 - indexing must not fail on this
+        logger.debug("belief autoseed not started: %s", exc)
+    return result
 
 
 def _auto_index(
