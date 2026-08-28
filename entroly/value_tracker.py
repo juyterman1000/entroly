@@ -169,6 +169,33 @@ def _has_priced_model(model: str) -> bool:
     )
 
 
+def routing_delta_usd(
+    original_model: str, chosen_model: str, tokens_in: int, tokens_out: int = 0
+) -> float:
+    """USD difference between serving a request on ``original`` vs ``chosen``.
+
+    Priced on both rates, because routing changes the cost of the response as
+    well as the prompt -- input-only would understate a swap on a long
+    generation, which is exactly where routing pays best.
+
+    Returns 0.0 when either model is unpriced rather than guessing. An
+    unrecognised model already falls back to a default rate for display
+    purposes, but a *difference* between two defaults is structurally zero and
+    reporting it as a saving would invent money from a missing catalog entry.
+    """
+    if not original_model or not chosen_model:
+        return 0.0
+    if not (_has_priced_model(original_model) and _has_priced_model(chosen_model)):
+        return 0.0
+    delta = (
+        estimate_cost(max(0, int(tokens_in)), original_model, "input")
+        - estimate_cost(max(0, int(tokens_in)), chosen_model, "input")
+        + estimate_cost(max(0, int(tokens_out)), original_model, "output")
+        - estimate_cost(max(0, int(tokens_out)), chosen_model, "output")
+    )
+    return round(delta, 6) if delta > 0 else 0.0
+
+
 def estimate_cost(tokens_saved: int, model: str = "", kind: str = "input") -> float:
     """Estimate USD saved for ``tokens_saved`` tokens of a model.
 
@@ -749,6 +776,38 @@ class ValueTracker:
         except Exception as e:  # noqa: BLE001
             logger.debug("record_routing_saving failed: %s", e)
 
+    def record_routing_opportunity(
+        self, cost_available_usd: float, *, chosen_model: str = "",
+        source: str = "",
+    ) -> None:
+        """A cheaper capable model was identified but not used.
+
+        Routing substitutes the model on a live request, so it stays behind an
+        explicit authorisation. That left the user deciding blind: the switch
+        was off, nothing measured it, and the panel showed nothing, so the only
+        way to learn what routing was worth was to authorise it first and find
+        out afterwards.
+
+        The decision itself costs nothing to compute -- it is a pure function
+        of cached state with no model call -- so it is evaluated regardless and
+        recorded here. This is money *available*, not money saved, and it is
+        kept in its own field so it can never be added to a captured total.
+        """
+        try:
+            amount = self._finite_float(cost_available_usd)
+            if amount <= 0.0:
+                return
+            with self._mutation():
+                lt = self._data["lifetime"]
+                lt["routing_available_usd"] = round(
+                    lt.get("routing_available_usd", 0.0) + amount, 6)
+                lt["routing_opportunities"] = lt.get("routing_opportunities", 0) + 1
+                lt["routing_opportunity_model"] = chosen_model or lt.get(
+                    "routing_opportunity_model", "")
+                self._save()
+        except Exception as e:  # noqa: BLE001 - measurement must not break a request
+            logger.debug("record_routing_opportunity failed: %s", e)
+
     def record_belief_conditioning(
         self, n_fragments: int, *, source: str = "", detail: str = ""
     ) -> None:
@@ -1117,6 +1176,11 @@ class ValueTracker:
                     "hallucinations_blocked": lt.get(
                         "hallucinations_blocked", 0),
                     "routing_saved_usd": lt.get("routing_saved_usd", 0.0),
+                    # Money a cheaper capable model was available for but did
+                    # not capture. Reported beside the captured figure so the
+                    # authorisation decision is made against evidence.
+                    "routing_available_usd": lt.get("routing_available_usd", 0.0),
+                    "routing_opportunities": lt.get("routing_opportunities", 0),
                 },
                 "status": "active" if self._session_requests > 0 else "idle",
             }

@@ -1832,6 +1832,71 @@ class PromptCompilerProxy:
             output_tokens = 1024
         return prefix_tokens, new_input, output_tokens
 
+    def _record_routing_value(
+        self,
+        *,
+        original_model: str,
+        chosen_model: str,
+        body: dict[str, Any],
+        captured: bool,
+    ) -> None:
+        """Price a routing decision and record it. Never raises.
+
+        ``captured`` separates money actually saved by a swap that happened
+        from money a cheaper model was available for but did not take. They are
+        stored in different fields and must never be summed: one is a
+        consequence of a request that was served differently, the other is a
+        forecast about requests that were not.
+
+        Token counts come from the outbound body rather than the response,
+        because this runs before the request is forwarded. That undercounts
+        output tokens, so the estimate is conservative in the direction that
+        matters -- it will not overstate.
+        """
+        try:
+            from .value_tracker import get_tracker, routing_delta_usd
+
+            tokens_in = self._estimate_body_tokens(body)
+            amount = routing_delta_usd(original_model, chosen_model, tokens_in)
+            if amount <= 0.0:
+                return
+            tracker = get_tracker()
+            if captured:
+                tracker.record_routing_saving(
+                    amount, source="proxy", chosen_model=chosen_model,
+                    detail=f"{original_model} -> {chosen_model}",
+                )
+            else:
+                tracker.record_routing_opportunity(
+                    amount, chosen_model=chosen_model, source="proxy")
+        except Exception as e:  # noqa: BLE001 - accounting must not fail a request
+            logger.debug("routing value not recorded: %s", e)
+
+    @staticmethod
+    def _estimate_body_tokens(body: dict[str, Any]) -> int:
+        """Rough input-token count for the outbound request body.
+
+        Characters over four is the standard approximation and is used only to
+        price a difference between two rates, where a proportional error
+        affects both sides and largely cancels.
+        """
+        try:
+            total = 0
+            for message in body.get("messages") or []:
+                content = message.get("content")
+                if isinstance(content, str):
+                    total += len(content)
+                elif isinstance(content, list):
+                    for part in content:
+                        if isinstance(part, dict):
+                            total += len(str(part.get("text", "")))
+            system = body.get("system")
+            if isinstance(system, str):
+                total += len(system)
+            return total // 4
+        except Exception:  # noqa: BLE001
+            return 0
+
     def _cache_economics_allow_ravs(
         self,
         *,
@@ -2892,6 +2957,23 @@ class PromptCompilerProxy:
                             pass  # No simhash = no feedback, safe to skip
 
                 if _current_model:
+                    if not self._ravs_router_enabled:
+                        # Routing is off, so nothing will be swapped. Evaluate
+                        # anyway: the decision is a table lookup and a
+                        # classifier over cached state, and without it the user
+                        # is asked to authorise model substitution with no
+                        # evidence of what it is worth -- "nothing to gain"
+                        # looks exactly like "never measured". Recorded as
+                        # available, never as saved.
+                        _shadow = self._ravs_router.shadow_route(
+                            _current_model, user_message)
+                        if not _shadow.use_original and _shadow.recommended_model:
+                            self._record_routing_value(
+                                original_model=_current_model,
+                                chosen_model=_shadow.recommended_model,
+                                body=body,
+                                captured=False,
+                            )
                     decision = self._ravs_router.route(_current_model, user_message)
                     if not decision.use_original and decision.recommended_model:
                         # ── ECE Pre-Screen (V5): Tier 0 ambiguity filter only ──
@@ -2977,6 +3059,17 @@ class PromptCompilerProxy:
                                 decision.recommended_model,
                                 decision.reason,
                                 cache_reason,
+                            )
+                            # The swap was already happening; nothing recorded
+                            # it. The dashboard has read routing_saved_usd
+                            # since it was written and no production path ever
+                            # incremented it, so "Model-Routing Saved" showed
+                            # $0 however much traffic RAVS actually moved.
+                            self._record_routing_value(
+                                original_model=_current_model,
+                                chosen_model=decision.recommended_model,
+                                body=body,
+                                captured=True,
                             )
 
                 # Store for next-request feedback attribution

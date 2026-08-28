@@ -735,7 +735,25 @@ class BayesianRouter:
     def enabled(self, val: bool) -> None:
         self._enabled = val
 
-    def route(self, model: str, user_message: str) -> RoutingDecision:
+    def shadow_route(self, model: str, user_message: str) -> RoutingDecision:
+        """What this router would decide if enabled. Never swaps anything.
+
+        Every other gate still applies -- tier lookup, risk classification,
+        archetype cell confidence -- so a shadow recommendation means exactly
+        what a live one does. Only the enabled check is bypassed.
+
+        That check is an authorisation, not a capability: substituting a model
+        on a live request needs the user's say-so, but working out that a
+        cheaper model would have served is a table lookup and a classifier over
+        cached state, with no model call. Without this the user is asked to
+        authorise routing blind, and "nothing to gain" is indistinguishable
+        from "never measured".
+        """
+        return self.route(model, user_message, _ignore_enabled=True)
+
+    def route(
+        self, model: str, user_message: str, *, _ignore_enabled: bool = False
+    ) -> RoutingDecision:
         """Decide whether to route to a cheaper model.
 
         Returns RoutingDecision. If use_original=False, the proxy should
@@ -743,7 +761,7 @@ class BayesianRouter:
         """
         self._total_decisions += 1
 
-        if not self._enabled:
+        if not self._enabled and not _ignore_enabled:
             return RoutingDecision(reason="bayesian_router_disabled")
 
         tier = _lookup_tier(model)
