@@ -141,6 +141,16 @@ def _record_section_error(snap: dict, section: str, exc: BaseException) -> None:
     })
 
 
+def _autoseed_state() -> bool:
+    """Whether belief seeding would run. Never raises; a hint is not a feature."""
+    try:
+        from .belief_autoseed import autoseed_enabled
+
+        return autoseed_enabled()
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _cogops_unavailable_snapshot(reason: str) -> dict:
     """Dashboard-safe CogOps payload when the optional native module is absent."""
     return _safe_json({
@@ -152,6 +162,9 @@ def _cogops_unavailable_snapshot(reason: str) -> dict:
         "freshness_pct": 100.0,
         "entity_count": 0,
         "engine": "unavailable",
+        # Reported even here so the empty panel does not blame seeding for a
+        # missing native module. The two have different fixes.
+        "autoseed": _autoseed_state(),
         "status": "native_module_missing",
         "hint": (
             "CogOps is degraded: the native engine 'entroly_core' isn't "
@@ -476,6 +489,10 @@ def _get_full_snapshot() -> dict:
         if total_beliefs > 0:
             avg_confidence /= total_beliefs
 
+        # Whether seeding is running decides what an empty panel means: work
+        # in flight, or a switch the user turned off. Without it the panel has
+        # to guess, and it used to guess wrong -- telling the user to run a
+        # command the product now runs itself.
         snap["cogops"] = _safe_json({
             "total_beliefs": total_beliefs,
             "verified": verified,
@@ -485,6 +502,7 @@ def _get_full_snapshot() -> dict:
             "freshness_pct": round((1 - stale / max(total_beliefs, 1)) * 100, 1),
             "entity_count": len(set(entities)),
             "engine": "rust",
+            "autoseed": _autoseed_state(),
         })
     except ModuleNotFoundError as e:
         if getattr(e, "name", "") == "entroly_core":
@@ -1508,7 +1526,13 @@ function renderCogops(d){
   const tb=c.total_beliefs||0,ver=c.verified||0,st=c.stale||0,db=c.doc_beliefs||0;
   const conf=c.avg_confidence||0,fresh=c.freshness_pct||0,ents=c.entity_count||0;
   if(b){b.textContent=(c.engine||'cogops')+' · '+tb+' beliefs';b.className='badge '+(tb>0?'b-violet':'b-blue');}
-  if(tb===0){el.innerHTML='<div class="empty">No beliefs yet — run <code>compile_beliefs</code> to seed the vault</div>';return;}
+  // Was "run compile_beliefs to seed the vault". Indexing now seeds them, so
+  // that instruction asked the user to do work already in flight. An empty
+  // panel here means one of two things and they need different words.
+  if(tb===0){el.innerHTML=c.autoseed
+    ?'<div class="empty">No beliefs yet — seeding runs automatically after indexing and fills in shortly</div>'
+    :'<div class="empty">Belief seeding is off (<code>ENTROLY_BELIEF_AUTOSEED=0</code>) — unset it, or run <code>entroly compile .</code> once</div>';
+    return;}
   el.innerHTML=`<div class="cache-kpis">
     <div class="cache-kpi"><div class="cache-kpi-label">Total Beliefs</div><div class="cache-kpi-val hv-blue">${fmt(tb)}</div><div class="cache-kpi-sub">${ents} distinct entities · ${db} doc-linked</div></div>
     <div class="cache-kpi"><div class="cache-kpi-label">Avg Confidence</div><div class="cache-kpi-val hv-green">${(conf*100).toFixed(1)}%</div><div class="cache-kpi-sub">${ver} verified · ${tb-ver-st} inferred</div></div>

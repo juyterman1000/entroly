@@ -135,3 +135,43 @@ class TestMcpWiring:
         assert "try:" in source[max(0, index - 400):index], (
             "an unguarded dashboard start can take down the stdio session"
         )
+
+
+class TestEmptyBeliefPanelTellsTheTruth:
+    """An empty panel must not ask for work the product already does.
+
+    It read "No beliefs yet -- run compile_beliefs to seed the vault". Since
+    indexing seeds them, that instruction is now false in the common case: an
+    empty panel means seeding is in flight, not that the user must act. The
+    two states have different fixes, so the panel needs to know which it is in.
+    """
+
+    def test_the_stale_instruction_is_gone(self):
+        from entroly.dashboard import DASHBOARD_HTML
+
+        assert "run <code>compile_beliefs</code> to seed the vault" not in DASHBOARD_HTML
+
+    def test_both_empty_states_are_distinguished(self):
+        from entroly.dashboard import DASHBOARD_HTML
+
+        assert "seeding runs automatically after indexing" in DASHBOARD_HTML
+        assert "ENTROLY_BELIEF_AUTOSEED=0" in DASHBOARD_HTML
+        assert "c.autoseed" in DASHBOARD_HTML, "the panel must branch on real state"
+
+    def test_the_snapshot_reports_seeding_state(self, monkeypatch):
+        from entroly.dashboard import _autoseed_state
+
+        monkeypatch.delenv("ENTROLY_BELIEF_AUTOSEED", raising=False)
+        assert _autoseed_state() is True
+        monkeypatch.setenv("ENTROLY_BELIEF_AUTOSEED", "0")
+        assert _autoseed_state() is False
+
+    def test_a_missing_native_module_does_not_read_as_seeding_off(self, monkeypatch):
+        """Different causes, different fixes -- the panel must not conflate them."""
+        monkeypatch.delenv("ENTROLY_BELIEF_AUTOSEED", raising=False)
+        from entroly.dashboard import _cogops_unavailable_snapshot
+
+        snapshot = _cogops_unavailable_snapshot("no entroly_core")
+        assert snapshot["autoseed"] is True, (
+            "a native-engine problem would be reported as a seeding switch"
+        )
