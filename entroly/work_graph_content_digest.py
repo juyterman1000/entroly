@@ -8,8 +8,11 @@ Security and honesty rules:
 - never follow symlinks or read special files;
 - never read outside the repository root;
 - bound every file read;
-- staged/conflicted paths remain non-dedupeable because one worktree digest
-  cannot represent both index and worktree state;
+- staged/conflicted paths remain non-dedupeable via ``content_digest``, because
+  one worktree digest cannot represent both index and worktree state -- but
+  they are no longer left unbound: ``index_digest`` and ``worktree_digest``
+  commit to each state separately, and a conflicted path additionally records
+  its base/ours/theirs stage digests;
 - detect path/file races before and after reading and fail closed;
 - preserve Git's SHA-1/SHA-256 blob identity exactly.
 """
@@ -169,6 +172,44 @@ def _git_blob_digest(root: Path, repo_rel: str, algorithm: str) -> str:
             pass
 
 
+_CONFLICT_STAGE_NAMES = {"1": "base", "2": "ours", "3": "theirs"}
+
+
+def _index_entries(root: Path, repo_rel: str) -> dict[str, str]:
+    """Blob identities Git already holds in its index, keyed by stage name.
+
+    Read from the index rather than recomputed from disk. For a staged path the
+    index is the only place the staged bytes exist -- the worktree may have
+    moved on since ``git add`` -- and for a conflicted path the three stages
+    have no on-disk representation at all: what is in the worktree is merged
+    text with markers, which is not any of them.
+
+    ``ls-files -s`` reports ``<mode> <sha> <stage>\\t<path>``. Stage 0 is an
+    ordinary index entry; 1/2/3 are base/ours/theirs of an unresolved merge.
+    """
+    if not repo_rel or repo_rel.startswith("sensitive:"):
+        return {}
+    raw = _git_text(root, "ls-files", "-s", "-z", "--", repo_rel)
+    entries: dict[str, str] = {}
+    for record in raw.split("\0"):
+        if not record or "\t" not in record:
+            continue
+        meta, _, path = record.partition("\t")
+        if path.replace("\\", "/") != repo_rel:
+            continue
+        fields = meta.split()
+        if len(fields) < 3:
+            continue
+        _mode, sha, stage = fields[0], fields[1], fields[2]
+        if not sha or set(sha) <= {"0"}:
+            continue
+        # Same ``git-blob:`` prefix the worktree digests carry. These are the
+        # same kind of thing -- a Git blob identity -- and a caller comparing
+        # index against worktree should not have to strip one side first.
+        entries[_CONFLICT_STAGE_NAMES.get(stage, "index")] = f"git-blob:{sha}"
+    return entries
+
+
 def enrich_worktree_content_digests(
     repo_path: str | os.PathLike[str], observation: dict[str, Any]
 ) -> dict[str, Any]:
@@ -189,16 +230,44 @@ def enrich_worktree_content_digests(
         if not isinstance(raw, dict):
             continue
         raw["content_digest"] = ""
-        if raw.get("staged") or raw.get("conflicted"):
+        raw["index_digest"] = ""
+        raw["worktree_digest"] = ""
+
+        # A withheld path carries an opaque id, not a filename, so there is
+        # nothing to hash and nothing that should be hashed: a content digest
+        # of a short credential file is a confirmation oracle for a guessed
+        # value.
+        if raw.get("redacted"):
             continue
-        kind = str(raw.get("kind", ""))
-        if kind == "deleted":
-            raw["content_digest"] = "worktree:deleted"
-            continue
-        if algorithm is None:
-            continue
+
         repo_rel = str(raw.get("path", ""))
-        raw["content_digest"] = _git_blob_digest(root, repo_rel, algorithm)
+        kind = str(raw.get("kind", ""))
+        staged = bool(raw.get("staged"))
+        conflicted = bool(raw.get("conflicted"))
+
+        if kind == "deleted":
+            raw["worktree_digest"] = "worktree:deleted"
+            if not (staged or conflicted):
+                raw["content_digest"] = "worktree:deleted"
+        elif algorithm is not None:
+            worktree = _git_blob_digest(root, repo_rel, algorithm)
+            raw["worktree_digest"] = worktree
+            # content_digest keeps its original meaning -- a single identity
+            # that stands for the whole path -- so it stays empty exactly when
+            # one digest cannot honestly represent the path's state. Rust's
+            # dedup semantics are unchanged by this commit.
+            if not (staged or conflicted):
+                raw["content_digest"] = worktree
+
+        if staged or conflicted:
+            entries = _index_entries(root, repo_rel)
+            if "index" in entries:
+                raw["index_digest"] = entries["index"]
+            stages = {
+                name: sha for name, sha in entries.items() if name != "index"
+            }
+            if stages:
+                raw["conflict_stage_digests"] = stages
     return observation
 
 

@@ -30,6 +30,13 @@ from .work_graph import (
     verify_recovery_handle,
 )
 from .work_graph_content_digest import enrich_worktree_content_digests
+from .work_graph_recovery_ack import (
+    RecoveryAcknowledgementRequired,
+    acknowledge as recovery_acknowledge,
+    arm as recovery_arm,
+    recovery_token,
+    require_acknowledged as recovery_require_acknowledged,
+)
 from .work_graph_repo import discover_repository_identity, discover_repository_observation
 from .work_graph_store import (
     continuation_outstanding_refs,
@@ -67,6 +74,23 @@ def _project_path(project: str = "") -> Path:
 def _store_for_path(path: Path) -> WorkGraphStore:
     identity = discover_repository_identity(path)
     return WorkGraphStore(identity["repo_id"])
+
+
+def _recovery_unknowns(view: Any) -> list[str]:
+    """What the reconstruction could not establish, for the agent to accept.
+
+    Intent is always unknown: the Work Graph observes durable Git and
+    checkpoint facts and deliberately never infers purpose from filenames,
+    commit prose, or branch names. Anything the view already records as unknown
+    is carried through rather than restated here, so the list stays honest if
+    the reconstruction learns to establish more.
+    """
+    unknowns = {"unknown:previous-agent-intent"}
+    if isinstance(view, dict):
+        recorded = view.get("unknowns")
+        if isinstance(recorded, list):
+            unknowns.update(str(item) for item in recorded if isinstance(item, str))
+    return sorted(unknowns)
 
 
 def _passive_observation(path: Path) -> dict[str, Any]:
@@ -386,6 +410,11 @@ def work_claim(
         ttl = _ttl_ms(ttl_seconds)
         path = _project_path(project)
         store = _store_for_path(path)
+        # Claiming work is the first act that binds this agent to a task. If a
+        # recovery is outstanding, the agent would be acting on reconstructed
+        # state it never accepted, which is exactly what the trust label warns
+        # about and previously did nothing to prevent.
+        recovery_require_acknowledged(store.repo_dir)
         now_ms = int(time.time() * 1000)
         lease_id = uuid.uuid4().hex
         observation = discover_repository_observation(
@@ -456,6 +485,13 @@ def work_resume(
         )
         view = store.resume(selected_workstream or None, max_evidence=max_evidence)
         payload: dict[str, Any] = {"resume": view}
+
+        # Arm the trust gate. Everything below this point is reconstructed, not
+        # observed, and the agent may not mutate work until it says so.
+        token = recovery_token(view)
+        payload["acknowledgement"] = recovery_arm(
+            store.repo_dir, token, _recovery_unknowns(view)
+        )
         if target_agent:
             payload["continuation_proof"] = store.reconstructed_continuation_proof(
                 str(view["selected_workstream"]["node_id"]),
@@ -467,6 +503,35 @@ def work_resume(
     except Exception as exc:
         return _error("work_resume", exc)
 
+
+
+def work_acknowledge_recovery(
+    *,
+    token: str,
+    project: str = "",
+) -> dict[str, Any]:
+    """Accept responsibility for reconstructed work state so acting is allowed.
+
+    ``work_resume`` returns state that was inferred from durable evidence, not
+    observed. Until an agent acknowledges the specific state it was shown,
+    ``work_claim`` refuses. The token is a digest of that state, so if the
+    worktree moved in between, the acknowledgement is rejected and the agent is
+    sent back to resume again rather than acting on a stale picture.
+    """
+    try:
+        supplied = str(token).strip()
+        if not supplied:
+            raise ValueError("token must not be empty")
+        if len(supplied) > _MAX_ID_CHARS or chr(0) in supplied:
+            raise ValueError(
+                f"token may not exceed {_MAX_ID_CHARS} characters or contain NUL"
+            )
+        path = _project_path(project)
+        store = _store_for_path(path)
+        result = recovery_acknowledge(store.repo_dir, supplied)
+        return {"status": "ok", "kind": "work_acknowledge_recovery", **result}
+    except Exception as exc:
+        return _error("work_acknowledge_recovery", exc)
 
 def work_handoff(
     *,

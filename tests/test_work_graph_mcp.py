@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import tempfile
+from pathlib import Path
+
 import hashlib
 
 from entroly import work_graph_mcp as m
@@ -31,9 +34,17 @@ class FakeGraph:
 
 
 class FakeStore:
-    def __init__(self):
+    def __init__(self, repo_dir=None):
         self.observation = None
         self.context_receipts = []
+        # The recovery acknowledgement gate persists its marker beside the
+        # repository's Work Graph state, so a double for the store has to
+        # model that directory. Tests that exercise the gate pass a tmp_path;
+        # the rest get an isolated directory so arming never touches a real
+        # state root.
+        self.repo_dir = Path(repo_dir) if repo_dir is not None else Path(
+            tempfile.mkdtemp(prefix="fake-store-")
+        )
 
     def load(self):
         return FakeGraph()
