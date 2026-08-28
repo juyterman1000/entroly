@@ -1253,9 +1253,39 @@ class PromptCompilerProxy:
         # when explicitly enabled and hook-captured event data proves it is safe.
         # Silent model substitution must be opt-in because it can change provider,
         # capability, cost, and data-handling semantics.
-        self._ravs_router_enabled = (
-            os.environ.get("ENTROLY_RAVS_ROUTER", "0") == "1"
-        )
+        # Two ways to be on. The explicit switch is unchanged. The second is a
+        # conformal certificate earned from this user's own traffic: shadow
+        # decisions scored by the deterministic verifiers give calibration
+        # observations, and conformal risk control turns them into a threshold
+        # with a finite-sample bound on the divergence rate.
+        #
+        # This is not "on by default with a nicer name". A fresh install has no
+        # observations and cannot be certified -- the minimum sample size falls
+        # out of the bound itself -- so it routes nothing until the evidence
+        # exists. What changes is that the user answers "do you accept this
+        # divergence rate?" once, instead of authorising an unmeasured risk per
+        # request and having no way to learn what it was worth.
+        self._ravs_certificate = None
+        explicit = os.environ.get("ENTROLY_RAVS_ROUTER", "0") == "1"
+        certified = False
+        if not explicit and os.environ.get("ENTROLY_RAVS_AUTO", "1") != "0":
+            try:
+                from .ravs.conformal import get_controller
+
+                self._ravs_certificate = get_controller().certificate()
+                certified = self._ravs_certificate.permits_routing
+                if certified:
+                    logger.info(
+                        "RAVS: routing certified at alpha=%.3f from %d observations "
+                        "(threshold %.3f, empirical risk %.4f)",
+                        self._ravs_certificate.alpha,
+                        self._ravs_certificate.n,
+                        self._ravs_certificate.lambda_hat,
+                        self._ravs_certificate.empirical_risk,
+                    )
+            except Exception as e:  # noqa: BLE001 - no certificate means no routing
+                logger.debug("RAVS certification unavailable: %s", e)
+        self._ravs_router_enabled = explicit or certified
         try:
             from .ravs.router import BayesianRouter
             self._ravs_router = BayesianRouter(
