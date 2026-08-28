@@ -3428,6 +3428,26 @@ def cmd_value(args):
         f"and not added to the provider total above){C.RESET}\n"
     )
 
+    # Shown unconditionally rather than behind a flag: it is derived from
+    # tokens already counted, so a figure that only appears when asked for is
+    # a figure nobody sees.
+    energy = receipt.get("energy") or {}
+    if energy:
+        print(f"  {C.BOLD}Electricity not spent{C.RESET}")
+        print(
+            f"    Prefill avoided: {C.GREEN}{energy['kwh_avoided']:.4f} kWh{C.RESET} "
+            f"{C.GRAY}({energy['accelerator_seconds_avoided']:,.0f} accelerator-seconds, "
+            f"{energy['petaflops_avoided']:,.1f} PFLOPs){C.RESET}"
+        )
+        a = energy["assumptions"]
+        print(
+            f"    {C.GRAY}Modeled, not measured: {a['model_params_billions']:.0f}B "
+            f"parameters, {a['accelerator_peak_tflops']:.0f} TFLOPS at "
+            f"{a['model_flops_utilization']:.0%} utilisation, "
+            f"{a['accelerator_tdp_watts']:.0f}W. Prefill only -- decode is "
+            f"memory-bound and unchanged by a shorter prompt.{C.RESET}\n"
+        )
+
     print(f"  {C.BOLD}Trust and routing signals{C.RESET}")
     print(
         "    Unsupported claims blocked: "

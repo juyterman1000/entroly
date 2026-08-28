@@ -1123,8 +1123,22 @@ class ValueTracker:
             1 for row in daily if int(row.get("local_operations", 0) or 0) > 0
         )
         pricing = pricing_provenance()
+        # Energy is derived from tokens already counted, so it costs one
+        # multiplication and needs nothing from the user. Reporting it only on
+        # request would mean the figure exists but nobody sees it, which is the
+        # same as not having it. Both channels are included because prefill
+        # work is avoided wherever the tokens were removed.
+        from .energy_value import energy_for_tokens
+
+        total_tokens_reduced = (
+            int(lifetime.get("provider_tokens_saved", 0) or 0)
+            + int(lifetime.get("local_tokens_reduced", 0) or 0)
+            + int(lifetime.get("unclassified_tokens_reduced", 0) or 0)
+        )
+
         return {
             "schema_version": "entroly.value-receipt.v1",
+            "energy": energy_for_tokens(total_tokens_reduced),
             "provider_path": {
                 "requests_observed": int(
                     lifetime.get("provider_requests", 0) or 0
