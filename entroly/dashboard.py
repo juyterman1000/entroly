@@ -66,7 +66,18 @@ def record_request(entry: dict):
 
 
 def _safe_json(obj: Any) -> Any:
-    """Recursively convert to JSON-safe types."""
+    """Recursively convert to JSON-safe types.
+
+    Six decimal places suit money and ratios, which is all this carried when
+    it was written. It does not suit physical quantities: a few hundred tokens
+    avoid roughly 1e-8 kWh, and rounding that to six places serialises a real
+    measurement as ``0.0``. A new user's first requests would report exactly
+    the nothing this dashboard exists to disprove.
+
+    So the decimal rounding stays -- it keeps every existing dollar figure
+    byte-identical -- and only the case where it would erase a non-zero value
+    falls back to significant figures.
+    """
     if isinstance(obj, dict):
         return {str(k): _safe_json(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
@@ -74,7 +85,12 @@ def _safe_json(obj: Any) -> Any:
     if isinstance(obj, float):
         if obj != obj:  # NaN
             return 0.0
-        return round(obj, 6)
+        rounded = round(obj, 6)
+        if rounded == 0.0 and obj != 0.0 and math.isfinite(obj):
+            from .energy_value import _sig
+
+            return _sig(obj, 6)
+        return rounded
     return obj
 
 def _control_learning_snapshot(daemon: Any) -> dict:
@@ -125,6 +141,16 @@ def _record_section_error(snap: dict, section: str, exc: BaseException) -> None:
     })
 
 
+def _autoseed_state() -> bool:
+    """Whether belief seeding would run. Never raises; a hint is not a feature."""
+    try:
+        from .belief_autoseed import autoseed_enabled
+
+        return autoseed_enabled()
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _cogops_unavailable_snapshot(reason: str) -> dict:
     """Dashboard-safe CogOps payload when the optional native module is absent."""
     return _safe_json({
@@ -136,6 +162,9 @@ def _cogops_unavailable_snapshot(reason: str) -> dict:
         "freshness_pct": 100.0,
         "entity_count": 0,
         "engine": "unavailable",
+        # Reported even here so the empty panel does not blame seeding for a
+        # missing native module. The two have different fixes.
+        "autoseed": _autoseed_state(),
         "status": "native_module_missing",
         "hint": (
             "CogOps is degraded: the native engine 'entroly_core' isn't "
@@ -460,6 +489,10 @@ def _get_full_snapshot() -> dict:
         if total_beliefs > 0:
             avg_confidence /= total_beliefs
 
+        # Whether seeding is running decides what an empty panel means: work
+        # in flight, or a switch the user turned off. Without it the panel has
+        # to guess, and it used to guess wrong -- telling the user to run a
+        # command the product now runs itself.
         snap["cogops"] = _safe_json({
             "total_beliefs": total_beliefs,
             "verified": verified,
@@ -469,6 +502,7 @@ def _get_full_snapshot() -> dict:
             "freshness_pct": round((1 - stale / max(total_beliefs, 1)) * 100, 1),
             "entity_count": len(set(entities)),
             "engine": "rust",
+            "autoseed": _autoseed_state(),
         })
     except ModuleNotFoundError as e:
         if getattr(e, "name", "") == "entroly_core":
@@ -958,15 +992,53 @@ function renderHero(d){
   const sparkBars=heroSparkData.map(v=>'<div class="hbar" style="height:'+Math.max(3,v/mx*44)+'px;"></div>').join('');
   const sparkHTML=heroSparkData.length>0?'<div class="hero-spark">'+sparkBars+'</div>':'';
 
-  // Prefer realized provider value. When only local reductions exist, show
-  // their user-priced future value without adding it to provider savings.
-  const bigNum=hasRealizedValue?'$'+realCost.toFixed(2):(hasBankedValue?'$'+bankedUsd(localTokens).toFixed(2):fmt(frags));
-  const bigLabel=hasRealizedValue?'MODELED API COST AVOIDED':(hasBankedValue?'BANKED FUTURE VALUE':'FRAGMENTS READY');
-  const subtitle=hasRealizedValue
-    ?`<b>${fmt(realTokens)}</b> input tokens reduced across <b>${realReqs}</b> provider-bound request${realReqs!==1?'s':''}`
-    :(hasBankedValue
-      ?`<b>${fmt(localTokens)}</b> local tokens banked at <b>$${bankedUsdPerMillion.toFixed(2)}/M</b> · modeled future value, not realized savings`
-      :`Indexed and ready · <span style="opacity:.7">point your AI tool to <code>http://localhost:9377/v1</code> to start saving on real requests</span>`);
+  // One bottom line, with the lines that produced it shown directly beneath.
+  // Previously the hero displayed provider savings OR local savings, never
+  // the sum, so a user running both saw the smaller of two true numbers and
+  // no total at all. A total is only honest if its composition is visible, so
+  // every component is itemised below with how it was derived: provider cost
+  // is priced from published per-model rates, local reductions at the user's
+  // own rate, routing from the price gap between the model asked for and the
+  // model used. None of them is an invoice, and the label says so.
+  const routingUsd=lt.routing_saved_usd||0;
+  const bankedLocalUsd=bankedUsd(localTokens);
+  const totalUsd=realCost+bankedLocalUsd+routingUsd;
+  // Only a total worth showing counts as value. Including hasRealizedValue
+  // here meant a user on an unpriced provider model -- tokens reduced,
+  // cost deliberately left at 0 -- skipped the empty state and got the
+  // headline "$0.00 / TOTAL VALUE BANKED": the exact nothing this block was
+  // rewritten to disprove. Tokens with no price still show, as fragments.
+  const hasAnyValue=totalUsd>0;
+
+  // Realized and modeled lanes are itemised separately and keep their own
+  // wording. Summing them is only defensible while the reader can still see
+  // which part came from a provider-bound request and which is priced at a
+  // rate the user chose, so the distinction survives inside the total rather
+  // than being flattened by it.
+  const lanes=[];
+  if(realCost>0||realTokens>0)lanes.push('<b>$'+realCost.toFixed(2)+'</b> provider requests · '+fmt(realTokens)+' tokens over '+realReqs+' request'+(realReqs!==1?'s':''));
+  if(routingUsd>0)lanes.push('<b>$'+routingUsd.toFixed(2)+'</b> model routing');
+  if(bankedLocalUsd>0)lanes.push('<b>$'+bankedLocalUsd.toFixed(2)+'</b> banked future value · '+fmt(localTokens)+' local tokens at $'+bankedUsdPerMillion.toFixed(2)+'/M, <i>modeled future value, not realized savings</i>');
+
+  // Electricity is the same reduction expressed in the other unit that
+  // matters. Derived from tokens already counted, so it cannot disagree with
+  // the dollar figure above it.
+  const en=lt.energy||{};
+  const kwh=en.kwh_avoided||0;
+  const energyLine=kwh>0
+    ?'<div style="margin-top:8px;font-size:12px;color:var(--dim)">⚡ <b>'+
+      (kwh>=0.01?kwh.toFixed(2)+' kWh':(kwh*1000).toFixed(2)+' Wh')+
+      '</b> of prefill electricity not drawn <span style="opacity:.65">· modeled from '+
+      (en.assumptions&&en.assumptions.model_params_billions||70)+'B params, stated assumptions</span></div>'
+    :'';
+
+  const bigNum=hasAnyValue?'$'+totalUsd.toFixed(2):fmt(frags);
+  const bigLabel=hasAnyValue?'TOTAL VALUE BANKED':'FRAGMENTS READY';
+  const subtitle=hasAnyValue
+    ?lanes.join(' &nbsp;·&nbsp; ')+
+      '<div style="margin-top:6px;font-size:11px;opacity:.6">modeled from published rates and measured token counts — not an invoice</div>'+
+      energyLine
+    :`Indexed and ready · <span style="opacity:.7">point your AI tool to <code>http://localhost:9377/v1</code> to start saving on real requests</span>`;
 
   document.getElementById('hero').innerHTML=`
     <div class="hero-impact">
@@ -1459,7 +1531,13 @@ function renderCogops(d){
   const tb=c.total_beliefs||0,ver=c.verified||0,st=c.stale||0,db=c.doc_beliefs||0;
   const conf=c.avg_confidence||0,fresh=c.freshness_pct||0,ents=c.entity_count||0;
   if(b){b.textContent=(c.engine||'cogops')+' · '+tb+' beliefs';b.className='badge '+(tb>0?'b-violet':'b-blue');}
-  if(tb===0){el.innerHTML='<div class="empty">No beliefs yet — run <code>compile_beliefs</code> to seed the vault</div>';return;}
+  // Was "run compile_beliefs to seed the vault". Indexing now seeds them, so
+  // that instruction asked the user to do work already in flight. An empty
+  // panel here means one of two things and they need different words.
+  if(tb===0){el.innerHTML=c.autoseed
+    ?'<div class="empty">No beliefs yet — seeding runs automatically after indexing and fills in shortly</div>'
+    :'<div class="empty">Belief seeding is off (<code>ENTROLY_BELIEF_AUTOSEED=0</code>) — unset it, or run <code>entroly compile .</code> once</div>';
+    return;}
   el.innerHTML=`<div class="cache-kpis">
     <div class="cache-kpi"><div class="cache-kpi-label">Total Beliefs</div><div class="cache-kpi-val hv-blue">${fmt(tb)}</div><div class="cache-kpi-sub">${ents} distinct entities · ${db} doc-linked</div></div>
     <div class="cache-kpi"><div class="cache-kpi-label">Avg Confidence</div><div class="cache-kpi-val hv-green">${(conf*100).toFixed(1)}%</div><div class="cache-kpi-sub">${ver} verified · ${tb-ver-st} inferred</div></div>
@@ -2017,3 +2095,61 @@ def start_dashboard(
     thread.start()
     logger.info(f"Dashboard live at http://localhost:{port}")
     return server
+
+
+def dashboard_autostart_enabled() -> bool:
+    """On unless explicitly disabled."""
+    import os
+
+    return os.environ.get("ENTROLY_DASHBOARD_AUTOSTART", "1").strip() not in {
+        "0", "false", "no",
+    }
+
+
+def _port_already_serving(port: int, host: str = "127.0.0.1") -> bool:
+    """Whether something is already listening on ``port``.
+
+    Binding cannot answer this. ``_ReuseAddrHTTPServer`` sets
+    ``allow_reuse_address``, and on Windows ``SO_REUSEADDR`` lets a second
+    socket bind a port that is already bound -- the bind succeeds and which
+    socket receives a given connection is undefined. A dashboard started that
+    way would silently split requests with the proxy's, so presence is probed
+    by connecting rather than inferred from a bind that cannot fail.
+    """
+    import socket
+
+    try:
+        with socket.create_connection((host, port), timeout=0.25):
+            return True
+    except OSError:
+        return False
+
+
+def maybe_start_dashboard(engine: Any = None, port: int = 9378) -> Any | None:
+    """Start the dashboard if nothing is serving yet. Returns the server or None.
+
+    The MCP server is the most common install, and it was the one entry point
+    that never started a dashboard: it indexed, compressed, seeded beliefs and
+    blocked hallucinations, and the user saw none of it unless they separately
+    ran ``entroly dashboard``. Value that is measured but never displayed is
+    indistinguishable, to the person who installed it, from value that was
+    never produced.
+
+    Every failure here is swallowed. A dashboard is how the work is *seen*; it
+    is never worth failing the work itself, and on the MCP path an exception
+    escaping into the stdio handshake would take the whole session down.
+    """
+    if not dashboard_autostart_enabled():
+        return None
+    try:
+        if _port_already_serving(port):
+            logger.info(
+                "Dashboard already serving on %s; not starting a second one", port)
+            return None
+        return start_dashboard(engine=engine, port=port, daemon=True)
+    except OSError as exc:
+        # Lost a race for the port, or it is otherwise unavailable.
+        logger.info("Dashboard not started on %s: %s", port, exc)
+    except Exception as exc:  # noqa: BLE001 - a missing panel must not end a session
+        logger.warning("Dashboard autostart failed (non-fatal): %s", exc)
+    return None
