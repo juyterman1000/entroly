@@ -125,7 +125,7 @@ def required_samples(alpha: float, bound: float = _LOSS_BOUND) -> int:
 class Certificate:
     """The outcome of applying (1) to the observations on hand."""
 
-    certified: bool
+    has_enough_data: bool
     lambda_hat: float
     alpha: float
     n: int
@@ -137,16 +137,18 @@ class Certificate:
     def permits_routing(self) -> bool:
         """Whether the certificate allows any request to be routed.
 
-        A certificate at :data:`NEVER` is valid and permits nothing: the data
-        support a guarantee, and the guarantee they support is "route none of
-        it". Distinguishing the two stops "certified" from being read as
-        "enabled".
+        A certificate can hold enough data to conclude something and have
+        that conclusion be "route none of it". The field was called
+        ``certified``, which reads as "enabled" -- and ``if cert.certified:``
+        type-checks, sounds right, and would authorise routing on a
+        certificate whose only valid threshold is NEVER. This is the only
+        field a caller should gate on.
         """
-        return self.certified and self.lambda_hat != NEVER
+        return self.has_enough_data and self.lambda_hat != NEVER
 
     def as_dict(self) -> dict[str, Any]:
         return {
-            "certified": self.certified,
+            "has_enough_data": self.has_enough_data,
             "permits_routing": self.permits_routing,
             "lambda_hat": None if self.lambda_hat == NEVER else self.lambda_hat,
             "alpha": self.alpha,
@@ -198,11 +200,13 @@ def certify(
                 True, lam, alpha, n, round(risk, 6), needed,
                 "certified" if lam != NEVER else "certified: routes nothing")
 
-    # Unreachable while n >= needed, since the NEVER candidate drives R̂ to 0
-    # and reduces the bound to B/(n+1) <= alpha. Kept so a future change to the
-    # loss cannot silently fall through into an uncertified route.
-    return Certificate(False, NEVER, alpha, n, 0.0, needed,
-                       "no threshold satisfies the risk bound")
+    # Unreachable while n >= needed: the NEVER candidate drives R̂ to 0, which
+    # reduces the bound to B/(n+1) <= alpha, guaranteed by the guard above. A
+    # bare return here would silently hand back an uncertified result if a
+    # future change to the loss broke that; say what is assumed instead.
+    raise AssertionError(
+        f"no threshold satisfied the risk bound with n={n} >= needed={needed}; "
+        "the loss is no longer monotone or the NEVER candidate was dropped")
 
 
 class ConformalRoutingController:

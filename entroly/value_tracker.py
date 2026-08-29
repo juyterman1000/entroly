@@ -751,6 +751,23 @@ class ValueTracker:
         except Exception as e:  # noqa: BLE001
             logger.debug("record_hallucination_blocked failed: %s", e)
 
+    def _accumulate_routing(
+        self, amount_field: str, counter_field: str, amount: float
+    ) -> None:
+        """Add to one routing total and bump its counter.
+
+        Captured and available routing value are separate lanes that must never
+        be summed, but they accrue identically. Keeping two copies of this let
+        their guards drift apart, which is how one of them came to accept
+        negative amounts.
+        """
+        with self._mutation():
+            lifetime = self._data["lifetime"]
+            lifetime[amount_field] = round(
+                lifetime.get(amount_field, 0.0) + amount, 6)
+            lifetime[counter_field] = lifetime.get(counter_field, 0) + 1
+            self._save()
+
     def record_routing_saving(
         self, cost_saved_usd: float, *, source: str = "",
         chosen_model: str = "", detail: str = "",
@@ -759,14 +776,12 @@ class ValueTracker:
         Fail-open."""
         try:
             amount = self._finite_float(cost_saved_usd)
-            if amount == 0.0:
+            # Was `== 0.0`, which let a negative amount through and subtracted
+            # from a lifetime total that only ever accrues.
+            if amount <= 0.0:
                 return
-            with self._mutation():
-                lt = self._data["lifetime"]
-                lt["routing_saved_usd"] = round(
-                    lt.get("routing_saved_usd", 0.0) + amount, 6)
-                lt["routing_decisions"] = lt.get("routing_decisions", 0) + 1
-                self._save()
+            self._accumulate_routing("routing_saved_usd", "routing_decisions",
+                                     amount)
             self.record_event(
                 "routing",
                 detail or f"Routed to {chosen_model or 'cheaper model'}",
@@ -797,14 +812,13 @@ class ValueTracker:
             amount = self._finite_float(cost_available_usd)
             if amount <= 0.0:
                 return
-            with self._mutation():
-                lt = self._data["lifetime"]
-                lt["routing_available_usd"] = round(
-                    lt.get("routing_available_usd", 0.0) + amount, 6)
-                lt["routing_opportunities"] = lt.get("routing_opportunities", 0) + 1
-                lt["routing_opportunity_model"] = chosen_model or lt.get(
-                    "routing_opportunity_model", "")
-                self._save()
+            # ``chosen_model`` is accepted for symmetry with the captured
+            # recorder and for the caller's own logging. It is deliberately not
+            # persisted: the field that held it was written on every call and
+            # read by nothing, so it accumulated in every user's lifetime JSON
+            # and would have had to be carried by every future migration.
+            self._accumulate_routing("routing_available_usd",
+                                     "routing_opportunities", amount)
         except Exception as e:  # noqa: BLE001 - measurement must not break a request
             logger.debug("record_routing_opportunity failed: %s", e)
 

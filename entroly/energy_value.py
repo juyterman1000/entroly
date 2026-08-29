@@ -146,26 +146,7 @@ def energy_for_tokens(
     }
 
 
-def scale_energy(per_period: dict[str, Any], factor: float) -> dict[str, Any]:
-    """Project a measured period forward without re-deriving it.
-
-    Kept separate from :func:`energy_for_tokens` so a projection can never be
-    mistaken for an observation: the multiplier used is returned alongside the
-    result.
-    """
-    multiplier = max(0.0, float(factor))
-    scaled = dict(per_period)
-    for key in ("tokens_saved", "petaflops_avoided",
-                "accelerator_seconds_avoided", "kwh_avoided"):
-        if key in scaled and isinstance(scaled[key], (int, float)):
-            scaled[key] = _sig(scaled[key] * multiplier)
-    scaled["projected"] = True
-    scaled["projection_multiplier"] = multiplier
-    return scaled
-
-
 __all__ = [
     "EnergyAssumptions",
     "energy_for_tokens",
-    "scale_energy",
 ]

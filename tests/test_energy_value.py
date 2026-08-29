@@ -14,7 +14,6 @@ import pytest
 from entroly.energy_value import (
     EnergyAssumptions,
     energy_for_tokens,
-    scale_energy,
 )
 
 
@@ -91,15 +90,6 @@ class TestOverrides:
         # A zero would divide by zero or zero out the result silently.
         monkeypatch.setenv("ENTROLY_ENERGY_MFU", "0")
         assert EnergyAssumptions.from_env().model_flops_utilization == 0.40
-
-
-class TestProjection:
-    def test_projection_is_labelled_as_such(self):
-        base = energy_for_tokens(1_000_000)
-        projected = scale_energy(base, 365)
-        assert projected["projected"] is True
-        assert projected["projection_multiplier"] == 365
-        assert projected["kwh_avoided"] == pytest.approx(base["kwh_avoided"] * 365, rel=1e-6)
 
 
 class TestReceiptIntegration:

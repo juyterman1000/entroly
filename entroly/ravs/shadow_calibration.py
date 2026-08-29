@@ -1,5 +1,21 @@
 """Earn the routing certificate without ever serving a cheap answer.
 
+NOT YET WIRED
+-------------
+Nothing in the product calls :class:`ShadowCalibrator` or :func:`should_sample`.
+``invoke_cheap`` has no implementation supplied anywhere, so no cheap-model call
+is ever made and no observation reaches the conformal controller from here. The
+only producer of calibration observations today is the proxy's implicit
+rephrase signal, which requires routing to already be on.
+
+That means ``ENTROLY_RAVS_SHADOW`` and ``ENTROLY_RAVS_SHADOW_RATE`` currently
+control nothing, and the bootstrap described below is a design that has been
+tested in isolation rather than a behaviour a user can observe. Read the rest of
+this docstring as a specification, not a description. Wiring it needs a
+``invoke_cheap`` that issues a second request through the proxy's existing
+forwarding path with the same prompt and the cheap model.
+
+
 The conformal controller in :mod:`entroly.ravs.conformal` can certify a routing
 threshold, but only from observations of how a cheap model performed -- and
 those cannot exist until the cheap model has been used. Routing therefore could

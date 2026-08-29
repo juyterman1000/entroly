@@ -76,12 +76,50 @@ class TestSeeding:
         )
 
     def test_the_marker_records_what_was_compiled(self, tmp_path):
-        belief_autoseed.compile_now(_project(tmp_path))
-        marker = json.loads(
+        project = _project(tmp_path)
+        belief_autoseed.compile_now(project)
+        markers = json.loads(
             (tmp_path / "state" / "vault" / "autoseed.json").read_text(encoding="utf-8"))
 
-        assert marker["signature"]
-        assert marker["files_processed"] >= 1
+        entry = markers[str(project.resolve())]
+        assert entry["signature"]
+        assert entry["files_processed"] >= 1
+
+    def test_two_projects_do_not_overwrite_each_other(self, tmp_path):
+        """A single unkeyed signature made every alternation recompile both."""
+        first = _project(tmp_path)
+        second = tmp_path / "other" / "src"
+        second.mkdir(parents=True)
+        (second / "billing.py").write_text(
+            "def charge(cents):\n    'Charge.'\n    return cents\n", encoding="utf-8")
+
+        assert belief_autoseed.compile_now(first)["status"] == "compiled"
+        assert belief_autoseed.compile_now(tmp_path / "other")["status"] == "compiled"
+        assert belief_autoseed.compile_now(first)["status"] == "skipped", (
+            "returning to a project already compiled must not recompile it"
+        )
+
+    def test_a_file_beyond_the_compile_cap_still_invalidates(self, tmp_path):
+        """The signature covers the whole tree; only compilation is capped.
+
+        Breaking the signature loop at max_files made every file sorting after
+        the cap invisible, so editing one never triggered recompilation again
+        and its beliefs stayed stale permanently.
+        """
+        project = _project(tmp_path)
+        source = project / "src"
+        for index in range(12):
+            (source / f"mod_{index:03d}.py").write_text(
+                f"def f{index}():\n    'Doc.'\n    return {index}\n", encoding="utf-8")
+
+        before = belief_autoseed._tree_signature(project.resolve(), max_files=2)
+        (source / "mod_011.py").write_text(
+            "def f11():\n    'Changed.'\n    return 999\n", encoding="utf-8")
+        after = belief_autoseed._tree_signature(project.resolve(), max_files=2)
+
+        assert before != after, (
+            "a file past the compile cap must still invalidate the signature"
+        )
 
 
 class TestFailsOpen:

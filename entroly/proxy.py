@@ -3019,7 +3019,15 @@ class PromptCompilerProxy:
                                 body=body,
                                 captured=False,
                             )
-                    decision = self._ravs_router.route(_current_model, user_message)
+                        # route() would only return the disabled sentinel here,
+                        # and it increments _total_decisions before checking,
+                        # so calling it as well counted two decisions for one
+                        # request and halved the reported swap_rate.
+                        from .ravs.router import RoutingDecision as _RD
+                        decision = _RD(reason="bayesian_router_disabled")
+                    else:
+                        decision = self._ravs_router.route(
+                            _current_model, user_message)
                     if not decision.use_original and decision.recommended_model:
                         # ── ECE Pre-Screen (V5): Tier 0 ambiguity filter only ──
                         # Tier 0 is the ONLY pre-routing check that works without

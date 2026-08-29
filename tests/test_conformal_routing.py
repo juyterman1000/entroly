@@ -37,7 +37,7 @@ class TestSampleRequirement:
         observations = [(0.99, False)] * 10
         result = certify(observations, alpha=0.02)
 
-        assert result.certified is False
+        assert result.has_enough_data is False
         assert result.permits_routing is False
         assert "insufficient calibration" in result.reason
 
@@ -50,7 +50,7 @@ class TestCertification:
         observations = [(0.95, False)] * 60
         result = certify(observations, alpha=0.05)
 
-        assert result.certified is True
+        assert result.has_enough_data is True
         assert result.permits_routing is True
         assert result.lambda_hat <= 0.95
 
@@ -59,7 +59,7 @@ class TestCertification:
         observations = [(0.95, True)] * 60
         result = certify(observations, alpha=0.05)
 
-        assert result.certified is True, "enough data to conclude something"
+        assert result.has_enough_data is True, "enough data to conclude something"
         assert result.permits_routing is False, (
             "a history of pure divergence must not authorise routing"
         )
@@ -87,7 +87,7 @@ class TestCertification:
     def test_certified_is_not_the_same_as_enabled(self):
         """A valid certificate can authorise nothing; the two must not be conflated."""
         result = certify([(0.95, True)] * 60, alpha=0.05)
-        assert result.certified is True and result.permits_routing is False
+        assert result.has_enough_data is True and result.permits_routing is False
 
 
 class TestGuaranteeHolds:

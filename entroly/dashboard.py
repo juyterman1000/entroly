@@ -1003,7 +1003,12 @@ function renderHero(d){
   const routingUsd=lt.routing_saved_usd||0;
   const bankedLocalUsd=bankedUsd(localTokens);
   const totalUsd=realCost+bankedLocalUsd+routingUsd;
-  const hasAnyValue=totalUsd>0||hasRealizedValue||hasBankedValue;
+  // Only a total worth showing counts as value. Including hasRealizedValue
+  // here meant a user on an unpriced provider model -- tokens reduced,
+  // cost deliberately left at 0 -- skipped the empty state and got the
+  // headline "$0.00 / TOTAL VALUE BANKED": the exact nothing this block was
+  // rewritten to disprove. Tokens with no price still show, as fragments.
+  const hasAnyValue=totalUsd>0;
 
   // Realized and modeled lanes are itemised separately and keep their own
   // wording. Summing them is only defensible while the reader can still see

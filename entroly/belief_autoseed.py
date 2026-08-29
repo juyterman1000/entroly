@@ -71,9 +71,13 @@ def _tree_signature(directory: Path, max_files: int) -> str:
     """
     digest = hashlib.sha256()
     seen = 0
+    # Every matching file is hashed, not just the first ``max_files``. Stopping
+    # early made each file sorting after the cap invisible to the fingerprint,
+    # so editing one never invalidated the marker and its beliefs went stale
+    # permanently -- not "until the next change", which is the exposure this
+    # was documented as accepting. The cap belongs on what gets compiled, not
+    # on what gets noticed; stat() is cheap enough to run over the whole tree.
     for path in sorted(directory.rglob("*")):
-        if seen >= max_files:
-            break
         if path.suffix.lower() not in {".py", ".rs", ".ts", ".js"}:
             continue
         if any(part in {".git", "node_modules", "__pycache__", ".venv", "target",
@@ -83,25 +87,58 @@ def _tree_signature(directory: Path, max_files: int) -> str:
             stat = path.stat()
         except OSError:
             continue
+        # Nanosecond mtime: int(st_mtime) could not distinguish two edits in
+        # the same second that left the size unchanged.
         digest.update(str(path).encode("utf-8", "surrogatepass"))
-        digest.update(f"{stat.st_size}:{int(stat.st_mtime)}".encode("ascii"))
+        digest.update(f"{stat.st_size}:{stat.st_mtime_ns}".encode("ascii"))
         seen += 1
     digest.update(str(seen).encode("ascii"))
     return digest.hexdigest()
 
 
-def _read_marker(vault: Path) -> dict[str, Any]:
+def _read_all_markers(vault: Path) -> dict[str, Any]:
     try:
-        return json.loads((vault / _MARKER_NAME).read_text(encoding="utf-8"))
+        data = json.loads((vault / _MARKER_NAME).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
+    return data if isinstance(data, dict) else {}
 
 
-def _write_marker(vault: Path, payload: dict[str, Any]) -> None:
+def _marker_key(directory: Path) -> str:
+    return str(directory)
+
+
+def _read_marker(vault: Path, directory: Path) -> dict[str, Any]:
+    """The marker for one project.
+
+    Markers are keyed by project root. A single unkeyed signature meant two
+    repositories sharing an ENTROLY_DIR overwrote each other: opening A then B
+    then A recompiled all three times, because the marker only ever described
+    whichever was opened last.
+    """
+    entry = _read_all_markers(vault).get(_marker_key(directory))
+    return entry if isinstance(entry, dict) else {}
+
+
+def _write_marker(vault: Path, directory: Path, payload: dict[str, Any]) -> None:
     try:
         vault.mkdir(parents=True, exist_ok=True)
-        (vault / _MARKER_NAME).write_text(
-            json.dumps(payload, sort_keys=True), encoding="utf-8")
+        markers = _read_all_markers(vault)
+        markers[_marker_key(directory)] = payload
+        target = vault / _MARKER_NAME
+        # Renamed into place: the proxy and MCP server can both be writing
+        # this, and a truncating write would let one read a partial document
+        # and lose every project's marker at once.
+        temporary = target.with_suffix(f".{os.getpid()}.tmp")
+        try:
+            temporary.write_text(
+                json.dumps(markers, sort_keys=True), encoding="utf-8")
+            os.replace(temporary, target)
+        finally:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
     except OSError as exc:
         logger.debug("belief autoseed marker not written: %s", exc)
 
@@ -117,7 +154,7 @@ def compile_now(directory: str | os.PathLike[str],
     vault_base = _vault_base()
     signature = _tree_signature(target, max_files)
 
-    marker = _read_marker(vault_base)
+    marker = _read_marker(vault_base, target)
     if marker.get("signature") == signature:
         return {"status": "skipped", "reason": "tree unchanged since last compile",
                 "signature": signature}
@@ -133,7 +170,7 @@ def compile_now(directory: str | os.PathLike[str],
         logger.warning("belief autoseed failed: %s", exc)
         return {"status": "error", "error": f"{type(exc).__name__}: {exc}"}
 
-    _write_marker(vault_base, {
+    _write_marker(vault_base, target, {
         "signature": signature,
         "files_processed": int(getattr(result, "files_processed", 0)),
         "beliefs_written": int(getattr(result, "beliefs_written", 0)),

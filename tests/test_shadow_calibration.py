@@ -251,3 +251,18 @@ class TestItActuallyCertifies:
         assert controller.certificate().permits_routing is False, (
             "a cheap model that keeps diverging must never be authorised"
         )
+
+
+def test_the_module_declares_that_it_is_not_wired():
+    """Env vars that control nothing must not read as if they control cost.
+
+    ENTROLY_RAVS_SHADOW and ENTROLY_RAVS_SHADOW_RATE are documented as opt-out
+    for cheap-model spend, but no production code calls should_sample or
+    supplies invoke_cheap, so setting them changes nothing. Until a caller
+    exists the docstring has to say so; delete this test when it is wired.
+    """
+    from entroly.ravs import shadow_calibration
+
+    assert "NOT YET WIRED" in (shadow_calibration.__doc__ or ""), (
+        "either wire the module or keep the notice; a silent no-op is worse"
+    )
