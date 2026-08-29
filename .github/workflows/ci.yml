@@ -415,6 +415,11 @@ jobs:
     # pins the base-install surface so that class of regression can't recur.
     name: Pure-Python Fallback (base `pip install entroly`, no Rust engine)
     runs-on: ubuntu-latest
+    env:
+      # This job verifies the engine-less surface. `entroly simulate` normally
+      # repairs that surface by installing entroly-core, which would mutate the
+      # environment midway through the suite and invalidate the gate.
+      ENTROLY_NO_SELF_HEAL: "1"
     # Same stale-budget problem as 'integration', one push behind it: measured
     # at 11.8 minutes against the old 15, and it grows from the same suite.
     timeout-minutes: 25

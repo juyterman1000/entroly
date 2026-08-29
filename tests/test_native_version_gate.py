@@ -20,6 +20,7 @@ nothing acted on it.
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 import textwrap
@@ -115,19 +116,41 @@ def test_server_and_qccr_agree_on_the_installed_core() -> None:
 
 
 def test_a_matched_core_is_still_accepted() -> None:
-    """The gate must not cost native acceleration when the core is correct."""
-    from entroly.native_status import native_status
+    """The gate must not cost native acceleration when the core is correct.
 
-    import entroly.server as server
+    Probe in a fresh interpreter so fake ``entroly_core`` modules used by
+    other tests cannot make an engine-less process look native-capable.
+    """
+    probe = textwrap.dedent(
+        """
+        import json
+        from entroly.native_status import native_status
+        import entroly.server as server
 
-    status = native_status()
-    if not status.available:
+        status = native_status()
+        print(json.dumps({
+            "available": status.available,
+            "version": status.version,
+            "version_ok": status.version_ok,
+            "rust_available": server._RUST_AVAILABLE,
+        }))
+        """
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", probe],
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    assert completed.returncode == 0, completed.stderr
+    result = json.loads(completed.stdout.strip().splitlines()[-1])
+    if not result["available"]:
         pytest.skip("native engine not installed in this environment")
-    if status.version_ok is False:
+    if result["version_ok"] is False:
         pytest.skip(
-            f"installed entroly_core {status.version} is below the minimum; "
+            f"installed entroly_core {result['version']} is below the minimum; "
             "rebuild with `cd entroly-core && maturin develop --release`"
         )
-    assert server._RUST_AVAILABLE is True, (
+    assert result["rust_available"] is True, (
         "a compatible native core was rejected; the gate is too strict"
     )

@@ -7,6 +7,23 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_pure_python_gate_cannot_self_install_the_native_engine() -> None:
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    match = re.search(
+        r"(?ms)^  python-fallback:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:|\Z)",
+        workflow,
+    )
+
+    assert match is not None, "pure-Python fallback job is missing"
+    assert re.search(
+        r'(?m)^      ENTROLY_NO_SELF_HEAL:\s*["\']1["\']\s*$',
+        match.group("body"),
+    ), (
+        "the engine-less gate must disable Entroly self-heal or a CLI test can "
+        "install entroly-core midway through the suite"
+    )
+
+
 def test_docker_publish_job_has_timeout() -> None:
     workflow = (ROOT / ".github/workflows/entroly-publish.yml").read_text(
         encoding="utf-8"

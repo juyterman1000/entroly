@@ -13,6 +13,17 @@ short `entroly` binary that delegates to `entroly-wasm`.
 npm install -g entroly
 ```
 
+Or run the same published package without a global install:
+
+```bash
+npx -y entroly@latest --help
+pnpm dlx entroly@latest --help
+bunx entroly@latest --help
+```
+
+Package runners download Entroly into their own tool cache. Pin
+`entroly@X.Y.Z` instead of `@latest` when reproducibility matters.
+
 Equivalent direct package:
 
 ```bash

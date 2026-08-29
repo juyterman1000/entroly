@@ -81,6 +81,14 @@ uvx --from entroly entroly
 npx -y entroly-mcp
 ```
 
+For a one-shot complete CLI without a global install, either Python tool runner
+works:
+
+```bash
+uvx --from entroly entroly --help
+pipx run --spec entroly entroly --help
+```
+
 Claude Code MCP registration:
 
 ```bash

@@ -257,6 +257,15 @@ def test_release_workflow_sanitizes_version_once_and_probes_live_artifacts() -> 
     assert "needs.release-metadata.outputs.version" in text
     assert "probe-pypi-openclaw-bridge:" in text
     assert "probe-npm-openclaw:" in text
+    assert "probe-npm-runners:" in text
+    assert "probe-python-runners:" in text
+    assert 'npx -y "entroly@${RELEASE_VERSION}" --help' in text
+    assert 'pnpm dlx "entroly@${RELEASE_VERSION}" --help' in text
+    assert 'bunx "entroly@${RELEASE_VERSION}" --help' in text
+    assert 'pipx run --spec "entroly==${RELEASE_VERSION}" entroly --version' in text
+    assert 'uvx --from "entroly==${RELEASE_VERSION}" entroly --version' in text
+    assert "oven-sh/setup-bun@v2" in text
+    assert "pipx==1.16.7 uv==0.12.7" in text
     assert "needs: [release-metadata, probe-npm-openclaw]" in text
     assert '"openclaw@2026.6.11" "entroly-openclaw@${RELEASE_VERSION}"' in text
     openclaw_publisher = text.split("  publish-npm-openclaw:", 1)[1].split(
@@ -264,7 +273,6 @@ def test_release_workflow_sanitizes_version_once_and_probes_live_artifacts() -> 
     )[0]
     assert "for attempt in $(seq 1 20)" in openclaw_publisher
     assert "waiting for PyPI propagation" in openclaw_publisher
-
     clawhub_publisher = text.split("  publish-clawhub-openclaw:", 1)[1].split(
         "  publish-binaries:", 1
     )[0]
@@ -311,6 +319,26 @@ def test_release_workflow_sanitizes_version_once_and_probes_live_artifacts() -> 
     assert "package moderation-status entroly-openclaw --json" in clawhub_publisher
     assert "moderation-status entroly-openclaw --json > \"$raw_status\"" in clawhub_publisher
     assert 'release.get("moderationReason")' not in clawhub_publisher
+
+
+def test_readme_documents_only_release_probed_package_runners() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    npm_readme = (ROOT / "entroly/npm-alias/README.md").read_text(encoding="utf-8")
+    pypi_readme = (ROOT / "PYPI_README.md").read_text(encoding="utf-8")
+
+    for command in (
+        "npx -y entroly@latest --help",
+        "pnpm dlx entroly@latest --help",
+        "bunx entroly@latest --help",
+    ):
+        assert command in readme
+        assert command in npm_readme
+    for command in (
+        "uvx --from entroly entroly --help",
+        "pipx run --spec entroly entroly --help",
+    ):
+        assert command in readme
+        assert command in pypi_readme
 
 
 def test_homebrew_sync_is_single_pinned_release_workflow() -> None:
