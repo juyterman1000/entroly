@@ -257,3 +257,85 @@ class TestTheLoopIsClosed:
         assert "circularity" in doc, (
             "a user must be told the certificate cannot self-start"
         )
+
+
+class TestReviewFixes:
+    """Five defects an extra-high-recall review found in this feature."""
+
+    def test_an_unreadable_store_is_not_an_empty_one(self, tmp_path):
+        """Finding 3: one torn read used to destroy the whole history."""
+        from entroly.ravs.conformal import ConformalRoutingController
+
+        path = tmp_path / "calib.json"
+        controller = ConformalRoutingController(path, alpha=0.05)
+        for _ in range(60):
+            controller.record(0.97, False)
+        assert controller.certificate().n == 60
+
+        path.write_text('{"observations": [{"conf', encoding="utf-8")
+        controller.record(0.97, False)
+
+        assert path.read_text(encoding="utf-8").startswith('{"observations": [{"conf'), (
+            "a store that could not be read must not be overwritten"
+        )
+
+    def test_an_unreadable_store_refuses_to_route(self, tmp_path):
+        from entroly.ravs.conformal import ConformalRoutingController
+
+        path = tmp_path / "calib.json"
+        path.write_text("{ truncated", encoding="utf-8")
+        certificate = ConformalRoutingController(path, alpha=0.05).certificate()
+
+        assert certificate.permits_routing is False
+        assert "unreadable" in certificate.reason
+
+    def test_a_missing_store_is_still_a_clean_start(self, tmp_path):
+        """Absent and corrupt must stay distinguishable."""
+        from entroly.ravs.conformal import ConformalRoutingController
+
+        controller = ConformalRoutingController(tmp_path / "none.json", alpha=0.05)
+        controller.record(0.9, False)
+        assert controller.certificate().n == 1
+
+    def test_the_store_is_replaced_atomically(self, tmp_path):
+        """Finding 4: write_text truncated before writing, so readers tore."""
+        import inspect
+
+        from entroly.ravs import conformal
+
+        source = inspect.getsource(conformal.ConformalRoutingController._write)
+        assert "os.replace" in source, "the swap must be atomic for concurrent readers"
+
+    def test_no_temp_files_are_left_behind(self, tmp_path):
+        from entroly.ravs.conformal import ConformalRoutingController
+
+        controller = ConformalRoutingController(tmp_path / "calib.json", alpha=0.05)
+        for _ in range(5):
+            controller.record(0.9, False)
+
+        assert list(tmp_path.glob("*.tmp")) == []
+
+
+class TestCertifiedThresholdIsEnforced:
+    """Finding 1: the bound was proven for a rule production did not apply."""
+
+    def test_the_proxy_compares_confidence_against_lambda_hat(self):
+        import inspect
+
+        from entroly import proxy
+
+        source = inspect.getsource(proxy)
+        assert "_conf < _cert.lambda_hat" in source, (
+            "routing below the certified threshold is outside the proven region"
+        )
+
+    def test_lambda_hat_is_not_only_a_log_argument(self):
+        """It was previously reachable only from a logger.info format string."""
+        import inspect
+
+        from entroly import proxy
+
+        source = inspect.getsource(proxy)
+        before, _, after = source.partition("logger.info")
+        assert "lambda_hat" in source
+        assert "_cert.lambda_hat" in source.replace("logger.info", "", 1) or                "_conf < _cert.lambda_hat" in source

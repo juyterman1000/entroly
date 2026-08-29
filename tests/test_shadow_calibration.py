@@ -68,12 +68,51 @@ class TestSamplingPolicy:
         assert decision.sample is False
         assert "never routed" in decision.reason
 
-    def test_sampling_stops_once_calibrated(self):
+    def test_sampling_stops_once_the_certificate_permits_routing(self):
         """A bootstrap phase with an end, not a standing tax."""
         decision = should_sample(
-            risk_level="low", observations=49, samples_needed=49, epsilon=1.0)
+            risk_level="low", observations=49, samples_needed=49,
+            permits_routing=True, epsilon=1.0)
         assert decision.sample is False
-        assert "calibration complete" in decision.reason
+        assert "certified and routing" in decision.reason
+
+    def test_sampling_continues_when_the_minimum_is_met_but_nothing_certifies(self):
+        """Finding 2: stopping at samples_needed deadlocked the feature.
+
+        samples_needed is only the smallest n at which the route-nothing
+        threshold becomes certifiable. Landing there with a few divergent
+        observations left a valid certificate permitting nothing and no way to
+        ever gather the evidence that would change it.
+        """
+        decision = should_sample(
+            risk_level="low", observations=49, samples_needed=49,
+            permits_routing=False, epsilon=1.0)
+        assert decision.sample is True, (
+            "routing would be permanently disabled with no recovery edge"
+        )
+
+    def test_sampling_gives_up_eventually(self):
+        """A cheap model that never agrees must not be paid for forever."""
+        decision = should_sample(
+            risk_level="low", observations=5000, samples_needed=49,
+            permits_routing=False, max_observations=5000, epsilon=1.0)
+        assert decision.sample is False
+        assert "exhausted" in decision.reason
+
+    def test_unclassified_risk_is_refused_not_assumed_low(self):
+        """Finding 5: the gate tested truthiness first and so failed open.
+
+        Several RoutingDecision early-return paths leave risk_level as "",
+        which skipped the check entirely and sampled traffic that can never be
+        routed -- polluting the calibration set with a population the bound is
+        not about.
+        """
+        for unknown in ("", "   ", "unknown"):
+            decision = should_sample(
+                risk_level=unknown, observations=0, samples_needed=49,
+                epsilon=1.0)
+            assert decision.sample is False, f"fails open on {unknown!r}"
+            assert "never routed" in decision.reason
 
     def test_low_risk_and_uncalibrated_is_sampled(self):
         assert should_sample(

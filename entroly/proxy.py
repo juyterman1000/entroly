@@ -3028,7 +3028,32 @@ class PromptCompilerProxy:
                         # POST-response alongside WITNESS — see P0 in
                         # _run_post_response_verification().
                         _ece_blocked = False
-                        if self._ece and self._ece._is_open_ended(user_message):
+
+                        # Enforce the certified threshold. When routing was
+                        # authorised by a conformal certificate rather than by
+                        # the explicit switch, the bound was proven only for
+                        # decisions whose confidence clears lambda_hat --
+                        # routing below it is outside the region where
+                        # E[L] <= alpha holds. This was previously unenforced:
+                        # the certificate was read as a boolean and the swap
+                        # then proceeded at the router's own ci_threshold, so
+                        # a user who accepted a 2% divergence rate was served
+                        # an unbounded one.
+                        _cert = self._ravs_certificate
+                        if _cert is not None and _cert.permits_routing:
+                            _conf = float(getattr(decision, "confidence", 0.0) or 0.0)
+                            if _conf < _cert.lambda_hat:
+                                _ece_blocked = True
+                                logger.info(
+                                    "RAVS: kept %s; confidence %.3f is below the "
+                                    "certified threshold %.3f (alpha=%.3f)",
+                                    _current_model, _conf, _cert.lambda_hat,
+                                    _cert.alpha,
+                                )
+
+                        if _ece_blocked:
+                            pass
+                        elif self._ece and self._ece._is_open_ended(user_message):
                             # Open-ended queries: allow swap (aleatoric, not epistemic)
                             pass  # Allow the swap — open-ended = cheap model is fine
                         elif self._ece:

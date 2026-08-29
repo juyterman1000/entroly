@@ -48,6 +48,13 @@ logger = logging.getLogger("entroly.ravs.shadow_calibration")
 _DEFAULT_EPSILON = 0.10
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 
+# Ceiling on how long a bootstrap may run before giving up. Sampling continues
+# until a certificate permits routing rather than until the minimum feasible
+# sample size, so without this a cheap model that never agrees would be paid
+# for indefinitely. Matches the controller's retention window: observations
+# beyond it displace older ones, so more spending cannot grow the sample.
+_MAX_CALIBRATION = 5000
+
 # Above this Jaccard distance the two answers are treated as divergent.
 # Chosen so paraphrase-level differences in wording do not dominate, while
 # genuinely different content does.
@@ -110,6 +117,8 @@ def should_sample(
     risk_level: str,
     observations: int,
     samples_needed: int,
+    permits_routing: bool = False,
+    max_observations: int = _MAX_CALIBRATION,
     epsilon: float | None = None,
     rng: random.Random | None = None,
 ) -> SampleDecision:
@@ -120,13 +129,30 @@ def should_sample(
     """
     if not shadow_enabled():
         return SampleDecision(False, "shadow calibration disabled")
-    if risk_level and risk_level.lower() not in {"low"}:
-        # Higher-risk requests will not be routed even once certified, so
-        # paying to learn about them buys nothing.
-        return SampleDecision(False, f"risk={risk_level} is never routed")
-    if observations >= samples_needed:
+    # An unclassified request is not a low-risk one. Testing truthiness first
+    # let risk_level="" -- which several RoutingDecision early-return paths
+    # produce -- skip the gate entirely and be sampled as though it had been
+    # classified, spending a call on traffic that can never be routed and
+    # polluting the calibration set with a population the bound is not about.
+    if risk_level.lower() != "low":
         return SampleDecision(
-            False, f"calibration complete ({observations}/{samples_needed})")
+            False, f"risk={risk_level or 'unclassified'} is never routed")
+    # Stopping at samples_needed was wrong: that is only the smallest n at
+    # which the route-nothing threshold becomes certifiable, not the point at
+    # which routing is justified. Landing there with a few divergent
+    # observations left the certificate valid, permitting nothing, and
+    # permanently unable to gather the evidence that would change it.
+    # Calibration now continues until a certificate actually permits routing.
+    if permits_routing:
+        return SampleDecision(
+            False, f"certified and routing ({observations} observations)")
+    if observations >= max_observations:
+        # A ceiling is still needed, or a cheap model that never agrees would
+        # be paid for forever.
+        return SampleDecision(
+            False,
+            f"calibration exhausted at {observations} observations without a "
+            f"routing certificate; the cheap model does not agree often enough")
     rate = _epsilon_from_env() if epsilon is None else epsilon
     if rate <= 0.0:
         return SampleDecision(False, "sampling rate is zero")

@@ -224,16 +224,32 @@ class ConformalRoutingController:
     def alpha(self) -> float:
         return self._alpha
 
-    def _load(self) -> list[tuple[float, bool]]:
+    def _load(self) -> tuple[list[tuple[float, bool]], bool]:
+        """Return ``(observations, intact)``.
+
+        A file that is absent and a file that is unreadable are different
+        situations and used to be conflated into an empty list. Because
+        :meth:`record` writes back what it loads, one torn read turned a full
+        calibration history into a single row -- reported afterwards as
+        "insufficient calibration", which is indistinguishable from a fresh
+        install. ``intact`` lets callers refuse to overwrite evidence they
+        could not read.
+        """
+        if not self._path.exists():
+            return [], True
         try:
             raw = json.loads(self._path.read_text(encoding="utf-8"))
             return [
                 (float(row["confidence"]), bool(row["diverged"]))
                 for row in raw.get("observations", [])
                 if "confidence" in row and "diverged" in row
-            ]
-        except (OSError, ValueError, TypeError, KeyError):
-            return []
+            ], True
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            logger.warning(
+                "calibration store at %s is unreadable (%s); refusing to "
+                "overwrite it and declining to route until it is repaired or "
+                "removed", self._path, exc)
+            return [], False
 
     def record(self, confidence: float, diverged: bool) -> None:
         """Add one calibration observation. Never raises.
@@ -246,25 +262,63 @@ class ConformalRoutingController:
             if not math.isfinite(value):
                 return
             with self._lock:
-                observations = self._load()
+                observations, intact = self._load()
+                if not intact:
+                    # Appending to what could not be read would persist a
+                    # one-row file over an unknown amount of real evidence.
+                    return
                 observations.append((value, bool(diverged)))
                 # Bounded, keeping the most recent: exchangeability is more
                 # plausible over a recent window than over all history.
                 observations = observations[-_MAX_OBSERVATIONS:]
-                self._path.parent.mkdir(parents=True, exist_ok=True)
-                self._path.write_text(json.dumps({
-                    "observations": [
-                        {"confidence": c, "diverged": d} for c, d in observations
-                    ],
-                }), encoding="utf-8")
+                self._write(observations)
         except Exception as e:  # noqa: BLE001 - calibration must not fail a request
             logger.debug("calibration observation not recorded: %s", e)
+
+    def _write(self, observations: list[tuple[float, bool]]) -> None:
+        """Replace the store atomically.
+
+        ``write_text`` truncates before writing, so a reader arriving mid-write
+        -- or a process killed there -- sees a partial document. That matters
+        more than usual here: this runs on daemon threads, which are killed
+        without joining at interpreter exit, and the proxy, MCP server and
+        dashboard are separate processes sharing one ENTROLY_DIR.
+
+        Writing to a temporary file and renaming makes the swap atomic on both
+        POSIX and Windows, so a concurrent reader sees either the old file or
+        the new one. It does not make read-modify-write atomic across
+        processes -- two writers can still interleave and lose an observation
+        -- but a lost observation only shrinks the sample, whereas a torn file
+        used to destroy the whole history.
+        """
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        payload = json.dumps({
+            "observations": [
+                {"confidence": c, "diverged": d} for c, d in observations
+            ],
+        })
+        temporary = self._path.with_suffix(f".{os.getpid()}.tmp")
+        try:
+            temporary.write_text(payload, encoding="utf-8")
+            os.replace(temporary, self._path)
+        finally:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     def certificate(self) -> Certificate:
         """Current certificate. Fails closed on any error."""
         try:
             with self._lock:
-                observations = self._load()
+                observations, intact = self._load()
+            if not intact:
+                # An unreadable store is not an empty one. Certifying from it
+                # would mean reasoning about evidence we could not read.
+                return Certificate(
+                    False, NEVER, self._alpha, 0, 0.0,
+                    required_samples(self._alpha),
+                    "calibration store unreadable; refusing to route")
             return certify(observations, self._alpha)
         except Exception as e:  # noqa: BLE001
             logger.debug("certification failed, refusing to route: %s", e)
