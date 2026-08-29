@@ -260,6 +260,39 @@ Status describes integration depth, not a savings guarantee — provider-observe
 
 Entroly carries verified public metadata for GPT-5.6 Sol, Terra, and Luna; Gemini 3.6 Flash; and Gemini 3.5 Flash-Lite, and it can discover installed NVIDIA Nemotron 3.5 Lightning Ollama tags. Gated or private-preview announcements are not promoted into the verified matrix without a usable public model ID and limits. For example, Gemini 3.5 Flash Cyber remains outside the generally available matrix because its documented CodeMender access is restricted to selected governments and trusted partners. See **[Verified model support](docs/model-support.html)** for model IDs, transport paths, limits, and availability boundaries.
 
+### Kimi K3, GLM-5.3, and GLM-5.3-Flash
+
+Entroly carries published metadata and list pricing for Moonshot AI's **Kimi K3**
+and Z.ai's **GLM-5.3** and **GLM-5.3-Flash**, so Context Receipts, budget
+resolution, and cost accounting work on those routes without configuration.
+
+| Model | Context window | Input / output per 1M | Vision |
+|---|---|---|---|
+| `kimi-k3` | 1,048,576 | $3.00 / $15.00 | yes |
+| `glm-5.3` | 1,000,000 | $1.40 / $4.40 | no |
+| `glm-5.3-flash` | 1,048,576 | $0.15 / $0.50 | yes |
+
+These are **announced** records, not verified ones: the figures come from
+published provider specifications rather than a request Entroly has observed.
+Announced records are not promoted into the verified matrix, and OpenClaw's
+budget resolution rejects them in favour of an explicit host budget or an
+operator `fallbackTokenBudget`. Set `ENTROLY_PRICING_FILE` to substitute
+negotiated rates without waiting for a release.
+
+`glm-5.3` and `glm-5.3-flash` are a flagship and a cheap sibling on one
+provider, which is the shape RAVS model routing looks for. Priced at the list
+rates above, routing a 100K-token request from `glm-5.3` to `glm-5.3-flash` is
+worth **$0.125**, and from `kimi-k3` **$0.285**. Routing stays behind an
+explicit authorisation because it substitutes the model on a live request;
+Entroly measures what the swap would be worth first, so the decision is made
+against evidence rather than a guess.
+
+A million-token window does not remove the reason to select context. A million
+tokens of prompt costs a million tokens of prefill on every turn, and published
+long-context evaluations report weaker retrieval for evidence buried in the
+middle of very long inputs. A large window is budget you now get to spend
+deliberately.
+
 ### NVIDIA Nemotron 3.5 Lightning with Ollama
 
 Entroly supports `nemotron-3.5-lightning` through its existing local Ollama discovery and OpenAI-compatible proxy path. This is a model-neutral integration: Entroly manages evidence selection, budgets, recovery handles, Context Receipts, and optional verification around the request; Ollama runs the model.
