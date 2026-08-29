@@ -2557,11 +2557,22 @@ class EntrolyEngine:
         ckpt_dir = self.config.checkpoint_dir
         try:
             os.makedirs(ckpt_dir, exist_ok=True)
-            # Write a probe file to confirm the directory is actually writable
-            probe = os.path.join(str(ckpt_dir), ".entroly_write_probe")
-            with open(probe, "w") as f:
-                f.write("ok")
-            os.unlink(probe)
+            # Use one probe per startup. A shared filename lets concurrent
+            # engines both open it, then the first unlink makes the second
+            # falsely report a writable directory as unwritable.
+            probe = os.path.join(
+                str(ckpt_dir), f".entroly_write_probe-{uuid.uuid4().hex}"
+            )
+            try:
+                with open(probe, "w") as f:
+                    f.write("ok")
+            finally:
+                try:
+                    os.unlink(probe)
+                except FileNotFoundError:
+                    # A concurrent cleanup may remove an otherwise successful
+                    # probe; that is not evidence that the directory is bad.
+                    pass
         except OSError as e:
             raise RuntimeError(
                 f"Entroly checkpoint directory '{ckpt_dir}' is not writable: {e}.\n"

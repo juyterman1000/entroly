@@ -13,7 +13,7 @@ from pyproject_compat import read_project_metadata
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RELEASE_VERSION = "1.0.80"
+RELEASE_VERSION = "1.0.81"
 HOMEBREW_FORMULA_VERSION = "1.0.78"
 HOMEBREW_FORMULA_URL = (
     "https://files.pythonhosted.org/packages/dc/ca/09fb67eef6cc9afabe48771ca1"
@@ -39,7 +39,7 @@ def _read_project_metadata(path: str) -> dict[str, object]:
     return read_project_metadata(path)
 
 
-def test_public_package_versions_are_1_0_80() -> None:
+def test_public_package_versions_are_1_0_81() -> None:
     assert _read_project_metadata("pyproject.toml")["version"] == RELEASE_VERSION
     assert _read_project_metadata("entroly/pyproject.toml")["version"] == RELEASE_VERSION
     assert _read_json("entroly/npm/package.json")["version"] == RELEASE_VERSION
@@ -339,6 +339,32 @@ def test_readme_documents_only_release_probed_package_runners() -> None:
     ):
         assert command in readme
         assert command in pypi_readme
+
+
+def test_contributor_environment_example_is_safe_and_discoverable() -> None:
+    example = (ROOT / ".env.example").read_text(encoding="utf-8")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    contributing = (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
+
+    assert "requires no environment variables or API keys" in example
+    for name in (
+        "ENTROLY_DIR",
+        "ENTROLY_SOURCE",
+        "ENTROLY_NO_SELF_HEAL",
+        "ENTROLY_AIR_GAP",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "GEMINI_API_KEY",
+        "OPENROUTER_API_KEY",
+        "OPENAI_BASE_URL",
+        "ANTHROPIC_BASE_URL",
+        "GOOGLE_GEMINI_BASE_URL",
+    ):
+        assert f"# {name}=" in example
+
+    assert not re.search(r"^[A-Z][A-Z0-9_]*=", example, flags=re.MULTILINE)
+    assert "[`.env.example`](.env.example)" in readme
+    assert "[`.env.example`](.env.example)" in contributing
 
 
 def test_homebrew_sync_is_single_pinned_release_workflow() -> None:

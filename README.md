@@ -153,6 +153,11 @@ Entroly then reports the figure explicitly labelled as unearned.</sub>
 Extras (`entroly[proxy]`, `entroly[native]`, `entroly[full]`), the standalone
 Rust binary, and uninstall steps: [Engine & install options](docs/DETAILS.md#engine--install-options).
 
+Contributing from source? Follow the reproducible
+[development setup](CONTRIBUTING.md#development-setup). Local installation and
+the normal test suite need no API key; [`.env.example`](.env.example) documents
+only optional workspace, offline, provider, and proxy settings.
+
 ---
 ## Quickstart — by how you work
 

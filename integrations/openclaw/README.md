@@ -22,7 +22,7 @@ Install the Python engine, then install the publicly verifiable OpenClaw plugin
 package from npm:
 
 ```bash
-pip install "entroly>=1.0.80"
+pip install "entroly>=1.0.81"
 openclaw plugins install npm:entroly-openclaw
 openclaw plugins enable entroly
 openclaw gateway restart
@@ -57,7 +57,7 @@ installable release.
 From an Entroly source checkout:
 
 ```bash
-pip install "entroly>=1.0.80"
+pip install "entroly>=1.0.81"
 openclaw plugins install ./integrations/openclaw
 openclaw plugins enable entroly
 openclaw gateway restart
