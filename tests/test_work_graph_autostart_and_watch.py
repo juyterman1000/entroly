@@ -22,6 +22,26 @@ from entroly import work_graph_session as session
 from entroly.work_graph_watcher import WorkspaceModificationWatcher
 
 
+def _native_available() -> bool:
+    try:
+        import entroly_core  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+# The Work Graph fails closed on a missing native engine rather than serving a
+# degraded timeline. CLAUDE.md permits that ("provide a semantically compatible
+# fallback OR fail closed behind the shared native capability gate"), and
+# entroly-core is a base dependency, so every real install has the engine. The
+# pure-Python fallback CI job removes it deliberately, so a test exercising a
+# native-only capability has to declare that rather than fail there.
+requires_native = pytest.mark.skipif(
+    not _native_available(), reason="native entroly_core not installed"
+)
+
+
+
 def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True)
 
@@ -110,6 +130,7 @@ class TestWatcherTimeline:
         )
 
 
+@requires_native
 class TestAutomaticTakeover:
     def test_clean_repository_is_a_null_control_not_an_error(self, repo, monkeypatch):
         """A fresh clone must not greet its agent with a refusal.

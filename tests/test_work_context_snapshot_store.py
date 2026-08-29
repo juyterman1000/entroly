@@ -16,6 +16,29 @@ from entroly.work_context_snapshot_store import (
 from entroly.work_graph_store import WorkGraphStore
 
 
+def _native_available() -> bool:
+    try:
+        import entroly_core  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+# The Work Graph fails closed on a missing native engine rather than serving a
+# degraded timeline. CLAUDE.md permits that ("provide a semantically compatible
+# fallback OR fail closed behind the shared native capability gate"), and
+# entroly-core is a base dependency, so every real install has the engine. The
+# pure-Python fallback CI job removes it deliberately, so a test exercising a
+# native-only capability has to declare that rather than fail there.
+requires_native = pytest.mark.skipif(
+    not _native_available(), reason="native entroly_core not installed"
+)
+
+# Every assertion here is about the native context snapshot verifier.
+pytestmark = requires_native
+
+
+
 def _context(marker: str = "alpha") -> dict:
     """Build a minimal real commitment using the production sealing algorithm."""
     return _seal_context(
