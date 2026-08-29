@@ -48,7 +48,7 @@ logger = logging.getLogger("entroly.value_tracker")
 #      "default": {"input": 0.003, "output": 0.009},
 #      "models": {"gpt-4o": {"input": 0.0025, "output": 0.01}}}
 # Loading is local-only (no network) and fail-open to these defaults.
-_PRICING_AS_OF = "2026-05"
+_PRICING_AS_OF = "2026-08"
 
 _MODEL_PRICING: dict[str, dict[str, float]] = {
     # OpenAI
@@ -75,6 +75,14 @@ _MODEL_PRICING: dict[str, dict[str, float]] = {
     "gemini-2.0-flash": {"input": 0.0001, "output": 0.0004},
     "gemini-1.5-pro": {"input": 0.00125, "output": 0.005},
     "gemini-1.5-flash": {"input": 0.000075, "output": 0.0003},
+    # Moonshot AI. Published list rates, per 1K: K3 is $3.00/M in, $15.00/M
+    # out. The $0.30/M cache-hit rate is not modelled -- Entroly prices the
+    # tokens it can observe being sent, and cache state is the provider's.
+    "kimi-k3": {"input": 0.003, "output": 0.015},
+    # Z.ai / Zhipu GLM-5. Flash is the cheap sibling flagship traffic can be
+    # routed to, which is the pairing RAVS looks for.
+    "glm-5.3-flash": {"input": 0.00015, "output": 0.0005},
+    "glm-5.3": {"input": 0.0014, "output": 0.0044},
 }
 
 _DEFAULT_PRICING = {"input": 0.003, "output": 0.009}  # conservative fallback
