@@ -55,6 +55,13 @@ python -m pip install -e ".[proxy,test]"
 python -m pip install -e ".[full,test]"
 ```
 
+No environment variables or API keys are required for installation, local CLI
+checks, or the normal test suite. [`.env.example`](.env.example) documents the
+optional workspace, offline, provider, and proxy settings used by specialized
+development paths. Entroly does not automatically load `.env`; export the
+values in your shell or use your usual environment loader, and never commit
+live credentials.
+
 For local Rust changes, install a Rust toolchain and maturin, then rebuild the
 extension after every native change:
 
