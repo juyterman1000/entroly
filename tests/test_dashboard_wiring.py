@@ -252,14 +252,45 @@ def test_modeled_banked_value_calculator(tokens, rate, expected):
 
 
 def test_dashboard_labels_banked_value_separately_from_realized_savings():
+    """Modeled value may be added to realized value, never disguised as it.
+
+    The hero shows one total, because a user running both the proxy and the
+    MCP server otherwise saw the smaller of two true numbers and no sum. That
+    is only defensible while the reader can still tell the parts apart, so the
+    modeled lane keeps its own wording and its own rate control inside the
+    total rather than being absorbed by it.
+    """
     from entroly.dashboard import DASHBOARD_HTML
 
-    assert "BANKED FUTURE VALUE" in DASHBOARD_HTML
     assert "Banked Future Value" in DASHBOARD_HTML
+    assert "banked future value" in DASHBOARD_HTML
     assert "modeled future value, not realized savings" in DASHBOARD_HTML
     assert "USD per 1M input tokens" in DASHBOARD_HTML
     assert "bankedUsdPerMillion" in DASHBOARD_HTML
     assert "if(raw===null)return 1" in DASHBOARD_HTML
+
+
+def test_dashboard_total_is_itemised_rather_than_a_bare_number():
+    """A total with no visible composition is a claim, not a report."""
+    from entroly.dashboard import DASHBOARD_HTML
+
+    assert "TOTAL VALUE BANKED" in DASHBOARD_HTML
+    for lane in ("provider requests", "model routing", "banked future value"):
+        assert lane in DASHBOARD_HTML, f"the total hides its {lane} component"
+    assert "not an invoice" in DASHBOARD_HTML, (
+        "a dollar total must say it is modeled, not billed"
+    )
+
+
+def test_dashboard_total_sums_every_priced_lane():
+    """The headline must not silently drop a lane that carries real value.
+
+    Regression: the hero showed provider savings OR local savings, so routing
+    savings never reached the headline at all no matter how large they grew.
+    """
+    from entroly.dashboard import DASHBOARD_HTML
+
+    assert "const totalUsd=realCost+bankedLocalUsd+routingUsd;" in DASHBOARD_HTML
 
 
 _NODE = shutil.which("node")
@@ -354,3 +385,48 @@ def test_cross_runtime_schema_contract(fresh_dir):
     assert receipt["provider_path"]["input_tokens_reduced"] == 500
     assert receipt["local_operations"]["tokens_reduced"] == 2200
     assert receipt["local_operations"]["dollar_claimed_usd"] == 0
+
+
+class TestSerialisationPreservesSmallMeasurements:
+    """Rounding for money must not erase physics.
+
+    _safe_json rounds every float to six decimal places, which suits dollars
+    and ratios but not the quantities the energy panel reports: a few hundred
+    tokens avoid ~1e-8 kWh. Serialised at six places that is 0.0, so a new
+    user's first requests would report exactly the nothing the dashboard
+    exists to disprove.
+    """
+
+    def test_a_small_non_zero_value_does_not_serialise_to_zero(self):
+        from entroly.dashboard import _safe_json
+
+        assert _safe_json(6.88e-9) != 0.0, (
+            "the first requests a user makes would report no energy saved"
+        )
+
+    def test_dollar_figures_are_unchanged(self):
+        """The narrow fix must not move any number that already displayed."""
+        from entroly.dashboard import _safe_json
+
+        for value in (0.75, 39.136125, 117.408375, 1.0, 0.000123):
+            assert _safe_json(value) == round(value, 6)
+
+    def test_zero_and_nan_still_collapse(self):
+        from entroly.dashboard import _safe_json
+
+        assert _safe_json(0.0) == 0.0
+        assert _safe_json(float("nan")) == 0.0
+
+    def test_energy_survives_the_api_boundary(self, tmp_path, monkeypatch):
+        """End to end: a tiny reduction still reaches the client as non-zero."""
+        monkeypatch.setenv("ENTROLY_DIR", str(tmp_path))
+        from entroly.dashboard import _safe_json
+        from entroly.value_tracker import ValueTracker
+
+        tracker = ValueTracker()
+        tracker.record(tokens_saved=50, source="mcp")
+        payload = _safe_json(tracker.get_lifetime())
+
+        assert payload["energy"]["kwh_avoided"] > 0.0, (
+            "measured, priced, then rounded away on the way to the browser"
+        )

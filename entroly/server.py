@@ -4081,6 +4081,23 @@ def _start_background_services(engine: EntrolyEngine) -> threading.Thread:
         except Exception as e:
             logger.warning("Autotune: failed to start daemon: %s", e)
 
+        # Surface the value this server is already producing. Every other
+        # entry point (proxy, daemon, `entroly dashboard`) starts one; the MCP
+        # server did not, which is how the most common install ended up being
+        # the one where nothing was visible. Started last, after indexing, so
+        # the first page load has something to show.
+        #
+        # Safe on this path specifically because it binds only after probing
+        # the port, logs to stderr rather than stdout, and swallows every
+        # failure -- stdout here is the JSON-RPC channel.
+        try:
+            from entroly.dashboard import maybe_start_dashboard
+
+            if maybe_start_dashboard(engine=engine) is not None:
+                logger.info("Value dashboard live at http://localhost:9378")
+        except Exception as e:
+            logger.warning("Dashboard autostart failed (non-fatal): %s", e)
+
     t = threading.Thread(
         target=_initialize,
         name="entroly-startup",

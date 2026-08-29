@@ -22,7 +22,7 @@ import logging
 import math
 import threading
 import time
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
@@ -66,7 +66,18 @@ def record_request(entry: dict):
 
 
 def _safe_json(obj: Any) -> Any:
-    """Recursively convert to JSON-safe types."""
+    """Recursively convert to JSON-safe types.
+
+    Six decimal places suit money and ratios, which is all this carried when
+    it was written. It does not suit physical quantities: a few hundred tokens
+    avoid roughly 1e-8 kWh, and rounding that to six places serialises a real
+    measurement as ``0.0``. A new user's first requests would report exactly
+    the nothing this dashboard exists to disprove.
+
+    So the decimal rounding stays -- it keeps every existing dollar figure
+    byte-identical -- and only the case where it would erase a non-zero value
+    falls back to significant figures.
+    """
     if isinstance(obj, dict):
         return {str(k): _safe_json(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
@@ -74,7 +85,12 @@ def _safe_json(obj: Any) -> Any:
     if isinstance(obj, float):
         if obj != obj:  # NaN
             return 0.0
-        return round(obj, 6)
+        rounded = round(obj, 6)
+        if rounded == 0.0 and obj != 0.0 and math.isfinite(obj):
+            from .energy_value import _sig
+
+            return _sig(obj, 6)
+        return rounded
     return obj
 
 def _control_learning_snapshot(daemon: Any) -> dict:
@@ -125,6 +141,16 @@ def _record_section_error(snap: dict, section: str, exc: BaseException) -> None:
     })
 
 
+def _autoseed_state() -> bool:
+    """Whether belief seeding would run. Never raises; a hint is not a feature."""
+    try:
+        from .belief_autoseed import autoseed_enabled
+
+        return autoseed_enabled()
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _cogops_unavailable_snapshot(reason: str) -> dict:
     """Dashboard-safe CogOps payload when the optional native module is absent."""
     return _safe_json({
@@ -136,6 +162,9 @@ def _cogops_unavailable_snapshot(reason: str) -> dict:
         "freshness_pct": 100.0,
         "entity_count": 0,
         "engine": "unavailable",
+        # Reported even here so the empty panel does not blame seeding for a
+        # missing native module. The two have different fixes.
+        "autoseed": _autoseed_state(),
         "status": "native_module_missing",
         "hint": (
             "CogOps is degraded: the native engine 'entroly_core' isn't "
@@ -460,6 +489,10 @@ def _get_full_snapshot() -> dict:
         if total_beliefs > 0:
             avg_confidence /= total_beliefs
 
+        # Whether seeding is running decides what an empty panel means: work
+        # in flight, or a switch the user turned off. Without it the panel has
+        # to guess, and it used to guess wrong -- telling the user to run a
+        # command the product now runs itself.
         snap["cogops"] = _safe_json({
             "total_beliefs": total_beliefs,
             "verified": verified,
@@ -469,6 +502,7 @@ def _get_full_snapshot() -> dict:
             "freshness_pct": round((1 - stale / max(total_beliefs, 1)) * 100, 1),
             "entity_count": len(set(entities)),
             "engine": "rust",
+            "autoseed": _autoseed_state(),
         })
     except ModuleNotFoundError as e:
         if getattr(e, "name", "") == "entroly_core":
@@ -958,15 +992,53 @@ function renderHero(d){
   const sparkBars=heroSparkData.map(v=>'<div class="hbar" style="height:'+Math.max(3,v/mx*44)+'px;"></div>').join('');
   const sparkHTML=heroSparkData.length>0?'<div class="hero-spark">'+sparkBars+'</div>':'';
 
-  // Prefer realized provider value. When only local reductions exist, show
-  // their user-priced future value without adding it to provider savings.
-  const bigNum=hasRealizedValue?'$'+realCost.toFixed(2):(hasBankedValue?'$'+bankedUsd(localTokens).toFixed(2):fmt(frags));
-  const bigLabel=hasRealizedValue?'MODELED API COST AVOIDED':(hasBankedValue?'BANKED FUTURE VALUE':'FRAGMENTS READY');
-  const subtitle=hasRealizedValue
-    ?`<b>${fmt(realTokens)}</b> input tokens reduced across <b>${realReqs}</b> provider-bound request${realReqs!==1?'s':''}`
-    :(hasBankedValue
-      ?`<b>${fmt(localTokens)}</b> local tokens banked at <b>$${bankedUsdPerMillion.toFixed(2)}/M</b> · modeled future value, not realized savings`
-      :`Indexed and ready · <span style="opacity:.7">point your AI tool to <code>http://localhost:9377/v1</code> to start saving on real requests</span>`);
+  // One bottom line, with the lines that produced it shown directly beneath.
+  // Previously the hero displayed provider savings OR local savings, never
+  // the sum, so a user running both saw the smaller of two true numbers and
+  // no total at all. A total is only honest if its composition is visible, so
+  // every component is itemised below with how it was derived: provider cost
+  // is priced from published per-model rates, local reductions at the user's
+  // own rate, routing from the price gap between the model asked for and the
+  // model used. None of them is an invoice, and the label says so.
+  const routingUsd=lt.routing_saved_usd||0;
+  const bankedLocalUsd=bankedUsd(localTokens);
+  const totalUsd=realCost+bankedLocalUsd+routingUsd;
+  // Only a total worth showing counts as value. Including hasRealizedValue
+  // here meant a user on an unpriced provider model -- tokens reduced,
+  // cost deliberately left at 0 -- skipped the empty state and got the
+  // headline "$0.00 / TOTAL VALUE BANKED": the exact nothing this block was
+  // rewritten to disprove. Tokens with no price still show, as fragments.
+  const hasAnyValue=totalUsd>0;
+
+  // Realized and modeled lanes are itemised separately and keep their own
+  // wording. Summing them is only defensible while the reader can still see
+  // which part came from a provider-bound request and which is priced at a
+  // rate the user chose, so the distinction survives inside the total rather
+  // than being flattened by it.
+  const lanes=[];
+  if(realCost>0||realTokens>0)lanes.push('<b>$'+realCost.toFixed(2)+'</b> provider requests · '+fmt(realTokens)+' tokens over '+realReqs+' request'+(realReqs!==1?'s':''));
+  if(routingUsd>0)lanes.push('<b>$'+routingUsd.toFixed(2)+'</b> model routing');
+  if(bankedLocalUsd>0)lanes.push('<b>$'+bankedLocalUsd.toFixed(2)+'</b> banked future value · '+fmt(localTokens)+' local tokens at $'+bankedUsdPerMillion.toFixed(2)+'/M, <i>modeled future value, not realized savings</i>');
+
+  // Electricity is the same reduction expressed in the other unit that
+  // matters. Derived from tokens already counted, so it cannot disagree with
+  // the dollar figure above it.
+  const en=lt.energy||{};
+  const kwh=en.kwh_avoided||0;
+  const energyLine=kwh>0
+    ?'<div style="margin-top:8px;font-size:12px;color:var(--dim)">⚡ <b>'+
+      (kwh>=0.01?kwh.toFixed(2)+' kWh':(kwh*1000).toFixed(2)+' Wh')+
+      '</b> of prefill electricity not drawn <span style="opacity:.65">· modeled from '+
+      (en.assumptions&&en.assumptions.model_params_billions||70)+'B params, stated assumptions</span></div>'
+    :'';
+
+  const bigNum=hasAnyValue?'$'+totalUsd.toFixed(2):fmt(frags);
+  const bigLabel=hasAnyValue?'TOTAL VALUE BANKED':'FRAGMENTS READY';
+  const subtitle=hasAnyValue
+    ?lanes.join(' &nbsp;·&nbsp; ')+
+      '<div style="margin-top:6px;font-size:11px;opacity:.6">modeled from published rates and measured token counts — not an invoice</div>'+
+      energyLine
+    :`Indexed and ready · <span style="opacity:.7">point your AI tool to <code>http://localhost:9377/v1</code> to start saving on real requests</span>`;
 
   document.getElementById('hero').innerHTML=`
     <div class="hero-impact">
@@ -1175,14 +1247,16 @@ async function refreshContextSessions(query){
     const response=await fetch('/api/context/sessions?q='+encodeURIComponent(q));
     if(!response.ok)throw new Error('Session index returned '+response.status);
     const payload=await response.json(),sessions=payload.sessions||[];
+    panelClearStale(list);
     const diagnostics=(payload.diagnostics||[]).slice(0,2).map(item=>'<div class="context-diagnostic">'+escHtml(item.message||item.type)+'</div>').join('');
     if(!sessions.length){list.innerHTML=diagnostics+'<div class="empty">No context receipts found. Create a Context Receipt to make selection and omission decisions inspectable.</div>';document.getElementById('contextDetail').innerHTML='<div class="empty">Nothing is hidden: unreadable artifacts appear as diagnostics here.</div>';contextSelectedKey='';return;}
     list.innerHTML=diagnostics+sessions.map(s=>{
       const active=s.key===contextSelectedKey?' active':'';const valid=(s.integrity||{}).valid;
       return '<div class="context-row'+active+'" onclick="loadContextSession(\''+s.key+'\')"><div class="context-row-title">'+escHtml(s.session_id)+'</div><div class="context-row-query">'+escHtml(s.query||'No task recorded')+'</div><div class="context-row-meta"><span>'+s.turn_count+' turn'+(s.turn_count===1?'':'s')+'</span><span>'+fmt(s.selected_tokens||0)+' selected</span><span style="color:'+(valid?'var(--emerald)':'var(--rose)')+'">'+(valid?'verified':'integrity issue')+'</span></div></div>';
     }).join('');
+    panelSucceeded('contextList');
     if(!contextSelectedKey||!sessions.some(s=>s.key===contextSelectedKey))await loadContextSession(sessions[0].key);
-  }catch(error){list.innerHTML='<div class="context-diagnostic">Context session index unavailable: '+escHtml(error.message||error)+'</div>';}
+  }catch(error){panelFailed('contextList', list, 'Context session index', error);}
 }
 async function loadContextSession(key){
   contextSelectedKey=key;const detail=document.getElementById('contextDetail');detail.innerHTML='<div class="empty">Loading receipt proof…</div>';
@@ -1241,10 +1315,68 @@ function renderContextHealth(data){
       '<div class="context-protection"><b>Drift protection</b><span>Status: '+escHtml(drift.status||'unavailable')+'; source freshness '+escHtml(drift.source_freshness||'unavailable')+'. '+escHtml(drift.scope||'')+'</span></div>'+
     '</div>';
 }
+// A panel polled every 3s must not throw away correct data because one poll
+// failed. Replacing the contents on the first error is why a dashboard that
+// was right a moment ago went blank: a single transient fetch rejection wiped
+// a panel and reported "Failed to fetch", which names neither what broke nor
+// that the previous answer is still the best available one.
+//
+// Panels keep their last good render and are marked stale instead. The error
+// replaces content only when there is nothing to preserve, or when failures
+// persist long enough that the displayed data should no longer be trusted.
+const PANEL_FAILURES_BEFORE_BLANKING = 3;
+const panelState = {};
+
+function panelSucceeded(name){
+  panelState[name] = {failures: 0, everLoaded: true};
+}
+
+// Returns true when the caller should render the error, false when the last
+// good content should be left in place.
+function panelFailed(name, el, label, error){
+  const prior = panelState[name] || {failures: 0, everLoaded: false};
+  const failures = prior.failures + 1;
+  panelState[name] = {failures: failures, everLoaded: prior.everLoaded};
+  const message = escHtml((error && error.message) || error || 'unknown error');
+
+  if(!prior.everLoaded || failures >= PANEL_FAILURES_BEFORE_BLANKING){
+    if(el){
+      el.innerHTML = '<div class="context-diagnostic">' + label +
+        ' unavailable: ' + message +
+        (failures > 1 ? ' (' + failures + ' consecutive attempts)' : '') +
+        '</div>';
+    }
+    return true;
+  }
+  // Keep what is on screen, but say plainly that it is not fresh -- silently
+  // showing stale numbers would be the opposite failure.
+  if(el && !el.querySelector('.panel-stale')){
+    const note = document.createElement('div');
+    note.className = 'context-diagnostic panel-stale';
+    note.textContent = label + ' refresh failed (' + message +
+      '); showing the last good reading.';
+    el.prepend(note);
+  }
+  return false;
+}
+
+function panelClearStale(el){
+  if(!el){return;}
+  const note = el.querySelector('.panel-stale');
+  if(note){note.remove();}
+}
+
 async function refreshContextHealth(){
   const el=document.getElementById('contextHealth');
-  try{const response=await fetch('/api/context/health');if(!response.ok)throw new Error('Context health returned '+response.status);renderContextHealth(await response.json());}
-  catch(error){if(el)el.innerHTML='<div class="context-diagnostic">Context health unavailable: '+escHtml(error.message||error)+'</div>';}
+  try{
+    const response=await fetch('/api/context/health');
+    if(!response.ok)throw new Error('Context health returned '+response.status);
+    const payload=await response.json();
+    panelClearStale(el);
+    renderContextHealth(payload);
+    panelSucceeded('contextHealth');
+  }
+  catch(error){panelFailed('contextHealth', el, 'Context health', error);}
 }
 function renderWitness(d){
   const w=d.witness||{},el=document.getElementById('witness'),b=document.getElementById('wb');
@@ -1399,7 +1531,13 @@ function renderCogops(d){
   const tb=c.total_beliefs||0,ver=c.verified||0,st=c.stale||0,db=c.doc_beliefs||0;
   const conf=c.avg_confidence||0,fresh=c.freshness_pct||0,ents=c.entity_count||0;
   if(b){b.textContent=(c.engine||'cogops')+' · '+tb+' beliefs';b.className='badge '+(tb>0?'b-violet':'b-blue');}
-  if(tb===0){el.innerHTML='<div class="empty">No beliefs yet — run <code>compile_beliefs</code> to seed the vault</div>';return;}
+  // Was "run compile_beliefs to seed the vault". Indexing now seeds them, so
+  // that instruction asked the user to do work already in flight. An empty
+  // panel here means one of two things and they need different words.
+  if(tb===0){el.innerHTML=c.autoseed
+    ?'<div class="empty">No beliefs yet — seeding runs automatically after indexing and fills in shortly</div>'
+    :'<div class="empty">Belief seeding is off (<code>ENTROLY_BELIEF_AUTOSEED=0</code>) — unset it, or run <code>entroly compile .</code> once</div>';
+    return;}
   el.innerHTML=`<div class="cache-kpis">
     <div class="cache-kpi"><div class="cache-kpi-label">Total Beliefs</div><div class="cache-kpi-val hv-blue">${fmt(tb)}</div><div class="cache-kpi-sub">${ents} distinct entities · ${db} doc-linked</div></div>
     <div class="cache-kpi"><div class="cache-kpi-label">Avg Confidence</div><div class="cache-kpi-val hv-green">${(conf*100).toFixed(1)}%</div><div class="cache-kpi-sub">${ver} verified · ${tb-ver-st} inferred</div></div>
@@ -1442,6 +1580,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
     """HTTP handler for the dashboard."""
 
     _MAX_CONTROL_BODY_BYTES = 64 * 1024
+    # Class-level default so the error path can read it even if a request
+    # fails before any instance attribute is set.
+    _response_started = False
 
     def log_message(self, format, *args):
         pass  # Suppress access logs
@@ -1472,6 +1613,29 @@ class DashboardHandler(BaseHTTPRequestHandler):
     }
 
     def do_GET(self):
+        # Every route answers, including the ones that fail.
+        #
+        # An unhandled exception propagated out of `finish_request`, the socket
+        # closed with no status line, and the browser reported
+        # `TypeError: Failed to fetch` -- a message naming no endpoint and no
+        # cause, so a subsystem that was merely unavailable looked like a dead
+        # dashboard. The panels already render "<panel> unavailable: <reason>";
+        # they were simply never given a reason.
+        #
+        # Intermittent by nature: only routes whose data source was momentarily
+        # unreadable raised, which is why the dashboard rendered correctly most
+        # of the time and blank occasionally.
+        try:
+            self._dispatch_get()
+        except Exception as exc:  # noqa: BLE001 - a failed panel must still reply
+            logger.warning("dashboard GET %s failed: %s", self.path, exc)
+            if not self._response_started:
+                self._send_json(500, {
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "path": self.path,
+                })
+
+    def _dispatch_get(self):
         parsed = urlparse(self.path)
         path = parsed.path
         # Static HTML
@@ -1720,6 +1884,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         Centralizing here is the only way headers (CORS, CSP, cache) stay
         in sync across handlers — every previous drift bug came from
         copy-pasted send_header blocks falling out of step."""
+        # Recorded before the status line goes out, so the error handler in
+        # do_GET can tell "nothing was written yet, send a 500" from "headers
+        # are already on the wire, a second status line would corrupt the
+        # response".
+        self._response_started = True
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         if no_cache:
@@ -1906,16 +2075,81 @@ def start_dashboard(
         existing_daemon._proxy_runtime = proxy_runtime
         existing_daemon._proxy_config = getattr(proxy_runtime, "config", None)
 
-    class _ReuseAddrHTTPServer(HTTPServer):
+    class _ReuseAddrHTTPServer(ThreadingHTTPServer):
+        # Was a hand-rolled `process_request` that started a thread on
+        # `finish_request` and stopped there. The stdlib equivalent wraps that
+        # call in try/except/finally and calls `shutdown_request` in the
+        # `finally`, so the hand-rolled version never closed the socket when a
+        # handler raised: the connection was dropped with no status line, the
+        # browser reported `TypeError: Failed to fetch`, and the descriptor
+        # leaked. It also skipped `handle_error`, so the traceback went to
+        # stderr unattributed to any route.
+        #
+        # ThreadingHTTPServer already provides per-request threads, so the
+        # non-blocking property that override existed for is retained.
         allow_reuse_address = True
-
-        def process_request(self, request, client_address):
-            """Handle each request in a new thread to avoid blocking."""
-            t = threading.Thread(target=self.finish_request, args=(request, client_address), daemon=True)
-            t.start()
+        daemon_threads = True
 
     server = _ReuseAddrHTTPServer(("127.0.0.1", port), DashboardHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=daemon)
     thread.start()
     logger.info(f"Dashboard live at http://localhost:{port}")
     return server
+
+
+def dashboard_autostart_enabled() -> bool:
+    """On unless explicitly disabled."""
+    import os
+
+    return os.environ.get("ENTROLY_DASHBOARD_AUTOSTART", "1").strip() not in {
+        "0", "false", "no",
+    }
+
+
+def _port_already_serving(port: int, host: str = "127.0.0.1") -> bool:
+    """Whether something is already listening on ``port``.
+
+    Binding cannot answer this. ``_ReuseAddrHTTPServer`` sets
+    ``allow_reuse_address``, and on Windows ``SO_REUSEADDR`` lets a second
+    socket bind a port that is already bound -- the bind succeeds and which
+    socket receives a given connection is undefined. A dashboard started that
+    way would silently split requests with the proxy's, so presence is probed
+    by connecting rather than inferred from a bind that cannot fail.
+    """
+    import socket
+
+    try:
+        with socket.create_connection((host, port), timeout=0.25):
+            return True
+    except OSError:
+        return False
+
+
+def maybe_start_dashboard(engine: Any = None, port: int = 9378) -> Any | None:
+    """Start the dashboard if nothing is serving yet. Returns the server or None.
+
+    The MCP server is the most common install, and it was the one entry point
+    that never started a dashboard: it indexed, compressed, seeded beliefs and
+    blocked hallucinations, and the user saw none of it unless they separately
+    ran ``entroly dashboard``. Value that is measured but never displayed is
+    indistinguishable, to the person who installed it, from value that was
+    never produced.
+
+    Every failure here is swallowed. A dashboard is how the work is *seen*; it
+    is never worth failing the work itself, and on the MCP path an exception
+    escaping into the stdio handshake would take the whole session down.
+    """
+    if not dashboard_autostart_enabled():
+        return None
+    try:
+        if _port_already_serving(port):
+            logger.info(
+                "Dashboard already serving on %s; not starting a second one", port)
+            return None
+        return start_dashboard(engine=engine, port=port, daemon=True)
+    except OSError as exc:
+        # Lost a race for the port, or it is otherwise unavailable.
+        logger.info("Dashboard not started on %s: %s", port, exc)
+    except Exception as exc:  # noqa: BLE001 - a missing panel must not end a session
+        logger.warning("Dashboard autostart failed (non-fatal): %s", exc)
+    return None

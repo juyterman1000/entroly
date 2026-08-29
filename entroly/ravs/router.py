@@ -37,6 +37,7 @@ The router NEVER:
 
 from __future__ import annotations
 
+import collections
 import json
 import logging
 import math
@@ -474,8 +475,45 @@ def classify_archetype(user_message: str) -> str:
     return "general"
 
 
+# Family fallback for model ids the exact table has not been taught yet.
+#
+# An exact table is a treadmill: every provider release silently drops the
+# router back to doing nothing, and nothing says so. `claude-opus-4-8` did not
+# match `claude-3-opus-20240229` under the prefix rule below -- rsplit yields
+# `claude-3-opus`, which is not a prefix of it -- so the flagship id most
+# callers now send resolved to None, and None was being read as "cheap".
+#
+# Family patterns answer the only question routing actually asks: is this a
+# flagship with a cheaper sibling? Ordered, first match wins, so cheap tiers
+# precede the broad flagship patterns that would otherwise swallow them.
+#
+# Cost is deliberately absent. Tier and alternative are structural facts about
+# a family; price is a number that changes without warning, and inventing one
+# so the savings figure looks populated would be worse than reporting none.
+# These entries are marked `inferred`, and the router counts swaps it could not
+# price instead of adding zero and calling that savings.
+_MODEL_FAMILIES: list[tuple[re.Pattern[str], dict[str, Any]]] = [
+    # Cheap tiers first, or the flagship patterns below would claim them.
+    (re.compile(r"^claude-(?:[\d.]+-)*haiku|^claude-haiku", re.I), {"tier": "cheap"}),
+    (re.compile(r"^gpt-[\w.]*mini|^o\d+-mini", re.I), {"tier": "cheap"}),
+    (re.compile(r"^gemini-[\w.]*flash", re.I), {"tier": "cheap"}),
+    (
+        re.compile(r"^claude-(?:[\d.]+-)*(?:opus|sonnet)|^claude-(?:opus|sonnet)", re.I),
+        {"tier": "flagship", "cheap_alt": "claude-haiku-4-5-20251001"},
+    ),
+    (re.compile(r"^gpt-|^o\d+", re.I), {"tier": "flagship", "cheap_alt": "gpt-4o-mini"}),
+    (re.compile(r"^gemini-", re.I), {"tier": "flagship", "cheap_alt": "gemini-2.0-flash"}),
+]
+
+
 def _lookup_tier(model: str) -> Optional[dict[str, Any]]:
-    """Look up a model's cost tier. Fuzzy prefix match."""
+    """Resolve a model's cost tier: exact, then prefix, then family.
+
+    Returns None only when the model belongs to no family this router knows.
+    That is a genuinely different state from "cheap", and callers must not
+    collapse the two -- doing so is what made the router inert for every
+    current Claude id.
+    """
     if not model:
         return None
     if model in MODEL_TIERS:
@@ -483,6 +521,9 @@ def _lookup_tier(model: str) -> Optional[dict[str, Any]]:
     for name, info in MODEL_TIERS.items():
         if model.startswith(name.rsplit("-", 1)[0]):
             return info
+    for pattern, info in _MODEL_FAMILIES:
+        if pattern.match(model):
+            return {**info, "inferred": True}
     return None
 
 
@@ -680,6 +721,10 @@ class BayesianRouter:
         self._total_decisions = 0
         self._total_swaps = 0
         self._total_savings_est = 0.0
+        # Both counters exist so a disengaged router is visible rather than
+        # indistinguishable from an idle one.
+        self._unpriced_swaps = 0
+        self._unrecognised_models: collections.Counter[str] = collections.Counter()
         self._swap_by_archetype: dict[str, int] = {}
 
     @property
@@ -690,7 +735,25 @@ class BayesianRouter:
     def enabled(self, val: bool) -> None:
         self._enabled = val
 
-    def route(self, model: str, user_message: str) -> RoutingDecision:
+    def shadow_route(self, model: str, user_message: str) -> RoutingDecision:
+        """What this router would decide if enabled. Never swaps anything.
+
+        Every other gate still applies -- tier lookup, risk classification,
+        archetype cell confidence -- so a shadow recommendation means exactly
+        what a live one does. Only the enabled check is bypassed.
+
+        That check is an authorisation, not a capability: substituting a model
+        on a live request needs the user's say-so, but working out that a
+        cheaper model would have served is a table lookup and a classifier over
+        cached state, with no model call. Without this the user is asked to
+        authorise routing blind, and "nothing to gain" is indistinguishable
+        from "never measured".
+        """
+        return self.route(model, user_message, _ignore_enabled=True)
+
+    def route(
+        self, model: str, user_message: str, *, _ignore_enabled: bool = False
+    ) -> RoutingDecision:
         """Decide whether to route to a cheaper model.
 
         Returns RoutingDecision. If use_original=False, the proxy should
@@ -698,12 +761,19 @@ class BayesianRouter:
         """
         self._total_decisions += 1
 
-        if not self._enabled:
+        if not self._enabled and not _ignore_enabled:
             return RoutingDecision(reason="bayesian_router_disabled")
 
         tier = _lookup_tier(model)
-        if not tier or tier.get("tier") != "flagship":
-            return RoutingDecision(reason=f"already_cheap ({tier.get('tier', '?') if tier else 'unknown'})")
+        if tier is None:
+            # Distinct from "already cheap". Declining to route an unrecognised
+            # model is correct -- there is no sibling to route to -- but saying
+            # it is cheap asserts something unknown, and made a permanently
+            # disengaged router look like one with nothing to do.
+            self._unrecognised_models[model] += 1
+            return RoutingDecision(reason=f"unrecognised_model ({model})")
+        if tier.get("tier") != "flagship":
+            return RoutingDecision(reason=f"already_cheap ({tier.get('tier', '?')})")
 
         cheap_alt = tier.get("cheap_alt")
         if not cheap_alt:
@@ -743,13 +813,22 @@ class BayesianRouter:
             )
 
         # Route!
-        flagship_cost = tier.get("cost_per_m", 0)
         cheap_info = _lookup_tier(cheap_alt)
-        cheap_cost = cheap_info.get("cost_per_m", 0) if cheap_info else 0
-        est_save = (flagship_cost - cheap_cost) * 4 / 1_000_000
+        flagship_cost = tier.get("cost_per_m")
+        cheap_cost = cheap_info.get("cost_per_m") if cheap_info else None
 
         self._total_swaps += 1
-        self._total_savings_est += est_save
+        if flagship_cost is None or cheap_cost is None:
+            # A family-inferred model carries no price. Adding zero here would
+            # report a real swap as zero saved, which reads identically to
+            # "the router never fired" -- the exact confusion this change
+            # exists to remove. Count it instead, so stats can say how much of
+            # the picture is missing.
+            est_save = 0.0
+            self._unpriced_swaps += 1
+        else:
+            est_save = (flagship_cost - cheap_cost) * 4 / 1_000_000
+            self._total_savings_est += est_save
         self._swap_by_archetype[archetype] = self._swap_by_archetype.get(archetype, 0) + 1
 
         logger.info(
@@ -789,6 +868,11 @@ class BayesianRouter:
             "total_swaps": self._total_swaps,
             "swap_rate": round(self._total_swaps / max(self._total_decisions, 1), 4),
             "est_savings_usd": round(self._total_savings_est, 6),
+            # est_savings_usd covers only swaps whose models were priced. These
+            # two say what it does not cover, so a reader can tell "saved
+            # nothing" from "saved something unmeasurable" from "never ran".
+            "unpriced_swaps": self._unpriced_swaps,
+            "unrecognised_models": dict(self._unrecognised_models),
             "swap_by_archetype": dict(self._swap_by_archetype),
             "min_samples": self._min_samples,
             "ci_threshold": self._ci_threshold,

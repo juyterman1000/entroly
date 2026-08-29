@@ -796,10 +796,36 @@ def cmd_health(args):
     from entroly.auto_index import auto_index
     from entroly.server import EntrolyEngine
 
-    print(f"\n{C.CYAN}{C.BOLD}  Entroly Health Analysis{C.RESET}\n")
+    # `doctor`, `simulate`, `perf`, `value`, `compress` and `verify-claims` all
+    # emit machine-readable output; health did not, so the one command whose
+    # whole output is a graded judgement was the one a script could not read.
+    json_output = bool(getattr(args, "json_output", False))
+    if not json_output:
+        print(f"\n{C.CYAN}{C.BOLD}  Entroly Health Analysis{C.RESET}\n")
 
     engine = EntrolyEngine()
     result = auto_index(engine)
+
+    if json_output:
+        # Reported rather than inferred: without the native engine there is no
+        # health analysis to emit, and returning an empty grade would read as
+        # a clean bill of health for a scan that never ran.
+        payload = {
+            "indexed": result.get("status") == "indexed",
+            "files_indexed": result.get("files_indexed", 0),
+            "total_tokens": result.get("total_tokens", 0),
+            "native_engine": bool(engine._use_rust),
+        }
+        if engine._use_rust:
+            engine.optimize_context(token_budget=128000, query="")
+            payload["health"] = _json.loads(engine._rust.analyze_health())
+            payload["security"] = _json.loads(engine._rust.security_report())
+        else:
+            payload["reason"] = (
+                "health analysis requires the native engine; none is available"
+            )
+        print(_json.dumps(payload, indent=2))
+        return 0
 
     if result["status"] == "indexed":
         print(f"  {C.GREEN}Indexed {result['files_indexed']} files ({result['total_tokens']:,} tokens){C.RESET}")
@@ -3390,10 +3416,37 @@ def cmd_value(args):
         f"    Operations: {local['operations']:,}  |  "
         f"Tokens reduced: {local['tokens_reduced']:,}"
     )
+    # Previously printed a hardcoded $0.0000. The token count beside it was
+    # measured, so showing nothing for its value understated real work: input
+    # avoided is input not bought, and tokens have a public rate. Show the
+    # replacement-cost figure and name the basis, so it can be neither ignored
+    # nor mistaken for an invoice.
     print(
-        f"    Dollar savings claimed: {C.GREEN}$0.0000{C.RESET} "
-        f"{C.GRAY}(delivery to a paid provider is not observable){C.RESET}\n"
+        f"    Value at list rate: "
+        f"{C.GREEN}${local.get('modeled_value_at_list_usd', 0.0):.4f}{C.RESET} "
+        f"{C.GRAY}(replacement cost of the input avoided; not invoice-verified, "
+        f"and not added to the provider total above){C.RESET}\n"
     )
+
+    # Shown unconditionally rather than behind a flag: it is derived from
+    # tokens already counted, so a figure that only appears when asked for is
+    # a figure nobody sees.
+    energy = receipt.get("energy") or {}
+    if energy:
+        print(f"  {C.BOLD}Electricity not spent{C.RESET}")
+        print(
+            f"    Prefill avoided: {C.GREEN}{energy['kwh_avoided']:.4f} kWh{C.RESET} "
+            f"{C.GRAY}({energy['accelerator_seconds_avoided']:,.0f} accelerator-seconds, "
+            f"{energy['petaflops_avoided']:,.1f} PFLOPs){C.RESET}"
+        )
+        a = energy["assumptions"]
+        print(
+            f"    {C.GRAY}Modeled, not measured: {a['model_params_billions']:.0f}B "
+            f"parameters, {a['accelerator_peak_tflops']:.0f} TFLOPS at "
+            f"{a['model_flops_utilization']:.0%} utilisation, "
+            f"{a['accelerator_tdp_watts']:.0f}W. Prefill only -- decode is "
+            f"memory-bound and unchanged by a shorter prompt.{C.RESET}\n"
+        )
 
     print(f"  {C.BOLD}Trust and routing signals{C.RESET}")
     print(
@@ -6284,6 +6337,10 @@ def main():
         "-v", "--verbose", action="store_true",
         help="Show details for each finding",
     )
+    health_parser.add_argument(
+        "--json", dest="json_output", action="store_true",
+        help="Emit the health and security report as JSON",
+    )
 
     # entroly autotune
     autotune_parser = subparsers.add_parser(
@@ -6716,7 +6773,13 @@ def main():
 
     recover_parser = subparsers.add_parser(
         "recover",
-        help="Recover the exact original bytes for a recovery digest",
+        # Not "the exact original bytes". What a digest recovers depends on the
+        # codec that produced it: `json` stores the complete original, `code`
+        # stores the bodies elided from a skeleton. Both are exact for what
+        # they hold, but only one is the whole file, and promising the file
+        # made a partial recovery look like a corrupt one.
+        help="Recover the exact bytes a recovery digest commits to "
+             "(a whole file, or the parts elided from its compressed form)",
     )
     recover_parser.add_argument(
         "digest", help="Recovery digest from a compress receipt (sha256:...)",

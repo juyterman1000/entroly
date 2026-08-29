@@ -28,9 +28,47 @@ share/python-wheels/
 MANIFEST
 
 # Rust
-entroly-core/target/
+# Every crate's build directory, not just entroly-core's. This repository has
+# four crates, and naming one of them left entroly-engine/target (2.9G),
+# entroly-wasm/target (1.5G) and entroly-qccr/target (757M) in the build
+# context -- roughly 5.2G uploaded to the daemon on every build, for artifacts
+# the builder stage recompiles from source anyway.
+**/target/
 **/.cargo/
 Cargo.lock
+
+# Node
+# Both npm packages carry their own tree, and a vendored dependency directory
+# is never an input to the image.
+**/node_modules/
+**/.npm/
+
+# Credential-shaped files.
+# Not a security boundary -- a build context should not be where secrets are
+# caught -- but COPY . /app takes whatever is in the working tree, and a key
+# dropped there for one test would otherwise be baked into a layer that
+# survives deletion of the file.
+id_rsa*
+id_dsa*
+id_ecdsa*
+id_ed25519*
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+.npmrc
+.pypirc
+.netrc
+.aws/
+kubeconfig
+*.kubeconfig
+
+# Local scratch. `.gitignore` covers `.tmp/` but not `.tmp_*`, so these are
+# untracked, unignored, and would otherwise be copied.
+.tmp_*/
+.tmp*.html
+.tmp*.md
 
 # Environments
 .env
