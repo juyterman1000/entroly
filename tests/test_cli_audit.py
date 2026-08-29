@@ -63,6 +63,10 @@ _CMD_PATTERN = re.compile(
     r"(?<![/\\])\bentroly\s+([a-z][a-z0-9\-]*)(?=[\s`<\-])"
 )
 
+_PYTHON_RUNNER_PREFIX_PATTERN = re.compile(
+    r"\b(?:uvx\s+--from\s+\S+|pipx\s+run\s+--spec\s+\S+)\s+(?=entroly\b)"
+)
+
 # Token strings that look like commands but aren't (verbs in prose etc.).
 _PROSE_FALSE_POSITIVES = {
     "actually",
@@ -74,10 +78,26 @@ _PROSE_FALSE_POSITIVES = {
 }
 
 
-def _claimed_commands_in_readme() -> set[str]:
-    text = README.read_text(encoding="utf-8")
+def _claimed_commands(text: str) -> set[str]:
+    # uvx and pipx repeat the package's console-script name after the package
+    # selector. Remove only that runner prefix so `entroly --help` remains an
+    # entry-point probe rather than being misread as `entroly entroly`.
+    text = _PYTHON_RUNNER_PREFIX_PATTERN.sub("", text)
     matches = _CMD_PATTERN.findall(text)
     return {m for m in matches if m not in _PROSE_FALSE_POSITIVES}
+
+
+def _claimed_commands_in_readme() -> set[str]:
+    return _claimed_commands(README.read_text(encoding="utf-8"))
+
+
+def test_python_package_runners_do_not_create_fake_subcommands():
+    text = """
+    uvx --from entroly entroly --help
+    pipx run --spec entroly entroly --help
+    entroly serve
+    """
+    assert _claimed_commands(text) == {"serve"}
 
 
 def test_every_readme_command_is_registered():
