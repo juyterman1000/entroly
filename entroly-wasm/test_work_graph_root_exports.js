@@ -9,6 +9,10 @@ function assert(condition, message) {
 for (const name of [
   'WorkGraph',
   'WorkGraphStore',
+  'WorkContextSnapshotStore',
+  'WorkContextSnapshotError',
+  'verifyCanonicalSnapshotBytes',
+  'verifiedContextSnapshotVerifyBytes',
   'discoverRepositoryIdentity',
   'discoverRepositoryObservation',
   'resumeRepository',
@@ -24,4 +28,8 @@ for (const name of [
 }
 
 assert(Number.isSafeInteger(pkg.MAX_RESUME_EVIDENCE), 'MAX_RESUME_EVIDENCE is not exported');
+assert(pkg.CONTEXT_SNAPSHOT_TOKEN_PREFIX === 'wctx1.', 'snapshot token prefix is not exported');
+assert(Number.isSafeInteger(pkg.DEFAULT_MAX_CONTEXT_BYTES), 'snapshot max bytes is not exported');
+assert(Number.isSafeInteger(pkg.DEFAULT_MAX_SNAPSHOTS), 'snapshot max entries is not exported');
+assert(Number.isSafeInteger(pkg.DEFAULT_MAX_TOTAL_BYTES), 'snapshot max total bytes is not exported');
 console.log('Work Graph npm root exports: PASS');

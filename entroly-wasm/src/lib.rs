@@ -42,6 +42,7 @@ pub(crate) use entroly_engine::knapsack_sds;
 pub(crate) use entroly_engine::learning;
 mod cognitive_bus_bindings;
 mod context_receipt_bindings;
+mod context_snapshot_bindings;
 mod localization;
 pub(crate) use entroly_engine::lsh;
 pub(crate) use entroly_engine::prism;

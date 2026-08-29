@@ -49,7 +49,7 @@ __all__ = [
     "WorkspaceDependencyGraph", "resolve_workspace_dependencies",
     "analyze_change_impact",
     "build_repository_index", "localize_tests", "InvalidChangedPaths",
-    "InvalidContextQuery", "InvalidSymbolQuery",
+    "InvalidContextFault", "InvalidContextQuery", "InvalidSymbolQuery",
     "RepositoryIntelligenceError", "RepositoryIntelligenceService",
     "UnknownChangedPaths", "build_symbol_graph", "build_verified_context",
     "build_repository_index_incremental", "build_verified_program_graph",
@@ -151,6 +151,7 @@ def build_repository_index(
 
 from .service import (  # noqa: E402
     InvalidChangedPaths,
+    InvalidContextFault,
     InvalidContextQuery,
     InvalidSymbolQuery,
     RepositoryIntelligenceError,

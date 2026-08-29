@@ -15,16 +15,40 @@ Pipeline:
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import re
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from .path_safety import resolve_file_within
 from .vault import BeliefArtifact, VaultManager
 
 logger = logging.getLogger(__name__)
+
+
+def _module_entity(file_path: str, fallback: str) -> str:
+    """Return a stable, collision-resistant identity for a source module.
+
+    Module basenames are not identities: ``ledger/postings.py`` and
+    ``store/postings.py`` are different sources.  Python keeps its historical
+    suffix-free name for compatibility; every other supported language keeps
+    the suffix so ``worker.py`` and ``worker.ts`` cannot collide.  Normalising
+    separators makes the same checkout compile to the same identities on
+    Windows and POSIX.
+    """
+
+    normalized = str(file_path).replace("\\", "/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    if not normalized:
+        return fallback
+
+    path = PurePosixPath(normalized)
+    identity = path.with_suffix("") if path.suffix == ".py" else path
+    value = identity.as_posix()
+    return fallback if value in ("", ".") else value
 
 # ── Try Rust-powered AST extraction ──────────────────────────────────
 try:
@@ -54,7 +78,7 @@ class CodeEntity:
 
     @property
     def qualified_name(self) -> str:
-        module = Path(self.file_path).stem
+        module = _module_entity(self.file_path, Path(self.file_path).stem)
         return f"{module}::{self.name}"
 
 
@@ -244,15 +268,36 @@ def _extract_js_entities(content: str, file_path: str) -> list[CodeEntity]:
     # Class
     for m in re.finditer(r'(?:export\s+)?class\s+(\w+)', content):
         line = content[:m.start()].count('\n') + 1
-        entities.append(CodeEntity(name=m.group(1), kind="class", file_path=file_path, line=line))
+        name = m.group(1)
+        entities.append(CodeEntity(
+            name=name,
+            kind="class",
+            file_path=file_path,
+            line=line,
+            signature=f"class {name}",
+        ))
     # Functions
     for m in re.finditer(r'(?:export\s+)?(?:async\s+)?function\s+(\w+)', content):
         line = content[:m.start()].count('\n') + 1
-        entities.append(CodeEntity(name=m.group(1), kind="function", file_path=file_path, line=line))
+        name = m.group(1)
+        entities.append(CodeEntity(
+            name=name,
+            kind="function",
+            file_path=file_path,
+            line=line,
+            signature=f"function {name}",
+        ))
     # Arrow exports
     for m in re.finditer(r'export\s+(?:const|let)\s+(\w+)\s*=', content):
         line = content[:m.start()].count('\n') + 1
-        entities.append(CodeEntity(name=m.group(1), kind="const", file_path=file_path, line=line))
+        name = m.group(1)
+        entities.append(CodeEntity(
+            name=name,
+            kind="const",
+            file_path=file_path,
+            line=line,
+            signature=f"const {name}",
+        ))
     return entities
 
 
@@ -340,15 +385,6 @@ class EntityResolver:
 # Architecture Synthesizer & Diagram Generator
 # ══════════════════════════════════════════════════════════════════════
 
-def _module_entity(file_path: str, fallback: str) -> str:
-    try:
-        path = Path(file_path)
-        stem = path.with_suffix("").as_posix().strip("./")
-        return stem or fallback
-    except (ValueError, OSError):
-        return fallback
-
-
 def synthesize_module_map(
     file_path: str,
     entities: list[CodeEntity],
@@ -401,7 +437,7 @@ def generate_module_diagram(modules: dict[str, list[CodeEntity]]) -> str:
     """Generate a Mermaid module-level architecture diagram."""
     lines = ["flowchart TB"]
     for fpath, entities in sorted(modules.items()):
-        mod_name = Path(fpath).stem
+        mod_name = _module_entity(fpath, Path(fpath).stem)
         mod_id = _mermaid_id(mod_name)
         classes = [e.name for e in entities if e.kind in ("class", "struct")]
         funcs = [e.name for e in entities if e.kind == "function"]
@@ -414,7 +450,8 @@ def generate_module_diagram(modules: dict[str, list[CodeEntity]]) -> str:
         lines.append(f'    {mod_id}["{label}"]')
     # Add edges based on imports
     for fpath, entities in modules.items():
-        src_id = _mermaid_id(Path(fpath).stem)
+        src_name = _module_entity(fpath, Path(fpath).stem)
+        src_id = _mermaid_id(src_name)
         all_deps = set()
         for e in entities:
             for d in e.dependencies:
@@ -429,7 +466,10 @@ def generate_module_diagram(modules: dict[str, list[CodeEntity]]) -> str:
 
 
 def _mermaid_id(s: str) -> str:
-    return re.sub(r'[^a-zA-Z0-9_]', '_', s)
+    # Mermaid identifiers have a restricted alphabet. Sanitising alone is
+    # many-to-one (``a/b`` and ``a_b`` collide), so key nodes by the full source
+    # identity and leave the readable path in the label.
+    return "n_" + hashlib.sha256(s.encode("utf-8")).hexdigest()
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -659,13 +699,13 @@ class BeliefCompiler:
         linked_deps: list[str] = []
         for entity_name in module_entities:
             for dep in dep_graph.get(entity_name, []):
-                dep_name = dep.split("::")[-1]
-                if dep_name not in linked_deps:
-                    linked_deps.append(dep_name)
+                dep_module = dep.rsplit("::", 1)[0]
+                if dep_module not in linked_deps:
+                    linked_deps.append(dep_module)
         if linked_deps:
             body_parts.append("\n## Linked Beliefs")
-            for dep_name in linked_deps[:20]:
-                body_parts.append(f"- [[{dep_name}]]")
+            for dep_module in linked_deps[:20]:
+                body_parts.append(f"- [[{dep_module}]]")
 
         # Invariants from docstrings
         invariants = []
@@ -710,7 +750,11 @@ class BeliefCompiler:
         for rel, mod in sorted(modules.items()):
             n_types = len([e for e in mod.entities if e.kind in ("class", "struct")])
             n_fns = len([e for e in mod.entities if e.kind == "function"])
-            body_parts.append(f"- **{mod.name}** ({mod.language}) — {n_types} types, {n_fns} fns, {mod.loc} LOC")
+            module_id = _module_entity(rel, mod.name)
+            body_parts.append(
+                f"- **{module_id}** ({mod.language}) — "
+                f"{n_types} types, {n_fns} fns, {mod.loc} LOC"
+            )
 
         # Language breakdown
         langs: dict[str, int] = {}

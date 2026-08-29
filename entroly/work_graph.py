@@ -402,6 +402,101 @@ def stable_edge_id(from_id: str, kind: str, to_id: str) -> str:
     return str(native.work_graph_edge_id(from_id, kind, to_id))
 
 
+def create_work_context_receipt(
+    *,
+    repository_id: str,
+    repository_commitment: str,
+    graph_commitment: str,
+    work_scope_id: str,
+    created_at_ms: int,
+    source_commitment: str = "",
+    selected_refs: list[str] | None = None,
+    omitted_refs: list[str] | None = None,
+    pinned_refs: list[str] | None = None,
+    recoverable_refs: list[str] | None = None,
+    recovery_handles: list[str] | None = None,
+    evidence_ids: list[str] | None = None,
+    budget_tokens: int = 0,
+    selection_policy: str = "",
+    execution_id: str = "",
+) -> dict[str, Any]:
+    """Create the canonical Rust-owned ContextReceipt envelope."""
+    native = _require_native_module()
+    return _json_value(str(native.context_receipt_build_json(
+        repository_id,
+        repository_commitment,
+        graph_commitment,
+        work_scope_id,
+        source_commitment,
+        selected_refs or [],
+        omitted_refs or [],
+        pinned_refs or [],
+        recoverable_refs or [],
+        recovery_handles or [],
+        evidence_ids or [],
+        budget_tokens,
+        selection_policy,
+        execution_id,
+        created_at_ms,
+    )))
+
+
+def verify_work_context_receipt(
+    receipt: str | Mapping[str, Any],
+) -> dict[str, Any]:
+    """Verify and canonicalize a ContextReceipt through the Rust contract."""
+    native = _require_native_module()
+    return _json_value(str(native.context_receipt_verify_json(_json_text(receipt))))
+
+
+def create_recovery_handle(
+    *,
+    repository_id: str,
+    receipt_id: str,
+    disposition: str,
+    observed_at_ms: int,
+    source_ref: str = "",
+    source_commitment: str = "",
+    fragment_commitment: str = "",
+    byte_start: int = 0,
+    byte_end: int = 0,
+    version: str = "",
+    storage_locator: str = "",
+) -> dict[str, Any]:
+    """Create a canonical recovery promise through the Rust contract."""
+    native = _require_native_module()
+    return _json_value(str(native.recovery_handle_build_json(
+        repository_id,
+        receipt_id,
+        disposition,
+        source_ref,
+        source_commitment,
+        fragment_commitment,
+        byte_start,
+        byte_end,
+        version,
+        storage_locator,
+        observed_at_ms,
+    )))
+
+
+def verify_recovery_handle(
+    handle: str | Mapping[str, Any],
+) -> dict[str, Any]:
+    """Verify and canonicalize a recovery handle through Rust."""
+    native = _require_native_module()
+    return _json_value(str(native.recovery_handle_verify_json(_json_text(handle))))
+
+
+def verify_recovered_bytes(
+    handle: str | Mapping[str, Any],
+    payload: bytes,
+) -> str:
+    """Return Rust's integrity state for bytes recovered through a handle."""
+    native = _require_native_module()
+    return str(native.recovery_handle_verify_bytes(_json_text(handle), payload))
+
+
 def create_routing_decision(
     *,
     repository_id: str,
@@ -546,11 +641,16 @@ def verification_freshness(
 
 __all__ = [
     "create_model_execution_outcome",
+    "create_recovery_handle",
     "create_routing_decision",
     "create_verification_record",
+    "create_work_context_receipt",
     "stable_edge_id",
     "stable_node_id",
     "verification_freshness",
+    "verify_recovered_bytes",
+    "verify_recovery_handle",
+    "verify_work_context_receipt",
     "WorkGraph",
     "WorkGraphUnavailableError",
 ]

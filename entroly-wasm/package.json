@@ -48,6 +48,8 @@
     "js/work_graph_repo.d.ts",
     "js/work_graph_store.js",
     "js/work_graph_store.d.ts",
+    "js/work_context_snapshot_store.js",
+    "js/work_context_snapshot_store.d.ts",
     "js/work_graph_content_digest.js",
     "js/work_graph_continuity.js",
     "js/work_graph_continuity.d.ts"
