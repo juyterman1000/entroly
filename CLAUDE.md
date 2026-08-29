@@ -206,8 +206,8 @@ python scripts/codebase_graph.py --json g.json
 python scripts/codebase_graph.py --check      # non-zero if anything is unreachable
 ```
 
-Measured on the current `entroly` 1.0.79 checkout: **302 modules, 838 import
-edges, 154,243 lines.**
+Measured on the current `entroly` 1.0.80 checkout: **311 modules, 859 import
+edges, 158,852 lines.**
 
 ### Entry points are narrower than they look
 
@@ -224,8 +224,8 @@ edges, 154,243 lines.**
 | `entroly-work-graph-mcp` | `entroly.work_graph_mcp_server:main` |
 
 Plus `python -m entroly` (`entroly.__main__`) and `import entroly` / `entroly.sdk`.
-**Reachability must be computed from these**, not from `cli.py`. 266 of 302
-modules are reachable; the other 36 (12,879 lines) are imported only by tests and
+**Reachability must be computed from these**, not from `cli.py`. 274 of 311
+modules are reachable; the other 37 (13,101 lines) are imported only by tests and
 benchmarks. Before promoting anything in that set to a README claim, give it a
 real product path — a test that imports a module directly does not prove a user
 can reach it.
@@ -239,14 +239,14 @@ highest-blast-radius modules by PageRank over static imports.
 
 ### Native boundary
 
-17 modules import `entroly_core` (PyO3). Each must explicitly provide a
+18 modules import `entroly_core` (PyO3). Each must explicitly provide a
 semantically compatible fallback or fail closed behind the shared native
 capability gate; importability alone is not proof of compatibility. `--json`
 lists them under `native_boundary`.
 
 ### Known import cycles
 
-7 cycles; the largest spans 30 modules around `entroly/__init__` ↔ `auto_index`
+7 cycles; the largest spans 31 modules around `entroly/__init__` ↔ `auto_index`
 ↔ `cache_aligner` ↔ `compression_proxy_live` and the proxy stack. Import order in that cluster
 is load-bearing — prefer a function-local import over a new module-level one.
 
