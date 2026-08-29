@@ -2,7 +2,7 @@
   "@context": "https://doi.org/10.5063/schema/codemeta-2.0",
   "@type": "SoftwareSourceCode",
   "name": "Entroly",
-  "version": "1.0.79",
+  "version": "1.0.80",
   "description": "Open-source, local-first Context Assurance for AI agents with budget-aware evidence selection, recoverable compression, content-addressed retrieval, Context Receipts, and evidence verification.",
   "codeRepository": "https://github.com/juyterman1000/entroly",
   "issueTracker": "https://github.com/juyterman1000/entroly/issues",
