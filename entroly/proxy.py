@@ -1253,9 +1253,39 @@ class PromptCompilerProxy:
         # when explicitly enabled and hook-captured event data proves it is safe.
         # Silent model substitution must be opt-in because it can change provider,
         # capability, cost, and data-handling semantics.
-        self._ravs_router_enabled = (
-            os.environ.get("ENTROLY_RAVS_ROUTER", "0") == "1"
-        )
+        # Two ways to be on. The explicit switch is unchanged. The second is a
+        # conformal certificate earned from this user's own traffic: shadow
+        # decisions scored by the deterministic verifiers give calibration
+        # observations, and conformal risk control turns them into a threshold
+        # with a finite-sample bound on the divergence rate.
+        #
+        # This is not "on by default with a nicer name". A fresh install has no
+        # observations and cannot be certified -- the minimum sample size falls
+        # out of the bound itself -- so it routes nothing until the evidence
+        # exists. What changes is that the user answers "do you accept this
+        # divergence rate?" once, instead of authorising an unmeasured risk per
+        # request and having no way to learn what it was worth.
+        self._ravs_certificate = None
+        explicit = os.environ.get("ENTROLY_RAVS_ROUTER", "0") == "1"
+        certified = False
+        if not explicit and os.environ.get("ENTROLY_RAVS_AUTO", "1") != "0":
+            try:
+                from .ravs.conformal import get_controller
+
+                self._ravs_certificate = get_controller().certificate()
+                certified = self._ravs_certificate.permits_routing
+                if certified:
+                    logger.info(
+                        "RAVS: routing certified at alpha=%.3f from %d observations "
+                        "(threshold %.3f, empirical risk %.4f)",
+                        self._ravs_certificate.alpha,
+                        self._ravs_certificate.n,
+                        self._ravs_certificate.lambda_hat,
+                        self._ravs_certificate.empirical_risk,
+                    )
+            except Exception as e:  # noqa: BLE001 - no certificate means no routing
+                logger.debug("RAVS certification unavailable: %s", e)
+        self._ravs_router_enabled = explicit or certified
         try:
             from .ravs.router import BayesianRouter
             self._ravs_router = BayesianRouter(
@@ -1831,6 +1861,71 @@ class PromptCompilerProxy:
         except (TypeError, ValueError):
             output_tokens = 1024
         return prefix_tokens, new_input, output_tokens
+
+    def _record_routing_value(
+        self,
+        *,
+        original_model: str,
+        chosen_model: str,
+        body: dict[str, Any],
+        captured: bool,
+    ) -> None:
+        """Price a routing decision and record it. Never raises.
+
+        ``captured`` separates money actually saved by a swap that happened
+        from money a cheaper model was available for but did not take. They are
+        stored in different fields and must never be summed: one is a
+        consequence of a request that was served differently, the other is a
+        forecast about requests that were not.
+
+        Token counts come from the outbound body rather than the response,
+        because this runs before the request is forwarded. That undercounts
+        output tokens, so the estimate is conservative in the direction that
+        matters -- it will not overstate.
+        """
+        try:
+            from .value_tracker import get_tracker, routing_delta_usd
+
+            tokens_in = self._estimate_body_tokens(body)
+            amount = routing_delta_usd(original_model, chosen_model, tokens_in)
+            if amount <= 0.0:
+                return
+            tracker = get_tracker()
+            if captured:
+                tracker.record_routing_saving(
+                    amount, source="proxy", chosen_model=chosen_model,
+                    detail=f"{original_model} -> {chosen_model}",
+                )
+            else:
+                tracker.record_routing_opportunity(
+                    amount, chosen_model=chosen_model, source="proxy")
+        except Exception as e:  # noqa: BLE001 - accounting must not fail a request
+            logger.debug("routing value not recorded: %s", e)
+
+    @staticmethod
+    def _estimate_body_tokens(body: dict[str, Any]) -> int:
+        """Rough input-token count for the outbound request body.
+
+        Characters over four is the standard approximation and is used only to
+        price a difference between two rates, where a proportional error
+        affects both sides and largely cancels.
+        """
+        try:
+            total = 0
+            for message in body.get("messages") or []:
+                content = message.get("content")
+                if isinstance(content, str):
+                    total += len(content)
+                elif isinstance(content, list):
+                    for part in content:
+                        if isinstance(part, dict):
+                            total += len(str(part.get("text", "")))
+            system = body.get("system")
+            if isinstance(system, str):
+                total += len(system)
+            return total // 4
+        except Exception:  # noqa: BLE001
+            return 0
 
     def _cache_economics_allow_ravs(
         self,
@@ -2854,7 +2949,7 @@ class PromptCompilerProxy:
                 # Bayesian evidence without needing shell exit codes.
                 prev_routed = getattr(self, "_ravs_prev_routed", None)
                 if prev_routed and hasattr(self, "_ravs_prev_client"):
-                    prev_client, prev_arch, prev_model = prev_routed
+                    prev_client, prev_arch, prev_model, _ravs_prev_conf = prev_routed
                     if prev_client == client_key:
                         try:
                             from entroly_core import py_simhash
@@ -2888,11 +2983,51 @@ class PromptCompilerProxy:
                                         )
                                     except Exception:
                                         pass
+                                    # Same outcome, second consumer: this is
+                                    # the only observed signal about a routed
+                                    # request, so it is also the calibration
+                                    # label. Without it the conformal
+                                    # controller has no producer and its
+                                    # certificate can never be earned.
+                                    try:
+                                        from .ravs.conformal import get_controller
+
+                                        get_controller().record(
+                                            confidence=_ravs_prev_conf,
+                                            diverged=(verdict == "fail"),
+                                        )
+                                    except Exception:  # noqa: BLE001
+                                        pass
                         except (ImportError, Exception):
                             pass  # No simhash = no feedback, safe to skip
 
                 if _current_model:
-                    decision = self._ravs_router.route(_current_model, user_message)
+                    if not self._ravs_router_enabled:
+                        # Routing is off, so nothing will be swapped. Evaluate
+                        # anyway: the decision is a table lookup and a
+                        # classifier over cached state, and without it the user
+                        # is asked to authorise model substitution with no
+                        # evidence of what it is worth -- "nothing to gain"
+                        # looks exactly like "never measured". Recorded as
+                        # available, never as saved.
+                        _shadow = self._ravs_router.shadow_route(
+                            _current_model, user_message)
+                        if not _shadow.use_original and _shadow.recommended_model:
+                            self._record_routing_value(
+                                original_model=_current_model,
+                                chosen_model=_shadow.recommended_model,
+                                body=body,
+                                captured=False,
+                            )
+                        # route() would only return the disabled sentinel here,
+                        # and it increments _total_decisions before checking,
+                        # so calling it as well counted two decisions for one
+                        # request and halved the reported swap_rate.
+                        from .ravs.router import RoutingDecision as _RD
+                        decision = _RD(reason="bayesian_router_disabled")
+                    else:
+                        decision = self._ravs_router.route(
+                            _current_model, user_message)
                     if not decision.use_original and decision.recommended_model:
                         # ── ECE Pre-Screen (V5): Tier 0 ambiguity filter only ──
                         # Tier 0 is the ONLY pre-routing check that works without
@@ -2901,7 +3036,32 @@ class PromptCompilerProxy:
                         # POST-response alongside WITNESS — see P0 in
                         # _run_post_response_verification().
                         _ece_blocked = False
-                        if self._ece and self._ece._is_open_ended(user_message):
+
+                        # Enforce the certified threshold. When routing was
+                        # authorised by a conformal certificate rather than by
+                        # the explicit switch, the bound was proven only for
+                        # decisions whose confidence clears lambda_hat --
+                        # routing below it is outside the region where
+                        # E[L] <= alpha holds. This was previously unenforced:
+                        # the certificate was read as a boolean and the swap
+                        # then proceeded at the router's own ci_threshold, so
+                        # a user who accepted a 2% divergence rate was served
+                        # an unbounded one.
+                        _cert = self._ravs_certificate
+                        if _cert is not None and _cert.permits_routing:
+                            _conf = float(getattr(decision, "confidence", 0.0) or 0.0)
+                            if _conf < _cert.lambda_hat:
+                                _ece_blocked = True
+                                logger.info(
+                                    "RAVS: kept %s; confidence %.3f is below the "
+                                    "certified threshold %.3f (alpha=%.3f)",
+                                    _current_model, _conf, _cert.lambda_hat,
+                                    _cert.alpha,
+                                )
+
+                        if _ece_blocked:
+                            pass
+                        elif self._ece and self._ece._is_open_ended(user_message):
                             # Open-ended queries: allow swap (aleatoric, not epistemic)
                             pass  # Allow the swap — open-ended = cheap model is fine
                         elif self._ece:
@@ -2978,10 +3138,24 @@ class PromptCompilerProxy:
                                 decision.reason,
                                 cache_reason,
                             )
+                            # The swap was already happening; nothing recorded
+                            # it. The dashboard has read routing_saved_usd
+                            # since it was written and no production path ever
+                            # incremented it, so "Model-Routing Saved" showed
+                            # $0 however much traffic RAVS actually moved.
+                            self._record_routing_value(
+                                original_model=_current_model,
+                                chosen_model=decision.recommended_model,
+                                body=body,
+                                captured=True,
+                            )
 
                 # Store for next-request feedback attribution
                 if _ravs_swapped:
-                    self._ravs_prev_routed = (client_key, _ravs_archetype, _current_model)
+                    self._ravs_prev_routed = (
+                        client_key, _ravs_archetype, _current_model,
+                        float(getattr(decision, "confidence", 0.0) or 0.0),
+                    )
                 else:
                     self._ravs_prev_routed = None
             except Exception as e:

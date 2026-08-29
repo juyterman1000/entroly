@@ -169,6 +169,33 @@ def _has_priced_model(model: str) -> bool:
     )
 
 
+def routing_delta_usd(
+    original_model: str, chosen_model: str, tokens_in: int, tokens_out: int = 0
+) -> float:
+    """USD difference between serving a request on ``original`` vs ``chosen``.
+
+    Priced on both rates, because routing changes the cost of the response as
+    well as the prompt -- input-only would understate a swap on a long
+    generation, which is exactly where routing pays best.
+
+    Returns 0.0 when either model is unpriced rather than guessing. An
+    unrecognised model already falls back to a default rate for display
+    purposes, but a *difference* between two defaults is structurally zero and
+    reporting it as a saving would invent money from a missing catalog entry.
+    """
+    if not original_model or not chosen_model:
+        return 0.0
+    if not (_has_priced_model(original_model) and _has_priced_model(chosen_model)):
+        return 0.0
+    delta = (
+        estimate_cost(max(0, int(tokens_in)), original_model, "input")
+        - estimate_cost(max(0, int(tokens_in)), chosen_model, "input")
+        + estimate_cost(max(0, int(tokens_out)), original_model, "output")
+        - estimate_cost(max(0, int(tokens_out)), chosen_model, "output")
+    )
+    return round(delta, 6) if delta > 0 else 0.0
+
+
 def estimate_cost(tokens_saved: int, model: str = "", kind: str = "input") -> float:
     """Estimate USD saved for ``tokens_saved`` tokens of a model.
 
@@ -724,6 +751,23 @@ class ValueTracker:
         except Exception as e:  # noqa: BLE001
             logger.debug("record_hallucination_blocked failed: %s", e)
 
+    def _accumulate_routing(
+        self, amount_field: str, counter_field: str, amount: float
+    ) -> None:
+        """Add to one routing total and bump its counter.
+
+        Captured and available routing value are separate lanes that must never
+        be summed, but they accrue identically. Keeping two copies of this let
+        their guards drift apart, which is how one of them came to accept
+        negative amounts.
+        """
+        with self._mutation():
+            lifetime = self._data["lifetime"]
+            lifetime[amount_field] = round(
+                lifetime.get(amount_field, 0.0) + amount, 6)
+            lifetime[counter_field] = lifetime.get(counter_field, 0) + 1
+            self._save()
+
     def record_routing_saving(
         self, cost_saved_usd: float, *, source: str = "",
         chosen_model: str = "", detail: str = "",
@@ -732,14 +776,12 @@ class ValueTracker:
         Fail-open."""
         try:
             amount = self._finite_float(cost_saved_usd)
-            if amount == 0.0:
+            # Was `== 0.0`, which let a negative amount through and subtracted
+            # from a lifetime total that only ever accrues.
+            if amount <= 0.0:
                 return
-            with self._mutation():
-                lt = self._data["lifetime"]
-                lt["routing_saved_usd"] = round(
-                    lt.get("routing_saved_usd", 0.0) + amount, 6)
-                lt["routing_decisions"] = lt.get("routing_decisions", 0) + 1
-                self._save()
+            self._accumulate_routing("routing_saved_usd", "routing_decisions",
+                                     amount)
             self.record_event(
                 "routing",
                 detail or f"Routed to {chosen_model or 'cheaper model'}",
@@ -748,6 +790,37 @@ class ValueTracker:
             )
         except Exception as e:  # noqa: BLE001
             logger.debug("record_routing_saving failed: %s", e)
+
+    def record_routing_opportunity(
+        self, cost_available_usd: float, *, chosen_model: str = "",
+        source: str = "",
+    ) -> None:
+        """A cheaper capable model was identified but not used.
+
+        Routing substitutes the model on a live request, so it stays behind an
+        explicit authorisation. That left the user deciding blind: the switch
+        was off, nothing measured it, and the panel showed nothing, so the only
+        way to learn what routing was worth was to authorise it first and find
+        out afterwards.
+
+        The decision itself costs nothing to compute -- it is a pure function
+        of cached state with no model call -- so it is evaluated regardless and
+        recorded here. This is money *available*, not money saved, and it is
+        kept in its own field so it can never be added to a captured total.
+        """
+        try:
+            amount = self._finite_float(cost_available_usd)
+            if amount <= 0.0:
+                return
+            # ``chosen_model`` is accepted for symmetry with the captured
+            # recorder and for the caller's own logging. It is deliberately not
+            # persisted: the field that held it was written on every call and
+            # read by nothing, so it accumulated in every user's lifetime JSON
+            # and would have had to be carried by every future migration.
+            self._accumulate_routing("routing_available_usd",
+                                     "routing_opportunities", amount)
+        except Exception as e:  # noqa: BLE001 - measurement must not break a request
+            logger.debug("record_routing_opportunity failed: %s", e)
 
     def record_belief_conditioning(
         self, n_fragments: int, *, source: str = "", detail: str = ""
@@ -1001,9 +1074,30 @@ class ValueTracker:
             self._save_activity()
 
     def get_lifetime(self) -> dict[str, Any]:
-        """Return lifetime cumulative stats."""
+        """Return lifetime cumulative stats, with energy derived on read.
+
+        Energy is computed here rather than accumulated on write because it is
+        a pure function of tokens already counted. Storing it would create a
+        second copy that could drift from the token totals it is derived from,
+        and would freeze the assumptions at the moment of writing -- a user who
+        corrects the model size later expects their history to be restated, not
+        left mixed.
+        """
         with self._lock:
-            return dict(self._data.get("lifetime", {}))
+            lifetime = dict(self._data.get("lifetime", {}))
+
+        tokens = (
+            int(lifetime.get("provider_tokens_saved", 0) or 0)
+            + int(lifetime.get("local_tokens_reduced", 0) or 0)
+            + int(lifetime.get("unclassified_tokens_reduced", 0) or 0)
+        )
+        try:
+            from .energy_value import energy_for_tokens
+
+            lifetime["energy"] = energy_for_tokens(tokens)
+        except Exception:  # noqa: BLE001 - a missing kWh line must not cost the totals
+            pass
+        return lifetime
 
     def get_daily(self, last_n: int = 30) -> list[dict[str, Any]]:
         """Return last N days of daily stats, sorted ascending."""
@@ -1096,6 +1190,11 @@ class ValueTracker:
                     "hallucinations_blocked": lt.get(
                         "hallucinations_blocked", 0),
                     "routing_saved_usd": lt.get("routing_saved_usd", 0.0),
+                    # Money a cheaper capable model was available for but did
+                    # not capture. Reported beside the captured figure so the
+                    # authorisation decision is made against evidence.
+                    "routing_available_usd": lt.get("routing_available_usd", 0.0),
+                    "routing_opportunities": lt.get("routing_opportunities", 0),
                 },
                 "status": "active" if self._session_requests > 0 else "idle",
             }
@@ -1123,8 +1222,22 @@ class ValueTracker:
             1 for row in daily if int(row.get("local_operations", 0) or 0) > 0
         )
         pricing = pricing_provenance()
+        # Energy is derived from tokens already counted, so it costs one
+        # multiplication and needs nothing from the user. Reporting it only on
+        # request would mean the figure exists but nobody sees it, which is the
+        # same as not having it. Both channels are included because prefill
+        # work is avoided wherever the tokens were removed.
+        from .energy_value import energy_for_tokens
+
+        total_tokens_reduced = (
+            int(lifetime.get("provider_tokens_saved", 0) or 0)
+            + int(lifetime.get("local_tokens_reduced", 0) or 0)
+            + int(lifetime.get("unclassified_tokens_reduced", 0) or 0)
+        )
+
         return {
             "schema_version": "entroly.value-receipt.v1",
+            "energy": energy_for_tokens(total_tokens_reduced),
             "provider_path": {
                 "requests_observed": int(
                     lifetime.get("provider_requests", 0) or 0
@@ -1159,11 +1272,34 @@ class ValueTracker:
                     lifetime.get("local_tokens_reduced", 0) or 0
                 ),
                 "active_days": local_days,
+                # Left at 0.0 deliberately. This field has always meant
+                # "verified against observed provider usage", and a local
+                # reduction is not that. Repurposing it would silently change
+                # the meaning of a number already published in receipts.
                 "dollar_claimed_usd": 0.0,
+                # Priced separately rather than left blank. Tokens are a
+                # commodity with a public rate, so a reduction that never
+                # reached an invoice still avoided buying that input at
+                # replacement cost -- the basis inventory is normally valued
+                # on. Reporting nothing understated a real measurement;
+                # reporting it as a verified saving would overstate it. The
+                # field name carries the basis so neither reading is available.
+                "modeled_value_at_list_usd": round(
+                    estimate_cost(
+                        int(lifetime.get("local_tokens_reduced", 0) or 0),
+                        model="",
+                        kind="input",
+                    ),
+                    6,
+                ),
+                "pricing_basis": "default_catalog_input_rate",
                 "evidence": (
-                    "SDK, MCP, npm, and other local reductions. Entroly does not "
-                    "claim dollar savings because it cannot prove the output was "
-                    "sent to a paid provider."
+                    "SDK, MCP, npm, and other local reductions. The token counts "
+                    "are measured. The dollar figure applies the default catalog "
+                    "input rate to them and is a replacement-cost model, not an "
+                    "invoice: Entroly cannot prove this output reached a paid "
+                    "provider, so it is reported apart from provider-bound "
+                    "savings and never added to them."
                 ),
             },
             "legacy_unclassified": {

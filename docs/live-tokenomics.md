@@ -14,7 +14,7 @@ classes:
 | Evidence class | Included | Excluded |
 |---|---|---|
 | `provider_path` | Requests observed by the Entroly proxy, input tokens reduced, and modeled input cost for explicit price-catalog matches | Provider invoices, output-token savings, negotiated prices and requests that bypassed Entroly |
-| `local_operations` | Token reduction measured by SDK, MCP, npm and other local operations | Dollar savings; Entroly cannot prove the result reached a paid provider |
+| `local_operations` | Token reduction measured by SDK, MCP, npm and other local operations, plus `modeled_value_at_list_usd`: those tokens priced at the default catalog input rate | Invoice verification; Entroly cannot prove the result reached a paid provider, so this figure is replacement cost and is never added to `provider_path` |
 | `legacy_unclassified` | Historical reduction retained for continuity | Public savings totals and current provider-path claims |
 | `trust_signals` | Modeled routing value and locally observed verification interventions | Claims that every intervention prevented a real-world failure |
 
