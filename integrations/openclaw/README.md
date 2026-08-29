@@ -28,6 +28,27 @@ openclaw plugins enable entroly
 openclaw gateway restart
 ```
 
+The plugin starts a local Python subprocess for context assembly. That child
+receives only the operating-system paths and Entroly-local settings it needs;
+provider API keys, cloud credentials, registry tokens, and unrelated host
+environment variables are not inherited. OpenClaw remains the sole owner of
+provider authentication.
+
+Local receipts are enabled by default because they make context decisions
+auditable. They contain hashes, counts, estimates, warnings, and decision
+metadata rather than conversation text, and are bounded by file-count and byte
+quotas. To opt out of persistence, set:
+
+```json5
+{
+  plugins: {
+    entries: {
+      entroly: { config: { writeReceipts: false } }
+    }
+  }
+}
+```
+
 ClawHub is an optional registry source. Use it only when
 `openclaw plugins search "entroly"` returns a current public package and its
 install hint. Do not guess a ClawHub slug or treat unpublished metadata as an
@@ -97,8 +118,10 @@ digest, native window, output reserve, safety reserve, and source.
 
 Context-budget discovery is local and enabled by default. It does not enable
 remote provider discovery or send credentials anywhere. Local Ollama/LM Studio
-and remote OpenRouter discovery remain separate operator opt-ins through
-Entroly's model-registry environment controls. Disable this fallback with
+discovery and a local `ENTROLY_MODEL_REGISTRY` override remain explicit
+operator controls. Remote OpenRouter discovery is deliberately unavailable
+inside the OpenClaw bridge because provider credentials do not cross the
+subprocess boundary. Disable local fallback with
 `autoDiscoverContextBudget: false`.
 
 For a custom model that neither OpenClaw nor trusted registry metadata can
@@ -211,6 +234,8 @@ archive receipts or raise `receiptMaxFiles` / `receiptMaxBytes` explicitly.
 
 ## Safety contract
 
+- Provider API keys and unrelated host secrets are removed from the local
+  Python bridge environment before it starts.
 - System and developer messages are never modified.
 - Signed text, thinking/reasoning, images, tool calls, tool-result metadata,
   opaque provider signatures, and unknown content blocks are never modified.

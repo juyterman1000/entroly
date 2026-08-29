@@ -487,6 +487,116 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.latest_token }}
 
+  probe-npm-runners:
+    needs: [release-metadata, publish-npm-alias]
+    if: needs.release-metadata.outputs.should_publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RELEASE_VERSION: ${{ needs.release-metadata.outputs.version }}
+    steps:
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22.19.0'
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.0'
+
+      - name: Install pinned pnpm
+        run: npm install --global pnpm@11.19.0
+
+      - name: Probe npx, pnpm, and Bun against the exact release
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 20); do
+            if [[ "$(npm view "entroly@${RELEASE_VERSION}" version 2>/dev/null || true)" == "$RELEASE_VERSION" ]]; then
+              break
+            fi
+            if [[ "$attempt" == 20 ]]; then
+              echo "entroly@${RELEASE_VERSION} did not become visible on npm." >&2
+              exit 1
+            fi
+            sleep 15
+          done
+
+          npx_dir="$(mktemp -d)"
+          pnpm_dir="$(mktemp -d)"
+          bun_dir="$(mktemp -d)"
+          (
+            cd "$npx_dir"
+            npx -y "entroly@${RELEASE_VERSION}" --help > help.txt
+            grep -F "Entroly v${RELEASE_VERSION}" help.txt
+          )
+          (
+            cd "$pnpm_dir"
+            pnpm dlx "entroly@${RELEASE_VERSION}" --help > help.txt
+            grep -F "Entroly v${RELEASE_VERSION}" help.txt
+          )
+          (
+            cd "$bun_dir"
+            bunx "entroly@${RELEASE_VERSION}" --help > help.txt
+            grep -F "Entroly v${RELEASE_VERSION}" help.txt
+          )
+
+  probe-python-runners:
+    needs: [release-metadata, publish-pypi]
+    if: needs.release-metadata.outputs.should_publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      RELEASE_VERSION: ${{ needs.release-metadata.outputs.version }}
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Install pinned Python tool runners
+        run: python -m pip install pipx==1.16.7 uv==0.12.7
+
+      - name: Probe pipx and uvx against the exact release
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 20); do
+            visible_version="$(python - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+
+          try:
+              with urllib.request.urlopen(
+                  f"https://pypi.org/pypi/entroly/{os.environ['RELEASE_VERSION']}/json",
+                  timeout=30,
+              ) as response:
+                  print(json.load(response)["info"]["version"])
+          except (urllib.error.HTTPError, urllib.error.URLError, ValueError, KeyError):
+              pass
+          PY
+          )"
+            if [[ "$visible_version" == "$RELEASE_VERSION" ]]; then
+              break
+            fi
+            if [[ "$attempt" == 20 ]]; then
+              echo "entroly==${RELEASE_VERSION} did not become visible on PyPI." >&2
+              exit 1
+            fi
+            sleep 15
+          done
+
+          PIPX_HOME="$RUNNER_TEMP/pipx-home" \
+            PIPX_BIN_DIR="$RUNNER_TEMP/pipx-bin" \
+            pipx run --spec "entroly==${RELEASE_VERSION}" entroly --version \
+            | grep -F "$RELEASE_VERSION"
+          UV_CACHE_DIR="$RUNNER_TEMP/uv-cache" \
+            uvx --from "entroly==${RELEASE_VERSION}" entroly --version \
+            | grep -F "$RELEASE_VERSION"
+
   probe-npm-openclaw:
     needs: [release-metadata, publish-npm-openclaw]
     if: needs.release-metadata.outputs.should_publish == 'true'

@@ -3,6 +3,51 @@ import readline from "node:readline";
 
 export const ENTROLY_BRIDGE_SCHEMA = "entroly.openclaw.bridge.v2";
 
+const BRIDGE_ENVIRONMENT_ALLOWLIST = new Set([
+  "APPDATA",
+  "COMSPEC",
+  "ENTROLY_AIR_GAP",
+  "ENTROLY_DISABLE_TELEMETRY",
+  "ENTROLY_DISCOVER_LOCAL_MODELS",
+  "ENTROLY_LMSTUDIO_BASE",
+  "ENTROLY_MODEL_DISCOVERY_MAX",
+  "ENTROLY_MODEL_DISCOVERY_TIMEOUT",
+  "ENTROLY_MODEL_REGISTRY",
+  "ENTROLY_OLLAMA_BASE",
+  "ENTROLY_OLLAMA_INSPECT_CONTEXT",
+  "ENTROLY_OPENCLAW_RECEIPT_KEY_FILE",
+  "ENTROLY_UNKNOWN_MODEL_CONTEXT",
+  "HOME",
+  "HOMEDRIVE",
+  "HOMEPATH",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "LOCALAPPDATA",
+  "PATH",
+  "PATHEXT",
+  "SYSTEMDRIVE",
+  "SYSTEMROOT",
+  "TEMP",
+  "TMP",
+  "TMPDIR",
+  "TZ",
+  "USERPROFILE",
+  "WINDIR",
+  "XDG_STATE_HOME",
+]);
+
+export function buildBridgeEnvironment(source = {}) {
+  return Object.fromEntries(
+    Object.entries(source).filter(
+      ([name, value]) =>
+        value !== undefined &&
+        value !== null &&
+        BRIDGE_ENVIRONMENT_ALLOWLIST.has(name.toUpperCase()),
+    ),
+  );
+}
+
 export function validateBridgeHealth(result) {
   if (
     !result ||
@@ -30,7 +75,7 @@ export class EntrolyBridgeClient {
     this.timeoutMs = timeoutMs;
     this.logger = logger;
     this.spawnProcess = spawnProcess;
-    this.environment = environment;
+    this.environment = buildBridgeEnvironment(environment);
     this.nextId = 1;
     this.pending = new Map();
     this.process = undefined;

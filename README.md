@@ -112,6 +112,26 @@ under [Install](#install).)
 | 🦀 **Rust** (source build) | `cd entroly-core && cargo build --release --bin entroly-rs --features proxy` | One self-contained program, no Python or Node needed |
 | 🍺 **Homebrew** | `brew install juyterman1000/entroly/entroly` | The command-line tool on macOS/Linux |
 | 🐳 **Docker** | `docker pull ghcr.io/juyterman1000/entroly:latest` | Runs in a container, nothing installed on your machine |
+
+**Prefer a package runner instead of a global install?** These commands use
+the same published artifacts in an isolated tool cache:
+
+```bash
+# Node / WASM runtime
+npx -y entroly@latest --help
+pnpm dlx entroly@latest --help
+bunx entroly@latest --help
+
+# Complete Python runtime
+uvx --from entroly entroly --help
+pipx run --spec entroly entroly --help
+```
+
+The Node commands provide the local WASM CLI. The Python commands provide the
+complete CLI, SDK, MCP, proxy, verification, and native-engine path described
+above. Entroly's release workflow smoke-tests all five runners against the
+exact version before a release is considered complete.
+
 **Now check that it worked — free, no API key:**
 
 ```bash

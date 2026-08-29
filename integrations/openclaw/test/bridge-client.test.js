@@ -10,6 +10,7 @@ import test from "node:test";
 import {
   ENTROLY_BRIDGE_SCHEMA,
   EntrolyBridgeClient,
+  buildBridgeEnvironment,
   validateBridgeHealth,
 } from "../bridge-client.js";
 
@@ -63,6 +64,51 @@ test("health rejects an incompatible Python bridge with an upgrade action", () =
       }),
     /pip install -U entroly/,
   );
+});
+
+test("bridge environment excludes provider credentials and unrelated host secrets", () => {
+  const environment = buildBridgeEnvironment({
+    PATH: "/usr/local/bin:/usr/bin",
+    HOME: "/home/operator",
+    ENTROLY_MODEL_REGISTRY: "/home/operator/models.json",
+    ENTROLY_OPENCLAW_RECEIPT_KEY_FILE: "/home/operator/receipt.key",
+    OPENAI_API_KEY: "openai-secret",
+    ANTHROPIC_API_KEY: "anthropic-secret",
+    OPENROUTER_API_KEY: "openrouter-secret",
+    AWS_SECRET_ACCESS_KEY: "aws-secret",
+    CLAWHUB_TOKEN: "clawhub-secret",
+  });
+
+  assert.deepEqual(environment, {
+    PATH: "/usr/local/bin:/usr/bin",
+    HOME: "/home/operator",
+    ENTROLY_MODEL_REGISTRY: "/home/operator/models.json",
+    ENTROLY_OPENCLAW_RECEIPT_KEY_FILE: "/home/operator/receipt.key",
+  });
+});
+
+test("spawn receives only the bounded bridge environment", async () => {
+  const child = createFakeChild();
+  let spawnOptions;
+  const client = new EntrolyBridgeClient({
+    environment: {
+      PATH: "/usr/bin",
+      ENTROLY_AIR_GAP: "1",
+      OPENAI_API_KEY: "must-not-cross-the-boundary",
+    },
+    spawnProcess: (_command, _args, options) => {
+      spawnOptions = options;
+      return child;
+    },
+    timeoutMs: 100,
+  });
+
+  await client.health();
+  assert.deepEqual(spawnOptions.env, {
+    PATH: "/usr/bin",
+    ENTROLY_AIR_GAP: "1",
+  });
+  await client.dispose();
 });
 
 test("timeout kills a wedged bridge and the next request restarts", async () => {
