@@ -262,8 +262,24 @@ def test_release_workflow_sanitizes_version_once_and_probes_live_artifacts() -> 
     assert 'npx -y "entroly@${RELEASE_VERSION}" --help' in text
     assert 'pnpm dlx "entroly@${RELEASE_VERSION}" --help' in text
     assert 'bunx "entroly@${RELEASE_VERSION}" --help' in text
-    assert 'pipx run --spec "entroly==${RELEASE_VERSION}" entroly --version' in text
-    assert 'uvx --from "entroly==${RELEASE_VERSION}" entroly --version' in text
+    assert "probe_runner npx" in text
+    assert "probe_runner pnpm" in text
+    assert "probe_runner bunx" in text
+    assert "probe_python_runner pipx env" in text
+    assert "pipx run --no-cache --cooldown 0 --backend pip" in text
+    assert "--index-url https://pypi.org/simple" in text
+    assert "probe_python_runner uvx env" in text
+    assert 'uvx --refresh --from "entroly==${RELEASE_VERSION}" entroly --version' in text
+    npm_runner_probe = text.split("  probe-npm-runners:", 1)[1].split(
+        "  probe-python-runners:", 1
+    )[0]
+    assert "for attempt in $(seq 1 20)" in npm_runner_probe
+    assert "npm view" not in npm_runner_probe
+    python_runner_probe = text.split("  probe-python-runners:", 1)[1].split(
+        "  probe-npm-openclaw:", 1
+    )[0]
+    assert "for attempt in $(seq 1 20)" in python_runner_probe
+    assert "pypi.org/pypi/" not in python_runner_probe
     assert "oven-sh/setup-bun@v2" in text
     assert "pipx==1.16.7 uv==0.12.7" in text
     assert "needs: [release-metadata, probe-npm-openclaw]" in text

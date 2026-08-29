@@ -512,35 +512,35 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for attempt in $(seq 1 20); do
-            if [[ "$(npm view "entroly@${RELEASE_VERSION}" version 2>/dev/null || true)" == "$RELEASE_VERSION" ]]; then
-              break
-            fi
-            if [[ "$attempt" == 20 ]]; then
-              echo "entroly@${RELEASE_VERSION} did not become visible on npm." >&2
-              exit 1
-            fi
-            sleep 15
-          done
+          probe_runner() {
+            local label="$1"
+            shift
+            for attempt in $(seq 1 20); do
+              probe_dir="$(mktemp -d)"
+              output="$probe_dir/help.txt"
+              error="$probe_dir/error.txt"
+              if (cd "$probe_dir" && "$@" > "$output" 2> "$error") \
+                   && grep -Fq "Entroly v${RELEASE_VERSION}" "$output"; then
+                cat "$output"
+                rm -rf "$probe_dir"
+                return 0
+              fi
+              echo "$label could not run entroly@${RELEASE_VERSION} (attempt $attempt/20)." >&2
+              cat "$output" >&2 || true
+              cat "$error" >&2 || true
+              rm -rf "$probe_dir"
+              if [[ "$attempt" != 20 ]]; then
+                sleep 15
+              fi
+            done
+            return 1
+          }
 
-          npx_dir="$(mktemp -d)"
-          pnpm_dir="$(mktemp -d)"
-          bun_dir="$(mktemp -d)"
-          (
-            cd "$npx_dir"
-            npx -y "entroly@${RELEASE_VERSION}" --help > help.txt
-            grep -F "Entroly v${RELEASE_VERSION}" help.txt
-          )
-          (
-            cd "$pnpm_dir"
-            pnpm dlx "entroly@${RELEASE_VERSION}" --help > help.txt
-            grep -F "Entroly v${RELEASE_VERSION}" help.txt
-          )
-          (
-            cd "$bun_dir"
-            bunx "entroly@${RELEASE_VERSION}" --help > help.txt
-            grep -F "Entroly v${RELEASE_VERSION}" help.txt
-          )
+          # Registry metadata may lead the package tarball/CDN. Probe the
+          # actual runner path and retry that path instead of trusting metadata.
+          probe_runner npx npx -y "entroly@${RELEASE_VERSION}" --help
+          probe_runner pnpm pnpm dlx "entroly@${RELEASE_VERSION}" --help
+          probe_runner bunx bunx "entroly@${RELEASE_VERSION}" --help
 
   probe-python-runners:
     needs: [release-metadata, publish-pypi]
@@ -562,40 +562,37 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for attempt in $(seq 1 20); do
-            visible_version="$(python - <<'PY'
-          import json
-          import os
-          import urllib.error
-          import urllib.request
+          probe_python_runner() {
+            local label="$1"
+            shift
+            local output="$RUNNER_TEMP/${label}-output.txt"
+            for attempt in $(seq 1 20); do
+              if "$@" > "$output" 2>&1 \
+                   && grep -Fq "$RELEASE_VERSION" "$output"; then
+                cat "$output"
+                return 0
+              fi
+              echo "$label could not run entroly==${RELEASE_VERSION} (attempt $attempt/20)." >&2
+              cat "$output" >&2 || true
+              if [[ "$attempt" != 20 ]]; then
+                sleep 15
+              fi
+            done
+            return 1
+          }
 
-          try:
-              with urllib.request.urlopen(
-                  f"https://pypi.org/pypi/entroly/{os.environ['RELEASE_VERSION']}/json",
-                  timeout=30,
-              ) as response:
-                  print(json.load(response)["info"]["version"])
-          except (urllib.error.HTTPError, urllib.error.URLError, ValueError, KeyError):
-              pass
-          PY
-          )"
-            if [[ "$visible_version" == "$RELEASE_VERSION" ]]; then
-              break
-            fi
-            if [[ "$attempt" == 20 ]]; then
-              echo "entroly==${RELEASE_VERSION} did not become visible on PyPI." >&2
-              exit 1
-            fi
-            sleep 15
-          done
-
-          PIPX_HOME="$RUNNER_TEMP/pipx-home" \
+          # pipx 1.16 defaults to a new-release cooldown and auto-selects uv
+          # when uv is installed. Disable that cooldown and pin the pip backend
+          # so this independently proves the public pip/PyPI path; uvx proves uv.
+          probe_python_runner pipx env \
+            PIPX_HOME="$RUNNER_TEMP/pipx-home" \
             PIPX_BIN_DIR="$RUNNER_TEMP/pipx-bin" \
-            pipx run --spec "entroly==${RELEASE_VERSION}" entroly --version \
-            | grep -F "$RELEASE_VERSION"
-          UV_CACHE_DIR="$RUNNER_TEMP/uv-cache" \
-            uvx --from "entroly==${RELEASE_VERSION}" entroly --version \
-            | grep -F "$RELEASE_VERSION"
+            pipx run --no-cache --cooldown 0 --backend pip \
+              --index-url https://pypi.org/simple \
+              --spec "entroly==${RELEASE_VERSION}" entroly --version
+          probe_python_runner uvx env \
+            UV_CACHE_DIR="$RUNNER_TEMP/uv-cache" \
+            uvx --refresh --from "entroly==${RELEASE_VERSION}" entroly --version
 
   probe-npm-openclaw:
     needs: [release-metadata, publish-npm-openclaw]
