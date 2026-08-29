@@ -71,9 +71,11 @@ def test_selection_is_invariant_to_fragment_input_order(tmp_path: Path):
     # presented (e.g. filesystem enumeration order). Same corpus, reversed input
     # order -> byte-identical ordered selection.
     from entroly import qccr
-    from entroly.native_status import QCCR_SYMBOLS, native_status
 
-    if not native_status(QCCR_SYMBOLS).ok:
+    # qccr binds its native functions once, at module import. Re-probing
+    # sys.modules here can observe a temporary fake core installed by another
+    # test even though this qccr module is still correctly in fallback mode.
+    if not qccr._HAS_RUST:
         pytest.skip("selection invariance requires the native QCCR engine")
 
     fragments = [

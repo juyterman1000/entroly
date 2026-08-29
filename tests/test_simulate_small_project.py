@@ -162,11 +162,10 @@ def test_a_realistic_small_project_reports_its_savings(tmp_path: Path):
     )
 
     # The saving comes from the resolution ladder, which only the native engine
-    # implements: the pure-Python fallback has no skeleton/multi-resolution
-    # path, so a project that fits its budget genuinely has nothing to drop and
-    # honestly reports 0%. Asserting a native-only number on both surfaces made
-    # the pure-Python CI job red for a capability that does not exist there --
-    # a real gap, recorded rather than papered over.
+    # implements. The pure-Python fallback can still return a smaller unranked
+    # set because fragment accounting and request overhead differ from the
+    # repository estimate. That number is allowed only as explicitly unearned
+    # budget arithmetic; it must never masquerade as measured savings.
     #
     # This is a user-visible difference: a default `pip install entroly` with no
     # Rust wheel sees 0% on exactly the small-project run that decides whether a
@@ -178,16 +177,16 @@ def test_a_realistic_small_project_reports_its_savings(tmp_path: Path):
         )
         assert report["total_tokens_saved"] > 0
     else:
-        assert report["average_reduction_pct"] == 0, (
-            "the pure-Python fallback has no resolution ladder, so it should "
-            "report 0% rather than a number it cannot have earned; got "
-            f"{report['average_reduction_pct']}%"
-        )
-        # Whatever it reports, it must not have silently dropped context.
+        assert report["query_conditioned_selection"] is False
+        assert report["selection_engine"] == "python-fallback-unranked"
+        assert any(
+            "NOT a measured saving" in limitation
+            for limitation in report["limitations"]
+        ), "fallback budget arithmetic must carry its caveat in JSON"
+        # Whatever it reports, selection must not silently collapse to empty.
         for row in report["queries"]:
             assert row["selected_fragments"] > 0, (
-                f"0% saved must mean 'nothing needed dropping', not "
-                f"'nothing was selected'. row={row!r}"
+                f"fallback selection returned no usable context. row={row!r}"
             )
 
 
