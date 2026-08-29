@@ -648,6 +648,72 @@ def _selection_matches_query(query: str, selected: list) -> bool:
     return False
 
 
+def _indexing_still_running() -> bool:
+    """Whether the first index pass has yet to finish. Never raises."""
+    try:
+        from .server import indexing_in_progress
+
+        return indexing_in_progress()
+    except Exception:  # noqa: BLE001 - a diagnostic must not break a reply
+        return False
+
+
+def _explain_empty_selection(result: dict[str, Any], query: str) -> None:
+    """Say why nothing came back, when nothing came back.
+
+    Three situations produce an empty selection and they need different
+    answers. Reporting them identically is what made an empty reply read as
+    "your repository has nothing relevant" regardless of the actual cause.
+    """
+    considered = int(result.get("total_fragments", 0) or 0)
+
+    if considered == 0 and _indexing_still_running():
+        # Measured on a 158k-line repository: the first pass takes about three
+        # seconds for 1,852 files, and a tool call issued before it lands is
+        # served from an empty index. An eager agent calls immediately after
+        # the handshake, so this is the common case, not an edge one.
+        reason = (
+            "the first index pass is still running, so no candidates exist "
+            "yet; this is not a statement about the repository"
+        )
+        remediation = (
+            "retry in a few seconds; indexing runs in the background so the "
+            "handshake is not delayed, and the query was not the limiting "
+            "factor"
+        )
+    elif considered == 0 and _usable_core_absent():
+        reason = (
+            "no candidates were generated, because query-conditioned retrieval "
+            "requires the native engine and it is not available"
+        )
+        remediation = (
+            'install the native engine with `pip install -U "entroly[native]"` '
+            "(or run `entroly repair`); no rewording can produce a match while "
+            "candidate generation is unavailable"
+        )
+    elif considered == 0:
+        reason = "no candidates were offered to the ranker, so nothing could match"
+        remediation = (
+            "run `entroly health` to confirm the repository is indexed; the "
+            "query was not the limiting factor here"
+        )
+    else:
+        reason = (
+            f"{considered} candidates were ranked and none carried the query's "
+            "terms; returning nothing rather than unrelated files"
+        )
+        remediation = "rephrase with identifiers from the codebase"
+
+    result["status"] = "no_match"
+    result["no_match"] = {
+        "reason": reason,
+        "query": query,
+        "candidates_considered": considered,
+        "indexing_in_progress": considered == 0 and _indexing_still_running(),
+        "remediation": remediation,
+    }
+
+
 def apply_no_match_contract(
     result: dict,
     query: str,
@@ -687,6 +753,19 @@ def apply_no_match_contract(
 
     selected = result.get("selected_fragments") or result.get("selected") or []
     if not selected:
+        # Returning here made the explanation below unreachable in exactly the
+        # case that most needs it. An empty selection is not a quiet success:
+        # it is indistinguishable, to the caller, from a repository with
+        # nothing relevant in it, and an agent told that stops asking. The
+        # reasoning below already separates "nothing matched" from "nothing was
+        # offered to the ranker" -- it was simply never reached, because it
+        # sits after a guard written for the opposite problem (trimming a
+        # selection that *did* return unrelated files).
+        #
+        # The helpers all behave on an empty list -- no ranking to be
+        # degenerate, no evidence to measure, no lexical overlap -- so the
+        # block below produces the right verdict without special-casing.
+        _explain_empty_selection(result, query)
         return result
 
     # Nothing was excluded -> there was no selection decision to be wrong about.

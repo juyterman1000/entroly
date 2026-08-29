@@ -235,6 +235,11 @@ def _slim_recall_results(
 
 
 _WIRE_COMPACT_JSON_THRESHOLD = 20_000
+
+# Handle on the background startup thread, so a tool can tell "nothing matched"
+# apart from "nothing has been read yet". See indexing_in_progress().
+_startup_thread: threading.Thread | None = None
+
 _HEALTH_WIRE_LIST_CAP = 10
 _HEALTH_WIRE_LISTS = (
     "clone_pairs",
@@ -4104,8 +4109,29 @@ def _start_background_services(engine: EntrolyEngine) -> threading.Thread:
         daemon=True,
     )
     t.start()
+    global _startup_thread
+    _startup_thread = t
     logger.info("Background project initialization launched")
     return t
+
+
+def indexing_in_progress() -> bool:
+    """Whether the first index pass is still running.
+
+    Indexing runs on a background thread so it cannot delay the stdio
+    handshake. The consequence is that a client calling a tool immediately
+    after ``initialize`` -- which is what an eager agent does -- can be served
+    from an index that is still empty. Measured on this repository: the first
+    pass takes about 3 seconds for 1,852 files, and a call issued before it
+    lands returns zero fragments.
+
+    Zero fragments because nothing matched and zero fragments because nothing
+    has been read yet are opposite situations that were reported identically.
+    An agent reading the first as the second concludes the repository holds
+    nothing relevant and stops asking.
+    """
+    thread = _startup_thread
+    return bool(thread is not None and thread.is_alive())
 
 
 def _repair_native_engine_at_startup() -> None:
