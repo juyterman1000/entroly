@@ -7,8 +7,12 @@ for the ~6.5s blocking cold start.
 """
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+import os
+import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -25,6 +29,32 @@ def test_ephemeral_engine_is_warm_immediately():
     e = EntrolyEngine(EntrolyConfig(use_persistent_index=False))
     assert e.wait_until_warm(0) is True          # nothing to load
     e.optimize_context(1000, "hello world")       # works without an index
+
+
+def test_concurrent_startup_uses_independent_write_probes(tmp_path, monkeypatch):
+    """One startup must not delete another startup's writability probe."""
+    real_unlink = os.unlink
+    unlink_barrier = threading.Barrier(2)
+
+    def synchronized_unlink(path):
+        if Path(path).name.startswith(".entroly_write_probe-"):
+            unlink_barrier.wait(timeout=5)
+        real_unlink(path)
+
+    monkeypatch.setattr("entroly.engine.os.unlink", synchronized_unlink)
+    config = SimpleNamespace(checkpoint_dir=tmp_path)
+
+    def validate():
+        engine = object.__new__(EntrolyEngine)
+        engine.config = config
+        engine._validate_checkpoint_dir()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(validate) for _ in range(2)]
+        for future in futures:
+            future.result(timeout=10)
+
+    assert not list(tmp_path.glob(".entroly_write_probe-*"))
 
 
 def test_construction_does_not_load_index(tmp_path: Path):
