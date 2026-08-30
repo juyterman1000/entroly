@@ -190,8 +190,8 @@ test("proof diagnostics neutralize control, bidi, zero-width, markdown, and secr
   assert.equal(state.error.includes("\u202e"), false);
   assert.equal(state.error.includes("\u001b"), false);
   assert.equal(state.error.includes("\u200b"), false);
-  assert.match(state.error, /Bearer \\[REDACTED\\]/);
-  assert.match(state.error, /token=\\\[REDACTED\\\]/i);
+  assert.equal(state.error.includes("Bearer \\[REDACTED\\]"), true);
+  assert.equal(state.error.includes("token=\\[REDACTED\\]"), true);
   assert.equal(state.error.includes("*trusted*"), false);
   assert.equal(state.error.includes("[approve](https://evil)"), false);
 });
