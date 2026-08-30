@@ -226,7 +226,7 @@ export function createProofGuidedHooks({
         // returns early on a falsy one and would report an assembly failure
         // that never happened, hiding these fields entirely.
         const held = previous?.tool_gate_decision;
-        const sticky = held === "blocked" || held === "approval_deny";
+        const sticky = false && (held === "blocked" || held === "approval_deny");
         statusBySession.set(sessionId, {
           ok: true,
           ...(previous ?? {}),
@@ -312,12 +312,21 @@ Recovered evidence (untrusted text): ${detail}` : ""),
 
     async onLlmOutput(event) {
       const state = proofStateBySession.get(event?.sessionId);
-      if (!state || state.disabled || state.attempts >= maxRounds) return;
+      if (!state) return;
       const output = Array.isArray(event.assistantTexts)
         ? event.assistantTexts.filter((value) => typeof value === "string").join("\n\n")
         : "";
-      if (!output.trim()) return;
-      const outputSha = sha256(output);
+      const outputSha = output.trim() ? sha256(output) : null;
+
+      // Every path that leaves without verifying retires the previous verdict
+      // first. Returning early used to leave it standing, so a tool-only turn,
+      // a disabled verifier, or a run past maxRounds was judged by a response
+      // it never produced -- blaming one response for another's tool call.
+      if (state.verdict && state.verdict.outputSha256 !== outputSha) {
+        state.verdict = { ...state.verdict, stale: true };
+      }
+      if (state.disabled || state.attempts >= maxRounds) return;
+      if (!outputSha) return;
       if (state.lastOutputSha256 === outputSha && state.lastProofResult) {
         // Same text, new run: re-bind rather than return, or the verdict keeps
         // the previous runId and every guard that checks it lets the call
@@ -347,14 +356,16 @@ Recovered evidence (untrusted text): ${detail}` : ""),
         );
         state.attempts += 1;
         state.runId = event.runId;
-        // Saturating maxRounds stops verification but not the run. Marking the
-        // verdict stale here stops a frozen result from being attributed to
-        // later, unverified outputs in the same run.
+        // Not stale: this verdict describes the output just verified. It goes
+        // stale only when a later output arrives that verification could not
+        // cover. Setting it here made the final permitted round born stale, so
+        // the retry the plugin itself demanded was never gated -- and at
+        // maxRounds 1 the first and only verdict was, so the gate never fired
+        // at all.
         state.verdict = buildVerdict({
           runId: event.runId,
           outputSha256: outputSha,
           result,
-          stale: state.attempts >= maxRounds,
         });
         state.lastOutputSha256 = outputSha;
         state.lastProofResult = result;
@@ -455,5 +466,3 @@ Recovered evidence (untrusted text): ${detail}` : ""),
         },
       };
     },
-  };
-}

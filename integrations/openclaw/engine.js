@@ -680,7 +680,7 @@ export function createEntrolyContextEngine({
               // the hooks read. Leaving it implicit is what let a test fixture
               // and production drift apart.
               verdict: null,
-              toolGateApprovedRunId: null,
+              toolGateApprovedOutputSha256: null,
               retryIssued: false,
               disabled: false,
             });
