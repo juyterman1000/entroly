@@ -13,6 +13,7 @@ function sha256(value) {
 const DISPLAY_WHITESPACE = /[\t\n\r\f\v\u0085\u2028\u2029]+/gu;
 const UNSAFE_FOR_DISPLAY = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu;
 const MARKDOWN_DELIMITERS = /([\\`*_[\]{}()<>#+.!|~-])/g;
+const AUTH_SCHEME = /\b(Basic|Bearer)\s+[^\s,;]+/gi;
 const SECRET_FIELD =
   /["']?\b(api[_-]?key|authorization|password|secret|token)\b["']?\s*[:=]\s*(?:"[^"]*(?:"|$)|'[^']*(?:'|$)|(?:Basic|Bearer)\s+[^\s,;]+|[^\s,;"']+)/gi;
 
@@ -27,6 +28,7 @@ function diagnosticSource(value) {
 
 function normalizeDiagnosticText(value) {
   return diagnosticSource(value)
+    .normalize("NFKC")
     .replace(DISPLAY_WHITESPACE, " ")
     .replace(UNSAFE_FOR_DISPLAY, "")
     .replace(/\s+/g, " ")
@@ -44,7 +46,7 @@ function sanitizeDisplayText(value, limit = 400) {
 
 function safeDiagnostic(value, limit = 400) {
   const redacted = normalizeDiagnosticText(value)
-    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [REDACTED]")
+    .replace(AUTH_SCHEME, "$1 [REDACTED]")
     .replace(SECRET_FIELD, "$1=[REDACTED]");
   return sanitizeDisplayText(redacted, limit);
 }
