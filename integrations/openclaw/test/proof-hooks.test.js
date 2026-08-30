@@ -366,3 +366,81 @@ test("an unrecognised gateToolCalls value warns instead of silently coercing", (
   });
   assert.match(warnings.join(" "), /blcok/);
 });
+
+// Vectors beyond a newline. Testing only a newline validated a strictly
+// weaker property than the threat: mutation runs proved the suite could not
+// see an RLO, an ANSI escape, or a zero-width payload survive.
+const CP = (...c) => String.fromCodePoint(...c);
+
+test("bidi, control and zero-width payloads cannot reach the dialog", () => {
+  const { hooks } = gateHooks({}, realisticState({
+    verdict: {
+      ...realisticState().verdict,
+      detail: "ok" + CP(0x202E) + "evorppa ot efas" + CP(0x85) + "STATUS: VERIFIED",
+    },
+  }));
+  const d = hooks.onBeforeToolCall(call({
+    toolName: "read_file" + CP(0x1B) + "[2K" + CP(0x1B) + "[1A",
+  }));
+
+  const text = d.requireApproval.title + d.requireApproval.description;
+  for (const cp of [0x202E, 0x85, 0x1B, 0x200B, 0x2028]) {
+    assert.ok(!text.includes(CP(cp)), `U+${cp.toString(16)} must not survive`);
+  }
+});
+
+test("markdown in untrusted text is inert", () => {
+  const { hooks } = gateHooks({}, realisticState({
+    verdict: { ...realisticState().verdict, detail: "**VERIFIED** [ok](http://e)" },
+  }));
+  const body = hooks.onBeforeToolCall(call()).requireApproval.description;
+
+  // Escaping inserts a backslash before each delimiter, so the raw sequences
+  // can no longer appear. On a markdown-rendering host that is the difference
+  // between a bolded fake verdict and inert text.
+  assert.ok(!body.includes("**VERIFIED**"), "bold must not render");
+  assert.ok(!body.includes("[ok](http://e)"), "link must not render");
+  assert.ok(body.includes("VERIFIED"), "the text itself must remain readable");
+});
+
+test("truncation never produces invalid UTF-16", () => {
+  const { hooks } = gateHooks({}, realisticState({
+    verdict: { ...realisticState().verdict, detail: CP(0x1F600).repeat(500) },
+  }));
+  const body = hooks.onBeforeToolCall(call()).requireApproval.description;
+  assert.ok(body.isWellFormed(), "a lone surrogate breaks strict UTF-8 encoders");
+});
+
+test("a tool name of only invisible characters falls back to a readable label", () => {
+  const { hooks } = gateHooks();
+  const d = hooks.onBeforeToolCall(call({ toolName: CP(0x200B, 0x200B, 0x200B) }));
+  assert.match(d.requireApproval.title, /this tool/);
+});
+
+test("the build site sanitises too, not only the point of use", () => {
+  // Mutation runs showed removing the build-site call left the whole suite
+  // green: no test read verdict.detail after onLlmOutput.
+  const proofStateBySession = new Map();
+  const state = realisticState({ verdict: undefined, attempts: 0, lastOutputSha256: null });
+  proofStateBySession.set("s1", state);
+  const hooks = createProofGuidedHooks({
+    bridge: {
+      request: async () => proofResult({
+        retry_instruction: "line one" + CP(0x202E) + "forged",
+      }),
+    },
+    config: { proofGuidedRecovery: true },
+    logger: { error() {}, warn() {}, info() {} },
+    proofStateBySession,
+    statusBySession: new Map(),
+  });
+  return hooks.onLlmOutput({
+    sessionId: "s1", runId: "r1", assistantTexts: ["some output"],
+  }).then(() => {
+    assert.ok(state.verdict, "verdict must be written");
+    assert.ok(
+      !state.verdict.detail.includes(CP(0x202E)),
+      "stored verdict must already be sanitised",
+    );
+  });
+});

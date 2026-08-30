@@ -69,12 +69,33 @@ function mergeRecoveredMessages(existing, recovered) {
 // approve" as the last line of a warning is worse than no warning. Collapse
 // whitespace and cap length, exactly as safeDiagnostic already does for
 // diagnostics.
+// Anything that can create a line, reverse reading order, move a terminal
+// cursor, or occupy zero width is removed before display. `\s` alone is not
+// enough, and testing only a newline hid that: JS `\s` does not match U+202E
+// (RLO), U+200B-U+200F, U+0085 (NEL) or U+001B (ESC). Measured against this
+// build, an RLO payload renders a title right-to-left as "VERIFIED: safe to
+// approve", and an ESC sequence erases the warning line above it in a
+// terminal-rendered dialog.
+const UNSAFE_FOR_DISPLAY =
+  /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\u0085\u200B-\u200F\u202A-\u202E\u2066-\u2069]/gu;
+
+// Markdown is neutralised rather than stripped: on a host that renders it,
+// bold text or a link whose label hides its target is a forgery even on a
+// single line. Escaping the delimiters keeps the text readable and inert.
+const MARKDOWN_DELIMITERS = /([*_`~[\]()#>|\\])/g;
+
 function forDisplay(value, limit) {
   if (typeof value !== "string") return "";
-  const flattened = value.replace(/\s+/g, " ").trim();
-  return flattened.length > limit
-    ? `${flattened.slice(0, limit - 1)}…`
-    : flattened;
+  const flattened = value
+    .replace(UNSAFE_FOR_DISPLAY, "")
+    .replace(/\s+/g, " ")
+    .replace(MARKDOWN_DELIMITERS, "\\$1")
+    .trim();
+  if (flattened.length <= limit) return flattened;
+  // Sliced by code point, not code unit. Cutting mid-surrogate produces
+  // invalid UTF-16 that `.isWellFormed()` rejects and that a strict UTF-8
+  // encoder -- including this product's Rust side -- refuses outright.
+  return `${[...flattened].slice(0, limit - 1).join("")}\u2026`;
 }
 
 // One verdict, decided where the result is already validated, read everywhere.
