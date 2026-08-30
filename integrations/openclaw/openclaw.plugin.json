@@ -115,25 +115,6 @@
         "default": 3,
         "title": "Recovery Message Limit",
         "description": "Maximum exact omitted messages appended to one revision instruction."
-      },
-      "gateToolCalls": {
-        "type": "string",
-        "enum": [
-          "off",
-          "approve",
-          "block"
-        ],
-        "default": "approve",
-        "title": "Unverified Tool Call Gate",
-        "description": "What to do when a tool call follows a response containing a claim the supplied evidence did not support. 'approve' asks you per call, 'block' withholds it, 'off' disables the gate. Consults the Proof-Guided Recovery verdict, so it has no effect unless that is enabled. No model call is made."
-      },
-      "gateToolCallsTimeoutMs": {
-        "type": "integer",
-        "minimum": 1,
-        "maximum": 3600000,
-        "default": 120000,
-        "title": "Tool Call Approval Timeout",
-        "description": "How long to wait for a tool-call approval before the host resolves it. An unresolved approval always denies, so an unattended or headless run reaches a bounded denial rather than hanging."
       }
     }
   }

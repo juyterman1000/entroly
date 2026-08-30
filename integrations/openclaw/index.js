@@ -52,25 +52,6 @@ export default definePluginEntry({
         api.on("llm_output", proofHooks.onLlmOutput);
         api.on("before_agent_finalize", proofHooks.onBeforeAgentFinalize);
         api.on("reply_payload_sending", proofHooks.onReplyPayloadSending);
-        // Gates the act, not just the reply. The other three decide what the
-        // user is shown; this decides whether a claim the evidence did not
-        // support is allowed to become a tool call. Registered through
-        // `api.on` because the typed runner never invokes an underscore name
-        // registered via `api.registerHook`.
-        // Registered separately and defensively. `typeof api.on === "function"`
-        // proves the hook bus exists, not that this host emits this event: a
-        // build that validates event names would throw here, and this sits
-        // before registerCommand, so an unsupported name would cost the whole
-        // plugin its `entroly-context` command rather than one feature.
-        try {
-          api.on("before_tool_call", proofHooks.onBeforeToolCall);
-        } catch (error) {
-          api.logger?.warn?.(
-            "entroly: this host does not accept the before_tool_call hook; " +
-              "tool-call gating is inactive and gateToolCalls has no effect " +
-              `(${error?.message ?? error})`,
-          );
-        }
       }
     }
     api.registerCommand({

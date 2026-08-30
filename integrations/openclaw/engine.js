@@ -37,7 +37,6 @@ function safeDiagnostic(value, limit = 400) {
 function statusSnapshot(status) {
   const snapshot = { ok: status?.ok === true };
   const numericFields = [
-    "tool_gate_count",
     "estimated_tokens",
     "source_tokens",
     "tokens_saved",
@@ -62,13 +61,6 @@ function statusSnapshot(status) {
     "assembly_strategy",
     "proof_guided_status",
     "proof_guided_audit_artifact_id",
-    // Withholding an action is the most consequential thing this plugin does.
-    // These are written by the tool-call gate; omitting them from the snapshot
-    // allowlist would silently drop them and make the audit record write-only.
-    "tool_gate_decision",
-    "tool_gate_tool",
-    "tool_gate_run_id",
-    "tool_gate_reason",
     "error",
   ];
   for (const field of numericFields) {
@@ -396,18 +388,6 @@ export function formatEntrolyStatus(status) {
     );
   }
   if (status.receipt_id) lines.push(`Receipt: ${boundedString(status.receipt_id, 160)}`);
-  if (status.tool_gate_decision) {
-    // An operator who denied a prompt must be able to reconstruct why. Writing
-    // the decision into the status map is not enough on its own: the snapshot
-    // allowlist and this renderer both have to carry it, or the record exists
-    // and nobody can read it.
-    lines.push(
-      `Tool-call gate: ${boundedString(status.tool_gate_decision, 40)} on ` +
-        `${boundedString(status.tool_gate_tool ?? "a tool", 60)} ` +
-        `(${boundedString(status.tool_gate_reason ?? "unknown", 40)}` +
-        `${status.tool_gate_count ? `, ${status.tool_gate_count} this session` : ""})`,
-    );
-  }
   if (status.proof_guided_status) {
     lines.push(
       `Proof-guided recovery: ${boundedString(status.proof_guided_status, 160)}`,
@@ -676,11 +656,6 @@ export function createEntrolyContextEngine({
               runId: null,
               lastOutputSha256: null,
               lastProofResult: null,
-              // Declared here so the state this file builds matches the shape
-              // the hooks read. Leaving it implicit is what let a test fixture
-              // and production drift apart.
-              verdict: null,
-              toolGateApprovedOutputSha256: null,
               retryIssued: false,
               disabled: false,
             });
