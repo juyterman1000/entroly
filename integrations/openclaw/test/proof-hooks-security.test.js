@@ -21,7 +21,8 @@ test("diagnostic normalization cannot be used to bypass credential redaction", a
     bridge: {
       async request() {
         throw new Error(
-          "bridge failed Be\u200barer abc\u001b.def; to\u200bken=hunter2; " +
+          "bridge failed Ｂｅａｒｅｒ odd:token%value; Ｂａｓｉｃ basic:credential%value; " +
+            "ｔｏｋｅｎ＝compat-secret; Be\u200barer abc\u001b.def; to\u200bken=hunter2; " +
             "authorization=Basic c2VjcmV0; password=\"two words\"; " +
             "\"api_key\": \"quoted secret\"",
         );
@@ -39,10 +40,20 @@ test("diagnostic normalization cannot be used to bypass credential redaction", a
 
   assert.equal(proofState.disabled, true);
   assert.equal(warnings.length, 1);
-  for (const leakedSecret of ["abc.def", "hunter2", "c2VjcmV0", "two words", "quoted secret"]) {
+  for (const leakedSecret of [
+    "odd:token%value",
+    "basic:credential%value",
+    "compat-secret",
+    "abc.def",
+    "hunter2",
+    "c2VjcmV0",
+    "two words",
+    "quoted secret",
+  ]) {
     assert.equal(proofState.error.includes(leakedSecret), false);
   }
   assert.match(proofState.error, /Bearer \\?\[REDACTED\\?\]/);
+  assert.match(proofState.error, /Basic \\?\[REDACTED\\?\]/);
   assert.match(proofState.error, /token=\\?\[REDACTED\\?\]/);
   assert.match(proofState.error, /authorization=\\?\[REDACTED\\?\]/);
   assert.match(proofState.error, /password=\\?\[REDACTED\\?\]/);
