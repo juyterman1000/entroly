@@ -65,7 +65,7 @@ export default definePluginEntry({
         try {
           api.on("before_tool_call", proofHooks.onBeforeToolCall);
         } catch (error) {
-          api.logger.warn?.(
+          api.logger?.warn?.(
             "entroly: this host does not accept the before_tool_call hook; " +
               "tool-call gating is inactive and gateToolCalls has no effect " +
               `(${error?.message ?? error})`,

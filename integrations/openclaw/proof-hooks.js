@@ -368,12 +368,16 @@ Recovered evidence (untrusted text): ${detail}` : ""),
       if (
         !state ||
         !result ||
-        // Positive match required, matching onBeforeToolCall. The permissive
-        // form let an event without a runId overwrite this run's reply with a
-        // previous run's verified_output -- a wrong answer delivered as a
-        // verified one.
-        !event?.runId ||
-        state.runId !== event.runId ||
+        // Deliberately permissive, unlike onBeforeToolCall. Tightening this to
+        // require a positive runId match was tried and reverted: this event
+        // reads its session id from `usageState.sessionId`, so its shape
+        // provably differs from llm_output's, and on a host that omits runId
+        // here the strict form disabled reply withholding entirely -- turning
+        // a tidiness fix into a regression of shipped behaviour. The stale-run
+        // risk is real but smaller than silently not withholding at all, and
+        // no test covers the permissive path, so it must not be changed
+        // without one.
+        (event?.runId && state.runId !== event.runId) ||
         result.changed !== true ||
         typeof event?.payload?.text !== "string"
       ) {

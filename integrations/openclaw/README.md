@@ -143,7 +143,7 @@ actionable warning instead of risking a provider overflow. Explicit OpenClaw
 budgets always win, followed by the operator's `fallbackTokenBudget`; automatic
 registry discovery is used only when neither is available.
 
-## ### Tool-call gating
+## Tool-call gating
 
 Proof-Guided Recovery also gates **actions**, not only replies. When the
 response behind a tool call contained a claim the supplied evidence did not
@@ -175,7 +175,7 @@ If verification itself fails, `block` withholds the call rather than allowing
 it — the reply path already withholds text in that case, and leaving the action
 path open would be the more dangerous asymmetry.
 
-Optional proof-guided exact recovery
+## Optional proof-guided exact recovery
 
 Default behavior performs local context assembly only and makes no additional
 model call. To let Entroly verify a draft, recover exact omitted messages, and
