@@ -226,7 +226,7 @@ export function createProofGuidedHooks({
         // returns early on a falsy one and would report an assembly failure
         // that never happened, hiding these fields entirely.
         const held = previous?.tool_gate_decision;
-        const sticky = false && (held === "blocked" || held === "approval_deny");
+        const sticky = held === "blocked" || held === "approval_deny";
         statusBySession.set(sessionId, {
           ok: true,
           ...(previous ?? {}),
@@ -466,3 +466,5 @@ Recovered evidence (untrusted text): ${detail}` : ""),
         },
       };
     },
+  };
+}
