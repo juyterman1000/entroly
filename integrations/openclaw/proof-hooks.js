@@ -28,6 +28,7 @@ function diagnosticSource(value) {
 
 function normalizeDiagnosticText(value) {
   return diagnosticSource(value)
+    .toWellFormed()
     .normalize("NFKC")
     .replace(DISPLAY_WHITESPACE, " ")
     .replace(UNSAFE_FOR_DISPLAY, "")
