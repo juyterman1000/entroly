@@ -44,7 +44,7 @@ function safeDiagnostic(value, limit = 400) {
   const redacted = normalizeDiagnosticText(value)
     .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [REDACTED]")
     .replace(
-      /\b(api[_-]?key|authorization|password|secret|token)\b\s*[:=]\s*["']?[^\s,;"']+/gi,
+      /\b(api[_-]?key|authorization|password|secret|token)\b["']?\s*[:=]\s*(?:"[^"]*(?:"|$)|'[^']*(?:'|$)|[^,;]+)/gi,
       "$1=[REDACTED]",
     );
   return sanitizeDisplayText(redacted, limit);
