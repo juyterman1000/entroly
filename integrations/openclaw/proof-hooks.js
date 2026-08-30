@@ -7,27 +7,41 @@ function sha256(value) {
 }
 
 // Diagnostics can contain provider text, tool names, bridge errors, or recovered
-// material. Treat them as untrusted display data: control/bidi/zero-width
-// characters can forge terminal or UI output, and markdown delimiters can make
-// a rendered warning visually claim something the underlying text does not.
+// material. Treat them as untrusted display data. Canonicalize before redaction
+// so format/control characters cannot be inserted into credential markers to
+// evade secret detection, then escape display syntax and truncate by code point.
+const DISPLAY_WHITESPACE = /[\t\n\r\f\v\u0085\u2028\u2029]+/gu;
 const UNSAFE_FOR_DISPLAY = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu;
 const MARKDOWN_DELIMITERS = /([\\`*_[\]{}()<>#+.!|~-])/g;
 
+function diagnosticSource(value) {
+  try {
+    const candidate = value?.message ?? value ?? "unknown error";
+    return typeof candidate === "string" ? candidate : String(candidate);
+  } catch {
+    return "unknown error";
+  }
+}
+
+function normalizeDiagnosticText(value) {
+  return diagnosticSource(value)
+    .replace(DISPLAY_WHITESPACE, " ")
+    .replace(UNSAFE_FOR_DISPLAY, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function sanitizeDisplayText(value, limit = 400) {
   if (typeof value !== "string" || limit <= 0) return "";
-  const flattened = value
-    .replace(UNSAFE_FOR_DISPLAY, " ")
-    .replace(/\s+/g, " ")
-    .replace(MARKDOWN_DELIMITERS, "\\$1")
-    .trim();
-  const codePoints = [...flattened];
-  if (codePoints.length <= limit) return flattened;
+  const escaped = value.replace(MARKDOWN_DELIMITERS, "\\$1");
+  const codePoints = [...escaped];
+  if (codePoints.length <= limit) return escaped;
   if (limit === 1) return "…";
   return `${codePoints.slice(0, limit - 1).join("")}…`;
 }
 
 function safeDiagnostic(value, limit = 400) {
-  const redacted = String(value?.message ?? value ?? "unknown error")
+  const redacted = normalizeDiagnosticText(value)
     .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [REDACTED]")
     .replace(
       /\b(api[_-]?key|authorization|password|secret|token)\b\s*[:=]\s*["']?[^\s,;"']+/gi,
