@@ -141,3 +141,67 @@ def test_elc_json_keeps_query_centered_long_scalar_within_budget() -> None:
     assert '"document_id": "gold"' in result.compressed
     assert estimate_tokens(result.compressed) <= 180
     assert result.receipt.anchors_preserved["query"] >= 1
+
+
+def test_elc_json_matches_natural_language_to_snake_case_metric_keys() -> None:
+    data = {
+        "aggregates": {
+            "paired": {
+                "entroly_only_final_exact": 6,
+                "external_adapter_only_final_exact": 0,
+                "mcnemar_exact_p": 0.03125,
+            },
+            "systems": {
+                "entroly": {
+                    "final_exact": 24,
+                    "mean_effective_token_ratio": 0.288781,
+                },
+                "external_adapter": {
+                    "final_exact": 18,
+                    "mean_effective_token_ratio": 0.429722,
+                },
+            },
+        },
+        "noise": [
+            {"fixture_id": f"case-{index}", "exact": True, "payload": "x" * 200}
+            for index in range(80)
+        ],
+    }
+
+    result = compress_evidence_locked(
+        json.dumps(data),
+        query=(
+            "How many exact final answers did each system achieve, what were "
+            "the effective token ratios, and what was the McNemar exact p-value?"
+        ),
+        budget_tokens=600,
+    )
+
+    assert result.changed
+    assert '"final_exact": 24' in result.compressed
+    assert '"mean_effective_token_ratio": 0.288781' in result.compressed
+    assert '"final_exact": 18' in result.compressed
+    assert '"mean_effective_token_ratio": 0.429722' in result.compressed
+    assert '"mcnemar_exact_p": 0.03125' in result.compressed
+
+
+def test_elc_source_matches_natural_language_to_identifier_components() -> None:
+    lines = [f"ordinary helper line {index}" for index in range(300)]
+    lines[140:146] = [
+        "# A recovery handle must have a stronger contract.",
+        "recovery_receipt = dict(receipt)",
+        'recovery_receipt[\"reason\"] = \"compression_proxy_full_recovery\"',
+        "if estimate_tokens(rendered) >= estimate_tokens(text):",
+        "    return text, False, receipt",
+        "return rendered, True, receipt",
+    ]
+
+    result = compress_evidence_locked(
+        "\n".join(lines),
+        query="How does the proxy mark full recovery and enforce the final token check?",
+        budget_tokens=180,
+    )
+
+    assert result.changed
+    assert "compression_proxy_full_recovery" in result.compressed
+    assert "if estimate_tokens(rendered) >= estimate_tokens(text):" in result.compressed
