@@ -8,6 +8,7 @@ from scripts.verify_public_trust import (
     PROMINENT_PUBLIC_FILES,
     _collect_prism_r_public_failures,
     _collect_stale_public_claim_failures,
+    _collect_token_authority_failures,
     collect_offline_failures,
 )
 
@@ -58,6 +59,10 @@ def test_stale_public_claims_fail_closed() -> None:
     )
     assert any("universal token or billing range" in failure for failure in failures)
     assert any("answer-quality guarantee" in failure for failure in failures)
+
+
+def test_ai_token_authority_pages_keep_measurement_and_claim_boundaries() -> None:
+    assert _collect_token_authority_failures() == []
 
 
 def test_registry_publisher_is_not_vendored_and_is_checksum_pinned() -> None:

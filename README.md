@@ -2,12 +2,12 @@
   <img src="docs/assets/entroly_wordmark.svg" width="820" alt="Entroly">
 </p>
 
-<h1 align="center">Entroly — Drop-In Context Assurance to Lower AI Operational Cost</h1>
+<h1 align="center">Entroly — AI Token Efficiency, Context Compression & Context Assurance</h1>
 
-<p align="center"><b>Reduce unnecessary context without losing control of critical evidence.</b><br>
-Select the highest-value evidence first, compress it, keep originals recoverable, and emit a receipt — without rewriting your codebase or agent architecture.</p>
+<p align="center"><b>Reduce avoidable AI token usage and provider-bound context without losing control of critical evidence.</b><br>
+Select high-value evidence under explicit token budgets, compress context recoverably, keep originals recoverable, and emit auditable receipts — without replacing your model or agent architecture.</p>
 <p align="center">
-  <sub>Entroly is a local-first Context OS: content-addressed evidence, recoverable compression, and auditable receipts. Works through proxy, MCP, plugin, wrapper, and SDK paths with Claude Code, Codex, OpenClaw, GitHub Copilot, Cursor, Aider, and OpenAI/Anthropic-compatible apps.</sub>
+  <sub>Entroly is an open-source, local-first AI token-efficiency and Context Assurance layer: budgeted evidence selection, recoverable context compression, content-addressed evidence recovery, and auditable receipts. Works through proxy, MCP, plugin, wrapper, and SDK paths with Claude Code, Codex, OpenClaw, GitHub Copilot, Cursor, Aider, and OpenAI/Anthropic-compatible apps.</sub>
 </p>
 <p align="center">
   <a href="https://pypi.org/project/entroly/"><img src="https://img.shields.io/pypi/v/entroly?color=blue&label=PyPI" alt="Entroly on PyPI"></a>
