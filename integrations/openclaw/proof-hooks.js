@@ -6,15 +6,50 @@ function sha256(value) {
   return createHash("sha256").update(String(value), "utf8").digest("hex");
 }
 
-function safeDiagnostic(value, limit = 400) {
-  return String(value?.message ?? value ?? "unknown error")
+// Diagnostics can contain provider text, tool names, bridge errors, or recovered
+// material. Treat them as untrusted display data. Canonicalize before redaction
+// so format/control characters cannot be inserted into credential markers to
+// evade secret detection, then escape display syntax and truncate by code point.
+const DISPLAY_WHITESPACE = /[\t\n\r\f\v\u0085\u2028\u2029]+/gu;
+const UNSAFE_FOR_DISPLAY = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu;
+const MARKDOWN_DELIMITERS = /([\\`*_[\]{}()<>#+.!|~-])/g;
+const AUTH_SCHEME = /\b(Basic|Bearer)\s+[^\s,;]+/gi;
+const SECRET_FIELD =
+  /["']?\b(api[_-]?key|authorization|password|secret|token)\b["']?\s*[:=]\s*(?:"[^"]*(?:"|$)|'[^']*(?:'|$)|(?:Basic|Bearer)\s+[^\s,;]+|[^\s,;"']+)/gi;
+
+function diagnosticSource(value) {
+  try {
+    const candidate = value?.message ?? value ?? "unknown error";
+    return typeof candidate === "string" ? candidate : String(candidate);
+  } catch {
+    return "unknown error";
+  }
+}
+
+function normalizeDiagnosticText(value) {
+  return diagnosticSource(value)
+    .toWellFormed()
+    .normalize("NFKC")
+    .replace(DISPLAY_WHITESPACE, " ")
+    .replace(UNSAFE_FOR_DISPLAY, "")
     .replace(/\s+/g, " ")
-    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [REDACTED]")
-    .replace(
-      /\b(api[_-]?key|authorization|password|secret|token)\b\s*[:=]\s*["']?[^\s,;"']+/gi,
-      "$1=[REDACTED]",
-    )
-    .slice(0, limit);
+    .trim();
+}
+
+function sanitizeDisplayText(value, limit = 400) {
+  if (typeof value !== "string" || limit <= 0) return "";
+  const escaped = value.replace(MARKDOWN_DELIMITERS, "\\$1");
+  const codePoints = [...escaped];
+  if (codePoints.length <= limit) return escaped;
+  if (limit === 1) return "…";
+  return `${codePoints.slice(0, limit - 1).join("")}…`;
+}
+
+function safeDiagnostic(value, limit = 400) {
+  const redacted = normalizeDiagnosticText(value)
+    .replace(AUTH_SCHEME, "$1 [REDACTED]")
+    .replace(SECRET_FIELD, "$1=[REDACTED]");
+  return sanitizeDisplayText(redacted, limit);
 }
 
 function positiveInteger(value, fallback, maximum) {

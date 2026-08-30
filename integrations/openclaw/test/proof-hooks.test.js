@@ -27,6 +27,16 @@ function proofResult(overrides = {}) {
   };
 }
 
+function proofState() {
+  return {
+    sourceMessages,
+    assembledMessages: sourceMessages,
+    recoveredMessages: [],
+    attempts: 0,
+    disabled: false,
+  };
+}
+
 test("proof hooks request one bounded revision and suppress unsupported delivery", async () => {
   const requests = [];
   const bridge = {
@@ -107,18 +117,7 @@ test("supported revision finalizes without another paid attempt", async () => {
       });
     },
   };
-  const proofStateBySession = new Map([
-    [
-      "session-2",
-      {
-        sourceMessages,
-        assembledMessages: sourceMessages,
-        recoveredMessages: [],
-        attempts: 1,
-        disabled: false,
-      },
-    ],
-  ]);
+  const proofStateBySession = new Map([["session-2", { ...proofState(), attempts: 1 }]]);
   const hooks = createProofGuidedHooks({
     bridge,
     config: { proofGuidedMaxRounds: 2 },
@@ -138,18 +137,7 @@ test("supported revision finalizes without another paid attempt", async () => {
 
 test("invalid bridge proof disables retries instead of looping", async () => {
   const warnings = [];
-  const proofStateBySession = new Map([
-    [
-      "session-3",
-      {
-        sourceMessages,
-        assembledMessages: sourceMessages,
-        recoveredMessages: [],
-        attempts: 0,
-        disabled: false,
-      },
-    ],
-  ]);
+  const proofStateBySession = new Map([["session-3", proofState()]]);
   const hooks = createProofGuidedHooks({
     bridge: { request: async () => ({ ok: true }) },
     logger: { warn: (message) => warnings.push(message) },
@@ -172,4 +160,62 @@ test("invalid bridge proof disables retries instead of looping", async () => {
     payload: { text: "unverified answer" },
   });
   assert.match(delivery.payload.text, /withheld.*verification failed/i);
+});
+
+test("proof diagnostics neutralize control, bidi, zero-width, markdown, and secrets", async () => {
+  const warnings = [];
+  const state = proofState();
+  const proofStateBySession = new Map([["session-hostile", state]]);
+  const hooks = createProofGuidedHooks({
+    bridge: {
+      async request() {
+        throw new Error(
+          "bridge failed\n\u202eVERIFIED\u001b[2K\u200b *trusted* [approve](https://evil) " +
+            "Bearer abc.def token=hunter2",
+        );
+      },
+    },
+    logger: { warn: (message) => warnings.push(message) },
+    proofStateBySession,
+  });
+
+  await hooks.onLlmOutput({
+    runId: "run-hostile",
+    sessionId: "session-hostile",
+    assistantTexts: ["answer"],
+  });
+
+  assert.equal(warnings.length, 1);
+  assert.equal(state.error.includes("\n"), false);
+  assert.equal(state.error.includes("\u202e"), false);
+  assert.equal(state.error.includes("\u001b"), false);
+  assert.equal(state.error.includes("\u200b"), false);
+  assert.equal(state.error.includes("Bearer \\[REDACTED\\]"), true);
+  assert.equal(state.error.includes("token=\\[REDACTED\\]"), true);
+  assert.equal(state.error.includes("*trusted*"), false);
+  assert.equal(state.error.includes("[approve](https://evil)"), false);
+});
+
+test("proof diagnostic truncation never splits a surrogate pair", async () => {
+  const state = proofState();
+  const proofStateBySession = new Map([["session-unicode", state]]);
+  const hooks = createProofGuidedHooks({
+    bridge: {
+      async request() {
+        throw new Error(`${"x".repeat(399)}🚀z`);
+      },
+    },
+    logger: { warn() {} },
+    proofStateBySession,
+  });
+
+  await hooks.onLlmOutput({
+    runId: "run-unicode",
+    sessionId: "session-unicode",
+    assistantTexts: ["answer"],
+  });
+
+  assert.equal([...state.error].length, 400);
+  assert.equal(state.error.endsWith("…"), true);
+  assert.equal(/[\uD800-\uDFFF]/.test(state.error), false);
 });
