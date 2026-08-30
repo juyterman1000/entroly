@@ -297,3 +297,31 @@ test("a malformed event allows rather than throws", () => {
     assert.equal(hooks.onBeforeToolCall(event), undefined);
   }
 });
+
+test("a tool-call event without a runId cannot be gated by a stale verdict", () => {
+  // engine.js rebuilds proof state only when the prompt changes, so a retry of
+  // the same prompt carries the previous verdict forward. If the host omits
+  // runId, there is no way to prove the verdict describes this call -- and the
+  // handler must allow rather than block on information it does not have.
+  const hooks = gateHooks({ gateToolCalls: "block" }, unsupported());
+
+  assert.equal(
+    hooks.onBeforeToolCall({ sessionId: "s1", toolName: "exec" }),
+    undefined,
+    "missing runId must allow, not gate on an unprovable verdict",
+  );
+});
+
+test("a verdict with no recorded runId cannot gate", () => {
+  // Fresh state sets runId: null. Before onLlmOutput records one, nothing is
+  // attributable to a run.
+  const hooks = gateHooks({ gateToolCalls: "block" }, {
+    runId: null,
+    lastProofResult: proofResult(),
+  });
+
+  assert.equal(
+    hooks.onBeforeToolCall({ sessionId: "s1", runId: "r1" }),
+    undefined,
+  );
+});

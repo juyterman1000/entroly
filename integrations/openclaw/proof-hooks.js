@@ -105,8 +105,15 @@ export function createProofGuidedHooks({
       const state = proofStateBySession.get(event?.sessionId);
       const result = state?.lastProofResult;
       if (!state || !result || state.disabled) return undefined;
-      // A verdict from an earlier run says nothing about this tool call.
-      if (event?.runId && state.runId !== event.runId) return undefined;
+      // The verdict must be provably about THIS run. Requiring a positive
+      // match rather than skipping the check when `runId` is absent matters
+      // because proof state outlives a run: engine.js only rebuilds it when
+      // the prompt changes, so a retry of the same prompt carries the previous
+      // verdict forward. Testing `event?.runId && ...` would let an event with
+      // no runId fall through that guard and gate an innocent tool call on a
+      // stale verdict -- failing closed on missing information, which is the
+      // opposite of what the rest of this handler does.
+      if (!event?.runId || state.runId !== event.runId) return undefined;
       if (result.status !== "retry_with_exact_evidence") return undefined;
 
       const detail =
