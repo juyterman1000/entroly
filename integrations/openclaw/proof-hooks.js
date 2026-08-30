@@ -79,8 +79,69 @@ export function createProofGuidedHooks({
     3,
     16,
   );
+  // "approve" by default rather than "block": withholding a tool call outright
+  // on a verdict the operator has not seen trades one failure mode for a worse
+  // one. An unknown value falls back to asking rather than to acting.
+  const gateToolCalls = ["off", "approve", "block"].includes(
+    config.gateToolCalls,
+  )
+    ? config.gateToolCalls
+    : "approve";
 
   return {
+    onBeforeToolCall(event) {
+      // A tool call is where an unsupported claim stops being text and becomes
+      // an action. Verification already ran at `llm_output`; this consults the
+      // verdict it produced rather than repeating the work.
+      //
+      // Deliberately synchronous and bridge-free. OpenClaw gives this hook a
+      // 15-second budget and fails CLOSED on expiry, so a round trip here would
+      // turn a slow or unreachable bridge into blocked tool calls for the user.
+      // Reading state that is already resident cannot time out.
+      //
+      // Everything unknown allows. Only an explicit "the model asserted
+      // something its evidence did not support", for this exact run, gates.
+      if (gateToolCalls === "off") return undefined;
+      const state = proofStateBySession.get(event?.sessionId);
+      const result = state?.lastProofResult;
+      if (!state || !result || state.disabled) return undefined;
+      // A verdict from an earlier run says nothing about this tool call.
+      if (event?.runId && state.runId !== event.runId) return undefined;
+      if (result.status !== "retry_with_exact_evidence") return undefined;
+
+      const detail =
+        typeof result.retry_instruction === "string"
+          ? result.retry_instruction.trim().slice(0, 400)
+          : "";
+      const toolName =
+        typeof event?.toolName === "string" && event.toolName
+          ? event.toolName
+          : "this tool";
+
+      if (gateToolCalls === "approve") {
+        return {
+          requireApproval: {
+            title: `Entroly: unverified claim behind ${toolName}`,
+            description:
+              "The response that led to this tool call contained a claim the " +
+              "supplied evidence did not support. Approve only if you have " +
+              "checked it yourself." + (detail ? `\n\n${detail}` : ""),
+            severity: "warning",
+            allowedDecisions: ["allow-once", "deny"],
+          },
+        };
+      }
+      return {
+        block: true,
+        blockReason:
+          "Entroly withheld this tool call: the response that produced it " +
+          "contained a claim the supplied evidence did not support" +
+          (detail ? ` (${detail})` : "") +
+          '. Set gateToolCalls to "approve" to decide per call, or "off" to ' +
+          "disable this gate.",
+      };
+    },
+
     async onLlmOutput(event) {
       const state = proofStateBySession.get(event?.sessionId);
       if (!state || state.disabled || state.attempts >= maxRounds) return;

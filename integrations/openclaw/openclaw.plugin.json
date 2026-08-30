@@ -115,6 +115,17 @@
         "default": 3,
         "title": "Recovery Message Limit",
         "description": "Maximum exact omitted messages appended to one revision instruction."
+      },
+      "gateToolCalls": {
+        "type": "string",
+        "enum": [
+          "off",
+          "approve",
+          "block"
+        ],
+        "default": "approve",
+        "description": "What to do when a tool call follows a response containing a claim the supplied evidence did not support. 'approve' asks you per call, 'block' withholds it, 'off' disables the gate. Consults the Proof-Guided Recovery verdict, so it has no effect unless that is enabled. No model call is made.",
+        "title": "Unverified Tool Call Gate"
       }
     }
   }

@@ -173,3 +173,127 @@ test("invalid bridge proof disables retries instead of looping", async () => {
   });
   assert.match(delivery.payload.text, /withheld.*verification failed/i);
 });
+
+// ── before_tool_call ────────────────────────────────────────────────────
+//
+// A tool call is where an unsupported claim stops being text and becomes an
+// action. OpenClaw gives this hook a 15-second budget and fails CLOSED on
+// expiry, so the handler must never do work that can hang: everything it
+// needs was already computed at `llm_output`.
+
+function gateHooks(config = {}, state = undefined) {
+  const proofStateBySession = new Map();
+  if (state) proofStateBySession.set("s1", state);
+  return createProofGuidedHooks({
+    bridge: {
+      request() {
+        throw new Error("before_tool_call must not call the bridge");
+      },
+    },
+    config: { proofGuidedRecovery: true, ...config },
+    logger: { error() {}, warn() {}, info() {} },
+    proofStateBySession,
+    statusBySession: new Map(),
+  });
+}
+
+const unsupported = () => ({ runId: "r1", lastProofResult: proofResult() });
+
+test("before_tool_call asks for approval when the claim behind it was unsupported", () => {
+  const hooks = gateHooks({}, unsupported());
+  const decision = hooks.onBeforeToolCall({
+    sessionId: "s1",
+    runId: "r1",
+    toolName: "exec",
+  });
+
+  assert.equal(decision?.block, undefined, "default must not block outright");
+  assert.ok(decision?.requireApproval, "the operator decides, not the plugin");
+  assert.match(decision.requireApproval.title, /exec/);
+  assert.deepEqual(decision.requireApproval.allowedDecisions, [
+    "allow-once",
+    "deny",
+  ]);
+});
+
+test("before_tool_call blocks when explicitly configured to", () => {
+  const decision = gateHooks({ gateToolCalls: "block" }, unsupported())
+    .onBeforeToolCall({ sessionId: "s1", runId: "r1", toolName: "exec" });
+
+  assert.equal(decision.block, true);
+  assert.match(decision.blockReason, /did not support/);
+});
+
+test("before_tool_call is inert when the gate is off", () => {
+  const decision = gateHooks({ gateToolCalls: "off" }, unsupported())
+    .onBeforeToolCall({ sessionId: "s1", runId: "r1" });
+
+  assert.equal(decision, undefined);
+});
+
+test("an unknown gate value asks rather than acts", () => {
+  const decision = gateHooks({ gateToolCalls: "nonsense" }, unsupported())
+    .onBeforeToolCall({ sessionId: "s1", runId: "r1" });
+
+  assert.ok(decision?.requireApproval, "unrecognised config must fail safe");
+});
+
+test("a supported verdict allows the tool call", () => {
+  const decision = gateHooks({}, {
+    runId: "r1",
+    lastProofResult: proofResult({ status: "supported", changed: false }),
+  }).onBeforeToolCall({ sessionId: "s1", runId: "r1" });
+
+  assert.equal(decision, undefined);
+});
+
+test("a verdict from an earlier run does not gate this one", () => {
+  const decision = gateHooks({}, unsupported())
+    .onBeforeToolCall({ sessionId: "s1", runId: "r2" });
+
+  assert.equal(decision, undefined, "a stale verdict says nothing about this call");
+});
+
+test("no verdict, no session, and disabled verification all allow", () => {
+  assert.equal(
+    gateHooks({}, undefined).onBeforeToolCall({ sessionId: "s1", runId: "r1" }),
+    undefined,
+    "an unknown session must not block the user",
+  );
+  assert.equal(
+    gateHooks({}, { runId: "r1" }).onBeforeToolCall({ sessionId: "s1", runId: "r1" }),
+    undefined,
+    "no verdict yet must not block the user",
+  );
+  assert.equal(
+    gateHooks({}, { runId: "r1", disabled: true, lastProofResult: proofResult() })
+      .onBeforeToolCall({ sessionId: "s1", runId: "r1" }),
+    undefined,
+    "verification that failed must not become a tool-call outage",
+  );
+});
+
+test("before_tool_call never calls the bridge", () => {
+  // The bridge in gateHooks throws on use. A 15-second fail-closed budget
+  // means a round trip here converts a slow bridge into blocked tool calls.
+  assert.doesNotThrow(() =>
+    gateHooks({}, unsupported()).onBeforeToolCall({ sessionId: "s1", runId: "r1" }),
+  );
+});
+
+test("before_tool_call is synchronous", () => {
+  const decision = gateHooks({}, unsupported())
+    .onBeforeToolCall({ sessionId: "s1", runId: "r1" });
+
+  assert.ok(
+    typeof decision?.then !== "function",
+    "returning a promise would put bridge latency inside a fail-closed budget",
+  );
+});
+
+test("a malformed event allows rather than throws", () => {
+  const hooks = gateHooks({}, unsupported());
+  for (const event of [undefined, null, {}, { sessionId: null }]) {
+    assert.equal(hooks.onBeforeToolCall(event), undefined);
+  }
+});

@@ -52,6 +52,12 @@ export default definePluginEntry({
         api.on("llm_output", proofHooks.onLlmOutput);
         api.on("before_agent_finalize", proofHooks.onBeforeAgentFinalize);
         api.on("reply_payload_sending", proofHooks.onReplyPayloadSending);
+        // Gates the act, not just the reply. The other three decide what the
+        // user is shown; this decides whether a claim the evidence did not
+        // support is allowed to become a tool call. Registered through
+        // `api.on` because the typed runner never invokes an underscore name
+        // registered via `api.registerHook`.
+        api.on("before_tool_call", proofHooks.onBeforeToolCall);
       }
     }
     api.registerCommand({
