@@ -24,7 +24,7 @@ test("diagnostic normalization cannot be used to bypass credential redaction", a
           "bridge failed Ｂｅａｒｅｒ odd:token%value; Ｂａｓｉｃ basic:credential%value; " +
             "ｔｏｋｅｎ＝compat-secret; Be\u200barer abc\u001b.def; to\u200bken=hunter2; " +
             "authorization=Basic c2VjcmV0; password=\"two words\"; " +
-            "\"api_key\": \"quoted secret\"",
+            "\"api_key\": \"quoted secret\"; malformed=\uD800",
         );
       },
     },
@@ -52,6 +52,7 @@ test("diagnostic normalization cannot be used to bypass credential redaction", a
   ]) {
     assert.equal(proofState.error.includes(leakedSecret), false);
   }
+  assert.equal(/[\uD800-\uDFFF]/.test(proofState.error), false);
   assert.match(proofState.error, /Bearer \\?\[REDACTED\\?\]/);
   assert.match(proofState.error, /Basic \\?\[REDACTED\\?\]/);
   assert.match(proofState.error, /token=\\?\[REDACTED\\?\]/);
