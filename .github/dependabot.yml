@@ -4,6 +4,14 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    ignore:
+      # MCP 2.x is a breaking SDK migration, not a compatible dependency bump:
+      # FastMCP was renamed/removed and transport APIs changed. Keep production
+      # on the tested 1.x contract until an explicit dual-major migration PR
+      # proves the full MCP surface against 2.x.
+      - dependency-name: "mcp"
+        update-types:
+          - "version-update:semver-major"
 
   - package-ecosystem: "cargo"
     directory: "/entroly-core"
