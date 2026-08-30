@@ -314,13 +314,69 @@ test("a nested session id resolves like the sibling hook", () => {
   assert.ok(d?.requireApproval);
 });
 
-test("allow-always suppresses repeat prompts for the run", () => {
+test("allow-always suppresses repeats for the response it was given for", () => {
   const { hooks, state } = gateHooks();
   const first = hooks.onBeforeToolCall(call());
   first.requireApproval.onResolution("allow-always");
 
-  assert.equal(state.toolGateApprovedRunId, "r1");
+  assert.equal(state.toolGateApprovedOutputSha256, "abc");
   assert.equal(hooks.onBeforeToolCall(call()), undefined, "no second modal");
+});
+
+test("allow-always does not blanket-approve a different later claim", () => {
+  // Keying on runId let one approval of a benign claim authorise every later
+  // unverified action in the same run.
+  const { hooks, state } = gateHooks();
+  hooks.onBeforeToolCall(call()).requireApproval.onResolution("allow-always");
+
+  state.verdict = { ...state.verdict, outputSha256: "def" };
+  const second = hooks.onBeforeToolCall(call({ toolName: "exec_shell" }));
+
+  assert.ok(second?.requireApproval, "a new claim must ask again");
+  assert.match(second.requireApproval.title, /exec_shell/);
+});
+
+test("one gated call counts once, not twice", () => {
+  const { hooks, statusBySession } = gateHooks();
+  hooks.onBeforeToolCall(call()).requireApproval.onResolution("deny");
+
+  assert.equal(statusBySession.get("s1").tool_gate_count, 1);
+  assert.equal(statusBySession.get("s1").tool_gate_decision, "approval_deny");
+});
+
+test("a denial is not erased by a later permitted call", () => {
+  const { hooks, state, statusBySession } = gateHooks();
+  hooks.onBeforeToolCall(call({ toolName: "exec_shell" }))
+    .requireApproval.onResolution("deny");
+
+  state.verdict = { ...state.verdict, outputSha256: "def" };
+  hooks.onBeforeToolCall(call({ toolName: "read_file" }))
+    .requireApproval.onResolution("allow-once");
+
+  const status = statusBySession.get("s1");
+  assert.equal(status.tool_gate_decision, "approval_deny", "the denial must survive");
+  assert.equal(status.tool_gate_tool, "exec_shell");
+});
+
+test("a broken verifier gates in approve mode too, and is recorded", () => {
+  // Previously it returned undefined in the default mode: reply withheld,
+  // action permitted, nothing recorded.
+  const { hooks, statusBySession } = gateHooks({}, realisticState({
+    disabled: true,
+    verdict: { ...realisticState().verdict, unsupported: false, errored: true },
+  }));
+  const d = hooks.onBeforeToolCall(call());
+
+  assert.ok(d, "a verification failure must not silently allow");
+  assert.equal(statusBySession.get("s1").tool_gate_reason, "verification_error");
+});
+
+test("a status entry written by the gate still renders", () => {
+  // Seeding from {} produced an entry with no `ok`, which formatEntrolyStatus
+  // reports as an assembly failure that never happened.
+  const { hooks, statusBySession } = gateHooks({ gateToolCalls: "block" });
+  hooks.onBeforeToolCall(call());
+  assert.equal(statusBySession.get("s1").ok, true);
 });
 
 test("gate decisions are recorded for inspection", () => {

@@ -81,8 +81,14 @@ const UNSAFE_FOR_DISPLAY =
 
 // Markdown is neutralised rather than stripped: on a host that renders it,
 // bold text or a link whose label hides its target is a forgery even on a
-// single line. Escaping the delimiters keeps the text readable and inert.
-const MARKDOWN_DELIMITERS = /([*_`~[\]()#>|\\])/g;
+// single line. Escaping keeps the text readable and inert.
+//
+// Underscore is deliberately absent. Tool names are overwhelmingly snake_case,
+// and escaping it turned `exec_shell` into `exec\_shell` in the dialog; an
+// intraword underscore does not open emphasis in CommonMark, so it buys
+// nothing. `#`, `>` and `|` are line-structural and the text is already
+// flattened to one line before this runs.
+const MARKDOWN_DELIMITERS = /([*`~[\]()\\])/g;
 
 function forDisplay(value, limit) {
   if (typeof value !== "string") return "";
@@ -195,9 +201,12 @@ export function createProofGuidedHooks({
       // A verification failure must not leave the higher-consequence surface
       // open while the reply is withheld. `disabled` and `errored` mean the
       // check did not happen: say so rather than implying the call was cleared.
+      // A verification failure is the strongest case for consulting the
+      // operator, not the weakest. Returning undefined here withheld the reply
+      // while letting the action run, and recorded nothing -- the exact
+      // asymmetry the README says this avoids. It now gates in both modes.
       const brokenVerifier = state.disabled || verdict.errored;
       if (!brokenVerifier && !verdict.unsupported) return undefined;
-      if (brokenVerifier && gateToolCalls !== "block") return undefined;
 
       const toolName = forDisplay(event?.toolName, 60) || "this tool";
       // Sanitised again at the point of use, not only where the verdict is
@@ -205,20 +214,33 @@ export function createProofGuidedHooks({
       // produced it: a verdict constructed on another path would otherwise
       // carry raw newlines straight into a security dialog.
       const detail = forDisplay(verdict.detail, 400);
-      const record = (decision) => {
+      const writeStatus = (decision, bumpCount) => {
         // Withholding an action is the most consequential thing this plugin
         // does and was the only intervention leaving no trace. Receipt honesty
         // requires that an operator can reconstruct why afterwards.
-        const previous = statusBySession.get(sessionId) ?? {};
+        const previous = statusBySession.get(sessionId);
+        // A withheld call must not be erased by a later permitted one. The
+        // most restrictive decision of the session is the one an operator
+        // needs to reconstruct, so a block or a denial is never overwritten by
+        // an allow. `ok` is preserved (and defaulted) because formatEntrolyStatus
+        // returns early on a falsy one and would report an assembly failure
+        // that never happened, hiding these fields entirely.
+        const held = previous?.tool_gate_decision;
+        const sticky = held === "blocked" || held === "approval_deny";
         statusBySession.set(sessionId, {
-          ...previous,
-          tool_gate_decision: decision,
-          tool_gate_tool: toolName,
-          tool_gate_run_id: event.runId,
-          tool_gate_count: (previous.tool_gate_count ?? 0) + 1,
-          tool_gate_reason: brokenVerifier ? "verification_error" : "unsupported",
+          ok: true,
+          ...(previous ?? {}),
+          tool_gate_decision: sticky ? held : decision,
+          tool_gate_tool: sticky ? previous.tool_gate_tool : toolName,
+          tool_gate_run_id: sticky ? previous.tool_gate_run_id : event.runId,
+          tool_gate_count: (previous?.tool_gate_count ?? 0) + (bumpCount ? 1 : 0),
+          tool_gate_reason: sticky
+            ? previous.tool_gate_reason
+            : brokenVerifier ? "verification_error" : "unsupported",
         });
       };
+      const record = (decision) => writeStatus(decision, true);
+      const recordDecisionOnly = (decision) => writeStatus(decision, false);
 
       if (brokenVerifier) {
         record("blocked");
@@ -235,8 +257,19 @@ export function createProofGuidedHooks({
         // Recorded before returning, and keyed per run: the host tells us
         // nothing about the outcome, so without this a single verdict produces
         // one identical modal per tool call and trains reflexive approval.
-        if (state.toolGateApprovedRunId === event.runId) return undefined;
+        // Scoped to the response the operator actually read, not the run. A
+        // run spans many turns, so keying on runId let one approval of a
+        // benign claim authorise every later unverified action in it.
+        if (
+          verdict.outputSha256 &&
+          state.toolGateApprovedOutputSha256 === verdict.outputSha256
+        ) {
+          return undefined;
+        }
+        // Counted once per gated call. Recording again in onResolution made a
+        // single event report two.
         record("approval_requested");
+        let resolved = false;
         return {
           requireApproval: {
             title: `Entroly: unverified claim behind ${toolName}`,
@@ -255,9 +288,11 @@ Recovered evidence (untrusted text): ${detail}` : ""),
             allowedDecisions: ["allow-once", "allow-always", "deny"],
             onResolution: (decision) => {
               if (decision === "allow-always") {
-                state.toolGateApprovedRunId = event.runId;
+                state.toolGateApprovedOutputSha256 = verdict.outputSha256;
               }
-              record(`approval_${decision}`);
+              if (resolved) return;
+              resolved = true;
+              recordDecisionOnly(`approval_${forDisplay(String(decision), 40)}`);
             },
           },
         };
@@ -283,7 +318,16 @@ Recovered evidence (untrusted text): ${detail}` : ""),
         : "";
       if (!output.trim()) return;
       const outputSha = sha256(output);
-      if (state.lastOutputSha256 === outputSha && state.lastProofResult) return;
+      if (state.lastOutputSha256 === outputSha && state.lastProofResult) {
+        // Same text, new run: re-bind rather than return, or the verdict keeps
+        // the previous runId and every guard that checks it lets the call
+        // through as though nothing were known.
+        if (state.verdict) {
+          state.verdict = { ...state.verdict, runId: event?.runId ?? null, stale: false };
+        }
+        state.runId = event?.runId;
+        return;
+      }
       try {
         const result = validateProofResult(
           await bridge.request({
