@@ -143,7 +143,39 @@ actionable warning instead of risking a provider overflow. Explicit OpenClaw
 budgets always win, followed by the operator's `fallbackTokenBudget`; automatic
 registry discovery is used only when neither is available.
 
-## Optional proof-guided exact recovery
+## ### Tool-call gating
+
+Proof-Guided Recovery also gates **actions**, not only replies. When the
+response behind a tool call contained a claim the supplied evidence did not
+support, Entroly asks you before the call runs.
+
+```json5
+{
+  plugins: {
+    entries: {
+      entroly: { config: { gateToolCalls: "approve" } }
+    }
+  }
+}
+```
+
+`approve` (default) prompts per call and offers *allow-always* to stop repeats
+for the run. `block` withholds the call outright. `off` disables the gate.
+Because it reads the Proof-Guided Recovery verdict, it does nothing unless that
+is enabled — but it **is on by default once it is**, so set `"off"` if you do
+not want approval prompts on tool calls.
+
+An unresolved approval always denies, so `gateToolCallsTimeoutMs` (default
+120000) bounds the wait for unattended or headless runs. Recovered evidence
+shown in the dialog is labelled untrusted and flattened to a single line: it
+can contain text a prior tool call fetched, and must not be able to forge a
+line you read as ours. Gate decisions are recorded in `/entroly-context`.
+
+If verification itself fails, `block` withholds the call rather than allowing
+it — the reply path already withholds text in that case, and leaving the action
+path open would be the more dangerous asymmetry.
+
+Optional proof-guided exact recovery
 
 Default behavior performs local context assembly only and makes no additional
 model call. To let Entroly verify a draft, recover exact omitted messages, and
