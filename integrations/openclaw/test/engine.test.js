@@ -794,3 +794,23 @@ test("status and doctor diagnostics are bounded and credential-redacted", () => 
   assert.match(doctor, /\[REDACTED\]/);
   assert.doesNotMatch(doctor, new RegExp(secret));
 });
+
+test("a gated tool call is visible to the operator, not just recorded", () => {
+  // The gate writes tool_gate_* into statusBySession. That is worthless unless
+  // the snapshot allowlist keeps the fields AND the renderer prints them --
+  // the first version of this feature wrote a record nothing could read.
+  const rendered = formatEntrolyStatus({
+    ok: true,
+    source_tokens: 1000,
+    estimated_tokens: 400,
+    tokens_saved: 600,
+    changed: true,
+    tool_gate_decision: "blocked",
+    tool_gate_tool: "exec",
+    tool_gate_reason: "unsupported",
+    tool_gate_count: 2,
+  });
+
+  assert.match(rendered, /Tool-call gate: blocked on exec/);
+  assert.match(rendered, /unsupported/);
+});
