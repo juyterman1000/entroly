@@ -4711,7 +4711,7 @@ def cmd_ingest(args):
     """entroly ingest PATH - build a local multi-document Context Receipt index."""
     from entroly.context_receipts import ingest_documents
     from entroly.context_receipts.ingest import read_documents_from_path, supported_documents_hint
-    from entroly.context_receipts.store import DEFAULT_INDEX, write_json
+    from entroly.context_receipts.store import default_index_path, write_json
 
     docs = read_documents_from_path(args.path)
     if not docs:
@@ -4742,7 +4742,7 @@ def cmd_ingest(args):
         overlap_tokens=args.overlap_tokens,
         prefer_rust=not args.python,
     )
-    out = Path(args.out) if args.out else DEFAULT_INDEX
+    out = Path(args.out) if args.out else default_index_path()
     write_json(out, index)
     print(f"  {C.GREEN}Indexed {len(index['documents'])} document(s), {len(index['chunks'])} chunk(s).{C.RESET}")
     print(f"  Index: {out}")
@@ -4753,7 +4753,7 @@ def cmd_select(args):
     from entroly.context_receipts import ingest_documents, markdown_report, select_from_index
     from entroly.context_receipts.ingest import read_documents_from_path
     from entroly.context_receipts.store import (
-        DEFAULT_INDEX,
+        default_index_path,
         default_receipt_path,
         default_report_path,
         read_json,
@@ -4774,7 +4774,7 @@ def cmd_select(args):
             prefer_rust=not args.python,
         )
     else:
-        index_path = Path(args.index) if args.index else DEFAULT_INDEX
+        index_path = Path(args.index) if args.index else default_index_path()
         if not index_path.exists():
             print(
                 f"  {C.RED}No Context Receipt index found at {index_path}.{C.RESET} "
