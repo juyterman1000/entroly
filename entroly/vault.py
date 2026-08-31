@@ -576,17 +576,26 @@ class VaultManager:
                 superseded["sources"], artifact.status, artifact.confidence,
                 len(artifact.sources or []),
             )
+            # The other outcomes in this module say what happened to *this*
+            # write -- written, updated, failed -- so this one does too. It is
+            # deliberately the negation of "written" rather than a word of its
+            # own: a caller that checks for success gets the right answer
+            # without having to know this case exists, and `failed` stays
+            # reserved for a write that broke rather than one that was refused.
             return {
-                "status": "kept_stronger_claim",
+                "status": "not_written",
                 "directory": "beliefs",
                 "entity": artifact.entity,
                 "claim_id": artifact.claim_id,
-                "current": superseded,
+                "kept_belief": superseded,
+                "recorded_in": "ledger (as a competing claim)",
                 "reason": (
-                    "the incoming belief is weaker in status and confidence and "
-                    "cites no source the current one does not already carry; it "
-                    "is recorded in the ledger as a competing claim rather than "
-                    "replacing what agents read"
+                    "a stronger belief about this entity is already recorded: "
+                    "this one is weaker in status and in confidence and cites "
+                    "no source the current one does not already carry, so it "
+                    "was kept as a competing claim in the ledger instead of "
+                    "replacing what agents read. To supersede it, cite a source "
+                    "the current belief does not have, or raise confidence."
                 ),
             }
 

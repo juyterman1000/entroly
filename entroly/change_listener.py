@@ -48,6 +48,10 @@ class WorkspaceSyncResult:
     changed_files: list[str] = field(default_factory=list)
     deleted_files: list[str] = field(default_factory=list)
     beliefs_written: int = 0
+    #: Beliefs the vault kept as competing claims rather than making current,
+    #: because a better-evidenced claim about the entity already existed.
+    #: Not writes, so not counted as any.
+    beliefs_superseded: int = 0
     verification_summary: dict[str, Any] = field(default_factory=dict)
     action_path: str = ""
     refresh_result: dict[str, Any] = field(default_factory=dict)
@@ -61,6 +65,7 @@ class WorkspaceSyncResult:
             "changed_files": self.changed_files,
             "deleted_files": self.deleted_files,
             "beliefs_written": self.beliefs_written,
+            "beliefs_superseded": self.beliefs_superseded,
             "verification_summary": self.verification_summary,
             "action_path": self.action_path,
             "refresh_result": self.refresh_result,
@@ -142,8 +147,12 @@ class WorkspaceChangeListener:
                 if belief is None:
                     completed_files.add(rel_path)
                     continue
-                self._vault.write_belief(belief)
-                result.beliefs_written += 1
+                # A refusal is not a write; see CompilationResult.
+                outcome = self._vault.write_belief(belief)
+                if (outcome or {}).get("status") == "written":
+                    result.beliefs_written += 1
+                else:
+                    result.beliefs_superseded += 1
                 completed_files.add(rel_path)
             except Exception as exc:
                 result.errors.append(f"{rel_path}: {exc}")

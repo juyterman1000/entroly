@@ -147,7 +147,7 @@ class TestEvidenceOutranksRecency:
             sources=[],
         )
 
-        assert result["status"] == "kept_stronger_claim"
+        assert result["status"] == "not_written"
         fm = _frontmatter(vault)
         assert fm["status"] == "verified"
         assert float(fm["confidence"]) == pytest.approx(0.95)
@@ -178,7 +178,7 @@ class TestCorrectionsStillGoThrough:
             confidence=0.4,
             sources=["src/auth.py:99"],
         )
-        assert result["status"] != "kept_stronger_claim"
+        assert result["status"] == "written"
         assert _frontmatter(vault)["status"] == "inferred"
 
     def test_a_stronger_claim_overwrites(self, vault):
@@ -190,17 +190,17 @@ class TestCorrectionsStillGoThrough:
         """Staleness reports freshness; it is not a competing evidence claim."""
         _write(vault)
         result = _write(vault, status="stale", confidence=0.3)
-        assert result["status"] != "kept_stronger_claim"
+        assert result["status"] == "written"
         assert _frontmatter(vault)["status"] == "stale"
 
     def test_a_lower_status_with_higher_confidence_overwrites(self, vault):
         _write(vault)
         result = _write(vault, status="inferred", confidence=0.99)
-        assert result["status"] != "kept_stronger_claim"
+        assert result["status"] == "written"
 
     def test_the_first_belief_about_an_entity_is_never_refused(self, vault):
         result = _write(vault, entity="brand/new", status="hypothesis", confidence=0.1)
-        assert result["status"] != "kept_stronger_claim"
+        assert result["status"] == "written"
         assert _frontmatter(vault, "brand/new")["status"] == "hypothesis"
 
     def test_a_weak_claim_may_replace_another_weak_unsourced_claim(self, vault):
@@ -209,4 +209,69 @@ class TestCorrectionsStillGoThrough:
         result = _write(
             vault, entity="e2", status="hypothesis", confidence=0.2, sources=[]
         )
-        assert result["status"] != "kept_stronger_claim"
+        assert result["status"] == "written"
+
+
+class TestARefusalIsNotCountedAsAWrite:
+    """The guard introduced a way for a reported count to stop being true.
+
+    `beliefs_written` is shown to the user and forwarded into the autoseed
+    summary. Both call sites incremented it for every belief they handed to the
+    vault, which was accurate only while `write_belief` could not refuse. Now
+    that it can, a count taken on "we called the vault" instead of "the vault
+    wrote it" would report beliefs that are not in the vault.
+    """
+
+    @staticmethod
+    def _project(tmp_path):
+        project = tmp_path / "project"
+        project.mkdir(parents=True)
+        (project / "auth.py").write_text(
+            "def authenticate():\n    return True\n", encoding="utf-8"
+        )
+        (project / "ledger.py").write_text(
+            "def post():\n    return 1\n", encoding="utf-8"
+        )
+        return project
+
+    def test_the_reported_count_equals_what_is_in_the_vault(self, tmp_path):
+        from entroly.belief_compiler import BeliefCompiler
+
+        vault = VaultManager(VaultConfig(base_path=str(tmp_path / "vault")))
+        result = BeliefCompiler(vault).compile_directory(str(self._project(tmp_path)))
+
+        assert result.beliefs_written == len(vault.list_beliefs()), (
+            "the number reported to the user must be the number actually stored"
+        )
+        assert result.beliefs_superseded == 0
+
+    def test_refused_writes_are_reported_separately_not_as_writes(
+        self, tmp_path, monkeypatch
+    ):
+        from entroly.belief_compiler import BeliefCompiler
+
+        vault = VaultManager(VaultConfig(base_path=str(tmp_path / "vault")))
+        monkeypatch.setattr(
+            vault, "write_belief", lambda _a: {"status": "not_written"}
+        )
+        result = BeliefCompiler(vault).compile_directory(str(self._project(tmp_path)))
+
+        assert result.beliefs_written == 0, (
+            "nothing was written; reporting otherwise is a number that is not true"
+        )
+        assert result.beliefs_superseded > 0
+        assert result.belief_ids == []
+
+    def test_an_unrecognised_outcome_is_not_counted_as_a_write(
+        self, tmp_path, monkeypatch
+    ):
+        """Counting on `== "written"` keeps this honest if outcomes are added."""
+        from entroly.belief_compiler import BeliefCompiler
+
+        vault = VaultManager(VaultConfig(base_path=str(tmp_path / "vault")))
+        monkeypatch.setattr(
+            vault, "write_belief", lambda _a: {"status": "some_future_outcome"}
+        )
+        result = BeliefCompiler(vault).compile_directory(str(self._project(tmp_path)))
+
+        assert result.beliefs_written == 0
