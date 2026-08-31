@@ -952,6 +952,32 @@ def _evidence_backed(selected: list) -> bool:
     return _evidence_signal(selected) is True
 
 
+# The largest prompt a caller could plausibly have sent instead. Nobody pastes
+# a five-million-token repository into a model -- it exceeds every context
+# window -- so crediting `corpus - selected` measures against a counterfactual
+# that cannot happen, and the figure grows with repository size rather than
+# with anything Entroly did.
+#
+# 32K is not arbitrary: it is the same "paste the matching files into the
+# prompt" baseline `entroly simulate` has always used, whose own comment reads
+# "Claiming savings vs. the whole repo (7M+ tokens) is marketing, not
+# measurement." That standard was applied in four places in cli.py and none
+# here, so the surface users actually run in production was the one violating
+# it. Measured on this repository before the cap: one call reported 4,919,764
+# tokens saved against 2,941 sent -- a ratio of 1,672x.
+_NAIVE_CONTEXT_BASELINE_TOKENS = 32_000
+
+
+def naive_context_baseline(total_available_tokens: int) -> int:
+    """The baseline a saving is measured against: a plausible dump, not the repo.
+
+    Capped at what actually exists, so a small project is never credited with
+    more than it contains.
+    """
+    return min(max(0, int(total_available_tokens or 0)),
+               _NAIVE_CONTEXT_BASELINE_TOKENS)
+
+
 def _honest_tokens_saved(selected: list, tokens_saved: int) -> int:
     """Savings only count when the selection is actually evidence-backed.
 
@@ -959,6 +985,11 @@ def _honest_tokens_saved(selected: list, tokens_saved: int) -> int:
     so it stayed ~constant regardless of query and was largest exactly when the
     engine found nothing. Withholding context because nothing matched is not a
     saving.
+
+    Callers must pass a difference already measured against
+    :func:`naive_context_baseline`. This function decides *whether* a saving
+    counts; the baseline decides *how much*, and conflating the two is what let
+    an evidence-backed selection still bill the entire corpus.
     """
     return max(0, int(tokens_saved or 0)) if _evidence_backed(selected) else 0
 
@@ -1546,7 +1577,8 @@ class EntrolyEngine:
                     _fragment_tokens(f) for f in candidates if isinstance(f, dict)
                 )
                 tokens_saved = _honest_tokens_saved(
-                    selected, total_available_tokens - tokens_used
+                    selected,
+                    naive_context_baseline(total_available_tokens) - tokens_used,
                 )
                 self._total_tokens_saved += tokens_saved
                 selected_count = len(selected)
@@ -2896,7 +2928,7 @@ class EntrolyEngine:
                  "is_pinned": f.is_pinned}
                 for f in selected
             ],
-            total_available_tokens - stats["total_tokens"],
+            naive_context_baseline(total_available_tokens) - stats["total_tokens"],
         )
         self._total_tokens_saved += max(0, tokens_saved)
 
