@@ -174,7 +174,10 @@ def cmd_recover(args) -> int:
             # one misleading message for another.
             detail = reference.note
             if reference.item_count:
-                detail += f" ({reference.item_count:,} item(s))"
+                # The label, not a bare "item(s)": the number means something
+                # different per codec, and printing it unlabelled next to
+                # "complete original ..." described a 60-record file as 59.
+                detail += f" ({reference.item_count:,} {reference.item_label})"
             print(f"  {C.GRAY}{detail}{C.RESET}")
     else:
         sys.stdout.buffer.write(original.encode("utf-8", "surrogateescape"))
