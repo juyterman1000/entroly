@@ -40,15 +40,18 @@ def _recovery_for(codec, text: str, source_id: str):
 
 
 class TestTheLabelDescribesTheNumber:
-    def test_json_says_the_count_is_of_elided_records(self):
+    def test_json_says_the_count_is_of_records_the_compressed_form_dropped(self):
         recovery = _recovery_for(JsonCodec(RecoveryStore()), _records(), "records.json")
 
         assert recovery.item_label != "item(s)", (
             "the default label next to 'complete original JSON' is what described "
             "a 60-record payload as 59 items"
         )
-        assert "elid" in recovery.item_label
         assert "record" in recovery.item_label
+        assert "dropped" in recovery.item_label or "restored" in recovery.item_label, (
+            "the label has to say the count describes the compressed form, not "
+            "the payload the user is holding"
+        )
 
     def test_the_json_count_itself_is_unchanged(self):
         """The number is a contract; only its label was wrong."""
@@ -67,6 +70,53 @@ class TestTheLabelDescribesTheNumber:
         text = "id,name\n" + "\n".join(f"{i},row{i}" for i in range(40))
         recovery = _recovery_for(TableCodec(RecoveryStore()), text, "t.csv")
         assert "row" in recovery.item_label and "header" in recovery.item_label
+
+
+class TestACompletePayloadNeverReadsAsAFragment:
+    """The label must not undo what the note establishes.
+
+    `recover` prints `note` then `(count label)`. For these codecs the note
+    says the payload is the *complete original*, so a label carrying this
+    codebase's fragment vocabulary contradicts it in the same sentence. The
+    first version of this fix said "record(s) elided from the columnar form"
+    and broke `test_recover_states_what_it_returned`, which exists precisely
+    because `recover` once handed a user a fragment described as their file.
+
+    Checked here per codec, so the contradiction is caught at the source
+    rather than only in the rendered CLI output of one of them.
+    """
+
+    #: Words this codebase uses for a recovery that IS the elided fragment.
+    _FRAGMENT_WORDS = ("elided", "combine", "partial", "fragment")
+
+    def test_no_complete_original_payload_is_labelled_with_fragment_words(self):
+        cases = [
+            (JsonCodec(RecoveryStore()), _records(), "records.json"),
+            (
+                LogCodec(RecoveryStore()),
+                "\n".join(
+                    f"2026-08-02T10:00:{i % 60:02d}Z ERROR failed (retry {i})"
+                    for i in range(200)
+                ),
+                "worker.log",
+            ),
+            (
+                TableCodec(RecoveryStore()),
+                "id,name\n" + "\n".join(f"{i},row{i}" for i in range(40)),
+                "t.csv",
+            ),
+        ]
+        for codec, text, source_id in cases:
+            recovery = _recovery_for(codec, text, source_id)
+            if "complete original" not in recovery.note and "full table" not in recovery.note:
+                continue
+            lowered = recovery.item_label.lower()
+            offenders = [w for w in self._FRAGMENT_WORDS if w in lowered]
+            assert not offenders, (
+                f"{type(codec).__name__} says the payload is complete "
+                f"({recovery.note!r}) but labels its count {recovery.item_label!r}, "
+                f"which uses fragment vocabulary {offenders}"
+            )
 
 
 class TestTheLabelSurvivesTheStore:
