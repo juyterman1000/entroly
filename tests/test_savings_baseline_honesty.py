@@ -70,3 +70,49 @@ class TestAppliedWhereItMatters:
             saving = naive_context_baseline(corpus) - used
             assert saving <= naive_context_baseline(corpus)
             assert saving <= max(corpus, 0), "cannot save more than exists"
+
+
+class TestTheScriptsCiRunsDirectly:
+    """Scripts CI runs standalone are invisible to a green local suite.
+
+    `pytest` collects `test_*.py` under `tests/`, so `tests/functional_test.py`
+    is never collected -- the file says so itself. It asserted
+    `tokens_saved == total_tokens - tokens_used`, the exact formula this module
+    exists to remove, and went on asserting it while the whole suite passed.
+    CI caught it on all five Python versions; nothing local could.
+
+    This walks the workflow to find those scripts rather than naming them, so a
+    script added to CI later is covered without anyone remembering to.
+    """
+
+    @staticmethod
+    def _standalone_scripts() -> list[pathlib.Path]:
+        workflow = pathlib.Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+        found = re.findall(r"python\s+(tests/[\w./-]+\.py)", workflow)
+        return sorted({pathlib.Path(p) for p in found})
+
+    def test_the_workflow_still_runs_scripts_this_guard_covers(self):
+        scripts = self._standalone_scripts()
+        assert scripts, (
+            "no standalone scripts found in ci.yml; if the workflow changed "
+            "shape, update this guard rather than deleting it"
+        )
+        for script in scripts:
+            assert script.exists(), f"ci.yml runs a missing script: {script}"
+
+    def test_none_of_them_asserts_a_saving_against_the_whole_corpus(self):
+        for script in self._standalone_scripts():
+            source = script.read_text(encoding="utf-8")
+            offenders = [
+                line.strip()
+                for line in source.splitlines()
+                if line.strip().startswith("assert")
+                and re.search(r"tokens_saved\s*==", line)
+                and "naive_context_baseline" not in line
+            ]
+            assert not offenders, (
+                f"{script} asserts a saving without the shared baseline: "
+                f"{offenders}. A saving is measured against a prompt someone "
+                "could have sent; use naive_context_baseline() so this script "
+                "and the engine cannot drift apart."
+            )

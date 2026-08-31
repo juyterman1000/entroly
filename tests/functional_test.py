@@ -11,6 +11,7 @@ logger = logging.getLogger("functional_test")
 sys.path.insert(0, str(Path(__file__).parent))
 from entroly.server import EntrolyEngine  # noqa: E402
 from entroly.config import EntrolyConfig  # noqa: E402
+from entroly.engine import naive_context_baseline  # noqa: E402
 
 
 def run_functional_test() -> None:
@@ -89,7 +90,19 @@ def run_functional_test() -> None:
         assert opt_result.get("selector") == "qccr", opt_result
         assert selected, "optimization returned no context"
         assert 0 < tokens_used <= budget
-        assert tokens_saved == total_tokens - tokens_used
+        # A saving is measured against a prompt someone could have sent, not
+        # against the whole ingested corpus. This asserted
+        # `total_tokens - tokens_used`, which credited the engine with the
+        # entire corpus: on this fixture that is 107,047 tokens "saved" against
+        # 11,442 actually sent, and it grows with the corpus rather than with
+        # anything the engine did. Nobody pastes 118k tokens into a model.
+        # `naive_context_baseline` is the shared ceiling; asserting against the
+        # function rather than a literal keeps this in step with the engine.
+        assert tokens_saved == naive_context_baseline(total_tokens) - tokens_used, (
+            f"expected {naive_context_baseline(total_tokens) - tokens_used}, "
+            f"got {tokens_saved} (corpus {total_tokens}, used {tokens_used})"
+        )
+        assert 0 <= tokens_saved <= naive_context_baseline(total_tokens)
         assert opt_result.get("selected_count") == len(selected)
 
         logger.info("\nOptimization Result:")
