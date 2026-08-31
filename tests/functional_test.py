@@ -7,8 +7,38 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("functional_test")
 
-# Import the engine and configuration
-sys.path.insert(0, str(Path(__file__).parent))
+# Import the engine and configuration from *this* checkout.
+#
+# This inserted `Path(__file__).parent` -- the tests/ directory -- which does
+# nothing for `import entroly`, so resolution fell through to site-packages.
+# Running `python tests/functional_test.py` puts tests/ on sys.path[0] and
+# never the repository root, so on a machine carrying an editable install of
+# entroly pointing somewhere else, this script silently exercised that other
+# checkout and reported its result as this one's. That happened here: a stale
+# `.pth` from an old worktree made this script pass locally while CI failed on
+# all five Python versions.
+#
+# `parents[1]` is the repository root, the same anchor `base_dir` below already
+# uses for the fixtures. A test that cannot say which code it ran is not
+# evidence, so this is pinned rather than left to the environment.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(_REPO_ROOT))
+
+import entroly  # noqa: E402
+
+# Fail loudly rather than reporting another checkout's result as this one's.
+# The path insert above is enough on its own; this is here because the failure
+# it prevents is silent by nature -- the script ran, printed numbers, and
+# passed, and nothing in the output said which tree produced them.
+_imported_from = Path(entroly.__file__).resolve()
+if _REPO_ROOT not in _imported_from.parents:
+    raise SystemExit(
+        f"functional test imported entroly from {_imported_from}, which is "
+        f"outside this checkout ({_REPO_ROOT}). An editable install or "
+        f"PYTHONPATH entry is shadowing the package; the result would describe "
+        f"code that is not under test."
+    )
+
 from entroly.server import EntrolyEngine  # noqa: E402
 from entroly.config import EntrolyConfig  # noqa: E402
 from entroly.engine import naive_context_baseline  # noqa: E402
