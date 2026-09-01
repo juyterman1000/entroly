@@ -2,7 +2,15 @@
 
 GitHub documents ``COPILOT_PROVIDER_API_KEY`` for Copilot CLI BYOK endpoints.
 Entroly only needs a non-secret local placeholder because the hardened proxy
-replaces it with the short-lived GitHub Copilot credential before forwarding.
+replaces it with the active GitHub Copilot credential before forwarding.
+
+GitHub's current Copilot SDK documents ``GITHUB_COPILOT_INTEGRATION_ID`` as the
+runtime identity used for Copilot routing and attribution, with
+``copilot-developer-cli`` as the default. Entroly must use exactly the same
+identity when it owns the provider-bound credential route; a token and a
+conflicting integration ID can be rejected by Copilot's authorization layer.
+This module therefore makes the client and Entroly identities one explicit
+contract and fails closed if an operator configured contradictory values.
 
 The SDK also supports selecting the Responses wire API, but that setting is not
 part of the public Copilot CLI BYOK environment-variable table. Therefore the
@@ -16,10 +24,49 @@ from __future__ import annotations
 from collections.abc import MutableMapping
 
 _LOCAL_PROVIDER_KEY = "entroly-local-provider-route"
+_DEFAULT_INTEGRATION_ID = "copilot-developer-cli"
+_MAX_INTEGRATION_ID_CHARS = 128
 
 
 class CopilotCLIProviderContractError(ValueError):
     """Invalid Copilot CLI custom-provider configuration."""
+
+
+def _validated_integration_id(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if (
+        len(text) > _MAX_INTEGRATION_ID_CHARS
+        or any(
+            not (char.isascii() and (char.isalnum() or char in "._-"))
+            for char in text
+        )
+    ):
+        raise CopilotCLIProviderContractError(
+            "Copilot integration ID must contain only ASCII letters, digits, '.', '_', or '-'"
+        )
+    return text
+
+
+def _configure_integration_identity(environ: MutableMapping[str, str]) -> str:
+    """Make the client/runtime and Entroly provider identities identical."""
+    entroly_id = _validated_integration_id(
+        environ.get("ENTROLY_COPILOT_INTEGRATION_ID")
+    )
+    runtime_id = _validated_integration_id(
+        environ.get("GITHUB_COPILOT_INTEGRATION_ID")
+    )
+    if entroly_id and runtime_id and entroly_id != runtime_id:
+        raise CopilotCLIProviderContractError(
+            "ENTROLY_COPILOT_INTEGRATION_ID and GITHUB_COPILOT_INTEGRATION_ID "
+            "must match for a provider-bound Copilot session"
+        )
+
+    selected = entroly_id or runtime_id or _DEFAULT_INTEGRATION_ID
+    environ["ENTROLY_COPILOT_INTEGRATION_ID"] = selected
+    environ["GITHUB_COPILOT_INTEGRATION_ID"] = selected
+    return selected
 
 
 def apply_copilot_cli_provider_contract(
@@ -39,6 +86,7 @@ def apply_copilot_cli_provider_contract(
             "Copilot wire API must be 'completions' or 'responses'"
         )
 
+    integration_id = _configure_integration_identity(environ)
     environ["COPILOT_PROVIDER_API_KEY"] = _LOCAL_PROVIDER_KEY
     environ.pop("COPILOT_PROVIDER_BEARER_TOKEN", None)
 
@@ -55,6 +103,7 @@ def apply_copilot_cli_provider_contract(
         "wire_api": normalized_wire,
         "wire_selector_experimental": experimental_wire_selector,
         "provider_secret_in_cli_env": False,
+        "integration_id": integration_id,
     }
 
 
