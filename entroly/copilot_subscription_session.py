@@ -58,9 +58,15 @@ def start_managed_subscription_proxy(
     plan: CopilotSubscriptionPlan,
     *,
     environ: MutableMapping[str, str] | None = None,
-    timeout_s: float = 15.0,
+    timeout_s: float = 30.0,
 ) -> ManagedCopilotSubscriptionProxy:
-    """Start the hardened proxy and return an explicit lifecycle handle."""
+    """Start the hardened proxy and return an explicit lifecycle handle.
+
+    The startup envelope intentionally exceeds the independent bounded auth
+    operations (``gh auth token`` plus GitHub's token exchange). Network calls
+    keep their tighter per-operation timeouts; only the parent health deadline
+    is wider so a slow-but-valid auth path is not mistaken for a dead child.
+    """
     env = dict(os.environ if environ is None else environ)
     port = _validate_port(plan.proxy_port)
     if _port_is_occupied(port):
