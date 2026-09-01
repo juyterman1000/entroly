@@ -154,14 +154,39 @@ def test_user_preflight_endpoint_is_derived_not_arbitrary() -> None:
         _validate_user_info_url("https://api.evil.test/copilot_internal/user")
 
 
-def test_standalone_manager_uses_same_official_identity_as_cli_contract() -> None:
-    manager = CopilotTokenManager(
+def _manager(*, payloads, credential: str = "gho_user-token") -> CopilotTokenManager:
+    iterator = iter(payloads)
+    return CopilotTokenManager(
         api_origin="https://api.githubcopilot.com",
         environ={},
-        user_info_fetch=lambda *_args: {"chat_enabled": True},
-        credential_resolver=lambda: "gho_user-token",
+        user_info_fetch=lambda *_args: next(iterator),
+        credential_resolver=lambda: credential,
     )
+
+
+def test_standalone_manager_uses_same_official_identity_as_cli_contract() -> None:
+    manager = _manager(payloads=[{"chat_enabled": True}])
     assert manager.integration_id == "copilot-developer-cli"
+
+
+def test_current_runtime_contract_preserves_github_bearer_exactly() -> None:
+    manager = _manager(
+        credential="gho_user-token",
+        payloads=[
+            {
+                "chat_enabled": True,
+                "endpoints": {"api": "https://api.business.githubcopilot.com"},
+            }
+        ],
+    )
+    resolved = manager.prime()
+    assert resolved.token == "gho_user-token"
+    assert manager.current_token() == "gho_user-token"
+    assert resolved.api_origin == "https://api.business.githubcopilot.com"
+    summary = manager.public_summary()
+    assert summary["auth_semantics"] == "github-bearer"
+    assert summary["background_refresh"] is False
+    assert summary["automatic_auth_replay"] is False
 
 
 def test_generic_public_bootstrap_may_adopt_github_advertised_sku_host() -> None:
@@ -210,8 +235,8 @@ def test_explicit_public_sku_host_accepts_exact_same_host() -> None:
 
 
 def test_manager_pins_first_advertised_api_origin() -> None:
-    payloads = iter(
-        [
+    manager = _manager(
+        payloads=[
             {
                 "chat_enabled": True,
                 "endpoints": {"api": "https://api.individual.githubcopilot.com"},
@@ -222,24 +247,18 @@ def test_manager_pins_first_advertised_api_origin() -> None:
             },
         ]
     )
-    manager = CopilotTokenManager(
-        api_origin="https://api.githubcopilot.com",
-        environ={},
-        user_info_fetch=lambda *_args: next(payloads),
-        credential_resolver=lambda: "gho_user-token",
-    )
 
     first = manager._refresh(force=True)
     assert first.token == "gho_user-token"
     assert manager.api_origin == "https://api.individual.githubcopilot.com"
     second = manager._refresh(force=True)
     assert second.token == "gho_user-token"
-    assert manager.api_origin == "https://api.individual.githubcopilot.com"
+    assert second.api_origin == first.api_origin
 
 
 def test_manager_rejects_origin_change_after_pin() -> None:
-    payloads = iter(
-        [
+    manager = _manager(
+        payloads=[
             {
                 "chat_enabled": True,
                 "endpoints": {"api": "https://api.individual.githubcopilot.com"},
@@ -249,12 +268,6 @@ def test_manager_rejects_origin_change_after_pin() -> None:
                 "endpoints": {"api": "https://api.business.githubcopilot.com"},
             },
         ]
-    )
-    manager = CopilotTokenManager(
-        api_origin="https://api.githubcopilot.com",
-        environ={},
-        user_info_fetch=lambda *_args: next(payloads),
-        credential_resolver=lambda: "gho_user-token",
     )
     manager._refresh(force=True)
     with pytest.raises(
@@ -285,34 +298,80 @@ def test_disabled_chat_fails_closed() -> None:
         )
 
 
+def test_classic_pat_fails_before_user_preflight() -> None:
+    called = False
+
+    def user_info_fetch(*_args):
+        nonlocal called
+        called = True
+        return {"chat_enabled": True}
+
+    manager = CopilotTokenManager(
+        api_origin="https://api.githubcopilot.com",
+        environ={},
+        user_info_fetch=user_info_fetch,
+        credential_resolver=lambda: "ghp_classic-token",
+    )
+    with pytest.raises(CopilotSubscriptionAuthError, match="classic `ghp_`"):
+        manager.prime()
+    assert called is False
+
+
+def test_unknown_credential_shape_fails_before_user_preflight() -> None:
+    called = False
+
+    def user_info_fetch(*_args):
+        nonlocal called
+        called = True
+        return {"chat_enabled": True}
+
+    manager = CopilotTokenManager(
+        api_origin="https://api.githubcopilot.com",
+        environ={},
+        user_info_fetch=user_info_fetch,
+        credential_resolver=lambda: "opaque-token",
+    )
+    with pytest.raises(CopilotSubscriptionAuthError, match="unsupported"):
+        manager.prime()
+    assert called is False
+
+
+def test_legacy_exchange_hook_is_rejected_instead_of_reanimating_old_auth_model() -> None:
+    with pytest.raises(CopilotSubscriptionAuthError, match="no longer accepts"):
+        CopilotTokenManager(
+            api_origin="https://api.githubcopilot.com",
+            environ={},
+            exchange=lambda *_args: {},
+            credential_resolver=lambda: "gho_user-token",
+        )
+
+
 def test_github_credential_precedence_uses_documented_client_token() -> None:
     env = {
-        "GITHUB_TOKEN": "github-token",
-        "GH_TOKEN": "gh-token",
-        "COPILOT_GITHUB_TOKEN": "copilot-token",
+        "GITHUB_TOKEN": "ghs_actions-token",
+        "GH_TOKEN": "gho_gh-token",
+        "COPILOT_GITHUB_TOKEN": "gho_copilot-token",
     }
-    assert _resolve_github_credential(env) == "copilot-token"
+    assert _resolve_github_credential(env) == "gho_copilot-token"
 
 
 def test_github_credential_falls_back_to_gh_without_echoing_failure(monkeypatch) -> None:
     monkeypatch.setattr(
         "entroly.copilot_subscription_transport.subprocess.run",
-        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="gho-secret\n"),
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="gho_secret\n"),
     )
-    assert _resolve_github_credential({}) == "gho-secret"
+    assert _resolve_github_credential({}) == "gho_secret"
 
 
 def test_public_manager_summary_contains_no_credential() -> None:
-    manager = CopilotTokenManager(
-        api_origin="https://api.githubcopilot.com",
-        environ={},
-        user_info_fetch=lambda *_args: {"chat_enabled": True},
-        credential_resolver=lambda: "gho-do-not-disclose",
+    manager = _manager(
+        credential="gho_do-not-disclose",
+        payloads=[{"chat_enabled": True}],
     )
-    manager._refresh(force=True)
+    manager.prime()
     summary = manager.public_summary()
     rendered = repr(summary)
-    assert "gho-do-not-disclose" not in rendered
+    assert "gho_do-not-disclose" not in rendered
     assert summary["credential_persisted"] is False
     assert summary["background_refresh"] is False
     assert summary["automatic_auth_replay"] is False
@@ -324,6 +383,7 @@ def test_container_proxy_installs_subscription_layer_after_final_transport() -> 
     subscription_pos = source.index("install_copilot_subscription_transport")
     access_pos = source.index("proxy_access_security")
     assert final_pos < subscription_pos < access_pos
+    assert "copilot_subscription_credential_policy" not in source
 
 
 def test_python_module_entry_uses_same_safe_launcher_as_console_script() -> None:
