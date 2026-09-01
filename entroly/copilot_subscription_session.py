@@ -63,9 +63,10 @@ def start_managed_subscription_proxy(
     """Start the hardened proxy and return an explicit lifecycle handle.
 
     The startup envelope intentionally exceeds the independent bounded auth
-    operations (``gh auth token`` plus GitHub's token exchange). Network calls
-    keep their tighter per-operation timeouts; only the parent health deadline
-    is wider so a slow-but-valid auth path is not mistaken for a dead child.
+    operations (``gh auth token`` plus GitHub's Copilot user/entitlement
+    preflight). Network calls keep their tighter per-operation timeouts; only
+    the parent health deadline is wider so a slow-but-valid auth path is not
+    mistaken for a dead child.
     """
     env = dict(os.environ if environ is None else environ)
     port = _validate_port(plan.proxy_port)
