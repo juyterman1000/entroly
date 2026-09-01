@@ -23,10 +23,14 @@ from typing import Any
 from . import proxy_transport_safe as _proxy_transport_safe  # noqa: F401
 from . import proxy_transport_final as _proxy_transport_final  # noqa: F401
 from .copilot_subscription_transport import install_copilot_subscription_transport
+from .copilot_capi_contract import install_copilot_capi_contract
 
-# Copilot subscription auth is a narrow provider-credential seam layered on top
-# of the final hardened transport. It is a no-op unless explicitly enabled.
+# Copilot subscription auth and its CAPI metadata contract are narrow layers on
+# top of the final hardened transport. Both are no-ops unless explicitly enabled.
+# Order matters: CAPI metadata must wrap the already-installed auth seam so the
+# integration id on every request is the same one used to mint the credential.
 install_copilot_subscription_transport()
+install_copilot_capi_contract()
 
 from . import proxy_control_plane_safe as _proxy_control_plane_safe  # noqa: E402,F401
 from . import proxy_access_security as _proxy_access_security  # noqa: E402,F401
