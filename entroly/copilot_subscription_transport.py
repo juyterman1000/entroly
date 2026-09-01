@@ -8,11 +8,13 @@ credential to the already-hardened OpenAI-compatible Entroly transport.
 Security properties:
 * GitHub credentials are read only from documented environment variables or
   ``gh auth token`` and are never persisted by Entroly;
+* reusable GitHub credentials are acquisition credentials, never CAPI bearers;
 * token exchange is permitted only to a GitHub-operated endpoint derived from a
   validated Copilot API origin;
 * redirects are rejected and exchange responses are bounded before JSON parsing;
-* the Copilot API origin advertised by the first successful token exchange is
-  pinned for the lifetime of the proxy process;
+* a generic public CAPI bootstrap may adopt GitHub's advertised SKU host, while
+  an explicitly selected SKU or GHE tenant cannot silently move elsewhere;
+* the first accepted Copilot API origin is pinned for the proxy lifetime;
 * the local dummy provider bearer supplied to Copilot CLI is always replaced
   before an upstream request leaves Entroly;
 * refresh happens in a daemon thread so the request event loop normally performs
@@ -29,6 +31,7 @@ import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Callable
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -41,7 +44,8 @@ from .copilot_subscription import (
 _MAX_TOKEN_CHARS = 16_384
 _MAX_EXCHANGE_RESPONSE_BYTES = 256 * 1024
 _DEFAULT_REFRESH_SKEW = 60.0
-_DEFAULT_INTEGRATION_ID = "copilot-cli-chat"
+_DEFAULT_INTEGRATION_ID = "copilot-developer-cli"
+_PUBLIC_CAPI_BOOTSTRAP_HOST = "api.githubcopilot.com"
 _GITHUB_TOKEN_ENV_VARS = (
     "COPILOT_GITHUB_TOKEN",
     "GH_TOKEN",
@@ -243,14 +247,30 @@ def _resolve_github_credential(environ: Mapping[str, str]) -> str:
     return token
 
 
+def _transport_client_kwargs() -> dict[str, Any]:
+    """Load Entroly's outbound trust policy without silently bypassing failures."""
+    try:
+        from .proxy_transport_final import _safe_http_client_kwargs
+    except (ImportError, AttributeError):
+        # Minimal standalone/unit-test environments may not load the hardened
+        # proxy layer. The fallback remains strict: no ambient proxy inheritance
+        # and redirects are disabled by the caller below.
+        return {"follow_redirects": False, "trust_env": False}
+
+    try:
+        return dict(_safe_http_client_kwargs())
+    except Exception as exc:
+        raise CopilotSubscriptionAuthError(
+            "unable to apply Entroly's outbound transport trust policy"
+        ) from exc
+
+
 def _exchange_token_payload(
     exchange_url: str,
     github_credential: str,
     integration_id: str,
 ) -> Mapping[str, Any]:
     """Exchange a GitHub credential for a bounded short-lived Copilot API token."""
-    # Re-derive the trusted URL from the configured CAPI origin elsewhere; this
-    # function still rejects anything outside the two allowed GitHub API forms.
     _validate_exchange_url(exchange_url)
     credential = _validated_secret(github_credential)
     if not credential:
@@ -265,14 +285,7 @@ def _exchange_token_payload(
         "Copilot-Integration-Id": _validated_integration_id(integration_id),
     }
 
-    # Reuse Entroly's existing CA/proxy-trust policy without importing another
-    # transport stack. Import lazily so this module remains unit-testable alone.
-    try:
-        from .proxy_transport_final import _safe_http_client_kwargs
-
-        kwargs = dict(_safe_http_client_kwargs())
-    except Exception:
-        kwargs = {"follow_redirects": False, "trust_env": False}
+    kwargs = _transport_client_kwargs()
     kwargs["timeout"] = httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=5.0)
     kwargs["follow_redirects"] = False
 
@@ -366,21 +379,34 @@ def _token_from_exchange_payload(
     )
 
 
-def _same_trust_partition(requested_origin: str, advertised_origin: str) -> bool:
-    from urllib.parse import urlsplit
+def _is_public_capi_host(host: str) -> bool:
+    normalized = host.casefold().rstrip(".")
+    return normalized == _PUBLIC_CAPI_BOOTSTRAP_HOST or (
+        normalized.startswith("api.")
+        and normalized.endswith(".githubcopilot.com")
+    )
 
-    requested_host = (urlsplit(requested_origin).hostname or "").casefold()
-    advertised_host = (urlsplit(advertised_origin).hostname or "").casefold()
-    requested_public = requested_host == "api.githubcopilot.com" or (
-        requested_host.startswith("api.")
-        and requested_host.endswith(".githubcopilot.com")
-    )
-    advertised_public = advertised_host == "api.githubcopilot.com" or (
-        advertised_host.startswith("api.")
-        and advertised_host.endswith(".githubcopilot.com")
-    )
+
+def _same_trust_partition(requested_origin: str, advertised_origin: str) -> bool:
+    """Return whether an advertised CAPI origin may replace the requested one.
+
+    ``api.githubcopilot.com`` is a discovery/bootstrap origin, so GitHub may
+    legitimately advertise a public SKU-specific CAPI host on first exchange.
+    An operator who explicitly selected a SKU-specific public host has already
+    narrowed the trust boundary; that host must therefore remain exact. GHE
+    origins are likewise pinned to the exact data-residency tenant.
+    """
+    requested_host = (urlsplit(requested_origin).hostname or "").casefold().rstrip(".")
+    advertised_host = (urlsplit(advertised_origin).hostname or "").casefold().rstrip(".")
+    requested_public = _is_public_capi_host(requested_host)
+    advertised_public = _is_public_capi_host(advertised_host)
+
     if requested_public or advertised_public:
-        return requested_public and advertised_public
+        if not (requested_public and advertised_public):
+            return False
+        if requested_host == _PUBLIC_CAPI_BOOTSTRAP_HOST:
+            return True
+        return requested_host == advertised_host
 
     prefix = "copilot-api."
     suffix = ".ghe.com"
@@ -445,8 +471,6 @@ def _positive_seconds(value: object) -> float | None:
 
 
 def _validate_exchange_url(url: str) -> None:
-    from urllib.parse import urlsplit
-
     try:
         parsed = urlsplit(url)
         port = parsed.port
