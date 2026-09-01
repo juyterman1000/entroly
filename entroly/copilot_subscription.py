@@ -1,10 +1,17 @@
-"""Opt-in preparation for GitHub Copilot CLI subscription proxy mode.
+"""Plan and validate GitHub Copilot CLI subscription proxy mode.
 
-This module does not add another router, provider adapter, or proxy. It only
-prepares the existing ``entroly wrap copilot`` path so the current Copilot CLI
-custom-provider seam traverses Entroly's hardened OpenAI-compatible proxy.
-Subscription authentication is acquired and refreshed inside that proxy by
-``copilot_subscription_transport``.
+This module owns only wrapper-option parsing, trusted GitHub Copilot origin
+validation, and the immutable subscription plan.  It deliberately does not
+start a proxy process and does not configure Copilot CLI provider credentials.
+Those responsibilities have one owner each:
+
+* :mod:`copilot_subscription_session` owns the dedicated proxy lifecycle;
+* :mod:`copilot_cli_provider_contract` owns Copilot CLI provider environment;
+* :mod:`copilot_subscription_transport` owns provider-bound authentication.
+
+Keeping those boundaries explicit prevents the subscription feature from
+creating a second routing or process-management stack beside Entroly's existing
+wrapper and hardened proxy.
 """
 
 from __future__ import annotations
@@ -13,9 +20,7 @@ import json
 import os
 import socket
 import subprocess
-import sys
 import tempfile
-import time
 import urllib.error
 import urllib.request
 from collections.abc import MutableMapping, Sequence
@@ -26,7 +31,6 @@ from urllib.parse import urlsplit
 _DEFAULT_API_ORIGIN = "https://api.githubcopilot.com"
 _PUBLIC_TOKEN_EXCHANGE_URL = "https://api.github.com/copilot_internal/v2/token"
 _ALLOWED_WIRE_APIS = frozenset({"completions", "responses"})
-_LOCAL_PROVIDER_BEARER = "entroly-local-provider-route"
 
 
 class CopilotSubscriptionError(ValueError):
@@ -70,7 +74,7 @@ def prepare_subscription_wrap(
     *,
     environ: MutableMapping[str, str] | None = None,
 ) -> CopilotSubscriptionPlan:
-    """Prepare the existing wrapper/proxy lifecycle for Copilot subscription traffic."""
+    """Build the subscription plan without owning the client-provider contract."""
     values = [str(value) for value in argv]
     if not is_subscription_wrap(values):
         raise CopilotSubscriptionError(
@@ -89,12 +93,13 @@ def prepare_subscription_wrap(
     )
 
     cleaned, port = _ensure_dedicated_port(cleaned)
+
+    # These are Entroly routing facts, not Copilot CLI provider credentials.
+    # The launcher applies copilot_cli_provider_contract immediately after this
+    # function returns, giving provider environment mutation a single owner.
     env["ENTROLY_OPENAI_BASE"] = origin
     env["ENTROLY_COPILOT_SUBSCRIPTION"] = "1"
     env["ENTROLY_CLIENT_ROUTE"] = "github-copilot-subscription"
-    env["COPILOT_PROVIDER_WIRE_API"] = wire_api
-    env["COPILOT_PROVIDER_BEARER_TOKEN"] = _LOCAL_PROVIDER_BEARER
-    env.pop("COPILOT_PROVIDER_API_KEY", None)
     env["COPILOT_MODEL"] = model
     _ensure_loopback_no_proxy(env)
 
@@ -104,86 +109,6 @@ def prepare_subscription_wrap(
         wire_api=wire_api,
         model=model,
         proxy_port=port,
-    )
-
-
-def start_subscription_proxy(
-    plan: CopilotSubscriptionPlan,
-    *,
-    environ: MutableMapping[str, str] | None = None,
-    timeout_s: float = 15.0,
-) -> Path:
-    """Start the existing hardened proxy on the plan's dedicated loopback port.
-
-    The proxy is started before the existing ``cmd_wrap`` lifecycle runs. That
-    lifecycle then observes the healthy Entroly proxy and reuses it instead of
-    starting its legacy direct proxy path. No provider credential is synthesized
-    or copied into the parent process here.
-    """
-    env = dict(os.environ if environ is None else environ)
-    port = _validate_port(plan.proxy_port)
-    if _port_is_occupied(port):
-        raise CopilotSubscriptionError(
-            f"subscription mode requires a dedicated proxy port; {port} is already in use"
-        )
-
-    env["ENTROLY_PROXY_HOST"] = "127.0.0.1"
-    env["ENTROLY_PROXY_PORT"] = str(port)
-    env["ENTROLY_PROXY_DASHBOARD"] = "1"
-    env["ENTROLY_OPENAI_BASE"] = plan.upstream_origin
-    env["ENTROLY_COPILOT_SUBSCRIPTION"] = "1"
-
-    runtime = _runtime_dir(env)
-    log_path = runtime / f"copilot-subscription-proxy-{port}.log"
-    command = [sys.executable, "-m", "entroly.container_proxy"]
-    try:
-        handle = log_path.open("ab")
-    except OSError as exc:
-        raise CopilotSubscriptionError(
-            "unable to create the local Copilot subscription proxy log"
-        ) from exc
-
-    try:
-        handle.write(
-            (
-                "\n--- Entroly Copilot subscription proxy start "
-                f"port={port} ---\n"
-            ).encode("utf-8")
-        )
-        handle.flush()
-        try:
-            process = subprocess.Popen(
-                command,
-                env=env,
-                stdin=subprocess.DEVNULL,
-                stdout=handle,
-                stderr=subprocess.STDOUT,
-            )
-        except OSError as exc:
-            raise CopilotSubscriptionError(
-                "unable to start the hardened Entroly proxy process"
-            ) from exc
-    finally:
-        handle.close()
-
-    deadline = time.monotonic() + max(1.0, float(timeout_s))
-    health_url = f"http://127.0.0.1:{port}/health"
-    while time.monotonic() < deadline:
-        if process.poll() is not None:
-            detail = _tail_log(log_path)
-            raise CopilotSubscriptionError(
-                "Copilot subscription proxy exited during startup"
-                + (f": {detail}" if detail else "")
-            )
-        if _healthy_proxy(health_url):
-            return log_path
-        time.sleep(0.1)
-
-    _stop_process(process)
-    detail = _tail_log(log_path)
-    raise CopilotSubscriptionError(
-        "timed out waiting for the Copilot subscription proxy"
-        + (f": {detail}" if detail else "")
     )
 
 
@@ -255,7 +180,10 @@ def _ghe_tenant_from_capi_host(host: str) -> str:
             or len(label) > 63
             or label[0] == "-"
             or label[-1] == "-"
-            or any(not (char.isascii() and (char.isalnum() or char == "-")) for char in label)
+            or any(
+                not (char.isascii() and (char.isalnum() or char == "-"))
+                for char in label
+            )
         ):
             return ""
     return tenant
@@ -449,7 +377,9 @@ def _safe_text(value: object, limit: int) -> str:
     if value is None:
         return ""
     text = str(value).strip()
-    if len(text) > limit or any(ord(char) < 32 or ord(char) == 127 for char in text):
+    if len(text) > limit or any(
+        ord(char) < 32 or ord(char) == 127 for char in text
+    ):
         return ""
     return text
 
@@ -459,7 +389,6 @@ __all__ = [
     "CopilotSubscriptionPlan",
     "is_subscription_wrap",
     "prepare_subscription_wrap",
-    "start_subscription_proxy",
     "token_exchange_url_for_origin",
     "validate_copilot_api_origin",
 ]
