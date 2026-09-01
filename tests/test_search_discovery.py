@@ -71,6 +71,7 @@ def test_search_and_answer_crawlers_are_explicitly_allowed() -> None:
         "Claude-SearchBot",
         "Claude-User",
         "PerplexityBot",
+        "Perplexity-User",
     ):
         assert f"User-agent: {user_agent}\nAllow: /" in robots
     assert f"Sitemap: {SITE}/sitemap.xml" in robots

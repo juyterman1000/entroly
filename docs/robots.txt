@@ -23,6 +23,9 @@ Allow: /
 User-agent: PerplexityBot
 Allow: /
 
+User-agent: Perplexity-User
+Allow: /
+
 # Optional AI indexing and model-development crawlers
 User-agent: GPTBot
 Allow: /
