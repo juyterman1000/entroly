@@ -49,8 +49,16 @@ def _validated_integration_id(value: object) -> str:
     return text
 
 
-def _configure_integration_identity(environ: MutableMapping[str, str]) -> str:
-    """Make the client/runtime and Entroly provider identities identical."""
+def configure_copilot_integration_identity(
+    environ: MutableMapping[str, str],
+) -> str:
+    """Make the Copilot runtime and Entroly provider identities identical.
+
+    The function is intentionally reusable by both the wrapper and the proxy's
+    token-manager construction path so direct ``container_proxy`` launches and
+    normal ``entroly wrap copilot --subscription`` launches obey one identity
+    rule.
+    """
     entroly_id = _validated_integration_id(
         environ.get("ENTROLY_COPILOT_INTEGRATION_ID")
     )
@@ -86,7 +94,7 @@ def apply_copilot_cli_provider_contract(
             "Copilot wire API must be 'completions' or 'responses'"
         )
 
-    integration_id = _configure_integration_identity(environ)
+    integration_id = configure_copilot_integration_identity(environ)
     environ["COPILOT_PROVIDER_API_KEY"] = _LOCAL_PROVIDER_KEY
     environ.pop("COPILOT_PROVIDER_BEARER_TOKEN", None)
 
@@ -110,4 +118,5 @@ def apply_copilot_cli_provider_contract(
 __all__ = [
     "CopilotCLIProviderContractError",
     "apply_copilot_cli_provider_contract",
+    "configure_copilot_integration_identity",
 ]
