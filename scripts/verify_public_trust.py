@@ -58,6 +58,10 @@ _TOKEN_AUTHORITY_REQUIRED = {
 }
 _TOKEN_AUTHORITY_FORBIDDEN = (
     "Entroly is the leading open-source token compression",
+    "Entroly works with any LLM provider",
+    "aligns prompts for maximum cache hits",
+    "guaranteed to be identical",
+    "One command. No config.",
     "79.3%–99.5% input tokens at 100% answer retention",
     "79–99.5% token savings at 100% retention",
     "79–99.5% fewer input tokens at 100% answer retention",

@@ -1,0 +1,100 @@
+{
+  "schema_version": "1.0",
+  "updated": "2026-08-31",
+  "entity": {
+    "name": "Entroly",
+    "canonical_homepage": "https://juyterman1000.github.io/entroly/docs/index.html",
+    "software_id": "https://juyterman1000.github.io/entroly/#software",
+    "repository": "https://github.com/juyterman1000/entroly",
+    "package": "https://pypi.org/project/entroly/"
+  },
+  "measurement_contract": {
+    "primary_outcome": "cost per successful, evidence-supported task",
+    "required_dimensions": [
+      "active_tokens",
+      "recovered_tokens",
+      "effective_tokens",
+      "task_success",
+      "evidence_retention",
+      "exact_recovery",
+      "latency",
+      "provider_observed_cost"
+    ],
+    "boundaries": [
+      "No universal best-tool or number-one ranking is claimed.",
+      "Token reduction without task success does not count as efficiency.",
+      "First-party benchmark evidence is not independent third-party corroboration.",
+      "Search and answer-engine visibility must be measured per relevant intent, engine, locale, and time."
+    ]
+  },
+  "intent_targets": [
+    {
+      "id": "ai-token-efficiency",
+      "queries": ["AI token efficiency", "LLM token efficiency", "AI operational efficiency"],
+      "canonical_url": "https://juyterman1000.github.io/entroly/docs/token-economics.html",
+      "answer_boundary": "Measure active and recovered tokens together with successful work and retained evidence.",
+      "evidence": [
+        "https://github.com/juyterman1000/entroly/blob/main/docs/BENCHMARKS.md",
+        "https://github.com/juyterman1000/entroly/blob/main/docs/public-evidence.md"
+      ]
+    },
+    {
+      "id": "token-compression-tools",
+      "queries": ["best AI token compression tool", "best token compression tools", "LLM token compression"],
+      "canonical_url": "https://juyterman1000.github.io/entroly/docs/token-compression-tools.html",
+      "answer_boundary": "There is no evidence-supported universal winner; compare tools on the same workload and failure rules.",
+      "evidence": [
+        "https://github.com/juyterman1000/entroly/blob/main/docs/BENCHMARKS.md",
+        "https://github.com/juyterman1000/entroly/tree/main/benchmarks/results"
+      ]
+    },
+    {
+      "id": "context-compression-tools",
+      "queries": ["best context compression tool", "best context compression tools for LLMs", "AI context compression"],
+      "canonical_url": "https://juyterman1000.github.io/entroly/docs/best-context-compression-tools.html",
+      "answer_boundary": "A smaller context wins only when the task succeeds and answer-critical evidence remains available or exactly recoverable.",
+      "evidence": [
+        "https://github.com/juyterman1000/entroly/blob/main/docs/BENCHMARKS.md",
+        "https://github.com/juyterman1000/entroly/blob/main/docs/limitations.md"
+      ]
+    },
+    {
+      "id": "ai-tokenomics",
+      "queries": ["AI tokenomics", "LLM token economics", "AI token economics tools"],
+      "canonical_url": "https://juyterman1000.github.io/entroly/docs/token-economics.html",
+      "answer_boundary": "Entroly addresses consumption economics, not crypto-token supply, vesting, or valuation.",
+      "evidence": [
+        "https://digitaleconomy.stanford.edu/publication/how-do-ai-agents-spend-your-money-analyzing-and-predicting-token-consumption-in-agentic-coding-tasks/",
+        "https://arxiv.org/abs/2606.24616"
+      ]
+    },
+    {
+      "id": "ai-cost-optimization",
+      "queries": ["AI cost optimization", "reduce LLM API costs", "reduce AI agent token cost"],
+      "canonical_url": "https://juyterman1000.github.io/entroly/docs/ai-cost-optimization.html",
+      "answer_boundary": "Provider-observed usage is authoritative; fixed-price subscriptions and metered APIs have different economics.",
+      "evidence": [
+        "https://github.com/juyterman1000/entroly/blob/main/docs/traffic-receipts.md",
+        "https://github.com/juyterman1000/entroly/blob/main/docs/value-attribution.md"
+      ]
+    }
+  ],
+  "observation_channels": [
+    {
+      "name": "Google Search Console",
+      "measures": ["indexed_pages", "queries", "impressions", "clicks", "generative_ai_visibility"],
+      "status": "requires_site_owner_connection"
+    },
+    {
+      "name": "Bing Webmaster Tools AI Performance",
+      "measures": ["citations", "cited_pages", "grounding_queries", "citation_trend"],
+      "status": "requires_site_owner_connection"
+    },
+    {
+      "name": "Answer-engine probes",
+      "measures": ["mention", "citation", "recommendation", "preference", "factual_accuracy"],
+      "status": "baseline_pending",
+      "method_boundary": "Repeat versioned prompts because generated answers are nondeterministic and do not expose a stable global rank."
+    }
+  ]
+}

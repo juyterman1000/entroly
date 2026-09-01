@@ -100,6 +100,28 @@ The LobeHub listing is an external discovery surface. **Only the live LobeHub pa
 
 Marketplace badges are deliberately excluded from the simplified README until external indexing reflects the current release and validation state.
 
+## Discoverability evidence boundary
+
+The [discoverability registry](discoverability-registry.json) maps each priority
+AI-token intent to one canonical public answer, the evidence that answer may use,
+and the boundary it must preserve. It also records the measurement channels that
+must be connected before search visibility can be reported as observed rather
+than assumed.
+
+Search metadata, structured data, internal links, crawler access, and a sitemap
+can make Entroly easier to identify and index. They do **not** establish a Google
+ranking, an answer-engine citation, product superiority, or independent authority.
+A private transcript is useful as a requirements source but is not a public
+discovery signal. A first-party Entroly page is evidence of Entroly's published
+position only; it becomes third-party coverage only when an external source
+independently publishes or cites it.
+
+Current visibility must therefore be measured separately by query intent, engine,
+locale, and observation time. Google Search Console and Bing Webmaster Tools
+require owner-controlled connections. ChatGPT, Claude, and other answer-engine
+probes are nondeterministic observations, not durable rank guarantees. Until those
+channels contain dated observations, the registry keeps their status as pending.
+
 ## Quarantined public surfaces
 
 Legacy savings, prompt-compression, hallucination, projected-dashboard, and stale setup pages remain `noindex` redirects until their claims and setup instructions are rebuilt. An HTTP-successful page is not sufficient evidence that its copy or runtime is current.

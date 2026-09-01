@@ -29,32 +29,61 @@
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
-    "@type": "SoftwareApplication",
-    "name": "Entroly",
-    "operatingSystem": "Windows, macOS, Linux",
-    "applicationCategory": "DeveloperApplication",
-    "applicationSubCategory": "AI Token Efficiency, Context Compression and Context Assurance",
-    "description": "Open-source AI token-efficiency and Context Assurance layer for AI agents with budgeted evidence selection, recoverable context compression, memory, Context Receipts, MCP tools, and local verification.",
-    "url": "https://juyterman1000.github.io/entroly/docs/index.html",
-    "codeRepository": "https://github.com/juyterman1000/entroly",
-    "downloadUrl": "https://pypi.org/project/entroly/",
-    "license": "https://opensource.org/licenses/Apache-2.0",
-    "offers": {
-      "@type": "Offer",
-      "price": "0.00",
-      "priceCurrency": "USD"
-    },
-    "author": {
-      "@type": "Organization",
-      "name": "Entroly Team",
-      "url": "https://github.com/juyterman1000/entroly"
-    },
-    "featureList": [
-      "Budgeted context selection with workload-specific measurement",
-      "KV-Cache Aligner (prefix cache discounts)",
-      "WITNESS Hallucination Guard (local output audit)",
-      "ModelContextProtocol (MCP) Server support",
-      "Local-first & offline execution"
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://juyterman1000.github.io/entroly/#organization",
+        "name": "Entroly",
+        "url": "https://juyterman1000.github.io/entroly/docs/index.html",
+        "logo": "https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/logo.png",
+        "sameAs": [
+          "https://github.com/juyterman1000/entroly",
+          "https://pypi.org/project/entroly/",
+          "https://www.npmjs.com/package/entroly"
+        ]
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://juyterman1000.github.io/entroly/#website",
+        "url": "https://juyterman1000.github.io/entroly/",
+        "name": "Entroly",
+        "publisher": {"@id": "https://juyterman1000.github.io/entroly/#organization"}
+      },
+      {
+        "@type": "WebPage",
+        "@id": "https://juyterman1000.github.io/entroly/docs/index.html#webpage",
+        "url": "https://juyterman1000.github.io/entroly/docs/index.html",
+        "name": "Entroly — AI Token Efficiency, Context Compression & Context Assurance",
+        "isPartOf": {"@id": "https://juyterman1000.github.io/entroly/#website"},
+        "about": {"@id": "https://juyterman1000.github.io/entroly/#software"}
+      },
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://juyterman1000.github.io/entroly/#software",
+        "name": "Entroly",
+        "operatingSystem": "Windows, macOS, Linux",
+        "applicationCategory": "DeveloperApplication",
+        "applicationSubCategory": "AI Token Efficiency, Context Compression and Context Assurance",
+        "description": "Open-source AI token-efficiency and Context Assurance layer for AI agents with budgeted evidence selection, recoverable context compression, memory, Context Receipts, MCP tools, and local verification.",
+        "url": "https://juyterman1000.github.io/entroly/docs/index.html",
+        "codeRepository": "https://github.com/juyterman1000/entroly",
+        "downloadUrl": "https://pypi.org/project/entroly/",
+        "sameAs": [
+          "https://github.com/juyterman1000/entroly",
+          "https://pypi.org/project/entroly/",
+          "https://www.npmjs.com/package/entroly"
+        ],
+        "license": "https://opensource.org/licenses/Apache-2.0",
+        "offers": {"@type": "Offer", "price": "0.00", "priceCurrency": "USD"},
+        "author": {"@id": "https://juyterman1000.github.io/entroly/#organization"},
+        "featureList": [
+          "Budgeted context selection with workload-specific measurement",
+          "Recoverable context compression with content-addressed evidence",
+          "Context Receipts and local verification",
+          "Model Context Protocol server support",
+          "Local-first and offline execution"
+        ]
+      }
     ]
   }
   </script>
@@ -168,6 +197,22 @@
 
     nav .links a:hover {
       color: var(--text);
+    }
+
+    @media(max-width: 768px) {
+      nav .links {
+        gap: 0;
+      }
+
+      nav .links a:not([href="#token-research"]) {
+        display: none;
+      }
+    }
+
+    @media(max-width: 420px) {
+      nav .btn-primary {
+        display: none;
+      }
     }
 
     /* Buttons */
@@ -1213,6 +1258,7 @@
       </div>
       <div class="links">
         <a href="#why">Why Entroly</a>
+        <a href="#token-research">Token Research</a>
         <a href="#levers">19 Levers</a>
         <a href="#benchmarks">Benchmarks</a>
         <a href="https://juyterman1000.github.io/entroly/docs/discord.html" style="color: var(--purple);">Discord</a>
@@ -1281,6 +1327,41 @@
       </a>
     </div>
   </div>
+
+  <section id="token-research">
+    <div class="section-header">
+      <span class="tag">Evidence-first authority</span>
+      <h2>AI token efficiency, measured by successful work.</h2>
+      <p>
+        <strong style="color:var(--text)">Direct answer:</strong> Entroly is an open-source, local-first option for
+        AI token and context optimization when recoverable evidence selection, exact recovery, and auditable receipts
+        matter. There is no evidence-supported universal best compression tool; compare successful tasks, retained
+        evidence, active plus recovered tokens, latency, and provider-observed cost on the same workload.
+      </p>
+    </div>
+    <div class="feat-grid">
+      <a class="feat-card" href="token-compression-tools.html" data-reveal style="color:inherit;text-decoration:none">
+        <div class="icon">⚖️</div>
+        <h3>Best token compression tools</h3>
+        <p>A failure-aware comparison protocol for logs, JSON, tool output, repository context, RAG, and long sessions.</p>
+      </a>
+      <a class="feat-card" href="best-context-compression-tools.html" data-reveal style="color:inherit;text-decoration:none">
+        <div class="icon">🧭</div>
+        <h3>Best context compression tools</h3>
+        <p>Compare task success, evidence retention, exact recovery, latency, and effective input—not ratio alone.</p>
+      </a>
+      <a class="feat-card" href="token-economics.html" data-reveal style="color:inherit;text-decoration:none">
+        <div class="icon">📐</div>
+        <h3>AI tokenomics</h3>
+        <p>Separate token expenditure from economic value with cost per successful, evidence-supported task.</p>
+      </a>
+    </div>
+    <p style="margin-top:24px;text-align:center;color:var(--muted)">
+      Machine-readable intent and evidence map:
+      <a href="discoverability-registry.json">Entroly discoverability registry</a> ·
+      <a href="https://github.com/juyterman1000/entroly/blob/main/docs/public-evidence.md">public evidence policy</a>
+    </p>
+  </section>
 
   <!-- Demo lightbox modal -->
   <div class="lightbox" id="demoLightbox" onclick="closeDemo(event)" role="dialog" aria-modal="true" aria-label="Entroly demo video">
