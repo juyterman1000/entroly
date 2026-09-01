@@ -1,34 +1,28 @@
 """Credential policy for GitHub Copilot subscription inference.
 
-Entroly's subscription route reuses the existing CopilotTokenManager. The
-manager normally exchanges a GitHub credential for a short-lived Copilot token.
-Current GitHub Copilot runtimes also accept supported GitHub credentials through
-the runtime authentication path, and preserving that credential can avoid
-changing the caller's entitlement lane.
+Entroly's provider-bound Copilot route has two distinct credential classes and
+must never confuse them:
 
-This module wraps the manager's existing exchange callable rather than inventing
-a second token manager or transport. It also resolves the manager integration ID
-through the same contract used by the Copilot CLI wrapper, so credential
-acquisition and outbound ``Copilot-Integration-Id`` can never silently disagree.
+* a reusable GitHub credential authenticates the caller to GitHub and is used
+  only to acquire Copilot entitlement/API state;
+* the credential returned by GitHub's Copilot token exchange authenticates the
+  actual provider-bound CAPI request.
 
-Exchange is still attempted first so GitHub can advertise the authoritative CAPI
-endpoint. For recognized direct credentials, the advertised endpoint is retained
-while the original credential is kept as the inference bearer. If exchange is
-merely unavailable/rejected, a recognized direct credential can fall back to the
-already-validated configured CAPI origin. Redirects, malformed payloads,
-untrusted advertised origins, tenant-boundary failures, and other trust errors
-remain hard failures.
+GitHub's SDK accepts OAuth user tokens, GitHub App user tokens, fine-grained
+PATs, and a separate runtime path for installation tokens. That means those
+credentials are valid *runtime/acquisition* inputs; it does not make them CAPI
+bearer tokens. This module therefore never replaces an exchanged Copilot token
+with the original GitHub credential and never falls back to a long-lived GitHub
+credential when exchange fails.
 
-GitHub's current Copilot CLI/SDK documentation supports OAuth user tokens,
-GitHub App user tokens, and fine-grained PATs. GitHub Actions additionally has a
-runtime path for installation/GITHUB_TOKEN credentials. Classic ``ghp_`` PATs
-are explicitly unsupported and are rejected before any provider call.
+The module also resolves the manager integration ID through the same contract
+used by the Copilot CLI wrapper, so credential acquisition and outbound
+``Copilot-Integration-Id`` cannot silently disagree.
 """
 
 from __future__ import annotations
 
 import os
-import time
 from collections.abc import Callable, Mapping
 from typing import Any
 
@@ -38,20 +32,23 @@ from .copilot_cli_provider_contract import (
     configure_copilot_integration_identity,
 )
 
-_DIRECT_GITHUB_PREFIXES = ("gho_", "ghu_", "github_pat_", "ghs_")
+_SUPPORTED_GITHUB_PREFIXES = ("gho_", "ghu_", "github_pat_", "ghs_")
 _CLASSIC_PAT_PREFIX = "ghp_"
-_DIRECT_FALLBACK_REFRESH_S = 300.0
-_DIRECT_FALLBACK_ERRORS = (
-    "GitHub rejected the credential for Copilot subscription access",
-    "GitHub Copilot token exchange failed with HTTP ",
-    "unable to reach GitHub's Copilot token exchange endpoint",
-)
+
+
+def is_supported_copilot_github_credential(token: object) -> bool:
+    """Return whether *token* is a recognized Copilot runtime credential shape."""
+    value = _validated_token_text(token)
+    return bool(value and value.startswith(_SUPPORTED_GITHUB_PREFIXES))
 
 
 def is_direct_copilot_github_credential(token: object) -> bool:
-    """Return whether *token* is a supported direct Copilot credential shape."""
-    value = _validated_token_text(token)
-    return bool(value and value.startswith(_DIRECT_GITHUB_PREFIXES))
+    """Compatibility alias for the old classifier name.
+
+    ``True`` means the shape is a supported GitHub credential for acquisition;
+    it deliberately does **not** mean Entroly may forward the token to CAPI.
+    """
+    return is_supported_copilot_github_credential(token)
 
 
 def is_unsupported_classic_pat(token: object) -> bool:
@@ -69,42 +66,16 @@ def _validated_token_text(token: object) -> str:
     return value
 
 
-def _exchange_failure_allows_direct_fallback(exc: Exception) -> bool:
-    """Allow fallback only for exchange availability/credential-class failures."""
-    message = str(exc)
-    return any(message.startswith(prefix) for prefix in _DIRECT_FALLBACK_ERRORS)
-
-
-def _direct_fallback_payload(
-    token: str,
-    *,
-    now: float,
-) -> dict[str, object]:
-    """Build a synthetic cache horizon without pretending it is token expiry."""
-    return {
-        "token": token,
-        "expires_at": now + _DIRECT_FALLBACK_REFRESH_S + 60.0,
-        "refresh_in": _DIRECT_FALLBACK_REFRESH_S,
-    }
-
-
-def _preserve_direct_token(
-    payload: Mapping[str, Any],
-    *,
-    token: str,
-) -> dict[str, Any]:
-    """Keep GitHub's endpoint/refresh metadata while retaining caller identity."""
-    result = dict(payload)
-    result["token"] = token
-    return result
-
-
 def _wrap_exchange(
     exchange: Callable[[str, str, str], Mapping[str, Any]],
-    *,
-    clock: Callable[[], float],
 ) -> Callable[[str, str, str], Mapping[str, Any]]:
-    if getattr(exchange, "__entroly_direct_credential_policy__", False):
+    """Guard acquisition credentials without changing exchange semantics.
+
+    The returned payload is passed through verbatim. In particular, its
+    ``token`` field remains the provider credential; the input GitHub credential
+    is never substituted back into the payload.
+    """
+    if getattr(exchange, "__entroly_credential_policy__", False):
         return exchange
 
     def exchange_with_policy(
@@ -118,27 +89,14 @@ def _wrap_exchange(
                 "GitHub Copilot CLI does not support classic `ghp_` personal access tokens; "
                 "use an OAuth token or a fine-grained PAT with Copilot Requests permission"
             )
+        if not credential:
+            raise _transport.CopilotSubscriptionAuthError(
+                "GitHub credential is empty or malformed"
+            )
+        return exchange(exchange_url, credential, integration_id)
 
-        direct = is_direct_copilot_github_credential(credential)
-        try:
-            payload = exchange(exchange_url, github_credential, integration_id)
-        except _transport.CopilotSubscriptionAuthError as exc:
-            if not direct or not _exchange_failure_allows_direct_fallback(exc):
-                raise
-            # The manager already validated and pinned its requested CAPI origin.
-            # Omitting endpoints here intentionally keeps that trusted origin.
-            return _direct_fallback_payload(credential, now=float(clock()))
-
-        if not isinstance(payload, Mapping):
-            # Preserve the transport's existing failure semantics. The manager's
-            # normal parser will reject this shape; do not turn it into fallback.
-            return payload
-        if not direct:
-            return payload
-        return _preserve_direct_token(payload, token=credential)
-
-    exchange_with_policy.__entroly_direct_credential_policy__ = True
-    exchange_with_policy.__entroly_direct_credential_policy_original__ = exchange
+    exchange_with_policy.__entroly_credential_policy__ = True
+    exchange_with_policy.__entroly_credential_policy_original__ = exchange
     return exchange_with_policy
 
 
@@ -168,9 +126,9 @@ def _resolved_manager_integration_id(kwargs: dict[str, Any]) -> str:
 
 
 def install_copilot_subscription_credential_policy() -> bool:
-    """Install identity and direct-credential policy on the real manager seam."""
+    """Install identity/acquisition policy on the real token-manager seam."""
     current_init = _transport.CopilotTokenManager.__init__
-    if getattr(current_init, "__entroly_direct_credential_policy__", False):
+    if getattr(current_init, "__entroly_credential_policy__", False):
         return True
 
     def manager_init(self: Any, *args: Any, **kwargs: Any) -> None:
@@ -179,10 +137,10 @@ def install_copilot_subscription_credential_policy() -> bool:
         kwargs = dict(kwargs)
         kwargs["integration_id"] = _resolved_manager_integration_id(kwargs)
         current_init(self, *args, **kwargs)
-        self._exchange = _wrap_exchange(self._exchange, clock=self._clock)
+        self._exchange = _wrap_exchange(self._exchange)
 
-    manager_init.__entroly_direct_credential_policy__ = True
-    manager_init.__entroly_direct_credential_policy_original__ = current_init
+    manager_init.__entroly_credential_policy__ = True
+    manager_init.__entroly_credential_policy_original__ = current_init
     _transport.CopilotTokenManager.__init__ = manager_init
     return True
 
@@ -190,5 +148,6 @@ def install_copilot_subscription_credential_policy() -> bool:
 __all__ = [
     "install_copilot_subscription_credential_policy",
     "is_direct_copilot_github_credential",
+    "is_supported_copilot_github_credential",
     "is_unsupported_classic_pat",
 ]
