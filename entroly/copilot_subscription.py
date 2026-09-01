@@ -1,9 +1,9 @@
 """Plan and validate GitHub Copilot CLI subscription proxy mode.
 
-This module owns only wrapper-option parsing, trusted GitHub Copilot origin
-validation, and the immutable subscription plan.  It deliberately does not
-start a proxy process and does not configure Copilot CLI provider credentials.
-Those responsibilities have one owner each:
+This module owns wrapper-option parsing, trusted GitHub Copilot origin
+validation, and the immutable subscription plan. It deliberately does not start
+a proxy process or own provider credentials. Those responsibilities have one
+owner each:
 
 * :mod:`copilot_subscription_session` owns the dedicated proxy lifecycle;
 * :mod:`copilot_cli_provider_contract` owns Copilot CLI provider environment;
@@ -29,7 +29,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 _DEFAULT_API_ORIGIN = "https://api.githubcopilot.com"
-_PUBLIC_TOKEN_EXCHANGE_URL = "https://api.github.com/copilot_internal/v2/token"
+_PUBLIC_USER_INFO_URL = "https://api.github.com/copilot_internal/user"
 _ALLOWED_WIRE_APIS = frozenset({"completions", "responses"})
 
 
@@ -145,16 +145,16 @@ def validate_copilot_api_origin(raw: object) -> str:
     )
 
 
-def token_exchange_url_for_origin(origin: str) -> str:
-    """Derive the GitHub token-exchange endpoint from a validated CAPI origin."""
+def user_info_url_for_origin(origin: str) -> str:
+    """Derive the GitHub Copilot user/entitlement endpoint for a trusted CAPI origin."""
     normalized = validate_copilot_api_origin(origin)
     host = urlsplit(normalized).hostname or ""
     if _is_public_copilot_host(host):
-        return _PUBLIC_TOKEN_EXCHANGE_URL
+        return _PUBLIC_USER_INFO_URL
     tenant = _ghe_tenant_from_capi_host(host)
     if tenant:
-        return f"https://api.{tenant}.ghe.com/copilot_internal/v2/token"
-    raise CopilotSubscriptionError("unable to derive a trusted Copilot token endpoint")
+        return f"https://api.{tenant}.ghe.com/copilot_internal/user"
+    raise CopilotSubscriptionError("unable to derive a trusted Copilot user endpoint")
 
 
 def _is_public_copilot_host(host: str) -> bool:
@@ -389,6 +389,6 @@ __all__ = [
     "CopilotSubscriptionPlan",
     "is_subscription_wrap",
     "prepare_subscription_wrap",
-    "token_exchange_url_for_origin",
+    "user_info_url_for_origin",
     "validate_copilot_api_origin",
 ]
