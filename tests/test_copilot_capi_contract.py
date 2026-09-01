@@ -44,6 +44,7 @@ def test_contract_preserves_valid_client_correlation_api_and_editor_metadata() -
     interaction = "123e4567-e89b-12d3-a456-426614174000"
     headers = build_copilot_capi_headers(
         original={
+            "User-Agent": "GitHubCopilotCLI/1.2.3",
             "x-github-api-version": "2026-06-01",
             "X-Interaction-ID": interaction,
             "X-Initiator": "AGENT",
@@ -54,7 +55,9 @@ def test_contract_preserves_valid_client_correlation_api_and_editor_metadata() -
         },
         forwarded={
             "Authorization": "Bearer token",
-            "User-Agent": "GitHubCopilotCLI/1.2.3",
+            # A lower transport/auth layer may have its own synthetic identity;
+            # client identity must come from ``original`` instead.
+            "User-Agent": "GithubCopilot/1.0",
         },
         integration_id="copilot-cli-chat",
         environ={},
@@ -68,6 +71,25 @@ def test_contract_preserves_valid_client_correlation_api_and_editor_metadata() -
     assert headers["Editor-Plugin-Version"] == "copilot-cli/1.2.3"
     assert headers["Copilot-Vision-Request"] == "true"
     assert headers["User-Agent"] == "GitHubCopilotCLI/1.2.3"
+
+
+def test_contract_never_promotes_lower_layer_synthetic_client_identity() -> None:
+    headers = build_copilot_capi_headers(
+        original={"User-Agent": "generic-client/9.0"},
+        forwarded={
+            "Authorization": "Bearer token",
+            "User-Agent": "GithubCopilot/1.0",
+            "Editor-Version": "vscode/1.0",
+            "Editor-Plugin-Version": "copilot/1.0",
+        },
+        integration_id="copilot-cli-chat",
+        environ={},
+    )
+
+    assert headers["User-Agent"].startswith("Entroly-Copilot/")
+    assert headers["User-Agent"] != "GithubCopilot/1.0"
+    assert "Editor-Version" not in headers
+    assert "Editor-Plugin-Version" not in headers
 
 
 def test_contract_does_not_trust_client_token_bound_identity_or_bad_metadata() -> None:
