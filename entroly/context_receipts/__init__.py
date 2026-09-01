@@ -311,7 +311,7 @@ def run_recoverable_pipeline(
     receipt_path: Path | None = None
     recovery_p: Path | None = None
     if receipt_id:
-        base = Path(store_dir) if store_dir is not None else _store.DEFAULT_STORE
+        base = Path(store_dir) if store_dir is not None else _store.resolve_store()
         base.mkdir(parents=True, exist_ok=True)
         receipt_path = _store.write_json(base / f"{receipt_id}.json", receipt)
         recovery_p = _save_recovery_bundle(

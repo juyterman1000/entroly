@@ -44,6 +44,13 @@ class RecoveryReference:
     digest: str
     byte_length: int
     item_count: int = 0
+    #: What `item_count` counts, as a plural noun phrase. Codecs disagree on
+    #: this by design -- `json` counts the records it elided, `log` counts every
+    #: line in the original -- and both were printed as "N item(s)" next to a
+    #: note saying the payload was the complete original. A 60-record file
+    #: recovered whole therefore announced "(59 item(s))". The number is the
+    #: contract each codec's tests pin; the label is what makes it readable.
+    item_label: str = "item(s)"
     note: str = ""
     receipt_id: str = ""
     span_id: str = ""
@@ -63,6 +70,7 @@ class RecoveryReference:
             "digest": self.digest,
             "byte_length": self.byte_length,
             "item_count": self.item_count,
+            "item_label": self.item_label,
             "note": self.note,
             "receipt_id": self.receipt_id,
             "span_id": self.span_id,
@@ -171,6 +179,7 @@ class RecoveryStore:
         content: str,
         *,
         item_count: int = 0,
+        item_label: str = "item(s)",
         note: str = "",
     ) -> RecoveryReference:
         digest = content_digest(content)
@@ -196,6 +205,7 @@ class RecoveryStore:
                 "codec_digest": digest,
                 "codec_byte_length": len(content.encode("utf-8")),
                 "codec_item_count": int(item_count),
+                "codec_item_label": item_label,
                 "codec_note": note,
             },
         )
@@ -206,6 +216,7 @@ class RecoveryStore:
             digest=digest,
             byte_length=len(_to_bytes(content)),
             item_count=int(item_count),
+            item_label=item_label,
             note=note,
             receipt_id=stored.receipt_id,
             span_id=span.span_id,
@@ -258,6 +269,7 @@ class RecoveryStore:
                 digest=digest,
                 byte_length=byte_length,
                 item_count=int(metadata.get("codec_item_count") or 0),
+                item_label=str(metadata.get("codec_item_label") or "item(s)"),
                 note=str(metadata.get("codec_note") or ""),
                 receipt_id=receipt_id,
                 span_id=span_id,

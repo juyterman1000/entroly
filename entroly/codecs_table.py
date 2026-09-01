@@ -175,6 +175,7 @@ class TableCodec:
         recovery = self.store.put(
             text,
             item_count=len(body),
+            item_label="data row(s), excluding the header",
             note=f"full table for {source_id or 'csv'}",
         )
 

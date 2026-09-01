@@ -444,6 +444,84 @@ class VaultManager:
 
     # â”€â”€ Belief Operations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+    #: How much evidence a status asserts. Only used to compare two claims
+    #: about the same entity; an unranked status compares as neutral so a new
+    #: vocabulary term can never silently outrank or be outranked.
+    _STATUS_EVIDENCE_RANK = {
+        "hypothesis": 0,
+        "unsupported": 0,
+        "stale": 1,
+        "inferred": 2,
+        "observed": 3,
+        "verified": 4,
+    }
+
+    #: Statuses that report on a belief's freshness rather than assert a
+    #: competing description of the code. Marking something stale is how the
+    #: vault stays honest as the tree moves under it, so it is never refused
+    #: for carrying less evidence -- it is not making an evidence claim at all.
+    #: (The live staleness paths rewrite the field in place rather than going
+    #: through `write_belief`; this keeps the two from disagreeing if one ever
+    #: does.)
+    _LIFECYCLE_STATUSES = frozenset({"stale"})
+
+    def _weaker_than_current(self, artifact: BeliefArtifact) -> dict[str, Any] | None:
+        """Describe the current belief if ``artifact`` would weaken it, else None.
+
+        Deliberately narrow: it takes a drop in status rank *and* in confidence
+        *and* citing nothing the current belief does not already cite. A
+        genuine correction -- new evidence, a re-verification, a downgrade that
+        cites why -- carries at least one of those and overwrites normally.
+        What this refuses is the update that is weaker on every axis at once,
+        which is not a correction but a regression.
+        """
+        try:
+            record = self.read_belief(artifact.entity)
+        except Exception:  # noqa: BLE001 - a guard must not break the write
+            return None
+        if not record:
+            return None
+        # read_belief returns {path, frontmatter, body}; the fields this
+        # compares live in the frontmatter, not at the top level.
+        current = record.get("frontmatter") or {}
+        if not isinstance(current, dict):
+            return None
+
+        if artifact.status in self._LIFECYCLE_STATUSES:
+            return None
+
+        ranks = self._STATUS_EVIDENCE_RANK
+        current_status = str(current.get("status") or "")
+        incoming_rank = ranks.get(artifact.status)
+        current_rank = ranks.get(current_status)
+        if incoming_rank is None or current_rank is None:
+            return None
+        if incoming_rank >= current_rank:
+            return None
+
+        try:
+            current_confidence = float(current.get("confidence") or 0.0)
+        except (TypeError, ValueError):
+            return None
+        if float(artifact.confidence or 0.0) >= current_confidence:
+            return None
+
+        current_sources = {str(s) for s in (current.get("sources") or [])}
+        if not current_sources:
+            # Nothing to protect: the current claim cites no evidence either.
+            return None
+        if {str(s) for s in (artifact.sources or [])} - current_sources:
+            # It brings a source the current belief does not have. That is new
+            # evidence, so it is a correction and must be allowed through.
+            return None
+
+        return {
+            "status": current_status,
+            "confidence": current_confidence,
+            "sources": len(current_sources),
+            "claim_id": current.get("claim_id"),
+        }
+
     def write_belief(self, artifact: BeliefArtifact) -> dict[str, Any]:
         """Write a belief artifact to the vault.
 
@@ -467,6 +545,59 @@ class VaultManager:
 
         if not artifact.sources and artifact.status == "verified":
             artifact = replace(artifact, status="unsupported")
+
+        # Recency must not outrank evidence. Measured on this vault: a
+        # `verified` belief at confidence 0.95 citing src/auth.py:42 was
+        # replaced by a `hypothesis` at 0.1 citing nothing, and read_belief --
+        # what vault_query and every agent actually reads -- returned the
+        # hypothesis. The ledger kept both versions, so provenance survived,
+        # but nothing reads the ledger by default, so the operative knowledge
+        # was simply wrong.
+        #
+        # This is the dominant state-update failure reported for long-horizon
+        # agents (SKILL.state, arXiv 2608.26263, whose error taxonomy puts
+        # premature state overwrite/deletion at 68% of state errors), and the
+        # same answer applies here -- a weaker patch must not corrupt current
+        # state. The claim is still kept and still recorded in the ledger, in
+        # keeping with the rule above that losing a claim is worse than holding
+        # it at a lower status; it simply does not become what agents read.
+        superseded = self._weaker_than_current(artifact)
+        if superseded is not None:
+            try:
+                from .vault_time import BeliefLedger
+
+                BeliefLedger(self._base).record(artifact)
+            except Exception as exc:  # noqa: BLE001 - the refusal is the point
+                logger.error(f"Vault: competing-claim ledger append failed: {exc}")
+            logger.info(
+                "Vault: kept stronger belief for '%s' (%s@%.2f citing %d source(s)) "
+                "over incoming %s@%.2f citing %d",
+                artifact.entity, superseded["status"], superseded["confidence"],
+                superseded["sources"], artifact.status, artifact.confidence,
+                len(artifact.sources or []),
+            )
+            # The other outcomes in this module say what happened to *this*
+            # write -- written, updated, failed -- so this one does too. It is
+            # deliberately the negation of "written" rather than a word of its
+            # own: a caller that checks for success gets the right answer
+            # without having to know this case exists, and `failed` stays
+            # reserved for a write that broke rather than one that was refused.
+            return {
+                "status": "not_written",
+                "directory": "beliefs",
+                "entity": artifact.entity,
+                "claim_id": artifact.claim_id,
+                "kept_belief": superseded,
+                "recorded_in": "ledger (as a competing claim)",
+                "reason": (
+                    "a stronger belief about this entity is already recorded: "
+                    "this one is weaker in status and in confidence and cites "
+                    "no source the current one does not already carry, so it "
+                    "was kept as a competing claim in the ledger instead of "
+                    "replacing what agents read. To supersede it, cite a source "
+                    "the current belief does not have, or raise confidence."
+                ),
+            }
 
         # Sanitize entity for filename. The mapping is many-to-one, so if the
         # preferred name is already held by a *different* entity, fall back to
@@ -1038,21 +1169,63 @@ def _belief_filenames(entity: str) -> tuple[str, str]:
     return _safe_filename(entity or "untitled"), _disambiguated_filename(entity)
 
 
-def _parse_frontmatter(content: str) -> dict[str, str] | None:
-    """Parse YAML frontmatter from markdown content."""
+def _parse_frontmatter(content: str) -> dict[str, Any] | None:
+    """Parse YAML frontmatter, including the block sequences beliefs cite.
+
+    Provenance is written as a block sequence -- `sources:` followed by
+    indented `- path` lines -- and the previous parser kept only `key: value`
+    lines and skipped anything beginning with `-`. So `sources` and
+    `derived_from` were written to disk correctly and then dropped on the way
+    back in. `read_belief` is returned verbatim by the `vault_query` MCP tool,
+    so an agent asking what the vault knows about an entity was told
+    `status: verified, confidence: 0.95` with no citations attached and no way
+    to check what the claim had been verified against.
+
+    CLAUDE.md requires vault beliefs to be machine-auditable and omitted
+    evidence to be inspectable. Evidence that survives the write and not the
+    read is neither. Every caller that actually needed provenance had worked
+    around this by re-scanning the raw text with `_extract_sources` next to its
+    parse; fixing the shared parser is what lets those two agree, rather than
+    leaving a second extractor free to drift from the first.
+    """
     split = _split_frontmatter(content)
     if split is None:
         return None
 
-    fm_text = split[0].strip()
-    result: dict[str, str] = {}
-    for line in fm_text.splitlines():
-        if ":" in line and not line.strip().startswith("-"):
-            key, _, value = line.partition(":")
-            key = key.strip()
-            value = value.strip()
-            if key and value:
-                result[key] = value
+    result: dict[str, Any] = {}
+    pending_key: str | None = None
+    for line in split[0].strip().splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+
+        if pending_key is not None:
+            if stripped.startswith("- "):
+                result.setdefault(pending_key, []).append(stripped[2:].strip())
+                continue
+            if stripped == "[]":
+                # `to_markdown` writes an explicit empty list for a belief that
+                # cites nothing. That is a recorded value -- "asked, cited
+                # nothing" -- not a missing one, and it must read back as such.
+                result[pending_key] = []
+                pending_key = None
+                continue
+
+        pending_key = None
+        if stripped.startswith("-") or ":" not in stripped:
+            continue
+
+        key, _, value = line.partition(":")
+        key, value = key.strip(), value.strip()
+        if not key:
+            continue
+        if value:
+            result[key] = value
+        else:
+            # A bare `key:` opens a block sequence. It only becomes a list if
+            # items follow, so a key with a genuinely empty scalar still parses
+            # as absent, exactly as it did before.
+            pending_key = key
     return result if result else None
 
 
@@ -1159,26 +1332,16 @@ def _path_suffix_index(roots: list[Path]) -> set[str]:
 
 
 def _extract_sources(content: str) -> list[str]:
-    """Extract sources list from frontmatter."""
-    split = _split_frontmatter(content)
-    if split is None:
-        return []
+    """The sources a belief cites, or an empty list.
 
-    fm_text = split[0].strip().splitlines()
-    sources: list[str] = []
-    in_sources = False
-    for line in fm_text:
-        stripped = line.strip()
-        if stripped.startswith("sources:"):
-            in_sources = True
-            continue
-        if in_sources:
-            if stripped.startswith("- "):
-                sources.append(stripped[2:].strip())
-                continue
-            if stripped and not stripped.startswith("-"):
-                break
-    return sources
+    Kept as a named helper because the groundedness scan reads it on its own
+    terms, but it no longer walks the frontmatter itself: two extractors that
+    can disagree about what a belief cites is the failure the audit trail
+    exists to prevent.
+    """
+    fm = _parse_frontmatter(content) or {}
+    value = fm.get("sources")
+    return [str(v) for v in value] if isinstance(value, list) else []
 
 
 def _extract_body(content: str) -> str:

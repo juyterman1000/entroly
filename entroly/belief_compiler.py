@@ -99,6 +99,11 @@ class ModuleMap:
 class CompilationResult:
     """Result of a belief compilation run."""
     beliefs_written: int = 0
+    #: Beliefs the vault declined to make current because a better-evidenced
+    #: claim about the same entity already existed. They are held in the
+    #: ledger as competing claims, not lost -- but they are not writes, and
+    #: `beliefs_written` is a number reported to the user.
+    beliefs_superseded: int = 0
     entities_extracted: int = 0
     modules_mapped: int = 0
     diagrams_generated: int = 0
@@ -595,9 +600,17 @@ class BeliefCompiler:
                 belief = self._module_to_belief(
                     module, rel_path, resolver, source_root=_root_label(root)
                 )
-                self._vault.write_belief(belief)
-                result.beliefs_written += 1
-                result.belief_ids.append(belief.claim_id)
+                # Counted on the vault's answer, not on having called it: the
+                # vault refuses a write that would replace a better-evidenced
+                # belief with a weaker one, and a refusal is not a write.
+                # Checking for "written" rather than against a list of refusal
+                # codes keeps the count honest if new outcomes are ever added.
+                outcome = self._vault.write_belief(belief)
+                if (outcome or {}).get("status") == "written":
+                    result.beliefs_written += 1
+                    result.belief_ids.append(belief.claim_id)
+                else:
+                    result.beliefs_superseded += 1
             except Exception as e:
                 result.errors.append(f"Belief write failed for {rel_path}: {e}")
 
@@ -605,8 +618,11 @@ class BeliefCompiler:
         if all_modules:
             try:
                 arch_belief = self._create_architecture_belief(all_modules, str(root))
-                self._vault.write_belief(arch_belief)
-                result.beliefs_written += 1
+                outcome = self._vault.write_belief(arch_belief)
+                if (outcome or {}).get("status") == "written":
+                    result.beliefs_written += 1
+                else:
+                    result.beliefs_superseded += 1
             except Exception as e:
                 result.errors.append(f"Architecture belief failed: {e}")
 
@@ -637,10 +653,17 @@ class BeliefCompiler:
             except Exception as e:
                 result.errors.append(f"Module diagram failed: {e}")
 
+        # Only mentioned when it happened: a line that always reads
+        # "0 superseded" trains the reader to stop seeing it.
+        superseded = (
+            f", {result.beliefs_superseded} superseded by better-evidenced claims"
+            if result.beliefs_superseded
+            else ""
+        )
         logger.info(
             f"BeliefCompiler: compiled {result.files_processed} files → "
             f"{result.beliefs_written} beliefs, {result.entities_extracted} entities, "
-            f"{result.diagrams_generated} diagrams"
+            f"{result.diagrams_generated} diagrams{superseded}"
         )
         return result
 

@@ -211,6 +211,7 @@ class JsonCodec:
                     recovery=self.store.put(
                         text,
                         item_count=_count_elided_json_records(data),
+                        item_label="record(s) restored that the columnar form dropped",
                         note=(
                             "complete original JSON for "
                             f"{source_id or 'payload'} (columnar form kept "
@@ -239,6 +240,7 @@ class JsonCodec:
         recovery = self.store.put(
             text,
             item_count=omitted_count,
+            item_label="record(s) restored that the schema form dropped",
             note=f"complete original JSON for {source_id or 'payload'}",
         )
         reps.append(
@@ -921,6 +923,7 @@ class LogCodec:
                     recovery=self.store.put(
                         text,
                         item_count=len(text.splitlines()),
+                        item_label="line(s) in the original",
                         note=(
                             f"complete original log for {source_id or 'log'} "
                             "(templated form kept every value verbatim)"
@@ -945,6 +948,7 @@ class LogCodec:
         recovery = self.store.put(
             text,
             item_count=_log_omitted_count(text, _log_template, _strip_log_prefix),
+            item_label="repeated line(s) restored that the collapsed form dropped",
             note=f"complete original log for {source_id or 'log'}",
         )
         reps.append(
@@ -1063,6 +1067,7 @@ class ShellCodec:
         recovery = self.store.put(
             text,
             item_count=max(0, original_nonempty - compressed_nonempty),
+            item_label="non-empty line(s) restored that the compressed form dropped",
             note=f"complete original shell output for {source_id or 'command'}",
         )
         reps.append(
