@@ -2,11 +2,11 @@
 
 This module is deliberately narrow. It does not route requests, transform model
 payloads, retry provider calls, or create a second receipt/accounting layer.
-Explicit Copilot subscription mode uses GitHub's current runtime contract:
+Explicit Copilot subscription mode follows GitHub's current runtime contract:
 
 * a supported GitHub user/runtime credential is the CAPI bearer;
-* ``/copilot_internal/user`` is a bounded entitlement/endpoint preflight, not a
-  token minting service;
+* ``/copilot_internal/user`` is bounded entitlement/endpoint discovery, not a
+  token-minting service;
 * credentials remain process-local and are never persisted by Entroly;
 * a generic public CAPI bootstrap may adopt GitHub's advertised SKU host, while
   an explicitly selected SKU or GHE tenant cannot silently move elsewhere;
@@ -16,11 +16,10 @@ Explicit Copilot subscription mode uses GitHub's current runtime contract:
   upstream request leaves Entroly;
 * Entroly never retries a provider request merely because authentication fails.
 
-The distinction between GitHub credentials and Copilot API tokens matters. The
-current GitHub Copilot SDK exposes OAuth-authenticated CAPI sessions with the
-resolved GitHub bearer as the provider ``api_key``. A separate
-``GITHUB_COPILOT_API_TOKEN`` mode exists in the SDK, but this wrapper does not
-pretend a GitHub user token was exchanged into that different credential class.
+GitHub's current runtime exposes OAuth-authenticated CAPI sessions with the
+resolved GitHub bearer as the provider API key. A separate direct Copilot API
+credential mode exists upstream, but this subscription wrapper intentionally
+does not conflate those credential classes.
 """
 
 from __future__ import annotations
@@ -50,6 +49,7 @@ _MAX_TOKEN_CHARS = 16_384
 _MAX_USER_RESPONSE_BYTES = 256 * 1024
 _DEFAULT_INTEGRATION_ID = "copilot-developer-cli"
 _PUBLIC_CAPI_BOOTSTRAP_HOST = "api.githubcopilot.com"
+_USER_API_VERSION = "2025-04-01"
 _SUPPORTED_GITHUB_PREFIXES = ("gho_", "ghu_", "github_pat_", "ghs_")
 _CLASSIC_PAT_PREFIX = "ghp_"
 _GITHUB_TOKEN_ENV_VARS = (
@@ -71,17 +71,14 @@ class CopilotProviderCredential:
     api_origin: str
 
 
-# Compatibility name for the draft feature's earlier internal imports.
-CopilotAPIToken = CopilotProviderCredential
-
-
 class CopilotTokenManager:
     """Resolve one GitHub-backed CAPI credential for one proxy process.
 
-    The manager does not claim the credential is short-lived and does not run a
-    background refresh timer: the current runtime contract gives Entroly no
-    trustworthy expiry for a GitHub user token. Expiry therefore fails normally
-    at CAPI rather than triggering unsafe request replay.
+    The name reflects ownership of the GitHub token used by CAPI. The manager
+    deliberately does not invent token expiry or run a credential-refresh
+    timer: the current GitHub runtime does not expose a trustworthy expiry at
+    this boundary. Provider auth failures therefore propagate instead of
+    triggering replay of a model request.
     """
 
     def __init__(
@@ -90,17 +87,9 @@ class CopilotTokenManager:
         api_origin: str,
         environ: Mapping[str, str] | None = None,
         integration_id: str | None = None,
-        user_info_fetch: Callable[[str, str, str], Mapping[str, Any]] | None = None,
+        user_info_fetch: Callable[[str, str], Mapping[str, Any]] | None = None,
         credential_resolver: Callable[[], str] | None = None,
-        exchange: Callable[..., Any] | None = None,
-        clock: Callable[..., Any] | None = None,
     ) -> None:
-        if exchange is not None:
-            raise CopilotSubscriptionAuthError(
-                "Copilot subscription auth no longer accepts a token-exchange hook; "
-                "use user_info_fetch for entitlement discovery"
-            )
-        del clock
         self._environ = os.environ if environ is None else environ
         self._requested_origin = validate_copilot_api_origin(api_origin)
         self._user_info_url = user_info_url_for_origin(self._requested_origin)
@@ -131,15 +120,17 @@ class CopilotTokenManager:
         return self._refresh(force=True)
 
     def current_token(self) -> str:
-        """Return the process-local GitHub bearer without hidden request replay."""
+        """Return the process-local GitHub bearer without hidden network I/O."""
         with self._lock:
             current = self._current
-        if current is not None:
-            return current.token
-        return self._refresh(force=True).token
+        if current is None:
+            raise CopilotSubscriptionAuthError(
+                "Copilot subscription credential was not primed before provider traffic"
+            )
+        return current.token
 
     def stop(self) -> None:
-        """Compatibility lifecycle hook; no background credential worker exists."""
+        """Lifecycle compatibility hook; no background credential worker exists."""
         return None
 
     def public_summary(self) -> dict[str, object]:
@@ -159,17 +150,13 @@ class CopilotTokenManager:
             }
 
     def _refresh(self, *, force: bool) -> CopilotProviderCredential:
-        """Re-resolve identity metadata; retained for deterministic tests/tools."""
+        """Re-run endpoint/entitlement discovery without replaying model traffic."""
         with self._lock:
             if not force and self._current is not None:
                 return self._current
             try:
                 credential = _validated_runtime_credential(self._credential_resolver())
-                payload = self._fetch_user_info(
-                    self._user_info_url,
-                    credential,
-                    self._integration_id,
-                )
+                payload = self._fetch_user_info(self._user_info_url, credential)
                 resolved = _credential_from_user_payload(
                     credential,
                     payload,
@@ -267,6 +254,8 @@ def _transport_client_kwargs() -> dict[str, Any]:
     try:
         from .proxy_transport_final import _safe_http_client_kwargs
     except (ImportError, AttributeError):
+        # Standalone unit-test environments may not have installed the hardened
+        # proxy layer. The fallback still refuses ambient proxy inheritance.
         return {"follow_redirects": False, "trust_env": False}
 
     try:
@@ -280,16 +269,14 @@ def _transport_client_kwargs() -> dict[str, Any]:
 def _fetch_user_info_payload(
     user_info_url: str,
     github_credential: str,
-    integration_id: str,
 ) -> Mapping[str, Any]:
     """Fetch bounded Copilot user/entitlement metadata using the GitHub bearer."""
     _validate_user_info_url(user_info_url)
     credential = _validated_runtime_credential(github_credential)
     headers = {
-        "Accept": "application/json",
         "Authorization": f"Bearer {credential}",
-        "User-Agent": "GithubCopilot/1.0",
-        "Copilot-Integration-Id": _validated_integration_id(integration_id),
+        "Accept": "application/json",
+        "X-GitHub-Api-Version": _USER_API_VERSION,
     }
 
     kwargs = _transport_client_kwargs()
@@ -376,6 +363,7 @@ def _is_public_capi_host(host: str) -> bool:
 
 
 def _same_trust_partition(requested_origin: str, advertised_origin: str) -> bool:
+    """Return whether endpoint discovery may replace the requested CAPI origin."""
     requested_host = (urlsplit(requested_origin).hostname or "").casefold().rstrip(".")
     advertised_host = (urlsplit(advertised_origin).hostname or "").casefold().rstrip(".")
     requested_public = _is_public_capi_host(requested_host)
@@ -545,7 +533,6 @@ def install_copilot_subscription_transport() -> bool:
 
 
 __all__ = [
-    "CopilotAPIToken",
     "CopilotProviderCredential",
     "CopilotSubscriptionAuthError",
     "CopilotTokenManager",
