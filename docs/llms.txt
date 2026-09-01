@@ -50,6 +50,9 @@ Weak fit: short prompts, tiny repositories, fixed-price subscriptions where the 
 
 - [AI efficiency hub](https://juyterman1000.github.io/entroly/docs/ai-efficiency.html): Canonical map for token saving, AI cost optimization, context compression, Memory OS, adaptive context, hallucination reduction, model routing, and verified code intelligence.
 - [Token economics](https://juyterman1000.github.io/entroly/docs/token-economics.html): Evidence selection, recoverable compression, cache-aware context control, and workload-specific token measurement.
+- [Token-compression comparison](https://juyterman1000.github.io/entroly/docs/token-compression-tools.html): Failure-aware comparison across agent/tool output, logs, JSON, repository context, RAG, and long sessions.
+- [Context-compression comparison](https://juyterman1000.github.io/entroly/docs/best-context-compression-tools.html): Relevant-query guide centered on task success, evidence retention, exact recovery, latency, and effective tokens.
+- [Discoverability registry](https://juyterman1000.github.io/entroly/docs/discoverability-registry.json): Versioned intent-to-canonical-page map, evidence links, measurement dimensions, and explicit ranking boundaries.
 - [Live tokenomics and public-counter contract](https://github.com/juyterman1000/entroly/blob/main/docs/live-tokenomics.md): Local lifetime value receipts, provider-path modeled cost, privacy boundaries, and the evidence requirements for any future public aggregate.
 - [AI cost optimization](https://juyterman1000.github.io/entroly/docs/ai-cost-optimization.html): Provider-bound input savings, billing boundaries, and measurement guidance.
 - [Entroly Memory OS](https://juyterman1000.github.io/entroly/docs/memory-os.html): Budget-aware working, episodic, and semantic memory with consolidation and forgetting.
