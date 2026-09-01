@@ -22,15 +22,19 @@ from typing import Any
 # produced by the previous layer; remote access authentication must be outermost.
 from . import proxy_transport_safe as _proxy_transport_safe  # noqa: F401
 from . import proxy_transport_final as _proxy_transport_final  # noqa: F401
+from .copilot_subscription_credential_policy import (
+    install_copilot_subscription_credential_policy,
+)
 from .copilot_subscription_transport import install_copilot_subscription_transport
 from .copilot_capi_routing import install_copilot_capi_routing
 from .copilot_capi_contract import install_copilot_capi_contract
 
-# Copilot subscription support adds three narrow contracts to the existing
-# hardened proxy: entitlement auth, exact CAPI path normalization, then request
-# metadata. All are no-ops unless explicit subscription mode is enabled. Access
-# security remains outermost and provider/query/redirect handling stays owned by
-# the existing proxy/transport layers.
+# Copilot subscription support adds narrow contracts to the existing hardened
+# proxy: credential policy, entitlement auth, exact CAPI path normalization, then
+# request metadata. All are no-ops unless explicit subscription mode is enabled
+# at the transport/app layer. Access security remains outermost and provider,
+# query, redirect, retry, and body handling stay owned by the existing proxy.
+install_copilot_subscription_credential_policy()
 install_copilot_subscription_transport()
 install_copilot_capi_routing()
 install_copilot_capi_contract()
