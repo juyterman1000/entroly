@@ -234,17 +234,14 @@ def _wrapper_flag(argv: list[str], flag: str) -> bool:
     return flag in argv[:boundary]
 
 
-def _prepare_copilot_subscription(argv: list[str]) -> bool:
-    """Prepare and pre-start the hardened proxy for explicit Copilot subscription mode."""
+def _prepare_copilot_subscription(argv: list[str]):
+    """Prepare subscription routing and return ``(handled, managed_proxy)``."""
     from .copilot_cli_provider_contract import apply_copilot_cli_provider_contract
-    from .copilot_subscription import (
-        is_subscription_wrap,
-        prepare_subscription_wrap,
-        start_subscription_proxy,
-    )
+    from .copilot_subscription import is_subscription_wrap, prepare_subscription_wrap
+    from .copilot_subscription_session import start_managed_subscription_proxy
 
     if not is_subscription_wrap(argv):
-        return False
+        return False, None
 
     dry_run = _wrapper_flag(argv, "--dry-run")
     plan = prepare_subscription_wrap(argv)
@@ -264,21 +261,29 @@ def _prepare_copilot_subscription(argv: list[str]) -> bool:
         + (" [dry-run]" if dry_run else ""),
         file=sys.stderr,
     )
-    if not dry_run:
-        log_path = start_subscription_proxy(plan)
-        print(
-            f"[entroly] Hardened Copilot subscription proxy ready; log: {log_path}",
-            file=sys.stderr,
-        )
-    return True
+    if dry_run:
+        return True, None
+
+    managed_proxy = start_managed_subscription_proxy(plan)
+    print(
+        f"[entroly] Hardened Copilot subscription proxy ready; log: "
+        f"{managed_proxy.log_path}",
+        file=sys.stderr,
+    )
+    return True, managed_proxy
 
 
 def launch() -> None:
     """Launch local commands, native proxy mode, or version-pinned Docker MCP."""
     argv = sys.argv[1:]
     try:
-        if _prepare_copilot_subscription(argv):
-            _legacy.launch()
+        handled, managed_proxy = _prepare_copilot_subscription(argv)
+        if handled:
+            try:
+                _legacy.launch()
+            finally:
+                if managed_proxy is not None:
+                    managed_proxy.close()
             return
         if argv and argv[0] == "routing":
             _run_routing_command(argv[1:])
