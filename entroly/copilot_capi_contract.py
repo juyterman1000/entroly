@@ -9,14 +9,15 @@ The boundary is fail-closed for token-bound identity and fail-safe for optional
 client metadata:
 
 * ``Copilot-Integration-Id`` always comes from the same trusted manager that
-  minted the short-lived Copilot credential;
+  owns the active Copilot credential route;
 * ``X-GitHub-Api-Version`` is a validated ISO date, preferring a valid client
   value, then an explicit Entroly override, then a conservative default;
 * ``X-Interaction-Id`` preserves a valid client correlation id or generates a
   fresh UUID4 locally;
 * the outbound user-agent must identify Copilot traffic without pretending to
   be a particular VS Code/Copilot build;
-* optional initiator/intent metadata is copied only through a bounded allowlist.
+* editor/plugin metadata is preserved only when the actual client supplied it;
+* optional initiator, intent, and vision metadata uses bounded allowlists.
 """
 
 from __future__ import annotations
@@ -102,6 +103,19 @@ def _drop_case_insensitive(headers: dict[str, str], names: set[str]) -> None:
             headers.pop(key, None)
 
 
+def _copy_optional_ascii(
+    original: Mapping[str, Any],
+    out: dict[str, str],
+    name: str,
+    *,
+    limit: int,
+) -> None:
+    value = _visible_ascii(_header_value(original, name), limit=limit)
+    _drop_case_insensitive(out, {name})
+    if value:
+        out[name] = value
+
+
 def build_copilot_capi_headers(
     *,
     original: Mapping[str, Any],
@@ -111,9 +125,9 @@ def build_copilot_capi_headers(
 ) -> dict[str, str]:
     """Return the trusted outbound CAPI header set for one request.
 
-    ``forwarded`` must already contain the short-lived Copilot Authorization
+    ``forwarded`` must already contain the active Copilot Authorization
     credential installed by ``copilot_subscription_transport``. This function
-    does not read or synthesize credentials.
+    does not read, persist, or synthesize credentials.
     """
     trusted_integration_id = _visible_ascii(integration_id, limit=128)
     if not trusted_integration_id or any(
@@ -131,6 +145,9 @@ def build_copilot_capi_headers(
             "X-Interaction-Id",
             "X-Initiator",
             "OpenAI-Intent",
+            "Editor-Version",
+            "Editor-Plugin-Version",
+            "Copilot-Vision-Request",
         },
     )
 
@@ -143,6 +160,11 @@ def build_copilot_capi_headers(
         _drop_case_insensitive(out, {"User-Agent"})
         out["User-Agent"] = f"Entroly-Copilot/{__version__}"
 
+    # Preserve actual client identity metadata when present, but never fabricate
+    # a VS Code or Copilot extension version on the client's behalf.
+    _copy_optional_ascii(original, out, "Editor-Version", limit=128)
+    _copy_optional_ascii(original, out, "Editor-Plugin-Version", limit=128)
+
     initiator = _visible_ascii(_header_value(original, "X-Initiator"), limit=16)
     if initiator.casefold() in {"user", "agent"}:
         out["X-Initiator"] = initiator.casefold()
@@ -150,6 +172,10 @@ def build_copilot_capi_headers(
     intent = _visible_ascii(_header_value(original, "OpenAI-Intent"), limit=128)
     if intent:
         out["OpenAI-Intent"] = intent
+
+    vision = _visible_ascii(_header_value(original, "Copilot-Vision-Request"), limit=8)
+    if vision.casefold() in {"true", "false"}:
+        out["Copilot-Vision-Request"] = vision.casefold()
 
     return out
 
