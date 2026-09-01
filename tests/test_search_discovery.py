@@ -87,7 +87,7 @@ def test_discovery_sitemap_is_current_and_complete() -> None:
     }
     for spec in PAGES.values():
         assert entries[spec["canonical"]] == spec["lastmod"]
-    assert entries[f"{SITE}/docs/index.html"] == "2026-08-09"
+    assert entries[f"{SITE}/docs/index.html"] == "2026-08-30"
 
 
 def test_intent_pages_have_unique_search_metadata_and_valid_json_ld() -> None:
