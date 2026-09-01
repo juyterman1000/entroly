@@ -229,10 +229,49 @@ def _run_routing_command(argv: list[str]) -> None:
         _routing_check(remaining)
 
 
+def _wrapper_flag(argv: list[str], flag: str) -> bool:
+    boundary = argv.index("--") if "--" in argv else len(argv)
+    return flag in argv[:boundary]
+
+
+def _prepare_copilot_subscription(argv: list[str]) -> bool:
+    """Prepare and pre-start the hardened proxy for explicit Copilot subscription mode."""
+    from .copilot_subscription import (
+        is_subscription_wrap,
+        prepare_subscription_wrap,
+        start_subscription_proxy,
+    )
+
+    if not is_subscription_wrap(argv):
+        return False
+
+    dry_run = _wrapper_flag(argv, "--dry-run")
+    plan = prepare_subscription_wrap(argv)
+    sys.argv[1:] = list(plan.cleaned_argv)
+    summary = plan.public_summary()
+    print(
+        "[entroly] Copilot subscription route: "
+        f"{summary['wire_api']} -> {summary['upstream_origin']} "
+        f"via dedicated localhost:{summary['proxy_port']}"
+        + (" [dry-run]" if dry_run else ""),
+        file=sys.stderr,
+    )
+    if not dry_run:
+        log_path = start_subscription_proxy(plan)
+        print(
+            f"[entroly] Hardened Copilot subscription proxy ready; log: {log_path}",
+            file=sys.stderr,
+        )
+    return True
+
+
 def launch() -> None:
     """Launch local commands, native proxy mode, or version-pinned Docker MCP."""
     argv = sys.argv[1:]
     try:
+        if _prepare_copilot_subscription(argv):
+            _legacy.launch()
+            return
         if argv and argv[0] == "routing":
             _run_routing_command(argv[1:])
             return
@@ -249,6 +288,7 @@ def launch() -> None:
 
 __all__ = [
     "_apply_proxy_cli_overrides",
+    "_prepare_copilot_subscription",
     "_routing_proxy_requested",
     "launch",
 ]
