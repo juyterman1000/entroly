@@ -20,7 +20,7 @@ A package badge does not prove benchmark quality. A local token estimate does no
 - [npm `entroly-wasm`](https://www.npmjs.com/package/entroly-wasm)
 - [Apache-2.0 license](../LICENSE)
 
-The base Python package has a pure-Python path. Rust acceleration is optional. The npm `entroly` package is a separate Node/WASM runtime.
+The base Python package declares `entroly-core` as a required dependency for the standard supported install and uses the native engine when a compatible wheel is available. An internal pure-Python fallback remains for unsupported platforms, but the benchmarked query-conditioned selection path must not be described as an optional native extra. The npm `entroly` package is a separate Node/WASM runtime.
 
 ## MCP launch contract
 

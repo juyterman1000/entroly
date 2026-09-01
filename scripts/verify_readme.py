@@ -44,21 +44,21 @@ OPENCLAW_TEXT = Path("integrations/openclaw/README.md").read_text(encoding="utf-
 
 # === Intentional public product profiles ===
 check(
-    "README developer Context Assurance and Context OS identity",
+    "README AI token efficiency and Context Assurance identity",
     lambda: require(
         all(
             phrase in README_TEXT
             for phrase in (
-                "Entroly — Drop-In Context Assurance to Lower AI Operational Cost",
-                "Reduce unnecessary context without losing control of critical evidence.",
+                "Entroly — AI Token Efficiency, Context Compression & Context Assurance",
+                "Reduce avoidable AI token usage and provider-bound context without losing control of critical evidence.",
                 "content-addressed evidence",
-                "recoverable compression",
-                "Context OS",
+                "recoverable context compression",
+                "Context Assurance layer",
                 "Context Receipts",
                 "local-first",
             )
         ),
-        "README no longer states the cost-led Context Assurance and AI-agent Context OS contract",
+        "README no longer states the AI token-efficiency and Context Assurance contract",
     ),
 )
 check(
