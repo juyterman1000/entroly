@@ -61,11 +61,13 @@ def test_successful_exchange_discovers_origin_without_replacing_direct_pat(
     assert resolved.expires_at > resolved.refresh_at > now
 
 
-def test_exchange_failure_falls_back_only_for_recognized_direct_github_token(
+def test_exchange_unavailability_falls_back_only_for_recognized_direct_github_token(
     monkeypatch,
 ) -> None:
+    message = "GitHub Copilot token exchange failed with HTTP 404"
+
     def fake_exchange(_token: str, *, requested_origin: str, integration_id: str):
-        raise transport.CopilotSubscriptionAuthError("exchange unavailable")
+        raise transport.CopilotSubscriptionAuthError(message)
 
     monkeypatch.setattr(transport, "_exchange_github_token", fake_exchange)
     install_copilot_subscription_credential_policy()
@@ -78,9 +80,34 @@ def test_exchange_failure_falls_back_only_for_recognized_direct_github_token(
     assert direct.token == "gho_direct-user-token"
     assert direct.api_origin == "https://api.githubcopilot.com"
 
-    with pytest.raises(transport.CopilotSubscriptionAuthError, match="exchange unavailable"):
+    with pytest.raises(transport.CopilotSubscriptionAuthError, match="HTTP 404"):
         transport._exchange_github_token(
             "opaque-token",
+            requested_origin="https://api.githubcopilot.com",
+            integration_id="copilot-cli-chat",
+        )
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "GitHub Copilot token exchange redirected; refusing to forward credentials",
+        "GitHub Copilot token exchange returned invalid JSON",
+        "GitHub Copilot token response advertised an untrusted API origin",
+        "GitHub Copilot token response crossed the configured tenant boundary",
+        "GitHub Copilot token response exceeded the safety limit",
+    ],
+)
+def test_trust_failures_never_fall_back_to_direct_token(monkeypatch, message: str) -> None:
+    def fake_exchange(_token: str, *, requested_origin: str, integration_id: str):
+        raise transport.CopilotSubscriptionAuthError(message)
+
+    monkeypatch.setattr(transport, "_exchange_github_token", fake_exchange)
+    install_copilot_subscription_credential_policy()
+
+    with pytest.raises(transport.CopilotSubscriptionAuthError, match="GitHub Copilot"):
+        transport._exchange_github_token(
+            "github_pat_direct-entitled",
             requested_origin="https://api.githubcopilot.com",
             integration_id="copilot-cli-chat",
         )
