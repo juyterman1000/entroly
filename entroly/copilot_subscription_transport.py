@@ -1,24 +1,26 @@
 """GitHub Copilot subscription authentication for Entroly's existing proxy.
 
 This module is deliberately narrow. It does not route requests, transform model
-payloads, retry provider calls, or create a second receipt/accounting layer. In
-explicit Copilot subscription mode it supplies GitHub's short-lived Copilot API
-credential to the already-hardened OpenAI-compatible Entroly transport.
+payloads, retry provider calls, or create a second receipt/accounting layer.
+Explicit Copilot subscription mode uses GitHub's current runtime contract:
 
-Security properties:
-* GitHub credentials are read only from documented environment variables or
-  ``gh auth token`` and are never persisted by Entroly;
-* reusable GitHub credentials are acquisition credentials, never CAPI bearers;
-* token exchange is permitted only to a GitHub-operated endpoint derived from a
-  validated Copilot API origin;
-* redirects are rejected and exchange responses are bounded before JSON parsing;
+* a supported GitHub user/runtime credential is the CAPI bearer;
+* ``/copilot_internal/user`` is a bounded entitlement/endpoint preflight, not a
+  token minting service;
+* credentials remain process-local and are never persisted by Entroly;
 * a generic public CAPI bootstrap may adopt GitHub's advertised SKU host, while
   an explicitly selected SKU or GHE tenant cannot silently move elsewhere;
-* the first accepted Copilot API origin is pinned for the proxy lifetime;
-* the local dummy provider bearer supplied to Copilot CLI is always replaced
-  before an upstream request leaves Entroly;
-* refresh happens in a daemon thread so the request event loop normally performs
-  no authentication I/O.
+* redirects, malformed responses, untrusted origins, and tenant changes fail
+  closed;
+* the local dummy provider key supplied to Copilot CLI is replaced before an
+  upstream request leaves Entroly;
+* Entroly never retries a provider request merely because authentication fails.
+
+The distinction between GitHub credentials and Copilot API tokens matters. The
+current GitHub Copilot SDK exposes OAuth-authenticated CAPI sessions with the
+resolved GitHub bearer as the provider ``api_key``. A separate
+``GITHUB_COPILOT_API_TOKEN`` mode exists in the SDK, but this wrapper does not
+pretend a GitHub user token was exchanged into that different credential class.
 """
 
 from __future__ import annotations
@@ -27,7 +29,6 @@ import json
 import os
 import subprocess
 import threading
-import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -35,17 +36,22 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from .copilot_cli_provider_contract import (
+    CopilotCLIProviderContractError,
+    configure_copilot_integration_identity,
+)
 from .copilot_subscription import (
     CopilotSubscriptionError,
-    token_exchange_url_for_origin,
+    user_info_url_for_origin,
     validate_copilot_api_origin,
 )
 
 _MAX_TOKEN_CHARS = 16_384
-_MAX_EXCHANGE_RESPONSE_BYTES = 256 * 1024
-_DEFAULT_REFRESH_SKEW = 60.0
+_MAX_USER_RESPONSE_BYTES = 256 * 1024
 _DEFAULT_INTEGRATION_ID = "copilot-developer-cli"
 _PUBLIC_CAPI_BOOTSTRAP_HOST = "api.githubcopilot.com"
+_SUPPORTED_GITHUB_PREFIXES = ("gho_", "ghu_", "github_pat_", "ghs_")
+_CLASSIC_PAT_PREFIX = "ghp_"
 _GITHUB_TOKEN_ENV_VARS = (
     "COPILOT_GITHUB_TOKEN",
     "GH_TOKEN",
@@ -58,15 +64,25 @@ class CopilotSubscriptionAuthError(RuntimeError):
 
 
 @dataclass(frozen=True, slots=True)
-class CopilotAPIToken:
+class CopilotProviderCredential:
+    """Process-local provider credential plus its pinned Copilot API origin."""
+
     token: str
     api_origin: str
-    expires_at: float
-    refresh_at: float
+
+
+# Compatibility name for the draft feature's earlier internal imports.
+CopilotAPIToken = CopilotProviderCredential
 
 
 class CopilotTokenManager:
-    """In-memory, process-local Copilot API token manager."""
+    """Resolve one GitHub-backed CAPI credential for one proxy process.
+
+    The manager does not claim the credential is short-lived and does not run a
+    background refresh timer: the current runtime contract gives Entroly no
+    trustworthy expiry for a GitHub user token. Expiry therefore fails normally
+    at CAPI rather than triggering unsafe request replay.
+    """
 
     def __init__(
         self,
@@ -74,29 +90,32 @@ class CopilotTokenManager:
         api_origin: str,
         environ: Mapping[str, str] | None = None,
         integration_id: str | None = None,
-        clock: Callable[[], float] = time.time,
-        exchange: Callable[[str, str, str], Mapping[str, Any]] | None = None,
+        user_info_fetch: Callable[[str, str, str], Mapping[str, Any]] | None = None,
         credential_resolver: Callable[[], str] | None = None,
+        exchange: Callable[..., Any] | None = None,
+        clock: Callable[..., Any] | None = None,
     ) -> None:
+        if exchange is not None:
+            raise CopilotSubscriptionAuthError(
+                "Copilot subscription auth no longer accepts a token-exchange hook; "
+                "use user_info_fetch for entitlement discovery"
+            )
+        del clock
         self._environ = os.environ if environ is None else environ
         self._requested_origin = validate_copilot_api_origin(api_origin)
-        self._exchange_url = token_exchange_url_for_origin(self._requested_origin)
-        self._integration_id = _validated_integration_id(
-            integration_id
-            or self._environ.get("ENTROLY_COPILOT_INTEGRATION_ID")
-            or _DEFAULT_INTEGRATION_ID
+        self._user_info_url = user_info_url_for_origin(self._requested_origin)
+        self._integration_id = _resolved_integration_id(
+            self._environ,
+            explicit=integration_id,
         )
-        self._clock = clock
-        self._exchange = exchange or _exchange_token_payload
+        self._fetch_user_info = user_info_fetch or _fetch_user_info_payload
         self._credential_resolver = credential_resolver or (
             lambda: _resolve_github_credential(self._environ)
         )
         self._lock = threading.RLock()
-        self._stop = threading.Event()
-        self._refresh_thread: threading.Thread | None = None
-        self._current: CopilotAPIToken | None = None
+        self._current: CopilotProviderCredential | None = None
         self._pinned_origin: str | None = None
-        self._last_refresh_error = ""
+        self._last_auth_error = ""
 
     @property
     def integration_id(self) -> str:
@@ -107,113 +126,93 @@ class CopilotTokenManager:
         with self._lock:
             return self._pinned_origin or self._requested_origin
 
-    def prime(self) -> CopilotAPIToken:
-        """Acquire the first API token before accepting provider traffic."""
-        token = self._refresh(force=True)
-        self._start_background_refresh()
-        return token
+    def prime(self) -> CopilotProviderCredential:
+        """Validate entitlement and resolve the provider boundary before startup."""
+        return self._refresh(force=True)
 
     def current_token(self) -> str:
-        """Return a valid cached token, synchronously recovering only if necessary."""
-        now = self._clock()
+        """Return the process-local GitHub bearer without hidden request replay."""
         with self._lock:
             current = self._current
-            if current is not None and now < current.expires_at - 5.0:
-                return current.token
-        # Background refresh should make this path exceptional. If it did not,
-        # refresh under the manager lock rather than forwarding an expired token.
+        if current is not None:
+            return current.token
         return self._refresh(force=True).token
 
     def stop(self) -> None:
-        self._stop.set()
+        """Compatibility lifecycle hook; no background credential worker exists."""
+        return None
 
     def public_summary(self) -> dict[str, object]:
         with self._lock:
             current = self._current
             return {
                 "mode": "github-copilot-subscription",
+                "auth_semantics": "github-bearer",
                 "api_origin": self._pinned_origin or self._requested_origin,
                 "integration_id": self._integration_id,
-                "token_cached": current is not None,
-                "token_persisted": False,
+                "credential_cached": current is not None,
                 "credential_persisted": False,
-                "refresh_background": self._refresh_thread is not None,
-                "last_refresh_error": self._last_refresh_error[:160],
+                "user_preflight": current is not None,
+                "background_refresh": False,
+                "automatic_auth_replay": False,
+                "last_auth_error": self._last_auth_error[:160],
             }
 
-    def _refresh(self, *, force: bool) -> CopilotAPIToken:
+    def _refresh(self, *, force: bool) -> CopilotProviderCredential:
+        """Re-resolve identity metadata; retained for deterministic tests/tools."""
         with self._lock:
-            now = self._clock()
-            current = self._current
-            if (
-                not force
-                and current is not None
-                and now < current.refresh_at
-                and now < current.expires_at - 5.0
-            ):
-                return current
-
+            if not force and self._current is not None:
+                return self._current
             try:
-                credential = self._credential_resolver()
-                payload = self._exchange(
-                    self._exchange_url,
+                credential = _validated_runtime_credential(self._credential_resolver())
+                payload = self._fetch_user_info(
+                    self._user_info_url,
                     credential,
                     self._integration_id,
                 )
-                token = _token_from_exchange_payload(
+                resolved = _credential_from_user_payload(
+                    credential,
                     payload,
                     requested_origin=self._requested_origin,
-                    now=now,
                 )
                 if self._pinned_origin is None:
-                    self._pinned_origin = token.api_origin
-                elif token.api_origin != self._pinned_origin:
+                    self._pinned_origin = resolved.api_origin
+                elif resolved.api_origin != self._pinned_origin:
                     raise CopilotSubscriptionAuthError(
                         "GitHub changed the Copilot API origin during this session; "
                         "restart Entroly to re-establish the trust boundary"
                     )
-                self._current = token
-                self._last_refresh_error = ""
-                return token
+                self._current = resolved
+                self._last_auth_error = ""
+                return resolved
             except CopilotSubscriptionAuthError as exc:
-                self._last_refresh_error = str(exc)
+                self._last_auth_error = str(exc)
                 raise
             except Exception as exc:
-                self._last_refresh_error = type(exc).__name__
+                self._last_auth_error = type(exc).__name__
                 raise CopilotSubscriptionAuthError(
-                    "unable to refresh the GitHub Copilot subscription credential"
+                    "unable to validate the GitHub Copilot subscription credential"
                 ) from exc
 
-    def _start_background_refresh(self) -> None:
-        with self._lock:
-            if self._refresh_thread is not None and self._refresh_thread.is_alive():
-                return
-            thread = threading.Thread(
-                target=self._refresh_loop,
-                name="entroly-copilot-token-refresh",
-                daemon=True,
-            )
-            self._refresh_thread = thread
-            thread.start()
 
-    def _refresh_loop(self) -> None:
-        while not self._stop.is_set():
-            with self._lock:
-                current = self._current
-                now = self._clock()
-                delay = 5.0 if current is None else max(1.0, current.refresh_at - now)
-            if self._stop.wait(min(delay, 300.0)):
-                return
-            with self._lock:
-                current = self._current
-                if current is not None and self._clock() < current.refresh_at:
-                    continue
-            try:
-                self._refresh(force=True)
-            except CopilotSubscriptionAuthError:
-                # Keep a still-valid token and retry soon. The request path will
-                # fail closed once no valid token remains.
-                self._stop.wait(15.0)
+def _resolved_integration_id(
+    environ: Mapping[str, str],
+    *,
+    explicit: str | None,
+) -> str:
+    identity_env = dict(environ)
+    explicit_text = str(explicit or "").strip()
+    if explicit_text and not identity_env.get("ENTROLY_COPILOT_INTEGRATION_ID"):
+        identity_env["ENTROLY_COPILOT_INTEGRATION_ID"] = explicit_text
+    try:
+        selected = configure_copilot_integration_identity(identity_env)
+    except CopilotCLIProviderContractError as exc:
+        raise CopilotSubscriptionAuthError(str(exc)) from exc
+    if explicit_text and explicit_text != selected:
+        raise CopilotSubscriptionAuthError(
+            "explicit Copilot integration ID conflicts with the configured runtime identity"
+        )
+    return selected or _DEFAULT_INTEGRATION_ID
 
 
 def _resolve_github_credential(environ: Mapping[str, str]) -> str:
@@ -247,14 +246,27 @@ def _resolve_github_credential(environ: Mapping[str, str]) -> str:
     return token
 
 
+def _validated_runtime_credential(value: object) -> str:
+    token = _validated_secret(value)
+    if not token:
+        raise CopilotSubscriptionAuthError("GitHub credential is empty or malformed")
+    if token.startswith(_CLASSIC_PAT_PREFIX):
+        raise CopilotSubscriptionAuthError(
+            "GitHub Copilot CLI does not support classic `ghp_` personal access tokens; "
+            "use an OAuth token or a fine-grained PAT with Copilot Requests permission"
+        )
+    if not token.startswith(_SUPPORTED_GITHUB_PREFIXES):
+        raise CopilotSubscriptionAuthError(
+            "unsupported GitHub credential type for Copilot subscription routing"
+        )
+    return token
+
+
 def _transport_client_kwargs() -> dict[str, Any]:
     """Load Entroly's outbound trust policy without silently bypassing failures."""
     try:
         from .proxy_transport_final import _safe_http_client_kwargs
     except (ImportError, AttributeError):
-        # Minimal standalone/unit-test environments may not load the hardened
-        # proxy layer. The fallback remains strict: no ambient proxy inheritance
-        # and redirects are disabled by the caller below.
         return {"follow_redirects": False, "trust_env": False}
 
     try:
@@ -265,23 +277,18 @@ def _transport_client_kwargs() -> dict[str, Any]:
         ) from exc
 
 
-def _exchange_token_payload(
-    exchange_url: str,
+def _fetch_user_info_payload(
+    user_info_url: str,
     github_credential: str,
     integration_id: str,
 ) -> Mapping[str, Any]:
-    """Exchange a GitHub credential for a bounded short-lived Copilot API token."""
-    _validate_exchange_url(exchange_url)
-    credential = _validated_secret(github_credential)
-    if not credential:
-        raise CopilotSubscriptionAuthError("GitHub credential is empty or malformed")
-
+    """Fetch bounded Copilot user/entitlement metadata using the GitHub bearer."""
+    _validate_user_info_url(user_info_url)
+    credential = _validated_runtime_credential(github_credential)
     headers = {
         "Accept": "application/json",
         "Authorization": f"Bearer {credential}",
         "User-Agent": "GithubCopilot/1.0",
-        "Editor-Version": "vscode/1.0",
-        "Editor-Plugin-Version": "copilot/1.0",
         "Copilot-Integration-Id": _validated_integration_id(integration_id),
     }
 
@@ -291,10 +298,10 @@ def _exchange_token_payload(
 
     try:
         with httpx.Client(**kwargs) as client:
-            with client.stream("GET", exchange_url, headers=headers) as response:
+            with client.stream("GET", user_info_url, headers=headers) as response:
                 if 300 <= response.status_code < 400:
                     raise CopilotSubscriptionAuthError(
-                        "GitHub Copilot token exchange redirected; refusing to forward credentials"
+                        "GitHub Copilot user preflight redirected; refusing to forward credentials"
                     )
                 if response.status_code in {401, 403}:
                     raise CopilotSubscriptionAuthError(
@@ -302,45 +309,45 @@ def _exchange_token_payload(
                     )
                 if response.status_code >= 400:
                     raise CopilotSubscriptionAuthError(
-                        f"GitHub Copilot token exchange failed with HTTP {response.status_code}"
+                        f"GitHub Copilot user preflight failed with HTTP {response.status_code}"
                     )
                 raw = bytearray()
                 for chunk in response.iter_bytes():
-                    if len(raw) + len(chunk) > _MAX_EXCHANGE_RESPONSE_BYTES:
+                    if len(raw) + len(chunk) > _MAX_USER_RESPONSE_BYTES:
                         raise CopilotSubscriptionAuthError(
-                            "GitHub Copilot token response exceeded the safety limit"
+                            "GitHub Copilot user response exceeded the safety limit"
                         )
                     raw.extend(chunk)
     except CopilotSubscriptionAuthError:
         raise
     except (httpx.TimeoutException, httpx.TransportError, OSError) as exc:
         raise CopilotSubscriptionAuthError(
-            "unable to reach GitHub's Copilot token exchange endpoint"
+            "unable to reach GitHub's Copilot user endpoint"
         ) from exc
 
     try:
         payload = json.loads(bytes(raw))
     except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as exc:
         raise CopilotSubscriptionAuthError(
-            "GitHub Copilot token exchange returned invalid JSON"
+            "GitHub Copilot user preflight returned invalid JSON"
         ) from exc
     if not isinstance(payload, Mapping):
         raise CopilotSubscriptionAuthError(
-            "GitHub Copilot token exchange returned an invalid payload"
+            "GitHub Copilot user preflight returned an invalid payload"
         )
     return payload
 
 
-def _token_from_exchange_payload(
+def _credential_from_user_payload(
+    credential: str,
     payload: Mapping[str, Any],
     *,
     requested_origin: str,
-    now: float,
-) -> CopilotAPIToken:
-    token = _validated_secret(payload.get("token"))
-    if not token:
+) -> CopilotProviderCredential:
+    token = _validated_runtime_credential(credential)
+    if payload.get("chat_enabled") is False:
         raise CopilotSubscriptionAuthError(
-            "GitHub Copilot token response did not contain a usable token"
+            "GitHub reports that Copilot chat is not enabled for this credential"
         )
 
     api_origin = requested_origin
@@ -350,33 +357,14 @@ def _token_from_exchange_payload(
             api_origin = validate_copilot_api_origin(endpoints.get("api"))
         except CopilotSubscriptionError as exc:
             raise CopilotSubscriptionAuthError(
-                "GitHub Copilot token response advertised an untrusted API origin"
+                "GitHub Copilot user response advertised an untrusted API origin"
             ) from exc
         if not _same_trust_partition(requested_origin, api_origin):
             raise CopilotSubscriptionAuthError(
-                "GitHub Copilot token response crossed the configured tenant boundary"
+                "GitHub Copilot user response crossed the configured tenant boundary"
             )
 
-    expires_at = _finite_timestamp(payload.get("expires_at"))
-    refresh_in = _positive_seconds(payload.get("refresh_in"))
-    if expires_at is None:
-        # Missing expiry is treated as a short cache, never an hour-long guess.
-        expires_at = now + (refresh_in if refresh_in is not None else 60.0)
-    if expires_at <= now + 5.0:
-        raise CopilotSubscriptionAuthError(
-            "GitHub Copilot token response was already expired"
-        )
-
-    refresh_at = expires_at - _DEFAULT_REFRESH_SKEW
-    if refresh_in is not None:
-        refresh_at = min(refresh_at, now + refresh_in)
-    refresh_at = max(now + 1.0, min(refresh_at, expires_at - 5.0))
-    return CopilotAPIToken(
-        token=token,
-        api_origin=api_origin,
-        expires_at=expires_at,
-        refresh_at=refresh_at,
-    )
+    return CopilotProviderCredential(token=token, api_origin=api_origin)
 
 
 def _is_public_capi_host(host: str) -> bool:
@@ -388,14 +376,6 @@ def _is_public_capi_host(host: str) -> bool:
 
 
 def _same_trust_partition(requested_origin: str, advertised_origin: str) -> bool:
-    """Return whether an advertised CAPI origin may replace the requested one.
-
-    ``api.githubcopilot.com`` is a discovery/bootstrap origin, so GitHub may
-    legitimately advertise a public SKU-specific CAPI host on first exchange.
-    An operator who explicitly selected a SKU-specific public host has already
-    narrowed the trust boundary; that host must therefore remain exact. GHE
-    origins are likewise pinned to the exact data-residency tenant.
-    """
     requested_host = (urlsplit(requested_origin).hostname or "").casefold().rstrip(".")
     advertised_host = (urlsplit(advertised_origin).hostname or "").casefold().rstrip(".")
     requested_public = _is_public_capi_host(requested_host)
@@ -448,36 +428,14 @@ def _validated_integration_id(value: object) -> str:
     return text
 
 
-def _finite_timestamp(value: object) -> float | None:
-    try:
-        parsed = float(value)
-    except (TypeError, ValueError, OverflowError):
-        return None
-    if not (0.0 < parsed < 1e16):
-        return None
-    if parsed > 1e12:
-        parsed /= 1000.0
-    return parsed
-
-
-def _positive_seconds(value: object) -> float | None:
-    try:
-        parsed = float(value)
-    except (TypeError, ValueError, OverflowError):
-        return None
-    if not (0.0 < parsed <= 86_400.0):
-        return None
-    return parsed
-
-
-def _validate_exchange_url(url: str) -> None:
+def _validate_user_info_url(url: str) -> None:
     try:
         parsed = urlsplit(url)
         port = parsed.port
     except ValueError as exc:
-        raise CopilotSubscriptionAuthError("Copilot token endpoint is malformed") from exc
+        raise CopilotSubscriptionAuthError("Copilot user endpoint is malformed") from exc
     host = (parsed.hostname or "").casefold().rstrip(".")
-    expected_path = "/copilot_internal/v2/token"
+    expected_path = "/copilot_internal/user"
     public = host == "api.github.com"
     ghe = host.startswith("api.") and host.endswith(".ghe.com")
     if (
@@ -491,7 +449,7 @@ def _validate_exchange_url(url: str) -> None:
         or parsed.fragment
     ):
         raise CopilotSubscriptionAuthError(
-            "Copilot token exchange is restricted to GitHub-operated HTTPS endpoints"
+            "Copilot user preflight is restricted to GitHub-operated HTTPS endpoints"
         )
 
 
@@ -531,8 +489,8 @@ def install_copilot_subscription_transport() -> bool:
             os.environ.get("ENTROLY_OPENAI_BASE", selected.openai_base_url)
         )
         manager = CopilotTokenManager(api_origin=requested_origin)
-        token = manager.prime()
-        selected.openai_base_url = token.api_origin
+        credential = manager.prime()
+        selected.openai_base_url = credential.api_origin
         try:
             app = current_create(
                 engine,
@@ -560,16 +518,11 @@ def install_copilot_subscription_transport() -> bool:
             return headers
 
         token = manager.current_token()
-        # Remove any local/custom-provider credential before adding the GitHub
-        # Copilot API credential. Fixed header names avoid arbitrary injection.
         for name in list(headers):
             if name.casefold() in {"authorization", "api-key", "x-api-key"}:
                 headers.pop(name, None)
         headers["Authorization"] = f"Bearer {token}"
         headers["Copilot-Integration-Id"] = manager.integration_id
-        headers.setdefault("Editor-Version", "vscode/1.0")
-        headers.setdefault("Editor-Plugin-Version", "copilot/1.0")
-        headers.setdefault("User-Agent", "GithubCopilot/1.0")
         return headers
 
     async def shutdown(self: Any) -> None:
@@ -593,6 +546,7 @@ def install_copilot_subscription_transport() -> bool:
 
 __all__ = [
     "CopilotAPIToken",
+    "CopilotProviderCredential",
     "CopilotSubscriptionAuthError",
     "CopilotTokenManager",
     "install_copilot_subscription_transport",
