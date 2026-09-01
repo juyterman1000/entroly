@@ -336,12 +336,12 @@ def test_unknown_credential_shape_fails_before_user_preflight() -> None:
     assert called is False
 
 
-def test_legacy_exchange_hook_is_rejected_instead_of_reanimating_old_auth_model() -> None:
-    with pytest.raises(CopilotSubscriptionAuthError, match="no longer accepts"):
+def test_legacy_exchange_hook_is_absent_from_runtime_auth_api() -> None:
+    with pytest.raises(TypeError, match="unexpected keyword argument 'exchange'"):
         CopilotTokenManager(
             api_origin="https://api.githubcopilot.com",
             environ={},
-            exchange=lambda *_args: {},
+            exchange=lambda *_args: {},  # type: ignore[call-arg]
             credential_resolver=lambda: "gho_user-token",
         )
 
