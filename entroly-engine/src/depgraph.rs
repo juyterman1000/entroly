@@ -857,7 +857,7 @@ pub fn extract_identifiers(content: &str) -> Vec<String> {
 }
 
 /// Extract symbol definitions (def, class, fn, struct, etc.)
-fn extract_definitions(content: &str) -> Vec<String> {
+pub(crate) fn extract_definitions(content: &str) -> Vec<String> {
     let mut defs = Vec::new();
 
     for line in content.lines() {
@@ -868,6 +868,7 @@ fn extract_definitions(content: &str) -> Vec<String> {
             if let Some(name) = trimmed.split_whitespace().nth(1) {
                 // Split on '(' to get the name before params
                 let clean = name.split('(').next().unwrap_or(name);
+                let clean = clean.split('[').next().unwrap_or(clean);
                 let clean = clean.trim_end_matches(':');
                 if !clean.is_empty() {
                     defs.push(clean.to_string());
@@ -887,6 +888,11 @@ fn extract_definitions(content: &str) -> Vec<String> {
             let name_idx = if words.first() == Some(&"pub") { 2 } else { 1 };
             if let Some(name) = words.get(name_idx) {
                 let clean = name.split('(').next().unwrap_or(name);
+                // A generic or lifetime list is part of the signature, not the
+                // name. `fn pick<'a>(` yielded the definition `pick<'a>`, which
+                // the reference scan -- which splits on non-alphanumerics --
+                // can never produce, so every generic function looked dead.
+                let clean = clean.split('<').next().unwrap_or(clean);
                 let clean = clean.trim_end_matches(['{', '<', ':']);
                 if !clean.is_empty() {
                     defs.push(clean.to_string());
@@ -1218,6 +1224,42 @@ fn is_keyword(word: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn definitions_stop_at_generic_and_lifetime_parameters() {
+        // `fn pick<'a>(` produced the definition `pick<'a>`. The reference scan
+        // splits on non-alphanumerics and can only ever produce `pick`, so the
+        // two could never match and every generic function looked dead.
+        // Measured on this repository: `pick<'a>`, `serialize<S>` and
+        // `WorkContinuationProofPayload<'a>` were all reported dead while
+        // having live call sites.
+        let defs = extract_definitions(
+            "fn pick<'a>(&mut self, values: &'a [&'a str]) -> &'a str {
+             pub fn serialize<S>(value: &T, ser: S) -> Result<S::Ok, S::Error> {
+             pub struct WorkContinuationProofPayload<'a> {
+",
+        );
+        assert!(defs.contains(&"pick".to_string()), "got {defs:?}");
+        assert!(defs.contains(&"serialize".to_string()), "got {defs:?}");
+        assert!(
+            defs.contains(&"WorkContinuationProofPayload".to_string()),
+            "got {defs:?}"
+        );
+        for d in &defs {
+            assert!(!d.contains('<'), "definition kept a generic list: {d}");
+        }
+    }
+
+    #[test]
+    fn plain_definitions_are_unaffected() {
+        let defs = extract_definitions("def compute_total(items, tax):
+class Ledger:
+fn plain() {
+");
+        assert!(defs.contains(&"compute_total".to_string()), "got {defs:?}");
+        assert!(defs.contains(&"Ledger".to_string()), "got {defs:?}");
+        assert!(defs.contains(&"plain".to_string()), "got {defs:?}");
+    }
+
     use super::*;
 
     #[test]
