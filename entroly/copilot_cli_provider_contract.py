@@ -67,8 +67,9 @@ def configure_copilot_integration_identity(
     )
     if entroly_id and runtime_id and entroly_id != runtime_id:
         raise CopilotCLIProviderContractError(
-            "ENTROLY_COPILOT_INTEGRATION_ID and GITHUB_COPILOT_INTEGRATION_ID "
-            "must match for a provider-bound Copilot session"
+            "ENTROLY_COPILOT_INTEGRATION_ID conflicts with "
+            "GITHUB_COPILOT_INTEGRATION_ID; the values must match for a "
+            "provider-bound Copilot session"
         )
 
     selected = entroly_id or runtime_id or DEFAULT_COPILOT_INTEGRATION_ID
