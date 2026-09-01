@@ -6,6 +6,7 @@ import entroly.copilot_subscription_transport as transport
 from entroly.copilot_subscription_credential_policy import (
     install_copilot_subscription_credential_policy,
     is_direct_copilot_github_credential,
+    is_supported_copilot_github_credential,
     is_unsupported_classic_pat,
 )
 
@@ -19,7 +20,10 @@ from entroly.copilot_subscription_credential_policy import (
         "ghs_installation-token",
     ],
 )
-def test_supported_runtime_github_credentials_are_direct_candidates(token: str) -> None:
+def test_supported_runtime_github_credentials_are_acquisition_candidates(token: str) -> None:
+    assert is_supported_copilot_github_credential(token) is True
+    # Compatibility alias classifies the same shapes; its name no longer grants
+    # permission to use the credential as a provider bearer.
     assert is_direct_copilot_github_credential(token) is True
 
 
@@ -27,7 +31,8 @@ def test_supported_runtime_github_credentials_are_direct_candidates(token: str) 
     "token",
     ["", "tid_short-lived", "ghp_classic-token", "bearer-anything", "github_pat_bad\nvalue"],
 )
-def test_unsupported_or_non_github_shapes_do_not_gain_direct_fallback(token: str) -> None:
+def test_unsupported_or_non_github_shapes_are_not_acquisition_candidates(token: str) -> None:
+    assert is_supported_copilot_github_credential(token) is False
     assert is_direct_copilot_github_credential(token) is False
 
 
@@ -82,45 +87,52 @@ def test_manager_explicit_identity_conflict_fails_closed() -> None:
         )
 
 
-def test_successful_exchange_discovers_origin_without_replacing_direct_pat() -> None:
+def test_successful_exchange_uses_short_lived_copilot_token_not_github_credential() -> None:
     def exchange(url: str, credential: str, integration_id: str):
         assert url == "https://api.github.com/copilot_internal/v2/token"
-        assert credential == "github_pat_direct-entitled"
+        assert credential == "github_pat_entitled-user"
         assert integration_id == "copilot-developer-cli"
         return {
-            "token": "tid_exchanged",
+            "token": "tid_exchanged-copilot-token",
             "expires_at": 2_000,
             "refresh_in": 300,
             "endpoints": {"api": "https://api.business.githubcopilot.com"},
         }
 
     manager = _manager(
-        credential="github_pat_direct-entitled",
+        credential="github_pat_entitled-user",
         exchange=exchange,
     )
     resolved = manager._refresh(force=True)
 
-    assert resolved.token == "github_pat_direct-entitled"
+    assert resolved.token == "tid_exchanged-copilot-token"
+    assert resolved.token != "github_pat_entitled-user"
     assert resolved.api_origin == "https://api.business.githubcopilot.com"
     assert manager.api_origin == resolved.api_origin
     assert resolved.expires_at > resolved.refresh_at > 1_000.0
 
 
-def test_exchange_unavailability_falls_back_only_for_supported_direct_token() -> None:
-    message = "GitHub Copilot token exchange failed with HTTP 404"
-
+@pytest.mark.parametrize(
+    "credential",
+    [
+        "gho_user-token",
+        "ghu_user-token",
+        "github_pat_fine-grained-token",
+        "ghs_installation-token",
+    ],
+)
+def test_exchange_failure_never_promotes_github_credential_to_capi_bearer(
+    credential: str,
+) -> None:
     def unavailable(_url: str, _credential: str, _integration_id: str):
-        raise transport.CopilotSubscriptionAuthError(message)
+        raise transport.CopilotSubscriptionAuthError(
+            "GitHub Copilot token exchange failed with HTTP 404"
+        )
 
-    direct = _manager(credential="gho_direct-user-token", exchange=unavailable)
-    resolved = direct._refresh(force=True)
-    assert resolved.token == "gho_direct-user-token"
-    assert resolved.api_origin == "https://api.githubcopilot.com"
-    assert resolved.expires_at > resolved.refresh_at > 1_000.0
-
-    opaque = _manager(credential="opaque-token", exchange=unavailable)
+    manager = _manager(credential=credential, exchange=unavailable)
     with pytest.raises(transport.CopilotSubscriptionAuthError, match="HTTP 404"):
-        opaque._refresh(force=True)
+        manager._refresh(force=True)
+    assert manager.public_summary()["token_cached"] is False
 
 
 @pytest.mark.parametrize(
@@ -133,12 +145,12 @@ def test_exchange_unavailability_falls_back_only_for_supported_direct_token() ->
         "GitHub Copilot token response exceeded the safety limit",
     ],
 )
-def test_trust_failures_never_fall_back_to_direct_token(message: str) -> None:
+def test_trust_failures_remain_hard_failures(message: str) -> None:
     def fail_trust(_url: str, _credential: str, _integration_id: str):
         raise transport.CopilotSubscriptionAuthError(message)
 
     manager = _manager(
-        credential="github_pat_direct-entitled",
+        credential="github_pat_entitled-user",
         exchange=fail_trust,
     )
     with pytest.raises(transport.CopilotSubscriptionAuthError, match="GitHub Copilot"):
@@ -159,7 +171,7 @@ def test_classic_pat_fails_before_exchange() -> None:
     assert called is False
 
 
-def test_non_direct_credential_keeps_normal_exchange_token() -> None:
+def test_opaque_acquisition_credential_keeps_normal_exchange_token() -> None:
     manager = _manager(
         credential="opaque-oauth-shape",
         exchange=lambda *_args: {
@@ -170,3 +182,16 @@ def test_non_direct_credential_keeps_normal_exchange_token() -> None:
     )
     resolved = manager._refresh(force=True)
     assert resolved.token == "tid_exchanged"
+
+
+def test_exchange_receives_trimmed_credential_without_mutating_provider_token() -> None:
+    observed: dict[str, str] = {}
+
+    def exchange(_url: str, credential: str, _integration_id: str):
+        observed["credential"] = credential
+        return {"token": "provider-token", "expires_at": 2_000}
+
+    manager = _manager(credential="  gho_user-token  ", exchange=exchange)
+    resolved = manager._refresh(force=True)
+    assert observed["credential"] == "gho_user-token"
+    assert resolved.token == "provider-token"
