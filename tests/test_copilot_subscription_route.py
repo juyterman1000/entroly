@@ -17,6 +17,7 @@ from entroly.copilot_subscription_transport import (
     CopilotSubscriptionAuthError,
     CopilotTokenManager,
     _resolve_github_credential,
+    _same_trust_partition,
     _token_from_exchange_payload,
     _validate_exchange_url,
 )
@@ -154,6 +155,66 @@ def test_token_exchange_endpoint_is_derived_not_arbitrary() -> None:
     _validate_exchange_url("https://api.acme.ghe.com/copilot_internal/v2/token")
     with pytest.raises(CopilotSubscriptionAuthError):
         _validate_exchange_url("https://api.evil.test/copilot_internal/v2/token")
+
+
+def test_standalone_token_manager_uses_same_official_identity_as_cli_contract() -> None:
+    manager = CopilotTokenManager(
+        api_origin="https://api.githubcopilot.com",
+        environ={},
+        clock=lambda: 1_000,
+        exchange=lambda *_args: {"token": "tid", "expires_at": 2_000},
+        credential_resolver=lambda: "github-oauth",
+    )
+    assert manager.integration_id == "copilot-developer-cli"
+
+
+def test_generic_public_bootstrap_may_adopt_github_advertised_sku_host() -> None:
+    assert _same_trust_partition(
+        "https://api.githubcopilot.com",
+        "https://api.individual.githubcopilot.com",
+    )
+    token = _token_from_exchange_payload(
+        {
+            "token": "short-lived",
+            "expires_at": 2_000,
+            "endpoints": {"api": "https://api.business.githubcopilot.com"},
+        },
+        requested_origin="https://api.githubcopilot.com",
+        now=1_000,
+    )
+    assert token.api_origin == "https://api.business.githubcopilot.com"
+
+
+@pytest.mark.parametrize(
+    "advertised",
+    [
+        "https://api.individual.githubcopilot.com",
+        "https://api.enterprise.githubcopilot.com",
+        "https://api.githubcopilot.com",
+    ],
+)
+def test_explicit_public_sku_host_cannot_silently_change(advertised: str) -> None:
+    assert not _same_trust_partition(
+        "https://api.business.githubcopilot.com",
+        advertised,
+    )
+    with pytest.raises(CopilotSubscriptionAuthError, match="tenant boundary"):
+        _token_from_exchange_payload(
+            {
+                "token": "short-lived",
+                "expires_at": 2_000,
+                "endpoints": {"api": advertised},
+            },
+            requested_origin="https://api.business.githubcopilot.com",
+            now=1_000,
+        )
+
+
+def test_explicit_public_sku_host_accepts_exact_same_host() -> None:
+    assert _same_trust_partition(
+        "https://api.business.githubcopilot.com",
+        "https://api.business.githubcopilot.com",
+    )
 
 
 def test_token_manager_pins_first_advertised_api_origin() -> None:
