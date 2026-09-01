@@ -41,22 +41,52 @@ def _manager(
     credential: str,
     exchange,
     now: float = 1_000.0,
+    environ: dict[str, str] | None = None,
+    integration_id: str | None = None,
 ) -> transport.CopilotTokenManager:
     install_copilot_subscription_credential_policy()
     return transport.CopilotTokenManager(
         api_origin="https://api.githubcopilot.com",
-        environ={},
+        environ={} if environ is None else environ,
+        integration_id=integration_id,
         clock=lambda: now,
         exchange=exchange,
         credential_resolver=lambda: credential,
     )
 
 
+def test_manager_defaults_to_official_copilot_runtime_identity() -> None:
+    manager = _manager(
+        credential="opaque",
+        exchange=lambda *_args: {"token": "tid", "expires_at": 2_000},
+    )
+    assert manager.integration_id == "copilot-developer-cli"
+
+
+def test_manager_uses_configured_runtime_identity() -> None:
+    manager = _manager(
+        credential="opaque",
+        exchange=lambda *_args: {"token": "tid", "expires_at": 2_000},
+        environ={"GITHUB_COPILOT_INTEGRATION_ID": "my-product-agent"},
+    )
+    assert manager.integration_id == "my-product-agent"
+
+
+def test_manager_explicit_identity_conflict_fails_closed() -> None:
+    with pytest.raises(transport.CopilotSubscriptionAuthError, match="conflicts"):
+        _manager(
+            credential="opaque",
+            exchange=lambda *_args: {"token": "tid", "expires_at": 2_000},
+            environ={"GITHUB_COPILOT_INTEGRATION_ID": "runtime-agent"},
+            integration_id="different-agent",
+        )
+
+
 def test_successful_exchange_discovers_origin_without_replacing_direct_pat() -> None:
     def exchange(url: str, credential: str, integration_id: str):
         assert url == "https://api.github.com/copilot_internal/v2/token"
         assert credential == "github_pat_direct-entitled"
-        assert integration_id == "copilot-cli-chat"
+        assert integration_id == "copilot-developer-cli"
         return {
             "token": "tid_exchanged",
             "expires_at": 2_000,
