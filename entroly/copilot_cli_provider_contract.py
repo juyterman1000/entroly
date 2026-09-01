@@ -24,7 +24,7 @@ from __future__ import annotations
 from collections.abc import MutableMapping
 
 _LOCAL_PROVIDER_KEY = "entroly-local-provider-route"
-_DEFAULT_INTEGRATION_ID = "copilot-developer-cli"
+DEFAULT_COPILOT_INTEGRATION_ID = "copilot-developer-cli"
 _MAX_INTEGRATION_ID_CHARS = 128
 
 
@@ -71,7 +71,7 @@ def configure_copilot_integration_identity(
             "must match for a provider-bound Copilot session"
         )
 
-    selected = entroly_id or runtime_id or _DEFAULT_INTEGRATION_ID
+    selected = entroly_id or runtime_id or DEFAULT_COPILOT_INTEGRATION_ID
     environ["ENTROLY_COPILOT_INTEGRATION_ID"] = selected
     environ["GITHUB_COPILOT_INTEGRATION_ID"] = selected
     return selected
@@ -117,6 +117,7 @@ def apply_copilot_cli_provider_contract(
 
 __all__ = [
     "CopilotCLIProviderContractError",
+    "DEFAULT_COPILOT_INTEGRATION_ID",
     "apply_copilot_cli_provider_contract",
     "configure_copilot_integration_identity",
 ]
