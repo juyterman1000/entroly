@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -10,16 +9,16 @@ from entroly.copilot_subscription import (
     CopilotSubscriptionError,
     is_subscription_wrap,
     prepare_subscription_wrap,
-    token_exchange_url_for_origin,
+    user_info_url_for_origin,
     validate_copilot_api_origin,
 )
 from entroly.copilot_subscription_transport import (
     CopilotSubscriptionAuthError,
     CopilotTokenManager,
+    _credential_from_user_payload,
     _resolve_github_credential,
     _same_trust_partition,
-    _token_from_exchange_payload,
-    _validate_exchange_url,
+    _validate_user_info_url,
 )
 
 
@@ -73,9 +72,7 @@ def test_prepare_owns_routing_facts_not_copilot_provider_environment(monkeypatch
     assert env["ENTROLY_CLIENT_ROUTE"] == "github-copilot-subscription"
     assert env["COPILOT_MODEL"] == "gpt-5"
 
-    # Provider authentication/configuration has exactly one owner:
-    # copilot_cli_provider_contract. Planning must leave pre-existing values
-    # untouched rather than partially configuring or clearing them.
+    # Planning has no provider-auth authority. The dedicated CLI contract owns it.
     assert env["COPILOT_PROVIDER_API_KEY"] == "third-party-key"
     assert env["COPILOT_PROVIDER_BEARER_TOKEN"] == "third-party-bearer"
     assert env["COPILOT_PROVIDER_WIRE_API"] == "existing-wire-value"
@@ -142,28 +139,27 @@ def test_copilot_origin_rejects_credential_exfiltration_shapes(value: str) -> No
         validate_copilot_api_origin(value)
 
 
-def test_token_exchange_endpoint_is_derived_not_arbitrary() -> None:
+def test_user_preflight_endpoint_is_derived_not_arbitrary() -> None:
     assert (
-        token_exchange_url_for_origin("https://api.business.githubcopilot.com")
-        == "https://api.github.com/copilot_internal/v2/token"
+        user_info_url_for_origin("https://api.business.githubcopilot.com")
+        == "https://api.github.com/copilot_internal/user"
     )
     assert (
-        token_exchange_url_for_origin("https://copilot-api.acme.ghe.com")
-        == "https://api.acme.ghe.com/copilot_internal/v2/token"
+        user_info_url_for_origin("https://copilot-api.acme.ghe.com")
+        == "https://api.acme.ghe.com/copilot_internal/user"
     )
-    _validate_exchange_url("https://api.github.com/copilot_internal/v2/token")
-    _validate_exchange_url("https://api.acme.ghe.com/copilot_internal/v2/token")
+    _validate_user_info_url("https://api.github.com/copilot_internal/user")
+    _validate_user_info_url("https://api.acme.ghe.com/copilot_internal/user")
     with pytest.raises(CopilotSubscriptionAuthError):
-        _validate_exchange_url("https://api.evil.test/copilot_internal/v2/token")
+        _validate_user_info_url("https://api.evil.test/copilot_internal/user")
 
 
-def test_standalone_token_manager_uses_same_official_identity_as_cli_contract() -> None:
+def test_standalone_manager_uses_same_official_identity_as_cli_contract() -> None:
     manager = CopilotTokenManager(
         api_origin="https://api.githubcopilot.com",
         environ={},
-        clock=lambda: 1_000,
-        exchange=lambda *_args: {"token": "tid", "expires_at": 2_000},
-        credential_resolver=lambda: "github-oauth",
+        user_info_fetch=lambda *_args: {"chat_enabled": True},
+        credential_resolver=lambda: "gho_user-token",
     )
     assert manager.integration_id == "copilot-developer-cli"
 
@@ -173,16 +169,16 @@ def test_generic_public_bootstrap_may_adopt_github_advertised_sku_host() -> None
         "https://api.githubcopilot.com",
         "https://api.individual.githubcopilot.com",
     )
-    token = _token_from_exchange_payload(
+    resolved = _credential_from_user_payload(
+        "gho_user-token",
         {
-            "token": "short-lived",
-            "expires_at": 2_000,
+            "chat_enabled": True,
             "endpoints": {"api": "https://api.business.githubcopilot.com"},
         },
         requested_origin="https://api.githubcopilot.com",
-        now=1_000,
     )
-    assert token.api_origin == "https://api.business.githubcopilot.com"
+    assert resolved.token == "gho_user-token"
+    assert resolved.api_origin == "https://api.business.githubcopilot.com"
 
 
 @pytest.mark.parametrize(
@@ -199,14 +195,10 @@ def test_explicit_public_sku_host_cannot_silently_change(advertised: str) -> Non
         advertised,
     )
     with pytest.raises(CopilotSubscriptionAuthError, match="tenant boundary"):
-        _token_from_exchange_payload(
-            {
-                "token": "short-lived",
-                "expires_at": 2_000,
-                "endpoints": {"api": advertised},
-            },
+        _credential_from_user_payload(
+            "gho_user-token",
+            {"chat_enabled": True, "endpoints": {"api": advertised}},
             requested_origin="https://api.business.githubcopilot.com",
-            now=1_000,
         )
 
 
@@ -217,20 +209,15 @@ def test_explicit_public_sku_host_accepts_exact_same_host() -> None:
     )
 
 
-def test_token_manager_pins_first_advertised_api_origin() -> None:
-    now = [1_000.0]
+def test_manager_pins_first_advertised_api_origin() -> None:
     payloads = iter(
         [
             {
-                "token": "short-lived-one",
-                "expires_at": 2_000,
-                "refresh_in": 100,
+                "chat_enabled": True,
                 "endpoints": {"api": "https://api.individual.githubcopilot.com"},
             },
             {
-                "token": "short-lived-two",
-                "expires_at": 3_000,
-                "refresh_in": 100,
+                "chat_enabled": True,
                 "endpoints": {"api": "https://api.individual.githubcopilot.com"},
             },
         ]
@@ -238,29 +225,27 @@ def test_token_manager_pins_first_advertised_api_origin() -> None:
     manager = CopilotTokenManager(
         api_origin="https://api.githubcopilot.com",
         environ={},
-        clock=lambda: now[0],
-        exchange=lambda *_args: next(payloads),
-        credential_resolver=lambda: "github-oauth",
+        user_info_fetch=lambda *_args: next(payloads),
+        credential_resolver=lambda: "gho_user-token",
     )
 
     first = manager._refresh(force=True)
-    assert first.token == "short-lived-one"
+    assert first.token == "gho_user-token"
     assert manager.api_origin == "https://api.individual.githubcopilot.com"
-    now[0] = first.refresh_at + 1
-    assert manager._refresh(force=False).token == "short-lived-two"
+    second = manager._refresh(force=True)
+    assert second.token == "gho_user-token"
+    assert manager.api_origin == "https://api.individual.githubcopilot.com"
 
 
-def test_token_manager_rejects_origin_change_after_pin() -> None:
+def test_manager_rejects_origin_change_after_pin() -> None:
     payloads = iter(
         [
             {
-                "token": "one",
-                "expires_at": 2_000,
+                "chat_enabled": True,
                 "endpoints": {"api": "https://api.individual.githubcopilot.com"},
             },
             {
-                "token": "two",
-                "expires_at": 3_000,
+                "chat_enabled": True,
                 "endpoints": {"api": "https://api.business.githubcopilot.com"},
             },
         ]
@@ -268,9 +253,8 @@ def test_token_manager_rejects_origin_change_after_pin() -> None:
     manager = CopilotTokenManager(
         api_origin="https://api.githubcopilot.com",
         environ={},
-        clock=lambda: 1_000,
-        exchange=lambda *_args: next(payloads),
-        credential_resolver=lambda: "github-oauth",
+        user_info_fetch=lambda *_args: next(payloads),
+        credential_resolver=lambda: "gho_user-token",
     )
     manager._refresh(force=True)
     with pytest.raises(
@@ -280,16 +264,24 @@ def test_token_manager_rejects_origin_change_after_pin() -> None:
         manager._refresh(force=True)
 
 
-def test_enterprise_token_response_cannot_cross_tenant_boundary() -> None:
+def test_enterprise_user_response_cannot_cross_tenant_boundary() -> None:
     with pytest.raises(CopilotSubscriptionAuthError, match="tenant boundary"):
-        _token_from_exchange_payload(
+        _credential_from_user_payload(
+            "gho_user-token",
             {
-                "token": "short-lived",
-                "expires_at": time.time() + 600,
+                "chat_enabled": True,
                 "endpoints": {"api": "https://api.githubcopilot.com"},
             },
             requested_origin="https://copilot-api.acme.ghe.com",
-            now=time.time(),
+        )
+
+
+def test_disabled_chat_fails_closed() -> None:
+    with pytest.raises(CopilotSubscriptionAuthError, match="not enabled"):
+        _credential_from_user_payload(
+            "gho_user-token",
+            {"chat_enabled": False},
+            requested_origin="https://api.githubcopilot.com",
         )
 
 
@@ -310,22 +302,20 @@ def test_github_credential_falls_back_to_gh_without_echoing_failure(monkeypatch)
     assert _resolve_github_credential({}) == "gho-secret"
 
 
-def test_public_manager_summary_contains_no_token() -> None:
+def test_public_manager_summary_contains_no_credential() -> None:
     manager = CopilotTokenManager(
         api_origin="https://api.githubcopilot.com",
         environ={},
-        clock=lambda: 1_000,
-        exchange=lambda *_args: {
-            "token": "do-not-disclose",
-            "expires_at": 2_000,
-        },
-        credential_resolver=lambda: "also-secret",
+        user_info_fetch=lambda *_args: {"chat_enabled": True},
+        credential_resolver=lambda: "gho-do-not-disclose",
     )
     manager._refresh(force=True)
-    rendered = repr(manager.public_summary())
-    assert "do-not-disclose" not in rendered
-    assert "also-secret" not in rendered
-    assert manager.public_summary()["token_persisted"] is False
+    summary = manager.public_summary()
+    rendered = repr(summary)
+    assert "gho-do-not-disclose" not in rendered
+    assert summary["credential_persisted"] is False
+    assert summary["background_refresh"] is False
+    assert summary["automatic_auth_replay"] is False
 
 
 def test_container_proxy_installs_subscription_layer_after_final_transport() -> None:
