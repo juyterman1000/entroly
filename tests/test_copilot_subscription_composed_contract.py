@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import time
 import uuid
 
 
@@ -11,17 +10,14 @@ def test_composed_copilot_subscription_proxy_contract(monkeypatch) -> None:
     monkeypatch.delenv("GITHUB_COPILOT_INTEGRATION_ID", raising=False)
 
     # Match container_proxy's security ordering: hardened transport first, then
-    # credential identity/policy, auth, exact path normalization, and metadata.
+    # GitHub-backed CAPI auth, exact path normalization, and trusted metadata.
     import entroly.proxy as proxy_module
     import entroly.proxy_transport_safe  # noqa: F401
     import entroly.proxy_transport_final  # noqa: F401
     from entroly.copilot_capi_contract import install_copilot_capi_contract
     from entroly.copilot_capi_routing import install_copilot_capi_routing
-    from entroly.copilot_subscription_credential_policy import (
-        install_copilot_subscription_credential_policy,
-    )
     from entroly.copilot_subscription_transport import (
-        CopilotAPIToken,
+        CopilotProviderCredential,
         CopilotTokenManager,
         install_copilot_subscription_transport,
     )
@@ -31,29 +27,24 @@ def test_composed_copilot_subscription_proxy_contract(monkeypatch) -> None:
     original_headers = proxy_module.PromptCompilerProxy._build_headers
     original_resolve = proxy_module.PromptCompilerProxy._resolve_target
     original_shutdown = proxy_module.PromptCompilerProxy.shutdown
-    original_manager_init = CopilotTokenManager.__init__
 
     try:
-        assert install_copilot_subscription_credential_policy() is True
         assert install_copilot_subscription_transport() is True
         assert install_copilot_capi_routing() is True
         assert install_copilot_capi_contract() is True
 
-        # Construction is deliberately side-effect free here: seed one valid
-        # in-memory credential to exercise the same request seam used after
-        # production startup has primed the manager.
+        # Construction is side-effect free. Seed the process-local credential to
+        # exercise the exact request seam used after startup preflight has passed.
         manager = CopilotTokenManager(
             api_origin="https://api.githubcopilot.com",
             environ={},
+            user_info_fetch=lambda *_args: {"chat_enabled": True},
+            credential_resolver=lambda: "gho_active-user-token",
         )
         assert manager.integration_id == "copilot-developer-cli"
-
-        now = time.time()
-        manager._current = CopilotAPIToken(
-            token="tid_active-copilot-token",
+        manager._current = CopilotProviderCredential(
+            token="gho_active-user-token",
             api_origin="https://api.githubcopilot.com",
-            expires_at=now + 1800,
-            refresh_at=now + 1500,
         )
         manager._pinned_origin = "https://api.githubcopilot.com"
 
@@ -75,7 +66,7 @@ def test_composed_copilot_subscription_proxy_contract(monkeypatch) -> None:
         )
 
         assert target == "https://api.githubcopilot.com/chat/completions"
-        assert headers["Authorization"] == "Bearer tid_active-copilot-token"
+        assert headers["Authorization"] == "Bearer gho_active-user-token"
         assert "entroly-local-provider-route" not in repr(headers)
         assert headers["Copilot-Integration-Id"] == "copilot-developer-cli"
         assert headers["User-Agent"] == "GitHubCopilotCLI/1.2.3"
@@ -88,7 +79,6 @@ def test_composed_copilot_subscription_proxy_contract(monkeypatch) -> None:
         manager = locals().get("manager")
         if manager is not None:
             manager.stop()
-        CopilotTokenManager.__init__ = original_manager_init
         proxy_module.create_proxy_app = original_create
         proxy_module.PromptCompilerProxy._build_headers = original_headers
         proxy_module.PromptCompilerProxy._resolve_target = original_resolve
