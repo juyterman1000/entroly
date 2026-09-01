@@ -23,12 +23,14 @@ from entroly.copilot_subscription_transport import (
 
 
 def test_subscription_flag_is_wrapper_owned_only_before_separator() -> None:
-    assert is_subscription_wrap(["wrap", "copilot", "--subscription", "--", "-p", "hello"])
+    assert is_subscription_wrap(
+        ["wrap", "copilot", "--subscription", "--", "-p", "hello"]
+    )
     assert not is_subscription_wrap(["wrap", "copilot", "--", "--subscription"])
     assert not is_subscription_wrap(["wrap", "cursor", "--subscription"])
 
 
-def test_prepare_reuses_existing_wrap_contract_without_leaking_provider_key(monkeypatch) -> None:
+def test_prepare_owns_routing_facts_not_copilot_provider_environment(monkeypatch) -> None:
     monkeypatch.setattr(
         "entroly.copilot_subscription._reserve_loopback_port",
         lambda: 19477,
@@ -36,6 +38,8 @@ def test_prepare_reuses_existing_wrap_contract_without_leaking_provider_key(monk
     env = {
         "NO_PROXY": "corp.internal",
         "COPILOT_PROVIDER_API_KEY": "third-party-key",
+        "COPILOT_PROVIDER_BEARER_TOKEN": "third-party-bearer",
+        "COPILOT_PROVIDER_WIRE_API": "existing-wire-value",
     }
     plan = prepare_subscription_wrap(
         [
@@ -62,12 +66,19 @@ def test_prepare_reuses_existing_wrap_contract_without_leaking_provider_key(monk
         "gpt-5",
         "--prompt=hello",
     )
+    assert plan.wire_api == "responses"
     assert env["ENTROLY_COPILOT_SUBSCRIPTION"] == "1"
     assert env["ENTROLY_OPENAI_BASE"] == "https://api.githubcopilot.com"
-    assert env["COPILOT_PROVIDER_WIRE_API"] == "responses"
-    assert env["COPILOT_PROVIDER_BEARER_TOKEN"] == "entroly-local-provider-route"
-    assert "COPILOT_PROVIDER_API_KEY" not in env
+    assert env["ENTROLY_CLIENT_ROUTE"] == "github-copilot-subscription"
     assert env["COPILOT_MODEL"] == "gpt-5"
+
+    # Provider authentication/configuration has exactly one owner:
+    # copilot_cli_provider_contract. Planning must leave pre-existing values
+    # untouched rather than partially configuring or clearing them.
+    assert env["COPILOT_PROVIDER_API_KEY"] == "third-party-key"
+    assert env["COPILOT_PROVIDER_BEARER_TOKEN"] == "third-party-bearer"
+    assert env["COPILOT_PROVIDER_WIRE_API"] == "existing-wire-value"
+
     assert "corp.internal" in env["NO_PROXY"]
     assert "127.0.0.1" in env["NO_PROXY"]
     assert "::1" in env["no_proxy"]
@@ -77,13 +88,28 @@ def test_prepare_reuses_existing_wrap_contract_without_leaking_provider_key(monk
 def test_prepare_preserves_explicit_wrapper_port_and_env_model() -> None:
     env = {"COPILOT_MODEL": "gpt-5.4"}
     plan = prepare_subscription_wrap(
-        ["wrap", "copilot", "--subscription", "--port", "19888", "--", "-p", "hi"],
+        [
+            "wrap",
+            "copilot",
+            "--subscription",
+            "--port",
+            "19888",
+            "--",
+            "-p",
+            "hi",
+        ],
         environ=env,
     )
     assert plan.proxy_port == 19888
     assert plan.model == "gpt-5.4"
     assert plan.cleaned_argv == (
-        "wrap", "copilot", "--port", "19888", "--", "-p", "hi"
+        "wrap",
+        "copilot",
+        "--port",
+        "19888",
+        "--",
+        "-p",
+        "hi",
     )
 
 
@@ -186,7 +212,10 @@ def test_token_manager_rejects_origin_change_after_pin() -> None:
         credential_resolver=lambda: "github-oauth",
     )
     manager._refresh(force=True)
-    with pytest.raises(CopilotSubscriptionAuthError, match="changed the Copilot API origin"):
+    with pytest.raises(
+        CopilotSubscriptionAuthError,
+        match="changed the Copilot API origin",
+    ):
         manager._refresh(force=True)
 
 
