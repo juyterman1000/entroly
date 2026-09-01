@@ -14,8 +14,8 @@ client metadata:
   value, then an explicit Entroly override, then a conservative default;
 * ``X-Interaction-Id`` preserves a valid client correlation id or generates a
   fresh UUID4 locally;
-* the outbound user-agent must identify Copilot traffic without pretending to
-  be a particular VS Code/Copilot build;
+* the outbound user-agent is copied from the actual inbound client only when it
+  identifies Copilot; otherwise Entroly identifies itself truthfully;
 * editor/plugin metadata is preserved only when the actual client supplied it;
 * optional initiator, intent, and vision metadata uses bounded allowlists.
 """
@@ -148,6 +148,7 @@ def build_copilot_capi_headers(
             "Editor-Version",
             "Editor-Plugin-Version",
             "Copilot-Vision-Request",
+            "User-Agent",
         },
     )
 
@@ -155,9 +156,14 @@ def build_copilot_capi_headers(
     out["X-GitHub-Api-Version"] = _api_version(original, environ)
     out["X-Interaction-Id"] = _interaction_id(original)
 
-    current_ua = _visible_ascii(_header_value(out, "User-Agent"), limit=256)
-    if not current_ua or "copilot" not in current_ua.casefold():
-        _drop_case_insensitive(out, {"User-Agent"})
+    # The metadata layer is the sole authority for inference identity. Do not
+    # inherit a synthetic UA inserted by a lower auth layer. Preserve the actual
+    # client only when it identifies itself as Copilot; otherwise identify
+    # Entroly rather than impersonating a VS Code/Copilot build.
+    client_ua = _visible_ascii(_header_value(original, "User-Agent"), limit=256)
+    if client_ua and "copilot" in client_ua.casefold():
+        out["User-Agent"] = client_ua
+    else:
         out["User-Agent"] = f"Entroly-Copilot/{__version__}"
 
     # Preserve actual client identity metadata when present, but never fabricate
