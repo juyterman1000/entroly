@@ -236,6 +236,7 @@ def _wrapper_flag(argv: list[str], flag: str) -> bool:
 
 def _prepare_copilot_subscription(argv: list[str]) -> bool:
     """Prepare and pre-start the hardened proxy for explicit Copilot subscription mode."""
+    from .copilot_cli_provider_contract import apply_copilot_cli_provider_contract
     from .copilot_subscription import (
         is_subscription_wrap,
         prepare_subscription_wrap,
@@ -247,12 +248,19 @@ def _prepare_copilot_subscription(argv: list[str]) -> bool:
 
     dry_run = _wrapper_flag(argv, "--dry-run")
     plan = prepare_subscription_wrap(argv)
+    cli_contract = apply_copilot_cli_provider_contract(
+        os.environ,
+        wire_api=plan.wire_api,
+    )
     sys.argv[1:] = list(plan.cleaned_argv)
     summary = plan.public_summary()
+    wire_note = " [experimental wire selector]" if cli_contract[
+        "wire_selector_experimental"
+    ] else ""
     print(
         "[entroly] Copilot subscription route: "
         f"{summary['wire_api']} -> {summary['upstream_origin']} "
-        f"via dedicated localhost:{summary['proxy_port']}"
+        f"via dedicated localhost:{summary['proxy_port']}{wire_note}"
         + (" [dry-run]" if dry_run else ""),
         file=sys.stderr,
     )
