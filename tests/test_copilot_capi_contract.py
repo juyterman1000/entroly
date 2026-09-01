@@ -34,11 +34,13 @@ def test_contract_synthesizes_current_required_capi_headers() -> None:
     assert headers["Copilot-Integration-Id"] == "copilot-cli-chat"
     assert headers["X-GitHub-Api-Version"] == "2025-04-01"
     assert "copilot" in headers["User-Agent"].casefold()
+    assert "Editor-Version" not in headers
+    assert "Editor-Plugin-Version" not in headers
     parsed = uuid.UUID(headers["X-Interaction-Id"])
     assert parsed.version == 4
 
 
-def test_contract_preserves_valid_client_correlation_and_api_version() -> None:
+def test_contract_preserves_valid_client_correlation_api_and_editor_metadata() -> None:
     interaction = "123e4567-e89b-12d3-a456-426614174000"
     headers = build_copilot_capi_headers(
         original={
@@ -46,6 +48,9 @@ def test_contract_preserves_valid_client_correlation_and_api_version() -> None:
             "X-Interaction-ID": interaction,
             "X-Initiator": "AGENT",
             "OpenAI-Intent": "conversation-edits",
+            "Editor-Version": "copilot-cli/1.2.3",
+            "Editor-Plugin-Version": "copilot-cli/1.2.3",
+            "Copilot-Vision-Request": "TRUE",
         },
         forwarded={
             "Authorization": "Bearer token",
@@ -59,15 +64,20 @@ def test_contract_preserves_valid_client_correlation_and_api_version() -> None:
     assert headers["X-Interaction-Id"] == interaction
     assert headers["X-Initiator"] == "agent"
     assert headers["OpenAI-Intent"] == "conversation-edits"
+    assert headers["Editor-Version"] == "copilot-cli/1.2.3"
+    assert headers["Editor-Plugin-Version"] == "copilot-cli/1.2.3"
+    assert headers["Copilot-Vision-Request"] == "true"
     assert headers["User-Agent"] == "GitHubCopilotCLI/1.2.3"
 
 
-def test_contract_does_not_trust_client_token_bound_identity() -> None:
+def test_contract_does_not_trust_client_token_bound_identity_or_bad_metadata() -> None:
     headers = build_copilot_capi_headers(
         original={
             "Copilot-Integration-Id": "attacker-controlled",
             "X-Interaction-Id": "bad\r\nX-Evil: injected",
             "X-Initiator": "root",
+            "Editor-Version": "bad\r\nX-Evil: injected",
+            "Copilot-Vision-Request": "yes-please",
         },
         forwarded=_base_forwarded(),
         integration_id="copilot-cli-chat",
@@ -77,6 +87,8 @@ def test_contract_does_not_trust_client_token_bound_identity() -> None:
     assert headers["Copilot-Integration-Id"] == "copilot-cli-chat"
     assert "X-Evil" not in repr(headers)
     assert "X-Initiator" not in headers
+    assert "Editor-Version" not in headers
+    assert "Copilot-Vision-Request" not in headers
     uuid.UUID(headers["X-Interaction-Id"])
 
 
