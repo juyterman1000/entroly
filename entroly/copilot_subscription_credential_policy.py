@@ -1,28 +1,37 @@
-"""Credential-mode policy for GitHub Copilot subscription inference.
+"""Credential policy for GitHub Copilot subscription inference.
 
-GitHub Copilot accepts more than one legitimate credential lifecycle. OAuth
-credentials can often be exchanged for a short-lived Copilot entitlement token,
-but GitHub's own CLI also documents fine-grained PATs with the ``Copilot
-Requests`` permission as inference credentials. Public Copilot integrations
-likewise report that some GitHub user/PAT token shapes are valid directly even
-when ``/copilot_internal/v2/token`` is unavailable for that account.
+Entroly's subscription route reuses the existing CopilotTokenManager.  The
+manager normally exchanges a GitHub credential for a short-lived Copilot token.
+Current GitHub Copilot runtimes also accept supported GitHub credentials through
+the runtime authentication path, and preserving that credential can avoid
+changing the caller's entitlement lane.
 
-Entroly therefore uses token exchange as *endpoint discovery* when possible,
-without unnecessarily replacing a recognized direct GitHub credential. Direct
-fallback is deliberately narrower than a generic fail-open: only recognized
-GitHub user/PAT token shapes, only an already-validated configured CAPI origin,
-and only exchange-unavailable/rejected failures qualify. Redirects, malformed
-payloads, unsafe advertised origins, tenant-boundary violations, and other trust
-failures remain hard failures.
+This module therefore wraps the manager's *existing exchange callable* rather
+than inventing a second token manager or a second transport.  Exchange is still
+attempted first so GitHub can advertise the authoritative CAPI endpoint.  For
+recognized direct credentials, the advertised endpoint is retained while the
+original credential is kept as the inference bearer.  If exchange is merely
+unavailable/rejected, a recognized direct credential can fall back to the
+already-validated configured CAPI origin.  Redirects, malformed payloads,
+untrusted advertised origins, tenant-boundary failures, and other trust errors
+remain hard failures.
+
+GitHub's current Copilot CLI/SDK documentation supports OAuth user tokens,
+GitHub App user tokens, and fine-grained PATs.  GitHub Actions additionally has
+a runtime path for installation/GITHUB_TOKEN credentials.  Classic ``ghp_``
+PATs are explicitly unsupported and are rejected here before any provider call.
 """
 
 from __future__ import annotations
 
 import time
+from collections.abc import Callable, Mapping
+from typing import Any
 
 from . import copilot_subscription_transport as _transport
 
-_DIRECT_GITHUB_PREFIXES = ("gho_", "ghu_", "ghp_", "github_pat_")
+_DIRECT_GITHUB_PREFIXES = ("gho_", "ghu_", "github_pat_", "ghs_")
+_CLASSIC_PAT_PREFIX = "ghp_"
 _DIRECT_FALLBACK_REFRESH_S = 300.0
 _DIRECT_FALLBACK_ERRORS = (
     "GitHub rejected the credential for Copilot subscription access",
@@ -32,13 +41,24 @@ _DIRECT_FALLBACK_ERRORS = (
 
 
 def is_direct_copilot_github_credential(token: object) -> bool:
-    """Return whether *token* is a recognized GitHub user/PAT bearer shape."""
+    """Return whether *token* is a supported direct Copilot credential shape."""
+    value = _validated_token_text(token)
+    return bool(value and value.startswith(_DIRECT_GITHUB_PREFIXES))
+
+
+def is_unsupported_classic_pat(token: object) -> bool:
+    """Return True for GitHub classic PATs, which Copilot CLI does not support."""
+    value = _validated_token_text(token)
+    return bool(value and value.startswith(_CLASSIC_PAT_PREFIX))
+
+
+def _validated_token_text(token: object) -> str:
     value = str(token or "").strip()
     if not value or len(value) > 16_384:
-        return False
+        return ""
     if any(ord(char) < 33 or ord(char) == 127 for char in value):
-        return False
-    return value.startswith(_DIRECT_GITHUB_PREFIXES)
+        return ""
+    return value
 
 
 def _exchange_failure_allows_direct_fallback(exc: Exception) -> bool:
@@ -47,76 +67,91 @@ def _exchange_failure_allows_direct_fallback(exc: Exception) -> bool:
     return any(message.startswith(prefix) for prefix in _DIRECT_FALLBACK_ERRORS)
 
 
-def _direct_token(
+def _direct_fallback_payload(
     token: str,
     *,
-    api_origin: str,
-    now: float | None = None,
-    refresh_after_s: float = _DIRECT_FALLBACK_REFRESH_S,
-) -> _transport.CopilotAPIToken:
-    current = time.time() if now is None else float(now)
-    refresh_after = max(30.0, float(refresh_after_s))
-    # The GitHub credential itself may be long-lived or externally refreshed.
-    # This synthetic horizon controls only how often Entroly re-evaluates origin
-    # discovery; it is not presented as the credential's actual expiry.
-    return _transport.CopilotAPIToken(
-        token=token,
-        api_origin=api_origin,
-        expires_at=current + refresh_after + 60.0,
-        refresh_at=current + refresh_after,
-    )
+    now: float,
+) -> dict[str, object]:
+    """Build a synthetic cache horizon without pretending it is token expiry."""
+    return {
+        "token": token,
+        "expires_at": now + _DIRECT_FALLBACK_REFRESH_S + 60.0,
+        "refresh_in": _DIRECT_FALLBACK_REFRESH_S,
+    }
 
 
-def install_copilot_subscription_credential_policy() -> bool:
-    """Wrap token acquisition with direct-GitHub-credential preservation."""
-    current_exchange = _transport._exchange_github_token
-    if getattr(current_exchange, "__entroly_direct_credential_policy__", False):
-        return True
+def _preserve_direct_token(
+    payload: Mapping[str, Any],
+    *,
+    token: str,
+) -> dict[str, Any]:
+    """Keep GitHub's endpoint/refresh metadata while retaining caller identity."""
+    result = dict(payload)
+    result["token"] = token
+    return result
+
+
+def _wrap_exchange(
+    exchange: Callable[[str, str, str], Mapping[str, Any]],
+    *,
+    clock: Callable[[], float],
+) -> Callable[[str, str, str], Mapping[str, Any]]:
+    if getattr(exchange, "__entroly_direct_credential_policy__", False):
+        return exchange
 
     def exchange_with_policy(
-        github_token: str,
-        *,
-        requested_origin: str,
+        exchange_url: str,
+        github_credential: str,
         integration_id: str,
-    ) -> _transport.CopilotAPIToken:
-        direct = is_direct_copilot_github_credential(github_token)
-        try:
-            exchanged = current_exchange(
-                github_token,
-                requested_origin=requested_origin,
-                integration_id=integration_id,
+    ) -> Mapping[str, Any]:
+        credential = _validated_token_text(github_credential)
+        if is_unsupported_classic_pat(credential):
+            raise _transport.CopilotSubscriptionAuthError(
+                "GitHub Copilot CLI does not support classic `ghp_` personal access tokens; "
+                "use an OAuth token or a fine-grained PAT with Copilot Requests permission"
             )
+
+        direct = is_direct_copilot_github_credential(credential)
+        try:
+            payload = exchange(exchange_url, github_credential, integration_id)
         except _transport.CopilotSubscriptionAuthError as exc:
             if not direct or not _exchange_failure_allows_direct_fallback(exc):
                 raise
-            # ``requested_origin`` has already passed strict GitHub CAPI origin
-            # validation in CopilotTokenManager.__init__. No arbitrary host can
-            # enter through this fallback.
-            return _direct_token(github_token, api_origin=requested_origin)
+            # The manager already validated and pinned its requested CAPI origin.
+            # Omitting endpoints here intentionally keeps that trusted origin.
+            return _direct_fallback_payload(credential, now=float(clock()))
 
+        if not isinstance(payload, Mapping):
+            # Preserve the transport's existing failure semantics.  The manager's
+            # normal parser will reject this shape; do not turn it into fallback.
+            return payload
         if not direct:
-            return exchanged
-
-        # Keep GitHub's advertised/pinned API origin, but preserve the caller's
-        # legitimate GitHub credential for inference. This avoids reducing model
-        # entitlement by substituting an independently minted token while still
-        # benefiting from GitHub's endpoint discovery when available.
-        now = time.time()
-        remaining = max(30.0, exchanged.refresh_at - now)
-        return _direct_token(
-            github_token,
-            api_origin=exchanged.api_origin,
-            now=now,
-            refresh_after_s=remaining,
-        )
+            return payload
+        return _preserve_direct_token(payload, token=credential)
 
     exchange_with_policy.__entroly_direct_credential_policy__ = True
-    exchange_with_policy.__entroly_direct_credential_policy_original__ = current_exchange
-    _transport._exchange_github_token = exchange_with_policy
+    exchange_with_policy.__entroly_direct_credential_policy_original__ = exchange
+    return exchange_with_policy
+
+
+def install_copilot_subscription_credential_policy() -> bool:
+    """Install direct-credential preservation on the real token-manager seam."""
+    current_init = _transport.CopilotTokenManager.__init__
+    if getattr(current_init, "__entroly_direct_credential_policy__", False):
+        return True
+
+    def manager_init(self: Any, *args: Any, **kwargs: Any) -> None:
+        current_init(self, *args, **kwargs)
+        self._exchange = _wrap_exchange(self._exchange, clock=self._clock)
+
+    manager_init.__entroly_direct_credential_policy__ = True
+    manager_init.__entroly_direct_credential_policy_original__ = current_init
+    _transport.CopilotTokenManager.__init__ = manager_init
     return True
 
 
 __all__ = [
     "install_copilot_subscription_credential_policy",
     "is_direct_copilot_github_credential",
+    "is_unsupported_classic_pat",
 ]
