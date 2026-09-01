@@ -225,11 +225,30 @@ fn find_dead_symbols(fragments: &[&ContextFragment], dep_graph: &DepGraph) -> Ve
     let all_content: Vec<&str> = fragments.iter().map(|f| f.content.as_str()).collect();
 
     // Build a frequency map of all identifiers across all fragments
-    let mut referenced: HashSet<String> = HashSet::new();
+    // Counted, not a set membership test. A symbol's own `def`/`fn` line is
+    // part of the content being scanned, so every defined symbol was trivially
+    // "referenced" by the line that defined it and nothing could ever be
+    // reported dead. Measured: four functions called from nowhere reported as
+    // 0 dead symbols.
+    //
+    // A definition line contributes exactly one occurrence of the name, so a
+    // symbol is unreferenced when its total occurrence count does not exceed
+    // the number of lines that define it.
+    let mut reference_counts: HashMap<String, usize> = HashMap::new();
+    let mut definition_line_counts: HashMap<String, usize> = HashMap::new();
     for content in &all_content {
-        for word in content.split(|c: char| !c.is_alphanumeric() && c != '_') {
-            if word.len() >= 2 {
-                referenced.insert(word.to_lowercase());
+        for line in content.lines() {
+            let defined_here: HashSet<String> = crate::depgraph::extract_definitions(line)
+                .into_iter()
+                .map(|d| d.to_lowercase())
+                .collect();
+            for name in &defined_here {
+                *definition_line_counts.entry(name.clone()).or_insert(0) += 1;
+            }
+            for word in line.split(|c: char| !c.is_alphanumeric() && c != '_') {
+                if word.len() >= 2 {
+                    *reference_counts.entry(word.to_lowercase()).or_insert(0) += 1;
+                }
             }
         }
     }
@@ -250,8 +269,10 @@ fn find_dead_symbols(fragments: &[&ContextFragment], dep_graph: &DepGraph) -> Ve
             continue;
         }
 
-        // Check if referenced anywhere
-        if referenced.contains(&sym_lower) {
+        // Referenced somewhere other than the lines that define it.
+        let uses = reference_counts.get(&sym_lower).copied().unwrap_or(0);
+        let defs = definition_line_counts.get(&sym_lower).copied().unwrap_or(0);
+        if uses > defs {
             continue;
         }
 
@@ -844,6 +865,50 @@ mod tests {
     use crate::dedup::simhash;
     use crate::depgraph::DepGraph;
     use crate::fragment::ContextFragment;
+
+    #[test]
+    fn a_symbol_referenced_only_by_its_own_definition_is_dead() {
+        // The reference scan read every line of every fragment, including the
+        // line that defined the symbol, so a definition always "referenced"
+        // itself and nothing could ever be reported dead. Measured on a
+        // four-file project with four functions called from nowhere:
+        // "Dead symbols: 0", printed with a green marker.
+        let a = make_frag(
+            "f1",
+            "def compute_total(items):
+    return sum(items)
+
+def zzqqx_unused(x):
+    return x * 2
+",
+            "billing.py",
+        );
+        let b = make_frag(
+            "f2",
+            "from billing import compute_total
+
+def run(items):
+    return compute_total(items)
+",
+            "main.py",
+        );
+        let frags: Vec<&ContextFragment> = vec![&a, &b];
+        let mut dep = DepGraph::new();
+        dep.register_symbol("compute_total", "f1");
+        dep.register_symbol("zzqqx_unused", "f1");
+
+        let dead = find_dead_symbols(&frags, &dep);
+        let names: Vec<&str> = dead.iter().map(|d| d.name.as_str()).collect();
+
+        assert!(
+            names.contains(&"zzqqx_unused"),
+            "a function called from nowhere must be reported dead; got {names:?}"
+        );
+        assert!(
+            !names.contains(&"compute_total"),
+            "a function called from another file is alive; got {names:?}"
+        );
+    }
 
     fn make_frag(id: &str, content: &str, source: &str) -> ContextFragment {
         let mut f = ContextFragment::new(
