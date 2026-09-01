@@ -203,6 +203,18 @@ def test_an_unreadable_belief_does_not_break_a_vault_scan(tmp_path):
     ) is not None
 
 
+# A soak, not a unit test: two writers race a verifier that re-reads the whole
+# ledger on every iteration, so the work is quadratic in the number of writes
+# and the wall time is dominated by the runner's disk and core count. It takes
+# ~39s on a developer machine and exceeded the suite's 60s ceiling twice on a
+# CI runner -- once on PR #391 and again on main at e4d2b049 -- both times on
+# Python 3.12 alone while the other four versions passed the same commit.
+#
+# The ceiling was wrong, not the test. Lowering the write count would cut the
+# cost, but the number of verifications landing inside the race window is
+# exactly what gives this test its power to catch the false alarm it guards, so
+# the budget is raised instead of the exposure reduced.
+@pytest.mark.timeout(180)
 def test_verification_during_concurrent_writes_does_not_false_alarm(tmp_path):
     """The log and the head are two files.
 
