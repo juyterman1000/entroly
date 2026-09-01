@@ -8,21 +8,27 @@ likewise report that some GitHub user/PAT token shapes are valid directly even
 when ``/copilot_internal/v2/token`` is unavailable for that account.
 
 Entroly therefore uses token exchange as *endpoint discovery* when possible,
-without unnecessarily replacing a recognized direct GitHub credential. If the
-exchange is unavailable, only known GitHub user/PAT token shapes may fall back
-to direct inference, and only against the already validated configured CAPI
-origin. Arbitrary or malformed bearer strings never gain this fallback.
+without unnecessarily replacing a recognized direct GitHub credential. Direct
+fallback is deliberately narrower than a generic fail-open: only recognized
+GitHub user/PAT token shapes, only an already-validated configured CAPI origin,
+and only exchange-unavailable/rejected failures qualify. Redirects, malformed
+payloads, unsafe advertised origins, tenant-boundary violations, and other trust
+failures remain hard failures.
 """
 
 from __future__ import annotations
 
 import time
-from typing import Any
 
 from . import copilot_subscription_transport as _transport
 
 _DIRECT_GITHUB_PREFIXES = ("gho_", "ghu_", "ghp_", "github_pat_")
 _DIRECT_FALLBACK_REFRESH_S = 300.0
+_DIRECT_FALLBACK_ERRORS = (
+    "GitHub rejected the credential for Copilot subscription access",
+    "GitHub Copilot token exchange failed with HTTP ",
+    "unable to reach GitHub's Copilot token exchange endpoint",
+)
 
 
 def is_direct_copilot_github_credential(token: object) -> bool:
@@ -33,6 +39,12 @@ def is_direct_copilot_github_credential(token: object) -> bool:
     if any(ord(char) < 33 or ord(char) == 127 for char in value):
         return False
     return value.startswith(_DIRECT_GITHUB_PREFIXES)
+
+
+def _exchange_failure_allows_direct_fallback(exc: Exception) -> bool:
+    """Allow fallback only for exchange availability/credential-class failures."""
+    message = str(exc)
+    return any(message.startswith(prefix) for prefix in _DIRECT_FALLBACK_ERRORS)
 
 
 def _direct_token(
@@ -74,8 +86,8 @@ def install_copilot_subscription_credential_policy() -> bool:
                 requested_origin=requested_origin,
                 integration_id=integration_id,
             )
-        except _transport.CopilotSubscriptionAuthError:
-            if not direct:
+        except _transport.CopilotSubscriptionAuthError as exc:
+            if not direct or not _exchange_failure_allows_direct_fallback(exc):
                 raise
             # ``requested_origin`` has already passed strict GitHub CAPI origin
             # validation in CopilotTokenManager.__init__. No arbitrary host can
