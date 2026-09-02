@@ -30,12 +30,14 @@ they do not measure model-answer quality or claim identical Python/Rust selectio
 
 Entroly is building a paired, model-neutral benchmark for the question
 token-savings tables cannot answer: does less context preserve real task
-quality? The preregistered protocol compares raw context, model-native
+quality? The versioned protocol compares raw context, model-native
 compaction, Entroly, and their combination using provider-observed tokens,
 cost, latency, task success, evidence recall, and unsupported claims.
 
-[Read the preregistered protocol](benchmarks/context-efficiency-frontier.md).
-No headline result will be claimed until the paired confidence bounds pass.
+[Read protocol v2](benchmarks/context-efficiency-frontier-v2.md) and the
+[preserved v1 preregistration](benchmarks/context-efficiency-frontier.md).
+No headline result will be claimed until the paired effect and exact harm-risk
+bounds pass.
 
 ## Matched token-cap active-context quality frontier (1.0.59 source candidate)
 

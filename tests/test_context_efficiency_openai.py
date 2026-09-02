@@ -3,13 +3,20 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
+import pytest
+
 from benchmarks.context_efficiency_frontier import analyze_frontier, load_trials
 from benchmarks.context_efficiency_openai import (
     DEFAULT_MODEL,
+    LONG_BENCH_METRICS_SHA256,
+    SCORER,
     ProviderConfig,
     WorkloadItem,
     call_openai,
+    normalize_answer,
+    qa_f1_score,
     run_trials,
+    select_longbench_rows,
 )
 
 
@@ -73,6 +80,43 @@ def test_call_openai_captures_provider_usage_and_request_id():
     assert client.fake_completions.requests[0]["temperature"] == 0
 
 
+def test_call_openai_forwards_explicit_reasoning_configuration():
+    client = _client([_response("ORCHID-17", "chatcmpl_reasoning", 123)])
+
+    call_openai(
+        client,
+        model="gemini-2.5-flash",
+        context="The launch code is ORCHID-17.",
+        question="What is the launch code?",
+        max_output_tokens=80,
+        reasoning_effort="none",
+    )
+
+    request = client.fake_completions.requests[0]
+    assert request["max_tokens"] == 80
+    assert request["reasoning_effort"] == "none"
+
+
+def test_shortest_context_selection_is_deterministic_and_explicitly_biased():
+    rows = [
+        {"context": "long context", "question": "q3"},
+        {"context": "x", "question": "q1"},
+        {"context": "medium", "question": "q2"},
+    ]
+
+    selected = select_longbench_rows(rows, 2, "shortest-context")
+
+    assert [row["context"] for row in selected] == ["x", "medium"]
+    assert select_longbench_rows(rows, 2, "random") == rows[:2]
+
+
+def test_longbench_hotpotqa_scorer_matches_official_normalization_and_f1():
+    assert normalize_answer("The, ORCHID-17!") == "orchid17"
+    assert qa_f1_score("Alpha Beta", "the alpha beta gamma") == 0.8
+    assert "longbench-v1-hotpotqa-official-qa-f1" in SCORER
+    assert len(LONG_BENCH_METRICS_SHA256) == 64
+
+
 def test_run_trials_writes_complete_auditable_matrix(tmp_path):
     output = tmp_path / "trials.jsonl"
     client = _client(
@@ -96,6 +140,11 @@ def test_run_trials_writes_complete_auditable_matrix(tmp_path):
     entroly = next(trial for trial in loaded if trial.condition == "entroly")
     assert entroly.context_commit_id and entroly.context_commit_id.startswith("ctx_")
     assert entroly.usage_source == "provider_response"
+    assert entroly.usage_observed is True
+    assert entroly.cost_observed is True
+    assert entroly.task_success is True
+    assert entroly.scorer == SCORER
+    assert '"selection_policy":"preselected"' in entroly.experiment_config
     assert "2026-07-11" in entroly.cost_source_reference
     assert "input-0.15" in entroly.cost_source_reference
     assert list(output.parent.glob("trials_context_commits/*.json"))
@@ -126,6 +175,28 @@ def test_run_trials_keeps_provider_errors_as_zero_score_outcomes(tmp_path):
     assert error["task_score"] == 0.0
     assert error["context_tokens"] == 0
     assert error["error_type"] == "TimeoutError"
+    assert error["usage_observed"] is False
+    assert error["cost_observed"] is False
+    assert len(error["error_fingerprint"]) == 64
+
+
+def test_run_trials_refuses_tasks_without_answer_evidence_before_calling_provider(
+    tmp_path,
+):
+    output = tmp_path / "trials.jsonl"
+    client = _client([])
+    item = WorkloadItem(
+        task_id="missing-evidence",
+        context="Only distractors are present.",
+        question="What is the launch code?",
+        answers=("ORCHID-17",),
+    )
+
+    with pytest.raises(ValueError, match="raw context does not contain"):
+        run_trials(items=[item], client=client, output=output)
+
+    assert not output.exists()
+    assert client.fake_completions.requests == []
 
 
 def test_resume_does_not_rebill_completed_conditions(tmp_path):
