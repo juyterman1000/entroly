@@ -890,6 +890,70 @@ pub fn information_mass_factor(token_count: u32) -> f64 {
 
 #[cfg(test)]
 mod tests {
+    fn ent_lcg(state: &mut u64) -> u64 {
+        *state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        *state >> 33
+    }
+
+    /// Shannon entropy has closed-form values; assert them rather than a range.
+    #[test]
+    fn shannon_matches_its_closed_form_on_known_distributions() {
+        // A constant source carries no information.
+        assert!(shannon_entropy("aaaaaaaa").abs() < 1e-12);
+        assert!(shannon_entropy("").abs() < 1e-12);
+
+        // n equiprobable symbols: H = log2(n), exactly.
+        assert!((shannon_entropy("ab") - 1.0).abs() < 1e-12);
+        assert!((shannon_entropy("abcd") - 2.0).abs() < 1e-12);
+        assert!((shannon_entropy("abcdefgh") - 3.0).abs() < 1e-12);
+
+        // This scorer histograms *bytes*, so the closed form has to be stated
+        // over bytes. Code points above 127 encode as two UTF-8 bytes, and a
+        // string of chars 0..=255 has a byte histogram of 128 singletons plus
+        // 0xC2/0xC3 sixty-four times each -- H = 6.25, not 8. Restricting the
+        // input to ASCII keeps one byte per symbol.
+        let ascii: String = (0u8..=127).map(|b| b as char).collect();
+        assert_eq!(ascii.len(), 128, "the fixture must be one byte per symbol");
+        assert!(
+            (shannon_entropy(&ascii) - 7.0).abs() < 1e-9,
+            "H over 128 equiprobable bytes must be log2(128) = 7, got {}",
+            shannon_entropy(&ascii)
+        );
+    }
+
+    /// Rényi order 2 is documented as "always <= Shannon entropy". That is a
+    /// theorem (Rényi entropy is non-increasing in α), which makes it a
+    /// falsifiable property of this implementation rather than a range check.
+    #[test]
+    fn collision_entropy_never_exceeds_shannon_entropy() {
+        let mut seed = 0xE470_9E37_79B9_1234_u64;
+        for case in 0..400 {
+            let len = 1 + (ent_lcg(&mut seed) % 300) as usize;
+            // Skewed alphabets make the two measures diverge most.
+            let alphabet = 1 + (ent_lcg(&mut seed) % 40) as u8;
+            let text: String = (0..len)
+                .map(|_| (b'a' + (ent_lcg(&mut seed) % alphabet as u64) as u8) as char)
+                .collect();
+
+            let h1 = shannon_entropy(&text);
+            let h2 = renyi_entropy_2(&text);
+
+            assert!(h1 >= -1e-12, "case {case}: Shannon entropy went negative: {h1}");
+            assert!(h2 >= -1e-12, "case {case}: collision entropy went negative: {h2}");
+            assert!(h1 <= 8.0 + 1e-9, "case {case}: Shannon exceeded the byte bound: {h1}");
+            assert!(
+                h2 <= h1 + 1e-9,
+                "case {case}: collision entropy {h2} exceeded Shannon {h1},                  contradicting the monotonicity of Renyi entropy in alpha"
+            );
+
+            let norm = normalized_entropy(&text);
+            assert!(
+                (0.0..=1.0).contains(&norm),
+                "case {case}: normalized entropy {norm} left [0, 1]"
+            );
+        }
+    }
+
     use super::*;
 
     #[test]
