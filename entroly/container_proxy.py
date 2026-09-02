@@ -22,19 +22,32 @@ from typing import Any
 # produced by the previous layer; remote access authentication must be outermost.
 from . import proxy_transport_safe as _proxy_transport_safe  # noqa: F401
 from . import proxy_transport_final as _proxy_transport_final  # noqa: F401
-from . import proxy_control_plane_safe as _proxy_control_plane_safe  # noqa: F401
-from . import proxy_access_security as _proxy_access_security  # noqa: F401
-from .proxy import create_proxy_app
-from .proxy_config import ProxyConfig
-from .proxy_routing_official_guard import (
+from .copilot_subscription_transport import install_copilot_subscription_transport
+from .copilot_capi_routing import install_copilot_capi_routing
+from .copilot_capi_contract import install_copilot_capi_contract
+
+# Copilot subscription support adds three narrow contracts to the existing
+# hardened proxy: GitHub-backed CAPI auth/user preflight, exact CAPI path
+# normalization, then trusted request metadata. All are no-ops unless explicit
+# subscription mode is enabled. Access security remains outermost and provider,
+# query, redirect, retry, and body handling stay owned by the existing proxy.
+install_copilot_subscription_transport()
+install_copilot_capi_routing()
+install_copilot_capi_contract()
+
+from . import proxy_control_plane_safe as _proxy_control_plane_safe  # noqa: E402,F401
+from . import proxy_access_security as _proxy_access_security  # noqa: E402,F401
+from .proxy import create_proxy_app  # noqa: E402
+from .proxy_config import ProxyConfig  # noqa: E402
+from .proxy_routing_official_guard import (  # noqa: E402
     install_official_routing_guard,
     validate_official_routing_boundary,
 )
-from .proxy_routing_safety import (
+from .proxy_routing_safety import (  # noqa: E402
     configure_proxy_routing_safety,
     validate_routing_environment,
 )
-from .server import EntrolyEngine, _start_background_services
+from .server import EntrolyEngine, _start_background_services  # noqa: E402
 
 logger = logging.getLogger("entroly.container_proxy")
 

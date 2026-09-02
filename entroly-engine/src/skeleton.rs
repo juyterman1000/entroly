@@ -148,6 +148,98 @@ fn count_char(s: &str, ch: char) -> usize {
 }
 
 /// Python skeleton: keep imports, decorators, class/def signatures, top-level assignments.
+/// Index just past a complete `def`/`class` header, which may span lines.
+///
+/// The header guards used to be `trimmed.contains(':')`, which is only true of
+/// a single-line signature. A multi-line one therefore matched no rule at all:
+/// its `def name(` line fell through to "everything else -- skip", losing the
+/// function name, while its closing `) -> T:` line survived on its own via the
+/// top-level-annotation rule. The result had unmatched parentheses and body
+/// lines leaked to module level.
+///
+/// Measured on this repository before the fix: 28 of 310 generated Python
+/// skeletons parsed. The codec table advertises "syntax stays valid", and the
+/// knapsack serves skeletons in place of full fragments when the budget is
+/// tight, so the model was receiving code that does not parse.
+///
+/// Brackets are counted outside string literals and comments. Returns `None`
+/// if the header never closes, so malformed input is skipped rather than
+/// consuming the rest of the file.
+fn python_header_end(lines: &[&str], start: usize) -> Option<usize> {
+    const MAX_HEADER_LINES: usize = 64;
+    let mut depth = 0i32;
+    let mut i = start;
+
+    while i < lines.len() && i - start < MAX_HEADER_LINES {
+        let line = lines[i];
+        let mut in_str: Option<char> = None;
+        let mut prev = ' ';
+
+        for ch in line.chars() {
+            match in_str {
+                Some(quote) => {
+                    if ch == quote && prev != '\\' {
+                        in_str = None;
+                    }
+                }
+                None => match ch {
+                    '#' => break,
+                    '\'' | '"' => in_str = Some(ch),
+                    '(' | '[' | '{' => depth += 1,
+                    ')' | ']' | '}' => depth -= 1,
+                    _ => {}
+                },
+            }
+            prev = ch;
+        }
+
+        if depth <= 0 && line.trim_end().ends_with(':') {
+            return Some(i + 1);
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Index just past a bracket-balanced statement starting at `start`.
+///
+/// The import, assignment, annotation and decorator rules each pushed only
+/// their first line, so a multi-line form left an unclosed bracket in the
+/// skeleton. A parenthesised import is the common case: its continuation lines
+/// begin with a name, not a comma, so the old comma-only rule dropped them.
+fn python_statement_end(lines: &[&str], start: usize) -> usize {
+    const MAX_STATEMENT_LINES: usize = 200;
+    let mut depth = 0i32;
+    let mut i = start;
+
+    while i < lines.len() && i - start < MAX_STATEMENT_LINES {
+        let mut in_str: Option<char> = None;
+        let mut prev = ' ';
+        for ch in lines[i].chars() {
+            match in_str {
+                Some(quote) => {
+                    if ch == quote && prev != '\\' {
+                        in_str = None;
+                    }
+                }
+                None => match ch {
+                    '#' => break,
+                    '\'' | '"' => in_str = Some(ch),
+                    '(' | '[' | '{' => depth += 1,
+                    ')' | ']' | '}' => depth -= 1,
+                    _ => {}
+                },
+            }
+            prev = ch;
+        }
+        i += 1;
+        if depth <= 0 {
+            return i;
+        }
+    }
+    i
+}
+
 /// Replace function/method bodies with `...`
 fn extract_python_skeleton(content: &str) -> String {
     let mut out = Vec::new();
@@ -196,27 +288,37 @@ fn extract_python_skeleton(content: &str) -> String {
 
         // Imports — always keep
         if trimmed.starts_with("import ") || trimmed.starts_with("from ") {
-            out.push(line.to_string());
-            // Handle continuation lines
-            i += 1;
-            while i < lines.len() && lines[i].trim().starts_with(',') {
-                out.push(lines[i].to_string());
-                i += 1;
+            let end = python_statement_end(&lines, i);
+            for kept in &lines[i..end] {
+                out.push((*kept).to_string());
             }
+            i = end;
             continue;
         }
 
-        // Decorators — keep (they're part of the signature)
+        // Decorators — keep (they're part of the signature). An argument list
+        // spans lines like any other call, and pushing only the first left an
+        // unclosed bracket.
         if trimmed.starts_with('@') {
-            out.push(line.to_string());
-            i += 1;
+            let end = python_statement_end(&lines, i);
+            for kept in &lines[i..end] {
+                out.push((*kept).to_string());
+            }
+            i = end;
             continue;
         }
 
         // Class definition — keep the signature line
-        if trimmed.starts_with("class ") && trimmed.contains(':') {
-            out.push(line.to_string());
-            i += 1;
+        if trimmed.starts_with("class ") {
+            let Some(header_end) = python_header_end(&lines, i) else {
+                i += 1;
+                continue;
+            };
+            for kept in &lines[i..header_end] {
+                out.push((*kept).to_string());
+            }
+            let class_indent = indent;
+            i = header_end;
             // Keep the docstring if present
             if i < lines.len() {
                 let next = lines[i].trim();
@@ -236,16 +338,24 @@ fn extract_python_skeleton(content: &str) -> String {
                     i += 1;
                 }
             }
+            // A class whose members are all elided still needs a body, or the
+            // skeleton does not parse. `...` ahead of any kept methods is
+            // valid Python.
+            out.push(format!("{}...", " ".repeat(class_indent + 4)));
             continue;
         }
 
         // Function/method definition — keep signature, skip body
-        if (trimmed.starts_with("def ") || trimmed.starts_with("async def "))
-            && trimmed.contains(':')
-        {
-            out.push(line.to_string());
+        if trimmed.starts_with("def ") || trimmed.starts_with("async def ") {
+            let Some(header_end) = python_header_end(&lines, i) else {
+                i += 1;
+                continue;
+            };
+            for kept in &lines[i..header_end] {
+                out.push((*kept).to_string());
+            }
             let def_indent = indent;
-            i += 1;
+            i = header_end;
 
             // Keep the docstring if present
             if i < lines.len() {
@@ -287,17 +397,54 @@ fn extract_python_skeleton(content: &str) -> String {
             continue;
         }
 
+        // Top-level compound statements, checked before the assignment rule:
+        // `if a == b:` contains '=' and was matched as an assignment, so it was
+        // kept without its body and the skeleton failed with "expected an
+        // indented block".
+        const COMPOUND_HEAD: [&str; 8] =
+            ["if ", "try", "else", "elif ", "with ", "for ", "while ", "except"];
+        if indent == 0
+            && COMPOUND_HEAD.iter().any(|k| trimmed.starts_with(k))
+            && !trimmed.starts_with('#')
+        {
+            let end = python_statement_end(&lines, i);
+            if lines[end - 1].trim_end().ends_with(':') {
+                for kept in &lines[i..end] {
+                    out.push((*kept).to_string());
+                }
+                out.push("    ...".to_string());
+                i = end;
+                while i < lines.len() {
+                    if lines[i].trim().is_empty() {
+                        i += 1;
+                        continue;
+                    }
+                    if leading_spaces(lines[i]) == 0 {
+                        break;
+                    }
+                    i += 1;
+                }
+                continue;
+            }
+        }
+
         // Top-level assignments and constants — keep
         if indent == 0 && (trimmed.contains('=') || trimmed.starts_with("__")) {
-            out.push(line.to_string());
-            i += 1;
+            let end = python_statement_end(&lines, i);
+            for kept in &lines[i..end] {
+                out.push((*kept).to_string());
+            }
+            i = end;
             continue;
         }
 
         // Type annotations at top level
         if indent == 0 && trimmed.contains(':') && !trimmed.starts_with('#') {
-            out.push(line.to_string());
-            i += 1;
+            let end = python_statement_end(&lines, i);
+            for kept in &lines[i..end] {
+                out.push((*kept).to_string());
+            }
+            i = end;
             continue;
         }
 
@@ -2100,6 +2247,227 @@ fn extract_css_skeleton(content: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// Bracket balance for a skeleton, ignoring string literals and comments.
+    ///
+    /// A necessary condition for validity in every language here, and the one
+    /// that caught 193 of the 282 Python skeleton failures.
+    fn bracket_depth(src: &str, hash_is_comment: bool) -> i32 {
+        let mut depth = 0i32;
+        for line in src.lines() {
+            let mut in_str: Option<char> = None;
+            let mut prev = ' ';
+            let mut chars = line.chars().peekable();
+            while let Some(ch) = chars.next() {
+                match in_str {
+                    Some(quote) => {
+                        if ch == quote && prev != '\\' {
+                            in_str = None;
+                        }
+                    }
+                    None => {
+                        if ch == '/' && chars.peek() == Some(&'/') {
+                            break;
+                        }
+                        if hash_is_comment && ch == '#' {
+                            break;
+                        }
+                        match ch {
+                            '"' | '\'' | '`' => in_str = Some(ch),
+                            '(' | '[' | '{' => depth += 1,
+                            ')' | ']' | '}' => {
+                                depth -= 1;
+                                if depth < 0 {
+                                    return depth;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                prev = ch;
+            }
+        }
+        depth
+    }
+
+    fn multiline_python_fixture() -> String {
+        let filler: String = (0..12)
+            .map(|k| format!("    step_{k} = value * {k}\n"))
+            .collect();
+        format!(
+            "from mod import (\n    Alpha,\n    Beta,\n)\n\n\nWEIGHTS = {{\n    'a': 1,\n}}\n\n\ndef compute(\n    first: int,\n    second: str,\n) -> float:\n{filler}    return 0.0\n"
+        )
+    }
+
+    /// A skeleton stands in for the full fragment when the budget is tight, so
+    /// it has to be readable code.
+    ///
+    /// This gate exists because the defect was invisible from the inside: the
+    /// extractor looked reasonable and every unit test passed while 282 of 310
+    /// generated Python skeletons failed `ast.parse`. Only generating skeletons
+    /// and checking them showed it.
+    #[test]
+    fn python_skeletons_have_balanced_brackets() {
+        let src = multiline_python_fixture();
+        let skel = extract_skeleton(&src, "mod.py").expect("fixture should compress");
+        assert_eq!(
+            bracket_depth(&skel, true),
+            0,
+            "unbalanced Python skeleton:\n{skel}"
+        );
+    }
+
+    /// The same check for Rust, JavaScript and Go, which do NOT pass.
+    ///
+    /// Ignored deliberately, and not as a shortcut. Measured across this
+    /// repository's tracked sources, skeletons with balanced brackets:
+    ///
+    ///     rust        6 / 74   ( 8.1%)
+    ///     javascript 47 / 61   (77.0%)
+    ///     typescript  5 /  7   (71.4%)
+    ///     shell       6 /  6   (100%)
+    ///     ruby        1 /  1   (100%)
+    ///
+    /// The cause is the same one fixed for Python: each extractor pushes the
+    /// first line of a construct and moves on, so multi-line signatures,
+    /// attributes, collection literals and grouped imports lose their closing
+    /// bracket.
+    ///
+    /// Two repair attempts were measured and both made real files *worse*,
+    /// even though they made fixtures like this one pass:
+    ///
+    ///   * per-branch fixes for `fn`, `#![attr]` and `const` took rust from
+    ///     8.1% to 11.6%, then down to 10.1%;
+    ///   * a shared balanced-construct helper applied at every push site made
+    ///     this fixture pass but took real rust from 8.1% to 3.9%, and 23 of
+    ///     74 files stopped producing a skeleton at all because including the
+    ///     continuations pushed them past the 70% "not worth it" threshold.
+    ///
+    /// Both were reverted. Passing a fixture is not evidence; the next attempt
+    /// needs to be measured against real sources, and probably needs the size
+    /// threshold reconsidered at the same time, since a correct skeleton is
+    /// necessarily larger than a truncated one.
+    #[test]
+    #[ignore = "measured defect: rust/js/go skeletons are not bracket-balanced; \
+                two repair attempts measured worse on real files and were reverted"]
+    fn rust_js_go_skeletons_have_balanced_brackets() {
+        let filler: String = (0..12)
+            .map(|k| format!("    let step_{k} = value * {k};\n"))
+            .collect();
+        let cases: [(&str, &str, String); 3] = [
+            (
+                "rust",
+                "mod.rs",
+                format!("#![allow(\n    dead_code,\n)]\n\nconst NAMES: &[&str] = &[\n    \"a\",\n];\n\npub fn compute(\n    first: u32,\n) -> f64 {{\n{filler}    0.0\n}}\n"),
+            ),
+            (
+                "javascript",
+                "mod.js",
+                format!("export function compute(\n  first,\n  second,\n) {{\n{filler}  return 0;\n}}\n"),
+            ),
+            (
+                "go",
+                "mod.go",
+                format!("package main\n\nfunc Compute(\n    first int,\n) float64 {{\n{filler}    return 0\n}}\n"),
+            ),
+        ];
+
+        let mut bad = Vec::new();
+        for (lang, source, content) in cases {
+            if let Some(skel) = extract_skeleton(&content, source) {
+                let depth = bracket_depth(&skel, false);
+                if depth != 0 {
+                    bad.push(format!("{lang} (depth {depth}):\n{skel}"));
+                }
+            }
+        }
+        assert!(bad.is_empty(), "unbalanced skeletons:\n{}", bad.join("\n---\n"));
+    }
+
+    /// Brackets must balance and every header must have a body.
+    ///
+    /// The codec table advertises "syntax stays valid", and the knapsack serves
+    /// skeletons in place of full fragments when the budget is tight, so an
+    /// unparseable skeleton is code the model cannot read. Measured on this
+    /// repository's Python files: 28 of 310 skeletons parsed before these
+    /// fixes, 286 of 300 after. Each fixture is one of the shapes that failed.
+    fn assert_wellformed(skel: &str, label: &str) {
+        let mut depth = 0i32;
+        for (n, line) in skel.lines().enumerate() {
+            let mut in_str: Option<char> = None;
+            let mut prev = ' ';
+            for ch in line.chars() {
+                match in_str {
+                    Some(q) => {
+                        if ch == q && prev != '\\' {
+                            in_str = None;
+                        }
+                    }
+                    None => match ch {
+                        '#' => break,
+                        '\'' | '"' => in_str = Some(ch),
+                        '(' | '[' | '{' => depth += 1,
+                        ')' | ']' | '}' => depth -= 1,
+                        _ => {}
+                    },
+                }
+                prev = ch;
+            }
+            assert!(depth >= 0, "{label}: closed an unopened bracket at line {n}");
+        }
+        assert_eq!(depth, 0, "{label}: unbalanced brackets:\n{skel}");
+
+        let lines: Vec<&str> = skel.lines().collect();
+        for (n, line) in lines.iter().enumerate() {
+            let t = line.trim();
+            let is_header = t.starts_with("def ")
+                || t.starts_with("async def ")
+                || t.starts_with("class ");
+            if !is_header || !t.ends_with(':') {
+                continue;
+            }
+            let indent = leading_spaces(line);
+            let body = lines[n + 1..].iter().find(|l| !l.trim().is_empty());
+            assert!(
+                body.is_some_and(|b| leading_spaces(b) > indent),
+                "{label}: header without a body at line {n}: {t}"
+            );
+        }
+    }
+
+    #[test]
+    fn python_skeletons_are_wellformed_for_the_shapes_that_broke_them() {
+        let filler = "    step_0 = value * 0\n    step_1 = value * 1\n    step_2 = value * 2\n    step_3 = value * 3\n    step_4 = value * 4\n    step_5 = value * 5\n    step_6 = value * 6\n    step_7 = value * 7\n    step_8 = value * 8\n    step_9 = value * 9\n    step_10 = value * 10\n    step_11 = value * 11";
+        let cases: [(&str, String); 5] = [
+            (
+                "multi-line signature",
+                format!("import os\n\n\ndef compute(\n    first: int,\n    second: str,\n) -> float:\n    value = first\n{filler}\n    return float(value)\n"),
+            ),
+            (
+                "parenthesised import",
+                format!("from mod import (\n    Alpha,\n    Beta,\n)\n\n\ndef go(value: int) -> None:\n{filler}\n    return None\n"),
+            ),
+            (
+                "class with members elided",
+                format!("class Holder:\n    VALUE = 1\n\n    def run(self, value: int) -> int:\n{filler}\n        return value\n\n\nX = 3\n"),
+            ),
+            (
+                "top-level compound with a comparison",
+                format!("import sys\n\nif sys.version_info >= (3, 11):\n    from typing import Self\nelse:\n    Self = object\n\n\ndef use(value: int) -> None:\n{filler}\n    return None\n"),
+            ),
+            (
+                "multi-line collection literal",
+                format!("WEIGHTS = {{\n    'a': 1,\n    'b': 2,\n}}\n\n\ndef read(value: int) -> int:\n{filler}\n    return WEIGHTS['a']\n"),
+            ),
+        ];
+
+        for (label, src) in cases {
+            let skel = extract_skeleton(&src, "mod.py")
+                .unwrap_or_else(|| panic!("{label}: no skeleton produced"));
+            assert_wellformed(&skel, label);
+        }
+    }
+
     use super::*;
 
     #[test]

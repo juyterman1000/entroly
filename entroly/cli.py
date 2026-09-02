@@ -3887,6 +3887,14 @@ def cmd_doctor(args):
                     f"imported tree take no effect. Reinstall it "
                     f"(`pip install -e .`) or use `python -m entroly`.{C.RESET}"
                 )
+                # Counted, or the summary contradicts the line above it. This
+                # printed `!` and incremented nothing, so a machine where every
+                # command runs a different copy of Entroly than the one being
+                # edited still reported "8/8 checks passed" with no warning --
+                # the same false-green the split counters exist to prevent.
+                # This is the warning least able to afford being missed: it
+                # means the user's edits are not what is running.
+                checks_warned += 1
         except OSError:
             pass
 

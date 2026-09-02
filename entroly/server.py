@@ -2208,7 +2208,7 @@ def create_mcp_server(
     def scan_for_vulnerabilities(content: str, source: str = "unknown") -> str:
         """Scan code content for security vulnerabilities (SAST analysis).
 
-        Uses a 55-rule engine with taint-flow simulation and CVSS-inspired
+        Uses a 151-rule engine with taint-flow simulation and CVSS-inspired
         scoring. Detects hardcoded secrets, SQL injection, path traversal,
         command injection, insecure cryptography, unsafe deserialization,
         XSS, and authentication misconfigurations.

@@ -197,8 +197,25 @@ pub fn simhash_cosine_lcb(a: u64, b: u64, comparisons: usize, alpha: f64) -> f64
     let p_hat = hamming_distance(a, b) as f64 / SIMHASH_BITS;
     let k = comparisons.max(1) as f64;
     let z = normal_upper_quantile(alpha.clamp(1e-9, 0.5) / k);
-    let se = (p_hat * (1.0 - p_hat) / SIMHASH_BITS).sqrt();
-    let p_hi = (p_hat + z * se).min(1.0);
+    // Wilson score upper bound, not Wald.
+    //
+    // The Wald form `p_hat + z * sqrt(p(1-p)/n)` has zero width at p_hat = 0,
+    // so two fragments whose fingerprints matched exactly received a lower
+    // bound of exactly 1.000000 -- at every alpha and every comparison count.
+    // Observing zero disagreements in 64 bits does not establish p = 0: by the
+    // rule of three the true rate can be near 3/64, which is a similarity
+    // around 0.989. Claiming certainty is worst precisely where it matters,
+    // since a fingerprint match is when the index decides "duplicate" and drops
+    // a fragment.
+    //
+    // Wilson stays non-degenerate at both boundaries and needs no extra
+    // machinery: at p_hat = 0 it reduces to (z^2/n) / (1 + z^2/n) > 0.
+    let n = SIMHASH_BITS;
+    let z2 = z * z;
+    let denom = 1.0 + z2 / n;
+    let center = p_hat + z2 / (2.0 * n);
+    let margin = z * (p_hat * (1.0 - p_hat) / n + z2 / (4.0 * n * n)).sqrt();
+    let p_hi = ((center + margin) / denom).clamp(0.0, 1.0);
     (std::f64::consts::PI * p_hi).cos().clamp(0.0, 1.0)
 }
 
@@ -324,6 +341,55 @@ impl DedupIndex {
 
 #[cfg(test)]
 mod tests {
+    /// A lower confidence bound must not claim certainty it does not have.
+    ///
+    /// The Wald form has zero width at p_hat = 0, so two fragments whose
+    /// fingerprints matched exactly received a bound of exactly 1.000000 at
+    /// every alpha and every comparison count. Observing zero disagreements in
+    /// 64 bits does not establish p = 0 -- by the rule of three the true rate
+    /// can be near 3/64, a similarity around 0.989 -- and a fingerprint match
+    /// is precisely when the index decides "duplicate" and drops a fragment.
+    #[test]
+    fn the_bound_stays_uncertain_when_fingerprints_match_exactly() {
+        let a = simhash("a representative fragment body with several distinct words");
+        assert_eq!(hamming_distance(a, a), 0, "fixture must be an exact match");
+        assert_eq!(simhash_cosine(a, a), 1.0, "the point estimate is still 1");
+
+        let lcb = simhash_cosine_lcb(a, a, 1, 0.05);
+        assert!(
+            lcb < 1.0,
+            "a zero-width interval at p_hat = 0 asserts certainty: got {lcb}"
+        );
+        assert!(lcb > 0.9, "a single comparison should still be a tight bound: {lcb}");
+
+        // More comparisons must widen it, exactly as for any other distance.
+        let bounds: Vec<f64> = [1usize, 100, 10_000]
+            .iter()
+            .map(|&k| simhash_cosine_lcb(a, a, k, 0.05))
+            .collect();
+        for w in bounds.windows(2) {
+            assert!(w[1] < w[0], "the bound must widen with k, got {bounds:?}");
+        }
+
+        // A tighter alpha must also widen it.
+        assert!(
+            simhash_cosine_lcb(a, a, 1, 0.01) < simhash_cosine_lcb(a, a, 1, 0.05),
+            "a smaller alpha must give a more conservative bound"
+        );
+
+        // The invariant that must survive at the boundary too.
+        for k in [1usize, 64, 4096] {
+            for alpha in [0.05_f64, 0.01] {
+                let b = simhash_cosine_lcb(a, a, k, alpha);
+                assert!(
+                    (0.0..=simhash_cosine(a, a) + 1e-12).contains(&b),
+                    "bound {b} left [0, point] at k={k} alpha={alpha}"
+                );
+            }
+        }
+    }
+
+
     use super::*;
 
     #[test]
@@ -422,7 +488,18 @@ mod tests {
         // redundancy — that would trade a noisy penalty for an inert one.
         let text = realistic_fragment();
         let base = simhash(&text);
-        assert_eq!(simhash_cosine_lcb(base, base, 256, 0.05), 1.0);
+        // Not `== 1.0`. That asserted a zero-width confidence interval: the
+        // Wald form collapsed at p_hat = 0, so an exact fingerprint match
+        // claimed certainty at every alpha and every k. The bound is Wilson
+        // now, so an exact match reads ~0.87 at k=256 -- still far above any
+        // duplicate threshold, which is what this test actually exists to
+        // protect.
+        let exact = simhash_cosine_lcb(base, base, 256, 0.05);
+        assert!(
+            exact > 0.8,
+            "an exact fingerprint match must still read as a duplicate: {exact}"
+        );
+        assert!(exact < 1.0, "a lower bound must not claim certainty: {exact}");
 
         let near = simhash(&format!("// reviewed for correctness\n{text}"));
         let lcb = simhash_cosine_lcb(base, near, 256, 0.05);

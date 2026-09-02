@@ -111,9 +111,21 @@ def test_value_signal_uses_only_coarse_buckets():
         cost_evidence="not_available",
     )
 
-    body = telemetry._queue_path().read_text()
-    assert "12345" not in body
-    assert "3200" not in body
+    # Asserted against the parsed events, not a substring of the raw file.
+    #
+    # `"3200" not in body` scanned the whole queue, and every event carries a
+    # random 32-character hex `event_id` and `installation_id`. A four-digit
+    # run collides with those by chance, which is exactly how this failed in
+    # CI on one Python version while passing on the other four. The invariant
+    # is about what this event *reports*, so read the event.
+    raw_values = {12_345, 3_200, "12345", "3200"}
+    for item in _queue():
+        for key, value in item.get("properties", {}).items():
+            assert value not in raw_values, (
+                f"telemetry emitted the raw measurement {value!r} under {key!r}; "
+                "only coarse buckets may leave the machine"
+            )
+
     event = [
         item for item in _queue() if item["event_name"] == "optimization_outcome"
     ][0]

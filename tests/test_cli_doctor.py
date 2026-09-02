@@ -130,3 +130,26 @@ def test_doctor_passes_cleanly_when_nothing_is_wrong(
     assert "8/8 checks passed" in output
     assert "failed" not in output
     assert rc == 0
+
+
+def test_a_shadowed_installation_is_counted_as_a_warning(monkeypatch, capsys) -> None:
+    """The summary must not contradict the line above it.
+
+    `entroly` on PATH resolving to a different installation than the imported
+    package means every command runs code the user is not editing. Doctor
+    printed that warning and incremented nothing, so the run still ended
+    "8/8 checks passed" with no warning count -- the same false-green the split
+    counters exist to prevent, on the one warning least able to afford being
+    missed.
+    """
+    monkeypatch.setattr(
+        cli.shutil, "which", lambda _name: "/somewhere/else/bin/entroly"
+    )
+
+    cli.cmd_doctor(Namespace(port=9377, privacy=False))
+
+    output = capsys.readouterr().out
+    assert "different installation than the imported package" in output
+    assert "warning(s)" in output, (
+        "a printed warning that the summary does not count reads as all-clear"
+    )
