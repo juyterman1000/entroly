@@ -302,8 +302,26 @@ pub fn compute_lambda_star(
             .sum()
     };
 
-    // Fast path: all items fit at λ=0.
-    if expected_tokens(0.0) <= budget_f {
+    // Fast path: everything fits, so the constraint is not binding and its
+    // shadow price is zero.
+    //
+    // This tested `expected_tokens(0.0) <= budget_f`, the same
+    // probability-weighted count that let `soft_bisection_select` return an
+    // over-budget selection. Here the consequence is different but not
+    // cosmetic: λ* is stored as `last_lambda_star` and reused by the REINFORCE
+    // backward pass, which recomputes p_i = σ((s_i − λ*·tokens_i)/τ) and
+    // depends on it matching the forward pass for the advantage to be
+    // unbiased. Reporting λ* = 0 while candidates were actually dropped makes
+    // every p_i ≈ 1 and biases the gradient.
+    //
+    // Measured: fragments costing 1 + 1 + 50 against a target of 50 returned
+    // λ* = 0 -- "not binding" -- while the selector dropped 50 of the 52
+    // tokens. Feasibility is a property of the real token counts.
+    let actual_tokens: u64 = scored
+        .iter()
+        .map(|&(idx, _)| fragments[idx].token_count as u64)
+        .sum();
+    if actual_tokens <= budget_target as u64 {
         return 0.0;
     }
 
@@ -656,6 +674,50 @@ fn pinned_relevance(
 
 #[cfg(test)]
 mod tests {
+    /// λ* is the shadow price of the budget constraint, and the REINFORCE
+    /// backward pass reuses it.
+    ///
+    /// `compute_lambda_star` returned 0 -- "not binding" -- whenever the
+    /// probability-weighted token count fit, even when the real one did not.
+    /// The backward pass recomputes p_i = σ((s_i − λ*·tokens_i)/τ) from this
+    /// value and depends on it matching the forward pass for the advantage
+    /// `(action − p_exact) · R` to be unbiased. λ* = 0 makes every p_i ≈ 1.
+    #[test]
+    fn lambda_star_is_zero_only_when_everything_actually_fits() {
+        let weights = ScoringWeights::default();
+        let mk = |id: &str, tokens: u32, score: f64| {
+            let mut f = ContextFragment::new(id.into(), "c".into(), tokens, "".into());
+            f.recency_score = score;
+            f.frequency_score = score;
+            f.semantic_score = score;
+            f.entropy_score = score;
+            f
+        };
+        let items = vec![mk("a", 1, 0.9), mk("b", 1, 0.5), mk("c", 50, 0.7)];
+        let scored: Vec<(usize, f64)> = items
+            .iter()
+            .enumerate()
+            .map(|(i, f)| (i, linear_score(f, &weights, 1.0)))
+            .collect();
+        let total: u32 = items.iter().map(|f| f.token_count).sum();
+        assert_eq!(total, 52, "fixture must not fit in the binding case");
+
+        // Binding: 52 tokens of candidates against a 50 target.
+        let binding = compute_lambda_star(&scored, &items, 50, 0.5);
+        assert!(
+            binding > 0.0,
+            "the budget binds -- 52 tokens against 50 -- so the shadow price              cannot be zero, got {binding}"
+        );
+
+        // Not binding: a target that fits every candidate.
+        let slackful = compute_lambda_star(&scored, &items, total, 0.5);
+        assert_eq!(
+            slackful, 0.0,
+            "when every candidate fits, the constraint is not binding"
+        );
+    }
+
+
 
     /// Feasibility is a property of the real token counts, not of the soft
     /// relaxation used to price them.
