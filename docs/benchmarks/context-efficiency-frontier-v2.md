@@ -39,6 +39,8 @@ Every task-replicate contains the same condition matrix:
 | Condition | Behavior |
 |---|---|
 | `raw` | Complete, unmodified task context; required baseline. |
+| `algorithmic_baseline` | Frozen deterministic baseline, with its implementation and configuration digest bound into the manifest. |
+| `external_baseline` | Frozen third-party output manifest, including source version and exact per-task context hashes. |
 | `native_compaction` | Only documented model or agent compaction. |
 | `entroly` | Entroly context selection with native compaction disabled when controllable. |
 | `combined` | Entroly plus documented native compaction. |
@@ -51,9 +53,44 @@ scorer dependency digest, and pricing configuration. Entroly and combined
 trials also require the exact
 `ctx_...` Context Commit ID.
 
+Every run also binds the loaded Entroly package version, Git revision and dirty
+status digest, a digest of the Python package source tree, hashes of the
+benchmark runner and analyzer, and the installed native distribution and binary
+digest when present. A source change or pure-Python/native runtime change thus
+creates a different pair identity instead of silently pooling incompatible
+observations. Publishable runs must use a clean frozen revision; dirty identities
+are permitted only for calibration and development.
+
 Condition order is randomized within each task. Task sampling is fixed before
 calls begin. A `shortest-context` subset is calibration-only and must be labeled
 `SMOKE ONLY`; it cannot support a public product claim.
+
+Frozen competitor outputs use
+[`context_efficiency_baseline.schema.json`](../../benchmarks/context_efficiency_baseline.schema.json).
+The runner verifies exact task coverage, original-context hashes, selected-text
+hashes, baseline identity, configuration, version, and a canonical digest of
+the complete manifest before making a provider call. This permits official
+third-party tools to run in their own locked environment without making them an
+Entroly runtime dependency. Any manifest change creates a different experiment
+identity and cannot be resumed into an older trial file.
+
+The built-in head-tail generator is a transparent algorithmic calibration
+control, not a competitive baseline:
+
+```bash
+python -m benchmarks.context_efficiency_baseline \
+  --samples 20 --selection random --budget 2000 \
+  --output runs/head-tail.json
+
+python -m benchmarks.context_efficiency_openai \
+  --samples 20 --selection random --budget 2000 \
+  --frozen-baseline-manifest runs/head-tail.json \
+  --output runs/trials.jsonl
+```
+
+A serious public comparison must additionally generate a manifest from a
+version-pinned external compressor such as LLMLingua-2 or LongLLMLingua and
+publish its model revision, package lock, configuration, and output hashes.
 
 ## Outcomes and estimands
 

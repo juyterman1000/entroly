@@ -24,7 +24,14 @@ FAMILYWISE_ALPHA = 0.05
 MAX_REGRESSION_RATE = 0.05
 MINIMUM_CONTEXT_WIN_RATE = 0.5
 PRIMARY_RISK_GATES = 4
-CONDITIONS = ("raw", "native_compaction", "entroly", "combined")
+CONDITIONS = (
+    "raw",
+    "algorithmic_baseline",
+    "external_baseline",
+    "native_compaction",
+    "entroly",
+    "combined",
+)
 USAGE_SOURCES = (
     "provider_response",
     "provider_log",
@@ -610,9 +617,18 @@ def analyze_frontier(
         )
         has_enough_pairs = len(paired_rows) >= minimum_claim_pairs
         usage_complete = len(usage_pairs) == len(paired_rows)
+        dirty_entroly_runtime = any(
+            json.loads(candidate.experiment_config)
+            .get("entroly_runtime", {})
+            .get("entroly_git_dirty")
+            is True
+            for _, candidate in paired_rows
+        )
         blockers: list[str] = []
         if not has_enough_pairs:
             blockers.append("below_minimum_pair_count")
+        if dirty_entroly_runtime:
+            blockers.append("dirty_entroly_runtime")
         if not usage_complete:
             blockers.append("incomplete_usage_observation")
         if has_enough_pairs and not exact_risk_bounds_pass:
@@ -621,6 +637,8 @@ def analyze_frontier(
             blockers.append("paired_effect_bounds_not_met")
         if not has_enough_pairs:
             claim_status = "insufficient_data"
+        elif dirty_entroly_runtime:
+            claim_status = "non_publishable_runtime"
         elif not usage_complete:
             claim_status = "measurement_incomplete"
         elif not exact_risk_bounds_pass:
@@ -731,6 +749,7 @@ def analyze_frontier(
             "Runs below the minimum pair count are smoke tests and cannot produce a public PASS claim.",
             "Percentile-bootstrap effect intervals are descriptive; PASS additionally requires finite-sample exact binomial risk bounds.",
             "Missing provider usage blocks an efficiency claim instead of being interpreted as zero tokens.",
+            "A dirty Entroly Git worktree is calibration-only and blocks a public PASS claim.",
         ],
     }
 

@@ -83,6 +83,29 @@ def test_frontier_reports_paired_quality_preserving_win():
     assert report["provenance"]["usage_sources"] == ["deterministic_fixture"]
 
 
+def test_dirty_entroly_runtime_blocks_a_public_pass():
+    dirty_config = json.dumps(
+        {"entroly_runtime": {"entroly_git_dirty": True}},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    trials = [
+        Trial.from_dict(
+            _record(task, condition, experiment_config=dirty_config)
+        )
+        for task in range(100)
+        for condition in ("raw", "entroly")
+    ]
+
+    report = analyze_frontier(trials, bootstrap_samples=20, seed=7)
+    comparison = report["comparisons_to_raw"]["entroly"]
+
+    assert comparison["claim_status"] == "non_publishable_runtime"
+    assert comparison["quality_preserving_context_win"] is False
+    assert "dirty_entroly_runtime" in comparison["claim_blockers"]
+    assert "NON-PUBLISHABLE RUNTIME" in render_markdown(report)
+
+
 def test_frontier_refuses_to_call_context_savings_a_quality_win():
     trials = [
         Trial.from_dict(_record(task, "raw"))

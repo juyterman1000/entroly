@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.metadata
 import json
 import os
 import random
 import re
 import string
+import subprocess
 import time
 from collections import Counter
 from dataclasses import dataclass
@@ -84,6 +86,25 @@ class ProviderConfig:
     output_usd_per_million: float
 
 
+@dataclass(frozen=True)
+class FrozenBaseline:
+    condition: str
+    name: str
+    version: str
+    source: str
+    manifest_sha256: str
+    contexts: dict[str, str]
+
+    def experiment_identity(self) -> dict[str, str]:
+        return {
+            "condition": self.condition,
+            "manifest_sha256": self.manifest_sha256,
+            "name": self.name,
+            "source": self.source,
+            "version": self.version,
+        }
+
+
 OPENAI_PROVIDER = ProviderConfig(
     name="openai",
     cost_source="pricing_snapshot",
@@ -99,6 +120,173 @@ def _stable_digest(payload: object) -> str:
         payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _file_digest(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _source_tree_digest(root: Path) -> str:
+    entries = []
+    for path in sorted(root.rglob("*")):
+        if not path.is_file() or "__pycache__" in path.parts or path.suffix == ".pyc":
+            continue
+        entries.append(
+            {
+                "path": path.relative_to(root).as_posix(),
+                "sha256": _file_digest(path),
+            }
+        )
+    return _stable_digest(entries)
+
+
+def _git_value(root: Path, *arguments: str) -> str | None:
+    result = subprocess.run(
+        ["git", "-C", str(root), *arguments],
+        capture_output=True,
+        check=False,
+        text=True,
+        timeout=10,
+    )
+    value = result.stdout.strip()
+    return value if result.returncode == 0 and value else None
+
+
+def entroly_runtime_identity() -> dict[str, Any]:
+    """Bind every trial to the source and native implementation actually loaded."""
+    import entroly
+
+    package_root = Path(entroly.__file__).resolve().parent
+    repository_root_text = _git_value(package_root, "rev-parse", "--show-toplevel")
+    repository_root = Path(repository_root_text) if repository_root_text else None
+    git_status = (
+        _git_value(repository_root, "status", "--porcelain=v1", "--untracked-files=all")
+        if repository_root
+        else None
+    )
+    native_version: str | None
+    native_artifacts_sha256: str | None = None
+    try:
+        native_version = importlib.metadata.version("entroly-core")
+        import entroly_core
+
+        native_module = Path(entroly_core.__file__).resolve()
+        native_root = native_module.parent
+        native_artifacts = sorted(
+            path
+            for path in native_root.rglob("*")
+            if path.is_file() and path.suffix in {".dylib", ".pyd", ".so"}
+        )
+        if native_module.suffix in {".dylib", ".pyd", ".so"}:
+            native_artifacts = sorted(set(native_artifacts) | {native_module})
+        if native_artifacts:
+            native_artifacts_sha256 = _stable_digest(
+                [
+                    {
+                        "path": path.relative_to(native_root).as_posix(),
+                        "sha256": _file_digest(path),
+                    }
+                    for path in native_artifacts
+                ]
+            )
+    except (ImportError, importlib.metadata.PackageNotFoundError):
+        native_version = None
+
+    return {
+        "benchmark_frontier_sha256": _file_digest(
+            Path(__file__).with_name("context_efficiency_frontier.py")
+        ),
+        "benchmark_runner_sha256": _file_digest(Path(__file__)),
+        "entroly_git_dirty": bool(git_status),
+        "entroly_git_revision": (
+            _git_value(repository_root, "rev-parse", "HEAD")
+            if repository_root
+            else None
+        ),
+        "entroly_git_status_sha256": (
+            hashlib.sha256(git_status.encode("utf-8")).hexdigest()
+            if git_status
+            else None
+        ),
+        "entroly_package_version": getattr(entroly, "__version__", None),
+        "entroly_python_source_sha256": _source_tree_digest(package_root),
+        "native_artifacts_sha256": native_artifacts_sha256,
+        "native_distribution_version": native_version,
+    }
+
+
+def _manifest_text(payload: dict[str, Any], name: str) -> str:
+    value = payload.get(name)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"baseline manifest {name} must be a non-empty string")
+    return value.strip()
+
+
+def load_frozen_baseline(
+    path: Path, items: Iterable[WorkloadItem]
+) -> FrozenBaseline:
+    """Validate exact precomputed contexts from an algorithmic or external baseline."""
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(f"cannot load baseline manifest {path}: {error}") from error
+    if not isinstance(payload, dict):
+        raise ValueError("baseline manifest must be a JSON object")
+    if payload.get("schema_version") != "entroly.context-efficiency-baseline.v1":
+        raise ValueError("unsupported baseline manifest schema_version")
+    condition = _manifest_text(payload, "condition")
+    if condition not in {"algorithmic_baseline", "external_baseline"}:
+        raise ValueError(
+            "baseline manifest condition must be algorithmic_baseline or "
+            "external_baseline"
+        )
+    baseline = payload.get("baseline")
+    if not isinstance(baseline, dict):
+        raise ValueError("baseline manifest baseline must be an object")
+    name = _manifest_text(baseline, "name")
+    version = _manifest_text(baseline, "version")
+    source = _manifest_text(baseline, "source")
+    config = baseline.get("config")
+    if not isinstance(config, dict) or not config:
+        raise ValueError("baseline manifest config must be a non-empty object")
+    rows = payload.get("tasks")
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("baseline manifest tasks must be a non-empty array")
+
+    materialized = list(items)
+    expected = {item.task_id: item for item in materialized}
+    contexts: dict[str, str] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            raise ValueError("each baseline task must be an object")
+        task_id = _manifest_text(row, "task_id")
+        if task_id in contexts:
+            raise ValueError(f"duplicate baseline task {task_id!r}")
+        item = expected.get(task_id)
+        if item is None:
+            raise ValueError(f"unexpected baseline task {task_id!r}")
+        source_digest = _manifest_text(row, "source_context_sha256")
+        if source_digest != hashlib.sha256(item.context.encode("utf-8")).hexdigest():
+            raise ValueError(f"baseline source digest mismatch for {task_id!r}")
+        selected = row.get("selected_context")
+        if not isinstance(selected, str) or not selected.strip():
+            raise ValueError(f"baseline selected context is empty for {task_id!r}")
+        selected_digest = _manifest_text(row, "selected_context_sha256")
+        if selected_digest != hashlib.sha256(selected.encode("utf-8")).hexdigest():
+            raise ValueError(f"baseline selected digest mismatch for {task_id!r}")
+        contexts[task_id] = selected
+
+    missing = sorted(set(expected).difference(contexts))
+    if missing:
+        raise ValueError("baseline manifest is missing tasks: " + ", ".join(missing))
+    return FrozenBaseline(
+        condition=condition,
+        name=name,
+        version=version,
+        source=source,
+        manifest_sha256=_stable_digest(payload),
+        contexts=contexts,
+    )
 
 
 def prepare_longbench_items(rows: Iterable[dict[str, Any]]) -> list[WorkloadItem]:
@@ -428,6 +616,7 @@ def run_trials(
     max_output_tokens: int = 64,
     reasoning_effort: str | None = None,
     selection_policy: str = "preselected",
+    frozen_baseline: FrozenBaseline | None = None,
 ) -> list[Trial]:
     if token_budget < 1:
         raise ValueError("token_budget must be positive")
@@ -450,6 +639,7 @@ def run_trials(
             "cost_source": provider.cost_source,
             "cost_source_reference": provider.cost_source_reference,
             "input_usd_per_million": provider.input_usd_per_million,
+            "entroly_runtime": entroly_runtime_identity(),
             "longbench_metrics_sha256": LONG_BENCH_METRICS_SHA256,
             "longbench_revision": LONG_BENCH_REVISION,
             "max_output_tokens": max_output_tokens,
@@ -463,6 +653,9 @@ def run_trials(
             ).hexdigest(),
             "temperature": 0,
             "token_budget": token_budget,
+            "frozen_baseline": (
+                frozen_baseline.experiment_identity() if frozen_baseline else None
+            ),
         },
         sort_keys=True,
         separators=(",", ":"),
@@ -486,6 +679,8 @@ def run_trials(
     rng = random.Random(seed)
     for index, item in enumerate(items, 1):
         conditions = ["raw", "entroly"]
+        if frozen_baseline is not None:
+            conditions.append(frozen_baseline.condition)
         rng.shuffle(conditions)
         for condition in conditions:
             if (item.task_id, condition) in completed:
@@ -513,6 +708,8 @@ def run_trials(
                         json.dumps(commit, indent=2, sort_keys=True) + "\n",
                         encoding="utf-8",
                     )
+                elif frozen_baseline is not None and condition == frozen_baseline.condition:
+                    selected_context = frozen_baseline.contexts[item.task_id]
                 provider_started = time.perf_counter()
                 observation = call_openai(
                     client,
@@ -608,6 +805,11 @@ def main() -> int:
     parser.add_argument("--output-usd-per-million", type=float)
     parser.add_argument("--max-output-tokens", type=int, default=64)
     parser.add_argument(
+        "--frozen-baseline-manifest",
+        type=Path,
+        help="Validated JSON manifest of exact algorithmic or external baseline contexts.",
+    )
+    parser.add_argument(
         "--reasoning-effort",
         choices=("none", "minimal", "low", "medium", "high"),
     )
@@ -654,6 +856,11 @@ def main() -> int:
         provider = OPENAI_PROVIDER
 
     items = _load_longbench(args.samples, args.selection)
+    frozen_baseline = (
+        load_frozen_baseline(args.frozen_baseline_manifest, items)
+        if args.frozen_baseline_manifest
+        else None
+    )
     trials = run_trials(
         items=items,
         client=client,
@@ -666,6 +873,7 @@ def main() -> int:
         max_output_tokens=args.max_output_tokens,
         reasoning_effort=args.reasoning_effort,
         selection_policy=args.selection,
+        frozen_baseline=frozen_baseline,
     )
     report = analyze_frontier(trials)
     report_path = args.output.with_suffix(".report.json")
