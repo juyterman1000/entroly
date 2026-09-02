@@ -2421,6 +2421,43 @@ fn confidence_for_context(source: &str, line: &str, rule: &SastRule) -> f64 {
     conf.max(0.05)
 }
 
+/// Whether `pattern` occurs in `line` as its own token rather than as the tail
+/// of a longer identifier.
+///
+/// Rule patterns are plain substrings, so `open(` matched inside `urlopen(`.
+/// Combined with PATH-001's `requires: "request"` -- satisfied by the module
+/// name in `urllib.request.urlopen(...)` -- that reported three HTTP calls in
+/// this repository as High-severity path traversal, plus a fourth on
+/// `opener.open(request, ...)`.
+///
+/// Only patterns that begin with a letter are boundary-checked; `../` and `%s`
+/// have no identifier boundary to respect. A leading `.` or `(` still matches,
+/// so `Path(p).open(` and `(open(` keep working.
+fn matches_as_token(line: &str, pattern: &str) -> bool {
+    let first = match pattern.chars().next() {
+        Some(c) => c,
+        None => return false,
+    };
+    if !first.is_ascii_alphabetic() {
+        return line.contains(pattern);
+    }
+    let bytes = line.as_bytes();
+    let mut from = 0usize;
+    while let Some(rel) = line[from..].find(pattern) {
+        let at = from + rel;
+        let preceded_by_identifier = at > 0
+            && (bytes[at - 1].is_ascii_alphanumeric() || bytes[at - 1] == b'_');
+        if !preceded_by_identifier {
+            return true;
+        }
+        from = at + 1;
+        if from >= line.len() {
+            break;
+        }
+    }
+    false
+}
+
 /// Whether a SQL call on this line binds its parameters rather than building
 /// the query from them.
 ///
@@ -2588,8 +2625,9 @@ pub fn scan_content(content: &str, source: &str) -> SastReport {
                 continue;
             }
 
-            // Pattern match (case-insensitive)
-            if !line_lower.contains(rule.pattern) {
+            // Pattern match (case-insensitive), on token boundaries so a
+            // pattern like `open(` does not match inside `urlopen(`.
+            if !matches_as_token(&line_lower, rule.pattern) {
                 continue;
             }
 
@@ -2728,6 +2766,30 @@ pub fn scan_content(content: &str, source: &str) -> SastReport {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_pattern_does_not_match_the_tail_of_a_longer_identifier() {
+        // `open(` matched inside `urlopen(`, and PATH-001's
+        // `requires: "request"` was satisfied by the module name in
+        // `urllib.request.urlopen(...)`. That reported three HTTP calls in this
+        // repository as High-severity path traversal.
+        assert!(!matches_as_token("with urllib.request.urlopen(req) as r:", "open("));
+        assert!(!matches_as_token("myexec(cmd)", "exec("));
+
+        // A real call still matches, including as an attribute or after a paren.
+        assert!(matches_as_token("f = open(path)", "open("));
+        assert!(matches_as_token("with Path(p).open() as f:", "open("));
+        assert!(matches_as_token("(open(path))", "open("));
+        assert!(matches_as_token("open(path)", "open("));
+    }
+
+    #[test]
+    fn non_identifier_patterns_are_unaffected_by_the_boundary_rule() {
+        // `../` and `%s` have no identifier boundary to respect; requiring one
+        // would silently disable every rule that matches punctuation.
+        assert!(matches_as_token("path = base + \"../etc/passwd\"", "../"));
+        assert!(matches_as_token("q = \"select %s\" % name", "%s"));
+    }
+
     #[test]
     fn bound_parameters_are_not_reported_as_injection() {
         // SQL-006 matches `execute(` and fires when a tainted variable is on
