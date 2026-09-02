@@ -174,6 +174,62 @@ pub fn semantic_deduplicate_with_stats(
 
 #[cfg(test)]
 mod tests {
+    fn dd_lcg(state: &mut u64) -> u64 {
+        *state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        *state >> 33
+    }
+
+    /// A filter's invariants, asserted over randomised inputs.
+    ///
+    /// This is a threshold filter, not an optimiser, so no approximation ratio
+    /// is claimed or asserted. What must hold:
+    ///
+    ///   1. output is a subset of input with no repeated indices -- a
+    ///      deduplicator that invents or repeats indices corrupts everything
+    ///      downstream;
+    ///   2. the highest-relevance candidate is always kept, which the module
+    ///      docstring states as step 1 of the algorithm;
+    ///   3. idempotence -- re-filtering an already-filtered set changes
+    ///      nothing, because every survivor was already distinct enough to
+    ///      keep. A filter that kept dropping on each pass would make
+    ///      selection depend on how many times it happened to run.
+    #[test]
+    fn dedup_is_a_subset_keeps_the_top_candidate_and_is_idempotent() {
+        let mut seed = 0xDEDD_1234_5678_9ABC_u64;
+        for case in 0..40 {
+            let n = 3 + (dd_lcg(&mut seed) % 12) as usize;
+            let fragments: Vec<ContextFragment> = (0..n)
+                .map(|k| {
+                    let content = match dd_lcg(&mut seed) % 3 {
+                        0 => "def handler(request): return process(request)".to_string(),
+                        1 => format!("def handler{k}(request): return process(request)"),
+                        _ => format!("class Widget{k}: pass  # unrelated body {k}"),
+                    };
+                    make_frag(&format!("f{k}"), &content, 50)
+                })
+                .collect();
+            let order: Vec<usize> = (0..n).collect();
+
+            let kept = semantic_deduplicate(&fragments, &order, None);
+
+            assert!(!kept.is_empty(), "case {case}: a non-empty input produced nothing");
+            assert_eq!(kept[0], order[0], "case {case}: the top candidate was dropped");
+
+            let mut sorted = kept.clone();
+            sorted.sort_unstable();
+            let before = sorted.len();
+            sorted.dedup();
+            assert_eq!(sorted.len(), before, "case {case}: an index was repeated");
+            assert!(kept.iter().all(|i| *i < n), "case {case}: index outside input");
+
+            let again = semantic_deduplicate(&fragments, &kept, None);
+            assert_eq!(
+                again, kept,
+                "case {case}: re-filtering a filtered set changed it, so the                  result depends on how many times the filter ran"
+            );
+        }
+    }
+
     use super::*;
     use crate::fragment::ContextFragment;
 

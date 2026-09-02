@@ -1224,6 +1224,56 @@ fn is_keyword(word: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    /// `auto_link` accumulates; correctness depends on fragment ids being
+    /// unique per ingest.
+    ///
+    /// It appends edges without clearing prior ones, so calling it twice for
+    /// the same fragment id doubles that fragment's edges: measured 2 -> 4 -> 6
+    /// over three calls. `compute_dep_boosts` sums `dep.strength` across
+    /// outgoing edges, so a re-linked fragment would push its targets above
+    /// equally-related ones after normalisation.
+    ///
+    /// This is not reachable today: `EntrolyEngine::ingest` mints
+    /// `f{instance:08x}_{counter:06x}` from a monotonic counter, so no id is
+    /// ever linked twice. That is the property this test guards. Making
+    /// fragment ids content-addressed -- a natural optimisation, since it would
+    /// let re-ingesting an unchanged file be a no-op -- would silently
+    /// duplicate every edge and distort selection. `rebuild` is unaffected; it
+    /// resets with `*self = Self::new()` first.
+    #[test]
+    fn auto_link_is_additive_so_ids_must_not_repeat() {
+        let mut g = DepGraph::new();
+        g.register_definitions_for_fragment("lib", "def helper():
+    pass
+");
+        let caller = "from lib import helper
+helper()
+";
+
+        g.auto_link("caller", caller);
+        let once = g.edge_count();
+        assert!(once > 0, "the fixture must produce at least one edge");
+
+        g.auto_link("caller", caller);
+        assert_eq!(
+            g.edge_count(),
+            once * 2,
+            "auto_link is additive by design; if this stops doubling the              comment above is stale, but if fragment ids ever become stable              this doubling is a live selection bug"
+        );
+
+        let snapshot = vec![
+            ("lib".to_string(), "def helper():
+    pass
+".to_string()),
+            ("caller".to_string(), caller.to_string()),
+        ];
+        let mut r = DepGraph::new();
+        r.rebuild(&snapshot);
+        let first = r.edge_count();
+        r.rebuild(&snapshot);
+        assert_eq!(r.edge_count(), first, "rebuild must be idempotent");
+    }
+
     #[test]
     fn definitions_stop_at_generic_and_lifetime_parameters() {
         // `fn pick<'a>(` produced the definition `pick<'a>`. The reference scan
