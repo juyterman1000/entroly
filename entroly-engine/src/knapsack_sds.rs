@@ -856,7 +856,18 @@ mod tests {
 
         // A real fingerprint of 0 is reachable, so the guard cannot be
         // "simhash == 0"; it must be the explicit absence of a fingerprint.
-        assert_eq!(diversity_factor(Some(0), &[0]), 0.0);
+        //
+        // Asserted as "essentially no diversity credit" rather than exactly
+        // 0.0: that exact value depended on `simhash_cosine_lcb` returning
+        // exactly 1.0 for an exact match, which was a zero-width confidence
+        // interval. The bound is Wilson now, so an exact match leaves a hair
+        // of diversity (~0.008). What this test is about is that `Some(0)` is
+        // compared at all, unlike `None` above.
+        let identical = diversity_factor(Some(0), &[0]);
+        assert!(
+            identical < 0.05,
+            "an exact fingerprint match must earn essentially no diversity: {identical}"
+        );
 
         // End to end: a budget that fits every stub must select every stub.
         let frags: Vec<ContextFragment> = (0..6)
