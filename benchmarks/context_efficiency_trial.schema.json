@@ -128,6 +128,8 @@
     "condition": {
       "enum": [
         "raw",
+        "algorithmic_baseline",
+        "external_baseline",
         "native_compaction",
         "entroly",
         "combined"

@@ -100,6 +100,7 @@ def render_markdown(report: dict[str, Any]) -> str:
                     "no_claim": "NO CLAIM",
                     "insufficient_data": "SMOKE ONLY",
                     "measurement_incomplete": "MEASUREMENT INCOMPLETE",
+                    "non_publishable_runtime": "NON-PUBLISHABLE RUNTIME",
                     "insufficient_precision": "INSUFFICIENT PRECISION",
                 }[comparison["claim_status"]],
             )

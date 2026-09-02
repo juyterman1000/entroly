@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from jsonschema import Draft202012Validator
 
+from benchmarks.context_efficiency_baseline import build_head_tail_manifest
 from benchmarks.context_efficiency_frontier import analyze_frontier, load_trials
 from benchmarks.context_efficiency_openai import (
     DEFAULT_MODEL,
@@ -13,6 +16,7 @@ from benchmarks.context_efficiency_openai import (
     ProviderConfig,
     WorkloadItem,
     call_openai,
+    load_frozen_baseline,
     normalize_answer,
     qa_f1_score,
     run_trials,
@@ -144,7 +148,13 @@ def test_run_trials_writes_complete_auditable_matrix(tmp_path):
     assert entroly.cost_observed is True
     assert entroly.task_success is True
     assert entroly.scorer == SCORER
-    assert '"selection_policy":"preselected"' in entroly.experiment_config
+    experiment = json.loads(entroly.experiment_config)
+    assert experiment["selection_policy"] == "preselected"
+    runtime = experiment["entroly_runtime"]
+    assert runtime["entroly_package_version"]
+    assert len(runtime["entroly_python_source_sha256"]) == 64
+    assert len(runtime["benchmark_runner_sha256"]) == 64
+    assert runtime["entroly_git_revision"]
     assert "2026-07-11" in entroly.cost_source_reference
     assert "input-0.15" in entroly.cost_source_reference
     assert list(output.parent.glob("trials_context_commits/*.json"))
@@ -251,3 +261,80 @@ def test_self_hosted_provider_records_zero_api_fee_without_claiming_zero_compute
     assert {trial.provider for trial in trials} == {"ollama"}
     assert {trial.cost_source for trial in trials} == {"self_hosted_no_api_fee"}
     assert all(trial.billed_cost_usd == 0.0 for trial in trials)
+
+
+def test_frozen_algorithmic_baseline_joins_the_same_paired_matrix(tmp_path):
+    tiktoken = pytest.importorskip("tiktoken")
+
+    item = _item()
+    manifest = build_head_tail_manifest(
+        items=[item],
+        token_budget=120,
+        encoding=tiktoken.get_encoding("o200k_base"),
+        implementation_sha256="a" * 64,
+    )
+    baseline_schema = json.loads(
+        (
+            Path(__file__).resolve().parents[1]
+            / "benchmarks/context_efficiency_baseline.schema.json"
+        ).read_text(encoding="utf-8")
+    )
+    Draft202012Validator.check_schema(baseline_schema)
+    Draft202012Validator(baseline_schema).validate(manifest)
+    assert (
+        len(
+            tiktoken.get_encoding("o200k_base").encode(
+                manifest["tasks"][0]["selected_context"]
+            )
+        )
+        <= 120
+    )
+    manifest_path = tmp_path / "baseline.json"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    baseline = load_frozen_baseline(manifest_path, [item])
+    output = tmp_path / "trials.jsonl"
+    client = _client(
+        [
+            _response("ORCHID-17", "request-one", 900),
+            _response("ORCHID-17", "request-two", 500),
+            _response("ORCHID-17", "request-three", 150),
+        ]
+    )
+
+    trials = run_trials(
+        items=[item],
+        client=client,
+        output=output,
+        token_budget=120,
+        frozen_baseline=baseline,
+    )
+    report = analyze_frontier(trials, bootstrap_samples=20)
+
+    assert {trial.condition for trial in trials} == {
+        "raw",
+        "entroly",
+        "algorithmic_baseline",
+    }
+    assert set(report["comparisons_to_raw"]) == {
+        "algorithmic_baseline",
+        "entroly",
+    }
+    assert baseline.manifest_sha256 in trials[0].experiment_config
+
+
+def test_frozen_baseline_rejects_source_or_output_tampering(tmp_path):
+    tiktoken = pytest.importorskip("tiktoken")
+
+    item = _item()
+    manifest = build_head_tail_manifest(
+        items=[item],
+        token_budget=120,
+        encoding=tiktoken.get_encoding("o200k_base"),
+        implementation_sha256="a" * 64,
+    )
+    manifest["tasks"][0]["selected_context"] += " tampered"
+    path = tmp_path / "tampered.json"
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="selected digest mismatch"):
+        load_frozen_baseline(path, [item])
