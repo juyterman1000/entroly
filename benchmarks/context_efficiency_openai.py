@@ -11,7 +11,10 @@ import hashlib
 import json
 import os
 import random
+import re
+import string
 import time
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -29,6 +32,15 @@ from entroly.context_commit import create_context_commit, replay_context
 DEFAULT_MODEL = "gpt-4o-mini-2024-07-18"
 DEFAULT_BUDGET = 2_000
 DEFAULT_SEED = 42
+SELECTIONS = ("random", "shortest-context")
+LONG_BENCH_REVISION = "2e00731f8d0bff23dc4325161044d0ed8af94c1e"
+LONG_BENCH_METRICS_SHA256 = (
+    "587b87e8ea520f6093ebd061a7a99b0fb53ade84356ba16e95c518b28fe23d85"
+)
+SCORER = (
+    "longbench-v1-hotpotqa-official-qa-f1@"
+    f"{LONG_BENCH_REVISION}:metrics-sha256:{LONG_BENCH_METRICS_SHA256}"
+)
 PRICING_REFERENCE = (
     "openai:gpt-4o-mini:2026-07-11:usd-per-1m="
     "input-0.15,cached-input-0.075,output-0.60;"
@@ -117,12 +129,22 @@ def prepare_longbench_items(rows: Iterable[dict[str, Any]]) -> list[WorkloadItem
     return items
 
 
-def workload_version(items: Iterable[WorkloadItem]) -> str:
+def workload_version(
+    items: Iterable[WorkloadItem], *, selection_policy: str
+) -> str:
     manifest = [
-        {"task_id": item.task_id, "question": item.question, "answers": item.answers}
+        {
+            "task_id": item.task_id,
+            "context_sha256": hashlib.sha256(item.context.encode("utf-8")).hexdigest(),
+            "question": item.question,
+            "answers": item.answers,
+        }
         for item in items
     ]
-    return "longbench-hotpotqa-test-seed42-" + _stable_digest(manifest)[:16]
+    return (
+        f"longbench-v1-hotpotqa:{LONG_BENCH_REVISION}:{selection_policy}:"
+        + _stable_digest(manifest)
+    )
 
 
 def _selected_context(commit: dict[str, Any]) -> str:
@@ -133,9 +155,53 @@ def _selected_context(commit: dict[str, Any]) -> str:
     )
 
 
+def normalize_answer(text: str) -> str:
+    """Match the official LongBench English-QA normalization."""
+    lowered = text.lower()
+    without_punctuation = "".join(
+        character for character in lowered if character not in set(string.punctuation)
+    )
+    without_articles = re.sub(r"\b(a|an|the)\b", " ", without_punctuation)
+    return " ".join(without_articles.split())
+
+
+def qa_f1_score(prediction: str, ground_truth: str) -> float:
+    predicted = normalize_answer(prediction).split()
+    expected = normalize_answer(ground_truth).split()
+    if not predicted or not expected:
+        return float(predicted == expected)
+    shared = Counter(predicted) & Counter(expected)
+    overlap = sum(shared.values())
+    if overlap == 0:
+        return 0.0
+    precision = overlap / len(predicted)
+    recall = overlap / len(expected)
+    return 2 * precision * recall / (precision + recall)
+
+
 def _answer_present(text: str, answers: Iterable[str]) -> bool:
-    folded = text.casefold()
-    return any(answer.casefold() in folded for answer in answers)
+    normalized_text = normalize_answer(text)
+    return any(
+        normalized_answer and normalized_answer in normalized_text
+        for answer in answers
+        if (normalized_answer := normalize_answer(answer))
+    )
+
+
+def _exact_answer(prediction: str, answers: Iterable[str]) -> bool:
+    normalized_prediction = normalize_answer(prediction)
+    return any(
+        normalized_prediction == normalize_answer(answer) for answer in answers
+    )
+
+
+def _answer_score(prediction: str, answers: Iterable[str]) -> float:
+    return max(qa_f1_score(prediction, answer) for answer in answers)
+
+
+def _response_supported(response: str, context: str) -> bool:
+    normalized_response = normalize_answer(response)
+    return bool(normalized_response) and normalized_response in normalize_answer(context)
 
 
 def _usage_int(value: Any, name: str) -> int:
@@ -144,17 +210,28 @@ def _usage_int(value: Any, name: str) -> int:
     return value
 
 
-def call_openai(client: Any, *, model: str, context: str, question: str) -> ProviderObservation:
+def call_openai(
+    client: Any,
+    *,
+    model: str,
+    context: str,
+    question: str,
+    max_output_tokens: int = 64,
+    reasoning_effort: str | None = None,
+) -> ProviderObservation:
     started = time.perf_counter()
-    response = client.chat.completions.create(
-        model=model,
-        temperature=0,
-        max_tokens=64,
-        messages=[
+    request: dict[str, Any] = {
+        "model": model,
+        "temperature": 0,
+        "max_tokens": max_output_tokens,
+        "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": f"Context:\n{context}\n\nQuestion:\n{question}"},
         ],
-    )
+    }
+    if reasoning_effort is not None:
+        request["reasoning_effort"] = reasoning_effort
+    response = client.chat.completions.create(**request)
     latency_ms = (time.perf_counter() - started) * 1_000
     usage = getattr(response, "usage", None)
     if usage is None:
@@ -212,8 +289,11 @@ def _success_trial(
     commit_id: str | None,
     observation: ProviderObservation,
     provider: ProviderConfig,
+    experiment_config: str,
 ) -> Trial:
-    correct = _answer_present(observation.response_text, item.answers)
+    score = _answer_score(observation.response_text, item.answers)
+    task_success = _exact_answer(observation.response_text, item.answers)
+    has_claim = bool(normalize_answer(observation.response_text))
     return Trial.from_dict(
         {
             "schema_version": SCHEMA_VERSION,
@@ -235,10 +315,17 @@ def _success_trial(
             ).hexdigest(),
             "replicate": 0,
             "condition": condition,
-            "scorer": "longbench-hotpotqa-answer-only-v1",
-            "task_score": float(correct),
+            "scorer": SCORER,
+            "task_score": score,
+            "task_success": task_success,
             "evidence_recall": float(_answer_present(selected_context, item.answers)),
-            "unsupported_claim_rate": float(not correct),
+            "unsupported_claim_rate": float(
+                has_claim and not _response_supported(observation.response_text, selected_context)
+            ),
+            "experiment_config": experiment_config,
+            "usage_observed": True,
+            "cost_observed": True,
+            "error_fingerprint": None,
             "context_tokens": observation.prompt_tokens,
             "reasoning_tokens": observation.reasoning_tokens,
             "output_tokens": observation.completion_tokens,
@@ -259,10 +346,25 @@ def _error_trial(
     commit_id: str | None,
     error: Exception,
     provider: ProviderConfig,
+    experiment_config: str,
+    latency_ms: float,
 ) -> Trial:
     error_type = type(error).__name__
+    error_fingerprint = _stable_digest(
+        {
+            "error_type": error_type,
+            "message_sha256": hashlib.sha256(
+                str(error).encode("utf-8")
+            ).hexdigest(),
+            "status_code": getattr(error, "status_code", None),
+        }
+    )
     error_id = _stable_digest(
-        {"task": item.task_id, "condition": condition, "error": error_type}
+        {
+            "task": item.task_id,
+            "condition": condition,
+            "error_fingerprint": error_fingerprint,
+        }
     )[:20]
     usage_source = "provider_error" if error_type != "ContextPreparationError" else "runner_error"
     return Trial.from_dict(
@@ -284,15 +386,20 @@ def _error_trial(
             "response_sha256": None,
             "replicate": 0,
             "condition": condition,
-            "scorer": "longbench-hotpotqa-answer-only-v1",
+            "scorer": SCORER,
             "task_score": 0.0,
+            "task_success": False,
             "evidence_recall": float(_answer_present(selected_context, item.answers)),
-            "unsupported_claim_rate": 1.0,
+            "unsupported_claim_rate": 0.0,
+            "experiment_config": experiment_config,
+            "usage_observed": False,
+            "cost_observed": False,
+            "error_fingerprint": error_fingerprint,
             "context_tokens": 0,
             "reasoning_tokens": 0,
             "output_tokens": 0,
             "billed_cost_usd": 0.0,
-            "latency_ms": 0.0,
+            "latency_ms": latency_ms,
             "context_commit_id": commit_id,
         }
     )
@@ -318,18 +425,58 @@ def run_trials(
     seed: int = DEFAULT_SEED,
     resume: bool = False,
     provider: ProviderConfig = OPENAI_PROVIDER,
+    max_output_tokens: int = 64,
+    reasoning_effort: str | None = None,
+    selection_policy: str = "preselected",
 ) -> list[Trial]:
     if token_budget < 1:
         raise ValueError("token_budget must be positive")
+    if max_output_tokens < 1:
+        raise ValueError("max_output_tokens must be positive")
+    task_ids = [item.task_id for item in items]
+    if len(task_ids) != len(set(task_ids)):
+        raise ValueError("task_id values must be unique")
+    missing_evidence = [
+        item.task_id for item in items if not _answer_present(item.context, item.answers)
+    ]
+    if missing_evidence:
+        raise ValueError(
+            "raw context does not contain normalized answer evidence for: "
+            + ", ".join(missing_evidence)
+        )
+    experiment_config = json.dumps(
+        {
+            "cached_input_usd_per_million": provider.cached_input_usd_per_million,
+            "cost_source": provider.cost_source,
+            "cost_source_reference": provider.cost_source_reference,
+            "input_usd_per_million": provider.input_usd_per_million,
+            "longbench_metrics_sha256": LONG_BENCH_METRICS_SHA256,
+            "longbench_revision": LONG_BENCH_REVISION,
+            "max_output_tokens": max_output_tokens,
+            "output_usd_per_million": provider.output_usd_per_million,
+            "reasoning_effort": reasoning_effort,
+            "runner_contract": "context-efficiency-openai-v2",
+            "seed": seed,
+            "selection_policy": selection_policy,
+            "system_prompt_sha256": hashlib.sha256(
+                SYSTEM_PROMPT.encode("utf-8")
+            ).hexdigest(),
+            "temperature": 0,
+            "token_budget": token_budget,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
     if output.exists() and not resume:
         raise FileExistsError(f"{output} exists; use --resume or choose another path")
     existing = load_trials(output) if output.exists() else []
     completed = {(trial.task_id, trial.condition) for trial in existing}
-    version = workload_version(items)
+    version = workload_version(items, selection_policy=selection_policy)
     if any(
         trial.workload_version != version
         or trial.model != model
         or trial.provider != provider.name
+        or trial.experiment_config != experiment_config
         for trial in existing
     ):
         raise ValueError("existing trials do not match this workload/model configuration")
@@ -346,6 +493,7 @@ def run_trials(
             selected_context = item.context
             commit: dict[str, Any] | None = None
             commit_id: str | None = None
+            provider_started: float | None = None
             try:
                 if condition == "entroly":
                     chunk_tokens = min(360, token_budget)
@@ -365,11 +513,14 @@ def run_trials(
                         json.dumps(commit, indent=2, sort_keys=True) + "\n",
                         encoding="utf-8",
                     )
+                provider_started = time.perf_counter()
                 observation = call_openai(
                     client,
                     model=model,
                     context=selected_context,
                     question=item.question,
+                    max_output_tokens=max_output_tokens,
+                    reasoning_effort=reasoning_effort,
                 )
                 trial = _success_trial(
                     item=item,
@@ -380,8 +531,14 @@ def run_trials(
                     commit_id=commit_id,
                     observation=observation,
                     provider=provider,
+                    experiment_config=experiment_config,
                 )
             except Exception as error:  # Every failed request remains in the matrix.
+                failed_latency_ms = (
+                    (time.perf_counter() - provider_started) * 1_000
+                    if provider_started is not None
+                    else 0.0
+                )
                 trial = _error_trial(
                     item=item,
                     condition=condition,
@@ -391,6 +548,8 @@ def run_trials(
                     commit_id=commit_id,
                     error=error,
                     provider=provider,
+                    experiment_config=experiment_config,
+                    latency_ms=failed_latency_ms,
                 )
             _append_trial(output, trial)
             existing.append(trial)
@@ -402,15 +561,38 @@ def run_trials(
     return existing
 
 
-def _load_longbench(samples: int) -> list[WorkloadItem]:
+def select_longbench_rows(
+    rows: Iterable[dict[str, Any]], samples: int, selection: str
+) -> list[dict[str, Any]]:
+    candidates = list(rows)
+    if selection == "shortest-context":
+        candidates.sort(
+            key=lambda row: (
+                len(str(row.get("context", ""))),
+                _stable_digest(row),
+            )
+        )
+    elif selection != "random":
+        raise ValueError(f"unsupported LongBench selection: {selection}")
+    return candidates[:samples]
+
+
+def _load_longbench(samples: int, selection: str = "random") -> list[WorkloadItem]:
     from bench.accuracy import _load_longbench as load_rows
 
-    return prepare_longbench_items(load_rows(samples))
+    source_rows = load_rows(200 if selection == "shortest-context" else samples)
+    return prepare_longbench_items(select_longbench_rows(source_rows, samples, selection))
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--samples", type=int, default=10)
+    parser.add_argument(
+        "--selection",
+        choices=SELECTIONS,
+        default="random",
+        help="Dataset selection; shortest-context is a biased, quick calibration subset.",
+    )
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--budget", type=int, default=DEFAULT_BUDGET)
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
@@ -424,9 +606,24 @@ def main() -> int:
     parser.add_argument("--input-usd-per-million", type=float)
     parser.add_argument("--cached-input-usd-per-million", type=float)
     parser.add_argument("--output-usd-per-million", type=float)
+    parser.add_argument("--max-output-tokens", type=int, default=64)
+    parser.add_argument(
+        "--reasoning-effort",
+        choices=("none", "minimal", "low", "medium", "high"),
+    )
+    parser.add_argument(
+        "--request-timeout",
+        type=float,
+        default=60.0,
+        help="Per-request timeout in seconds (default: 60).",
+    )
     args = parser.parse_args()
     if args.samples < 1:
         parser.error("--samples must be positive")
+    if args.request_timeout <= 0:
+        parser.error("--request-timeout must be positive")
+    if args.max_output_tokens < 1:
+        parser.error("--max-output-tokens must be positive")
 
     from openai import OpenAI
 
@@ -438,7 +635,12 @@ def main() -> int:
         if args.api_key_env and not os.environ.get(args.api_key_env):
             parser.error(f"environment variable {args.api_key_env!r} is not set")
         api_key = os.environ[args.api_key_env] if args.api_key_env else "no-auth"
-        client = OpenAI(base_url=args.base_url, api_key=api_key, max_retries=0)
+        client = OpenAI(
+            base_url=args.base_url,
+            api_key=api_key,
+            max_retries=0,
+            timeout=args.request_timeout,
+        )
         provider = ProviderConfig(
             name=args.provider,
             cost_source=args.cost_source or "self_hosted_no_api_fee",
@@ -448,10 +650,10 @@ def main() -> int:
             output_usd_per_million=args.output_usd_per_million or 0.0,
         )
     else:
-        client = OpenAI(max_retries=2)
+        client = OpenAI(max_retries=2, timeout=args.request_timeout)
         provider = OPENAI_PROVIDER
 
-    items = _load_longbench(args.samples)
+    items = _load_longbench(args.samples, args.selection)
     trials = run_trials(
         items=items,
         client=client,
@@ -461,6 +663,9 @@ def main() -> int:
         seed=args.seed,
         resume=args.resume,
         provider=provider,
+        max_output_tokens=args.max_output_tokens,
+        reasoning_effort=args.reasoning_effort,
+        selection_policy=args.selection,
     )
     report = analyze_frontier(trials)
     report_path = args.output.with_suffix(".report.json")

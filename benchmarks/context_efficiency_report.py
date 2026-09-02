@@ -14,8 +14,12 @@ def _percent(value: float | None) -> str:
     return "n/a" if value is None else f"{value:.1%}"
 
 
-def _interval(value: list[float]) -> str:
-    return f"[{value[0]:.1%}, {value[1]:.1%}]"
+def _interval(value: list[float] | None) -> str:
+    return "n/a" if value is None else f"[{value[0]:.1%}, {value[1]:.1%}]"
+
+
+def _number(value: float | None, *, digits: int = 0) -> str:
+    return "n/a" if value is None else f"{value:,.{digits}f}"
 
 
 def render_markdown(report: dict[str, Any]) -> str:
@@ -41,22 +45,27 @@ def render_markdown(report: dict[str, Any]) -> str:
         "",
         "## Operating Points",
         "",
-        "| Condition | Trials | Errors | Task score | Evidence recall | Unsupported claims | Context tokens | Cost (USD) | Latency (ms) | Pareto |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| Condition | Trials | Errors | Successful tasks | Task score | Evidence recall | Unsupported-output proxy | Context tokens | Usage observed | Cost (USD) | Cost / successful task | Latency (ms) | Pareto |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     frontier = set(report.get("pareto_frontier", []))
     for condition, aggregate in aggregates.items():
         lines.append(
-            "| {condition} | {trials} | {errors} | {score:.3f} | {evidence:.3f} | "
-            "{unsupported:.3f} | {context:,.0f} | {cost:.6f} | {latency:,.1f} | {pareto} |".format(
+            "| {condition} | {trials} | {errors} | {successes} | {score:.3f} | {evidence:.3f} | "
+            "{unsupported:.3f} | {context} | {usage}/{trials} | {cost} | {cost_per_success} | {latency:,.1f} | {pareto} |".format(
                 condition=condition,
                 trials=aggregate["trials"],
                 errors=aggregate["errors"],
+                successes=aggregate["successful_tasks"],
                 score=aggregate["mean_task_score"],
                 evidence=aggregate["mean_evidence_recall"],
                 unsupported=aggregate["mean_unsupported_claim_rate"],
-                context=aggregate["mean_context_tokens"],
-                cost=aggregate["mean_billed_cost_usd"],
+                context=_number(aggregate["mean_context_tokens"]),
+                usage=aggregate["usage_observations"],
+                cost=_number(aggregate["mean_billed_cost_usd"], digits=6),
+                cost_per_success=_number(
+                    aggregate["cost_per_successful_task_usd"], digits=6
+                ),
                 latency=aggregate["mean_latency_ms"],
                 pareto="yes" if condition in frontier else "no",
             )
@@ -67,7 +76,7 @@ def render_markdown(report: dict[str, Any]) -> str:
             "",
             "## Paired Results Versus Raw Context",
             "",
-            "`PASS` requires the 95% paired-bootstrap bounds to preserve task score and evidence recall, avoid excess unsupported claims, and reduce context beyond zero.",
+            "`PASS` requires complete provider usage, the minimum pair count, descriptive paired-bootstrap bounds, and simultaneous exact one-sided risk bounds for task regressions, evidence regressions, unsupported-claim regressions, and per-task context wins. Smaller runs are `SMOKE ONLY`; imprecise larger runs remain `INSUFFICIENT PRECISION`.",
             "",
             "| Condition | Pairs | Quality delta (95% CI) | Evidence delta (95% CI) | Context reduction (95% CI) | Cost reduction | Result |",
             "|---|---:|---:|---:|---:|---:|---|",
@@ -86,11 +95,49 @@ def render_markdown(report: dict[str, Any]) -> str:
                 context=_percent(comparison["mean_context_reduction"]),
                 context_ci=_interval(comparison["context_reduction_95ci"]),
                 cost=_percent(comparison["mean_billed_cost_reduction"]),
-                result=(
-                    "PASS"
-                    if comparison["quality_preserving_context_win"]
-                    else "NO CLAIM"
+                result={
+                    "pass": "PASS",
+                    "no_claim": "NO CLAIM",
+                    "insufficient_data": "SMOKE ONLY",
+                    "measurement_incomplete": "MEASUREMENT INCOMPLETE",
+                    "insufficient_precision": "INSUFFICIENT PRECISION",
+                }[comparison["claim_status"]],
+            )
+        )
+
+    lines.extend(
+        [
+            "",
+            "## Exact Per-Task Risk Gates",
+            "",
+            "Bounds are one-sided Clopper-Pearson intervals with Bonferroni correction across the four primary gates.",
+            "",
+            "| Condition | Task regressions (upper) | Evidence regressions (upper) | Unsupported-output regressions (upper) | Context wins (lower) | Blockers |",
+            "|---|---:|---:|---:|---:|---|",
+        ]
+    )
+    for condition, comparison in comparisons.items():
+        blockers = ", ".join(comparison["claim_blockers"]) or "none"
+        lines.append(
+            "| {condition} | {task}/{pairs} ({task_upper}) | {evidence}/{pairs} "
+            "({evidence_upper}) | {unsupported}/{pairs} ({unsupported_upper}) | "
+            "{wins}/{usage_pairs} ({win_lower}) | {blockers} |".format(
+                condition=condition,
+                task=comparison["task_regressions"],
+                pairs=comparison["paired_trials"],
+                task_upper=_percent(comparison["task_regression_rate_upper_bound"]),
+                evidence=comparison["evidence_regressions"],
+                evidence_upper=_percent(
+                    comparison["evidence_regression_rate_upper_bound"]
                 ),
+                unsupported=comparison["unsupported_claim_regressions"],
+                unsupported_upper=_percent(
+                    comparison["unsupported_claim_regression_rate_upper_bound"]
+                ),
+                wins=comparison["context_token_wins"],
+                usage_pairs=comparison["usage_observed_pairs"],
+                win_lower=_percent(comparison["context_token_win_rate_lower_bound"]),
+                blockers=blockers,
             )
         )
 
@@ -101,9 +148,14 @@ def render_markdown(report: dict[str, Any]) -> str:
             "",
             f"- Baseline: `{methodology['baseline']}`",
             f"- Pair count: {report['pair_count']}",
-            f"- Confidence interval: {methodology['confidence_interval']}",
+            f"- Descriptive confidence interval: {methodology['descriptive_confidence_interval']}",
             f"- Bootstrap samples: {methodology['bootstrap_samples']}",
             f"- Quality tolerance: {_percent(methodology['quality_tolerance'])}",
+            f"- Minimum pairs for a public claim: {methodology['minimum_claim_pairs']}",
+            f"- Familywise alpha: {methodology['familywise_alpha']}",
+            f"- Exact-risk correction: {methodology['risk_gate_correction']}",
+            f"- Maximum allowed per-task regression risk: {_percent(methodology['max_regression_rate'])}",
+            f"- Minimum context-token win rate: {_percent(methodology['minimum_context_win_rate'])}",
             f"- Usage sources: {', '.join(report['provenance']['usage_sources'])}",
             f"- Cost sources: {', '.join(report['provenance']['cost_sources'])}",
             "- Cost source references: "
