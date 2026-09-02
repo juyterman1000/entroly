@@ -319,3 +319,44 @@ def test_v3_16_thread_safe():
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+def test_payments_scope_covers_ordinary_money_phrasing() -> None:
+    """`DomainRisk.HIGH` names payments as in scope; only two words matched it.
+
+    Measured before this test existed: 9 of 11 ordinary money requests --
+    "transfer funds", "issue a refund", "process a payout", "handle the
+    chargeback" -- classified STANDARD, which permits 2% success degradation
+    and makes them eligible for a cheaper model once a cell has data. Money
+    movement is precisely what the flagship is for, and RAVS is required to
+    never trade correctness for cost.
+    """
+    from entroly.ravs.router import DomainRisk, classify_risk
+
+    for query in (
+        "transfer funds between accounts",
+        "issue a refund to the customer",
+        "process a payout to the vendor",
+        "handle the chargeback dispute",
+        "calculate the invoice total",
+        "complete the checkout flow",
+    ):
+        assert classify_risk(query) is DomainRisk.HIGH, query
+
+
+def test_the_payments_keywords_do_not_swallow_ordinary_engineering() -> None:
+    """Over-classifying is the safe direction, but not a free one.
+
+    Every HIGH request forfeits routing entirely, so the keywords have to name
+    money rather than anything money-adjacent. "transaction" and "ledger" are
+    deliberately absent: a database transaction and this repository's own
+    belief ledger would match them.
+    """
+    from entroly.ravs.router import DomainRisk, classify_risk
+
+    for query in (
+        "open a database transaction",
+        "read the belief ledger",
+        "fix the typo in the README",
+    ):
+        assert classify_risk(query) is not DomainRisk.HIGH, query

@@ -81,6 +81,22 @@ _RISK_KEYWORDS: dict[str, DomainRisk] = {
     "credential": DomainRisk.HIGH,
     "payment": DomainRisk.HIGH,
     "billing": DomainRisk.HIGH,
+    # `DomainRisk.HIGH` names payments as in scope, but only the literal words
+    # "payment" and "billing" matched it. Measured against ordinary money
+    # phrasing, 9 of 11 requests -- "transfer funds", "issue a refund",
+    # "process a payout", "handle the chargeback" -- classified STANDARD, which
+    # permits 2% success degradation and makes them eligible for a cheaper
+    # model once a cell has data. Money movement is the case the flagship is
+    # for. These are deliberately unambiguous nouns; "transaction" and "ledger"
+    # are left out because a database transaction and this repository's own
+    # belief ledger would match them, and blocking every such request buys
+    # nothing.
+    "refund": DomainRisk.HIGH,
+    "invoice": DomainRisk.HIGH,
+    "payout": DomainRisk.HIGH,
+    "chargeback": DomainRisk.HIGH,
+    "funds": DomainRisk.HIGH,
+    "checkout": DomainRisk.HIGH,
     "encrypt": DomainRisk.HIGH,
     "decrypt": DomainRisk.HIGH,
     "token": DomainRisk.HIGH,
