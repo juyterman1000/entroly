@@ -2421,6 +2421,117 @@ fn confidence_for_context(source: &str, line: &str, rule: &SastRule) -> f64 {
     conf.max(0.05)
 }
 
+/// Whether `pattern` occurs in `line` as its own token rather than as the tail
+/// of a longer identifier.
+///
+/// Rule patterns are plain substrings, so `open(` matched inside `urlopen(`.
+/// Combined with PATH-001's `requires: "request"` -- satisfied by the module
+/// name in `urllib.request.urlopen(...)` -- that reported three HTTP calls in
+/// this repository as High-severity path traversal, plus a fourth on
+/// `opener.open(request, ...)`.
+///
+/// Only patterns that begin with a letter are boundary-checked; `../` and `%s`
+/// have no identifier boundary to respect. A leading `.` or `(` still matches,
+/// so `Path(p).open(` and `(open(` keep working.
+fn matches_as_token(line: &str, pattern: &str) -> bool {
+    let first = match pattern.chars().next() {
+        Some(c) => c,
+        None => return false,
+    };
+    if !first.is_ascii_alphabetic() {
+        return line.contains(pattern);
+    }
+    let bytes = line.as_bytes();
+    let mut from = 0usize;
+    while let Some(rel) = line[from..].find(pattern) {
+        let at = from + rel;
+        let preceded_by_identifier = at > 0
+            && (bytes[at - 1].is_ascii_alphanumeric() || bytes[at - 1] == b'_');
+        if !preceded_by_identifier {
+            return true;
+        }
+        from = at + 1;
+        if from >= line.len() {
+            break;
+        }
+    }
+    false
+}
+
+/// Whether a SQL call on this line binds its parameters rather than building
+/// the query from them.
+///
+/// SQL-006 matches `execute(` and fires whenever a tainted variable appears on
+/// the line. A parameterised call necessarily puts the tainted variable on that
+/// line -- `cursor.execute(sql, (name,))` is the whole point -- so the rule
+/// flagged the exact pattern its own `fix` text recommends, at Critical
+/// severity and confidence 1.0. A scanner that reports the remedy as the
+/// vulnerability trains people to ignore it.
+///
+/// Injection builds the string: concatenation, `%`, `.format(`, or an f-string.
+/// Binding does not. Only the argument list is examined, and anything that
+/// looks like string building keeps the finding.
+fn sql_call_binds_parameters(line: &str) -> bool {
+    let lower = line.to_lowercase();
+    let call = match lower.find("execute(").or_else(|| lower.find("executemany(")) {
+        Some(idx) => idx,
+        None => return false,
+    };
+    let args = match lower[call..].find('(') {
+        Some(offset) => &line[call + offset + 1..],
+        None => return false,
+    };
+
+    // An f-string query interpolates before the call ever runs.
+    if args.contains("f\"") || args.contains("f'") {
+        return false;
+    }
+
+    // Find the end of the first argument (the query itself). A quote inside the
+    // query is not a delimiter, so track the literal explicitly.
+    let bytes = args.as_bytes();
+    let mut quote: Option<u8> = None;
+    let mut split: Option<usize> = None;
+    let mut depth = 0i32;
+    for (i, &b) in bytes.iter().enumerate() {
+        match quote {
+            Some(q) => {
+                if b == q && (i == 0 || bytes[i - 1] != b'\\') {
+                    quote = None;
+                }
+            }
+            None => match b {
+                b'"' | b'\'' => quote = Some(b),
+                b'(' | b'[' | b'{' => depth += 1,
+                b')' | b']' | b'}' => {
+                    if depth == 0 {
+                        break;
+                    }
+                    depth -= 1;
+                }
+                b',' if depth == 0 => {
+                    split = Some(i);
+                    break;
+                }
+                _ => {}
+            },
+        }
+    }
+
+    let split = match split {
+        Some(i) => i,
+        None => return false, // single argument: nothing was bound
+    };
+
+    // The query must be static: no concatenation or formatting building it.
+    let query = &args[..split];
+    if query.contains('+') || query.contains('%') || query.contains(".format(") {
+        return false;
+    }
+    // And it must actually be a literal, not a variable holding a built string.
+    query.contains('"') || query.contains('\'')
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // CVSS-inspired aggregate risk score
 ///
@@ -2514,8 +2625,9 @@ pub fn scan_content(content: &str, source: &str) -> SastReport {
                 continue;
             }
 
-            // Pattern match (case-insensitive)
-            if !line_lower.contains(rule.pattern) {
+            // Pattern match (case-insensitive), on token boundaries so a
+            // pattern like `open(` does not match inside `urlopen(`.
+            if !matches_as_token(&line_lower, rule.pattern) {
                 continue;
             }
 
@@ -2555,6 +2667,11 @@ pub fn scan_content(content: &str, source: &str) -> SastReport {
             let taint_hit = if rule.taint_aware {
                 let is_tainted = line_is_tainted(&line_lower, &tainted_vars, &direct_sources, idx);
                 if !is_tainted {
+                    continue;
+                }
+                // A bound parameter is not an injection. See
+                // `sql_call_binds_parameters`.
+                if rule.category == "SQL Injection" && sql_call_binds_parameters(line) {
                     continue;
                 }
                 true
@@ -2649,6 +2766,68 @@ pub fn scan_content(content: &str, source: &str) -> SastReport {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_pattern_does_not_match_the_tail_of_a_longer_identifier() {
+        // `open(` matched inside `urlopen(`, and PATH-001's
+        // `requires: "request"` was satisfied by the module name in
+        // `urllib.request.urlopen(...)`. That reported three HTTP calls in this
+        // repository as High-severity path traversal.
+        assert!(!matches_as_token("with urllib.request.urlopen(req) as r:", "open("));
+        assert!(!matches_as_token("myexec(cmd)", "exec("));
+
+        // A real call still matches, including as an attribute or after a paren.
+        assert!(matches_as_token("f = open(path)", "open("));
+        assert!(matches_as_token("with Path(p).open() as f:", "open("));
+        assert!(matches_as_token("(open(path))", "open("));
+        assert!(matches_as_token("open(path)", "open("));
+    }
+
+    #[test]
+    fn non_identifier_patterns_are_unaffected_by_the_boundary_rule() {
+        // `../` and `%s` have no identifier boundary to respect; requiring one
+        // would silently disable every rule that matches punctuation.
+        assert!(matches_as_token("path = base + \"../etc/passwd\"", "../"));
+        assert!(matches_as_token("q = \"select %s\" % name", "%s"));
+    }
+
+    #[test]
+    fn bound_parameters_are_not_reported_as_injection() {
+        // SQL-006 matches `execute(` and fires when a tainted variable is on
+        // the line. A parameterised call necessarily puts it there, so the rule
+        // reported the exact pattern its own `fix` text recommends, at Critical
+        // severity and confidence 1.0. A scanner that flags the remedy trains
+        // people to ignore it.
+        let safe = "conn.execute(\"SELECT * FROM users WHERE name = ?\", (name,))";
+        assert!(sql_call_binds_parameters(safe), "parameterised call must be recognised");
+
+        // Every way of building the query must still be treated as injection.
+        for building in [
+            "conn.execute(\"SELECT * FROM u WHERE n = '\" + name + \"'\")",
+            "conn.execute(f\"SELECT * FROM u WHERE n = {name}\")",
+            "conn.execute(\"SELECT * FROM u WHERE n = %s\" % name)",
+            "conn.execute(query_built_earlier)",
+            "conn.execute(\"SELECT * FROM u WHERE n = {}\".format(name))",
+        ] {
+            assert!(
+                !sql_call_binds_parameters(building),
+                "string building must not be treated as binding: {building}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_quote_inside_the_query_does_not_end_the_argument() {
+        // The comma that separates query from parameters must be found outside
+        // the literal, or a query containing a comma or quote would look like
+        // a bound call when it is not.
+        assert!(sql_call_binds_parameters(
+            "cur.execute(\"SELECT a, b FROM t WHERE n = ? AND s = 'x'\", (name,))"
+        ));
+        assert!(!sql_call_binds_parameters(
+            "cur.execute(\"SELECT a, b FROM t WHERE n = '\" + name + \"'\")"
+        ));
+    }
+
     use super::*;
     /// Python's two triple-quote delimiters, as test fixtures.
     const DQ: &str = "\"\"\"";
