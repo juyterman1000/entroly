@@ -384,8 +384,24 @@ fn soft_bisection_select(
             .sum()
     };
 
-    // Fast path: λ=0 → p_i = σ(s_i/τ) ≈ 1 for all. If total E[tokens] ≤ B, include all.
-    if expected_tokens(0.0) <= budget_f {
+    // Fast path: everything fits, so there is nothing to choose between.
+    //
+    // This tested `expected_tokens(0.0) <= budget_f`, which is
+    // Σ σ(sᵢ/τ)·tokensᵢ -- a probability-weighted count. σ is strictly less
+    // than 1, so the expected total is always strictly below the true total,
+    // and a set that does not fit could still pass the test. It then returned
+    // every item, and the caller received a hard selection over budget:
+    // three fragments costing 1 + 1 + 50 against a budget of 50 gave an
+    // expected 41.7, took the fast path, and reported total_tokens = 52.
+    //
+    // Feasibility is a property of the actual token counts, not of the soft
+    // relaxation used to price them. `u64` because the sum of `u32` costs is
+    // not bounded by `u32`.
+    let actual_tokens: u64 = scored
+        .iter()
+        .map(|&(idx, _)| fragments[idx].token_count as u64)
+        .sum();
+    if actual_tokens <= budget as u64 {
         return (scored.iter().map(|&(idx, _)| idx).collect(), 0.0, 0.0);
     }
 
@@ -640,6 +656,189 @@ fn pinned_relevance(
 
 #[cfg(test)]
 mod tests {
+
+    /// Feasibility is a property of the real token counts, not of the soft
+    /// relaxation used to price them.
+    ///
+    /// The fast path asked whether `Σ σ(sᵢ/τ)·tokensᵢ ≤ B` before returning
+    /// every item. σ is strictly below 1, so that expected total is always
+    /// below the true total and a set that does not fit could still pass.
+    /// Measured: fragments costing 1 + 1 + 50 against a budget of 50 priced at
+    /// an expected 41.7, took the fast path, and returned `total_tokens = 52`.
+    /// Overrunning the budget is precisely what overflows a context window.
+    #[test]
+    fn the_include_everything_fast_path_checks_real_tokens_not_expected_tokens() {
+        let weights = ScoringWeights::default();
+        let mk = |id: &str, tokens: u32, score: f64| {
+            let mut f = ContextFragment::new(id.into(), "c".into(), tokens, "".into());
+            f.recency_score = score;
+            f.frequency_score = score;
+            f.semantic_score = score;
+            f.entropy_score = score;
+            f
+        };
+
+        let items = vec![mk("a", 1, 0.9), mk("b", 1, 0.5), mk("c", 50, 0.7)];
+        let budget = 50;
+        assert_eq!(
+            items.iter().map(|f| f.token_count).sum::<u32>(),
+            52,
+            "fixture must not fit, or it proves nothing"
+        );
+
+        let soft = knapsack_optimize(&items, budget, &weights, &no_feedback(), 0.5);
+        assert!(
+            soft.total_tokens <= budget,
+            "soft bisection returned {} tokens against a budget of {budget}",
+            soft.total_tokens
+        );
+
+        // And when everything genuinely fits, the fast path must still take it.
+        let fits = vec![mk("a", 1, 0.9), mk("b", 1, 0.5), mk("c", 10, 0.7)];
+        let all = knapsack_optimize(&fits, 50, &weights, &no_feedback(), 0.5);
+        assert_eq!(all.selected_indices.len(), 3, "a set that fits must be kept whole");
+        assert_eq!(all.total_tokens, 12);
+    }
+
+    /// Degenerate inputs a caller can actually produce. Each of these is a
+    /// classic way a knapsack implementation goes wrong: a zero budget, an item
+    /// that cannot fit, zero-cost items (density divides by weight), and
+    /// non-finite scores arriving from an upstream model.
+    #[test]
+    fn degenerate_inputs_never_overrun_the_budget_or_produce_nonsense() {
+        let weights = ScoringWeights::default();
+        let mk = |id: &str, tokens: u32, score: f64| {
+            let mut f = ContextFragment::new(id.into(), "c".into(), tokens, "".into());
+            f.recency_score = score;
+            f.frequency_score = score;
+            f.semantic_score = score;
+            f.entropy_score = score;
+            f
+        };
+
+        for temperature in [0.0_f64, 0.5] {
+            // Zero budget: nothing may be selected.
+            let items = vec![mk("a", 10, 0.9), mk("b", 20, 0.8)];
+            let r = knapsack_optimize(&items, 0, &weights, &no_feedback(), temperature);
+            assert_eq!(r.total_tokens, 0, "zero budget selected {} tokens", r.total_tokens);
+            assert!(r.selected_indices.is_empty());
+
+            // Every item larger than the budget: still nothing.
+            let big = vec![mk("a", 500, 0.9), mk("b", 900, 0.99)];
+            let r = knapsack_optimize(&big, 100, &weights, &no_feedback(), temperature);
+            assert!(r.total_tokens <= 100, "overran with only oversized items");
+
+            // Zero-token items: density is value/weight, so weight 0 is the
+            // division a density-greedy solver trips over.
+            let free = vec![mk("a", 0, 0.9), mk("b", 0, 0.5), mk("c", 50, 0.7)];
+            let r = knapsack_optimize(&free, 50, &weights, &no_feedback(), temperature);
+            assert!(r.total_tokens <= 50);
+            assert!(r.total_relevance.is_finite(), "zero-cost items produced a non-finite score");
+
+            // Non-finite scores from upstream must not poison the result.
+            let poisoned = vec![
+                mk("nan", 10, f64::NAN),
+                mk("inf", 10, f64::INFINITY),
+                mk("ok", 10, 0.5),
+            ];
+            let r = knapsack_optimize(&poisoned, 20, &weights, &no_feedback(), temperature);
+            assert!(r.total_tokens <= 20, "overran the budget on non-finite scores");
+            assert!(
+                r.total_relevance.is_finite(),
+                "a NaN or infinite input score reached the reported relevance"
+            );
+        }
+    }
+
+    /// Deterministic LCG so a failure is reproducible from the seed alone.
+    fn lcg(state: &mut u64) -> f64 {
+        *state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        ((*state >> 33) as f64) / ((1u64 << 31) as f64)
+    }
+
+    /// The soft bisection is a heuristic; the DP below 0.05 is exact. Randomised
+    /// instances let the exact path referee the approximate one.
+    ///
+    /// Three properties, in increasing order of how much a violation would cost:
+    ///   1. neither path may exceed the token budget -- overrunning it is what
+    ///      blows a context window;
+    ///   2. the DP must dominate, since it is the optimum by construction;
+    ///   3. the heuristic must stay within the Dantzig-style 1/2 that CLAUDE.md
+    ///      claims for a modular objective (explicitly *not* 1 - 1/e).
+    #[test]
+    fn soft_bisection_is_feasible_and_within_the_claimed_half_of_optimal() {
+        let weights = ScoringWeights::default();
+        let mut seed = 0x5EED_1234_u64;
+        let mut worst_ratio = f64::INFINITY;
+
+        for case in 0..60 {
+            let n = 6 + (case % 9);
+            let fragments: Vec<ContextFragment> = (0..n)
+                .map(|k| {
+                    // Mixed magnitudes on purpose. The first version of this
+                    // generator drew 20..420 uniformly and never produced the
+                    // shape that breaks feasibility: several very small items
+                    // beside one large one, where the soft relaxation prices the
+                    // set under budget while the true cost is over it.
+                    let tokens = if lcg(&mut seed) < 0.4 {
+                        1 + (lcg(&mut seed) * 5.0) as u32
+                    } else {
+                        20 + (lcg(&mut seed) * 400.0) as u32
+                    };
+                    let mut f = ContextFragment::new(
+                        format!("f{k:03}"),
+                        "x".repeat(8),
+                        tokens,
+                        "".into(),
+                    );
+                    f.recency_score = lcg(&mut seed);
+                    f.frequency_score = lcg(&mut seed);
+                    f.semantic_score = lcg(&mut seed);
+                    f.entropy_score = lcg(&mut seed);
+                    f
+                })
+                .collect();
+
+            let total: u32 = fragments.iter().map(|f| f.token_count).sum();
+            // A budget that binds: too large and every instance is trivial.
+            let budget = (total as f64 * (0.25 + 0.4 * lcg(&mut seed))) as u32;
+            if budget == 0 {
+                continue;
+            }
+
+            let exact = knapsack_optimize(&fragments, budget, &weights, &no_feedback(), 0.0);
+            let soft = knapsack_optimize(&fragments, budget, &weights, &no_feedback(), 0.5);
+
+            assert!(
+                exact.total_tokens <= budget,
+                "case {case}: exact DP overran the budget ({} > {budget})",
+                exact.total_tokens
+            );
+            assert!(
+                soft.total_tokens <= budget,
+                "case {case}: soft bisection overran the budget ({} > {budget})",
+                soft.total_tokens
+            );
+            assert!(
+                exact.total_relevance >= soft.total_relevance - 1e-9,
+                "case {case}: the exact DP is optimal by construction, so it                  cannot score below the heuristic ({} < {})",
+                exact.total_relevance,
+                soft.total_relevance
+            );
+
+            if exact.total_relevance > 1e-9 {
+                let ratio = soft.total_relevance / exact.total_relevance;
+                worst_ratio = worst_ratio.min(ratio);
+                assert!(
+                    ratio >= 0.5 - 1e-9,
+                    "case {case}: heuristic scored {ratio:.4} of optimal, below                      the Dantzig-style 1/2 claimed for a modular objective"
+                );
+            }
+        }
+
+        assert!(worst_ratio.is_finite(), "no binding instance was generated");
+    }
+
     use super::*;
     use crate::fragment::ContextFragment;
 
