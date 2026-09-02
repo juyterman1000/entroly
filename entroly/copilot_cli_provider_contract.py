@@ -36,12 +36,18 @@ def _validated_integration_id(value: object) -> str:
     text = str(value or "").strip()
     if not text:
         return ""
-    if (
-        len(text) > _MAX_INTEGRATION_ID_CHARS
-        or any(
-            not (char.isascii() and (char.isalnum() or char in "._-"))
-            for char in text
+    # Two distinct rejections, two distinct reasons. They shared one message
+    # that named only the character set, so an ID that is too long but composed
+    # entirely of legal characters was told its characters were wrong. An error
+    # that misstates its own cause sends the operator to fix the wrong thing.
+    if len(text) > _MAX_INTEGRATION_ID_CHARS:
+        raise CopilotCLIProviderContractError(
+            f"Copilot integration ID is {len(text)} characters; the limit is "
+            f"{_MAX_INTEGRATION_ID_CHARS}"
         )
+    if any(
+        not (char.isascii() and (char.isalnum() or char in "._-"))
+        for char in text
     ):
         raise CopilotCLIProviderContractError(
             "Copilot integration ID must contain only ASCII letters, digits, '.', '_', or '-'"

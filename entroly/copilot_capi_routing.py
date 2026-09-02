@@ -16,6 +16,7 @@ Copilot subscription token manager is attached to the proxy instance.
 from __future__ import annotations
 
 import os
+import re
 from typing import Any, Mapping
 
 from .copilot_subscription_transport import CopilotTokenManager
@@ -28,8 +29,26 @@ _CAPI_PATHS = {
 
 
 def normalize_copilot_capi_path(path: str) -> str:
-    """Translate only the known OpenAI-compatible ``/v1`` CAPI endpoints."""
-    return _CAPI_PATHS.get(path, path)
+    """Translate only the known OpenAI-compatible ``/v1`` CAPI endpoints.
+
+    The lookup is exact, but the spelling a client produces is not. A base URL
+    configured as ``.../v1/`` -- a trailing slash is the ordinary way to get
+    this wrong -- makes the CLI request ``/v1//chat/completions``. Starlette
+    reports that path verbatim and the proxy does not collapse it, so the exact
+    match missed, the ``/v1`` prefix survived, and the request reached CAPI as
+    ``/v1//chat/completions``. GitHub answers 404, which tells the user nothing
+    about the trailing slash that caused it.
+
+    Only the *lookup key* is canonicalised: repeated slashes collapse and one
+    trailing slash is dropped. A path that does not match a known CAPI endpoint
+    is returned exactly as it arrived, so this stays a translation of three
+    endpoints rather than becoming a second router.
+    """
+    canonical = re.sub(r"/{2,}", "/", path)
+    if len(canonical) > 1:
+        canonical = canonical.rstrip("/") or "/"
+    translated = _CAPI_PATHS.get(canonical)
+    return translated if translated is not None else path
 
 
 def _env_enabled(environ: Mapping[str, str] | None = None) -> bool:
