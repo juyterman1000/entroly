@@ -717,6 +717,95 @@ pub fn ios_select(
 
 #[cfg(test)]
 mod tests {
+    fn sds_lcg(state: &mut u64) -> f64 {
+        *state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        ((*state >> 33) as f64) / ((1u64 << 31) as f64)
+    }
+
+    /// The two invariants IOS must hold whatever the objective does.
+    ///
+    /// No worst-case ratio is claimed for this selector and none is asserted
+    /// here. What must hold regardless of approximation quality:
+    ///
+    ///   1. the selection fits the token budget -- the sibling solver shipped a
+    ///      fast path that compared a probability-weighted token count against
+    ///      a hard budget and returned a set costing 52 against a budget of 50,
+    ///      so this is not hypothetical;
+    ///   2. at most one resolution per fragment. This is a multiple-choice
+    ///      knapsack: two resolutions of the same fragment would put the same
+    ///      content in the context twice and charge for both.
+    #[test]
+    fn ios_selection_is_feasible_and_picks_one_resolution_per_fragment() {
+        let mut seed = 0xA11CE_u64;
+
+        for case in 0..50 {
+            let n = 4 + (case % 12);
+            let fragments: Vec<ContextFragment> = (0..n)
+                .map(|k| {
+                    // Mixed magnitudes: tiny items beside large ones are the
+                    // shape that broke feasibility in `knapsack.rs`.
+                    let tokens = if sds_lcg(&mut seed) < 0.4 {
+                        1 + (sds_lcg(&mut seed) * 5.0) as u32
+                    } else {
+                        20 + (sds_lcg(&mut seed) * 300.0) as u32
+                    };
+                    // Some near-duplicates, so the redundancy penalty is live.
+                    let content = if k % 3 == 0 {
+                        "shared duplicated body text".to_string()
+                    } else {
+                        format!("distinct body {k} with its own words")
+                    };
+                    let mut f = make_frag(&format!("f{k:03}"), &content, tokens, "s");
+                    f.semantic_score = sds_lcg(&mut seed);
+                    f.frequency_score = sds_lcg(&mut seed);
+                    f
+                })
+                .collect();
+
+            let total: u32 = fragments.iter().map(|f| f.token_count).sum();
+            let budget = ((total as f64) * (0.2 + 0.5 * sds_lcg(&mut seed))) as u32;
+            if budget == 0 {
+                continue;
+            }
+
+            for (diversity, multi_res) in [(false, false), (true, false), (true, true)] {
+                let r = ios_select(
+                    &fragments,
+                    budget,
+                    0.25, 0.25, 0.25, 0.25,
+                    &empty_feedback(),
+                    diversity,
+                    multi_res,
+                    &default_factors(),
+                    DEFAULT_DIV_FLOOR,
+                    DEFAULT_MIN_CANDIDATE_VALUE,
+                );
+
+                assert!(
+                    r.total_tokens <= budget,
+                    "case {case} (diversity={diversity}, multi_res={multi_res}):                      selected {} tokens against a budget of {budget}",
+                    r.total_tokens
+                );
+
+                let mut seen: Vec<usize> = r.selections.iter().map(|&(i, _)| i).collect();
+                let before = seen.len();
+                seen.sort_unstable();
+                seen.dedup();
+                assert_eq!(
+                    seen.len(), before,
+                    "case {case} (diversity={diversity}, multi_res={multi_res}):                      a fragment was selected at more than one resolution"
+                );
+
+                // `total_tokens` must describe the selection it ships with.
+                assert!(
+                    r.total_tokens as u64
+                        <= fragments.iter().map(|f| f.token_count as u64).sum::<u64>(),
+                    "case {case}: reported more tokens than exist"
+                );
+            }
+        }
+    }
+
     use super::*;
     use crate::dedup::simhash;
     use crate::fragment::ContextFragment;
