@@ -111,7 +111,27 @@ impl<const N: usize> SymMatrixN<N> {
             let app = a.get(p, p);
             let arr = a.get(r, r);
             let apr = a.get(p, r);
-            let theta = 0.5 * (2.0 * apr / (app - arr + 1e-15)).atan();
+            // The rotation that zeroes a[p][r] depends on the sign convention
+            // used by the update formulas below. Those implement
+            // J[p][r] = +s, J[r][p] = -s, whose zeroing angle is
+            // -atan2(2*a_pr, a_pp - a_rr)/2. This computed +that, so the
+            // transform did not actually eliminate a[p][r] -- and the code
+            // then forced `a.set(p, r, 0.0)`, discarding a nonzero value.
+            //
+            // That is why the loop still "converged": off-diagonals were being
+            // zeroed by assignment rather than by rotation. Trace survived (the
+            // diagonal formulas are self-consistent) but the determinant did
+            // not, which is the signature of a transform that is not a
+            // similarity transform. Measured on
+            // [[4,1,0,0],[1,3,1,0],[0,1,2,1],[0,0,1,1]]: det 7 became 8.6 after
+            // one rotation, and the returned eigenvalues were
+            // [1.64, 2.29, 2.71, 3.36] against the true
+            // [0.25, 1.82, 3.18, 4.75].
+            //
+            // `atan2` also removes the `1e-15` denominator fudge, which was
+            // papering over a_pp == a_rr where the correct angle is exactly 45
+            // degrees.
+            let theta = -0.5 * (2.0 * apr).atan2(app - arr);
             let c = theta.cos();
             let s = theta.sin();
 
@@ -495,6 +515,153 @@ pub struct ResonanceDiagnostics {
 
 #[cfg(test)]
 mod tests {
+    fn pr_lcg(state: &mut u64) -> f64 {
+        *state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        ((*state >> 33) as f64) / ((1u64 << 31) as f64) - 0.5
+    }
+
+    /// The defining property of an eigendecomposition, asserted directly.
+    ///
+    /// `jacobi_eigendecomposition` returns (Q, Λ) claiming C = Q Λ Qᵀ. Two
+    /// things make that true and both are checkable: Q must be orthogonal
+    /// (QᵀQ = I), and reassembling Q Λ Qᵀ must return the original matrix.
+    ///
+    /// The pre-existing tests checked orthogonality, spectral energy and
+    /// condition number -- all of which held while the eigenvalues themselves
+    /// were wrong, because an orthogonal-but-arbitrary basis satisfies them.
+    /// Reconstruction is the property that does not.
+    #[test]
+    fn jacobi_returns_an_orthogonal_basis_that_reconstructs_the_matrix() {
+        let mut seed = 0x5A17_C0DE_1234_5678_u64;
+        let rnd = |s: &mut u64| {
+            *s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((*s >> 33) as f64) / ((1u64 << 31) as f64) - 0.5
+        };
+
+        for case in 0..25 {
+            let a: Vec<Vec<f64>> =
+                (0..4).map(|_| (0..4).map(|_| rnd(&mut seed)).collect()).collect();
+            // `SymMatrixN` stores a full N x N array and `set` writes exactly
+            // one cell -- despite the name it does not mirror. Writing only the
+            // upper triangle would hand Jacobi a non-symmetric matrix.
+            let mut c = SymMatrixN::<4>::new();
+            for i in 0..4 {
+                for j in 0..4 {
+                    let v: f64 = (0..4).map(|k| a[k][i] * a[k][j]).sum();
+                    c.set(i, j, v);
+                }
+            }
+
+            let (q, lambda) = c.jacobi_eigendecomposition();
+
+            for i in 0..4 {
+                for j in 0..4 {
+                    let dot: f64 = (0..4).map(|k| q.get(k, i) * q.get(k, j)).sum();
+                    let expected = if i == j { 1.0 } else { 0.0 };
+                    assert!(
+                        (dot - expected).abs() < 1e-8,
+                        "case {case}: QᵀQ[{i}][{j}] = {dot}, expected {expected}"
+                    );
+                }
+            }
+
+            for i in 0..4 {
+                for j in 0..4 {
+                    let rebuilt: f64 =
+                        (0..4).map(|k| q.get(i, k) * lambda[k] * q.get(j, k)).sum();
+                    assert!(
+                        (rebuilt - c.get(i, j)).abs() < 1e-8,
+                        "case {case}: (QΛQᵀ)[{i}][{j}] = {rebuilt}, matrix has {}",
+                        c.get(i, j)
+                    );
+                }
+            }
+
+            for (k, ev) in lambda.iter().enumerate() {
+                assert!(*ev > -1e-9, "case {case}: eigenvalue {k} of a PSD matrix was {ev}");
+            }
+        }
+    }
+
+    /// A known spectrum, checked against values computed independently.
+    #[test]
+    fn jacobi_matches_a_known_spectrum() {
+        // [[4,1,0,0],[1,3,1,0],[0,1,2,1],[0,0,1,1]] has eigenvalues
+        // 0.25471876, 1.82271708, 3.17728292, 4.74528124 (numpy.linalg.eigvalsh).
+        let vals = [
+            [4.0, 1.0, 0.0, 0.0],
+            [1.0, 3.0, 1.0, 0.0],
+            [0.0, 1.0, 2.0, 1.0],
+            [0.0, 0.0, 1.0, 1.0],
+        ];
+        let mut c = SymMatrixN::<4>::new();
+        for (i, row) in vals.iter().enumerate() {
+            for (j, v) in row.iter().enumerate() {
+                c.set(i, j, *v);
+            }
+        }
+
+        let (_, mut lambda) = c.jacobi_eigendecomposition();
+        lambda.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let expected = [0.254_718_76, 1.822_717_08, 3.177_282_92, 4.745_281_24];
+        for (got, want) in lambda.iter().zip(expected.iter()) {
+            assert!(
+                (got - want).abs() < 1e-7,
+                "eigenvalues {lambda:?} do not match {expected:?}"
+            );
+        }
+
+        // Determinant is preserved by a similarity transform; the product of
+        // the eigenvalues must equal det(C) = 7. Trace alone does not catch
+        // this -- it survived while the spectrum was wrong.
+        let product: f64 = lambda.iter().product();
+        assert!((product - 7.0).abs() < 1e-6, "eigenvalue product was {product}, det is 7");
+    }
+
+    /// The update must stay finite whatever the gradient stream does.
+    #[test]
+    fn compute_update_stays_finite_on_degenerate_gradient_streams() {
+        let scenarios: Vec<(&str, Vec<Vec<f64>>)> = vec![
+            ("all-zero gradients", vec![vec![0.0; 4]; 12]),
+            ("constant gradients", vec![vec![0.7, 0.7, 0.7, 0.7]; 12]),
+            ("single-axis gradients", vec![vec![1.0, 0.0, 0.0, 0.0]; 12]),
+            ("enormous gradients", vec![vec![1e12, -1e12, 1e12, -1e12]; 8]),
+            ("denormal gradients", vec![vec![1e-300, 1e-300, 1e-300, 1e-300]; 8]),
+            ("one sample", vec![vec![0.3, -0.2, 0.5, 0.1]]),
+        ];
+
+        for (label, stream) in scenarios {
+            let mut opt = PrismOptimizerN::<4>::new(0.01);
+            for g in &stream {
+                let update = opt.compute_update(g);
+                assert_eq!(update.len(), 4, "{label}: wrong update arity");
+                for (k, v) in update.iter().enumerate() {
+                    assert!(v.is_finite(), "{label}: component {k} of the update was {v}");
+                }
+            }
+            let cond = opt.condition_number();
+            assert!(cond.is_finite() && cond >= 0.0, "{label}: condition number was {cond}");
+            for (k, ev) in opt.eigenvalues().iter().enumerate() {
+                assert!(ev.is_finite(), "{label}: eigenvalue {k} was {ev}");
+            }
+        }
+    }
+
+    /// Selection feeds prompt prefixes, which must stay byte-stable.
+    #[test]
+    fn compute_update_is_deterministic_for_one_gradient_sequence() {
+        let mut seed = 0x9E37_79B9_7F4A_7C15_u64;
+        let stream: Vec<Vec<f64>> =
+            (0..40).map(|_| (0..4).map(|_| pr_lcg(&mut seed)).collect()).collect();
+
+        let run = |stream: &[Vec<f64>]| -> Vec<Vec<f64>> {
+            let mut opt = PrismOptimizerN::<4>::new(0.01);
+            stream.iter().map(|g| opt.compute_update(g)).collect()
+        };
+
+        assert_eq!(run(&stream), run(&stream), "the same gradients gave different updates");
+    }
+
     use super::*;
 
     // ── 4D Tests (backward compatibility) ────────────────────────────
