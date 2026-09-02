@@ -2247,6 +2247,143 @@ fn extract_css_skeleton(content: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// Bracket balance for a skeleton, ignoring string literals and comments.
+    ///
+    /// A necessary condition for validity in every language here, and the one
+    /// that caught 193 of the 282 Python skeleton failures.
+    fn bracket_depth(src: &str, hash_is_comment: bool) -> i32 {
+        let mut depth = 0i32;
+        for line in src.lines() {
+            let mut in_str: Option<char> = None;
+            let mut prev = ' ';
+            let mut chars = line.chars().peekable();
+            while let Some(ch) = chars.next() {
+                match in_str {
+                    Some(quote) => {
+                        if ch == quote && prev != '\\' {
+                            in_str = None;
+                        }
+                    }
+                    None => {
+                        if ch == '/' && chars.peek() == Some(&'/') {
+                            break;
+                        }
+                        if hash_is_comment && ch == '#' {
+                            break;
+                        }
+                        match ch {
+                            '"' | '\'' | '`' => in_str = Some(ch),
+                            '(' | '[' | '{' => depth += 1,
+                            ')' | ']' | '}' => {
+                                depth -= 1;
+                                if depth < 0 {
+                                    return depth;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                prev = ch;
+            }
+        }
+        depth
+    }
+
+    fn multiline_python_fixture() -> String {
+        let filler: String = (0..12)
+            .map(|k| format!("    step_{k} = value * {k}\n"))
+            .collect();
+        format!(
+            "from mod import (\n    Alpha,\n    Beta,\n)\n\n\nWEIGHTS = {{\n    'a': 1,\n}}\n\n\ndef compute(\n    first: int,\n    second: str,\n) -> float:\n{filler}    return 0.0\n"
+        )
+    }
+
+    /// A skeleton stands in for the full fragment when the budget is tight, so
+    /// it has to be readable code.
+    ///
+    /// This gate exists because the defect was invisible from the inside: the
+    /// extractor looked reasonable and every unit test passed while 282 of 310
+    /// generated Python skeletons failed `ast.parse`. Only generating skeletons
+    /// and checking them showed it.
+    #[test]
+    fn python_skeletons_have_balanced_brackets() {
+        let src = multiline_python_fixture();
+        let skel = extract_skeleton(&src, "mod.py").expect("fixture should compress");
+        assert_eq!(
+            bracket_depth(&skel, true),
+            0,
+            "unbalanced Python skeleton:\n{skel}"
+        );
+    }
+
+    /// The same check for Rust, JavaScript and Go, which do NOT pass.
+    ///
+    /// Ignored deliberately, and not as a shortcut. Measured across this
+    /// repository's tracked sources, skeletons with balanced brackets:
+    ///
+    ///     rust        6 / 74   ( 8.1%)
+    ///     javascript 47 / 61   (77.0%)
+    ///     typescript  5 /  7   (71.4%)
+    ///     shell       6 /  6   (100%)
+    ///     ruby        1 /  1   (100%)
+    ///
+    /// The cause is the same one fixed for Python: each extractor pushes the
+    /// first line of a construct and moves on, so multi-line signatures,
+    /// attributes, collection literals and grouped imports lose their closing
+    /// bracket.
+    ///
+    /// Two repair attempts were measured and both made real files *worse*,
+    /// even though they made fixtures like this one pass:
+    ///
+    ///   * per-branch fixes for `fn`, `#![attr]` and `const` took rust from
+    ///     8.1% to 11.6%, then down to 10.1%;
+    ///   * a shared balanced-construct helper applied at every push site made
+    ///     this fixture pass but took real rust from 8.1% to 3.9%, and 23 of
+    ///     74 files stopped producing a skeleton at all because including the
+    ///     continuations pushed them past the 70% "not worth it" threshold.
+    ///
+    /// Both were reverted. Passing a fixture is not evidence; the next attempt
+    /// needs to be measured against real sources, and probably needs the size
+    /// threshold reconsidered at the same time, since a correct skeleton is
+    /// necessarily larger than a truncated one.
+    #[test]
+    #[ignore = "measured defect: rust/js/go skeletons are not bracket-balanced; \
+                two repair attempts measured worse on real files and were reverted"]
+    fn rust_js_go_skeletons_have_balanced_brackets() {
+        let filler: String = (0..12)
+            .map(|k| format!("    let step_{k} = value * {k};\n"))
+            .collect();
+        let cases: [(&str, &str, String); 3] = [
+            (
+                "rust",
+                "mod.rs",
+                format!("#![allow(\n    dead_code,\n)]\n\nconst NAMES: &[&str] = &[\n    \"a\",\n];\n\npub fn compute(\n    first: u32,\n) -> f64 {{\n{filler}    0.0\n}}\n"),
+            ),
+            (
+                "javascript",
+                "mod.js",
+                format!("export function compute(\n  first,\n  second,\n) {{\n{filler}  return 0;\n}}\n"),
+            ),
+            (
+                "go",
+                "mod.go",
+                format!("package main\n\nfunc Compute(\n    first int,\n) float64 {{\n{filler}    return 0\n}}\n"),
+            ),
+        ];
+
+        let mut bad = Vec::new();
+        for (lang, source, content) in cases {
+            if let Some(skel) = extract_skeleton(&content, source) {
+                let depth = bracket_depth(&skel, false);
+                if depth != 0 {
+                    bad.push(format!("{lang} (depth {depth}):\n{skel}"));
+                }
+            }
+        }
+        assert!(bad.is_empty(), "unbalanced skeletons:\n{}", bad.join("\n---\n"));
+    }
+
     /// Brackets must balance and every header must have a body.
     ///
     /// The codec table advertises "syntax stays valid", and the knapsack serves
