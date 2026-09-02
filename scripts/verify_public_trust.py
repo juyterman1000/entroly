@@ -31,6 +31,42 @@ _EXPLICIT_NON_GUARANTEE = (
 _SUPPORTED_README_TITLES = (
     "Entroly — The Open-Source Context OS for AI Agents",
     "Entroly — Drop-In Context Assurance to Lower AI Operational Cost",
+    "Entroly — AI Token Efficiency, Context Compression & Context Assurance",
+)
+_TOKEN_AUTHORITY_REQUIRED = {
+    "docs/token-economics.html": (
+        "cost per successful, evidence-supported task",
+        "Effective input tokens = active input tokens + recovery input tokens.",
+        "unrelated to crypto-token",
+    ),
+    "docs/token-compression-tools.html": (
+        "There is no evidence-supported universal winner.",
+        "active plus recovered tokens",
+        "cost per successful task",
+    ),
+    "docs/best-context-compression-tools.html": (
+        "there is no evidence-supported universal winner",
+        "Active input + every recovery input",
+        "provider-observed usage",
+    ),
+    "llms.txt": (
+        "AI Token Efficiency",
+        "token compression",
+        "AI tokenomics",
+        "crypto-token",
+    ),
+}
+_TOKEN_AUTHORITY_FORBIDDEN = (
+    "Entroly is the leading open-source token compression",
+    "Entroly works with any LLM provider",
+    "aligns prompts for maximum cache hits",
+    "guaranteed to be identical",
+    "One command. No config.",
+    "79.3%–99.5% input tokens at 100% answer retention",
+    "79–99.5% token savings at 100% retention",
+    "79–99.5% fewer input tokens at 100% answer retention",
+    "way too many tokens",
+    "This directly reduces API costs",
 )
 
 
@@ -79,10 +115,36 @@ def _collect_prism_r_public_failures(
     return failures
 
 
+def _collect_token_authority_failures() -> list[str]:
+    """Keep generic AI-token query surfaces useful without rank or savings claims."""
+
+    root = Path(__file__).resolve().parents[1]
+    failures: list[str] = []
+    texts: dict[str, str] = {}
+    for rel, required in _TOKEN_AUTHORITY_REQUIRED.items():
+        path = root / rel
+        if not path.is_file():
+            failures.append(f"missing token-authority surface: {rel}")
+            continue
+        text = path.read_text(encoding="utf-8")
+        texts[rel] = text
+        normalized = text.casefold()
+        for phrase in required:
+            if phrase.casefold() not in normalized:
+                failures.append(f"{rel} is missing token-authority boundary {phrase!r}")
+
+    combined = "\n".join(texts.values()).casefold()
+    for phrase in _TOKEN_AUTHORITY_FORBIDDEN:
+        if phrase.casefold() in combined:
+            failures.append(f"token-authority surface contains unsupported claim {phrase!r}")
+    return failures
+
+
 def collect_offline_failures() -> list[str]:
     """Return canonical failures without rejecting equivalent scoped wording."""
 
     failures = _impl.collect_offline_failures()
+    failures.extend(_collect_token_authority_failures())
     root = Path(__file__).resolve().parents[1]
     readme = (root / "README.md").read_text(encoding="utf-8")
     pypi_readme = (root / "PYPI_README.md").read_text(encoding="utf-8")
@@ -162,6 +224,7 @@ __all__ = [
     "PROMINENT_PUBLIC_FILES",
     "_collect_prism_r_public_failures",
     "_collect_stale_public_claim_failures",
+    "_collect_token_authority_failures",
     "collect_offline_failures",
     "collect_online_failures",
     "collect_published_version_failures",

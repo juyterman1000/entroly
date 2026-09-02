@@ -315,6 +315,10 @@ class ValueTracker:
         self._activity_path = self._dir / self._ACTIVITY_NAME
         self._process_lock_path = self._dir / f"{self._FILE_NAME}.lock"
         self._lock = threading.RLock()
+        # Events this process lost to lock contention, awaiting a successful
+        # mutation to carry them into the persisted total. See record().
+        self._pending_dropped = 0
+        self._pending_dropped_tokens = 0
         self._data = self._load()
         self._activity: list[dict[str, Any]] = self._load_activity()
         # mtime fingerprints so reader processes (the dashboard) can go
@@ -411,6 +415,21 @@ class ValueTracker:
             with self._interprocess_lock():
                 self._data = self._load()
                 self._activity = self._load_activity()
+                # Any events this process lost to contention are folded in here,
+                # while the lock is already held, so the receipt can report what
+                # it failed to record instead of presenting a floor as a total.
+                if self._pending_dropped:
+                    lifetime = self._data.setdefault("lifetime", {})
+                    lifetime["events_dropped"] = (
+                        self._nonnegative_int(lifetime.get("events_dropped"))
+                        + self._pending_dropped
+                    )
+                    lifetime["tokens_dropped"] = (
+                        self._nonnegative_int(lifetime.get("tokens_dropped"))
+                        + self._pending_dropped_tokens
+                    )
+                    self._pending_dropped = 0
+                    self._pending_dropped_tokens = 0
                 yield
 
     @staticmethod
@@ -964,6 +983,17 @@ class ValueTracker:
                 source=source,
             )
         except TimeoutError as error:
+            # Dropping beats blocking a user's request on telemetry, so the
+            # timeout stays. What cannot stay is dropping silently: measured
+            # here with eight concurrent writers, 10% of events were lost and
+            # the receipt still reported its total as though it were exact. An
+            # omitted measurement is omitted evidence.
+            #
+            # Counted in memory and folded into the persisted total by the next
+            # successful mutation. Persisting it here would need the very lock
+            # that just timed out.
+            self._pending_dropped += 1
+            self._pending_dropped_tokens += self._nonnegative_int(tokens_saved)
             logger.warning("Value tracker busy; telemetry event dropped: %s", error)
 
     def _record_with_lock(
@@ -1246,6 +1276,23 @@ class ValueTracker:
         return {
             "schema_version": "entroly.value-receipt.v1",
             "energy": energy_for_tokens(total_tokens_reduced),
+            # What this receipt failed to measure. Telemetry is dropped rather
+            # than allowed to block a request, so under contention the totals
+            # above are a floor, not an exact count. Measured with eight
+            # concurrent writers, 10% of events were lost while the receipt
+            # still presented its total as complete. A reader deciding how much
+            # to trust these numbers needs to know how many are missing.
+            "measurement_gaps": {
+                "events_dropped": int(lifetime.get("events_dropped", 0) or 0),
+                "tokens_dropped": int(lifetime.get("tokens_dropped", 0) or 0),
+                "reason": (
+                    "value-tracker lock contention; telemetry is dropped rather "
+                    "than allowed to block a request"
+                ),
+                "totals_are": "a floor" if int(
+                    lifetime.get("events_dropped", 0) or 0
+                ) else "complete",
+            },
             "provider_path": {
                 "requests_observed": int(
                     lifetime.get("provider_requests", 0) or 0

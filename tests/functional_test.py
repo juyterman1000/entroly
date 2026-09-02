@@ -7,10 +7,41 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("functional_test")
 
-# Import the engine and configuration
-sys.path.insert(0, str(Path(__file__).parent))
+# Import the engine and configuration from *this* checkout.
+#
+# This inserted `Path(__file__).parent` -- the tests/ directory -- which does
+# nothing for `import entroly`, so resolution fell through to site-packages.
+# Running `python tests/functional_test.py` puts tests/ on sys.path[0] and
+# never the repository root, so on a machine carrying an editable install of
+# entroly pointing somewhere else, this script silently exercised that other
+# checkout and reported its result as this one's. That happened here: a stale
+# `.pth` from an old worktree made this script pass locally while CI failed on
+# all five Python versions.
+#
+# `parents[1]` is the repository root, the same anchor `base_dir` below already
+# uses for the fixtures. A test that cannot say which code it ran is not
+# evidence, so this is pinned rather than left to the environment.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(_REPO_ROOT))
+
+import entroly  # noqa: E402
+
+# Fail loudly rather than reporting another checkout's result as this one's.
+# The path insert above is enough on its own; this is here because the failure
+# it prevents is silent by nature -- the script ran, printed numbers, and
+# passed, and nothing in the output said which tree produced them.
+_imported_from = Path(entroly.__file__).resolve()
+if _REPO_ROOT not in _imported_from.parents:
+    raise SystemExit(
+        f"functional test imported entroly from {_imported_from}, which is "
+        f"outside this checkout ({_REPO_ROOT}). An editable install or "
+        f"PYTHONPATH entry is shadowing the package; the result would describe "
+        f"code that is not under test."
+    )
+
 from entroly.server import EntrolyEngine  # noqa: E402
 from entroly.config import EntrolyConfig  # noqa: E402
+from entroly.engine import naive_context_baseline  # noqa: E402
 
 
 def run_functional_test() -> None:
@@ -89,7 +120,19 @@ def run_functional_test() -> None:
         assert opt_result.get("selector") == "qccr", opt_result
         assert selected, "optimization returned no context"
         assert 0 < tokens_used <= budget
-        assert tokens_saved == total_tokens - tokens_used
+        # A saving is measured against a prompt someone could have sent, not
+        # against the whole ingested corpus. This asserted
+        # `total_tokens - tokens_used`, which credited the engine with the
+        # entire corpus: on this fixture that is 107,047 tokens "saved" against
+        # 11,442 actually sent, and it grows with the corpus rather than with
+        # anything the engine did. Nobody pastes 118k tokens into a model.
+        # `naive_context_baseline` is the shared ceiling; asserting against the
+        # function rather than a literal keeps this in step with the engine.
+        assert tokens_saved == naive_context_baseline(total_tokens) - tokens_used, (
+            f"expected {naive_context_baseline(total_tokens) - tokens_used}, "
+            f"got {tokens_saved} (corpus {total_tokens}, used {tokens_used})"
+        )
+        assert 0 <= tokens_saved <= naive_context_baseline(total_tokens)
         assert opt_result.get("selected_count") == len(selected)
 
         logger.info("\nOptimization Result:")

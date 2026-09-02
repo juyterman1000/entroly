@@ -114,7 +114,7 @@ def build_recovery_bundle(index: dict[str, Any]) -> dict[str, Any]:
 
 
 def recovery_path(receipt_id: str, store_dir: str | Path | None = None) -> Path:
-    base = Path(store_dir) if store_dir is not None else _store.DEFAULT_STORE
+    base = Path(store_dir) if store_dir is not None else _store.resolve_store()
     base.mkdir(parents=True, exist_ok=True)
     return base / f"{receipt_id}{RECOVERY_SUFFIX}"
 

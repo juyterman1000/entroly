@@ -20,7 +20,7 @@ A package badge does not prove benchmark quality. A local token estimate does no
 - [npm `entroly-wasm`](https://www.npmjs.com/package/entroly-wasm)
 - [Apache-2.0 license](../LICENSE)
 
-The base Python package has a pure-Python path. Rust acceleration is optional. The npm `entroly` package is a separate Node/WASM runtime.
+The base Python package declares `entroly-core` as a required dependency for the standard supported install and uses the native engine when a compatible wheel is available. An internal pure-Python fallback remains for unsupported platforms, but the benchmarked query-conditioned selection path must not be described as an optional native extra. The npm `entroly` package is a separate Node/WASM runtime.
 
 ## MCP launch contract
 
@@ -99,6 +99,28 @@ The LobeHub listing is an external discovery surface. **Only the live LobeHub pa
 - [Dated score audit](lobehub-score-audit.md)
 
 Marketplace badges are deliberately excluded from the simplified README until external indexing reflects the current release and validation state.
+
+## Discoverability evidence boundary
+
+The [discoverability registry](discoverability-registry.json) maps each priority
+AI-token intent to one canonical public answer, the evidence that answer may use,
+and the boundary it must preserve. It also records the measurement channels that
+must be connected before search visibility can be reported as observed rather
+than assumed.
+
+Search metadata, structured data, internal links, crawler access, and a sitemap
+can make Entroly easier to identify and index. They do **not** establish a Google
+ranking, an answer-engine citation, product superiority, or independent authority.
+A private transcript is useful as a requirements source but is not a public
+discovery signal. A first-party Entroly page is evidence of Entroly's published
+position only; it becomes third-party coverage only when an external source
+independently publishes or cites it.
+
+Current visibility must therefore be measured separately by query intent, engine,
+locale, and observation time. Google Search Console and Bing Webmaster Tools
+require owner-controlled connections. ChatGPT, Claude, and other answer-engine
+probes are nondeterministic observations, not durable rank guarantees. Until those
+channels contain dated observations, the registry keeps their status as pending.
 
 ## Quarantined public surfaces
 

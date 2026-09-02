@@ -71,6 +71,7 @@ def test_search_and_answer_crawlers_are_explicitly_allowed() -> None:
         "Claude-SearchBot",
         "Claude-User",
         "PerplexityBot",
+        "Perplexity-User",
     ):
         assert f"User-agent: {user_agent}\nAllow: /" in robots
     assert f"Sitemap: {SITE}/sitemap.xml" in robots
@@ -87,7 +88,7 @@ def test_discovery_sitemap_is_current_and_complete() -> None:
     }
     for spec in PAGES.values():
         assert entries[spec["canonical"]] == spec["lastmod"]
-    assert entries[f"{SITE}/docs/index.html"] == "2026-08-09"
+    assert entries[f"{SITE}/docs/index.html"] == "2026-08-31"
 
 
 def test_intent_pages_have_unique_search_metadata_and_valid_json_ld() -> None:

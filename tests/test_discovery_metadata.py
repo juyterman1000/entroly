@@ -46,11 +46,11 @@ def _toml_section(path: str, section: str) -> str:
 def test_readme_first_folds_explain_their_supported_product_profiles() -> None:
     readme_first_fold = _text("README.md")[:7_500].casefold()
     for phrase in (
-        "entroly — drop-in context assurance to lower ai operational cost",
-        "reduce unnecessary context without losing control of critical evidence.",
+        "entroly — ai token efficiency, context compression & context assurance",
+        "reduce avoidable ai token usage and provider-bound context without losing control of critical evidence.",
         "content-addressed evidence",
-        "recoverable compression",
-        "context os",
+        "recoverable context compression",
+        "token-efficiency",
         "local-first",
     ):
         assert phrase in readme_first_fold

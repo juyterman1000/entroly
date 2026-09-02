@@ -31,6 +31,14 @@ recv = {}
 
 
 class Mock(BaseHTTPRequestHandler):
+    # Real provider front doors speak HTTP/1.1 with keep-alive. BaseHTTPRequest
+    # Handler defaults to HTTP/1.0, which closes the connection after every
+    # response, so the proxy's pooling agent kept reusing sockets the mock had
+    # already closed. Under a 12-way burst that surfaced as a single
+    # "upstream error: io: Peer disconnected" 502 and a red main. The race was
+    # manufactured by the mock, not by the proxy.
+    protocol_version = "HTTP/1.1"
+
     def do_POST(self):
         n = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(n)
@@ -40,6 +48,10 @@ class Mock(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("x-request-id", "req-123")
+            # No Content-Length and no chunked framing: under HTTP/1.1 the end
+            # of this body is the close, so say so rather than leaving the
+            # reader waiting for a length that never comes.
+            self.send_header("Connection", "close")
             self.end_headers()
             for i in range(3):
                 self.wfile.write(f"data: chunk{i}\n\n".encode())

@@ -4,16 +4,21 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Best Context Compression Tools for LLMs: 2026 Comparison &amp; Guide — Entroly</title>
-<meta name="description" content="Compare the best context compression tools, prompt compression, and token optimization utilities for LLMs. Entroly cuts 79.3%–99.5% of tokens at 100% answer retention on long-context benchmarks, keeps every omitted span byte-exactly recoverable, emits an inspectable receipt, and runs local-first.">
+<meta name="description" content="Compare context compression tools for LLMs by task success, evidence retention, active and recovered tokens, exact recovery, latency, and provider-observed cost.">
 <meta name="keywords" content="best context compression tools, best compression tools for llm, best prompt compression tools, llm context compression, token compression tools, ai context optimization, prompt compression">
+<meta name="robots" content="index,follow,max-snippet:-1,max-image-preview:large,max-video-preview:-1">
+<meta name="googlebot" content="index,follow,max-snippet:-1,max-image-preview:large">
+<meta name="bingbot" content="index,follow,max-snippet:-1,max-image-preview:large">
+<meta property="og:site_name" content="Entroly">
 <meta property="og:title" content="Best Context Compression Tools for LLMs: 2026 Comparison &amp; Guide">
-<meta property="og:description" content="Compare the best context compression tools for LLMs on ratio, recoverability, and audit trail. Entroly: 79–99.5% token savings at 100% answer retention, byte-exact recovery, inspectable receipts, local-first.">
+<meta property="og:description" content="An evidence-first guide to choosing context compression: measure successful work, evidence retention, recovery cost, latency, and provider usage.">
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://juyterman1000.github.io/entroly/docs/best-context-compression-tools.html">
 <meta property="og:image" content="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/logo.png">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Best Context Compression Tools for LLMs: 2026 Comparison &amp; Guide">
-<meta name="twitter:description" content="79–99.5% token savings at 100% answer retention. Compare the best context compression tools on recoverability and audit trail.">
+<meta name="twitter:description" content="Compare context compression tools by cost per successful, evidence-supported task—not token removal alone.">
+<meta name="twitter:image" content="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/logo.png">
 <link rel="canonical" href="https://juyterman1000.github.io/entroly/docs/best-context-compression-tools.html">
 <script type="application/ld+json">
 {
@@ -21,14 +26,33 @@
   "@type": "TechArticle",
   "headline": "Best Context Compression Tools for LLMs: 2026 Comparison & Guide",
   "description": "How the best context compression, prompt compression, and token optimization tools for large language models differ on compression ratio, recoverability of omitted content, and auditability of what was selected.",
-  "author": {"@type": "Organization", "name": "Entroly", "url": "https://github.com/juyterman1000/entroly"},
-  "publisher": {"@type": "Organization", "name": "Entroly", "url": "https://github.com/juyterman1000/entroly"},
+  "@id": "https://juyterman1000.github.io/entroly/docs/best-context-compression-tools.html#article",
+  "author": {"@id": "https://juyterman1000.github.io/entroly/#organization"},
+  "publisher": {"@id": "https://juyterman1000.github.io/entroly/#organization"},
   "datePublished": "2026-07-01",
-  "dateModified": "2026-08-15",
+  "dateModified": "2026-08-31",
   "license": "https://www.apache.org/licenses/LICENSE-2.0",
   "isAccessibleForFree": true,
   "keywords": "best context compression tools, best compression tools for llm, prompt compression, LLM token optimization, token reduction tools, AI cost reduction",
-  "mainEntityOfPage": {"@type": "WebPage", "@id": "https://juyterman1000.github.io/entroly/docs/best-context-compression-tools.html"}
+  "about": {"@id": "https://juyterman1000.github.io/entroly/#software"},
+  "citation": [
+    "https://aclanthology.org/2026.findings-acl.1032/",
+    "https://aclanthology.org/2025.findings-emnlp.949/",
+    "https://github.com/juyterman1000/entroly/blob/main/docs/BENCHMARKS.md"
+  ],
+  "mainEntityOfPage": {"@id": "https://juyterman1000.github.io/entroly/docs/best-context-compression-tools.html#webpage"}
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {"@type":"Organization","@id":"https://juyterman1000.github.io/entroly/#organization","name":"Entroly","url":"https://juyterman1000.github.io/entroly/docs/index.html","sameAs":["https://github.com/juyterman1000/entroly","https://pypi.org/project/entroly/","https://www.npmjs.com/package/entroly"]},
+    {"@type":"WebSite","@id":"https://juyterman1000.github.io/entroly/#website","url":"https://juyterman1000.github.io/entroly/","name":"Entroly","publisher":{"@id":"https://juyterman1000.github.io/entroly/#organization"}},
+    {"@type":"SoftwareApplication","@id":"https://juyterman1000.github.io/entroly/#software","name":"Entroly","url":"https://juyterman1000.github.io/entroly/docs/index.html","applicationCategory":"DeveloperApplication","applicationSubCategory":"AI Token Efficiency, Context Compression and Context Assurance","operatingSystem":"Windows, macOS, Linux","codeRepository":"https://github.com/juyterman1000/entroly","downloadUrl":"https://pypi.org/project/entroly/","license":"https://opensource.org/licenses/Apache-2.0"},
+    {"@type":"WebPage","@id":"https://juyterman1000.github.io/entroly/docs/best-context-compression-tools.html#webpage","url":"https://juyterman1000.github.io/entroly/docs/best-context-compression-tools.html","name":"Best Context Compression Tools for LLMs (2026)","isPartOf":{"@id":"https://juyterman1000.github.io/entroly/#website"},"about":{"@id":"https://juyterman1000.github.io/entroly/#software"},"breadcrumb":{"@id":"https://juyterman1000.github.io/entroly/docs/best-context-compression-tools.html#breadcrumb"}},
+    {"@type":"BreadcrumbList","@id":"https://juyterman1000.github.io/entroly/docs/best-context-compression-tools.html#breadcrumb","itemListElement":[{"@type":"ListItem","position":1,"name":"Entroly","item":"https://juyterman1000.github.io/entroly/docs/index.html"},{"@type":"ListItem","position":2,"name":"Context Compression Tools","item":"https://juyterman1000.github.io/entroly/docs/best-context-compression-tools.html"}]}
+  ]
 }
 </script>
 <script type="application/ld+json">
@@ -126,68 +150,31 @@ td{color:var(--muted)}
 <article>
 <h1>Best Open-Source Context Compression Tools for LLMs <span style="color:var(--muted);font-size:0.6em">(2026)</span></h1>
 
-<p>If you're running <strong>Cursor</strong>, <strong>Claude Code</strong>, <strong>Windsurf</strong>, <strong>Cline</strong>, or any LLM-powered coding agent, you're almost certainly sending <strong>way too many tokens</strong> per request. Context compression tools solve this — they reduce the tokens your AI sees while preserving the information it needs.</p>
+<p>Context compression can reduce avoidable model-bound input, but reduction is useful only when the task still succeeds and answer-critical evidence remains available. Repository context, tool output, RAG documents, and long-session history create different failure modes, so there is no evidence-supported universal winner.</p>
 
-<p>This guide compares every major open-source context compression and prompt optimization tool available in 2026. We cover <strong>compression ratio</strong>, <strong>lossless recovery</strong>, <strong>hallucination detection</strong>, <strong>cost savings</strong>, and <strong>integration ease</strong>.</p>
+<p>This guide gives a reproducible comparison contract for evaluating context compression and prompt optimization tools. It covers <strong>task success</strong>, <strong>evidence retention</strong>, <strong>active and recovered tokens</strong>, <strong>exact recovery</strong>, <strong>latency</strong>, and <strong>provider-observed cost</strong>.</p>
 
-<h2>Quick Comparison Table</h2>
+<p><strong>Independent research context:</strong> recent ACL work treats context management as a long-horizon agent problem rather than a ratio-only exercise, while information-preservation research evaluates grounding and downstream task performance alongside compression. These papers motivate the dimensions in this comparison; they do not validate Entroly's product-specific results. See <a href="https://aclanthology.org/2026.findings-acl.1032/">Context as a Tool</a> and <a href="https://aclanthology.org/2025.findings-emnlp.949/">Understanding and Improving Information Preservation in Prompt Compression</a>.</p>
+
+<h2>Comparison checklist</h2>
 
 <table>
 <thead>
-<tr><th>Tool</th><th>Compression</th><th>Lossless?</th><th>Hallucination Guard</th><th>MCP Support</th><th>Language</th><th>License</th></tr>
+<tr><th>Measure</th><th>What to record</th><th>Failure rule</th></tr>
 </thead>
 <tbody>
-<tr>
-  <td><strong>Entroly</strong></td>
-  <td class="winner">79–99.5%<br><small>at 100% answer retention</small></td>
-  <td class="winner">✅ CCR</td>
-  <td class="winner">✅ WITNESS</td>
-  <td class="winner">✅ Native</td>
-  <td>Rust + Python</td>
-  <td><span class="badge badge-green">Apache-2.0</span></td>
-</tr>
-<tr>
-  <td>LLMLingua-2</td>
-  <td class="good">50–80%</td>
-  <td class="weak">❌</td>
-  <td class="weak">❌</td>
-  <td class="weak">❌</td>
-  <td>Python</td>
-  <td><span class="badge badge-blue">MIT</span></td>
-</tr>
-<tr>
-  <td>Selective Context</td>
-  <td class="mid">40–60%</td>
-  <td class="weak">❌</td>
-  <td class="weak">❌</td>
-  <td class="weak">❌</td>
-  <td>Python</td>
-  <td><span class="badge badge-blue">MIT</span></td>
-</tr>
-<tr>
-  <td>RECOMP</td>
-  <td class="good">60–75%</td>
-  <td class="weak">❌</td>
-  <td class="weak">❌</td>
-  <td class="weak">❌</td>
-  <td>Python</td>
-  <td><span class="badge badge-blue">MIT</span></td>
-</tr>
-<tr>
-  <td>Context Caching (native)</td>
-  <td class="mid">0% (cost only)</td>
-  <td class="winner">✅</td>
-  <td class="weak">❌</td>
-  <td class="weak">❌</td>
-  <td>API</td>
-  <td><span class="badge badge-yellow">Proprietary</span></td>
-</tr>
+<tr><td><strong>Task success</strong></td><td>One preregistered oracle per task</td><td>A smaller failed context does not win</td></tr>
+<tr><td><strong>Effective tokens</strong></td><td>Active input + every recovery input</td><td>Recovery overhead cannot disappear</td></tr>
+<tr><td><strong>Evidence retention</strong></td><td>Answer-critical evidence kept in active context</td><td>Report separately from answer quality</td></tr>
+<tr><td><strong>Exact recovery</strong></td><td>Byte-level recovery and integrity result</td><td>Do not call lossy summaries recoverable</td></tr>
+<tr><td><strong>Latency</strong></td><td>Transform and recovery p50/p95</td><td>Include local preprocessing overhead</td></tr>
+<tr><td><strong>Cost per success</strong></td><td>Provider-observed usage and versioned prices</td><td>Local token estimates are not invoices</td></tr>
 </tbody>
 </table>
 
 <h2>What Is Context Compression?</h2>
 
-<p><strong>Context compression</strong> (also called <strong>prompt compression</strong> or <strong>token optimization</strong>) is the process of reducing the number of tokens sent to a large language model while preserving the information the model needs to produce accurate outputs. This directly reduces API costs and improves response latency.</p>
+<p><strong>Context compression</strong> (also called <strong>prompt compression</strong> or one part of <strong>token optimization</strong>) reduces the input sent to a large language model. It may reduce metered input cost or latency on a specific route, but only provider-observed usage and workload measurements can establish that outcome.</p>
 
 <p>There are several approaches:</p>
 <ul>
@@ -197,55 +184,54 @@ td{color:var(--muted)}
   <li><strong>Cache alignment</strong>: Structure prompts so provider KV-caches give automatic discounts (Entroly's secondary approach)</li>
 </ul>
 
-<h2>Tool Deep Dives</h2>
+<h2>Approach deep dives</h2>
 
-<h3>1. Entroly — The Full-Stack Context Control Plane</h3>
+<h3>Entroly — recoverable evidence selection and Context Assurance</h3>
 
-<p><strong>Entroly</strong> takes a fundamentally different approach from academic prompt compressors. Rather than modifying text, it uses <strong>information-theoretic selection</strong>: Shannon entropy scoring, 0/1 Knapsack optimization, SimHash deduplication, and BM25 ranking to select the <em>optimal subset</em> of context that fits your token budget.</p>
+<p><strong>Entroly</strong> selects whole evidence spans under an explicit token budget, applies structured compression, keeps omitted source addressable, and emits receipts. The useful question is whether this path improves effective-token efficiency on the exact task—not whether it reports the largest isolated reduction ratio.</p>
 
 <p>Key differentiators:</p>
 <ul>
-  <li><strong>79.3%–99.5% token savings at 100% answer retention</strong> on the long-context benchmarks in the committed set: NeedleInAHaystack cut 10,808 tokens to 56 (99.5%) with accuracy unchanged at 100%, Berkeley Function Calling cut 79.3% with accuracy unchanged, and LongBench HotpotQA cut 85.3% while accuracy <em>rose</em> from 64% to 66%. Every figure links to its raw result file in <a href="https://github.com/juyterman1000/entroly/blob/main/docs/BENCHMARKS.md">BENCHMARKS.md</a></li>
+  <li><strong>Workload-specific evidence:</strong> the committed benchmark set includes high-redundancy wins and a SQuAD 2.0 loss case. Every public figure must stay attached to its workload, budget, task metric, and raw result in <a href="https://github.com/juyterman1000/entroly/blob/main/docs/BENCHMARKS.md">BENCHMARKS.md</a></li>
   <li><strong>The worst case, stated plainly:</strong> SQuAD 2.0 retained 90% (80% → 72%) at 43.8% savings. That workload averages 233-token inputs — a single paragraph, run at a 100-token budget — so there is little redundancy to remove and the budget does the cutting. Compression helps least exactly where context is already small, which is why Entroly passes small inputs through untouched. Run <code>entroly simulate</code> for your own tree — offline, no API key</li>
-  <li><strong>Content-Compressed Retrieval (CCR)</strong>: Every omitted fragment gets a content-addressed handle. The AI can <code>entroly_retrieve("ccr:abc123")</code> to get the exact original bytes back — lossless, verified, no hallucination</li>
-  <li><strong>WITNESS hallucination guard</strong>: Locally verifies every LLM response against source evidence. 0.7976 AUROC on the 16,000-decision held-out HaluEval-QA split. $0 cost, no API calls</li>
-  <li><strong>KV-Cache Aligner</strong>: Reorders prompt sections so the stable prefix matches between requests, triggering Anthropic's and OpenAI's automatic cache discounts (up to 90% off cached tokens)</li>
-  <li><strong>MCP native</strong>: Runs as a Model Context Protocol server — plug into Cursor, Claude Code, Windsurf, or Cline in 30 seconds</li>
-  <li><strong>Rust engine</strong>: Core computations run in compiled Rust via PyO3, 50–100× faster than pure Python</li>
+  <li><strong>Content-addressed recovery:</strong> omitted source spans recorded in a receipt can remain addressable while the configured recovery state is retained; exact-recovery tests verify returned bytes against the original source</li>
+  <li><strong>WITNESS grounding-risk signal:</strong> locally evaluates configured output claims against supplied evidence. Its committed HaluEval-QA artifact reports the held-out protocol, sample count, AUROC, and uncertainty; it is not a universal hallucination-prevention guarantee</li>
+  <li><strong>KV-Cache Aligner:</strong> keeps eligible prompt prefixes byte-stable where possible; only provider-reported usage can establish whether a cache hit or discount occurred</li>
+  <li><strong>MCP integration:</strong> runs as a Model Context Protocol server for supported clients; setup and measured effect depend on the client and integration route</li>
+  <li><strong>Native engine</strong>: the supported Python install uses the compiled Rust engine where a compatible wheel is available, with a fallback for unsupported platforms</li>
 </ul>
 
 <pre>pip install entroly && cd /your/repo && entroly go</pre>
 
 <h3>2. LLMLingua-2 — Token-Level Prompt Compression</h3>
 
-<p><strong>LLMLingua-2</strong> (Microsoft Research) is a token-level compressor that uses a small classifier model to decide which tokens to keep and which to drop. It achieves 50–80% compression but <strong>modifies the actual text</strong> — dropped tokens are gone permanently.</p>
+<p><strong>Token-level compressors</strong> use a scoring model to decide which prompt tokens to retain. Evaluate them on the same task oracle and inspect whether omitted source can be recovered; compression ratios from a different dataset are not a head-to-head comparison.</p>
 
-<p>Limitations:</p>
+<p>Evaluation questions:</p>
 <ul>
-  <li>Requires a GPU for the classifier model</li>
-  <li>No lossless recovery — you cannot get omitted content back</li>
-  <li>No built-in hallucination detection</li>
-  <li>Not designed for code (trained on natural language)</li>
-  <li>No MCP integration — requires custom Python wrapper</li>
+  <li>What model and hardware does the scorer require on your route?</li>
+  <li>Can altered or omitted text be recovered and verified exactly?</li>
+  <li>What happens on code, tool output, JSON, and long agent trajectories?</li>
+  <li>What preprocessing latency and integration work does the method add?</li>
 </ul>
 
-<h3>3. Selective Context — Entropy-Based Filtering</h3>
+<h3>Entropy-based filtering</h3>
 
-<p><strong>Selective Context</strong> uses self-information (entropy) from a language model to filter out low-information tokens. Simpler than LLMLingua but achieves 40–60% compression. Struggles with code where syntactic tokens (brackets, semicolons) have low entropy but are semantically critical.</p>
+<p>Entropy-based filtering removes locally predictable material. Code and structured evidence need explicit task tests because syntactically small tokens can still be load-bearing.</p>
 
-<h3>4. RECOMP — Abstractive + Extractive</h3>
+<h3>Abstractive and extractive summarization</h3>
 
-<p><strong>RECOMP</strong> combines extractive sentence selection with abstractive summarization. Good for RAG pipelines where you want to compress retrieved passages before sending to the LLM. Achieves 60–75% compression but requires an LLM call for the abstractive step, which adds cost and latency.</p>
+<p>Abstractive and extractive summarization can shorten retrieved passages, but any extra model call, latency, and lost exact wording belongs in the measurement.</p>
 
 <h3>5. Provider Context Caching (Claude, GPT-4)</h3>
 
-<p>Anthropic and OpenAI offer <strong>automatic context caching</strong> — if the prefix of your prompt matches a previous request, cached tokens are discounted (up to 90% for Anthropic, 50% for OpenAI). This reduces <em>cost</em> but not <em>token count</em>. Entroly's KV-Cache Aligner specifically structures prompts to maximize these discounts while also compressing the actual content.</p>
+<p>Provider context caching can change billed cost without reducing token count. Treat provider-reported cache usage as authoritative and measure it separately from compression.</p>
 
 <h2>Why Context Compression Matters for AI Coding</h2>
 
-<p>A typical Cursor or Claude Code session on a medium repository (50K+ lines) sends <strong>80,000–200,000 tokens per request</strong>. At Claude Sonnet 4 pricing ($3/MTok input), that's <strong>$0.24–$0.60 per request</strong>. A developer making 50+ requests/day burns <strong>$12–$30/day</strong> or <strong>$250–$600/month</strong> in API costs alone.</p>
+<p>Agentic coding can repeatedly resend repository context, tool output, and history. The amount depends on the client, task, model, cache behavior, and integration route. Measure the actual provider-bound request rather than estimating a universal “typical” bill.</p>
 
-<p>Reducing that input is where compression pays. On the long-context benchmarks in Entroly's committed set, savings ran <strong>79.3%–99.5% with no accuracy loss</strong>, which on the request economics above would move a $0.24–$0.60 request into the low single-digit cents. Two honest caveats on that arithmetic: savings depend on your repository, query mix, token budget, and cache behaviour — run <code>entroly simulate</code> locally, with no API call, to get your own profile — and a token reduction only becomes a <em>billing</em> reduction on routes actually sent to a metered model. On a fixed-price subscription, fewer tokens does not lower the invoice; it buys longer sessions and larger working sets instead.</p>
+<p>Reducing avoidable input can help on metered routes, but active tokens are only one term. Count recovery, task failures, evidence loss, preprocessing latency, output usage, and cache behavior before converting a token result into an economic claim.</p>
 
 <p>But cost is only half the story. Model performance degrades measurably as input length grows — the effect commonly called context rot — so a smaller, better-selected context can help accuracy independently of price. That is a tendency, not a guarantee: compression can also remove something load-bearing, which is why Entroly emits a receipt of what it dropped and keeps every omission recoverable.</p>
 
@@ -254,39 +240,41 @@ td{color:var(--muted)}
 <div class="faq">
 <details>
 <summary>What is prompt compression?</summary>
-<div class="answer">Prompt compression reduces the number of tokens sent to an LLM while preserving the information needed for accurate responses. This saves money on API costs (tokens = money), reduces latency, and can improve output quality by removing noise from the context window.</div>
+<div class="answer">Prompt compression reduces the input sent to an LLM. It can reduce metered input usage on supported routes, but cost, latency, and answer quality remain workload- and provider-dependent measurements.</div>
 </details>
 
 <details>
 <summary>Does context compression hurt AI output quality?</summary>
-<div class="answer">Done well, context compression <em>improves</em> output quality. LLMs suffer from "lost in the middle" — they pay less attention to information in the middle of long contexts. By selecting only the most relevant fragments and ordering them optimally, compression tools like Entroly actually improve the model's ability to focus on what matters.</div>
+<div class="answer">It can. Compression may remove answer-critical evidence, and a smaller context is not proof of a better answer. Evaluate task success and evidence retention separately, publish loss cases, and count any later recovery in the effective-token total.</div>
 </details>
 
 <details>
 <summary>What's the difference between prompt compression and context caching?</summary>
-<div class="answer">Prompt compression reduces the number of tokens sent to the model. Context caching (offered by Anthropic and OpenAI) discounts the cost of tokens that were sent identically in a previous request. They're complementary: Entroly does both — it compresses context AND aligns prompts for maximum cache hits.</div>
+<div class="answer">Prompt compression reduces the number of tokens sent to the model. Context caching can discount eligible repeated prefixes. They are complementary: Entroly can reduce selected context and keep eligible prefixes stable, but only provider-reported usage can establish a cache hit or discount.</div>
 </details>
 
 <details>
 <summary>Can I compress prompts for Claude? For GPT-4? For Gemini?</summary>
-<div class="answer">Yes. Entroly works with any LLM provider. It runs as a local proxy or MCP server — it sits between your AI coding tool and the provider API, compressing context before it's sent. Works with Claude (Anthropic), GPT-4/o (OpenAI), Gemini (Google), and any OpenAI-compatible endpoint.</div>
+<div class="answer">Entroly supports documented proxy, MCP, SDK, and compatible endpoint routes. Provider and client behavior varies, so verify the exact adapter, request transformation, authentication ownership, and provider-observed token usage for your integration.</div>
 </details>
 
 <details>
 <summary>How is Entroly different from LLMLingua?</summary>
-<div class="answer">LLMLingua modifies text by dropping tokens — it's lossy and irreversible. Entroly <em>selects</em> the most relevant code fragments using information theory (knapsack optimization, entropy scoring) and provides Content-Compressed Retrieval (CCR) handles so the AI can fetch any omitted content back, byte-exact. Plus, Entroly includes a hallucination guard (WITNESS) that LLMLingua doesn't have.</div>
+<div class="answer">The methods optimize different surfaces. LLMLingua-family methods score and shorten prompt text. Entroly primarily selects whole evidence spans under a budget, records selection in Context Receipts, and can retain content-addressed recovery state. Compare both on the same task oracle, token accounting, evidence-retention test, latency budget, and recovery requirement.</div>
 </details>
 
 <details>
-<summary>What is Content-Compressed Retrieval (CCR)?</summary>
-<div class="answer">CCR is Entroly's lossless recovery mechanism. When context is compressed, every omitted fragment gets a content-addressed handle (like a git hash). The AI can call <code>entroly_retrieve("ccr:abc123")</code> to get the exact original content back. The recovered content is cryptographically verified — it's guaranteed to be identical to what was omitted.</div>
+<summary>What is Entroly's content-addressed recovery?</summary>
+<div class="answer">Entroly can record omitted source spans with content-addressed recovery metadata. While the configured recovery state is retained, the runtime can return the recorded original bytes and verify them against the receipt. Recovery availability and the exact public tool contract depend on the integration and retained state.</div>
 </details>
 </div>
 
 <div class="cta-box">
-  <h3>Try Entroly in 30 Seconds</h3>
-  <p style="color:var(--muted)">One command. No config. Works with Cursor, Claude Code, Windsurf, and Cline.</p>
-  <pre>pip install entroly && cd /your/repo && entroly go</pre>
+  <h3>Measure Entroly on your own repository</h3>
+  <p style="color:var(--muted)">Install locally, run the bounded verification, then inspect the documented integration path for your client.</p>
+  <pre>pip install -U entroly
+entroly verify-claims
+entroly simulate</pre>
   <br>
   <a href="https://github.com/juyterman1000/entroly" class="cta-btn">⭐ Star on GitHub</a>
   &nbsp;&nbsp;

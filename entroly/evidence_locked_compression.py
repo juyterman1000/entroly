@@ -36,6 +36,8 @@ _ANCHOR_RE = re.compile(
 _PATH_RE = re.compile(r"(?:[\w./-]+\.(?:py|rs|ts|tsx|js|jsx|java|kt|go|c|cpp|h|hpp|json|ya?ml|toml))(?:[:#]\d+)?")
 _ID_RE = re.compile(r"\b(?:[A-Fa-f0-9]{7,40}|[A-Z]{2,}-\d+|[\w.-]+@[\w.-]+)\b")
 _WORD_RE = re.compile(r"\b[\w.-]{3,}\b")
+_IDENTIFIER_BOUNDARY_RE = re.compile(r"[_\-.]+")
+_CAMEL_BOUNDARY_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 _SENTENCE_RE = re.compile(r"(?<=[.!?])\s+|\n+")
 _HARD_LOCK_REASONS = {"anchor", "query", "boundary", "path", "id"}
 _RECEIPT_REASONS = _HARD_LOCK_REASONS | {"outlier"}
@@ -307,7 +309,7 @@ def _score_line(index: int, line: str, query_terms: set[str], total_lines: int) 
     if _ID_RE.search(stripped):
         reasons.add("id")
         score += 1.5
-    matched = query_terms.intersection({w.lower() for w in _WORD_RE.findall(stripped)})
+    matched = query_terms.intersection(_lexical_terms(stripped))
     if matched:
         reasons.add("query")
         score += 4.0 + len(matched)
@@ -491,7 +493,7 @@ def _json_query_matches(
     ranked: list[tuple[int, int, Any]] = []
     for order, item in enumerate(_walk_json_records(obj)):
         rendered = json.dumps(item, ensure_ascii=False, sort_keys=True).lower()
-        words = {word.lower() for word in _WORD_RE.findall(rendered)}
+        words = _lexical_terms(rendered)
         coverage = len(query_terms.intersection(words))
         if coverage:
             ranked.append((coverage, order, item))
@@ -625,7 +627,7 @@ def _relevant_text_excerpt(text: str, query_terms: set[str], max_chars: int) -> 
         return text[:max_chars]
     scored: list[tuple[int, float, int]] = []
     for index, sentence in enumerate(sentences):
-        words = {word.lower() for word in _WORD_RE.findall(sentence)}
+        words = _lexical_terms(sentence)
         overlap = len(query_terms.intersection(words))
         density = overlap / max(1, len(words))
         scored.append((overlap, density, index))
@@ -647,10 +649,32 @@ def _relevant_text_excerpt(text: str, query_terms: set[str], max_chars: int) -> 
 
 def _query_terms(query: str) -> set[str]:
     return {
-        word.lower()
-        for word in _WORD_RE.findall(query or "")
-        if len(word) >= 3 and word.lower() not in _QUERY_STOPWORDS
+        term
+        for term in _lexical_terms(query or "")
+        if term not in _QUERY_STOPWORDS
     }
+
+
+def _lexical_terms(text: str) -> set[str]:
+    """Return whole tokens plus identifier components for query matching.
+
+    Natural-language tasks say "effective token ratio" or "full recovery",
+    while JSON and source code commonly encode the same concepts as
+    ``mean_effective_token_ratio`` or ``compressionProxyFullRecovery``.
+    Keeping both the full token and its components preserves exact-id matching
+    without making natural-language retrieval blind to structured fields.
+    """
+    terms: set[str] = set()
+    for raw in _WORD_RE.findall(text or ""):
+        lowered = raw.lower()
+        if len(lowered) >= 3:
+            terms.add(lowered)
+        camel_split = _CAMEL_BOUNDARY_RE.sub("_", raw)
+        for part in _IDENTIFIER_BOUNDARY_RE.split(camel_split):
+            normalized = part.lower()
+            if len(normalized) >= 3:
+                terms.add(normalized)
+    return terms
 
 
 def _entropy(text: str) -> float:
