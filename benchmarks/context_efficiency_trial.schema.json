@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://entroly.com/schemas/context-efficiency-trial.v1.json",
+  "$id": "https://entroly.com/schemas/context-efficiency-trial.v2.json",
   "title": "Entroly Context Efficiency Trial",
   "description": "One provider-observed task trial in a paired context-efficiency experiment.",
   "type": "object",
@@ -25,8 +25,13 @@
     "condition",
     "scorer",
     "task_score",
+    "task_success",
     "evidence_recall",
     "unsupported_claim_rate",
+    "experiment_config",
+    "usage_observed",
+    "cost_observed",
+    "error_fingerprint",
     "context_tokens",
     "reasoning_tokens",
     "output_tokens",
@@ -36,7 +41,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": "entroly.context-efficiency-trial.v1"
+      "const": "entroly.context-efficiency-trial.v2"
     },
     "workload": {
       "type": "string",
@@ -123,6 +128,8 @@
     "condition": {
       "enum": [
         "raw",
+        "algorithmic_baseline",
+        "external_baseline",
         "native_compaction",
         "entroly",
         "combined"
@@ -137,6 +144,10 @@
       "minimum": 0,
       "maximum": 1
     },
+    "task_success": {
+      "type": "boolean",
+      "description": "Predeclared binary success gate; separate from a potentially fractional benchmark score."
+    },
     "evidence_recall": {
       "type": "number",
       "minimum": 0,
@@ -146,6 +157,24 @@
       "type": "number",
       "minimum": 0,
       "maximum": 1
+    },
+    "experiment_config": {
+      "type": "string",
+      "minLength": 2,
+      "description": "Canonical JSON object binding decoding, prompt, budget, selection, and scorer dependencies."
+    },
+    "usage_observed": {
+      "type": "boolean"
+    },
+    "cost_observed": {
+      "type": "boolean"
+    },
+    "error_fingerprint": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
     },
     "context_tokens": {
       "type": "integer",
@@ -218,6 +247,9 @@
           "error_type": {
             "type": "null"
           },
+          "error_fingerprint": {
+            "type": "null"
+          },
           "response_text": {
             "type": "string"
           },
@@ -233,11 +265,62 @@
             "type": "string",
             "minLength": 1
           },
+          "error_fingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "task_success": {
+            "const": false
+          },
           "response_text": {
             "type": "null"
           },
           "response_sha256": {
             "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "usage_observed": {
+            "const": false
+          }
+        },
+        "required": [
+          "usage_observed"
+        ]
+      },
+      "then": {
+        "properties": {
+          "context_tokens": {
+            "const": 0
+          },
+          "reasoning_tokens": {
+            "const": 0
+          },
+          "output_tokens": {
+            "const": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "cost_observed": {
+            "const": false
+          }
+        },
+        "required": [
+          "cost_observed"
+        ]
+      },
+      "then": {
+        "properties": {
+          "billed_cost_usd": {
+            "const": 0
           }
         }
       }

@@ -5,6 +5,7 @@ import hashlib
 from pathlib import Path
 
 import pytest
+from jsonschema import Draft202012Validator
 
 from benchmarks.context_efficiency_frontier import (
     CONDITIONS,
@@ -14,7 +15,9 @@ from benchmarks.context_efficiency_frontier import (
     USAGE_SOURCES,
     Trial,
     analyze_frontier,
+    clopper_pearson_upper,
     load_trials,
+    zero_event_sample_size,
 )
 from benchmarks.context_efficiency_report import render_markdown
 
@@ -40,8 +43,13 @@ def _record(task: int, condition: str, **overrides):
         "condition": condition,
         "scorer": "exact-match-v1",
         "task_score": 1.0,
+        "task_success": True,
         "evidence_recall": 1.0,
         "unsupported_claim_rate": 0.0,
+        "experiment_config": '{"fixture":"v2"}',
+        "usage_observed": True,
+        "cost_observed": True,
+        "error_fingerprint": None,
         "context_tokens": 1_000 if condition == "raw" else 400,
         "reasoning_tokens": 100,
         "output_tokens": 50,
@@ -56,20 +64,46 @@ def _record(task: int, condition: str, **overrides):
 def test_frontier_reports_paired_quality_preserving_win():
     trials = [
         Trial.from_dict(_record(task, condition))
-        for task in range(8)
+        for task in range(100)
         for condition in ("raw", "entroly")
     ]
 
-    report = analyze_frontier(trials, bootstrap_samples=200, seed=7)
+    report = analyze_frontier(
+        trials, bootstrap_samples=200, seed=7
+    )
     comparison = report["comparisons_to_raw"]["entroly"]
 
-    assert report["pair_count"] == 8
+    assert report["pair_count"] == 100
     assert comparison["mean_quality_delta"] == 0.0
     assert comparison["mean_context_reduction"] == 0.6
     assert comparison["mean_billed_cost_reduction"] == 0.5
     assert comparison["quality_preserving_context_win"] is True
+    assert comparison["claim_status"] == "pass"
     assert report["pareto_frontier"] == ["entroly"]
     assert report["provenance"]["usage_sources"] == ["deterministic_fixture"]
+
+
+def test_dirty_entroly_runtime_blocks_a_public_pass():
+    dirty_config = json.dumps(
+        {"entroly_runtime": {"entroly_git_dirty": True}},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    trials = [
+        Trial.from_dict(
+            _record(task, condition, experiment_config=dirty_config)
+        )
+        for task in range(100)
+        for condition in ("raw", "entroly")
+    ]
+
+    report = analyze_frontier(trials, bootstrap_samples=20, seed=7)
+    comparison = report["comparisons_to_raw"]["entroly"]
+
+    assert comparison["claim_status"] == "non_publishable_runtime"
+    assert comparison["quality_preserving_context_win"] is False
+    assert "dirty_entroly_runtime" in comparison["claim_blockers"]
+    assert "NON-PUBLISHABLE RUNTIME" in render_markdown(report)
 
 
 def test_frontier_refuses_to_call_context_savings_a_quality_win():
@@ -78,7 +112,13 @@ def test_frontier_refuses_to_call_context_savings_a_quality_win():
         for task in range(6)
     ] + [
         Trial.from_dict(
-            _record(task, "entroly", task_score=0.8, evidence_recall=0.8)
+            _record(
+                task,
+                "entroly",
+                task_score=0.8,
+                task_success=False,
+                evidence_recall=0.8,
+            )
         )
         for task in range(6)
     ]
@@ -119,6 +159,10 @@ def test_error_trial_can_record_zero_provider_usage():
         task_score=0.0,
         evidence_recall=0.0,
         unsupported_claim_rate=1.0,
+        task_success=False,
+        usage_observed=False,
+        cost_observed=False,
+        error_fingerprint="a" * 64,
         response_text=None,
         response_sha256=None,
     )
@@ -127,6 +171,7 @@ def test_error_trial_can_record_zero_provider_usage():
 
     assert trial.outcome == "error"
     assert trial.context_tokens == 0
+    assert trial.usage_observed is False
 
 
 def test_success_trial_rejects_error_metadata_and_zero_context():
@@ -186,19 +231,36 @@ def test_load_trials_reports_the_invalid_line(tmp_path):
 def test_public_report_exposes_pass_rule_and_caveats():
     trials = [
         Trial.from_dict(_record(task, condition))
-        for task in range(4)
+        for task in range(100)
         for condition in ("raw", "entroly")
     ]
     report = analyze_frontier(trials, bootstrap_samples=50)
 
     markdown = render_markdown(report)
 
-    assert "| entroly | 4 |" in markdown
+    assert "| entroly | 100 |" in markdown
     assert "**PASS**" in markdown
-    assert "95% paired-bootstrap bounds" in markdown
+    assert "exact one-sided risk bounds" in markdown
     assert "Usage sources: deterministic_fixture" in markdown
     assert "Cost source references: fixture://zero-cost" in markdown
     assert "Context Commit IDs prove artifact integrity" in markdown
+
+
+def test_public_report_marks_small_runs_as_smoke_only():
+    trials = [
+        Trial.from_dict(_record(task, condition))
+        for task in range(2)
+        for condition in ("raw", "entroly")
+    ]
+
+    report = analyze_frontier(trials, bootstrap_samples=20)
+    comparison = report["comparisons_to_raw"]["entroly"]
+    markdown = render_markdown(report)
+
+    assert comparison["claim_status"] == "insufficient_data"
+    assert comparison["quality_preserving_context_win"] is False
+    assert "**SMOKE ONLY**" in markdown
+    assert "Minimum pairs for a public claim: 20" in markdown
 
 
 def test_public_report_rejects_unknown_schema():
@@ -219,3 +281,69 @@ def test_public_json_schema_matches_python_trial_contract():
     assert tuple(schema["properties"]["usage_source"]["enum"]) == USAGE_SOURCES
     assert tuple(schema["properties"]["cost_source"]["enum"]) == COST_SOURCES
     assert tuple(schema["properties"]["outcome"]["enum"]) == OUTCOMES
+    Draft202012Validator.check_schema(schema)
+    validator = Draft202012Validator(schema)
+    validator.validate(_record(1, "raw"))
+    validator.validate(
+        _record(
+            1,
+            "entroly",
+            outcome="error",
+            error_type="TimeoutError",
+            task_score=0.0,
+            task_success=False,
+            context_tokens=0,
+            reasoning_tokens=0,
+            output_tokens=0,
+            billed_cost_usd=0.0,
+            usage_observed=False,
+            cost_observed=False,
+            error_fingerprint="c" * 64,
+            response_text=None,
+            response_sha256=None,
+        )
+    )
+
+
+def test_exact_zero_event_bound_exposes_small_sample_uncertainty():
+    assert clopper_pearson_upper(0, 20, alpha=0.05) == pytest.approx(
+        0.139108, abs=1e-6
+    )
+    assert zero_event_sample_size(upper_rate=0.05, alpha=0.0125) == 86
+
+
+def test_missing_usage_blocks_efficiency_claim_instead_of_counting_as_zero():
+    trials = [Trial.from_dict(_record(1, "raw"))]
+    trials.append(
+        Trial.from_dict(
+            _record(
+                1,
+                "entroly",
+                outcome="error",
+                error_type="TimeoutError",
+                task_score=0.0,
+                task_success=False,
+                unsupported_claim_rate=0.0,
+                context_tokens=0,
+                reasoning_tokens=0,
+                output_tokens=0,
+                billed_cost_usd=0.0,
+                usage_observed=False,
+                cost_observed=False,
+                error_fingerprint="b" * 64,
+                response_text=None,
+                response_sha256=None,
+            )
+        )
+    )
+
+    report = analyze_frontier(
+        trials, bootstrap_samples=20, minimum_claim_pairs=1
+    )
+    aggregate = report["aggregates"]["entroly"]
+    comparison = report["comparisons_to_raw"]["entroly"]
+
+    assert aggregate["mean_context_tokens"] is None
+    assert aggregate["mean_billed_cost_usd"] is None
+    assert comparison["mean_context_reduction"] is None
+    assert comparison["claim_status"] == "measurement_incomplete"
