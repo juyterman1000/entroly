@@ -6,8 +6,19 @@
 //!   3. No awareness of file criticality independent of content
 //!
 //! This module implements:
-//!   - **Critical file patterns**: files that must NEVER be dropped
-//!   - **Safety signals**: content patterns that force inclusion
+//!   - **Critical file patterns**: files that must never be evicted from the
+//!     store, and that carry a selection score multiplier
+//!   - **Safety signals**: content patterns that raise criticality
+//!
+//! Criticality is deliberately not a hard include. It sets `is_protected`
+//! ("never drop from the store"), not `is_pinned` ("the operator required this
+//! in the answer") -- see `ContextFragment` and `migrate_pin_semantics`.
+//! Conflating the two is not hypothetical: criticality used to set `is_pinned`,
+//! which force-included every manifest and security file in every query
+//! regardless of relevance. In selection a critical file is score-boosted
+//! (`Safety` 3.0x, `Critical` 2.0x, `Important` 1.5x in `channel.rs`) and
+//! remains budget-constrained, exactly as `file_criticality` documents for
+//! nested monorepo configs.
 //!   - **Adaptive budgeting**: task-type-aware token budgets
 //!   - **Context ordering**: LLM-sensitive fragment ordering
 //!
