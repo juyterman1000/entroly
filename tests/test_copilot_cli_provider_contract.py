@@ -75,3 +75,39 @@ def test_integration_identity_rejects_header_unsafe_values() -> None:
     env = {"GITHUB_COPILOT_INTEGRATION_ID": "good\r\nX-Evil: 1"}
     with pytest.raises(CopilotCLIProviderContractError, match="ASCII letters"):
         apply_copilot_cli_provider_contract(env, wire_api="completions")
+
+
+def test_each_integration_id_rejection_names_its_real_cause() -> None:
+    """An error that misstates its cause sends the operator to fix the wrong thing.
+
+    The length check and the character check shared one message that named only
+    the character set, so a 500-character ID composed entirely of legal
+    characters was told its characters were wrong.
+    """
+    import pytest
+
+    from entroly.copilot_cli_provider_contract import (
+        CopilotCLIProviderContractError,
+        configure_copilot_integration_identity,
+    )
+
+    with pytest.raises(CopilotCLIProviderContractError) as too_long:
+        configure_copilot_integration_identity(
+            {"GITHUB_COPILOT_INTEGRATION_ID": "A" * 500}
+        )
+    message = str(too_long.value)
+    assert "500" in message and "128" in message, message
+    assert "must contain only" not in message, (
+        "a length rejection must not blame the character set"
+    )
+
+    with pytest.raises(CopilotCLIProviderContractError) as bad_chars:
+        configure_copilot_integration_identity(
+            {"GITHUB_COPILOT_INTEGRATION_ID": "not a valid id!"}
+        )
+    assert "must contain only" in str(bad_chars.value)
+
+    # The boundary itself stays accepted.
+    assert configure_copilot_integration_identity(
+        {"GITHUB_COPILOT_INTEGRATION_ID": "A" * 128}
+    ) == "A" * 128
