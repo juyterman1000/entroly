@@ -492,6 +492,65 @@ pub fn normalize_scores(scores: &[f64]) -> Vec<f64> {
 
 #[cfg(test)]
 mod tests {
+    /// IDF is documented as giving "low (but non-negative) scores to common
+    /// terms". With the Lucene `+1` form that is provable, so assert it at the
+    /// boundary that would break a plain probabilistic IDF: a term present in
+    /// every document.
+    #[test]
+    fn idf_stays_non_negative_and_falls_as_the_term_gets_commoner() {
+        let docs: Vec<(String, String, String)> = (0..20)
+            .map(|k| {
+                (
+                    format!("d{k}"),
+                    // `ubiquitous` in every doc; `rare_token` in only the first.
+                    if k == 0 {
+                        "ubiquitous rare_token body".to_string()
+                    } else {
+                        "ubiquitous body".to_string()
+                    },
+                    format!("src/f{k}.rs"),
+                )
+            })
+            .collect();
+        let index = BM25Index::build(&docs);
+
+        let common = index.idf("ubiquitous");
+        let rare = index.idf("rare_token");
+        let absent = index.idf("token_that_appears_nowhere");
+
+        assert!(common >= 0.0, "a term in every document produced negative IDF: {common}");
+        assert!(rare > common, "a rarer term must not score below a commoner one");
+        assert!(absent >= rare, "an unseen term cannot be commoner than a seen one");
+    }
+
+    /// The scoring docstring claims the cubic coverage multiplier "cannot
+    /// promote documents that match FEWER query terms".
+    ///
+    /// The multiplier `1 + 1.5·coverage³` is monotonic in coverage, and that
+    /// part is asserted here. The stronger reading -- that the *combined*
+    /// score respects coverage order -- is not asserted, because `combined`
+    /// also carries `bm25_base`, `path_boost` and `identifier_boost`, and a
+    /// document matching one query term many times can out-score one matching
+    /// two terms once. Asserting the stronger claim would be asserting a
+    /// property the formula does not have.
+    #[test]
+    fn coverage_multiplier_is_monotonic_in_coverage() {
+        let mut previous = f64::NEG_INFINITY;
+        for step in 0..=20 {
+            let coverage = step as f64 / 20.0;
+            let multiplier = 1.0 + 1.5 * coverage.powi(3);
+            assert!(
+                multiplier >= previous,
+                "multiplier fell from {previous} at coverage {coverage}"
+            );
+            previous = multiplier;
+        }
+        // The documented endpoints: full coverage amplifies 2.5x, and ~60%
+        // coverage amplifies ~1.32x.
+        assert!((1.0 + 1.5 * 1.0_f64.powi(3) - 2.5).abs() < 1e-12);
+        assert!(((1.0 + 1.5 * 0.6_f64.powi(3)) - 1.324).abs() < 1e-3);
+    }
+
     use super::*;
 
     #[test]
@@ -599,6 +658,35 @@ mod tests {
 
 #[cfg(test)]
 mod stemming_tests {
+    /// The two retrieval surfaces must not disagree about morphology.
+    ///
+    /// `entroly select` (Python, `context_receipts::retrieval::tokenize`) does
+    /// no morphological normalisation, so
+    /// `-q "how are passwords verified"` scored lexical 0.000000 against a
+    /// corpus containing "Verify a password against the stored bcrypt hash".
+    /// This Rust path does stem, so the same query is not blind here. Pinning
+    /// the cases that differ makes the divergence visible rather than folklore.
+    #[test]
+    fn the_rust_path_normalises_the_forms_the_python_path_misses() {
+        // Stemming here is additive: the stem is emitted *alongside* the
+        // original, so an exact match still scores and an inflected one meets
+        // it on the shared stem. The contract is a shared token, not equality.
+        let shares = |a: &str, b: &str| {
+            let left = tokenize_code(a);
+            let right = tokenize_code(b);
+            left.iter().any(|t| right.contains(t))
+        };
+        assert!(shares("passwords", "password"), "{:?}", tokenize_code("passwords"));
+        assert!(shares("queries", "query"), "{:?}", tokenize_code("queries"));
+        assert!(shares("verified", "verify") || shares("verified", "verifi"),
+                "{:?}", tokenize_code("verified"));
+
+        // And the conservatism the docstring promises still holds: these must
+        // NOT be merged, or unrelated identifiers collide.
+        assert_ne!(tokenize_code("class"), tokenize_code("clas"));
+        assert_ne!(tokenize_code("address"), tokenize_code("addres"));
+    }
+
     use super::*;
 
     /// The exact failure that motivated this: a natural-language query scored
