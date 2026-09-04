@@ -3530,17 +3530,49 @@ def create_mcp_server(
             logger.warning("verify_response: WITNESS signal unavailable: %s", e)
             verification["witness"] = {"status": "unavailable", "reason": str(e)[:200]}
 
+        # Signals 2-4 are logprob- and entity-driven. This tool receives plain
+        # text, so each is called with its real API and then *asked whether it
+        # actually measured anything*. A signal that cannot measure is reported
+        # unavailable with the true reason and left out of the fusion below.
+        #
+        # These call sites had drifted out of API compatibility: `ece.evaluate`
+        # does not exist (it is `evaluate_uncertainty`), and EPRSignal and
+        # SpectralSignal are dataclasses, not dicts, so `.get(...)` raised.
+        # Every call therefore raised AttributeError and the old fusion counted
+        # the crash as zero risk. Repairing only the names would have been
+        # worse: measured on grounded vs fabricated text with no logprobs, ECE
+        # returns epistemic_uncertainty 0.0 for both, EPR reports
+        # has_logprobs=False with mean_entropy 0.0, and spectral returns a flat
+        # 0.5 because its entity extractor finds no response entities. Scoring
+        # those would inject a constant dressed as a measurement.
+        #
+        # `compute_spectral_consistency(context, response)` also had its
+        # arguments reversed here, which silently changes the result (0.2000 vs
+        # 0.5000 on the same pair) -- latent until someone "fixed" the names.
+
         # 2. ECE: Fisher curvature (hedging/uncertainty detection)
         try:
             from .ravs.ece import EpistemicCascadeEngine
-            ece = EpistemicCascadeEngine()
-            ece_result = ece.evaluate(response)
-            risks["ece"] = float(ece_result.get("risk_score", 0))
-            verification["ece"] = {
-                "curvature": round(ece_result.get("curvature", 0), 4),
-                "renyi_divergence": round(ece_result.get("renyi_divergence", 0), 4),
-                "risk_score": round(risks["ece"], 4),
-            }
+
+            ece_signal = EpistemicCascadeEngine().evaluate_uncertainty(
+                prompt or "", response
+            )
+            if ece_signal.epistemic_uncertainty > 0.0:
+                risks["ece"] = float(ece_signal.epistemic_uncertainty)
+                verification["ece"] = {
+                    "curvature": round(float(ece_signal.fisher_curvature), 4),
+                    "renyi_entropy": round(float(ece_signal.renyi_entropy), 4),
+                    "risk_score": round(risks["ece"], 4),
+                }
+            else:
+                verification["ece"] = {
+                    "status": "unavailable",
+                    "reason": (
+                        "requires token logprobs; from text alone every "
+                        "curvature term is zero and cannot separate grounded "
+                        "from fabricated"
+                    ),
+                }
         except Exception as e:
             logger.warning("verify_response: ECE signal unavailable: %s", e)
             verification["ece"] = {"status": "unavailable", "reason": str(e)[:200]}
@@ -3548,12 +3580,25 @@ def create_mcp_server(
         # 3. EPR: Entropy Production Rate
         try:
             from .ravs.epr import compute_epr
-            epr_result = compute_epr(response)
-            risks["epr"] = float(epr_result.get("risk_score", 0))
-            verification["epr"] = {
-                "entropy_production_rate": round(epr_result.get("epr", 0), 4),
-                "risk_score": round(risks["epr"], 4),
-            }
+
+            epr_signal = compute_epr(response)
+            if epr_signal.has_logprobs:
+                risks["epr"] = float(
+                    max(0.0, min(1.0, epr_signal.entity_bg_ratio))
+                )
+                verification["epr"] = {
+                    "mean_entropy": round(float(epr_signal.mean_entropy), 4),
+                    "entity_bg_ratio": round(float(epr_signal.entity_bg_ratio), 4),
+                    "risk_score": round(risks["epr"], 4),
+                }
+            else:
+                verification["epr"] = {
+                    "status": "unavailable",
+                    "reason": (
+                        "requires token logprobs, which this tool does not "
+                        "receive; entropy is undefined without them"
+                    ),
+                }
         except Exception as e:
             logger.warning("verify_response: EPR signal unavailable: %s", e)
             verification["epr"] = {"status": "unavailable", "reason": str(e)[:200]}
@@ -3561,12 +3606,28 @@ def create_mcp_server(
         # 4. Spectral: entity cross-similarity SVD
         try:
             from .ravs.spectral import compute_spectral_consistency
-            spec_result = compute_spectral_consistency(response, context)
-            risks["spectral"] = float(spec_result.get("risk_score", 0))
-            verification["spectral"] = {
-                "consistency": round(spec_result.get("consistency", 1.0), 4),
-                "risk_score": round(risks["spectral"], 4),
-            }
+
+            # (context, response) -- this order is load-bearing.
+            spec_signal = compute_spectral_consistency(context, response)
+            if spec_signal.n_ctx_entities > 0 and spec_signal.n_resp_entities > 0:
+                risks["spectral"] = float(
+                    max(0.0, min(1.0, 1.0 - spec_signal.score))
+                )
+                verification["spectral"] = {
+                    "consistency": round(float(spec_signal.score), 4),
+                    "max_similarity": round(float(spec_signal.max_sim), 4),
+                    "risk_score": round(risks["spectral"], 4),
+                }
+            else:
+                verification["spectral"] = {
+                    "status": "unavailable",
+                    "reason": (
+                        f"no comparable entities "
+                        f"(context={spec_signal.n_ctx_entities}, "
+                        f"response={spec_signal.n_resp_entities}); the score "
+                        f"is a floor constant, not a measurement"
+                    ),
+                }
         except Exception as e:
             logger.warning("verify_response: spectral signal unavailable: %s", e)
             verification["spectral"] = {"status": "unavailable", "reason": str(e)[:200]}
