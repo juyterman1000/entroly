@@ -547,7 +547,16 @@ def _max_bytes_for_path(rel_path: str) -> int:
     if os.environ.get("ENTROLY_MAX_FILE_BYTES"):
         return MAX_FILE_BYTES
 
-    p = rel_path.lower().replace("\\", "/")
+    # Leading slash so a top-level directory matches the same markers a nested
+    # one does. Both marker lists are written with surrounding slashes (`/src/`,
+    # `/dist/`) so that `mysrc/` does not match, but the paths tested here are
+    # workspace-relative and carry no leading slash -- so `src/app.py` missed
+    # `/src/` while `pkg/src/app.py` matched it. Measured: a top-level `src/`,
+    # `lib/`, `server/` or `core/` got the conservative 50 KiB cap instead of
+    # the 192 KiB this function exists to grant, and `dist/src/x.js` got the
+    # *larger* cap because it matched `/src/` but not `/dist/`. A top-level
+    # `src/` is the most common layout there is.
+    p = "/" + rel_path.lower().replace("\\", "/").lstrip("/")
     _, ext = os.path.splitext(p.rsplit("/", 1)[-1])
     if ext not in SOURCE_CODE_EXTENSIONS:
         return MAX_FILE_BYTES
@@ -1462,8 +1471,13 @@ def _auto_index(
                         }
                         for fragment in engine._fragments.values()
                     ]
+                # Collapse chunk parts, same as the ingest paths below. A
+                # chunked file contributes `file:p`, `file:p#1`, ... and
+                # counting raw sources reported 68 "files" for a 5-file project
+                # on the cache path -- the same overcount, reached by reloading
+                # a persisted index instead of building one.
                 existing_files = len({
-                    fragment.get("source", "")
+                    _logical_rel_path(fragment["source"])
                     for fragment in frags
                     if fragment.get("source")
                 })
@@ -1644,22 +1658,28 @@ def _auto_index(
             # `ingested` counts FRAGMENTS, and a file yields more than one, so
             # returning it as `files_indexed` reported more files than the
             # repository contains: "Auto-indexed 1799 files" against 1525
-            # indexable ones, and 188 against an explicit cap of 120. The
-            # debug line below already compared it to `len(batch)` -- fragments
-            # over files -- which is where the mismatch was visible all along.
+            # indexable ones, and 188 against an explicit cap of 120.
             #
-            # This number is printed to users, returned by `simulate`/`perf`
-            # `--json` and by `verify-claims`, and published as the headline in
-            # the CI dogfood evidence artifact, so it overstated coverage
-            # everywhere at once.
+            # `len(batch)` does not fix that, because an oversized source file
+            # appends one batch entry per chunk (`file:p`, `file:p#1`, ...).
+            # Measured on this repository after that change: `verify-claims
+            # --max-files 20` reported 60 files and `--max-files 120` reported
+            # 189 -- the same over-the-cap symptom, one layer down.
+            #
+            # Count distinct source files instead, which is what the field
+            # claims to be. This number is printed to users, returned by
+            # `simulate`/`perf` `--json` and by `verify-claims`, and published
+            # as the headline in the CI dogfood evidence artifact, so it
+            # overstated coverage everywhere at once.
             fragments_ingested = int(r.get("ingested", 0))
-            indexed = len(batch)
+            indexed = len({_logical_rel_path(source) for _, source, _ in batch})
             total_tokens = int(r.get("total_tokens", 0))
             p1 = r.get('phase1_ms', '?')
             p2 = r.get('phase2_ms', '?')
             p3 = r.get('phase3_ms', '?')
             logger.debug(
-                f"batch_ingest: {fragments_ingested} fragments from {len(batch)} files "
+                f"batch_ingest: {fragments_ingested} fragments from "
+                f"{len(batch)} batch entries ({indexed} files) "
                 f"in {r.get('duration_ms', 0)}ms "
                 f"(P1={p1}ms P2={p2}ms P3={p3}ms, {r.get('duplicates', 0)} dups)"
             )
@@ -1667,6 +1687,10 @@ def _auto_index(
             # Older entroly_core without batch_ingest — graceful fallback
             logger.debug("batch_ingest unavailable, falling back to per-file ingest")
             try:
+                # A set, not a counter: `batch` holds one entry per chunk, so
+                # incrementing per entry counted chunks as files, the same
+                # overcount the batch path had.
+                indexed_files: set[str] = set()
                 for content, source, tokens in batch:
                     ingest_result = engine.ingest_fragment(
                         content=content, source=source,
@@ -1677,10 +1701,11 @@ def _auto_index(
                     # the live index and therefore cannot contribute to the
                     # baseline used by simulate/perf savings arithmetic.
                     if ingest_result.get("status") == "ingested":
-                        indexed += 1
+                        indexed_files.add(_logical_rel_path(source))
                         total_tokens += int(
                             ingest_result.get("token_count", tokens) or tokens
                         )
+                indexed = len(indexed_files)
             except Exception:
                 if force_snapshot is not None:
                     engine.restore_index_state(force_snapshot)
@@ -1691,16 +1716,19 @@ def _auto_index(
             raise
     else:
         try:
+            # Distinct files, not batch entries -- see the batch path above.
+            pure_python_files: set[str] = set()
             for content, source, tokens in batch:
                 ingest_result = engine.ingest_fragment(
                     content=content, source=source,
                     token_count=tokens, is_pinned=False,
                 )
                 if ingest_result.get("status") == "ingested":
-                    indexed += 1
+                    pure_python_files.add(_logical_rel_path(source))
                     total_tokens += int(
                         ingest_result.get("token_count", tokens) or tokens
                     )
+            indexed = len(pure_python_files)
         except Exception:
             if force_snapshot is not None:
                 engine.restore_index_state(force_snapshot)

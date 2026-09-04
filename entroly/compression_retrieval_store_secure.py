@@ -9,6 +9,7 @@ all storage, locking, snapshot, and accounting logic in
 from __future__ import annotations
 
 import copy
+import logging
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -24,6 +25,8 @@ from .compression_retrieval_store_safe import (
     derive_recovery_scope,
     sanitize_recovery_metadata,
 )
+
+logger = logging.getLogger("entroly.compression_retrieval_store")
 
 
 def _public_item(item: StoredCompression | None) -> StoredCompression | None:
@@ -75,12 +78,41 @@ class CompressionRetrievalStore(_SafeCompressionRetrievalStore):
                 for span in item.spans:
                     token_count = _estimate_tokens(span.content)
                     for retrieval_id in span.retrieval_ids:
-                        self._record_retrieval(
-                            item.receipt_id,
-                            span.span_id,
-                            token_count,
-                            retrieval_id=retrieval_id,
-                        )
+                        self._backfill_retrieval(item, span, token_count, retrieval_id)
+
+    def _backfill_retrieval(
+        self,
+        item: StoredCompression,
+        span: StoredSpan,
+        token_count: int,
+        retrieval_id: str,
+    ) -> None:
+        """Replay one already-recorded retrieval into a freshly attached ledger.
+
+        This is reconciliation, not measurement. The store keeps the retrieval id
+        but not the token count that was debited for it, so the replay can only
+        offer an estimate; an excerpt retrieval debited the measured excerpt
+        instead. When the ledger already holds that authoritative row it rejects
+        the differing estimate as tampering, and letting that escape would make
+        every later construction of this store -- and therefore every recovery
+        tool call -- fail on state the store itself wrote.
+        """
+        try:
+            self._record_retrieval(
+                item.receipt_id,
+                span.span_id,
+                token_count,
+                retrieval_id=retrieval_id,
+            )
+        except ValueError as exc:
+            logger.warning(
+                "recovery ledger already holds retrieval %s for receipt %s span %s; "
+                "keeping the ledger's recorded debit (%s)",
+                retrieval_id,
+                item.receipt_id,
+                span.span_id,
+                exc,
+            )
 
     def _record_compression(self, item: StoredCompression) -> None:
         if self.optimization_ledger is None:

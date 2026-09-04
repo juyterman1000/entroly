@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 import copy
 import math
+import re
 from dataclasses import asdict
 from typing import Any
 
@@ -72,6 +73,83 @@ def _compression_ratio(
 
 
 _REVIEW_ORDER = {"low": 0, "medium": 1, "high": 2}
+
+_OMITTED_RELEVANT_WARNING_RE = re.compile(
+    r"^(?:at least )?\d+ relevant chunk\(s\) were omitted"
+)
+
+
+def _omitted_listing_facts(
+    *,
+    selected_count: int,
+    total_chunks: int,
+    listed_omitted: int,
+    listed_relevant: int,
+) -> dict[str, Any]:
+    """Reconcile omitted-evidence counters against the index, not the listing.
+
+    ``omitted_context`` is a bounded top-N listing, so any count taken from it
+    saturates at that limit. Reporting the saturated value as
+    ``omitted_relevant_chunks`` -- and deriving ``omitted_evidence_pressure``
+    from it -- silently understates withheld evidence: a receipt that dropped
+    299 relevant chunks looks identical to one that dropped 20.
+
+    The listing is score-descending, so it *is* a complete census of relevant
+    omissions whenever it was not truncated, or whenever it already contains a
+    zero-score entry (everything positive was reached before the cut-off). Only
+    when neither holds is the count a lower bound, and then the pressure control
+    fails closed onto the exact omitted-chunk total instead of the saturated
+    count.
+    """
+    selected_count = max(0, _int_or_default(selected_count))
+    total_chunks = max(0, _int_or_default(total_chunks))
+    listed_omitted = max(0, _int_or_default(listed_omitted))
+    listed_relevant = max(0, _int_or_default(listed_relevant))
+
+    omitted_total = max(0, total_chunks - selected_count)
+    listing_truncated = omitted_total > listed_omitted
+    relevant_exact = (not listing_truncated) or listed_relevant < listed_omitted
+    upper_bound = listed_relevant if relevant_exact else omitted_total
+    pressure = min(1.0, upper_bound / max(1, selected_count + upper_bound))
+    return {
+        "omitted_chunks_total": omitted_total,
+        "omitted_context_listed": listed_omitted,
+        "omitted_context_listing_truncated": listing_truncated,
+        "omitted_relevant_chunks": listed_relevant,
+        "omitted_relevant_chunks_exact": relevant_exact,
+        "omitted_relevant_chunks_upper_bound": upper_bound,
+        "omission_pressure": round(pressure, 6),
+        "omission_pressure_basis": (
+            "exact_relevant_omitted_count"
+            if relevant_exact
+            else "upper_bound_truncated_omitted_listing"
+        ),
+    }
+
+
+def _omitted_relevant_warning(facts: Mapping[str, Any]) -> str | None:
+    listed_relevant = _int_or_default(facts.get("omitted_relevant_chunks"))
+    if listed_relevant <= 0:
+        return None
+    if facts.get("omitted_relevant_chunks_exact"):
+        return (
+            f"{listed_relevant} relevant chunk(s) were omitted; "
+            "inspect omitted_context."
+        )
+    return (
+        f"at least {listed_relevant} relevant chunk(s) were omitted "
+        f"({_int_or_default(facts.get('omitted_chunks_total'))} chunk(s) omitted in "
+        f"total); omitted_context lists only the "
+        f"{_int_or_default(facts.get('omitted_context_listed'))} highest-scoring."
+    )
+
+
+def _omission_pressure_band(pressure: float) -> str:
+    if pressure > 0.4:
+        return "high"
+    if pressure > 0.15:
+        return "medium"
+    return "low"
 
 
 def _max_review_level(current: str, candidate: str) -> str:
@@ -145,7 +223,7 @@ def _risk_summary(
     *,
     selected_count: int,
     selected_tokens: int,
-    omitted_relevant: int,
+    omitted_facts: Mapping[str, Any],
     dependencies: list,
     warnings: list[str],
     selection_certificate: dict[str, Any],
@@ -164,9 +242,7 @@ def _risk_summary(
         1, sum(chunk.token_count for chunk in index.chunks)
     )
     chunk_coverage = selected_count / max(1, total_chunks)
-    omission_pressure = min(
-        1.0, omitted_relevant / max(1, selected_count + omitted_relevant)
-    )
+    omission_pressure = _float_metric(omitted_facts.get("omission_pressure"))
     dependency_pressure = min(
         1.0, (unresolved + missing_dependency_warnings) / max(1, len(dependencies))
     )
@@ -191,7 +267,24 @@ def _risk_summary(
         "total_chunks": total_chunks,
         "chunk_coverage": round(chunk_coverage, 6),
         "token_coverage": round(token_coverage, 6),
-        "omitted_relevant_chunks": omitted_relevant,
+        "omitted_relevant_chunks": _int_or_default(
+            omitted_facts.get("omitted_relevant_chunks")
+        ),
+        "omitted_chunks_total": _int_or_default(
+            omitted_facts.get("omitted_chunks_total")
+        ),
+        "omitted_context_listed": _int_or_default(
+            omitted_facts.get("omitted_context_listed")
+        ),
+        "omitted_context_listing_truncated": bool(
+            omitted_facts.get("omitted_context_listing_truncated")
+        ),
+        "omitted_relevant_chunks_exact": bool(
+            omitted_facts.get("omitted_relevant_chunks_exact")
+        ),
+        "omitted_relevant_chunks_upper_bound": _int_or_default(
+            omitted_facts.get("omitted_relevant_chunks_upper_bound")
+        ),
         "unresolved_dependency_count": unresolved,
         "missing_dependency_warning_count": missing_dependency_warnings,
         "dependency_bundle_omission_count": dependency_bundle_omissions,
@@ -210,15 +303,80 @@ def _risk_summary(
             "dependency_bundle_fit": "omitted_due_to_budget"
             if dependency_bundle_omissions
             else "complete",
-            "omitted_evidence_pressure": "high"
-            if omission_pressure > 0.4
-            else "medium"
-            if omission_pressure > 0.15
-            else "low",
+            "omitted_evidence_pressure": _omission_pressure_band(omission_pressure),
+            "omitted_evidence_pressure_basis": str(
+                omitted_facts.get("omission_pressure_basis", "unknown")
+            ),
             "replayable_fingerprints": True,
             "local_no_llm_judgment": True,
         },
     }
+
+
+def _reconcile_omitted_counters(
+    risk_summary: dict[str, Any],
+    warnings: list[str],
+    receipt: ContextReceipt,
+    index: ContextIndex | None,
+) -> None:
+    """Rebase a native receipt's omitted-evidence counters onto the index.
+
+    The Rust selector caps ``omitted_context`` at the same listing limit as the
+    Python one and then counts that capped list, so its
+    ``omitted_relevant_chunks`` and ``omitted_evidence_pressure`` saturate
+    identically. This bridge is already the place where native receipts are
+    brought back onto the Python contract, so the reconciliation lives here and
+    applies to both engines.
+    """
+    selected_count = _int_or_default(
+        risk_summary.get("selected_chunks"), len(receipt.selected_context)
+    )
+    total_chunks = _int_or_default(risk_summary.get("total_chunks"))
+    if total_chunks <= 0 and index is not None:
+        total_chunks = len(index.chunks)
+    if total_chunks <= 0:
+        return
+    listed_omitted = len(receipt.omitted_context)
+    listed_relevant = sum(1 for item in receipt.omitted_context if item.score > 0)
+    facts = _omitted_listing_facts(
+        selected_count=selected_count,
+        total_chunks=total_chunks,
+        listed_omitted=listed_omitted,
+        listed_relevant=listed_relevant,
+    )
+    risk_summary.update(
+        {
+            "omitted_relevant_chunks": facts["omitted_relevant_chunks"],
+            "omitted_chunks_total": facts["omitted_chunks_total"],
+            "omitted_context_listed": facts["omitted_context_listed"],
+            "omitted_context_listing_truncated": facts[
+                "omitted_context_listing_truncated"
+            ],
+            "omitted_relevant_chunks_exact": facts["omitted_relevant_chunks_exact"],
+            "omitted_relevant_chunks_upper_bound": facts[
+                "omitted_relevant_chunks_upper_bound"
+            ],
+        }
+    )
+    controls = risk_summary.get("controls")
+    if not isinstance(controls, dict):
+        controls = {}
+        risk_summary["controls"] = controls
+    pressure = _float_metric(facts["omission_pressure"])
+    controls["omitted_evidence_pressure"] = _omission_pressure_band(pressure)
+    controls["omitted_evidence_pressure_basis"] = facts["omission_pressure_basis"]
+    if pressure > 0.25:
+        risk_summary["review_level"] = _max_review_level(
+            str(risk_summary.get("review_level", "low")), "medium"
+        )
+    corrected = _omitted_relevant_warning(facts)
+    warnings[:] = [
+        warning
+        for warning in warnings
+        if not _OMITTED_RELEVANT_WARNING_RE.match(warning)
+    ]
+    if corrected:
+        warnings.append(corrected)
 
 
 def attach_novelty_frontier(
@@ -253,6 +411,7 @@ def attach_novelty_frontier(
         omitted_text_by_chunk_id=omitted_text_by_chunk_id,
     )
     warnings = _warning_list(enriched.get("warnings", []))
+    _reconcile_omitted_counters(risk_summary, warnings, py_receipt, py_index)
     _apply_novelty_risk(risk_summary, novelty, warnings)
     enriched["warnings"] = list(dict.fromkeys(warnings))
 
@@ -305,16 +464,21 @@ def build_receipt(
     ranking_reasons = {rank.chunk_id: rank.reasons for rank in ranked}
     warning_candidates = list(selection.warnings)
     high_omitted = [item for item in selection.omitted if item.score > 0]
-    if high_omitted:
-        warning_candidates.append(
-            f"{len(high_omitted)} relevant chunk(s) were omitted; inspect omitted_context."
-        )
+    omitted_facts = _omitted_listing_facts(
+        selected_count=len(selection.selected),
+        total_chunks=len(index.chunks),
+        listed_omitted=len(selection.omitted),
+        listed_relevant=len(high_omitted),
+    )
+    omitted_warning = _omitted_relevant_warning(omitted_facts)
+    if omitted_warning:
+        warning_candidates.append(omitted_warning)
     warnings = list(dict.fromkeys(warning_candidates))
     risk_summary = _risk_summary(
         index,
         selected_count=len(selection.selected),
         selected_tokens=selected_tokens,
-        omitted_relevant=len(high_omitted),
+        omitted_facts=omitted_facts,
         dependencies=dependencies,
         warnings=warnings,
         selection_certificate=selection.certificate,
@@ -401,7 +565,11 @@ def markdown_report(receipt: ContextReceipt) -> str:
         f"- Certified relevance regret bound: {_float_metric(selection_objective.get('certified_regret_upper_bound')):.6f}",
         f"- Best omitted recovery bundle: {best_omitted.get('root_chunk_id', 'none')}",
         f"- Dependency bundles omitted: {_int_or_default(risk_summary.get('dependency_bundle_omission_count'))}",
-        f"- Omitted evidence pressure: {controls.get('omitted_evidence_pressure', 'unknown')}",
+        f"- Omitted evidence pressure: {controls.get('omitted_evidence_pressure', 'unknown')}"
+        f" (basis: {controls.get('omitted_evidence_pressure_basis', 'unknown')})",
+        f"- Chunks omitted in total: {_int_or_default(risk_summary.get('omitted_chunks_total'))}"
+        f"; listed in this receipt: {_int_or_default(risk_summary.get('omitted_context_listed'))}"
+        f"{'' if risk_summary.get('omitted_relevant_chunks_exact', True) else ' (relevant count is a lower bound)'}",
         f"- Novelty frontier pressure: {controls.get('novelty_frontier', 'unknown')}",
         f"- Novelty frontier action: {novelty_assessment.get('action', 'unknown')}",
         f"- Replayable fingerprints: {controls.get('replayable_fingerprints', False)}",

@@ -79,10 +79,9 @@ def create_repository_mcp_server(
     cache_dir: str | os.PathLike[str] | None = None,
 ):
     """Create a workspace-fixed MCP server with no caller-controlled root."""
-    try:
-        from mcp.server.fastmcp import FastMCP
-    except ImportError:
-        raise RuntimeError("MCP SDK not installed. Install with: pip install mcp") from None
+    from ..mcp_sdk import load_fastmcp
+
+    FastMCP = load_fastmcp()
 
     service = RepositoryIntelligenceService(
         _configured_root(root),

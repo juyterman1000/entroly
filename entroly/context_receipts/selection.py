@@ -21,6 +21,12 @@ from .retrieval import tokenize
 EXACT_CLOSED_SET_ROOT_LIMIT = 14
 _SCORE_EPSILON = 1e-9
 
+# ``omitted_context`` is a bounded, score-descending *listing*, not a census.
+# Anything that counts entries in that list saturates here; the Rust selector
+# (entroly-core/src/context_receipts.rs) hard-codes the same limit, so both
+# backends must reconcile counters against the index, never against the list.
+MAX_OMITTED_LISTED = 20
+
 
 class SelectionResult:
     def __init__(
@@ -165,7 +171,7 @@ def select_context(
     dependency_links: list[DependencyLink],
     *,
     token_budget: int,
-    max_omitted: int = 20,
+    max_omitted: int = MAX_OMITTED_LISTED,
 ) -> SelectionResult:
     token_budget = max(0, token_budget)
     chunks = {chunk.chunk_id: chunk for chunk in index.chunks}

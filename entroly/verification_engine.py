@@ -370,18 +370,38 @@ class VerificationEngine:
 
             try:
                 checked = datetime.fromisoformat(last.replace("Z", "+00:00"))
-                hours = (now - checked).total_seconds() / 3600
-                if hours > self._freshness_hours:
-                    stale.append(StaleReport(
-                        claim_id=b.get("claim_id", ""),
-                        entity=b.get("entity", ""),
-                        status=b.get("status", ""),
-                        last_checked=last,
-                        hours_since=hours,
-                        confidence=b.get("confidence", 0),
-                    ))
             except (ValueError, TypeError):
-                pass
+                # An unparseable last_checked means the freshness check could
+                # not run. Swallowing it left the belief out of the stale list
+                # entirely, so check_belief reported status="verified" with no
+                # issues for a belief whose freshness was never established —
+                # a corrupt timestamp read as a clean bill of health. A check
+                # that cannot run is not a check that passed.
+                logger.warning(
+                    "VerificationEngine: belief %s has unparseable last_checked=%r; "
+                    "treating as stale",
+                    b.get("claim_id", ""), last,
+                )
+                stale.append(StaleReport(
+                    claim_id=b.get("claim_id", ""),
+                    entity=b.get("entity", ""),
+                    status=b.get("status", ""),
+                    last_checked=f"unparseable:{last}",
+                    hours_since=float('inf'),
+                    confidence=b.get("confidence", 0),
+                ))
+                continue
+
+            hours = (now - checked).total_seconds() / 3600
+            if hours > self._freshness_hours:
+                stale.append(StaleReport(
+                    claim_id=b.get("claim_id", ""),
+                    entity=b.get("entity", ""),
+                    status=b.get("status", ""),
+                    last_checked=last,
+                    hours_since=hours,
+                    confidence=b.get("confidence", 0),
+                ))
 
         return stale
 

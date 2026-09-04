@@ -255,6 +255,40 @@ def test_project_scope_helpers_reject_parent_traversal(tmp_path):
     assert resolve_output_within(project, "../training.jsonl") is None
 
 
+def test_output_scope_rejects_dangling_symlink_out_of_project(tmp_path):
+    """A symlink whose target does not exist yet still redirects the write.
+
+    ``resolve_output_within`` guards every vault write and the MCP receipt
+    tool. It used to check containment only when ``candidate_path.exists()``,
+    and ``exists`` follows symlinks -- so a link pointing outside the project at
+    a target that had not been created reported ``False``, skipped the check,
+    and was returned as safe. Writing through the returned path then landed
+    outside the project. A *live* symlink was already blocked, which is why this
+    needs its own case: the escape is only reachable while the target is
+    missing, which is exactly how it would be planted.
+    """
+    project = tmp_path / "project"
+    project.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+
+    dangling = project / "dangling.jsonl"
+    try:
+        dangling.symlink_to(outside / "not_created_yet.jsonl")
+    except OSError as exc:
+        pytest.skip(f"symlink creation unavailable: {exc}")
+
+    assert not dangling.exists()  # the condition that used to skip the check
+    assert resolve_output_within(project, "dangling.jsonl") is None
+    assert resolve_output_within(project, dangling) is None
+
+    # A dangling link that stays inside the project is still a legitimate
+    # output target -- the rule is containment, not "no symlinks".
+    inside_link = project / "inside.jsonl"
+    inside_link.symlink_to(project / "later.jsonl")
+    assert resolve_output_within(project, "inside.jsonl") == (project / "later.jsonl").resolve()
+
+
 def test_skill_benchmark_rejects_parent_traversal(tmp_path):
     vault = VaultManager(VaultConfig(base_path=str(tmp_path / "vault")))
     vault.ensure_structure()
