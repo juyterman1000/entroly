@@ -107,9 +107,19 @@ impl Fingerprint {
         }
         let denom = norm_a.sqrt() * norm_b.sqrt();
         if denom < 1e-12 {
+            // No direction, so similarity is undefined. Report none rather
+            // than dividing by zero and handing a NaN downstream.
             0.0
         } else {
-            dot / denom
+            // Clamped to the documented range. `dot / denom` is exactly 1 only
+            // in exact arithmetic: measured, `a.cosine_similarity(&a)` returns
+            // 1.0000000000000002 for ordinary fingerprints. Nothing calls this
+            // in production yet, which is the reason to fix it now -- the first
+            // caller to pass the result to `acos`, or to treat it as a
+            // probability, gets a NaN from a value the docstring promised was
+            // in range. `dedup::simhash_cosine` already clamps for the same
+            // reason.
+            (dot / denom).clamp(-1.0, 1.0)
         }
     }
 }
@@ -782,6 +792,91 @@ fn log_norm(value: f64, max_ref: f64) -> f64 {
 
 #[cfg(test)]
 mod tests {
+    fn fp_lcg(state: &mut u64) -> f64 {
+        *state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        ((*state >> 33) as f64) / ((1u64 << 31) as f64) - 0.5
+    }
+
+    fn random_fp(seed: &mut u64) -> Fingerprint {
+        let mut fp = Fingerprint::zero();
+        for k in 0..FINGERPRINT_DIM {
+            fp.dims[k] = fp_lcg(seed);
+        }
+        fp
+    }
+
+    /// `distance` claims to be L2 and `cosine_similarity` claims a range.
+    /// Both are closed-form, so assert the defining properties rather than a
+    /// plausible-looking value: identity, symmetry, the triangle inequality,
+    /// and the stated range. A self-similarity that lands at 1.0000000000000002
+    /// is outside a documented `[-1, 1]` and breaks any caller that feeds it to
+    /// `acos` or treats it as a probability.
+    #[test]
+    fn fingerprint_distance_and_similarity_obey_their_definitions() {
+        let mut seed = 0xF1_2345_6789_ABCD_u64;
+
+        for case in 0..200 {
+            let a = random_fp(&mut seed);
+            let b = random_fp(&mut seed);
+            let c = random_fp(&mut seed);
+
+            // Identity and symmetry.
+            assert!(a.distance(&a).abs() < 1e-12, "case {case}: d(a,a) != 0");
+            assert!(
+                (a.distance(&b) - b.distance(&a)).abs() < 1e-12,
+                "case {case}: distance is not symmetric"
+            );
+
+            // Triangle inequality: L2 is a metric.
+            let (ab, bc, ac) = (a.distance(&b), b.distance(&c), a.distance(&c));
+            assert!(
+                ac <= ab + bc + 1e-9,
+                "case {case}: triangle inequality violated: {ac} > {ab} + {bc}"
+            );
+
+            // Cosine: symmetric, within range, and 1 against itself.
+            let sim = a.cosine_similarity(&b);
+            assert!(
+                (sim - b.cosine_similarity(&a)).abs() < 1e-12,
+                "case {case}: cosine is not symmetric"
+            );
+            assert!(
+                (-1.0..=1.0).contains(&sim),
+                "case {case}: cosine {sim} left the documented [-1, 1]"
+            );
+            let self_sim = a.cosine_similarity(&a);
+            assert!(
+                (-1.0..=1.0).contains(&self_sim),
+                "case {case}: self-similarity {self_sim} left [-1, 1]"
+            );
+            assert!(
+                (self_sim - 1.0).abs() < 1e-9,
+                "case {case}: self-similarity was {self_sim}, expected 1"
+            );
+        }
+    }
+
+    /// A zero fingerprint has no direction, so similarity is undefined. The
+    /// implementation reports 0 rather than dividing by zero; assert that
+    /// rather than leaving it to be rediscovered as a NaN downstream.
+    #[test]
+    fn a_zero_fingerprint_reports_no_similarity_instead_of_nan() {
+        let zero = Fingerprint::zero();
+        let mut seed = 0xABCD_u64;
+        let other = random_fp(&mut seed);
+
+        for value in [
+            zero.cosine_similarity(&zero),
+            zero.cosine_similarity(&other),
+            other.cosine_similarity(&zero),
+        ] {
+            assert!(value.is_finite(), "similarity against a zero vector was {value}");
+            assert_eq!(value, 0.0);
+        }
+        assert!(zero.distance(&zero).abs() < 1e-12);
+        assert!(zero.distance(&other).is_finite());
+    }
+
     use super::*;
 
     #[test]

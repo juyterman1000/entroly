@@ -165,6 +165,96 @@ pub fn score_utilization(fragments: &[&ContextFragment], response: &str) -> Util
 
 #[cfg(test)]
 mod tests {
+    fn util_frag(id: &str, content: &str) -> ContextFragment {
+        ContextFragment::new(id.into(), content.into(), 50, "src/mod.rs".into())
+    }
+
+    /// A report's counts have to add up, and its mean has to be a mean.
+    ///
+    /// `fragments_used + fragments_ignored` is the whole population, and
+    /// `session_utilization` is documented as the mean combined score. Counts
+    /// that do not reconcile are how a surface reports work it did not do --
+    /// the same defect class as a belief writer counting refusals as writes.
+    #[test]
+    fn utilization_counts_reconcile_and_the_mean_stays_in_range() {
+        let cases: Vec<(&str, Vec<ContextFragment>, &str)> = vec![
+            (
+                "response quotes one fragment",
+                vec![
+                    util_frag("a", "fn compute_tax(amount: f64) -> f64 { amount * 0.2 }"),
+                    util_frag("b", "struct Widget { name: String, size: u32 }"),
+                ],
+                "The function compute_tax multiplies amount by 0.2 to get the tax.",
+            ),
+            (
+                "response ignores everything",
+                vec![
+                    util_frag("a", "fn compute_tax(amount: f64) -> f64 { amount * 0.2 }"),
+                    util_frag("b", "struct Widget { name: String, size: u32 }"),
+                ],
+                "I cannot help with that request.",
+            ),
+            (
+                "empty response",
+                vec![util_frag("a", "fn alpha() -> u32 { 1 }")],
+                "",
+            ),
+            (
+                "response is a verbatim copy",
+                vec![util_frag("a", "fn alpha() -> u32 { 1 }")],
+                "fn alpha() -> u32 { 1 }",
+            ),
+        ];
+
+        for (label, frags, response) in cases {
+            let refs: Vec<&ContextFragment> = frags.iter().collect();
+            let report = score_utilization(&refs, response);
+
+            assert_eq!(
+                report.fragments_injected,
+                refs.len(),
+                "{label}: injected count does not match what was passed"
+            );
+            assert_eq!(
+                report.fragments_used + report.fragments_ignored,
+                report.fragments_injected,
+                "{label}: {} used + {} ignored != {} injected",
+                report.fragments_used,
+                report.fragments_ignored,
+                report.fragments_injected
+            );
+            assert_eq!(
+                report.per_fragment.len(),
+                report.fragments_injected,
+                "{label}: per-fragment breakdown does not cover every fragment"
+            );
+            assert!(
+                report.session_utilization.is_finite(),
+                "{label}: session_utilization was {}",
+                report.session_utilization
+            );
+            assert!(
+                (0.0..=1.0).contains(&report.session_utilization),
+                "{label}: session_utilization {} left [0, 1]",
+                report.session_utilization
+            );
+        }
+    }
+
+    /// No fragments means nothing to score, not a division by zero.
+    #[test]
+    fn an_empty_injection_reports_zero_rather_than_nan() {
+        let report = score_utilization(&[], "any response at all");
+        assert_eq!(report.fragments_injected, 0);
+        assert_eq!(report.fragments_used, 0);
+        assert_eq!(report.fragments_ignored, 0);
+        assert!(
+            report.session_utilization.is_finite(),
+            "empty injection produced {}",
+            report.session_utilization
+        );
+    }
+
     use super::*;
     use crate::fragment::ContextFragment;
 

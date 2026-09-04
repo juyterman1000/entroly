@@ -27,6 +27,7 @@ import time
 from pathlib import Path
 from typing import Any, Iterator
 
+from .beta_bounds import beta_lower_bound
 from .events import (
     DECOMPOSITION_KINDS,
     HONEST_OUTCOME_TYPES,
@@ -319,10 +320,13 @@ def generate_report(
             entry["total_estimated_delta_usd"] / max(entry["comparisons"], 1), 6
         )
 
-    # ── Phase 4½: Bayesian cells (Empirical Bayes) ─────────────────────
-    # Per-cell Beta-Bernoulli posteriors with hierarchical pooling.
+    # ── Phase 4½: Bayesian cells (Jeffreys prior) ──────────────────────
+    # Per-cell Beta-Bernoulli posteriors, Beta(1/2, 1/2) prior.
     # Each cell = (tool_category) from hook-sourced events.
-    # Sparse cells borrow from the global prior via Empirical Bayes.
+    #
+    # No longer Empirical Bayes: sparse cells used to borrow from a prior
+    # pooled over the same log, which inflated thin cells rather than
+    # regularising them. See the prior block below.
 
     bayesian_cells: dict[str, dict[str, Any]] = {}
     _cell_counts: dict[str, dict[str, int]] = {}  # {cell: {pass: N, fail: N}}
@@ -344,15 +348,21 @@ def generate_report(
             elif value in failure_values:
                 cell["fail"] += 1
 
-    # Compute global prior (Empirical Bayes: pool across all cells)
-    total_pass = sum(c["pass"] for c in _cell_counts.values())
-    total_fail = sum(c["fail"] for c in _cell_counts.values())
-    total_obs = total_pass + total_fail
-    # Global success rate as prior mean; prior strength = 2 (weak prior)
-    global_mean = total_pass / max(total_obs, 1)
-    prior_strength = 2.0  # equivalent sample size of prior
-    alpha_0 = max(global_mean * prior_strength, 0.1)
-    beta_0 = max((1 - global_mean) * prior_strength, 0.1)
+    # Jeffreys prior, Beta(1/2, 1/2) -- the same prior `router.py` scores with.
+    #
+    # This used to fit the prior to the log it then scored: prior mean =
+    # global success rate, strength 2. `router.py` removed that and explains
+    # why ("a confidence bound whose prior is fitted to the evidence is not a
+    # confidence bound, and this one failed open"), but the report kept it, so
+    # the two disagreed about the same cell. On a log with no failures the old
+    # prior was alpha_0=2.0, beta_0=0.1 -- a prior mean of 0.952 before a single
+    # observation. Measured on a 2-pass cell: the report displayed
+    # P(success)=0.976 for a cell the router scores at 0.833.
+    #
+    # The report is what an operator reads to understand why routing did what it
+    # did, so it has to be the router's arithmetic, not a second opinion.
+    alpha_0 = 0.5
+    beta_0 = 0.5
 
     for cell_key, counts in _cell_counts.items():
         n = counts["pass"] + counts["fail"]
@@ -514,10 +524,10 @@ def format_report_text(report: dict[str, Any]) -> str:
         lines.append(f"  {'':30s}    NOT counterfactual truth.")
         lines.append("")
 
-    # Bayesian cells (Empirical Bayes per-tool posteriors)
+    # Bayesian cells (Jeffreys-prior per-tool posteriors)
     cells = report.get("bayesian_cells", {})
     if cells:
-        lines.append("  ── Bayesian Cells (Empirical Bayes) ──────────────────────")
+        lines.append("  ── Bayesian Cells (Jeffreys prior) ───────────────────────")
         prior = None
         for cell_key, cell in cells.items():
             n = cell.get("n", 0)
@@ -528,13 +538,14 @@ def format_report_text(report: dict[str, Any]) -> str:
             fails = cell.get("failures", 0)
             prior = cell.get("prior", {})
 
-            # Compute 95% CI via normal approximation of Beta
-            import math
-            ab = alpha + beta
-            var = (alpha * beta) / (ab * ab * (ab + 1)) if ab > 0 else 0
-            std = math.sqrt(var) if var > 0 else 0
-            ci_lo = max(0.0, mean - 1.96 * std)
-            ci_hi = min(1.0, mean + 1.96 * std)
+            # Exact 95% equal-tailed credible interval. This printed a normal
+            # approximation under a `95%CI=` label, which is a claim the numbers
+            # did not support -- the `max`/`min` clamps below were themselves a
+            # symptom, since a correct Beta interval cannot leave [0, 1].
+            # Same bound the router gates on, so the report and the decision
+            # agree.
+            ci_lo = beta_lower_bound(alpha, beta)
+            ci_hi = 1.0 - beta_lower_bound(beta, alpha)
 
             lines.append(
                 f"  {cell_key:25s}  n={n:3d}  "
@@ -543,7 +554,7 @@ def format_report_text(report: dict[str, Any]) -> str:
                 f"95%CI=[{ci_lo:.2f},{ci_hi:.2f}]"
             )
         if prior:
-            lines.append(f"  Prior: α₀={prior.get('alpha_0', '?')}, β₀={prior.get('beta_0', '?')} (hierarchical pool)")
+            lines.append(f"  Prior: α₀={prior.get('alpha_0', '?')}, β₀={prior.get('beta_0', '?')} (Jeffreys)")
         lines.append("")
 
     lines.append("  ══════════════════════════════════════════════════════════")

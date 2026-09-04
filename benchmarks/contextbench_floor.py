@@ -11,12 +11,42 @@ Checkouts are downloaded to an external short-path root and deleted per task.
 """
 from __future__ import annotations
 
+import functools
 import os
 
 # Raise the source-size cap BEFORE any entroly import so gold-bearing large files
 # (e.g. astropy table.py = 147 KB) are indexable — a v2 protocol requirement.
-os.environ.setdefault("ENTROLY_MAX_SOURCE_FILE_BYTES", "500000")
-os.environ.setdefault("ENTROLY_MAX_FILE_BYTES", "500000")
+#
+# Applied around `main` rather than at module import. These variables are
+# process-global and `tests/test_contextbench_runner_safety.py` imports this
+# module, so setting them at import time leaked a 500,000-byte cap into every
+# test that ran afterwards in the same session: `_max_bytes_for_path` returns
+# early whenever `ENTROLY_MAX_FILE_BYTES` is set, so thousands of tests silently
+# ran against a different indexing configuration. `main` imports entroly lazily,
+# so this is still "before any entroly import" on the script path, which is what
+# the protocol requires.
+_SIZE_CAP_VARS = ("ENTROLY_MAX_SOURCE_FILE_BYTES", "ENTROLY_MAX_FILE_BYTES")
+
+
+def _with_raised_size_caps(fn):
+    """Raise the caps for the duration of the call, then restore them."""
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        previous = {name: os.environ.get(name) for name in _SIZE_CAP_VARS}
+        for name in _SIZE_CAP_VARS:
+            os.environ.setdefault(name, "500000")
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            for name, value in previous.items():
+                if value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = value
+
+    return wrapper
+
 
 import json  # noqa: E402
 import random  # noqa: E402
@@ -45,6 +75,7 @@ def _tokens(records) -> int:
     return sum(r.token_cost for r in records)
 
 
+@_with_raised_size_caps
 def main(tasks_json: str, co_root: str, budget: int, n: int) -> int:
     from benchmarks.contextbench_determinism_tax import (
         bm25_rank_files,

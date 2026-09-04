@@ -283,12 +283,9 @@ def register_work_graph_tools(mcp: Any) -> Any:
 
 
 def create_mcp_server():
-    try:
-        from mcp.server.fastmcp import FastMCP
-    except ImportError:
-        raise RuntimeError(
-            'MCP SDK not installed. Reinstall Entroly with `pip install "entroly"`.'
-        ) from None
+    from .mcp_sdk import load_fastmcp
+
+    FastMCP = load_fastmcp()
 
     mcp = FastMCP(
         "entroly-work-graph",

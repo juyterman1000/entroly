@@ -12,6 +12,18 @@ def test_transport_json_is_deterministic():
 
 
 def test_mcp_dependency_is_lazy(monkeypatch):
+    """Importing this module must not require the SDK; building a server may.
+
+    The failure is raised from ``create_mcp_server``, not at import time.
+
+    This asserted the literal "MCP SDK not installed", which is only true when
+    the SDK is absent. Here it is installed and only the submodule is blocked,
+    and reporting "not installed" would send the operator to reinstall a
+    package they already have. The message is now chosen from the actual state,
+    so the assertion checks the state this test creates.
+    """
+    from entroly.mcp_sdk import installed_version
+
     real_import = builtins.__import__
 
     def blocked(name, *args, **kwargs):
@@ -20,8 +32,16 @@ def test_mcp_dependency_is_lazy(monkeypatch):
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", blocked)
-    with pytest.raises(RuntimeError, match="MCP SDK not installed"):
+
+    with pytest.raises(RuntimeError) as excinfo:
         server.create_mcp_server()
+
+    message = str(excinfo.value)
+    assert "MCP SDK" in message, message
+    if installed_version() is not None:
+        assert "not installed" not in message, (
+            f"the SDK is installed; the error claims otherwise: {message}"
+        )
 
 
 def _fake_fastmcp(monkeypatch):

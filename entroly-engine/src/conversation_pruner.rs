@@ -922,6 +922,106 @@ mod tests {
     use super::*;
     use crate::dedup::simhash;
 
+    /// The pruned conversation fits the budget, or is at the floor the
+    /// protection contract imposes -- never above both.
+    ///
+    /// `prune_conversation` exists to make a conversation fit a context window,
+    /// but nothing asserted that it does. The two passes that run after the
+    /// knapsack solve are both safe today for reasons that are easy to break:
+    /// `enforce_dag_coherence` assigns `max(child, parent)` on an ordering
+    /// where a larger `Resolution` is *more* compressed, so it only removes
+    /// tokens; and `protect_recent` raises only the last `protect_last` blocks,
+    /// and only as far as `Skeleton`. Flip either -- reverse the comparison to
+    /// make a child inherit its parent's *fidelity*, or lift the tail to
+    /// `Verbatim` -- and the result silently exceeds the budget it was given,
+    /// because the returned `total_tokens_after` is never compared against
+    /// `token_budget` again.
+    ///
+    /// The bound is `max(budget, contract_floor)` rather than `budget` alone:
+    /// user and system messages are contractually never compressed, so a
+    /// conversation whose protected messages already exceed the budget cannot
+    /// meet it. Comparing against the raw budget conflates that contract with a
+    /// real overshoot and reports a violation on 44 of 60 conversations that
+    /// are in fact optimal.
+    #[test]
+    fn pruning_respects_the_budget_or_the_protection_floor() {
+        let mut state = 0x5EED_1234_9ABC_DEF0_u64;
+        let mut next = || {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (state >> 33) as usize
+        };
+
+        let roles = ["user", "assistant", "tool", "system"];
+        let sizes = [1u32, 2, 3, 5, 900, 1500, 3000];
+
+        for protect_last in [0usize, 2] {
+            for case in 0..60 {
+                let n = 4 + next() % 22;
+                let blocks: Vec<ConvBlock> = (0..n)
+                    .map(|i| {
+                        let tokens = sizes[next() % sizes.len()];
+                        let role = roles[next() % roles.len()];
+                        make_block(i, role, &"x ".repeat((tokens as usize / 4).max(4)), tokens)
+                    })
+                    .collect();
+
+                let total_before: u32 = blocks.iter().map(|b| b.token_count).sum();
+                let budget = ((total_before as usize * (15 + next() % 46)) / 100).max(1) as u32;
+
+                // Smallest total the contract permits: every block it forbids
+                // compressing at full cost, everything else at the cheapest
+                // resolution the enum offers.
+                let cutoff = n.saturating_sub(protect_last);
+                let floor: u32 = blocks
+                    .iter()
+                    .enumerate()
+                    .map(|(i, b)| {
+                        let forced = matches!(
+                            b.kind,
+                            BlockKind::UserMessage | BlockKind::SystemMessage
+                        ) || i >= cutoff;
+                        let fraction = if forced {
+                            Resolution::Verbatim.token_fraction()
+                        } else {
+                            Resolution::Fingerprint.token_fraction()
+                        };
+                        (b.token_count as f64 * fraction).round() as u32
+                    })
+                    .fold(0u32, u32::saturating_add);
+
+                let result = prune_conversation(&blocks, budget, 0.1, protect_last);
+                let allowance = budget.max(floor);
+
+                assert!(
+                    result.total_tokens_after <= allowance,
+                    "protect_last={protect_last} case={case}: returned {} tokens \
+                     against a budget of {budget} with a contract floor of {floor} \
+                     ({} blocks, {total_before} tokens before)",
+                    result.total_tokens_after,
+                    n
+                );
+
+                // The reported total has to match the assignments it reports,
+                // or the caller is budgeting against a number the pruner made up.
+                let recomputed: u32 = blocks
+                    .iter()
+                    .enumerate()
+                    .map(|(i, b)| {
+                        (b.token_count as f64 * result.assignments[i].1.token_fraction()).round()
+                            as u32
+                    })
+                    .fold(0u32, u32::saturating_add);
+                assert_eq!(
+                    result.total_tokens_after, recomputed,
+                    "protect_last={protect_last} case={case}: reported total does not \
+                     match the returned assignments"
+                );
+            }
+        }
+    }
+
     fn make_block(index: usize, role: &str, content: &str, tokens: u32) -> ConvBlock {
         ConvBlock {
             index,

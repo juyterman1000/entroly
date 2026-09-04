@@ -352,6 +352,14 @@ class CompressionRetrievalStore(_LegacyCompressionRetrievalStore):
         spans: list[dict[str, Any]],
         metadata=None,
     ):
+        # Loaded state is checked against _validate_identifier, so a span id the
+        # writer chose freely can make the shared store file unreadable for every
+        # scope that opens it afterwards. Validate at the boundary that accepts
+        # the id, not only at the one that later has no choice but to refuse it.
+        for raw in spans or ():
+            if not isinstance(raw, dict):
+                raise ValueError("exact spans must be objects")
+            _validate_identifier(str(raw.get("span_id", "")), name="span_id")
         stored = super().put_exact_spans(
             original_text=original_text,
             compressed_text=compressed_text,
@@ -399,6 +407,30 @@ class CompressionRetrievalStore(_LegacyCompressionRetrievalStore):
             optional=True,
         )
         return validated or f"auto:{uuid.uuid4().hex}"
+
+    def _record_retrieval(
+        self,
+        receipt_id: str,
+        span_id: str,
+        token_count: int,
+        *,
+        retrieval_id: str,
+    ) -> None:
+        """Debit the ledger under an id owned by this scope's record.
+
+        ``retrieval_id`` arrives verbatim from a recovery caller, while the
+        optimization ledger keys adjustments in a single process-wide namespace
+        shared by every store and workspace. Binding the caller's value to the
+        scope, receipt, and span that produced it keeps a chosen id from
+        claiming, colliding with, or denying another record's ledger row while
+        preserving per-span retry idempotency.
+        """
+        super()._record_retrieval(
+            receipt_id,
+            span_id,
+            token_count,
+            retrieval_id=f"{self.scope_hash}:{receipt_id}:{span_id}:{retrieval_id}",
+        )
 
     def _record_locked(
         self,
