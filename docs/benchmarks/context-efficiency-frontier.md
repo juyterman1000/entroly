@@ -1,5 +1,11 @@
 # Entroly Context Efficiency Frontier
 
+> Historical protocol v1. The first calibration run exposed weaknesses in the
+> scoring, missing-usage, and small-sample rules. This file is preserved as the
+> preregistration record and is superseded for future experiments by
+> [protocol v2](context-efficiency-frontier-v2.md). No v1 observation is
+> retroactively presented as if it had been collected under v2.
+
 The Context Efficiency Frontier (CEF) measures whether a context-control system
 reduces model input while preserving task outcomes. It does not treat token
 savings alone as a product win.
