@@ -203,8 +203,27 @@ pub fn extract_key_terms(query: &str, fragment_summaries: &[String], top_n: usiz
             .collect()
     };
 
+    // Tie-break on the term itself. `scored` is built by iterating a HashMap,
+    // whose order is randomized per map instance, and `sort_unstable_by` does
+    // not preserve input order either -- so equal scores came out in an
+    // arbitrary order that changed between engines and between processes.
+    //
+    // Ties are the common case here, not a corner case: with no fragment
+    // summaries the score is `tf + min(len/10, 0.5)`, so every distinct word of
+    // five or more characters occurring once scores exactly 1.5. Measured on
+    // "how do the payload handlers compute totals", two engines in one process
+    // returned ['handlers','compute','totals','payload'] and
+    // ['totals','handlers','compute','payload'].
+    //
+    // `key_terms` is handed back to callers in `query_analysis` and feeds query
+    // refinement, so an unstable order makes the refined query -- and any
+    // prompt bytes built from it -- non-reproducible.
     let mut sorted = scored;
-    sorted.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    sorted.sort_unstable_by(|a, b| {
+        b.1.partial_cmp(&a.1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.0.cmp(&b.0))
+    });
     sorted.truncate(top_n);
     sorted.into_iter().map(|(t, _)| t).collect()
 }
@@ -433,6 +452,35 @@ mod tests {
         assert!(!terms.contains(&"the".to_string()));
         assert!(!terms.contains(&"is".to_string()));
         assert!(!terms.contains(&"in".to_string()));
+    }
+
+    /// Equal scores must order deterministically, not by HashMap chance.
+    ///
+    /// `scored` is built by iterating a HashMap and then sorted with
+    /// `sort_unstable_by`, which neither preserves input order nor breaks
+    /// ties. With no fragment summaries the score is `tf + min(len/10, 0.5)`,
+    /// so every distinct word of five or more characters occurring once scores
+    /// exactly 1.5 -- ties are the common case. Measured before the tie-break,
+    /// two engines in one process returned the same four terms in different
+    /// orders, which propagates into `query_analysis` and query refinement.
+    #[test]
+    fn key_terms_break_ties_deterministically() {
+        let query = "how do the payload handlers compute totals";
+
+        let first = extract_key_terms(query, &[], 12);
+        for _ in 0..25 {
+            assert_eq!(
+                extract_key_terms(query, &[], 12),
+                first,
+                "key term order is not reproducible for the same query"
+            );
+        }
+
+        // The tied terms must come back in a defined order, and every tie in
+        // this query is total, so the whole run is alphabetical.
+        let mut expected = first.clone();
+        expected.sort();
+        assert_eq!(first, expected, "tied terms are not ordered by term");
     }
 
     #[test]
