@@ -153,6 +153,13 @@ def test_usable_core_refuses_a_core_missing_the_symbols_its_callers_use() -> Non
     ``WORK_GRAPH_SYMBOLS`` records published 1.0.78 passing the version check
     while lacking a symbol.
     """
+    # "Incomplete" presupposes a core to be incomplete. On the pure-Python
+    # fallback surface there is no `entroly_core` at all, which
+    # `test_usable_core_refuses_a_below_minimum_core` and the engine/checkpoint
+    # agreement test already cover — and the probe below would abort on its own
+    # import, which this test would then read as the crash it is looking for.
+    pytest.importorskip("entroly_core")
+
     probe = (
         "import sys, types\n"
         "import entroly_core as real\n"
