@@ -175,3 +175,65 @@ def test_untruncated_listing_reports_an_exact_count(prefer_rust):
         f"{risk['omitted_relevant_chunks']} relevant chunk(s) were omitted; "
         "inspect omitted_context."
     )
+
+
+# ── Two normalisers, one documented input shape ───────────────────────────
+
+
+def test_both_document_normalisers_accept_the_same_shapes():
+    """A `{path: text}` mapping must ingest the same way through either door.
+
+    `sdk._normalize_receipt_documents` reads a top-level dict as
+    `{source_path: text}` — that is the path the MCP `create_context_receipt`
+    tool uses. `context_receipts.ingest.normalize_document_pairs` discarded a
+    Mapping outright, so the *same documented input* produced a full receipt
+    through one entry point and an empty one through the other.
+
+    A dict also satisfies the declared `Iterable[tuple[str, str]]` by
+    duck-typing, so `ingest_documents({...})` returned an index of zero chunks
+    without raising, and the receipt then reported "No relevant chunks matched
+    the query" — blaming the query for input that was never ingested.
+    """
+    from entroly.context_receipts.ingest import normalize_document_pairs
+    from entroly.sdk import _normalize_receipt_documents
+
+    shapes = {
+        "mapping": {"a.py": "def f():\n    return 1\n", "b.py": "def g():\n    return 2\n"},
+        "pairs": [("a.py", "def f():\n    return 1\n"), ("b.py", "def g():\n    return 2\n")],
+        "records": [
+            {"source_path": "a.py", "text": "def f():\n    return 1\n"},
+            {"source_path": "b.py", "text": "def g():\n    return 2\n"},
+        ],
+    }
+    for label, payload in shapes.items():
+        via_ingest = normalize_document_pairs(payload)
+        via_sdk = _normalize_receipt_documents(payload)
+        assert via_ingest == via_sdk, (
+            f"{label}: the two normalisers disagree — "
+            f"ingest={via_ingest!r} sdk={via_sdk!r}"
+        )
+        assert len(via_ingest) == 2, f"{label}: expected 2 documents, got {via_ingest!r}"
+
+
+def test_a_mapping_actually_reaches_the_index():
+    """The end the defect was visible from: chunks, not an empty receipt."""
+    from entroly.context_receipts.ingest import ingest_documents
+
+    docs = {
+        "src/a.py": "def refund_declined(payment):\n    return payment.validate()\n",
+        "src/b.py": "def widget(alpha, beta):\n    return alpha * beta\n",
+    }
+    index = ingest_documents(docs, chunk_tokens=40)
+    assert index.chunks, "a {path: text} mapping produced an empty index"
+    sources = {c.source_path for c in index.chunks}
+    assert sources == set(docs), f"ingested sources {sources} != {set(docs)}"
+
+
+def test_non_document_inputs_are_still_refused():
+    """The deliberate rejections must survive the mapping change."""
+    from entroly.context_receipts.ingest import normalize_document_pairs
+
+    assert normalize_document_pairs("not documents") == []
+    assert normalize_document_pairs(b"raw bytes") == []
+    # Malformed rows are skipped rather than raising — the documented contract.
+    assert normalize_document_pairs([("only-one",), 42, {"no": "usable keys"}]) == []
