@@ -228,3 +228,59 @@ def test_parseable_timestamps_still_classify_correctly(engine_and_beliefs):
 
     assert engine.check_belief("c_fresh")["status"] == "verified"
     assert engine.check_belief("c_old")["status"] == "needs_attention"
+
+
+# ── Signals 2-4: correct API, and a reason that is true ────────────────────
+
+
+def test_unavailable_signals_report_a_true_reason_not_an_attribute_error():
+    """A signal that cannot measure must say why, accurately.
+
+    All three of ECE/EPR/spectral had drifted out of API compatibility --
+    `ece.evaluate` does not exist (it is `evaluate_uncertainty`), and EPRSignal
+    and SpectralSignal are dataclasses, not dicts, so `.get(...)` raised. The
+    reported reason was therefore an AttributeError string, which reads as a
+    trivial code bug rather than the real situation: these signals need token
+    logprobs or extractable entities, and this tool receives plain text.
+    """
+    from entroly.ravs.ece import EpistemicCascadeEngine
+    from entroly.ravs.epr import compute_epr
+    from entroly.ravs.spectral import compute_spectral_consistency
+
+    # The real APIs exist under these names.
+    assert hasattr(EpistemicCascadeEngine, "evaluate_uncertainty")
+    assert not hasattr(EpistemicCascadeEngine, "evaluate"), (
+        "an `evaluate` method appeared; re-check which one verify_response calls"
+    )
+
+    # They return dataclasses, so `.get` is not available -- the original bug.
+    epr = compute_epr("some response text")
+    assert not hasattr(epr, "get")
+    assert hasattr(epr, "has_logprobs")
+
+    spec = compute_spectral_consistency("ctx", "resp")
+    assert not hasattr(spec, "get")
+    assert hasattr(spec, "n_ctx_entities") and hasattr(spec, "score")
+
+
+def test_spectral_argument_order_is_context_then_response():
+    """`compute_spectral_consistency(context, response)` is not symmetric.
+
+    verify_response passed them reversed. Measured on one pair the two orders
+    gave 0.2000 and 0.5000, so the swap silently changed the number -- latent
+    only because the call was raising before it could be used.
+    """
+    from entroly.ravs.spectral import compute_spectral_consistency
+
+    context = (
+        "The RefundProcessor validates DeclinedTransaction objects and "
+        "PaymentGateway.charge calls StripeAdapter.submit."
+    )
+    response = "ZylophaneScheduler reconciles ParallelUniverseBatch records."
+
+    forward = compute_spectral_consistency(context, response)
+    reversed_ = compute_spectral_consistency(response, context)
+    assert (forward.n_ctx_entities, forward.n_resp_entities) != (
+        reversed_.n_ctx_entities,
+        reversed_.n_resp_entities,
+    ), "the two orders are indistinguishable here; pick a pair that separates them"
