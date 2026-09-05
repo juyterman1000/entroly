@@ -72,7 +72,6 @@ _PROSE_FALSE_POSITIVES = {
     "actually",
     "auto-merges",
     "prints",
-    "shrink",
     "starts",
     "import",  # used in `from entroly import compress` (Python `import` keyword)
 }

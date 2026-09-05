@@ -1,0 +1,38 @@
+{
+  "name": "entroly",
+  "version": "1.0.81",
+  "description": "Evidence operations and exactly recoverable context for Codex tasks.",
+  "author": {
+    "name": "Entroly"
+  },
+  "homepage": "https://github.com/juyterman1000/entroly",
+  "repository": "https://github.com/juyterman1000/entroly",
+  "license": "Apache-2.0",
+  "keywords": [
+    "context",
+    "receipts",
+    "recovery",
+    "token-audit"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Entroly",
+    "shortDescription": "Audit and recover agent context",
+    "longDescription": "Run content-blind audits, matched context experiments, and recoverable command or browser evidence without hiding uncertainty or loss cases.",
+    "developerName": "Entroly",
+    "category": "Developer Tools",
+    "capabilities": [
+      "context-audit",
+      "recoverable-compression",
+      "matched-experiments",
+      "mcp"
+    ],
+    "websiteURL": "https://github.com/juyterman1000/entroly",
+    "defaultPrompt": [
+      "Audit this task's context cost with Entroly.",
+      "Compress this command output with exact recovery.",
+      "Set up a matched Entroly context experiment."
+    ]
+  }
+}
