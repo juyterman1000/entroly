@@ -21,6 +21,7 @@ from entroly.ccr import (
     slice_recovery_content,
 )
 from entroly.config import EntrolyConfig
+from entroly.engine import naive_context_baseline
 from entroly.server import EntrolyEngine
 
 
@@ -92,8 +93,26 @@ def run(output: str | None = None, max_files: int = 120) -> int:
     # perfect score for having returned no context at all. `cmd_simulate`
     # already scores the identical event as 0.0%; two commands in one product
     # must not give opposite answers to "we returned nothing".
-    savings = (1 - used / tokens) * 100 if selected and tokens > 0 and used <= tokens else 0.0
-    print(f"  selected={len(selected)} tokens={used:,} savings={savings:.1f}% latency={optimize_ms:.1f}ms")
+    #
+    # The baseline has to match for the same reason. This divided by `tokens`,
+    # the whole indexed corpus, which credits every fragment that was never
+    # going to be sent -- the error `engine._honest_tokens_saved` documents.
+    # `cmd_simulate` measures against `min(total_tokens, 32_000)`, a context
+    # window someone might plausibly fill. Measured on this repository the two
+    # disagreed by more than ten points: verify-claims printed 99.4% against
+    # 769,339 corpus tokens while simulate reported 89.1%, and only simulate
+    # said what it was comparing against. Both are onboarding steps 1 and 2.
+    baseline = naive_context_baseline(tokens)
+    savings = (
+        (1 - used / baseline) * 100
+        if selected and baseline > 0 and used <= baseline
+        else 0.0
+    )
+    print(
+        f"  selected={len(selected)} tokens={used:,} "
+        f"savings={savings:.1f}% vs {baseline:,}-token baseline "
+        f"latency={optimize_ms:.1f}ms"
+    )
 
     # A deliberate no-match is not a failure. The engine refuses to return
     # files that share no term with the query rather than padding the budget
@@ -232,6 +251,10 @@ def run(output: str | None = None, max_files: int = 120) -> int:
         "total_tokens": tokens,
         "index_time_s": round(index_s, 3),
         "tokens_used": used,
+        # Report what the percentage is measured against. `cmd_simulate` emits
+        # `baseline_tokens` for the same reason: a saving without its baseline
+        # is not checkable, and the number moves by ten points depending on it.
+        "baseline_tokens": baseline,
         "savings_pct": round(savings, 1),
         "optimize_latency_ms": round(optimize_ms, 1),
         "recovery": {

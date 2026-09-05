@@ -5220,7 +5220,29 @@ impl EntrolyEngine {
     pub fn export_fragments(&self) -> PyResult<PyObject> {
         Python::with_gil(|py| {
             let list = pyo3::types::PyList::empty(py);
-            for frag in self.fragments.values() {
+            // Stable order, for the same reason the cogops candidate vector is
+            // sorted: HashMap iteration is randomized per map instance, and
+            // selection must not inherit that entropy.
+            //
+            // This list feeds the QCCR selector, which is the DEFAULT path.
+            // `optimize_context` exports fragments here and hands them to
+            // `qccr::select`, which groups by "first-seen order" over this
+            // slice -- so score ties were broken in HashMap order.
+            //
+            // Measured before this sort: 12 fragments all scoring exactly 1.0
+            // selected the same set every run but in a different order every
+            // run, so the injected bytes and their SHA-256 changed on every
+            // process start, and between two engines in one process. That
+            // defeats the provider KV cache this project exists to align --
+            // caches match an exact prefix, and `CacheAligner` only reuses on
+            // an exact digest -- and makes a selection non-re-derivable. The
+            // pure-Python selector was already deterministic here.
+            //
+            // Sorting by fragment_id recovers ingest order (shared engine
+            // prefix plus a monotonic counter) without changing scoring.
+            let mut ordered: Vec<&ContextFragment> = self.fragments.values().collect();
+            ordered.sort_by(|a, b| a.fragment_id.cmp(&b.fragment_id));
+            for frag in ordered {
                 let d = PyDict::new(py);
                 d.set_item("fragment_id", &frag.fragment_id)?;
                 d.set_item("content", &frag.content)?;

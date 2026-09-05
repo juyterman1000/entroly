@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 
 # These always-installed boundaries patch modules only after their public classes
@@ -89,9 +90,29 @@ def _safe_store_path(path_override: str, configured_path: str | None) -> Path:
             raise ValueError("override parent is not a directory")
         resolved_parent.relative_to(allowed_root)
         resolved = resolved_parent / override.name
+        # Resolving the parent leaves the final component symbolic. A link
+        # planted at that name -- live or dangling, since a dangling link is not
+        # reported by exists() -- puts the store wherever it points the moment it
+        # is opened. Containment has to be decided on the path that is used.
+        if resolved.is_symlink():
+            target = resolved.resolve(strict=False)
+            target.relative_to(allowed_root)
+            resolved = target
     except (OSError, RuntimeError, ValueError) as exc:
         raise ValueError("store_path_override escapes the configured recovery root") from exc
     return resolved
+
+
+# Store, lock, and ledger failures render the offending absolute path into their
+# message. That message is model-facing, and where this recovery store lives on
+# the operator's disk is not part of the retrieval answer.
+_ABSOLUTE_PATH_RE = re.compile(
+    r"""(?:[A-Za-z]:[\\/]|\\\\[^\s'"]|/[^\s'"/]+/)[^\s'"]*"""
+)
+
+
+def _redacted_error(error: Exception) -> str:
+    return _ABSOLUTE_PATH_RE.sub("<path>", str(error))[:500]
 
 
 def _error_payload(error: Exception, *, operation: str) -> str:
@@ -99,7 +120,7 @@ def _error_payload(error: Exception, *, operation: str) -> str:
         {
             "status": "error",
             "operation": operation,
-            "error": str(error)[:500],
+            "error": _redacted_error(error),
         },
         indent=2,
         ensure_ascii=False,
@@ -108,10 +129,9 @@ def _error_payload(error: Exception, *, operation: str) -> str:
 
 def create_compression_mcp_server(store_path: str | None = None):
     """Create a focused MCP server for scope-bound compressed-span retrieval."""
-    try:
-        from mcp.server.fastmcp import FastMCP
-    except ImportError:
-        raise RuntimeError("MCP SDK not installed. Install with: pip install mcp") from None
+    from .mcp_sdk import load_fastmcp
+
+    FastMCP = load_fastmcp()
 
     mcp = FastMCP(
         "entroly-compression",

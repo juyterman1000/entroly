@@ -3971,7 +3971,7 @@ def cmd_doctor(args):
                 checks_passed += 1
             else:
                 print(f"  {C.YELLOW}!{C.RESET} Config: weights sum={w_sum:.3f} (expected ~1.0)")
-                checks_passed += 1  # warning, not failure
+                checks_warned += 1
         except Exception as e:
             print(f"  {C.RED}x{C.RESET} Config error: {e}")
             checks_failed += 1
@@ -4001,9 +4001,10 @@ def cmd_doctor(args):
             age_hours = (_time.time() - newest) / 3600
             if age_hours < 24:
                 print(f"  {C.GREEN}+{C.RESET} Index fresh ({age_hours:.1f}h old)")
+                checks_passed += 1
             else:
                 print(f"  {C.YELLOW}!{C.RESET} Index stale ({age_hours:.0f}h old -- consider re-indexing)")
-            checks_passed += 1
+                checks_warned += 1
         else:
             print(f"  {C.GRAY}-{C.RESET} No index found (will be created on first run)")
             checks_passed += 1
@@ -4025,7 +4026,7 @@ def cmd_doctor(args):
                 checks_passed += 1
             elif drift < 0.3:
                 print(f"  {C.YELLOW}!{C.RESET} Weights drifted (drift={drift:.3f})")
-                checks_passed += 1  # warning, still usable
+                checks_warned += 1
             else:
                 # Advisory, not a broken install: heavy drift is produced by the
                 # supported `entroly autotune` doing its job, and the message
@@ -4067,8 +4068,23 @@ def cmd_doctor(args):
         checks_passed += 1
     except ImportError as e:
         print(f"  {C.YELLOW}!{C.RESET} Hallucination verifiers not available ({e})")
-        checks_passed += 1  # optional, not a failure
+        checks_warned += 1
 
+    # Invariant: the bucket a check is counted in matches the marker printed for
+    # it -- `+` and `-` are passed, `x` is failed, `!` is warned.
+    #
+    # Stated that way rather than as a sum: check 1b (the PATH shadow advisory)
+    # is deliberately outside checks_total, as its comment explains, so
+    # passed + failed + warned exceeds total by the number of such advisories.
+    # Every *counted* check still lands in exactly one bucket.
+    #
+    # Four warning branches used to print `!` and then increment checks_passed
+    # (config weights not summing to 1.0, a stale index, mild weight drift, and
+    # missing hallucination verifiers). Measured differentially: adding a bad
+    # tuning_config.json took the printed warnings from 1 to 2 while the summary
+    # stayed "8/8 checks passed, 1 warning(s)". An operator scanning the last
+    # line saw all-green while the body reported a problem, which is the
+    # false-green this split counter exists to prevent.
     summary = f"\n  {C.BOLD}{checks_passed}/{checks_total} checks passed"
     if checks_failed:
         summary += f", {C.RED}{checks_failed} failed{C.RESET}{C.BOLD}"

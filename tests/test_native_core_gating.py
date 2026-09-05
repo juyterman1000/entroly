@@ -138,6 +138,81 @@ def test_usable_core_refuses_a_below_minimum_core() -> None:
     )
 
 
+def test_usable_core_refuses_a_core_missing_the_symbols_its_callers_use() -> None:
+    """The gate documents "incomplete" -- it has to actually detect it.
+
+    ``usable_core`` called ``native_status()`` with no required symbols, so
+    ``missing_symbols`` was always empty and the incomplete branch could never
+    fire, while the docstring promised it did. A core new enough to pass the
+    version gate but missing ``ContextFragment`` was handed back, and
+    ``checkpoint.py`` -- which dereferences it with no guard -- raised
+    ``AttributeError`` at import time instead of using the pure-Python fallback
+    in the next branch.
+
+    Partially featured cores are not hypothetical: the comment on
+    ``WORK_GRAPH_SYMBOLS`` records published 1.0.78 passing the version check
+    while lacking a symbol.
+    """
+    # "Incomplete" presupposes a core to be incomplete. On the pure-Python
+    # fallback surface there is no `entroly_core` at all, which
+    # `test_usable_core_refuses_a_below_minimum_core` and the engine/checkpoint
+    # agreement test already cover — and the probe below would abort on its own
+    # import, which this test would then read as the crash it is looking for.
+    pytest.importorskip("entroly_core")
+
+    probe = (
+        "import sys, types\n"
+        "import entroly_core as real\n"
+        "fake = types.ModuleType('entroly_core')\n"
+        "fake.__file__ = getattr(real, '__file__', '<t>')\n"
+        "for n in dir(real):\n"
+        "    if n != 'ContextFragment':\n"
+        "        try: setattr(fake, n, getattr(real, n))\n"
+        "        except Exception: pass\n"
+        "sys.modules['entroly_core'] = fake\n"
+        "import entroly.native_status as ns\n"
+        "ns.usable_core.cache_clear()\n"
+        "print('CORE=' + repr(ns.usable_core()))\n"
+        "import entroly.checkpoint as cp\n"
+        "print('FRAGMENT_MODULE=' + cp.ContextFragment.__module__)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True, timeout=300
+    )
+    if result.returncode != 0:
+        pytest.fail(
+            "an incomplete core crashed instead of falling back:\n"
+            f"{result.stdout}\n{result.stderr}"
+        )
+    assert "CORE=None" in result.stdout, (
+        f"usable_core() accepted a core missing ContextFragment:\n{result.stdout}"
+    )
+    assert "FRAGMENT_MODULE=entroly" in result.stdout, (
+        "checkpoint did not fall back to the Python ContextFragment:\n"
+        f"{result.stdout}"
+    )
+
+
+def test_core_symbols_are_present_in_the_engine_this_release_builds() -> None:
+    """Guard the other direction: the gate must not disable a healthy core.
+
+    ``CORE_SYMBOLS`` is a hard requirement, so a name that is misspelled or
+    renamed in the Rust core would silently drop the whole process to
+    pure-Python -- a large, quiet performance regression rather than a failure.
+    """
+    import entroly.native_status as ns
+
+    core = pytest.importorskip("entroly_core")
+    missing = [s for s in ns.CORE_SYMBOLS if not hasattr(core, s)]
+    assert not missing, (
+        f"CORE_SYMBOLS names symbols the built core does not export: {missing}. "
+        "Every process would fall back to pure-Python."
+    )
+    assert ns.usable_core() is not None, (
+        "a healthy core was refused by the capability gate"
+    )
+
+
 def test_engine_and_checkpoint_agree_on_the_core() -> None:
     """The two halves of the crash must reach the same verdict."""
     import entroly.checkpoint as checkpoint

@@ -15,6 +15,7 @@ Success criteria (not a preregistered precision target — establishing the rang
 """
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import os
@@ -22,7 +23,32 @@ import shutil
 import sys
 import time
 
-os.environ.setdefault("ENTROLY_MAX_SOURCE_FILE_BYTES", "500000")
+# Applied around `main` rather than at module import. This variable is
+# process-global and `tests/test_contextbench_runner_safety.py` imports this
+# module, so setting it at import time leaked the raised cap into every test
+# that ran afterwards in the same session. `main` imports entroly lazily, so
+# this is still set before any entroly import on the script path.
+_SIZE_CAP_VARS = ("ENTROLY_MAX_SOURCE_FILE_BYTES",)
+
+
+def _with_raised_size_caps(fn):
+    """Raise the caps for the duration of the call, then restore them."""
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        previous = {name: os.environ.get(name) for name in _SIZE_CAP_VARS}
+        for name in _SIZE_CAP_VARS:
+            os.environ.setdefault(name, "500000")
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            for name, value in previous.items():
+                if value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = value
+
+    return wrapper
 
 
 def _read_py_files(
@@ -58,6 +84,7 @@ def _spans_digest(spans) -> str:
     return hashlib.sha256(blob.encode()).hexdigest()
 
 
+@_with_raised_size_caps
 def main(tasks_json: str, co_root: str, n: int, budget: int, topk: int) -> int:
     from benchmarks.contextbench_determinism_tax import file_score, line_score, parse_gold
     from benchmarks.contextbench_pilot import _download, _extract_stripped

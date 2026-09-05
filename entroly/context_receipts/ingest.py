@@ -169,7 +169,20 @@ def normalize_document_pairs(documents: object) -> list[tuple[str, str]]:
     fails before receipt generation can produce an auditable empty result.
     """
     pairs: list[tuple[str, str]] = []
-    if isinstance(documents, Mapping) or isinstance(documents, str | bytes):
+    if isinstance(documents, Mapping):
+        # A top-level mapping is ``{source_path: text}``. Discarding it was the
+        # one shape a caller could not detect went missing: a ``dict`` satisfies
+        # the declared ``Iterable`` by duck-typing, so ``ingest_documents({...})``
+        # built an index of zero chunks and the receipt then reported "No
+        # relevant chunks matched the query" -- blaming the query for input that
+        # was never ingested.
+        #
+        # ``sdk._normalize_receipt_documents`` already reads a top-level dict
+        # exactly this way, and that is the path the MCP tool uses, so the same
+        # documented input produced a full receipt through one entry point and
+        # an empty one through the other.
+        iterable = tuple(documents.items())
+    elif isinstance(documents, str | bytes):
         iterable = ()
     else:
         try:

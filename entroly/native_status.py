@@ -49,6 +49,23 @@ RELEASE_NATIVE_SYMBOLS = QCCR_SYMBOLS + (
     "py_compress_block",
 )
 
+# What `usable_core()` consumers dereference off the module it hands back.
+# `checkpoint.py` takes `ContextFragment` with no guard, so a core missing it
+# raises AttributeError at import time instead of using the pure-Python
+# fallback sitting in the very next branch. `engine.py` takes the other three.
+#
+# Feature-specific sets stay out on purpose. QCCR_SYMBOLS and
+# WORK_GRAPH_SYMBOLS are checked by the features that need them, via
+# `native_status(...)`; a core without QCCR should lose QCCR, not all native
+# acceleration. This tuple is the opposite case -- the symbols whose absence
+# leaves the process unable to use the core at all.
+CORE_SYMBOLS = (
+    "ContextFragment",
+    "EntrolyEngine",
+    "py_analyze_query",
+    "py_refine_heuristic",
+)
+
 
 @dataclass(frozen=True)
 class NativeStatus:
@@ -191,14 +208,33 @@ def usable_core() -> ModuleType | None:
 
     Cached: the answer cannot change within a process, and this sits on import
     paths that run per request.
+
+    "Incomplete" means missing any of ``CORE_SYMBOLS``. This used to call
+    ``native_status()`` with no required symbols, so ``missing_symbols`` was
+    always empty and the incomplete case could not be detected -- the promise
+    above was documented but not implemented. A core new enough to pass the
+    version gate but missing ``ContextFragment`` was handed to ``checkpoint.py``,
+    which dereferences it without a guard and raised ``AttributeError`` at
+    import time rather than falling back. That is not hypothetical: the comment
+    on ``WORK_GRAPH_SYMBOLS`` records a published core that satisfied the
+    minimum version while lacking a symbol.
     """
-    status = native_status()
+    status = native_status(CORE_SYMBOLS)
+    logger = logging.getLogger("entroly")
     if status.available and status.version_ok is False:
-        logging.getLogger("entroly").warning(
+        logger.warning(
             "entroly_core %s is below the %s this release requires; using the "
             "pure-Python engine. Rebuild with `cd entroly-core && maturin "
             "develop --release` to restore native acceleration.",
             status.version,
             MIN_ENTROLY_CORE_VERSION,
+        )
+    elif status.available and status.missing_symbols:
+        logger.warning(
+            "entroly_core %s is missing required symbols (%s); using the "
+            "pure-Python engine. Rebuild with `cd entroly-core && maturin "
+            "develop --release` to restore native acceleration.",
+            status.version,
+            ", ".join(status.missing_symbols),
         )
     return status.module if status.ok else None

@@ -969,7 +969,7 @@ class CompressionRetrievalStore:
 
 
 def _estimate_tokens(text: str) -> int:
-    return max(1, len((text or "").encode("utf-8")) // 4)
+    return max(1, len(_exact_bytes(text or "")) // 4)
 
 
 def _count_o200k_tokens(text: str) -> int:
@@ -979,7 +979,7 @@ def _count_o200k_tokens(text: str) -> int:
         # A byte is a conservative upper bound for a tokenizer piece. Base
         # installs intentionally keep benchmark tokenizers optional, so this
         # path may return less context but can never violate the public cap.
-        return len(text.encode("utf-8"))
+        return len(_exact_bytes(text))
 
     return len(tiktoken.get_encoding("o200k_base").encode(text))
 
@@ -1142,8 +1142,32 @@ def _query_local_json_object(
     return best[4] if best[3] <= max_tokens else None
 
 
+def _exact_bytes(text: str) -> bytes:
+    """Exact bytes for text that may carry unpaired surrogates.
+
+    Content reaching this store is read with ``errors="surrogateescape"`` (see
+    ``cli_recover.cmd_compress``), so a byte that is not valid UTF-8 arrives as
+    a lone surrogate. ``surrogatepass`` round-trips those; a bare
+    ``encode("utf-8")`` raises on them, and ``errors="ignore"`` silently deletes
+    them.
+    """
+    return text.encode("utf-8", "surrogatepass")
+
+
 def _sha256_text(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8", errors="ignore")).hexdigest()
+    """Content address over exact bytes.
+
+    NOT ``errors="ignore"``. That deleted every unencodable character before
+    hashing, so a file holding a raw non-UTF-8 byte addressed identically to the
+    same file with that byte removed. ``put`` short-circuits on a known
+    ``receipt_id`` and returns the item already stored, so the collision handed
+    back the WRONG original -- a silent integrity break in the one function the
+    recovery contract rests on.
+
+    ``surrogatepass`` is byte-identical to ``errors="ignore"`` for any text
+    without surrogates, so every content address already on disk is unchanged.
+    """
+    return hashlib.sha256(_exact_bytes(text)).hexdigest()
 
 
 def _short_hash(text: str) -> str:

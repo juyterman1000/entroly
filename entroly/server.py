@@ -445,13 +445,13 @@ def create_mcp_server(
     Uses the FastMCP SDK for automatic tool schema generation
     from Python type hints and docstrings.
     """
+    from .mcp_sdk import load_fastmcp
+
     try:
-        from mcp.server.fastmcp import FastMCP
-    except ImportError:
-        logger.error(
-            "MCP SDK not installed. Install with: pip install mcp"
-        )
-        raise RuntimeError("MCP SDK not installed. Install with: pip install mcp") from None
+        FastMCP = load_fastmcp()
+    except RuntimeError as exc:
+        logger.error(str(exc))
+        raise
 
     mcp = FastMCP(
         "entroly",
@@ -3494,80 +3494,177 @@ def create_mcp_server(
             context: The source context that was provided to the AI
             prompt: The original user prompt/query (helps calibrate verification)
         """
-        verification = {}
+        verification: dict[str, Any] = {}
+        # A signal that did not run contributes NO score. `None` here is
+        # distinct from 0.0: zero-filling a failed check is what turns a
+        # broken verifier into a machine that certifies everything.
+        risks: dict[str, float | None] = {
+            "witness": None, "ece": None, "epr": None, "spectral": None,
+        }
 
-        # 1. WITNESS: entity coverage gap
+        # 1. WITNESS: proof-carrying groundedness (the validated signal)
         try:
             from .witness import WitnessAnalyzer
             analyzer = WitnessAnalyzer()
             witness_result = analyzer.analyze(context or prompt, response)
+            # summary_score is GROUNDEDNESS (1.0 = fully grounded), so the
+            # risk contribution is its complement — the same convention
+            # entroly.sdk.detect_hallucination uses. Reading summary_score
+            # directly as a "gap" inverts the verdict.
+            groundedness = max(0.0, min(1.0, float(witness_result.summary_score)))
+            risks["witness"] = 1.0 - groundedness
             verification["witness"] = {
-                "entity_coverage_gap": round(witness_result.summary_score, 4),
+                "risk_score": round(risks["witness"], 4),
+                "groundedness": round(groundedness, 4),
                 "flagged_claims": [
-                    {"claim": c.text[:120], "score": round(c.score, 3)}
+                    {
+                        "claim": c.claim_text[:120],
+                        "risk": round(c.risk, 3),
+                        "label": c.label,
+                    }
                     for c in (witness_result.flagged() or [])[:10]
                 ],
-                "total_claims": witness_result.total_claims,
+                "total_claims": len(witness_result.certificates),
             }
         except Exception as e:
-            verification["witness"] = {"status": "unavailable", "reason": str(e)[:100]}
+            logger.warning("verify_response: WITNESS signal unavailable: %s", e)
+            verification["witness"] = {"status": "unavailable", "reason": str(e)[:200]}
+
+        # Signals 2-4 are logprob- and entity-driven. This tool receives plain
+        # text, so each is called with its real API and then *asked whether it
+        # actually measured anything*. A signal that cannot measure is reported
+        # unavailable with the true reason and left out of the fusion below.
+        #
+        # These call sites had drifted out of API compatibility: `ece.evaluate`
+        # does not exist (it is `evaluate_uncertainty`), and EPRSignal and
+        # SpectralSignal are dataclasses, not dicts, so `.get(...)` raised.
+        # Every call therefore raised AttributeError and the old fusion counted
+        # the crash as zero risk. Repairing only the names would have been
+        # worse: measured on grounded vs fabricated text with no logprobs, ECE
+        # returns epistemic_uncertainty 0.0 for both, EPR reports
+        # has_logprobs=False with mean_entropy 0.0, and spectral returns a flat
+        # 0.5 because its entity extractor finds no response entities. Scoring
+        # those would inject a constant dressed as a measurement.
+        #
+        # `compute_spectral_consistency(context, response)` also had its
+        # arguments reversed here, which silently changes the result (0.2000 vs
+        # 0.5000 on the same pair) -- latent until someone "fixed" the names.
 
         # 2. ECE: Fisher curvature (hedging/uncertainty detection)
         try:
             from .ravs.ece import EpistemicCascadeEngine
-            ece = EpistemicCascadeEngine()
-            ece_result = ece.evaluate(response)
-            verification["ece"] = {
-                "curvature": round(ece_result.get("curvature", 0), 4),
-                "renyi_divergence": round(ece_result.get("renyi_divergence", 0), 4),
-                "risk_score": round(ece_result.get("risk_score", 0), 4),
-            }
+
+            ece_signal = EpistemicCascadeEngine().evaluate_uncertainty(
+                prompt or "", response
+            )
+            if ece_signal.epistemic_uncertainty > 0.0:
+                risks["ece"] = float(ece_signal.epistemic_uncertainty)
+                verification["ece"] = {
+                    "curvature": round(float(ece_signal.fisher_curvature), 4),
+                    "renyi_entropy": round(float(ece_signal.renyi_entropy), 4),
+                    "risk_score": round(risks["ece"], 4),
+                }
+            else:
+                verification["ece"] = {
+                    "status": "unavailable",
+                    "reason": (
+                        "requires token logprobs; from text alone every "
+                        "curvature term is zero and cannot separate grounded "
+                        "from fabricated"
+                    ),
+                }
         except Exception as e:
-            verification["ece"] = {"status": "unavailable", "reason": str(e)[:100]}
+            logger.warning("verify_response: ECE signal unavailable: %s", e)
+            verification["ece"] = {"status": "unavailable", "reason": str(e)[:200]}
 
         # 3. EPR: Entropy Production Rate
         try:
             from .ravs.epr import compute_epr
-            epr_result = compute_epr(response)
-            verification["epr"] = {
-                "entropy_production_rate": round(epr_result.get("epr", 0), 4),
-                "risk_score": round(epr_result.get("risk_score", 0), 4),
-            }
+
+            epr_signal = compute_epr(response)
+            if epr_signal.has_logprobs:
+                risks["epr"] = float(
+                    max(0.0, min(1.0, epr_signal.entity_bg_ratio))
+                )
+                verification["epr"] = {
+                    "mean_entropy": round(float(epr_signal.mean_entropy), 4),
+                    "entity_bg_ratio": round(float(epr_signal.entity_bg_ratio), 4),
+                    "risk_score": round(risks["epr"], 4),
+                }
+            else:
+                verification["epr"] = {
+                    "status": "unavailable",
+                    "reason": (
+                        "requires token logprobs, which this tool does not "
+                        "receive; entropy is undefined without them"
+                    ),
+                }
         except Exception as e:
-            verification["epr"] = {"status": "unavailable", "reason": str(e)[:100]}
+            logger.warning("verify_response: EPR signal unavailable: %s", e)
+            verification["epr"] = {"status": "unavailable", "reason": str(e)[:200]}
 
         # 4. Spectral: entity cross-similarity SVD
         try:
             from .ravs.spectral import compute_spectral_consistency
-            spec_result = compute_spectral_consistency(response, context)
-            verification["spectral"] = {
-                "consistency": round(spec_result.get("consistency", 1.0), 4),
-                "risk_score": round(spec_result.get("risk_score", 0), 4),
-            }
+
+            # (context, response) -- this order is load-bearing.
+            spec_signal = compute_spectral_consistency(context, response)
+            if spec_signal.n_ctx_entities > 0 and spec_signal.n_resp_entities > 0:
+                risks["spectral"] = float(
+                    max(0.0, min(1.0, 1.0 - spec_signal.score))
+                )
+                verification["spectral"] = {
+                    "consistency": round(float(spec_signal.score), 4),
+                    "max_similarity": round(float(spec_signal.max_sim), 4),
+                    "risk_score": round(risks["spectral"], 4),
+                }
+            else:
+                verification["spectral"] = {
+                    "status": "unavailable",
+                    "reason": (
+                        f"no comparable entities "
+                        f"(context={spec_signal.n_ctx_entities}, "
+                        f"response={spec_signal.n_resp_entities}); the score "
+                        f"is a floor constant, not a measurement"
+                    ),
+                }
         except Exception as e:
-            verification["spectral"] = {"status": "unavailable", "reason": str(e)[:100]}
+            logger.warning("verify_response: spectral signal unavailable: %s", e)
+            verification["spectral"] = {"status": "unavailable", "reason": str(e)[:200]}
 
-        # 5. Fused risk score (same 4-signal fusion as proxy)
-        w_entity = 0.80
-        w_ece = 0.08
-        w_epr = 0.07
-        w_spectral = 0.05
-
-        entity_gap = verification.get("witness", {}).get("entity_coverage_gap", 0)
-        ece_risk = verification.get("ece", {}).get("risk_score", 0)
-        epr_risk = verification.get("epr", {}).get("risk_score", 0)
-        spec_risk = verification.get("spectral", {}).get("risk_score", 0)
-
+        # 5. Fused risk over the signals that ACTUALLY RAN.
+        #
+        # Fail-closed accounting. The previous fusion read each signal back
+        # out of `verification` with `.get("risk_score", 0)`, so a signal
+        # that raised was scored as ZERO risk — i.e. as positive evidence of
+        # safety. Because the whole cascade raised, every response scored
+        # fused_risk=0.0 and came back "pass / Accept — response appears
+        # well-grounded", including responses that contradict their context
+        # outright. Unavailable signals are now excluded from both numerator
+        # and denominator, and losing WITNESS — the primary, benchmark-
+        # validated signal — cannot yield a "pass".
+        weights = {"witness": 0.80, "ece": 0.08, "epr": 0.07, "spectral": 0.05}
+        scored = {k: v for k, v in risks.items() if v is not None}
+        unavailable = sorted(k for k, v in risks.items() if v is None)
+        denom = sum(weights[k] for k in scored)
         fused = (
-            w_entity * entity_gap
-            + w_ece * ece_risk
-            + w_epr * epr_risk
-            + w_spectral * spec_risk
+            sum(weights[k] * scored[k] for k in scored) / denom
+            if denom > 0.0
+            # Nothing ran at all: unknown is not safe.
+            else 1.0
         )
         fused = max(0.0, min(1.0, fused))
 
         # Verdict thresholds
-        if fused < 0.15:
+        if risks["witness"] is None:
+            verdict = "unverified"
+            recommendation = (
+                "Do NOT treat this response as verified — the primary WITNESS "
+                "groundedness signal did not run ("
+                + str(verification["witness"].get("reason", "unavailable"))
+                + "). No groundedness claim can be made."
+            )
+        elif fused < 0.15:
             verdict = "pass"
             recommendation = "Accept — response appears well-grounded"
         elif fused < 0.40:
@@ -3580,12 +3677,9 @@ def create_mcp_server(
         verification["fused_risk"] = round(fused, 4)
         verification["verdict"] = verdict
         verification["recommendation"] = recommendation
-        verification["signal_weights"] = {
-            "entity_coverage_gap": w_entity,
-            "ece_curvature": w_ece,
-            "epr_rate": w_epr,
-            "spectral_consistency": w_spectral,
-        }
+        verification["signals_scored"] = sorted(scored)
+        verification["signals_unavailable"] = unavailable
+        verification["signal_weights"] = {k: weights[k] for k in sorted(scored)}
 
         # ── Third-party verifier plugins (entroly.verifier entry points) ──
         # Additive observations with attribution. They never change the core

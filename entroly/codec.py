@@ -203,7 +203,14 @@ class RecoveryStore:
             metadata={
                 "codec_recovery": True,
                 "codec_digest": digest,
-                "codec_byte_length": len(content.encode("utf-8")),
+                # `_to_bytes`, not a bare encode: this length is what
+                # `reference_for` rebuilds `RecoveryReference.byte_length` from
+                # across processes, and `verify` compares it against
+                # `_to_bytes(recovered)`. A bare encode both raised on content
+                # the reader deliberately admitted (cli_recover reads with
+                # surrogateescape) and disagreed with the value it is checked
+                # against.
+                "codec_byte_length": len(_to_bytes(content)),
                 "codec_item_count": int(item_count),
                 "codec_item_label": item_label,
                 "codec_note": note,

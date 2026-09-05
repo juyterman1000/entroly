@@ -56,6 +56,7 @@ from ..proxy_transform import (
     is_legacy_claude_3_model,
     strip_anthropic_unsupported_params,
 )
+from .beta_bounds import beta_lower_bound
 
 logger = logging.getLogger("entroly.ravs.router")
 
@@ -142,9 +143,14 @@ class GateStatus:
 
     # Metrics that must pass the gate
     decomposition_evidence_rate: float = 0.0    # target: >= 0.40
-    executor_coverage: float = 0.0              # target: >= 0.50
     shadow_success_rate: float = 0.0            # target: >= baseline - tolerance
     sample_size: int = 0                        # target: >= 50
+
+    # None means "not measured", which is the honest value today: no report
+    # field carries executor coverage, so `compute_gate_status` has nothing to
+    # read. It previously reported the gate's own *threshold* here, so the
+    # field always equalled 0.50 and read as a measurement of the fleet.
+    executor_coverage: float | None = None      # target: >= 0.50 (unenforced)
 
     # Model-specific readiness
     model_readiness: dict[str, bool] = field(default_factory=dict)
@@ -162,6 +168,13 @@ def compute_gate_status(
 
     Called offline (not per-request). Result is cached and used
     by the router for fast O(1) decisions.
+
+    ``min_executor_coverage`` is accepted but **not enforced**: it never appears
+    in ``checks``, and no report field carries executor coverage for it to be
+    compared against. It is kept so existing callers keep working, and named
+    here so the gap is visible rather than implied by a threshold that looks
+    active. Adding it as a real check would fail every gate until something
+    produces the metric, which would silently disable routing entirely.
     """
     total = report.get("total_requests", 0)
     decomp_rate = report.get("decomposition_evidence_rate", 0.0)
@@ -187,7 +200,11 @@ def compute_gate_status(
         passed=len(failed) == 0,
         reason="all gates passed" if not failed else f"failed: {', '.join(failed)}",
         decomposition_evidence_rate=decomp_rate,
-        executor_coverage=min_executor_coverage,  # from shadow data
+        # Read it if the report ever carries one; otherwise None for "not
+        # measured". This used to pass `min_executor_coverage`, so the field
+        # reported the gate's own threshold under a comment claiming it came
+        # "from shadow data" -- a constant presented as a measurement.
+        executor_coverage=report.get("executor_coverage"),
         shadow_success_rate=success_rate,
         sample_size=total,
         model_readiness=model_ready,
@@ -811,10 +828,13 @@ class BayesianRouter:
         alpha = cell.get("alpha", 1)
         beta = cell.get("beta", 1)
         mean = alpha / (alpha + beta) if (alpha + beta) > 0 else 0.5
-        ab = alpha + beta
-        var = (alpha * beta) / (ab * ab * (ab + 1)) if ab > 0 else 0
-        std = math.sqrt(var) if var > 0 else 0
-        ci_lo = max(0.0, mean - 1.96 * std)
+        # Exact quantile of the posterior, not `mean - 1.96 * std`. The normal
+        # approximation overstates the bound everywhere it was measured, and
+        # the overstatement is worst at the smallest qualifying cell: at
+        # `min_samples` observations with a perfect record it reported 0.8367
+        # where the posterior gives 0.7828, clearing a 0.80 threshold the
+        # evidence does not support. See `beta_bounds` for the measurements.
+        ci_lo = beta_lower_bound(alpha, beta)
 
         if n < self._min_samples:
             return RoutingDecision(
