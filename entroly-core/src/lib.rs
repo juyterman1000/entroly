@@ -61,6 +61,7 @@ mod context_receipt_bindings;
 mod context_snapshot_bindings;
 mod witness;
 mod work_graph_bindings;
+mod governance_bindings;
 // Cross-agent memory IPC primitives vendored from juyterman1000/AgentOS
 // (MIT-licensed, same author). Provides:
 //   - ipc:         SimHash Conditional-Entropy IPC bus (SCHIPC)
@@ -6446,6 +6447,7 @@ fn entroly_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     context_snapshot_bindings::register(m)?;
     work_graph_bindings::register(m)?;
     trust_engine_bindings::register(m)?;
+    governance_bindings::register(m)?;
     // ── Entropy / Hashing
     m.add_function(wrap_pyfunction!(py_shannon_entropy, m)?)?;
     m.add_function(wrap_pyfunction!(py_normalized_entropy, m)?)?;
