@@ -1,0 +1,12 @@
+{
+  "name": "entroly",
+  "version": "1.0.81",
+  "description": "Evidence operations, auditable context selection, and exact recovery for AI coding agents.",
+  "author": {
+    "name": "Entroly"
+  },
+  "homepage": "https://github.com/juyterman1000/entroly",
+  "repository": "https://github.com/juyterman1000/entroly",
+  "license": "Apache-2.0",
+  "skills": "./skills/"
+}

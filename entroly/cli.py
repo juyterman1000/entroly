@@ -35,6 +35,10 @@ Commands:
     entroly witness     Verify or suppress hallucinated factual claims
     entroly cache       Inspect EGSC persistent cache (cross-session)
     entroly unwrap      Safely remove persistent Entroly integration
+    entroly trial       Record matched baseline/optimized agent runs
+    entroly shrink      Compress command output with exact local recovery
+    entroly browser     Build a recoverable accessibility evidence envelope
+    entroly response    Manage reversible agent response contracts
     entroly capabilities Report installed runtime capabilities offline
 """
 
@@ -2175,6 +2179,9 @@ def _resolved_wrap_env(spec: dict, port: int) -> dict[str, str]:
     values = {spec["env_key"]: spec["env_val"].format(port=port)}
     for key, value in spec.get("extra_env", {}).items():
         values[str(key)] = str(value).format(port=port)
+    from .response_contract import environment_contract
+
+    values.update(environment_contract())
     return values
 
 
@@ -2711,6 +2718,10 @@ def cmd_unwrap(args):
 
 def cmd_learn(args):
     """entroly learn — analyze session for failure patterns."""
+    if getattr(args, "history", False):
+        from .cli_context_workflows import cmd_history
+
+        return cmd_history(args)
     print(f"\n{C.CYAN}{C.BOLD}  Entroly Learn — Failure Pattern Analysis{C.RESET}\n")
 
     import urllib.request
@@ -4453,7 +4464,8 @@ def cmd_completions(args):
         "init", "go", "serve", "proxy", "dashboard", "value", "health",
         "autotune", "benchmark", "simulate", "perf", "status", "config", "clean",
         "telemetry", "export", "import", "drift", "profile",
-        "batch", "wrap", "unwrap", "capabilities", "learn", "share", "demo",
+        "batch", "wrap", "unwrap", "trial", "shrink", "browser", "response",
+        "capabilities", "learn", "share", "demo",
         "doctor", "digest", "migrate", "role", "completions",
         "optimize", "ingest", "select", "receipt", "explain",
         "feedback", "compile", "verify", "sync",
@@ -6972,6 +6984,83 @@ def main():
         help="Additional arguments passed to the agent",
     )
 
+    # Explicit two-arm experiments. Each invocation records one arm so Entroly
+    # never runs a stateful/costly agent task twice without separate consent.
+    trial_parser = subparsers.add_parser(
+        "trial",
+        help="Record one matched baseline/optimized agent run or report an experiment",
+    )
+    trial_parser.add_argument("--experiment", default=None, help="Stable experiment id")
+    trial_parser.add_argument(
+        "--arm", choices=["baseline", "optimized"], default=None,
+        help="Baseline bypasses selection; optimized enables Entroly",
+    )
+    trial_parser.add_argument("--report", default=None, help="Report an existing experiment id")
+    trial_parser.add_argument("--evaluation", default=None, help="External JSON quality evaluation")
+    trial_parser.add_argument("--port", type=int, default=9377, help="Entroly proxy port")
+    trial_parser.add_argument("--receipt", default=None, help="Override the run receipt path")
+    trial_parser.add_argument(
+        "--json", dest="json_output", action="store_true", help="Emit JSON"
+    )
+    trial_parser.add_argument(
+        "agent_command", nargs=argparse.REMAINDER,
+        help="Agent command after --, for example: -- codex exec 'fix the test'",
+    )
+
+    shrink_parser = subparsers.add_parser(
+        "shrink",
+        help="Run a command through a bounded, exactly recoverable output envelope",
+    )
+    shrink_parser.add_argument("--budget", type=int, default=1200, help="Per-stream token budget")
+    shrink_parser.add_argument(
+        "--max-bytes", type=int, default=64 * 1024 * 1024,
+        help="Per-stream compression cap; larger streams pass through",
+    )
+    shrink_parser.add_argument("--store", dest="store_path", default=None, help="Recovery store path")
+    shrink_parser.add_argument("--receipt", default=None, help="Run receipt path")
+    shrink_parser.add_argument(
+        "command_args", nargs=argparse.REMAINDER, help="Command after --"
+    )
+
+    browser_parser = subparsers.add_parser(
+        "browser",
+        help="Capture and compress a recoverable accessibility evidence envelope",
+    )
+    browser_parser.add_argument("url", nargs="?", help="HTTP(S) page URL")
+    browser_parser.add_argument("--snapshot", default=None, help="Existing ARIA snapshot path")
+    browser_parser.add_argument("--query", default="", help="Evidence query used for selection")
+    browser_parser.add_argument("--budget", type=int, default=2000, help="Active token budget")
+    browser_parser.add_argument("--timeout", type=float, default=30.0, help="Navigation timeout seconds")
+    browser_parser.add_argument(
+        "--max-bytes", type=int, default=16 * 1024 * 1024, help="Maximum snapshot file size"
+    )
+    browser_parser.add_argument(
+        "--allow-private-network", action="store_true",
+        help="Permit loopback/private/reserved targets for explicit local testing",
+    )
+    browser_parser.add_argument("--store", dest="store_path", default=None, help="Recovery store path")
+    browser_parser.add_argument("--receipt", default=None, help="Receipt output path")
+    browser_parser.add_argument(
+        "--json", dest="json_output", action="store_true", help="Emit context and receipt as JSON"
+    )
+
+    response_parser = subparsers.add_parser(
+        "response", help="Manage reversible response contracts for agent bundles"
+    )
+    response_subparsers = response_parser.add_subparsers(dest="response_action", required=True)
+    for response_action in ("list", "show", "disable"):
+        response_action_parser = response_subparsers.add_parser(response_action)
+        response_action_parser.add_argument(
+            "--scope", choices=["project", "user"], default="project"
+        )
+        response_action_parser.add_argument(
+            "--json", dest="json_output", action="store_true"
+        )
+    response_set = response_subparsers.add_parser("set")
+    response_set.add_argument("name", choices=["concise", "minimal", "evidence", "off"])
+    response_set.add_argument("--scope", choices=["project", "user"], default="project")
+    response_set.add_argument("--json", dest="json_output", action="store_true")
+
     # entroly unwrap
     unwrap_parser = subparsers.add_parser(
         "unwrap",
@@ -6999,6 +7088,18 @@ def main():
         "--apply", action="store_true",
         help="Write learnings to CLAUDE.md / AGENTS.md",
     )
+    learn_parser.add_argument(
+        "--history", action="store_true",
+        help="Audit local agent histories without emitting their content",
+    )
+    learn_parser.add_argument(
+        "--history-root", action="append", default=None,
+        help="Explicit history root (repeatable; overrides known defaults)",
+    )
+    learn_parser.add_argument("--max-files", type=int, default=200)
+    learn_parser.add_argument("--max-bytes", type=int, default=64 * 1024 * 1024)
+    learn_parser.add_argument("--max-file-bytes", type=int, default=8 * 1024 * 1024)
+    learn_parser.add_argument("--json", dest="json_output", action="store_true")
 
     # entroly capabilities
     capabilities_parser = subparsers.add_parser(
@@ -7338,6 +7439,12 @@ def main():
     internal_attach_serve = args.command == "attach" and args.attach_action == "serve"
     machine_readable = (
         (args.command == "value" and getattr(args, "json_output", False))
+        or (args.command == "learn" and getattr(args, "history", False)
+            and getattr(args, "json_output", False))
+        or (args.command in {"trial", "browser", "response"}
+            and getattr(args, "json_output", False))
+        or (args.command == "trial" and getattr(args, "report", None))
+        or args.command == "shrink"
         or args.command == "proof"
     )
     lifecycle_exit = args.command == "uninstall"
@@ -7345,6 +7452,22 @@ def main():
         _check_first_run()
         if args.command not in (None, "completions"):
             _check_for_update()
+
+    from .cli_context_workflows import (
+        cmd_browser,
+        cmd_response,
+        cmd_shrink,
+        cmd_trial,
+        configure_cli_runtime,
+    )
+
+    configure_cli_runtime(
+        state_dir=_ENTROLY_DIR,
+        wrap_agents=_WRAP_AGENTS,
+        wrap_agent_names=_wrap_agent_names,
+        start_proxy=_start_proxy_if_needed,
+        resolved_wrap_env=_resolved_wrap_env,
+    )
 
     _dispatch = {
         "optimize": cmd_optimize,
@@ -7398,6 +7521,10 @@ def main():
         "witness": cmd_witness,
         "wrap": cmd_wrap,
         "unwrap": cmd_unwrap,
+        "trial": cmd_trial,
+        "shrink": cmd_shrink,
+        "browser": cmd_browser,
+        "response": cmd_response,
         "learn": cmd_learn,
         "share": cmd_share,
         "ravs": cmd_ravs,

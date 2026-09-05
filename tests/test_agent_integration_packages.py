@@ -88,3 +88,51 @@ def test_hermes_exports_current_contract_adapter() -> None:
         "get_status",
     ):
         assert f"def {method}(" in modern
+
+
+def test_codex_bundle_has_manifest_mcp_and_narrow_valid_skill() -> None:
+    integration = ROOT / "integrations" / "codex" / "entroly"
+    manifest = json.loads(
+        (integration / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8")
+    )
+    mcp = json.loads((integration / ".mcp.json").read_text(encoding="utf-8"))
+    skill = (
+        integration / "skills" / "entroly-evidence-operations" / "SKILL.md"
+    ).read_text(encoding="utf-8")
+
+    assert manifest["name"] == "entroly"
+    assert manifest["skills"] == "./skills/"
+    assert manifest["mcpServers"] == "./.mcp.json"
+    assert len(manifest["interface"]["defaultPrompt"]) <= 3
+    assert mcp["mcpServers"]["entroly"]["args"] == ["serve"]
+    assert mcp["mcpServers"]["entroly"]["env"]["ENTROLY_NO_DOCKER"] == "1"
+    assert "process exit code" in skill.lower()
+    assert "provider billing" in skill.lower()
+
+
+def test_claude_and_gemini_bundles_share_evidence_contract() -> None:
+    claude_manifest = json.loads(
+        (ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
+    )
+    gemini_root = ROOT / "integrations" / "gemini" / "entroly"
+    gemini_manifest = json.loads(
+        (gemini_root / "gemini-extension.json").read_text(encoding="utf-8")
+    )
+    gemini_skill = (
+        gemini_root / "skills" / "entroly-evidence-operations" / "SKILL.md"
+    ).read_text(encoding="utf-8")
+
+    assert claude_manifest["skills"] == "./skills/"
+    assert gemini_manifest["name"] == "entroly"
+    assert gemini_manifest["contextFileName"] == "GEMINI.md"
+    assert "matched operational experiment" in gemini_skill
+
+
+def test_bundle_installers_are_reversible_and_marker_gated() -> None:
+    powershell = (ROOT / "scripts" / "install-agent-bundles.ps1").read_text(encoding="utf-8")
+    shell = (ROOT / "scripts" / "install-agent-bundles.sh").read_text(encoding="utf-8")
+    for script in (powershell, shell):
+        assert "entroly-bundle.json" in script
+        assert "backup" in script.lower()
+        assert "disabled" in script.lower()
+        assert "uninstall" in script.lower()
