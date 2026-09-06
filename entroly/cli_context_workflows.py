@@ -305,10 +305,23 @@ def _trial_report(experiment: str) -> dict[str, Any]:
             "matched_command": matched_command,
             "balanced_arms": arms["baseline"]["runs"] == arms["optimized"]["runs"],
             "status": "directional" if enough_for_directional else "insufficient-evidence",
+            # Gated on `enough_for_directional`, not `comparable`.
+            #
+            # A difference is a *comparison*, so it must not exist when the
+            # status says the comparison is unsupported. Gated on `comparable`
+            # (>=1 run) a single run reported
+            # `status="insufficient-evidence"` alongside
+            # `provider_input_token_difference=4200`, and a consumer that reads
+            # the number without the status renders one run as a 4,200-token
+            # win. The claim boundary printed beside it already says three
+            # matched runs are the minimum.
+            #
+            # Per-arm totals in `arms` stay populated: those are observations,
+            # not a claim about their difference.
             "provider_input_token_difference": (
                 arms["baseline"]["provider_reported_active_input_tokens"]
                 - arms["optimized"]["provider_reported_active_input_tokens"]
-                if comparable else None
+                if enough_for_directional else None
             ),
             "claim_boundary": (
                 "Three matched runs permit a directional operational comparison only. "

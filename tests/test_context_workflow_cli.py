@@ -260,3 +260,71 @@ def test_trial_report_requires_a_valid_command_digest_for_comparability(
 
     assert report["comparison"]["matched_command"] is False
     assert report["comparison"]["provider_input_token_difference"] is None
+
+
+def _trial_receipt(arm: str, active_input: int, digest: str) -> dict:
+    return {
+        "schema_version": "entroly.trial-run.v2",
+        "experiment": "exp1",
+        "arm": arm,
+        "command_sha256": digest,
+        "traffic": {"requests": 3, "provider_requests": 3, "evidence_gate": "passed"},
+        "usage": {"provider_reported_active_input_tokens": active_input},
+        "quality": {"task_success": True, "evidence_retained": True},
+        "economics": {"cost_usd": 0.02},
+    }
+
+
+def test_insufficient_evidence_cannot_carry_a_token_difference(tmp_path, monkeypatch):
+    """A comparison must not exist while the status says it is unsupported.
+
+    The difference was gated on `comparable` (>= 1 balanced run) while the
+    status required three. A single run therefore reported
+    `status="insufficient-evidence"` **and**
+    `provider_input_token_difference=4200`. Any consumer that reads the number
+    without the status — a dashboard, a README, a launch claim — renders one run
+    as a 4,200-token win, which is precisely what the claim boundary printed
+    beside it forbids: "Three matched runs permit a directional operational
+    comparison only."
+
+    Per-arm totals stay populated at any run count; those are observations. It
+    is their *difference* that is a claim.
+    """
+    import hashlib
+
+    monkeypatch.setenv("ENTROLY_DIR", str(tmp_path / "state"))
+    from entroly import cli_context_workflows as workflows
+
+    digest = "sha256:" + hashlib.sha256(b"pytest -q").hexdigest()
+    directory = workflows._experiment_dir("exp1")
+    directory.mkdir(parents=True, exist_ok=True)
+
+    observed: dict[int, tuple[str, object]] = {}
+    for runs in (1, 2, 3):
+        for stale in directory.glob("*.json"):
+            stale.unlink()
+        for index in range(runs):
+            (directory / f"b{index}.json").write_text(
+                json.dumps(_trial_receipt("baseline", 10_000, digest)), encoding="utf-8"
+            )
+            (directory / f"o{index}.json").write_text(
+                json.dumps(_trial_receipt("optimized", 5_800, digest)), encoding="utf-8"
+            )
+        comparison = workflows._trial_report("exp1")["comparison"]
+        observed[runs] = (
+            comparison["status"],
+            comparison["provider_input_token_difference"],
+        )
+
+    for runs in (1, 2):
+        status, difference = observed[runs]
+        assert status == "insufficient-evidence", f"{runs} run(s): {status}"
+        assert difference is None, (
+            f"{runs} balanced run(s) reported status={status!r} but still "
+            f"emitted provider_input_token_difference={difference!r}; a number "
+            "beside a weak status gets quoted without it"
+        )
+
+    status, difference = observed[3]
+    assert status == "directional"
+    assert difference == 12_600, f"three runs should compare, got {difference!r}"
