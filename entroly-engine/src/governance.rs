@@ -161,6 +161,19 @@ pub enum VerificationStatus {
 ///
 /// Field order is alphabetical (BTreeMap-like) to guarantee deterministic
 /// serialization across Rust, Python, and Node/WASM.
+///
+/// Nothing in the Rust build enforces that. `canonical_json` is
+/// `serde_json::to_string`, which emits declaration order, while the Python
+/// binding builds the same document with `sort_keys=True`; the two agree only
+/// while this struct stays sorted. Reordering these lines for readability
+/// would change every identity token and invalidate all issued credentials,
+/// and `cargo test` would still pass. The differential that fails instead is
+/// `tests/test_governance_native_conformance.py` on the Python side.
+///
+/// Note also that serde emits raw UTF-8, never `\uXXXX` escapes. Any binding
+/// that canonicalizes with ASCII escaping hashes different bytes for the same
+/// identity; that is precisely how non-ASCII user names once produced
+/// unverifiable tokens across distributions.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AgentIdentityPayload {
     pub agent_id: String,
