@@ -494,6 +494,14 @@ jobs:
     timeout-minutes: 15
     env:
       RELEASE_VERSION: ${{ needs.release-metadata.outputs.version }}
+      # The assertion below looks for the literal "Entroly v<version>" in the
+      # banner, and `entroly-wasm/js/cli.js:40` builds that banner as
+      # `${C.CYAN}${C.BOLD}  Entroly${C.RESET} v${VERSION}` -- the reset lands
+      # *between* the name and the version, so with colour on the literal never
+      # appears and `grep -F` cannot match no matter how long it retries. The
+      # CLI honours NO_COLOR (cli.js:30), which collapses the codes to empty
+      # strings and makes the banner say what the assertion expects.
+      NO_COLOR: '1'
     steps:
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -519,8 +527,16 @@ jobs:
               probe_dir="$(mktemp -d)"
               output="$probe_dir/help.txt"
               error="$probe_dir/error.txt"
+              # Strip ANSI before matching as well as setting NO_COLOR. The
+              # banner colours the product name separately from the version, so
+              # a single stray escape between them makes `grep -F` fail on a
+              # perfectly good release -- and it fails identically on every
+              # retry, which reads as a registry problem rather than a broken
+              # assertion. Belt and braces, because this gate reported red for
+              # two releases while the packages were fine.
               if (cd "$probe_dir" && "$@" > "$output" 2> "$error") \
-                   && grep -Fq "Entroly v${RELEASE_VERSION}" "$output"; then
+                   && sed -r 's/\x1B\[[0-9;]*[A-Za-z]//g' "$output" \
+                        | grep -Fq "Entroly v${RELEASE_VERSION}"; then
                 cat "$output"
                 rm -rf "$probe_dir"
                 return 0
@@ -546,7 +562,11 @@ jobs:
     needs: [release-metadata, publish-pypi]
     if: needs.release-metadata.outputs.should_publish == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Comfortably above the 900s probe budget plus runner setup, so the budget
+    # is what ends this job. A job timeout kills it mid-retry with no
+    # explanation; the budget prints how long it waited and how many attempts
+    # it made, which is the difference between a usable failure and a puzzle.
+    timeout-minutes: 25
     env:
       RELEASE_VERSION: ${{ needs.release-metadata.outputs.version }}
     steps:
@@ -562,23 +582,44 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          # One wall-clock budget shared by every runner, not 20 attempts each.
+          #
+          # This job starts seconds after the upload finishes -- measured at 7s
+          # for 1.0.83 -- and the old budget of 20 attempts x 15s gave PyPI five
+          # minutes to serve the new version from the `/simple/` index that pip
+          # resolves against. That was not enough: the probe failed 20/20 on a
+          # correctly published release, and the same job succeeded in 21s when
+          # it ran again half an hour later. So the release was fine and the
+          # gate was wrong, which is the worst way for a gate to fail.
+          #
+          # A shared deadline rather than per-runner attempts means the first
+          # probe absorbs the propagation wait and the rest return immediately,
+          # so the ceiling does not multiply as runners are added.
+          PROBE_DEADLINE=$(( $(date +%s) + ${PROBE_BUDGET_SECONDS:-900} ))
+
           probe_python_runner() {
             local label="$1"
             shift
             local output="$RUNNER_TEMP/${label}-output.txt"
-            for attempt in $(seq 1 20); do
+            local attempt=0
+            while :; do
+              attempt=$(( attempt + 1 ))
               if "$@" > "$output" 2>&1 \
                    && grep -Fq "$RELEASE_VERSION" "$output"; then
                 cat "$output"
                 return 0
               fi
-              echo "$label could not run entroly==${RELEASE_VERSION} (attempt $attempt/20)." >&2
-              cat "$output" >&2 || true
-              if [[ "$attempt" != 20 ]]; then
-                sleep 15
+              local remaining=$(( PROBE_DEADLINE - $(date +%s) ))
+              if (( remaining <= 0 )); then
+                echo "$label still could not run entroly==${RELEASE_VERSION} after ${PROBE_BUDGET_SECONDS:-900}s and ${attempt} attempts." >&2
+                cat "$output" >&2 || true
+                return 1
               fi
+              echo "$label could not run entroly==${RELEASE_VERSION} (attempt ${attempt}, ${remaining}s of budget left)." >&2
+              cat "$output" >&2 || true
+              sleep 15
             done
-            return 1
           }
 
           # pipx 1.16 defaults to a new-release cooldown and auto-selects uv
