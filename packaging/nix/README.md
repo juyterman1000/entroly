@@ -8,7 +8,7 @@
 is scheduled. This directory holds the checklist only.
 
 This file previously said the flake was "on the v0.19.x roadmap". Entroly is at
-1.0.81, so that line had outlived the version it named by three majors and read
+1.0.82, so that line had outlived the version it named by three majors and read
 as a commitment rather than an unstarted item. Tracked as a blocked target in
 [`docs/distribution/targets.json`](../../docs/distribution/targets.json).
 

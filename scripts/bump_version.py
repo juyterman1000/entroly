@@ -5,6 +5,7 @@ Usage: python scripts/bump_version.py <semver>
 """
 from __future__ import annotations
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -152,6 +153,41 @@ def main(argv: list[str]) -> int:
         print(f"  {rel} -> rebuilt")
     file_count = len(pending) + len(artifacts)
     print(f"bumped {replacement_count} target(s) across {file_count} file(s) to {new}")
+
+    # TARGETS above is a hand-maintained list, so it cannot know about a version
+    # surface added after it was last edited -- that is exactly how seven
+    # manifests kept 1.0.81 through the 1.0.82 bump while everything beside them
+    # moved. Sweeping the tree here means the person running the bump learns
+    # immediately, instead of a release shipping with a manifest that tells its
+    # host the wrong version.
+    checker = ROOT / "scripts" / "check_version_staleness.py"
+    if not (ROOT / ".git").exists():
+        # A synthetic tree, not the repository -- `tests/test_bump_version.py`
+        # points ROOT at a fixture directory to exercise the rewrite logic.
+        # Sweeping it would report every unrelated fixture string. The sweep is
+        # a property of the real repository, so it is skipped here rather than
+        # failing a test that is not about it.
+        return 0
+    print()
+    if not checker.exists():
+        # Inside the real repository the sweep is not optional: without it a
+        # bump can silently leave a manifest behind, which is the defect this
+        # step exists to catch.
+        print("!! check_version_staleness.py is missing; bump is UNVERIFIED",
+              file=sys.stderr)
+        return 1
+    result = subprocess.run(
+        [sys.executable, str(checker)], cwd=str(ROOT),
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    print(result.stdout.rstrip())
+    if result.returncode != 0:
+        print(
+            "\n!! The bump left a version behind. Add each file above to TARGETS "
+            "in this script, then re-run.",
+            file=sys.stderr,
+        )
+        return result.returncode
     return 0
 
 

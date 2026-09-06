@@ -144,4 +144,10 @@ python -m bench.accuracy --benchmark truthfulqa --samples 100
 python -m bench.accuracy --benchmark longbench  --samples 100
 ```
 
-Engine version: `entroly-core v0.9.0` (BM25+GGCR retrieval, IOS selection, hierarchical Bayesian prior)
+Engine version: `entroly-core 1.0.82` (BM25+GGCR retrieval, IOS selection, hierarchical Bayesian prior)
+
+That line read `v0.9.0` until this release. It was written in the v1.0 founding
+commit and never moved again, so it named a pre-1.0 engine for the entire life
+of the project. It was not a provenance record either — the result files under
+`benchmarks/results/` carry no version field — so re-run the commands above to
+measure against the engine you actually have.

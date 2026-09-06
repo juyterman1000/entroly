@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       release_version:
-        description: 'Version to publish manually, for example 1.0.25. Leave blank for Docker-only run.'
+        description: 'Version to publish manually, for example 1.0.82. Leave blank for Docker-only run.'
         required: false
         type: string
 

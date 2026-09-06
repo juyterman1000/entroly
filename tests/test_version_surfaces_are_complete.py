@@ -68,20 +68,25 @@ def _tracked_json() -> tuple[Path, ...]:
 
 
 def _declared_version(path: Path) -> str | None:
-    """A top-level `version` that this product actually ships.
+    """A top-level `version` a manifest in this repository declares for itself.
 
-    `"private": true` is the discriminator, not a name pattern. A private
-    package is never published, so it keeps its own lifecycle and has no reason
-    to track the product version -- `deploy/cloudflare-community-savings` is a
-    Worker still at 1.0.0 whose version has never moved in its history. Every
-    published manifest in this repo is non-private, so the rule separates them
-    exactly without an allow-list that would need maintaining.
+    Private manifests are included. An earlier version of this file skipped
+    `"private": true` on the reasoning that an unpublished package keeps its own
+    lifecycle -- `deploy/cloudflare-community-savings` was a Worker sitting at
+    1.0.0 that had never moved. That carve-out is gone: the rule is that every
+    manifest this repository owns declares the current version, published or
+    not, so "which of these is allowed to be stale" is not a judgement anyone
+    has to make again.
+
+    Only a *nested* version is ignored, because those belong to third parties --
+    a lock file records `serde 1.0.4` and `windows 0.52.6`, and rewriting those
+    would mean demanding versions of other people's crates that do not exist.
     """
     try:
         document = json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, UnicodeDecodeError, OSError):
         return None
-    if not isinstance(document, dict) or document.get("private") is True:
+    if not isinstance(document, dict):
         return None
     value = document.get("version")
     return value if isinstance(value, str) and _SEMVER.match(value) else None

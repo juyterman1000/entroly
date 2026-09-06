@@ -772,9 +772,24 @@ def test_zero_query():
 # RUNNER
 # ══════════════════════════════════════════════════════════════════════════════
 
+
+def _entroly_version() -> str:
+    """Read the version rather than hardcoding it.
+
+    This banner said "v0.2.0" for eighty releases, because a literal in a
+    print() has nothing checking it. Reading the master means it cannot drift
+    again, and the bump script does not need to know this file exists.
+    """
+    try:
+        from entroly import __version__
+        return f"v{__version__}"
+    except Exception:
+        return "(version unavailable)"
+
+
 def run():
     print("══════════════════════════════════════════════════════════════")
-    print("  Entroly v0.2.0 — Intensive Functional Test Suite")
+    print(f"  Entroly {_entroly_version()} — Intensive Functional Test Suite")
     print(f"  Corpus: {len(real_sources())} real project files")
     print("══════════════════════════════════════════════════════════════")
 

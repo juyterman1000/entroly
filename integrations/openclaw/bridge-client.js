@@ -57,7 +57,7 @@ export function validateBridgeHealth(result) {
     result.receipt_commit_protocol !== "two_phase"
   ) {
     throw new Error(
-      "Incompatible Entroly Python bridge; install entroly>=1.0.57 with `python -m pip install -U entroly`",
+      "Incompatible Entroly Python bridge; install entroly>=1.0.82 with `python -m pip install -U entroly`",
     );
   }
   return result;

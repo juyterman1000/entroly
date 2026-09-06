@@ -28,7 +28,7 @@ body:
     id: version
     attributes:
       label: Entroly version and installation source
-      placeholder: "Example: 1.0.75 from PyPI"
+      placeholder: "Example: 1.0.82 from PyPI"
     validations:
       required: true
   - type: textarea

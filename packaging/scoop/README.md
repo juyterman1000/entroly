@@ -10,7 +10,7 @@ sidecar — see
 [windows-artifact-verification.md](../../docs/distribution/windows-artifact-verification.md).
 
 This file previously said the manifest was "on the v0.19.x roadmap" and should
-point at the PyPI wheel. Both are now wrong: the product is at 1.0.81, and the
+point at the PyPI wheel. Both are now wrong: the product is at 1.0.82, and the
 manifest points at the standalone `entroly-rs` release binary, which is what
 Scoop can install without a Python toolchain.
 
