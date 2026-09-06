@@ -284,3 +284,67 @@ def test_spectral_argument_order_is_context_then_response():
         reversed_.n_ctx_entities,
         reversed_.n_resp_entities,
     ), "the two orders are indistinguishable here; pick a pair that separates them"
+
+
+# ── Antonym substitution: polarity reversed without a negation cue ─────────
+
+
+_ANTONYM_CASES = [
+    ("The build fails when the incremental cache is enabled.",
+     "The build succeeds when the incremental cache is enabled."),
+    ("The retry policy is disabled for streaming requests.",
+     "The retry policy is enabled for streaming requests."),
+    ("The scheduler runs before the allocator in the pipeline.",
+     "The scheduler runs after the allocator in the pipeline."),
+    ("The parser accepts trailing commas in object literals.",
+     "The parser rejects trailing commas in object literals."),
+    ("Writes are acknowledged synchronously by the primary.",
+     "Writes are acknowledged asynchronously by the primary."),
+]
+
+
+@pytest.mark.parametrize("evidence,contradiction", _ANTONYM_CASES)
+def test_antonym_substitution_is_not_certified_grounded(evidence, contradiction):
+    """A minimal-edit antonym swap must not pass as grounded.
+
+    `_NEG_CUES` only catches polarity carried by an explicit negation word, so
+    "enabled" -> "disabled" reversed the meaning with nothing to detect. It is
+    the hardest case precisely because every other token is shared: the
+    overlap-driven features peak exactly when the label should flip.
+
+    McCoy et al. 2019 (HANS) call this the lexical-overlap heuristic — when the
+    hypothesis words all appear in the premise, systems predict entailment, at
+    near 0% accuracy on non-entailment. Naik et al. 2018 (COLING) isolate
+    "antonym" as its own stress category. Measured here before the gate: 10 of
+    10 such contradictions certified `grounded`, mean risk 0.0213 against 0.0023
+    for the matched entailments.
+    """
+    from entroly.witness import WitnessAnalyzer
+
+    result = WitnessAnalyzer().analyze(contradiction, evidence)
+    certificates = result.certificates or []
+    assert certificates, "no certificate produced"
+    label = certificates[0].label
+    assert label != "grounded", (
+        f"antonym contradiction certified {label!r}: {contradiction!r} against "
+        f"{evidence!r}"
+    )
+
+
+@pytest.mark.parametrize("evidence,_contradiction", _ANTONYM_CASES)
+def test_the_antonym_gate_does_not_fire_on_a_true_entailment(evidence, _contradiction):
+    """The other arm: a detector that also flags entailments is not a fix.
+
+    A false antonym would flip a correct entailment to `contradicted`, which is
+    the more damaging error for a verifier people rely on. Restating the
+    evidence verbatim must stay grounded.
+    """
+    from entroly.witness import WitnessAnalyzer
+
+    result = WitnessAnalyzer().analyze(evidence, evidence)
+    certificates = result.certificates or []
+    assert certificates, "no certificate produced"
+    assert certificates[0].label == "grounded", (
+        f"verbatim restatement was labelled {certificates[0].label!r}; the "
+        "antonym gate is firing on an entailment"
+    )
