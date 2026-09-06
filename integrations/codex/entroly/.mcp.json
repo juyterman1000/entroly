@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "entroly": {
+      "command": "entroly",
+      "args": [
+        "serve"
+      ],
+      "env": {
+        "ENTROLY_NO_DOCKER": "1"
+      }
+    }
+  }
+}

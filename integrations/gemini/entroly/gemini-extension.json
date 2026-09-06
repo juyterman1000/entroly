@@ -1,0 +1,17 @@
+{
+  "name": "entroly",
+  "version": "1.0.81",
+  "description": "Evidence operations and exactly recoverable context for Gemini CLI.",
+  "contextFileName": "GEMINI.md",
+  "mcpServers": {
+    "entroly": {
+      "command": "entroly",
+      "args": [
+        "serve"
+      ],
+      "env": {
+        "ENTROLY_NO_DOCKER": "1"
+      }
+    }
+  }
+}

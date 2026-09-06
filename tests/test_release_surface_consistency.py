@@ -44,11 +44,18 @@ def _master_version() -> str:
 MASTER = _master_version()
 
 JSON_MANIFESTS = (
+    ".claude-plugin/plugin.json",
     "entroly/npm/package.json",
     "entroly/npm-alias/package.json",
     "entroly-wasm/package.json",
+    "integrations/codex/entroly/.codex-plugin/plugin.json",
+    "integrations/codex/entroly/entroly-bundle.json",
+    "integrations/codex/entroly/skills/entroly-evidence-operations/entroly-bundle.json",
+    "integrations/gemini/entroly/gemini-extension.json",
+    "integrations/gemini/entroly/entroly-bundle.json",
     "integrations/openclaw/package.json",
     "server.json",
+    "skills/entroly-evidence-operations/entroly-bundle.json",
 )
 
 TOML_MANIFESTS = (

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Entroly Evidence Operations"
+  short_description: "Audit, compare, compress, and recover context"
+  default_prompt: "Use $entroly-evidence-operations to audit this task's context cost without overstating savings."
+policy:
+  allow_implicit_invocation: true
