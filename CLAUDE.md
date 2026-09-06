@@ -206,8 +206,10 @@ python scripts/codebase_graph.py --json g.json
 python scripts/codebase_graph.py --check      # non-zero if anything is unreachable
 ```
 
-Measured on the current `entroly` 1.0.80 checkout: **311 modules, 859 import
-edges, 158,852 lines.**
+Measured on the `entroly` 1.0.82 checkout: **332 modules, 915 import edges,
+167,087 lines.** Re-run the command above rather than trusting this line; it is
+a snapshot, and the previous one sat at 1.0.80 numbers (311 / 859 / 158,852)
+while the tree grew by 21 modules.
 
 ### Entry points are narrower than they look
 
@@ -224,7 +226,7 @@ edges, 158,852 lines.**
 | `entroly-work-graph-mcp` | `entroly.work_graph_mcp_server:main` |
 
 Plus `python -m entroly` (`entroly.__main__`) and `import entroly` / `entroly.sdk`.
-**Reachability must be computed from these**, not from `cli.py`. 274 of 311
+**Reachability must be computed from these**, not from `cli.py`. 295 of 332
 modules are reachable; the other 37 (13,101 lines) are imported only by tests and
 benchmarks. Before promoting anything in that set to a README claim, give it a
 real product path — a test that imports a module directly does not prove a user

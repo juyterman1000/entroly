@@ -21,7 +21,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Released Entroly version to diagnose or reconcile, for example 1.0.63."
+        description: "Released Entroly version to diagnose or reconcile, for example 1.0.82."
         required: false
         type: string
       publish_if_missing:
