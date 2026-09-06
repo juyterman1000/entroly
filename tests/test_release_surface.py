@@ -13,7 +13,7 @@ from pyproject_compat import read_project_metadata
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RELEASE_VERSION = "1.0.81"
+RELEASE_VERSION = "1.0.82"
 HOMEBREW_FORMULA_VERSION = "1.0.81"
 HOMEBREW_FORMULA_URL = (
     "https://files.pythonhosted.org/packages/8b/90/fdd30ed5bbe7586979259de173"
@@ -39,7 +39,7 @@ def _read_project_metadata(path: str) -> dict[str, object]:
     return read_project_metadata(path)
 
 
-def test_public_package_versions_are_1_0_81() -> None:
+def test_public_package_versions_are_1_0_82() -> None:
     assert _read_project_metadata("pyproject.toml")["version"] == RELEASE_VERSION
     assert _read_project_metadata("entroly/pyproject.toml")["version"] == RELEASE_VERSION
     assert _read_json("entroly/npm/package.json")["version"] == RELEASE_VERSION
