@@ -285,6 +285,28 @@ Status describes integration depth, not a savings guarantee — provider-observe
 
 Entroly carries verified public metadata for GPT-5.6 Sol, Terra, and Luna; Gemini 3.6 Flash; and Gemini 3.5 Flash-Lite, and it can discover installed NVIDIA Nemotron 3.5 Lightning Ollama tags. Gated or private-preview announcements are not promoted into the verified matrix without a usable public model ID and limits. For example, Gemini 3.5 Flash Cyber remains outside the generally available matrix because its documented CodeMender access is restricted to selected governments and trusted partners. See **[Verified model support](docs/model-support.html)** for model IDs, transport paths, limits, and availability boundaries.
 
+### Why does my AI coding agent miss files in a large codebase?
+
+Because something decided which files it was allowed to see, and that decision is usually invisible. A codebase is larger than any context window, so a tool picks what fits — and if it assumes a smaller window than your model actually has, it drops evidence that would have fitted. The agent then says *"I don't see where that is handled"*, and it reads like a model failure when it was a budgeting one.
+
+Entroly makes that decision explicit: it records each model's published limits so it fills the window you are paying for, and every fragment it drops appears in a receipt with the reason. **On a 1.67M-token codebase, knowing the real limit is the difference between carrying 7% and 52% of the repository as evidence in one request.**
+
+### GPT-6 Astra and Muse Spark 1.3
+
+**Does Entroly support GPT-6 Astra? Yes.** Entroly fills up to **869,500 tokens** on GPT-6 Astra (`openai/gpt-6-astra`) and **865,076** on Muse Spark 1.3 (`meta/muse-spark-1.3`), instead of the 121,600-token default it applies to models it cannot identify. Both work through the proxy, MCP, plugin, and SDK paths with Claude Code, Codex, Cursor, and OpenAI-compatible apps — no separate configuration.
+
+| Model | Model ID | Context window | Max output | Tokens Entroly will fill |
+|---|---|---:|---:|---:|
+| GPT-6 Astra | `openai/gpt-6-astra` | 1,050,000 | 128,000 | **869,500** |
+| Muse Spark 1.3 | `meta/muse-spark-1.3` | 1,048,576 | 131,072 | **865,076** |
+| Muse Spark 1.3 Contributor | `meta/muse-spark-1.3-contributor` | 1,048,576 | 131,072 | **865,076** |
+
+**Why this matters:** when a context tool does not know a model's real limit, it assumes a small one and compresses harder than it needs to. Evidence gets dropped that would have fitted. Your agent then answers "I don't see where that is handled" — not because the model ran out of room, but because the tool guessed the room was smaller. Entroly records each model's published limits so that never happens silently, and every dropped fragment still appears in the receipt with the reason it was dropped.
+
+**What it does not do:** this does not make requests cheaper — long-context requests cost what the provider charges. It removes an artificial ceiling on evidence, so hard questions can draw on more of the codebase when they need to. Entroly reserves output tokens plus an uncertainty margin, which is why the usable figure sits below the raw window.
+
+Both models resolve at **announced** trust from their public announcements, with tools, vision, and reasoning controls. Neither carries price metadata — the announcements describe pricing tiers without publishing rates, so Entroly reports no cost estimate for them rather than inventing one. Rates and `verified` trust follow when the first-party model pages publish them.
+
 ### Kimi K3, GLM-5.3, and GLM-5.3-Flash
 
 Entroly carries published metadata and list pricing for Moonshot AI's **Kimi K3**

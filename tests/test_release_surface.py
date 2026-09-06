@@ -247,6 +247,37 @@ def test_homebrew_formula_targets_release_sdist() -> None:
     assert f'sha256 "{HOMEBREW_FORMULA_SHA256}"' in text
 
 
+def _assert_probe_retries_and_is_bounded(probe: str, name: str) -> None:
+    """A publish probe must tolerate propagation without hanging forever.
+
+    Both halves matter. Without retries the probe races the registry index and
+    fails on a healthy release -- measured: the PyPI probe starts 7s after
+    upload and once failed 20/20 in five minutes, then passed in 21s when rerun
+    half an hour later. Without a bound it could hang until the job timeout
+    kills it with no explanation.
+
+    Asserted as a property rather than a literal loop. This previously pinned
+    `for attempt in $(seq 1 20)`, which passes only for a count-based loop, so
+    replacing it with an equivalent wall-clock deadline failed the test while
+    preserving everything the test exists to protect. A gate that encodes one
+    implementation blocks a better one wearing the same guarantees.
+
+    Caller keeps its own `npm view` / `pypi.org/pypi/` assertions: a probe must
+    exercise the real installer path, because registry metadata can lead the
+    tarball and CDN.
+    """
+    retries = "sleep " in probe and ("$(seq 1 " in probe or "while :" in probe)
+    assert retries, (
+        f"{name} does not retry; it will fail whenever the registry index lags "
+        f"behind a correct publish"
+    )
+    bounded = "$(seq 1 " in probe or "PROBE_DEADLINE" in probe
+    assert bounded, (
+        f"{name} retries without a bound; it can only end by hitting the job "
+        f"timeout, which reports nothing about what it was waiting for"
+    )
+
+
 def test_release_workflow_sanitizes_version_once_and_probes_live_artifacts() -> None:
     text = (ROOT / ".github/workflows/entroly-publish.yml").read_text(
         encoding="utf-8"
@@ -273,12 +304,12 @@ def test_release_workflow_sanitizes_version_once_and_probes_live_artifacts() -> 
     npm_runner_probe = text.split("  probe-npm-runners:", 1)[1].split(
         "  probe-python-runners:", 1
     )[0]
-    assert "for attempt in $(seq 1 20)" in npm_runner_probe
+    _assert_probe_retries_and_is_bounded(npm_runner_probe, "probe-npm-runners")
     assert "npm view" not in npm_runner_probe
     python_runner_probe = text.split("  probe-python-runners:", 1)[1].split(
         "  probe-npm-openclaw:", 1
     )[0]
-    assert "for attempt in $(seq 1 20)" in python_runner_probe
+    _assert_probe_retries_and_is_bounded(python_runner_probe, "probe-python-runners")
     assert "pypi.org/pypi/" not in python_runner_probe
     assert "oven-sh/setup-bun@v2" in text
     assert "pipx==1.16.7 uv==0.12.7" in text
