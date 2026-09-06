@@ -1,6 +1,6 @@
 {
   "name": "entroly-community-savings-worker",
-  "version": "1.0.0",
+  "version": "1.0.82",
   "private": true,
   "type": "module",
   "scripts": {

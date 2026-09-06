@@ -59,7 +59,7 @@ jobs:
 
       - name: Install focused test dependencies
         # `pip install -e ".[test]"` cannot bootstrap this branch. The root
-        # package requires `entroly-core>=1.0.79` so an install can never
+        # package requires `entroly-core>=1.0.82` so an install can never
         # resolve a published core that predates the Work Graph, and 1.0.79 is
         # not on PyPI until the release publishes -- `publish-core` runs before
         # `publish-pypi`, which is the correct order. A candidate therefore has
