@@ -55,6 +55,64 @@ from difflib import SequenceMatcher
 
 
 # Negation cues (lowercase). Order matters: longest first for matching.
+# Polarity-reversing lexical substitutions, as antonym pairs.
+#
+# `_NEG_CUES` only catches polarity expressed with an explicit negation word.
+# A minimal-edit antonym swap ("enabled" -> "disabled") reverses polarity with
+# no cue at all, and it is the harder case precisely because every other token
+# is shared: overlap-driven features peak exactly when the label should flip.
+#
+# McCoy et al. 2019 (HANS, ACL) name this the lexical-overlap heuristic — when
+# the hypothesis words all appear in the premise, systems predict entailment,
+# scoring near 0% on non-entailment. Naik et al. 2018 (COLING) isolate
+# "antonym" as its own stress category, separate from word overlap and
+# negation. Measured on this codebase before this gate: 10 of 10 minimal-edit
+# antonym contradictions were certified `grounded`, mean risk 0.0213 against
+# 0.0023 for the matched entailments — indistinguishable.
+#
+# Deliberately a small, high-precision list rather than a thesaurus. A false
+# antonym would flip a correct entailment to `contradicted`, which is the more
+# damaging error for a verifier people rely on; the accompanying benchmark
+# measures both arms.
+_ANTONYM_PAIRS: tuple[tuple[str, str], ...] = (
+    ("enabled", "disabled"),
+    ("enable", "disable"),
+    ("succeeds", "fails"),
+    ("succeed", "fail"),
+    ("success", "failure"),
+    ("accepts", "rejects"),
+    ("accept", "reject"),
+    ("allowed", "denied"),
+    ("allow", "deny"),
+    ("before", "after"),
+    ("warm", "cold"),
+    ("synchronously", "asynchronously"),
+    ("synchronous", "asynchronous"),
+    ("acquires", "releases"),
+    ("acquire", "release"),
+    ("queued", "dropped"),
+    ("increases", "decreases"),
+    ("increase", "decrease"),
+    ("above", "below"),
+    ("more", "less"),
+    ("always", "never"),
+    ("include", "exclude"),
+    ("included", "excluded"),
+    ("valid", "invalid"),
+    ("present", "absent"),
+    ("open", "closed"),
+    ("start", "stop"),
+    ("started", "stopped"),
+)
+
+_TOKEN_EDGE = ".,;:!?\"'()[]{}"
+
+_ANTONYM_OF: dict[str, str] = {}
+for _a, _b in _ANTONYM_PAIRS:
+    _ANTONYM_OF[_a] = _b
+    _ANTONYM_OF[_b] = _a
+
+
 _NEG_CUES = (
     "is not", "are not", "was not", "were not", "does not", "do not",
     "did not", "has not", "have not", "had not", "will not", "would not",
@@ -367,6 +425,31 @@ def feat_negation_polarity(claim: str, context: str) -> float:
         neg_ctx = has_negation_before(context_lower, word)
         if neg_claim != neg_ctx:
             return -1.0
+
+    # Polarity reversed lexically rather than with a negation cue.
+    #
+    # Checked only on the *aligned* tokens of a near-identical pair: the claim
+    # carries one half of an antonym pair exactly where the evidence carries the
+    # other, everything around it shared. That is a contradiction expressed
+    # without a cue, and it is invisible to the loop above.
+    #
+    # Requiring the same position in an otherwise-matching sentence keeps this
+    # conservative. Two texts that merely both mention "before" and "after"
+    # somewhere do not trip it, so a legitimate entailment discussing both
+    # polarities is unaffected.
+    claim_tokens = claim_lower.split()
+    context_tokens = context_lower.split()
+    if len(claim_tokens) == len(context_tokens) and claim_tokens:
+        differing = [
+            (c_tok.strip(_TOKEN_EDGE), x_tok.strip(_TOKEN_EDGE))
+            for c_tok, x_tok in zip(claim_tokens, context_tokens)
+            if c_tok != x_tok
+        ]
+        if differing and all(
+            _ANTONYM_OF.get(c_tok) == x_tok for c_tok, x_tok in differing
+        ):
+            return -1.0
+
     return 1.0
 
 

@@ -341,6 +341,30 @@ Ollama lists the standard `nemotron-3.5-lightning` tag as a 30B mixture-of-exper
 ---
 ## More commands
 
+For evidence-led optimization rather than a synthetic savings estimate:
+
+```bash
+entroly learn --history --json
+entroly shrink -- pytest -q
+entroly trial --experiment checkout-fix --arm baseline -- codex exec "fix the checkout test"
+entroly trial --experiment checkout-fix --arm optimized -- codex exec "fix the checkout test"
+entroly trial --report checkout-fix
+entroly browser https://example.com --query "billing settings"
+entroly response set evidence --scope project
+```
+
+Trials run one explicitly selected arm at a time so a stateful or paid agent task is never repeated implicitly. Response contracts shape agent instructions; they do not truncate responses or count as measured savings. Browser and command reductions keep exact local recovery handles and pass through when their safety gates cannot be met.
+
+For teams that need to say who an agent is and what it was allowed to do:
+
+```bash
+entroly govern status                          # identity, policies, audit chain
+entroly govern policy check write --risk high  # evaluate one authorization
+entroly govern audit verify                    # exit non-zero on a broken chain
+```
+
+Authorization is deny-by-default and every denial names the policy and the reason it gave. `audit verify` checks that recorded entries were not altered after the fact — it does not prove every action was recorded, and `govern status` reports the state of the local control plane only, not an attestation that each agent action passed through it. Identity tokens are unsigned unless `ENTROLY_IDENTITY_KEY` is set, and the credential is never printed.
+
 Also available: `entroly wrap`, `entroly unwrap`, `entroly serve`, `entroly daemon`, `entroly dashboard`, `entroly demo`, `entroly capabilities`, `entroly ingest`, `entroly select`, `entroly receipt`, `entroly explain`, `entroly context-commit`, `entroly proof`, `entroly benchmark`, `entroly cache`, `entroly ravs`, `entroly perf`, `entroly batch`. Full description: [command reference](docs/DETAILS.md#command-reference).
 
 ---

@@ -59,6 +59,24 @@ dependencies = [
     # x86_64/aarch64, and Windows x64; the pure-Python fallback remains for any
     # platform without a wheel.
     "entroly-core>=1.0.81,<2",
+    # Required, not optional: it is the only reader for the governance policy
+    # file.
+    #
+    # `governance/policy.py` is the sole yaml importer, and it degrades to the
+    # built-in deny-by-default policy when the import fails -- logged, never
+    # raised. PyYAML was declared in no dependency group and is not pulled in
+    # transitively, so on a default `pip install entroly` an operator's
+    # policies.yaml was read by nothing: every agent ran read-only regardless
+    # of what the file said, and `load_policies` returned as if it had loaded.
+    #
+    # Failing to the restrictive side is right; doing it silently is not.
+    # `policy_source_status` now names the reason, and this pin means the
+    # answer is no longer "the parser is missing".
+    #
+    # Longer term this parsing belongs in entroly-engine with the rest of the
+    # governance computation, so Python, Node, and WASM cannot disagree about
+    # what a policy says -- the same reason identity tokens are computed there.
+    "pyyaml>=6.0,<7",
 ]
 
 [project.urls]
@@ -91,6 +109,9 @@ code-intelligence = [
 images = [
     "Pillow>=10,<13",
 ]
+browser = [
+    "playwright>=1.49,<2",
+]
 full = [
     "cryptography>=42",
     "entroly-core>=1.0.81,<2",
@@ -98,6 +119,7 @@ full = [
     "starlette>=1.3.1",
     "uvicorn>=0.51.0",
     "tree-sitter-language-pack>=1.14.3,<2",
+    "playwright>=1.49,<2",
 ]
 test = [
     "pytest>=9.0.3,<10",

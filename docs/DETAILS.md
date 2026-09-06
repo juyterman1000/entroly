@@ -227,6 +227,11 @@ cd entroly/entroly-core && cargo build --release --bin entroly-rs --features pro
 | `entroly receipt` | Render a Context Receipt as a Markdown report |
 | `entroly explain` | Explain why a chunk was selected or omitted |
 | `entroly compress` / `entroly recover` | Compress one file with a receipt; recover the exact original from a digest |
+| `entroly learn --history` | Audit local agent histories without emitting prompts, responses, commands, URLs, or paths |
+| `entroly shrink -- <command>` | Run a command through a bounded output envelope with exact local recovery |
+| `entroly trial` | Record explicit baseline/optimized arms and report only matched evidence |
+| `entroly browser` | Select query-conditioned ARIA evidence; pass through on query or recovery failure |
+| `entroly response` | Set or inspect reversible response instruction contracts; never truncates output |
 | `entroly simulate` | Local no-LLM savings estimate with an explicit baseline |
 | `entroly perf` | Local no-LLM savings and optimizer latency |
 | `entroly value` | Evidence-classified provider value, local token reduction, and legacy history |
