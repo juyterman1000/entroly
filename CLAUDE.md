@@ -206,10 +206,10 @@ python scripts/codebase_graph.py --json g.json
 python scripts/codebase_graph.py --check      # non-zero if anything is unreachable
 ```
 
-Measured on the `entroly` 1.0.82 checkout: **332 modules, 915 import edges,
+Measured on the `entroly` 1.0.83 checkout: **332 modules, 915 import edges,
 167,087 lines.** Re-run the command above rather than trusting this line; it is
-a snapshot, and the previous one sat at 1.0.80 numbers (311 / 859 / 158,852)
-while the tree grew by 21 modules.
+a snapshot, and one earlier version of it sat at 1.0.80 numbers
+(311 / 859 / 158,852) while the tree grew by 21 modules underneath it.
 
 ### Entry points are narrower than they look
 

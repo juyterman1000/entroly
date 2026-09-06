@@ -1,6 +1,6 @@
 {
   "name": "entroly",
-  "version": "1.0.82",
+  "version": "1.0.83",
   "description": "Node/WASM Context Assurance for AI agents: reduce avoidable token usage with local evidence selection, receipts, exact recovery, and verification.",
   "main": "index.js",
   "types": "index.d.ts",
@@ -16,7 +16,7 @@
     "README.md"
   ],
   "dependencies": {
-    "entroly-wasm": "1.0.82"
+    "entroly-wasm": "1.0.83"
   },
   "repository": {
     "type": "git",

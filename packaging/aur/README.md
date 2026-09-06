@@ -7,10 +7,10 @@ PKGBUILD for installing entroly on Arch Linux via the AUR.
 **Not implemented.** There is no `PKGBUILD` in this repository and no work is
 scheduled. This directory holds the checklist only.
 
-This file previously said the submission was "on the v0.19.x roadmap". Entroly
-is at 1.0.82, so that line named a version series the project left long ago and
-read as a commitment rather than an unstarted item. It was the third copy of the
-same stale sentence, alongside `packaging/nix/` and `packaging/scoop/`.
+This file previously said the submission was "on the v0.19.x roadmap" -- a
+version series the project left long ago, which read as a commitment rather than
+an unstarted item. It was the third copy of that sentence, alongside
+`packaging/nix/` and `packaging/scoop/`.
 
 Until a PKGBUILD exists, Arch users should install via `pip install entroly`.
 

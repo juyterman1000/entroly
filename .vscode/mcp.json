@@ -5,8 +5,10 @@
     "entroly": {
       "type": "stdio",
       "command": "entroly",
-      "args": ["serve"],
-      "env": {}
+      "args": [],
+      "env": {
+        "ENTROLY_NO_DOCKER": "1"
+      }
     }
   }
 }
