@@ -7060,6 +7060,62 @@ def main():
         "--json", dest="json_output", action="store_true", help="Emit context and receipt as JSON"
     )
 
+    # ── Governance control plane ──────────────────────────────────────
+    # The `entroly/governance/` package shipped with tests but no entry point,
+    # so the repository's own reachability check listed all seven modules as
+    # unreachable. This is its product path.
+    govern_parser = subparsers.add_parser(
+        "govern", help="Inspect the agent governance control plane"
+    )
+    govern_groups = govern_parser.add_subparsers(dest="govern_group", required=True)
+
+    govern_identity = govern_groups.add_parser("identity", help="Agent identity")
+    identity_actions = govern_identity.add_subparsers(dest="identity_action", required=True)
+    identity_actions.add_parser("show", help="Resolve the current agent identity")
+    identity_create = identity_actions.add_parser("create", help="Mint an agent identity")
+    identity_create.add_argument("--agent-id", required=True)
+    identity_create.add_argument("--agent-type", default="unknown")
+    identity_create.add_argument("--organization", default="")
+    identity_create.add_argument("--user", default="")
+    identity_create.add_argument("--model", default="")
+    identity_create.add_argument("--scope", default="", help="Comma-separated scopes")
+
+    govern_policy = govern_groups.add_parser("policy", help="Policy evaluation")
+    policy_actions = govern_policy.add_subparsers(dest="policy_action", required=True)
+    policy_list = policy_actions.add_parser("list", help="List loaded policies")
+    policy_check = policy_actions.add_parser("check", help="Evaluate one authorization")
+    policy_check.add_argument("scope", help="Scope being requested, e.g. tool:write")
+    policy_check.add_argument("--resource", default="")
+    policy_check.add_argument("--risk", default="low")
+    # On both actions: `list` is where an operator inspects a candidate file
+    # before checking against it. Registering it only on `check` made the
+    # obvious first command fail with "unrecognized arguments".
+    for _policy_leaf in (policy_list, policy_check):
+        _policy_leaf.add_argument("--policy-file", default=None)
+
+    govern_audit = govern_groups.add_parser("audit", help="Governance audit log")
+    audit_actions = govern_audit.add_subparsers(dest="audit_action", required=True)
+    audit_tail = audit_actions.add_parser("tail", help="Show recent audit records")
+    audit_tail.add_argument("--limit", type=int, default=20)
+    audit_actions.add_parser("verify", help="Verify the audit hash chain")
+
+    govern_status = govern_groups.add_parser("status", help="Control-plane status")
+
+    # `--json` on every leaf, not just the groups: argparse only accepts a
+    # parent's flag *before* the subcommand, so `govern status --json` would
+    # otherwise fail with "unrecognized arguments" — the order an operator
+    # actually types.
+    for _govern_leaf in (
+        identity_actions.choices["show"],
+        identity_create,
+        policy_actions.choices["list"],
+        policy_check,
+        audit_tail,
+        audit_actions.choices["verify"],
+        govern_status,
+    ):
+        _govern_leaf.add_argument("--json", dest="json_output", action="store_true")
+
     response_parser = subparsers.add_parser(
         "response", help="Manage reversible response contracts for agent bundles"
     )
@@ -7469,6 +7525,7 @@ def main():
         if args.command not in (None, "completions"):
             _check_for_update()
 
+    from .cli_governance import cmd_govern
     from .cli_context_workflows import (
         cmd_browser,
         cmd_response,
@@ -7541,6 +7598,7 @@ def main():
         "shrink": cmd_shrink,
         "browser": cmd_browser,
         "response": cmd_response,
+        "govern": cmd_govern,
         "learn": cmd_learn,
         "share": cmd_share,
         "ravs": cmd_ravs,

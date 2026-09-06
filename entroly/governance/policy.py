@@ -9,10 +9,16 @@ Evaluates authorization decisions using Attribute-Based Access Control
   - resource (path, type, sensitivity)
   - context (risk level, environment, time, approval state)
 
-Policies are versioned YAML-as-code loaded from:
-  1. ENTROLY_POLICY_FILE environment variable
-  2. ~/.entroly/governance/policies.yaml
-  3. Built-in default deny-by-default policy
+Policies are versioned YAML-as-code. `resolve_policy_path` picks the source at
+call time, most specific first:
+  1. an explicit path argument
+  2. ENTROLY_POLICY_FILE environment variable
+  3. $ENTROLY_DIR/governance/policies.yaml (the project state directory)
+  4. ~/.entroly/governance/policies.yaml
+  5. Built-in default deny-by-default policy, when none of the above is readable
+
+`policy_source_status` reports which one was used and why, because two of the
+fallbacks are silent.
 
 Every policy decision records: policy_id, version, inputs, decision,
 reason, and timestamp — for the audit trail.
@@ -61,7 +67,6 @@ logger = logging.getLogger(__name__)
 # ── Constants ────────────────────────────────────────────────────────
 
 _POLICY_FILE_ENV = "ENTROLY_POLICY_FILE"
-_DEFAULT_POLICY_PATH = Path("~/.entroly/governance/policies.yaml").expanduser()
 POLICY_SCHEMA_VERSION = "entroly.governance.policy.v1"
 
 
@@ -125,13 +130,76 @@ def _policy_from_dict(data: Mapping[str, Any]) -> Policy:
     )
 
 
+def resolve_policy_path(path: str | Path | None = None) -> Path:
+    """Where policies are read from, resolved at call time, most specific first.
+
+    The default was a module-level ``Path("~/...").expanduser()`` evaluated once
+    at import, so relocating HOME afterwards had no effect, and ``ENTROLY_DIR``
+    -- the project state directory the rest of the package honours -- was
+    ignored entirely. Same defect as the audit directory, second location.
+
+    Exported so callers can report which source they actually read. A missing
+    file falls back to deny-by-default read-only, which is the correct security
+    behaviour but is indistinguishable from a file that loaded successfully
+    unless the caller can name the path that was tried.
+    """
+    if path is not None:
+        return Path(path).expanduser()
+    env_path = os.environ.get(_POLICY_FILE_ENV, "").strip()
+    if env_path:
+        return Path(env_path).expanduser()
+    state_dir = os.environ.get("ENTROLY_DIR", "").strip()
+    if state_dir:
+        return Path(state_dir).expanduser() / "governance" / "policies.yaml"
+    return Path("~/.entroly/governance/policies.yaml").expanduser()
+
+
+def policy_source_status(path: str | Path | None = None) -> dict[str, Any]:
+    """Why the operator's policy file is, or is not, in effect.
+
+    ``load_policies`` substitutes the built-in deny-by-default policy for two
+    reasons that produce no error: the file is absent, or PyYAML is not
+    installed. Both are logged and neither reaches the caller, so an operator
+    who writes ``policies.yaml`` and installs without the YAML extra has their
+    file ignored in silence while the return value looks like a successful
+    load. (A malformed file is the third case and does raise ``PolicyError``.)
+
+    Falling back is the correct security behaviour -- read-only is the safe
+    direction. Being unable to tell that it happened is not.
+
+    Reported here rather than reconstructed by callers, so there is one answer
+    to "which policies are actually in force".
+    """
+    resolved = resolve_policy_path(path)
+    exists = resolved.exists()
+    status: dict[str, Any] = {
+        "source": str(resolved),
+        "source_exists": exists,
+        "yaml_available": _YAML_AVAILABLE,
+        "using_builtin_fallback": True,
+        "fallback_reason": None,
+    }
+    if not exists:
+        status["fallback_reason"] = (
+            "no policy file at the resolved path; built-in deny-by-default "
+            "(read only) is in force"
+        )
+        return status
+    if not _YAML_AVAILABLE:
+        status["fallback_reason"] = (
+            "PyYAML is not installed, so the policy file cannot be read and is "
+            "being ignored; install the yaml extra to load it"
+        )
+        return status
+    # A malformed file raises rather than falling back, so reaching here means
+    # the operator's policies are genuinely the ones in force.
+    status["using_builtin_fallback"] = False
+    return status
+
+
 def load_policies(path: str | Path | None = None) -> list[Policy]:
     """Load versioned policies from YAML config. Fails safe to read-only."""
-    if path is None:
-        env_path = os.environ.get(_POLICY_FILE_ENV, "")
-        path = Path(env_path) if env_path else _DEFAULT_POLICY_PATH
-
-    path = Path(path)
+    path = resolve_policy_path(path)
     if not path.exists():
         logger.info(
             "No policy file at %s; using built-in deny-by-default policy. "
@@ -401,6 +469,8 @@ __all__ = [
     "PolicyDeniedError",
     "PolicyDecision",
     "load_policies",
+    "resolve_policy_path",
+    "policy_source_status",
     "find_matching_policy",
     "evaluate",
     "require",

@@ -99,8 +99,28 @@ class IdentityExpiredError(IdentityError):
 def _identity_payload_json(identity_data: dict[str, Any]) -> str:
     """Build the canonical AgentIdentityPayload JSON for the Rust engine.
 
-    Field names must match `AgentIdentityPayload` in governance.rs exactly
-    so the Rust HMAC computation is identical to the Python fallback.
+    Rust is the authority: `AgentIdentityPayload::canonical_json` is
+    `serde_json::to_string(self)`, and Rust re-serializes the payload it parsed
+    rather than hashing the string Python handed it. Python must therefore
+    produce the bytes serde_json would produce, or the two hash different
+    inputs from the same identity.
+
+    Two couplings make that true, both previously unstated:
+
+    * ``ensure_ascii`` must stay False. It was True, which emits ``\\u00e4``
+      escapes where serde_json emits raw UTF-8, so every identity carrying a
+      non-ASCII field -- an accented user name, a CJK agent id -- produced a
+      *different token* in Python than in Rust. Pure ASCII agreed, so it looked
+      correct everywhere it was tried. An identity minted on a pure-Python
+      install then failed verification on a native one and `resolve_identity`
+      silently downgraded it to anonymous/read-only.
+    * ``sort_keys`` must stay True *and* the fields of `AgentIdentityPayload`
+      in entroly-engine/src/governance.rs must stay alphabetical. serde emits
+      struct fields in declaration order, so the two forms agree only because
+      that struct happens to be sorted. Reordering it for readability would
+      invalidate every issued token with nothing to catch it.
+
+    `tests/test_governance_native_conformance.py` pins both.
     """
     scopes = identity_data.get("scopes", [])
     if isinstance(scopes, (set, frozenset)):
@@ -117,7 +137,7 @@ def _identity_payload_json(identity_data: dict[str, Any]) -> str:
         "team": str(identity_data.get("team", "")),
         "user": str(identity_data.get("user", "")),
     }
-    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
 def _python_compute_token(payload_json: str, key: str) -> str:

@@ -59,8 +59,29 @@ def _jaccard(a: set[str], b: set[str]) -> float:
 
 
 def _preview(text: str, limit: int = 240) -> str:
-    compact = " ".join(text.split())
-    return compact if len(compact) <= limit else compact[: limit - 3] + "..."
+    """Bound an omitted chunk's preview without misrepresenting its source.
+
+    This was `" ".join(text.split())`, which collapses every newline, tab and
+    indent into single spaces. For prose that is merely lossy; for code it
+    destroys the structure that makes the excerpt readable, turning a function
+    into one run-on line that is no longer valid in its own language.
+
+    The omitted-evidence explorer renders this in a block styled
+    `white-space: pre-wrap`, directly beside selected fragments that keep their
+    line breaks, so the flattened text reads as corrupted next to them. Omitted
+    evidence exists to be audited; a preview that silently reflows the source
+    is a worse answer than a shorter, faithful one.
+
+    Line breaks are kept, trailing whitespace and blank-line runs are dropped,
+    and the result is still bounded. Callers needing a single line -- the
+    Markdown report renders this after a `- Preview:` bullet -- flatten at
+    render time, where that is a formatting choice rather than stored loss.
+    """
+    kept = [line.rstrip() for line in text.splitlines() if line.strip()]
+    compact = "\n".join(kept)
+    if len(compact) <= limit:
+        return compact
+    return compact[: limit - 3].rstrip() + "..."
 
 
 def _dependency_closure(
