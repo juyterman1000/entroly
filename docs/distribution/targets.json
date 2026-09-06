@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-04",
+  "updated_at": "2026-09-06",
   "repository": "https://github.com/juyterman1000/entroly",
   "policy": {
     "prepared": "Entroly has the required product surface and repository-local submission copy, but no external submission is claimed.",
@@ -138,7 +138,7 @@
       "fit": ["repository-intelligence", "code-search", "swe-benchmark"],
       "required_assets": ["fixed-root repository adapter", "version pin", "unchanged benchmark protocol"],
       "proof_url": null,
-      "next_action": "Wait for the repository-intelligence surface to land, then add a bounded adapter and run the unchanged harness."
+      "next_action": "Precondition satisfied: the repository-intelligence surface has landed (entroly/repository_intelligence/, console entry entroly-repository-mcp), so this is no longer waiting on that. Remaining work is the bounded adapter, which is unwritten, followed by an upstream pull request against someone else's repository."
     },
     {
       "id": "llm-agents-nix",
@@ -164,7 +164,7 @@
       "fit": ["windows", "cli", "binary-distribution"],
       "required_assets": ["packaging/scoop/entroly.json", "docs/distribution/windows-artifact-verification.md", "unaltered upstream release asset entroly-rs-x86_64-pc-windows-msvc.zip", "silent install contract"],
       "proof_url": null,
-      "next_action": "Windows artifact verified against release entroly-v1.0.81: sha256 matches the published sidecar, the binary runs, and compress succeeds (docs/distribution/windows-artifact-verification.md). Remaining blocker: the published .sha256 sidecar names the file as *dist/<archive> while Scoop matches the basename, so confirm autoupdate hash extraction or republish the sidecar with a bare basename before submitting."
+      "next_action": "Windows artifact verified against release entroly-v1.0.81: sha256 matches the published sidecar, the binary runs, and compress succeeds (docs/distribution/windows-artifact-verification.md). The manifest is at packaging/scoop/entroly.json. The sidecar path-prefix defect is fixed at source in .github/workflows/release-binary.yml, so the next release publishes a bare-basename sidecar; every release up to and including entroly-v1.0.81 still carries the dist/ prefix and Scoop autoupdate would fail against those. Remaining before submitting: cut a release with the corrected sidecar, then run scoop install end to end on a Windows host."
     },
     {
       "id": "freebsd-ports",

@@ -82,11 +82,26 @@ jobs:
             tar -czf "dist/${name}.tar.gz" -C "entroly-core/target/${{ matrix.target }}/release" "entroly-rs"
             archive="dist/${name}.tar.gz"
           fi
+          # Checksum from inside dist/ so the sidecar names the file the way a
+          # user receives it. `sha256sum` echoes back whatever path it was
+          # given, so passing "dist/<archive>" published a build-machine path
+          # into every release:
+          #
+          #     2e4a23f1...  dist/entroly-rs-x86_64-unknown-linux-gnu.tar.gz
+          #
+          # `sha256sum -c` then looks for "dist/<archive>" relative to the
+          # user's download directory and fails "No such file or directory" --
+          # the documented verification step could not succeed for anyone, on
+          # any platform. It also blocks the Scoop autoupdate hash extraction
+          # recorded against `scoop-main` in docs/distribution/targets.json,
+          # since Scoop matches on the basename.
+          archive_name="$(basename "$archive")"
           if command -v sha256sum >/dev/null 2>&1; then
-            sha256sum "$archive" > "${archive}.sha256"
+            (cd dist && sha256sum "$archive_name" > "${archive_name}.sha256")
           else
-            shasum -a 256 "$archive" > "${archive}.sha256"
+            (cd dist && shasum -a 256 "$archive_name" > "${archive_name}.sha256")
           fi
+          cat "${archive}.sha256"
           ls -la dist
 
       - name: Attach to release

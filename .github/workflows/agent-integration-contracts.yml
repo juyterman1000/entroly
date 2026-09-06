@@ -11,7 +11,11 @@ on:
       - "entroly/npm-alias/package.json"
       - "entroly-wasm/package.json"
       - "entroly/integrations/**"
-      - "integrations/hermes/**"
+      # No `integrations/hermes/**` entry: that path is gitignored
+      # (.gitignore:120), so no file under it can ever reach a commit and the
+      # filter could never match on any pull request. The Hermes integration
+      # actually lives in `entroly/integrations/hermes*`, which the line above
+      # already covers, so nothing is lost by dropping it.
       - "integrations/openclaw/**"
       - "integrations/opencode/**"
       - "docs/ai-cost-optimization.html"

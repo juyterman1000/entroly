@@ -1,0 +1,54 @@
+name: Distribution Listing Freshness
+
+# Recorded external listings decay silently. An upstream maintainer can drop
+# the entry or revert the PR, and `targets.json` goes on asserting a listing
+# that is no longer there — `check_distribution_surface.py` only proves the
+# field is a well-formed URL, never that the listing still exists.
+#
+# Scheduled rather than run per-PR on purpose: the result depends on other
+# people's repositories and on the network, so a transient failure must not
+# block an unrelated change. The script separates "the listing is gone" (exit 1)
+# from "could not fetch" (exit 2) for the same reason — a check that cries wolf
+# gets ignored, and then it is worth nothing when it is finally right.
+
+on:
+  schedule:
+    # Mondays, offset from the other weekly trust jobs so they do not contend.
+    - cron: "41 7 * * 1"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      # Only when the registry or the checker itself changes: this is the one
+      # PR context where the network cost is justified, because the change
+      # under review is the thing being checked.
+      - docs/distribution/targets.json
+      - scripts/check_proof_url_freshness.py
+      - .github/workflows/distribution-freshness.yml
+
+permissions:
+  contents: read
+
+jobs:
+  freshness:
+    name: Recorded listings still mention Entroly
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Verify every recorded listing
+        run: |
+          set +e
+          python scripts/check_proof_url_freshness.py
+          status=$?
+          set -e
+          if [ "$status" -eq 2 ]; then
+            echo "::warning::A recorded listing could not be fetched. This is inconclusive, not a delisting."
+            exit 0
+          fi
+          exit "$status"
