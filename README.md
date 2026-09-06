@@ -20,8 +20,8 @@ Select high-value evidence under explicit token budgets, compress context recove
   <a href="https://github.com/juyterman1000/entroly"><img src="https://img.shields.io/github/stars/juyterman1000/entroly?style=social" alt="Entroly GitHub stars"></a>
 </p>
 
-<p align="center"><b>100,438 downloads · growing day by day</b><br>
-<sub>Measured across different distribution sources.</sub></p>
+<p align="center"><b>Download counts are live in the badges above · <a href="https://pypistats.org/packages/entroly">PyPI stats</a> · <a href="https://www.npmjs.com/package/entroly">npm</a></b><br>
+<sub>Published by the registries themselves, so the figure is current and independently checkable.</sub></p>
 
 <p align="center"><b>⭐ If Entroly is useful to you, please star the repository on GitHub.</b><br>
 <a href="https://github.com/juyterman1000/entroly">⭐ Star Entroly on GitHub</a> — it helps the project grow and reach more developers.</p>
