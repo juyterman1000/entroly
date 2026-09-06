@@ -95,6 +95,21 @@ PINNED_ARTIFACTS = {
     "packaging/homebrew/entroly.rb",
 }
 
+# ── Self-reference ───────────────────────────────────────────────────────────
+#
+# This file and its test define what a stale declaration looks like, so they
+# necessarily quote examples of one -- `Entroly v0.2.0`, `for example 1.0.25`.
+# The checker flagged its own docstring the moment it became tracked, which is
+# the same reason a linter does not lint its own rule fixtures.
+#
+# This is the only exclusion of its kind and it is deliberately two paths, not a
+# pattern. Do not extend it: if a real file trips the checker, fix the version
+# or write the sentence in past tense.
+SELF_REFERENTIAL = {
+    "scripts/check_version_staleness.py",
+    "tests/test_no_stale_version_declarations.py",
+}
+
 BINARY_SUFFIXES = (
     ".png", ".jpg", ".jpeg", ".gif", ".mp4", ".ico", ".woff", ".woff2",
     ".zip", ".mcpb", ".svg", ".pdf", ".whl", ".gz",
@@ -126,10 +141,19 @@ DECLARATION_PATTERNS = (
 )
 
 # Past-tense context: the line records history even outside an archive path.
+#
+# The verb list matters more than it looks. This file's own docstring cites
+# `Entroly v0.2.0` and `for example 1.0.25` as bugs it exists to catch, and the
+# checker flagged itself the moment it became tracked -- correctly, because
+# "printed" and "offered" were not recognised as past tense. Reworded prose to
+# dodge the pattern would be the wrong fix; recognising ordinary past-tense
+# verbs is the right one.
 HISTORICAL_MARKERS = re.compile(
     r"\b(previously|used to|was written|shipped in|as of|until this release|"
     r"historically|no longer|had outlived|left behind|never moved|founding commit|"
-    r"predates?|earlier version|before this|regression|caught|measured on)\b",
+    r"predates?|earlier version|before this|regression|caught|measured on|"
+    r"printed|offered|declared|sat |kept|named a?|read(?:ing)? `|"
+    r"stale|behind|missed|was |were |had )\b",
     re.I,
 )
 
@@ -158,7 +182,7 @@ def scan() -> tuple[list[str], list[str]]:
     allowed: list[str] = []
 
     for rel in _tracked_files():
-        if rel.endswith(BINARY_SUFFIXES):
+        if rel.endswith(BINARY_SUFFIXES) or rel in SELF_REFERENTIAL:
             continue
         path = ROOT / rel
         try:
