@@ -59,6 +59,8 @@ pub(crate) use entroly_engine::trajectory;
 pub(crate) use entroly_engine::utilization;
 mod trust_engine_bindings;
 mod work_graph_bindings;
+mod governance_bindings;
+pub(crate) use entroly_engine::governance;
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
