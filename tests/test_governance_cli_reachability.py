@@ -165,6 +165,110 @@ def test_audit_records_stay_inside_the_configured_state_directory(tmp_path):
     assert payload["db_path"].startswith(state_dir)
 
 
+def _seed_audit_records(tmp_path, count: int) -> None:
+    """Write records into the same state directory the CLI will read."""
+    from entroly.governance.audit import GovernanceAuditLog
+
+    log = GovernanceAuditLog(audit_dir=tmp_path / "state" / "governance" / "audit")
+    for index in range(count):
+        log.append(
+            event_id=f"seed-{index}", event_type="permission.denied",
+            agent_id="a", payload={"scope": "write"}, allowed=False,
+        )
+
+
+def test_an_explicit_zero_limit_returns_nothing(tmp_path):
+    """`--limit 0` meant twenty.
+
+    The handler read `int(limit or 20)`, so a legitimate zero was
+    indistinguishable from an unset flag. `query(limit=0)` returns no records,
+    which made the CLI the only layer misreading it.
+    """
+    _seed_audit_records(tmp_path, 5)
+    payload = _json_tail(
+        _run_cli("govern", "audit", "tail", "--limit", "0", "--json", tmp_path=tmp_path).stdout
+    )
+    assert payload["limit"] == 0
+    assert payload["returned"] == 0, "an explicit zero limit returned records"
+
+    bounded = _json_tail(
+        _run_cli("govern", "audit", "tail", "--limit", "2", "--json", tmp_path=tmp_path).stdout
+    )
+    assert bounded["returned"] == 2, "the seeded records are not readable at all"
+
+
+def test_a_negative_limit_is_refused_not_treated_as_unbounded(tmp_path):
+    """SQLite reads a negative LIMIT as *no limit*.
+
+    `--limit -1` therefore dumped the whole audit log -- the exact opposite of
+    asking for a bound, on the one store designed to grow without end.
+    """
+    _seed_audit_records(tmp_path, 5)
+    result = _run_cli("govern", "audit", "tail", "--limit", "-1", "--json", tmp_path=tmp_path)
+    assert result.returncode != 0, "a negative limit was accepted"
+    payload = _json_tail(result.stdout)
+    assert payload["status"] == "error"
+    assert "records" not in payload, "a refused request still returned audit records"
+
+
+def test_a_rejected_scope_still_answers_in_json(tmp_path):
+    """`--json` must produce JSON on the failure path too.
+
+    An invalid scope raised past the handler and printed nothing to stdout,
+    while an invalid `--risk` on the sibling command returned a structured
+    error. A caller parsing `--json` got an empty stream rather than a refusal.
+    """
+    result = _run_cli(
+        "govern", "identity", "create", "--agent-id", "a",
+        "--scope", "root:/", "--json", tmp_path=tmp_path,
+    )
+    assert result.returncode != 0
+    payload = _json_tail(result.stdout)
+    assert payload["status"] == "error"
+    assert "scope" in payload["reason"].lower()
+
+
+def test_an_operator_policy_file_is_actually_read(tmp_path):
+    """A control plane that cannot read its own policy file governs nothing.
+
+    `governance/policy.py` is the only yaml importer in the package, and it
+    degrades to built-in deny-by-default when the import fails -- logged, never
+    raised. PyYAML was in no dependency group and is not pulled in
+    transitively, so on a default `pip install entroly` every operator's
+    policies.yaml was read by nothing while `load_policies` returned as though
+    it had loaded.
+    """
+    state = tmp_path / "state" / "governance"
+    state.mkdir(parents=True)
+    (state / "policies.yaml").write_text(
+        'policies:\n'
+        '  - id: team-write\n'
+        '    name: team can write\n'
+        '    version: "2"\n'
+        '    agent_type_pattern: "*"\n'
+        '    allowed_scopes: [read, write]\n'
+        '    max_risk_level: medium\n',
+        encoding="utf-8",
+    )
+    payload = _json_tail(_run_cli("govern", "policy", "list", "--json", tmp_path=tmp_path).stdout)
+    assert payload["yaml_available"] is True, "PyYAML is missing; policy files cannot be read"
+    assert payload["using_builtin_fallback"] is False, (
+        f"the operator's policy file was ignored: {payload.get('fallback_reason')}"
+    )
+    assert [p["id"] for p in payload["policies"]] == ["team-write"]
+
+
+def test_a_silently_ignored_policy_file_says_so(tmp_path):
+    """Falling back to read-only is right; doing it silently is not."""
+    payload = _json_tail(_run_cli("govern", "policy", "list", "--json", tmp_path=tmp_path).stdout)
+    assert payload["source_exists"] is False
+    assert payload["using_builtin_fallback"] is True
+    assert payload["fallback_reason"], (
+        "the built-in policy was substituted with no reason given, which is "
+        "indistinguishable from the operator's file having loaded"
+    )
+
+
 def test_audit_dir_precedence_resolves_at_call_time(monkeypatch, tmp_path):
     """Explicit argument > ENTROLY_AUDIT_DIR > ENTROLY_DIR > home.
 

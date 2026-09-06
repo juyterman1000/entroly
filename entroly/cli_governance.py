@@ -59,14 +59,22 @@ def _cmd_identity(args: Any) -> int:
 
     if action == "create":
         scopes = [s for s in (getattr(args, "scope", None) or "").split(",") if s]
-        identity = create_identity(
-            agent_id=args.agent_id,
-            agent_type=getattr(args, "agent_type", "") or "unknown",
-            organization=getattr(args, "organization", "") or "",
-            user=getattr(args, "user", "") or "",
-            model=getattr(args, "model", "") or "",
-            scopes=scopes or None,
-        )
+        try:
+            identity = create_identity(
+                agent_id=args.agent_id,
+                agent_type=getattr(args, "agent_type", "") or "unknown",
+                organization=getattr(args, "organization", "") or "",
+                user=getattr(args, "user", "") or "",
+                model=getattr(args, "model", "") or "",
+                scopes=scopes or None,
+            )
+        except IdentityError as exc:
+            # A rejected scope must still answer in the requested format. This
+            # escaped past `--json` and printed nothing to stdout, so a caller
+            # parsing the output got an empty stream instead of a refusal --
+            # while `--risk banana` on the sibling command returned structured
+            # JSON. Same class of error, two different contracts.
+            return _error(str(exc), as_json=as_json)
         payload = _identity_payload(identity, is_expired)
         payload["claim_boundary"] = (
             "An identity asserts who is acting. It does not authorize an action; "
@@ -104,7 +112,12 @@ def _identity_payload(identity: Any, is_expired: Any) -> dict[str, Any]:
 def _cmd_policy(args: Any) -> int:
     from .governance.domain import RiskLevel
     from .governance.identity import IdentityError, resolve_identity
-    from .governance.policy import PolicyError, evaluate, load_policies
+    from .governance.policy import (
+        PolicyError,
+        evaluate,
+        load_policies,
+        policy_source_status,
+    )
 
     as_json = bool(getattr(args, "json_output", False))
     action = getattr(args, "policy_action", "list")
@@ -115,10 +128,14 @@ def _cmd_policy(args: Any) -> int:
         return _error(f"policies could not be loaded: {exc}", as_json=as_json)
 
     if action == "list":
+        # Echoing the requested path as "source" made a typo'd filename read as
+        # "your file loaded and contains one policy". Two fallbacks are silent
+        # -- a missing file and a missing PyYAML -- so ask the policy engine
+        # which source is in force rather than inferring it from the path.
         return _emit(
             {
                 "policy_count": len(policies),
-                "source": str(getattr(args, "policy_file", None) or "defaults"),
+                **policy_source_status(getattr(args, "policy_file", None)),
                 "policies": [
                     {
                         # Field names taken from the Policy dataclass. Guessing
@@ -216,7 +233,20 @@ def _cmd_audit(args: Any) -> int:
         # Fail closed: a broken chain must be a non-zero exit for CI use.
         return 0 if ok else 2
 
-    limit = int(getattr(args, "limit", 20) or 20)
+    # `int(x or 20)` turned an explicit `--limit 0` into 20: the caller asked
+    # for nothing and got twenty. `query(limit=0)` returns zero records, so the
+    # CLI was the only layer misreading it.
+    raw_limit = getattr(args, "limit", None)
+    limit = 20 if raw_limit is None else int(raw_limit)
+    if limit < 0:
+        # SQLite reads a negative LIMIT as unbounded, so `--limit -1` silently
+        # dumped the entire audit log -- the opposite of asking for a bound,
+        # on the one store that grows without end.
+        return _error(
+            f"--limit must be zero or greater, got {limit}. A negative limit "
+            f"returns the entire audit log rather than bounding it.",
+            as_json=as_json,
+        )
     records = list(log.query(limit=limit))
     return _emit(
         {

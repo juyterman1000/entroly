@@ -7082,12 +7082,16 @@ def main():
 
     govern_policy = govern_groups.add_parser("policy", help="Policy evaluation")
     policy_actions = govern_policy.add_subparsers(dest="policy_action", required=True)
-    policy_actions.add_parser("list", help="List loaded policies")
+    policy_list = policy_actions.add_parser("list", help="List loaded policies")
     policy_check = policy_actions.add_parser("check", help="Evaluate one authorization")
     policy_check.add_argument("scope", help="Scope being requested, e.g. tool:write")
     policy_check.add_argument("--resource", default="")
     policy_check.add_argument("--risk", default="low")
-    policy_check.add_argument("--policy-file", default=None)
+    # On both actions: `list` is where an operator inspects a candidate file
+    # before checking against it. Registering it only on `check` made the
+    # obvious first command fail with "unrecognized arguments".
+    for _policy_leaf in (policy_list, policy_check):
+        _policy_leaf.add_argument("--policy-file", default=None)
 
     govern_audit = govern_groups.add_parser("audit", help="Governance audit log")
     audit_actions = govern_audit.add_subparsers(dest="audit_action", required=True)
