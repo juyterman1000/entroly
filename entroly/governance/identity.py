@@ -25,6 +25,7 @@ import re
 import time
 from typing import Any, Mapping, Sequence
 
+from ..native_status import usable_core
 from .domain import AgentIdentity, _new_id, _now
 from .events import (
     GovernanceEventBus,
@@ -37,18 +38,31 @@ logger = logging.getLogger(__name__)
 
 # ── Rust Engine Integration ───────────────────────────────────────────────────
 
-try:
-    from entroly_core import (  # type: ignore[import]
-        governance_compute_identity_token as _rust_compute_token,
-        governance_verify_identity_token as _rust_verify_token,
-    )
-    _RUST_AVAILABLE = True
+# Routed through the shared capability gate, not a bare `import entroly_core`.
+#
+# A direct import decides on its own whether the native core is usable, so this
+# module would call into a core the rest of the process has already refused --
+# below the declared minimum version, or missing symbols other modules need.
+# `usable_core()` is the single answer to "may this process call into
+# entroly_core?", and a mixed process is worse than either pure mode: that is
+# the split that produced `ContextFragment.__new__() got an unexpected keyword
+# argument 'recency_score'`.
+#
+# The symbols are then fetched individually. They are new to this release, so a
+# core that is otherwise perfectly usable can still lack them; absence must fall
+# back rather than raise at first call.
+_core = usable_core()
+_rust_compute_token = getattr(_core, "governance_compute_identity_token", None)
+_rust_verify_token = getattr(_core, "governance_verify_identity_token", None)
+_RUST_AVAILABLE = _rust_compute_token is not None and _rust_verify_token is not None
+
+if _RUST_AVAILABLE:
     logger.debug("governance.identity: using Rust engine for token computation")
-except ImportError:
-    _RUST_AVAILABLE = False
+else:
     logger.debug(
-        "governance.identity: Rust engine unavailable — using Python HMAC fallback. "
-        "Run `maturin develop --release` in entroly-core/ to enable native tokens."
+        "governance.identity: native identity tokens unavailable — using Python "
+        "HMAC fallback. Run `maturin develop --release` in entroly-core/ to "
+        "enable native tokens."
     )
 
 
