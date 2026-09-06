@@ -9,12 +9,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import shutil
 import time
 from pathlib import Path
 from typing import Any
 
+
+logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = "entroly.response-contract.v1"
 CONTRACTS: dict[str, dict[str, Any]] = {
@@ -149,10 +152,31 @@ def set_contract(name: str, *, scope: str = "project") -> dict[str, Any]:
 
 
 def environment_contract() -> dict[str, str]:
-    """Return a minimal environment pointer for wrapped CLI agents."""
-    project = contract_path("project")
-    user = contract_path("user")
-    selected = project if project.exists() else user if user.exists() else None
+    """Return a minimal environment pointer for wrapped CLI agents.
+
+    Returns ``{}`` when no contract can be located, which is the ordinary case
+    and already the documented result. Resolution failures are folded into that
+    same empty answer on purpose: this pointer is an optional enrichment for a
+    wrapped agent, and `entroly wrap` must not fail because a home directory or
+    project root could not be resolved.
+
+    That is not hypothetical. `Path.home()` selects its flavour from
+    ``os.name``, so any caller that has swapped it -- as the wrap tests do to
+    exercise the Windows shim path -- makes `Path` construction raise
+    ``UnsupportedOperation`` on POSIX. Before this guard that turned an
+    optional pointer into a hard failure of the wrap command itself, on every
+    Linux wheel build.
+
+    Debug-logged rather than silent: the caller gets the honest empty answer,
+    and the reason stays recoverable.
+    """
+    try:
+        project = contract_path("project")
+        user = contract_path("user")
+        selected = project if project.exists() else user if user.exists() else None
+    except (OSError, ValueError, NotImplementedError) as exc:
+        logger.debug("response contract path unresolved (%s); omitting pointer", exc)
+        return {}
     return {"ENTROLY_RESPONSE_CONTRACT": str(selected)} if selected else {}
 
 

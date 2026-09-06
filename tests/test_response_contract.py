@@ -29,3 +29,25 @@ def test_unknown_response_contract_fails_closed(tmp_path: Path, monkeypatch: pyt
     monkeypatch.setattr(response_contract, "_state_root", lambda _scope: tmp_path)
     with pytest.raises(ValueError, match="unknown response contract"):
         response_contract.set_contract("telepathic")
+
+
+def test_environment_contract_survives_an_unresolvable_path(monkeypatch):
+    """An optional pointer must not fail `entroly wrap`.
+
+    `Path.home()` picks its flavour from ``os.name``. Any caller that has
+    swapped it — the wrap tests do, to exercise the Windows shim path — makes
+    `Path` construction raise on POSIX: `pathlib.UnsupportedOperation` on 3.13+,
+    plain `NotImplementedError` earlier, both reported as "cannot instantiate
+    'WindowsPath' on your system".
+
+    Before this guard that turned an optional environment pointer into a hard
+    failure of the wrap command, on every Linux wheel build. Returning `{}` is
+    the same answer the function already gives when no contract exists.
+    """
+    from entroly import response_contract
+
+    def explode(_scope: str = "project"):
+        raise NotImplementedError("cannot instantiate 'WindowsPath' on your system")
+
+    monkeypatch.setattr(response_contract, "contract_path", explode)
+    assert response_contract.environment_contract() == {}
