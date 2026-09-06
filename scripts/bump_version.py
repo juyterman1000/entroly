@@ -49,6 +49,32 @@ TARGETS = [
     ("entroly/npm-alias/package.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     ("entroly/npm-alias/package.json", r'"entroly-wasm"\s*:\s*"[^"]+"', '"entroly-wasm": "{v}"'),
     ("integrations/openclaw/package.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
+    # Surfaces the 1.0.82 bump had to fix by hand. They were corrected in that
+    # release but never added here, so the next bump would have left them
+    # behind again -- which is exactly what the post-bump sweep reported.
+    ("integrations/openclaw/bridge-client.js",
+        r'entroly>=[0-9]+\.[0-9]+\.[0-9]+', 'entroly>={v}'),
+    ("entroly/integrations/hermes_context_engine/plugin.yaml",
+        r'^version:\s*[0-9]+\.[0-9]+\.[0-9]+', 'version: {v}'),
+    ("entroly/integrations/hermes_context_engine/plugin.yaml",
+        r'entroly>=[0-9]+\.[0-9]+\.[0-9]+', 'entroly>={v}'),
+    ("BENCHMARKS.md",
+        r'entroly-core [0-9]+\.[0-9]+\.[0-9]+', 'entroly-core {v}'),
+    ("deploy/cloudflare-community-savings/package.json",
+        r'"version"\s*:\s*"[0-9]+\.[0-9]+\.[0-9]+"', '"version": "{v}"'),
+    # Version examples shown to a human filling in a manual-dispatch field or an
+    # issue form. They are not internal comments -- an operator reads them while
+    # deciding what to type, and one had been offering 1.0.25.
+    (".github/workflows/entroly-publish.yml",
+        r'for example [0-9]+\.[0-9]+\.[0-9]+', 'for example {v}'),
+    (".github/workflows/publish-mcp-registry.yml",
+        r'for example [0-9]+\.[0-9]+\.[0-9]+', 'for example {v}'),
+    (".github/workflows/publish-openclaw-clawhub.yml",
+        r'for example [0-9]+\.[0-9]+\.[0-9]+', 'for example {v}'),
+    (".github/ISSUE_TEMPLATE/independent-review.yml",
+        r'Example: [0-9]+\.[0-9]+\.[0-9]+', 'Example: {v}'),
+    (".github/workflows/round7-runtime-repair.yml",
+        r'entroly-core>=[0-9]+\.[0-9]+\.[0-9]+', 'entroly-core>={v}'),
     ("integrations/openclaw/README.md",
         r'pip install "entroly>=[0-9]+\.[0-9]+\.[0-9]+"',
         'pip install "entroly>={v}"'),

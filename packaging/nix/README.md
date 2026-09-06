@@ -7,9 +7,9 @@
 **Not implemented.** There is no `flake.nix` in this repository, and no work
 is scheduled. This directory holds the checklist only.
 
-This file previously said the flake was "on the v0.19.x roadmap". Entroly is at
-1.0.82, so that line had outlived the version it named by three majors and read
-as a commitment rather than an unstarted item. Tracked as a blocked target in
+This file previously said the flake was "on the v0.19.x roadmap" -- a version
+series the product left three majors ago, which read as a commitment rather than
+an unstarted item. Tracked as a blocked target in
 [`docs/distribution/targets.json`](../../docs/distribution/targets.json).
 
 Until a flake exists, install via `pip install entroly` inside a Python

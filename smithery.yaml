@@ -12,13 +12,15 @@ startCommand:
         default: false
   commandFunction: |-
     (config) => {
-      const args = ["serve"];
+      const env = {
+        ENTROLY_NO_DOCKER: "1"
+      };
       if (config.DEBUG) {
-        args.push("--debug");
+        env.ENTROLY_DEBUG = "1";
       }
       return {
         command: "uvx",
-        args: ["--from", "entroly", "entroly", ...args],
-        env: {}
+        args: ["--from", "entroly", "entroly"],
+        env: env
       };
     }

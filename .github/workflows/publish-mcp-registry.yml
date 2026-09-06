@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Exact Entroly version to publish, for example 1.0.82"
+        description: "Exact Entroly version to publish, for example 1.0.83"
         required: false
         type: string
   # Recovery trigger: changing this workflow on main with the guarded retry
