@@ -162,9 +162,9 @@
       "target_url": "https://github.com/ScoopInstaller/Main",
       "submission_url": "https://github.com/ScoopInstaller/Main/pulls",
       "fit": ["windows", "cli", "binary-distribution"],
-      "required_assets": ["stable Windows artifact", "checksum", "autoupdate manifest", "silent install contract"],
+      "required_assets": ["packaging/scoop/entroly.json", "docs/distribution/windows-artifact-verification.md", "unaltered upstream release asset entroly-rs-x86_64-pc-windows-msvc.zip", "silent install contract"],
       "proof_url": null,
-      "next_action": "Publish and verify a stable Windows CLI artifact before submitting a Scoop manifest."
+      "next_action": "Windows artifact verified against release entroly-v1.0.81: sha256 matches the published sidecar, the binary runs, and compress succeeds (docs/distribution/windows-artifact-verification.md). Remaining blocker: the published .sha256 sidecar names the file as *dist/<archive> while Scoop matches the basename, so confirm autoupdate hash extraction or republish the sidecar with a bare basename before submitting."
     },
     {
       "id": "freebsd-ports",
