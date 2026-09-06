@@ -265,20 +265,67 @@ is load-bearing — prefer a function-local import over a new module-level one.
 
 ## Release Discipline
 
-When bumping versions, update every release surface together:
+### Never hand-maintain the list of version surfaces
 
-- `pyproject.toml`
-- `entroly/pyproject.toml`
-- `entroly-core/pyproject.toml`
-- `entroly-core/Cargo.toml`
-- `entroly-qccr/Cargo.toml`
-- `entroly-wasm/Cargo.toml`
-- `entroly-wasm/package.json`
-- `entroly/npm/package.json`
-- `entroly/npm-alias/package.json`
-- `entroly/__init__.py`
-- `entroly/native_status.py`
-- Homebrew formula URL and SHA-256
-- README/docs install pins
+```bash
+python scripts/bump_version.py 1.2.3     # rewrites, then verifies the whole tree
+python scripts/check_version_staleness.py --list   # audit at any time
+```
 
-After a release, verify the published package first, then update downstream formulas/checksums.
+`bump_version.py` rewrites ~57 targets across ~38 files and then sweeps the
+repository for anything it missed, failing with the offending paths. **Do not
+edit version strings by hand and do not trust a list in a document** — a list is
+what failed. This section previously named 13 surfaces; the real count is over
+40, and the 1.0.82 bump left **seven manifests behind** because they were added
+after that list was written:
+
+- `.claude-plugin/plugin.json` — beside the `manifest.json` that *was* listed
+- the Codex and Gemini agent bundles, and `gemini-extension.json`
+- `skills/entroly-evidence-operations/entroly-bundle.json`
+
+Each declares the product version to a *different host*, so the release would
+have told Claude, Codex and Gemini it was the previous version. Nothing failed:
+a stale version is valid JSON that parses and loads.
+
+Older strings hid further back. Three functional-test suites previously printed
+a banner naming version 0.2.0 — eighty releases behind — because a literal
+inside `print()` has nothing checking it; they now read `entroly.__version__`.
+`BENCHMARKS.md` had declared an engine version written in the v1.0 founding
+commit and never touched again. The same "v0.19.x roadmap" sentence sat in three
+packaging READMEs; fixing two by hand missed the third.
+
+### The rule the checker enforces
+
+A version string must equal `entroly/__init__.py` if it **declares or pins the
+product as it is now**. It may be older if it **records something that
+happened**.
+
+That distinction is load-bearing. A naive sweep finds **631** old version
+strings, and almost all are correct: release notes for 1.0.47 say 1.0.47
+forever, a benchmark that ran on 1.0.59 must keep saying so, a test fixture is
+the input proving the bump rewrites 1.0.39 to 1.0.40, and `Cargo.lock` records
+`serde 1.0.4` because that is serde's version. Rewriting those destroys
+provenance or breaks the build.
+
+So archives are recognised by path (`docs/releases/`, `docs/investigations/`,
+`benchmarks/results/`, `tests/`, lock files, `*_EVIDENCE*`) and past-tense
+phrasing is recognised in prose. **If the checker fails, fix the version — do
+not add the file to the archive list.** If a live line is genuinely about
+history, write it in past tense.
+
+### Two files deliberately lag
+
+`packaging/scoop/entroly.json` and `packaging/homebrew/entroly.rb` pin a
+*published* artifact with a verified SHA-256. Moving them before that release
+exists points at a 404 with a hash matching nothing. They advance **after** the
+release is cut and the checksum re-verified.
+
+### Tagging
+
+Release is tag-driven. Merge to `main` first, then tag the **post-merge commit
+on main** and push the tag. Tagging a branch commit that is later squash-merged
+orphans the tag permanently, and every publish then fails with "Production
+source is not contained in canonical main".
+
+After a release, verify the published package first, then update downstream
+formulas/checksums.
