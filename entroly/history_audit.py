@@ -94,6 +94,37 @@ def _generic_usage_blocks(value: Any, parent_key: str = "") -> Iterator[dict[str
             yield from _generic_usage_blocks(child, parent_key)
 
 
+_KNOWN_AGENTS = frozenset({"codex", "claude", "gemini"})
+
+
+def _infer_agent(record: Any) -> str | None:
+    """Recognise a known export format from the record's shape.
+
+    Adapter selection keys off the *root label*, and `--history-root` labels
+    whatever the operator points at ``custom-N``. A Codex or Claude export
+    audited through that flag therefore matched neither adapter and fell
+    through to the generic scanner, which does not reach
+    ``payload.info.total_token_usage`` -- so the file contributed **zero**
+    rather than being reported as unknown-semantics. Measured on one rollout:
+    3 usage blocks and 900 input tokens through the default root, 0 and 0
+    through ``--history-root`` on the same bytes.
+
+    Silence is the worst outcome here: the report still renders, with a claim
+    boundary that reads as though something was audited.
+
+    Shape only, and only for roots whose label is not already a known agent,
+    so the semantics of a recognised adapter are never reinterpreted.
+    """
+    if not isinstance(record, dict):
+        return None
+    if record.get("type") in {"event_msg", "response_item"}:
+        return "codex"
+    message = record.get("message")
+    if isinstance(message, dict) and isinstance(message.get("usage"), dict):
+        return "claude"
+    return None
+
+
 def _usage_observations(record: Any, agent: str) -> Iterator[tuple[str, dict[str, int]]]:
     """Yield ``(semantics, usage)`` where semantics is additive/cumulative/unknown."""
     if not isinstance(record, dict):
@@ -297,11 +328,16 @@ def audit_histories(
         try:
             for record in _records(path):
                 records_read += 1
-                classified = _classify_event(record, agent)
+                # A custom root carries no adapter identity; recover it from
+                # the record itself so the file is not silently counted as zero.
+                effective = agent
+                if effective not in _KNOWN_AGENTS:
+                    effective = _infer_agent(record) or effective
+                classified = _classify_event(record, effective)
                 if classified is not None:
                     sink, chars = classified
                     sinks[sink] += chars
-                for semantics, block in _usage_observations(record, agent):
+                for semantics, block in _usage_observations(record, effective):
                     usage_blocks += 1
                     if semantics == "cumulative":
                         for key, value in block.items():
