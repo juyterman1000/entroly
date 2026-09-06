@@ -33,7 +33,10 @@ on:
       - sitemap.xml
       - llms.txt
       - docs/llms.txt
-      - llms-full.txt
+      # `docs/llms-full.txt`, not a root-level copy. This entry read
+      # `llms-full.txt` for its whole life and no such file has ever existed,
+      # so edits to the real file never triggered this workflow through it.
+      - docs/llms-full.txt
       - scripts/verify_context_assurance_public.py
       - scripts/verify_public_trust.py
       - scripts/verify_readme.py
