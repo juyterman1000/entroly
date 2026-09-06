@@ -45,8 +45,36 @@ logger = logging.getLogger(__name__)
 # ── Constants ────────────────────────────────────────────────────────
 
 _AUDIT_DIR_ENV = "ENTROLY_AUDIT_DIR"
-_DEFAULT_AUDIT_DIR = Path("~/.entroly/governance/audit").expanduser()
+_STATE_DIR_ENV = "ENTROLY_DIR"
 _DB_SCHEMA_VERSION = 1
+
+
+def _resolve_audit_dir(audit_dir: Path | None = None) -> Path:
+    """Where audit records live, resolved at call time, most specific first.
+
+    Previously a module-level ``Path("~/...").expanduser()``. Two consequences,
+    both reproduced before this was changed:
+
+    * ``~`` was expanded once at import, so relocating HOME afterwards had no
+      effect and records kept landing in the original home directory. Tests and
+      sandboxes isolate exactly that way.
+    * ``ENTROLY_DIR`` -- the project state directory 24 other modules honour --
+      was ignored, so governance was the one subsystem that could not be scoped
+      to a project.
+
+    An explicit argument also now outranks the environment. It did not: passing
+    ``audit_dir=`` while ``ENTROLY_AUDIT_DIR`` was set wrote somewhere else
+    entirely and said nothing, which makes a caller's isolation silently void.
+    """
+    if audit_dir is not None:
+        return Path(audit_dir).expanduser()
+    override = os.environ.get(_AUDIT_DIR_ENV, "").strip()
+    if override:
+        return Path(override).expanduser()
+    state_dir = os.environ.get(_STATE_DIR_ENV, "").strip()
+    if state_dir:
+        return Path(state_dir).expanduser() / "governance" / "audit"
+    return Path("~/.entroly/governance/audit").expanduser()
 
 # Patterns redacted before persistence — never log raw credentials
 _REDACT_PATTERNS = (
@@ -143,8 +171,7 @@ class GovernanceAuditLog:
     """
 
     def __init__(self, audit_dir: Path | None = None) -> None:
-        env = os.environ.get(_AUDIT_DIR_ENV, "")
-        self._dir = Path(env).expanduser() if env else (audit_dir or _DEFAULT_AUDIT_DIR)
+        self._dir = _resolve_audit_dir(audit_dir)
         self._lock = threading.Lock()
         self._prev_hash = ""
         self._initialized = False

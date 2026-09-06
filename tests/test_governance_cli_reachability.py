@@ -146,6 +146,53 @@ def test_a_signed_identity_reports_its_token_and_an_unsigned_one_does_not(tmp_pa
     assert "identity_token" not in signed and "token" not in signed
 
 
+def test_audit_records_stay_inside_the_configured_state_directory(tmp_path):
+    """`ENTROLY_DIR` must scope governance too, or isolation is a fiction.
+
+    Running the documented `entroly govern audit verify` is what exposed this:
+    it printed a path under the real `~/.entroly` while `ENTROLY_DIR` pointed
+    at a temp directory. Twenty-four other modules honour that variable;
+    governance was the one subsystem that could not be scoped to a project, so
+    every test and sandbox was writing into the user's actual home.
+    """
+    result = _run_cli("govern", "audit", "verify", "--json", tmp_path=tmp_path)
+    assert result.returncode in (0, 2), result.stderr
+    payload = _json_tail(result.stdout)
+    state_dir = str(tmp_path / "state")
+    assert payload["jsonl_path"].startswith(state_dir), (
+        f"audit log escaped ENTROLY_DIR: {payload['jsonl_path']} not under {state_dir}"
+    )
+    assert payload["db_path"].startswith(state_dir)
+
+
+def test_audit_dir_precedence_resolves_at_call_time(monkeypatch, tmp_path):
+    """Explicit argument > ENTROLY_AUDIT_DIR > ENTROLY_DIR > home.
+
+    Each rung was wrong. The default was `Path("~/...").expanduser()` evaluated
+    at import, so relocating HOME afterwards did nothing; and the environment
+    outranked the explicit constructor argument, so `GovernanceAuditLog(
+    audit_dir=tmp)` silently wrote elsewhere whenever the variable happened to
+    be set -- voiding a caller's isolation without a word.
+    """
+    from entroly.governance.audit import GovernanceAuditLog
+
+    explicit = tmp_path / "explicit"
+    monkeypatch.setenv("ENTROLY_AUDIT_DIR", str(tmp_path / "env"))
+    assert GovernanceAuditLog(audit_dir=explicit).jsonl_path.parent == explicit
+    assert GovernanceAuditLog().jsonl_path.parent == tmp_path / "env"
+
+    monkeypatch.delenv("ENTROLY_AUDIT_DIR")
+    monkeypatch.setenv("ENTROLY_DIR", str(tmp_path / "state"))
+    assert GovernanceAuditLog().jsonl_path.parent == tmp_path / "state" / "governance" / "audit"
+
+    # Resolved per call, not once at import: a later HOME must be respected.
+    monkeypatch.delenv("ENTROLY_DIR")
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    assert GovernanceAuditLog().jsonl_path.is_relative_to(home)
+
+
 def test_the_governance_api_shapes_the_cli_depends_on():
     """Pin the four shapes that broke when assumed rather than read."""
     from entroly.governance.audit import GovernanceAuditLog
