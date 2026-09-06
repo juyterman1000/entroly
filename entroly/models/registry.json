@@ -284,6 +284,31 @@
       "verified_at": "2026-07-13"
     },
     {
+      "id": "openai/gpt-6-astra",
+      "provider": "openai",
+      "aliases": [
+        "gpt-6-astra",
+        "openai/gpt-6-astra",
+        "gpt-6-astra-"
+      ],
+      "context_window": 1050000,
+      "max_output_tokens": 128000,
+      "supports_tools": true,
+      "supports_vision": true,
+      "supports_reasoning": true,
+      "reasoning_levels": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "trust": "announced",
+      "source": "https://docs.openclaw.ai/releases/2026.9.2",
+      "verified_at": null
+    },
+    {
       "id": "anthropic/claude-opus-4.6",
       "provider": "anthropic",
       "aliases": [

@@ -285,6 +285,8 @@ Status describes integration depth, not a savings guarantee — provider-observe
 
 Entroly carries verified public metadata for GPT-5.6 Sol, Terra, and Luna; Gemini 3.6 Flash; and Gemini 3.5 Flash-Lite, and it can discover installed NVIDIA Nemotron 3.5 Lightning Ollama tags. Gated or private-preview announcements are not promoted into the verified matrix without a usable public model ID and limits. For example, Gemini 3.5 Flash Cyber remains outside the generally available matrix because its documented CodeMender access is restricted to selected governments and trusted partners. See **[Verified model support](docs/model-support.html)** for model IDs, transport paths, limits, and availability boundaries.
 
+**GPT-6 Astra** (`openai/gpt-6-astra`) resolves at **announced** trust from its public announcement: a 1,050,000-token context window with up to 128,000 output tokens, tools, vision, and reasoning levels through `max`. Budgeting works against those limits — Entroly reserves output and an uncertainty margin, giving an effective input budget of 869,500 tokens. It carries **no price metadata**, because the announcement describes a higher long-context pricing tier without publishing rates, so Entroly returns no cost estimate for Astra rather than inventing one. Rates and `verified` trust follow when the first-party model page publishes them.
+
 ### Kimi K3, GLM-5.3, and GLM-5.3-Flash
 
 Entroly carries published metadata and list pricing for Moonshot AI's **Kimi K3**
