@@ -224,9 +224,25 @@ def _cmd_audit(args: Any) -> int:
             "detail": detail,
             "jsonl_path": str(getattr(log, "jsonl_path", "") or ""),
             "db_path": str(getattr(log, "db_path", "") or ""),
+            # Measured, not assumed. Against a chain of five records this
+            # detects a payload edit and a deletion from the middle, and does
+            # NOT detect tail truncation, an edit whose chain was recomputed,
+            # or a wholly fabricated self-consistent log -- it reported "Chain
+            # intact" over attacker-written records granting admin. The chain
+            # is unkeyed SHA-256, so write access to the file is enough to
+            # forge a consistent history. An earlier version of this string
+            # claimed entries "were not altered after the fact", which is the
+            # exact overclaim the trust invariants forbid.
+            "detects": ["payload edited in place", "record removed from the middle"],
+            "does_not_detect": [
+                "records truncated from the end",
+                "an edit whose chain hash was recomputed",
+                "a fabricated log that is internally consistent",
+            ],
             "claim_boundary": (
-                "Chain verification proves the recorded entries were not altered "
-                "after the fact. It does not prove every action was recorded."
+                "The chain is unkeyed, so this detects accidental corruption and "
+                "naive edits, not a writer who recomputes it. It also does not "
+                "prove every action was recorded."
             ),
         }
         _emit(payload, as_json=as_json)
