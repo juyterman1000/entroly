@@ -621,7 +621,7 @@ def markdown_report(receipt: ContextReceipt) -> str:
                     f"- Tokens: {item.token_count}; score: {item.score:.4f}",
                     f"- Why omitted: {item.omission_reason}",
                     f"- Ranking reason: {'; '.join(item.reasons)}",
-                    f"- Preview: {item.text_preview}",
+                    f"- Preview: {_one_line(item.text_preview)}",
                     "",
                 ]
             )
@@ -657,13 +657,24 @@ def markdown_report(receipt: ContextReceipt) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+
+def _one_line(text: str) -> str:
+    """Flatten a stored preview for single-line contexts.
+
+    Previews keep their line breaks so the omitted-evidence explorer can show
+    code as code. A Markdown bullet and a one-sentence explanation both need
+    one line, so they flatten here -- a rendering choice, made where the
+    rendering happens, rather than baked into what the receipt stores.
+    """
+    return " ".join(text.split())
+
 def explain_omitted(receipt: ContextReceipt, chunk_id: str) -> str:
     for item in receipt.omitted_context:
         if item.chunk_id == chunk_id:
             return (
                 f"{chunk_id} was omitted from {item.source_path}: {item.omission_reason}. "
                 f"Score={item.score:.4f}. Ranking reasons: {'; '.join(item.reasons)}. "
-                f"Preview: {item.text_preview}"
+                f"Preview: {_one_line(item.text_preview)}"
             )
     selected_ids = {item.chunk_id for item in receipt.selected_context}
     if chunk_id in selected_ids:
