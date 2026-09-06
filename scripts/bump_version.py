@@ -59,7 +59,26 @@ TARGETS = [
     ("entroly/cli.py", r'entroly-core>=[0-9]+\.[0-9]+\.[0-9]+', 'entroly-core>={v}'),
     ("entroly/server.py", r'_version\s*=\s*"[^"]+"', '_version = "{v}"'),
     (".claude-plugin/manifest.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
+    # `plugin.json` sits beside `manifest.json` and was never listed, so it
+    # lagged a release behind every bump that touched its neighbour.
+    (".claude-plugin/plugin.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     (".mcpb-build/manifest.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
+    # Agent bundles and per-host extension manifests. Each declares the product
+    # version to its host, and none of them was in this list -- a bump left
+    # seven surfaces behind, which `tests/test_version_surfaces_are_complete.py`
+    # now catches rather than the next release doing it.
+    ("skills/entroly-evidence-operations/entroly-bundle.json",
+        r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
+    ("integrations/codex/entroly/.codex-plugin/plugin.json",
+        r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
+    ("integrations/codex/entroly/entroly-bundle.json",
+        r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
+    ("integrations/codex/entroly/skills/entroly-evidence-operations/entroly-bundle.json",
+        r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
+    ("integrations/gemini/entroly/entroly-bundle.json",
+        r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
+    ("integrations/gemini/entroly/gemini-extension.json",
+        r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     ("server.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     ("CITATION.cff", r'^version:\s*[^\s]+\s*$', 'version: {v}'),
     ("codemeta.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
