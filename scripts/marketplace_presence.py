@@ -98,7 +98,11 @@ RAW_MARKETPLACE_URL = (
     "https://raw.githubusercontent.com/juyterman1000/entroly/main/"
     ".claude-plugin/marketplace.json"
 )
-SMITHERY_URL = "https://smithery.ai/server/@juyterman1000/entroly"
+# The registry API, not the human-facing page. `smithery.ai/server/...` answers
+# 308 to a redirect urllib will not follow, so probing it returns UNKNOWN
+# forever -- and UNKNOWN raises no warning, which would leave this channel
+# exactly as silently dead as it was before this checker existed.
+SMITHERY_URL = "https://registry.smithery.ai/servers/@juyterman1000/entroly"
 
 
 def probe_claude_marketplace(version: str, *, fetch: Fetch = _fetch_json) -> Probe:
