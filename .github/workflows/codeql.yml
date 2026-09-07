@@ -53,7 +53,12 @@ jobs:
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
-          language: ${{ matrix.language }}
+          # `languages`, plural. The singular form is not an input: the action
+          # only warns about it, then falls back to auto-detecting languages,
+          # which picked Java in this repository and died finalizing a database
+          # for a language it does not contain. An ignored input failed as a
+          # build error several minutes later, nowhere near its cause.
+          languages: ${{ matrix.language }}
           # security-extended adds lower-severity and higher-precision-cost
           # queries. The default suite alone would leave this repository with
           # roughly the coverage bandit already provides.

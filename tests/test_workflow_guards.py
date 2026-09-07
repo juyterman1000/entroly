@@ -151,3 +151,34 @@ def test_every_security_scan_is_enforced() -> None:
         f"these scanners run but no gate reads their result: {unenforced}. "
         "They would report findings and still pass the job."
     )
+
+
+def test_codeql_declares_languages_not_language() -> None:
+    """`language:` is silently ignored by github/codeql-action/init.
+
+    The action warns about the unknown input and carries on with language
+    auto-detection, which in this repository selected Java and then failed
+    finalizing a database for a language it does not contain. The failure
+    surfaced minutes later as a build error with exit code 32, nowhere near
+    the typo that caused it.
+
+    Pinned because the two spellings differ by one character and the wrong one
+    fails in a way that does not name itself.
+    """
+    workflow = (ROOT / ".github/workflows/codeql.yml").read_text(encoding="utf-8")
+    init = re.search(
+        r"(?ms)^      - name: Initialize CodeQL\n(?P<body>.*?)(?=^      - |\Z)", workflow
+    )
+    assert init is not None, "the CodeQL init step is missing"
+    body = init.group("body")
+
+    assert re.search(r"(?m)^\s+languages:\s*\$\{\{\s*matrix\.language\s*\}\}", body), (
+        "the CodeQL init step must pass `languages:` (plural)"
+    )
+    # Scoped to the step body on purpose: `language:` is also the legitimate
+    # name of the matrix key, so searching the whole file would fail on a
+    # correct configuration.
+    assert not re.search(r"(?m)^\s+language:\s", body), (
+        "`language:` is not an input to codeql-action/init; it is ignored and "
+        "the action falls back to auto-detection"
+    )
