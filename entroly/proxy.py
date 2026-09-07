@@ -1236,6 +1236,27 @@ class PromptCompilerProxy:
                 capacity=float(rate_limit), refill_per_second=rate_limit / 60.0
             )
 
+        # Session spend cap — on by default, gated by the policy itself.
+        #
+        # `governance.authorization.check_budget` accumulates spend across the
+        # session and refuses once it passes the policy cap. That is the only
+        # thing that stops a run looping on a paid model while nobody watches:
+        # a per-request clamp cannot, because each individual call looks
+        # affordable no matter how many follow it.
+        #
+        # Writing `budget_limit_usd` into a policy *is* the opt-in. A second
+        # switch would only mean the cap silently does nothing for operators
+        # who set a budget and reasonably assumed it applied -- the same defect
+        # as shipping the check and never calling it.
+        #
+        # Safety comes from the policy, not a flag: the built-in
+        # deny-by-default policy carries `budget_limit_usd = 0.0`, and a
+        # non-positive budget disables enforcement, so a default install is
+        # untouched. `ENTROLY_ENFORCE_BUDGET=0` remains as an escape hatch.
+        self._budget_enforced = _env_int("ENTROLY_ENFORCE_BUDGET", 1) > 0
+        self._budget_denials = 0
+        self._budget_recorded_usd = 0.0
+
         # Pipeline latency tracking (Welford online stats)
         self._pipeline_stats = _WelfordStats()
 
@@ -2016,6 +2037,101 @@ class PromptCompilerProxy:
             }
         return allow, route.reason
 
+    def _debit_session_budget(self, event: Any) -> None:
+        """Charge a completed request's real cost against the session budget.
+
+        Only priced events are debited. An event whose `pricing_source` starts
+        with `unpriced:` has no rate behind it, and debiting a guess would put
+        an invented number into the running total that later refuses real
+        requests -- the cap has to be as honest as the ledger it reads.
+
+        Debiting after the response, from provider-reported usage, is what
+        makes the next `check_budget` meaningful: the total is measured, not
+        projected.
+        """
+        if not self._budget_enforced:
+            return
+        try:
+            if str(getattr(event, "pricing_source", "")).startswith("unpriced:"):
+                return
+            cost_usd = int(getattr(event, "cost_micro_usd", 0)) / 1_000_000
+            if cost_usd <= 0:
+                return
+            from .governance.authorization import get_authorization_service
+
+            get_authorization_service().record_spend(cost_usd)
+            with self._stats_lock:
+                self._budget_recorded_usd += cost_usd
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("Could not record spend against budget: %s", exc)
+
+    def _budget_refusal(self) -> JSONResponse | None:
+        """Refuse the request when the session has spent its policy budget.
+
+        Returns ``None`` when the request may proceed, which is every case
+        unless an operator has switched enforcement on *and* an applicable
+        policy names a positive budget. Both conditions are required: the
+        built-in deny-by-default policy caps at $0.00, so checking without the
+        second guard would refuse the first request of every default install.
+
+        The decision itself belongs to `governance.authorization`, which owns
+        the running total and the fail-closed comparison. This only asks and
+        renders the answer, so there is one implementation of "are we over
+        budget" rather than a second copy that can drift.
+        """
+        if not self._budget_enforced:
+            return None
+        try:
+            from .governance.authorization import get_authorization_service
+            from .governance.policy import find_matching_policy
+
+            service = get_authorization_service()
+            # Ask the service for the policies it already loaded. Calling
+            # `load_policies` here instead would stat and re-parse
+            # policies.yaml on every request -- disk I/O in the hot path, now
+            # that this runs by default -- and would read a different snapshot
+            # than the one `check_budget` evaluates against, so this guard and
+            # the decision below could disagree about the limit.
+            policy = find_matching_policy(service.identity, service.policies)
+            if not getattr(policy, "budget_limit_usd", 0.0) > 0:
+                # No budget declared, so nothing to enforce. This is the
+                # ordinary path for an install without a policies.yaml -- the
+                # built-in policy caps at $0.00, and treating that as "refuse
+                # everything" would break every default install. Logged at
+                # debug rather than warning because it is not a fault.
+                logger.debug(
+                    "Policy %r declares no budget_limit_usd; no session spend "
+                    "cap is in force.",
+                    getattr(policy, "id", "unknown"),
+                )
+                return None
+
+            decision = service.check_budget(0.0)
+        except Exception as exc:  # pragma: no cover - defensive
+            # A broken governance path must not take the proxy down, but it
+            # must not silently look like an enforced budget either.
+            logger.warning("Budget check unavailable (%s); request allowed", exc)
+            return None
+
+        if getattr(decision, "allowed", True):
+            return None
+
+        with self._stats_lock:
+            self._budget_denials += 1
+        return JSONResponse(
+            {
+                "error": "budget_exceeded",
+                "detail": getattr(decision, "reason", "session budget exhausted"),
+                "policy": getattr(getattr(decision, "policy", None), "id", None),
+                "claim_boundary": (
+                    "Spend is measured from provider-reported usage priced by "
+                    "the local catalog. It is an accounting of this session, "
+                    "not a provider invoice."
+                ),
+            },
+            status_code=402,
+        )
+
     def _record_provider_usage(
         self,
         *,
@@ -2055,6 +2171,7 @@ class PromptCompilerProxy:
                     self._usage_recorded += 1
                     if event.pricing_source.startswith("unpriced:"):
                         self._usage_unpriced += 1
+                self._debit_session_budget(event)
 
         if not inserted:
             return
@@ -2157,6 +2274,13 @@ class PromptCompilerProxy:
 
         with self._stats_lock:
             self._requests_total += 1
+
+        # Stop a session that has already spent its budget, before the call is
+        # made. Placed beside the rate limiter because it is the same kind of
+        # decision -- refuse early, cheaply, without touching the request.
+        budget_refusal = self._budget_refusal()
+        if budget_refusal is not None:
+            return budget_refusal
 
         # Read request
         body_bytes = await request.body()
