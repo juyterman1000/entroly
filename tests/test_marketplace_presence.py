@@ -97,3 +97,57 @@ def test_absent_when_the_package_set_is_unexpected() -> None:
 
     assert probe.presence is Presence.ABSENT
     assert "package" in probe.detail
+
+
+from marketplace_presence import (  # noqa: E402
+    BLOCKING,
+    probe_claude_marketplace,
+    probe_smithery,
+)
+
+
+def _marketplace(version: str) -> dict:
+    return {
+        "name": "entroly",
+        "owner": {"name": "juyterman1000"},
+        "plugins": [{"name": "entroly", "source": "./", "version": version}],
+    }
+
+
+def test_claude_marketplace_present_when_raw_manifest_lists_the_version() -> None:
+    probe = probe_claude_marketplace("1.0.84", fetch=lambda url: _marketplace("1.0.84"))
+
+    assert probe.presence is Presence.PRESENT
+    assert probe.channel == "claude-marketplace"
+
+
+def test_claude_marketplace_absent_when_the_manifest_lags() -> None:
+    probe = probe_claude_marketplace("1.0.84", fetch=lambda url: _marketplace("1.0.83"))
+
+    assert probe.presence is Presence.ABSENT
+
+
+def test_claude_marketplace_unknown_when_the_manifest_is_unreachable() -> None:
+    def explode(url: str) -> dict:
+        raise OSError("404 not found")
+
+    probe = probe_claude_marketplace("1.0.84", fetch=explode)
+
+    assert probe.presence is Presence.UNKNOWN
+
+
+def test_smithery_absent_when_the_server_page_is_missing() -> None:
+    # The audited state on 2026-09-06: correct smithery.yaml, no server page.
+    def missing(url: str) -> dict:
+        raise OSError("HTTP Error 404: Not Found")
+
+    probe = probe_smithery("1.0.84", fetch=missing)
+
+    assert probe.presence is Presence.ABSENT
+
+
+def test_smithery_is_advisory_so_it_cannot_block_a_release() -> None:
+    # Smithery indexes from GitHub on its own schedule, so ABSENT there can
+    # be nobody's fault and must never stop a release.
+    assert "smithery" not in BLOCKING
+    assert "claude-marketplace" in BLOCKING
