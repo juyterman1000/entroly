@@ -33,26 +33,36 @@ function resolve(command) {
   return null;
 }
 
+// Windows cannot exec a .cmd/.bat directly: spawnSync without a shell throws
+// EINVAL. Route those through cmd.exe with every part quoted, so `npx` -- which
+// ships as npx.cmd on Windows -- stays a real link in the chain instead of
+// being skipped. `/d` skips AutoRun, `/s` makes cmd strip exactly the outer
+// quote pair and take the rest verbatim.
+function runCandidate(executable, args) {
+  const options = {
+    stdio: "inherit",
+    env: { ...process.env, ENTROLY_NO_DOCKER: "1" },
+  };
+  if (process.platform === "win32" && /\.(cmd|bat)$/i.test(executable)) {
+    const line = [executable, ...args].map((part) => `"${part}"`).join(" ");
+    return spawnSync(
+      process.env.COMSPEC || "cmd.exe",
+      ["/d", "/s", "/c", `"${line}"`],
+      { ...options, windowsVerbatimArguments: true },
+    );
+  }
+  return spawnSync(executable, args, options);
+}
+
 for (const candidate of CANDIDATES) {
   const executable = resolve(candidate.command);
   if (executable === null) continue;
 
-  // Skip .cmd and .bat files on Windows without shell support, since
-  // spawnSync cannot execute them without shell: true. They will not be
-  // invoked, which is correct behavior: uvx and entroly are real binaries,
-  // not batch files, and npx.cmd on Windows should not be used directly.
-  // Instead, look for npx without an extension, which exists on some systems.
-  if (process.platform === "win32" && /\.(cmd|bat)$/i.test(executable)) {
-    continue;
-  }
-
-  const result = spawnSync(executable, candidate.args, {
-    stdio: "inherit",
-    env: { ...process.env, ENTROLY_NO_DOCKER: "1" },
-  });
-  if (result.status !== null) {
-    process.exit(result.status);
-  }
+  const result = runCandidate(executable, candidate.args);
+  // A null status means the process never launched. The next candidate may
+  // still work, so fall through instead of exiting -- this is exactly the
+  // "installed but broken" case the shell-free design exists to detect.
+  if (result.status !== null) process.exit(result.status);
 }
 
 process.stderr.write(
