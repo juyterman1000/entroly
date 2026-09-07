@@ -312,50 +312,18 @@ jobs:
         if: steps.release_guard.outputs.should_publish == 'true'
         shell: bash
         run: |
-          python - <<'PY'
-          import json
-          import time
-          import urllib.parse
-          import urllib.request
-
-          name = 'io.github.juyterman1000/entroly'
-          repository = 'https://github.com/juyterman1000/entroly'
-          expected_packages = {('pypi', 'entroly'), ('npm', 'entroly-mcp')}
-          version = json.load(open('server.json', encoding='utf-8'))['version']
-          url = (
-              'https://registry.modelcontextprotocol.io/v0.1/servers?search='
-              + urllib.parse.quote(name, safe='')
-          )
-
-          for attempt in range(1, 61):
-              request = urllib.request.Request(
-                  url,
-                  headers={'User-Agent': 'entroly-canonical-mcp-publisher'},
-              )
-              with urllib.request.urlopen(request, timeout=30) as response:
-                  payload = json.load(response)
-
-              match = None
-              for item in payload.get('servers', []):
-                  server = item.get('server', item)
-                  if server.get('name') == name and server.get('version') == version:
-                      match = server
-                      break
-
-              if match is not None:
-                  repo = match.get('repository') or {}
-                  packages = {
-                      (package.get('registryType'), package.get('identifier'))
-                      for package in match.get('packages', [])
-                  }
-                  if repo.get('url') != repository:
-                      raise SystemExit('registry listing points to a non-canonical repository')
-                  if packages != expected_packages:
-                      raise SystemExit(f'registry package set is unexpected: {packages!r}')
-                  print(f'Verified exclusive canonical listing {name} {version}.')
-                  break
-
-              if attempt == 60:
-                  raise SystemExit(f'Registry listing for {name} {version} was not visible')
-              time.sleep(10)
-          PY
+          version="$(python -c "import json;print(json.load(open('server.json'))['version'])")"
+          # Match `present` explicitly rather than trusting the exit code. The
+          # checker exits 0 on UNKNOWN as well, because UNKNOWN must never block
+          # a release elsewhere -- but here UNKNOWN means we could not confirm
+          # the publish landed, which is a reason to keep polling, not to pass.
+          for attempt in $(seq 1 60); do
+            if python scripts/marketplace_presence.py \
+                 --version "$version" --channel mcp-registry | tee /dev/stderr \
+                 | grep -q ': present -'; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::registry did not list $version after 60 attempts"
+          exit 1

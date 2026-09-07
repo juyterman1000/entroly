@@ -8,5 +8,15 @@
   "homepage": "https://github.com/juyterman1000/entroly",
   "repository": "https://github.com/juyterman1000/entroly",
   "license": "Apache-2.0",
-  "skills": "./skills/"
+  "skills": "./skills/",
+  "commands": "./.claude-plugin/commands/",
+  "mcpServers": {
+    "entroly": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/entroly-plugin-launch.mjs"],
+      "env": {
+        "ENTROLY_NO_DOCKER": "1"
+      }
+    }
+  }
 }
