@@ -89,6 +89,12 @@ TARGETS = [
     # `plugin.json` sits beside `manifest.json` and was never listed, so it
     # lagged a release behind every bump that touched its neighbour.
     (".claude-plugin/plugin.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
+    # The marketplace entry declares the plugin version to Claude Code's
+    # install UI. It is a third `.claude-plugin` surface; the sweep below
+    # would catch it, but catching it here means the bump never emits a
+    # warning in the first place.
+    (".claude-plugin/marketplace.json",
+        r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     (".mcpb-build/manifest.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     # Agent bundles and per-host extension manifests. Each declares the product
     # version to its host, and none of them was in this list -- a bump left
