@@ -3,10 +3,15 @@
 The chain is unkeyed SHA-256 over `(prev_hash, event_id, payload)`. That is
 tamper-*evidence* against accidental corruption and naive edits, and nothing
 more: anyone who can write the file can recompute the chain and produce a
-history that verifies. Measured against a five-record log, verification does
-not detect tail truncation, an edit whose chain was recomputed, or a wholly
-fabricated log -- it reported "Chain intact" over attacker-written records
-granting admin.
+history that verifies. Measured against a five-record log, verification still
+does not detect an edit whose chain was recomputed, nor a fabricated log -- it
+reported "Chain intact" over attacker-written records granting admin.
+
+Verification also cross-checks the chain's length against the database, which
+is the anchor a bare hash chain lacks. Truncating the JSONL alone is therefore
+detected now, and so is a fabrication with a different number of records. The
+anchor only holds while the database is intact: truncating *both* stores, or
+fabricating exactly as many records as the database holds, still passes.
 
 The CLI first said chain verification "proves the recorded entries were not
 altered after the fact", which is exactly the overclaim the trust invariants
@@ -75,13 +80,36 @@ def test_detects_a_record_removed_from_the_middle(chain):
     assert _verify(chain)[0] is False, "a deleted record verified as intact"
 
 
-def test_does_not_detect_tail_truncation(chain):
+def test_detects_tail_truncation_of_the_chain_alone(chain):
     """Dropping the newest records leaves every remaining link valid.
 
-    Not a bug in the implementation -- a bare hash chain has no anchor for the
-    expected length. Pinned so the CLI never claims otherwise.
+    A bare hash chain cannot say how long it is meant to be, so this used to
+    pass. The database row count supplies that anchor, and dropping records
+    from the chain alone now makes the two stores disagree.
     """
     _write(chain.jsonl_path, _records(chain.jsonl_path)[:3])
+    ok, detail = _verify(chain)
+    assert ok is False, "truncating the chain verified as intact"
+    assert "3" in detail and "5" in detail, (
+        f"the verdict must name both counts so the gap is auditable: {detail}"
+    )
+
+
+def test_does_not_detect_truncation_of_both_stores(chain):
+    """The count anchor is only as good as the store holding it.
+
+    Deleting the same records from the database as from the chain leaves the
+    two agreeing at the shorter length, and every remaining link still
+    verifies. This is the honest residue of the limitation above, and the CLI
+    must keep disclosing it.
+    """
+    import sqlite3
+
+    _write(chain.jsonl_path, _records(chain.jsonl_path)[:3])
+    conn = sqlite3.connect(str(chain.db_path))
+    conn.execute("DELETE FROM governance_audit WHERE event_id IN ('e3','e4')")
+    conn.commit()
+    conn.close()
     assert _verify(chain)[0] is True
 
 
@@ -93,14 +121,47 @@ def test_does_not_detect_an_edit_whose_chain_was_recomputed(chain):
     assert _verify(chain)[0] is True
 
 
-def test_does_not_detect_a_fabricated_self_consistent_log(chain):
+def test_does_not_detect_a_fabrication_of_the_same_length(chain):
+    """Matching the record count defeats the anchor.
+
+    The fabricated log carries the same event_ids as the real one, so both the
+    links and the count line up. Nothing in an unkeyed chain distinguishes this
+    from the truth -- which is why the CLI must not claim it proves the entries
+    are genuine.
+    """
+    fabricated = [
+        {"event_id": f"e{i}", "event_type": "permission.allowed", "agent_id": "attacker",
+         "payload": {"scope": "admin"}, "allowed": True, "created_at": 0, "chain_hash": ""}
+        for i in range(5)  # same count as the database
+    ]
+    _write(chain.jsonl_path, _rechain(fabricated))
+    assert _verify(chain)[0] is True
+
+
+def test_detects_a_fabrication_of_a_different_length(chain):
+    """A forger who does not match the record count is caught by the anchor."""
     fabricated = [
         {"event_id": f"x{i}", "event_type": "permission.allowed", "agent_id": "attacker",
          "payload": {"scope": "admin"}, "allowed": True, "created_at": 0, "chain_hash": ""}
         for i in range(3)
     ]
     _write(chain.jsonl_path, _rechain(fabricated))
-    assert _verify(chain)[0] is True
+    assert _verify(chain)[0] is False, "a 3-record forgery passed against a 5-record database"
+
+
+def test_detects_the_same_event_recorded_twice(chain):
+    """An inflated chain does not describe what happened.
+
+    Every event_id is unique by construction, so a repeat is one event written
+    twice. The links still verify -- each copy is hashed in order -- so only an
+    explicit check catches it. This is the shape a duplicate audit subscriber
+    produced, and it certified clean.
+    """
+    records = _records(chain.jsonl_path)
+    _write(chain.jsonl_path, _rechain(records[:3] + [dict(records[2])] + records[3:]))
+    ok, detail = _verify(chain)
+    assert ok is False, "an event recorded twice verified as intact"
+    assert "e2" in detail, f"the repeated event was not named: {detail}"
 
 
 def test_the_cli_states_the_boundary_it_actually_has(tmp_path, capsys, monkeypatch):
