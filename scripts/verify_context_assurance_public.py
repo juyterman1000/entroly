@@ -122,6 +122,12 @@ CLAIM_SENSITIVE_PUBLIC_FILES = (
     *RETIRED_SETUP_PAGES,
     *REPUBLISHED_PUBLIC_PAGES,
     *TRANSLATED_READMES,
+    # BENCHMARKS.md and RESEARCH.md each carried the universal "70-95%" range
+    # while this scanner banned it everywhere else, because neither file was in
+    # this tuple. BENCHMARKS.md asserted it four lines below its own measured
+    # 3.6% LongBench result. Scanning them closes that gap.
+    "BENCHMARKS.md",
+    "RESEARCH.md",
     "docs/context-engineering.html",
     "docs/DETAILS.md",
     "docs/for-teams.md",

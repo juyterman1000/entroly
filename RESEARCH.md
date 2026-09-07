@@ -257,7 +257,7 @@ Most systems have *either* fast retrieval *or* deliberate verification, never bo
 
 These surfaces are available in the repo, but they do not all run on every request by default. The production posture is layered:
 
-- **Token savings 70–95% on large eligible workloads** — knapsack + entropy + dedup reduce input context; small prompts should pass through.
+- **Token reduction on large eligible workloads** — knapsack + entropy + dedup reduce input context; small prompts should pass through. No universal savings range is claimed: a reported percentage is bounded by the configured token budget before selection runs.
 - **Invented-identifier detection** — BIPT can flag weakly grounded code identifiers; FORGE can attempt explicit, budgeted repair loops.
 - **Bias-aware learning** — Causal Context Graph reduces co-selection bias in fragment feedback.
 - **Multi-agent budget planning** — NKBE provides a principled allocation strategy when multiple agents share a context budget.
