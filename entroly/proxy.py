@@ -1236,7 +1236,7 @@ class PromptCompilerProxy:
                 capacity=float(rate_limit), refill_per_second=rate_limit / 60.0
             )
 
-        # Session spend cap — opt-in, and deliberately so.
+        # Session spend cap — on by default, gated by the policy itself.
         #
         # `governance.authorization.check_budget` accumulates spend across the
         # session and refuses once it passes the policy cap. That is the only
@@ -1244,12 +1244,16 @@ class PromptCompilerProxy:
         # a per-request clamp cannot, because each individual call looks
         # affordable no matter how many follow it.
         #
-        # It stays off unless the operator asks for it, because the built-in
-        # deny-by-default policy carries `budget_limit_usd = 0.0`. Enforcing
-        # unconditionally would refuse the first request on every default
-        # install, so enforcement needs both this switch and a policy that
-        # names a positive budget.
-        self._budget_enforced = _env_int("ENTROLY_ENFORCE_BUDGET", 0) > 0
+        # Writing `budget_limit_usd` into a policy *is* the opt-in. A second
+        # switch would only mean the cap silently does nothing for operators
+        # who set a budget and reasonably assumed it applied -- the same defect
+        # as shipping the check and never calling it.
+        #
+        # Safety comes from the policy, not a flag: the built-in
+        # deny-by-default policy carries `budget_limit_usd = 0.0`, and a
+        # non-positive budget disables enforcement, so a default install is
+        # untouched. `ENTROLY_ENFORCE_BUDGET=0` remains as an escape hatch.
+        self._budget_enforced = _env_int("ENTROLY_ENFORCE_BUDGET", 1) > 0
         self._budget_denials = 0
         self._budget_recorded_usd = 0.0
 
@@ -2079,24 +2083,27 @@ class PromptCompilerProxy:
             return None
         try:
             from .governance.authorization import get_authorization_service
-            from .governance.policy import find_matching_policy, load_policies
+            from .governance.policy import find_matching_policy
 
             service = get_authorization_service()
-            identity = service.identity
-            policies = load_policies(None)
-            policy = find_matching_policy(identity, policies)
+            # Ask the service for the policies it already loaded. Calling
+            # `load_policies` here instead would stat and re-parse
+            # policies.yaml on every request -- disk I/O in the hot path, now
+            # that this runs by default -- and would read a different snapshot
+            # than the one `check_budget` evaluates against, so this guard and
+            # the decision below could disagree about the limit.
+            policy = find_matching_policy(service.identity, service.policies)
             if not getattr(policy, "budget_limit_usd", 0.0) > 0:
-                # Enforcement asked for, but no budget declared. Refusing here
-                # would block everything; announcing it once is the honest
-                # middle, since silently passing looks identical to a working
-                # cap and would be discovered only by an unexpected bill.
-                if not getattr(self, "_budget_warned", False):
-                    self._budget_warned = True
-                    logger.warning(
-                        "ENTROLY_ENFORCE_BUDGET is set but policy %r declares no "
-                        "budget_limit_usd; no spend cap is in force.",
-                        getattr(policy, "id", "unknown"),
-                    )
+                # No budget declared, so nothing to enforce. This is the
+                # ordinary path for an install without a policies.yaml -- the
+                # built-in policy caps at $0.00, and treating that as "refuse
+                # everything" would break every default install. Logged at
+                # debug rather than warning because it is not a fault.
+                logger.debug(
+                    "Policy %r declares no budget_limit_usd; no session spend "
+                    "cap is in force.",
+                    getattr(policy, "id", "unknown"),
+                )
                 return None
 
             decision = service.check_budget(0.0)

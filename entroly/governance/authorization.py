@@ -327,6 +327,19 @@ class AuthorizationService:
         return self._stats
 
     @property
+    def policies(self) -> list[Policy]:
+        """The policies this service evaluates against.
+
+        Exposed so callers can inspect the applicable policy without calling
+        `load_policies` again. That function is uncached -- it stats the path
+        and re-parses the YAML on every call -- so a per-request caller would
+        add disk I/O to a hot path. Worse, it would read a *different* snapshot
+        than the one `check` and `check_budget` evaluate against, letting a
+        caller's pre-check and the service's decision disagree after an edit.
+        """
+        return self._policies
+
+    @property
     def spent_usd(self) -> float:
         with self._lock:
             return self._spent_usd
@@ -365,6 +378,29 @@ def get_authorization_service(
                 _global_service = AuthorizationService.from_environment(
                     header_value=header_value
                 )
+                # Start recording as soon as governance is used.
+                #
+                # `install_audit_subscriber` existed and nothing called it, so
+                # the audit log stayed empty unless an operator wired the bus
+                # themselves. An audit trail that is empty by default is worse
+                # than none: `govern audit verify` reports an intact chain over
+                # a log nothing ever wrote to.
+                #
+                # Attached here rather than at import so it stays side-effect
+                # free until governance is actually exercised -- the log
+                # resolves its directory lazily and creates nothing until an
+                # event arrives. Failure to attach must not stop authorization
+                # working, so it degrades to a warning rather than raising.
+                try:
+                    from .audit import install_audit_subscriber
+
+                    install_audit_subscriber()
+                except Exception as exc:  # pragma: no cover - defensive
+                    logger.warning(
+                        "Governance audit subscriber not installed (%s); "
+                        "decisions will not be recorded.",
+                        exc,
+                    )
     return _global_service
 
 

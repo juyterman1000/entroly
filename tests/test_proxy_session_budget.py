@@ -8,10 +8,11 @@ fail-closed comparison, and a denial naming the numbers -- while nothing called
 it. These tests wire it to the request path and pin the behaviour that makes it
 safe to ship.
 
-The default-off case is the one that matters most. The built-in
-deny-by-default policy caps at $0.00, so a budget check that ran unconditionally
-would refuse the first request of every default install. Enforcement requires
-both an explicit switch and a policy naming a positive budget.
+Writing `budget_limit_usd` into a policy is the opt-in. There is no second
+switch, because a flag nobody sets leaves the cap doing nothing for exactly the
+operators who asked for one. Safety comes from the policy instead: the built-in
+deny-by-default policy caps at $0.00, and a non-positive budget disables
+enforcement, so an install without a policies.yaml is untouched.
 """
 from __future__ import annotations
 
@@ -46,25 +47,46 @@ def proxy(monkeypatch, tmp_path):
 
 def _enforcing_proxy(monkeypatch, tmp_path):
     monkeypatch.setenv("ENTROLY_DIR", str(tmp_path / "state"))
-    monkeypatch.setenv("ENTROLY_ENFORCE_BUDGET", "1")
+    monkeypatch.delenv("ENTROLY_ENFORCE_BUDGET", raising=False)
     from entroly.proxy import ProxyConfig, PromptCompilerProxy
 
     return PromptCompilerProxy(object(), ProxyConfig())
 
 
-def test_budget_enforcement_is_off_by_default(proxy):
-    """No switch, no refusal — the common install must be untouched."""
-    assert proxy._budget_enforced is False
-    assert proxy._budget_refusal() is None
+def test_enforcement_is_on_by_default_but_a_default_install_is_untouched(proxy):
+    """The cap is armed without configuration, and still refuses nothing.
+
+    Both halves matter. An opt-in switch nobody sets is indistinguishable from
+    an unwired feature -- an operator who writes `budget_limit_usd` into a
+    policy has already said what they want, and requiring a second flag means
+    the cap silently does nothing for exactly the people who asked for it.
+
+    Safety comes from the policy instead: the built-in deny-by-default policy
+    caps at $0.00, and a non-positive budget disables enforcement, so an
+    install with no policies.yaml behaves exactly as before.
+    """
+    assert proxy._budget_enforced is True, "the cap must be armed by default"
+    assert proxy._budget_refusal() is None, (
+        "a default install with no declared budget was refused"
+    )
+
+
+def test_enforcement_can_be_switched_off(monkeypatch, tmp_path):
+    """An escape hatch has to exist for anyone who needs the old behaviour."""
+    monkeypatch.setenv("ENTROLY_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("ENTROLY_ENFORCE_BUDGET", "0")
+    from entroly.proxy import ProxyConfig, PromptCompilerProxy
+
+    p = PromptCompilerProxy(object(), ProxyConfig())
+    assert p._budget_enforced is False
+    assert p._budget_refusal() is None
 
 
 def test_enforcement_without_a_declared_budget_does_not_block(monkeypatch, tmp_path):
     """The built-in policy caps at $0.00; that must not mean "refuse everything".
 
-    Asking for enforcement while no policy declares a budget is a
-    misconfiguration. Refusing every request would be catastrophic and passing
-    silently is indistinguishable from a working cap, so the proxy allows the
-    request and warns once.
+    This is the ordinary path for an install with no policies.yaml, not a
+    misconfiguration, and it is why the cap can be armed by default at all.
     """
     p = _enforcing_proxy(monkeypatch, tmp_path)
     assert p._budget_enforced is True
@@ -158,6 +180,85 @@ def test_unpriced_usage_is_not_debited(proxy, monkeypatch):
     assert proxy._budget_recorded_usd == pytest.approx(0.25)
 
 
+def test_the_audit_subscriber_installs_once_per_bus(tmp_path, monkeypatch):
+    """Re-creating the service must not double-write every audit record.
+
+    `subscribe` appends unconditionally, so a second install attaches a second
+    wildcard handler and each event is appended twice. Recreating the service
+    is ordinary -- `get_authorization_service(reset=True)` does it -- so this
+    is reachable in a normal process, not just in tests.
+
+    The assertion reads the JSONL chain, not `query`. The two sinks in `append`
+    handle the duplicate differently: SQLite drops it (`INSERT OR IGNORE` on
+    `event_id`) so `query` looks correct, while the JSONL keeps it. Since
+    `verify_chain` walks the JSONL, the inflated copy is the one that gets
+    certified intact -- a `query`-based assertion passes while the audit trail
+    is wrong.
+    """
+    monkeypatch.setenv("ENTROLY_AUDIT_DIR", str(tmp_path / "audit"))
+    monkeypatch.setenv("ENTROLY_DIR", str(tmp_path / "state"))
+
+    import entroly.governance.audit as audit_module
+    from entroly.governance.authorization import get_authorization_service
+    from entroly.governance.domain import RiskLevel
+
+    monkeypatch.setattr(audit_module, "_global_log", None, raising=False)
+
+    get_authorization_service()
+    service = get_authorization_service(reset=True)  # second install attempt
+    service.check("write", resource="src/app.py", risk_level=RiskLevel.HIGH)
+
+    # A total count would be wrong: creating the service resolves identity,
+    # which is itself an auditable event, so the number legitimately varies.
+    # A duplicate subscriber appends the *same* event twice, so the defect is
+    # precisely a repeated event_id in the chain.
+    import json
+    from collections import Counter
+
+    log = audit_module.get_audit_log()
+    lines = log.jsonl_path.read_text(encoding="utf-8").splitlines()
+    counts = Counter(json.loads(ln)["event_id"] for ln in lines if ln.strip())
+    repeated = [eid for eid, n in counts.items() if n > 1]
+
+    assert not repeated, (
+        f"{len(repeated)} event(s) appear more than once in the audit chain "
+        f"({repeated[:3]}); the subscriber is attached more than once, so "
+        f"verify_chain certifies {len(lines)} records as intact while query "
+        "reports the real count"
+    )
+
+
+def test_the_budget_gate_does_not_read_policies_from_disk(proxy, monkeypatch):
+    """The per-request gate must not stat and re-parse policies.yaml.
+
+    `load_policies` is uncached: it resolves the path, stats it, and on a hit
+    reads and parses the YAML -- every call. This gate runs on every proxied
+    request and is on by default, so calling it here would put disk I/O in the
+    hot path of every install.
+
+    Correctness matters more than the cost. `check_budget` evaluates against
+    the snapshot the service loaded at construction, so a gate reading a fresh
+    copy could see a positive budget that the decision below never applies --
+    two answers to "what is the limit" from one request.
+    """
+    from entroly.governance import policy as policy_module
+
+    calls: list[object] = []
+    real = policy_module.load_policies
+    monkeypatch.setattr(
+        policy_module, "load_policies",
+        lambda *a, **k: (calls.append(a), real(*a, **k))[1],
+    )
+
+    proxy._budget_enforced = True
+    proxy._budget_refusal()
+
+    assert calls == [], (
+        f"the budget gate called load_policies {len(calls)}x for one request; "
+        "policies.yaml is re-read and re-parsed on every proxied request"
+    )
+
+
 def test_a_broken_governance_path_allows_the_request(proxy, monkeypatch):
     """Availability beats enforcement when the check itself fails.
 
@@ -170,3 +271,39 @@ def test_a_broken_governance_path_allows_the_request(proxy, monkeypatch):
         lambda: (_ for _ in ()).throw(RuntimeError("governance unavailable")),
     )
     assert proxy._budget_refusal() is None
+
+
+def test_governance_decisions_are_recorded_without_wiring_anything(tmp_path, monkeypatch):
+    """The audit trail must record by default, not on request.
+
+    `install_audit_subscriber` shipped and nothing called it, so the audit log
+    stayed empty unless an operator attached it to the bus themselves. That is
+    worse than having no audit trail: `govern audit verify` reports an intact
+    chain over a log nothing ever wrote to, which reads as evidence of clean
+    operation.
+
+    Obtaining the authorization service now attaches it, so a denial recorded
+    here proves the path is live end to end.
+    """
+    monkeypatch.setenv("ENTROLY_AUDIT_DIR", str(tmp_path / "audit"))
+    monkeypatch.setenv("ENTROLY_DIR", str(tmp_path / "state"))
+
+    import entroly.governance.audit as audit_module
+    from entroly.governance.authorization import get_authorization_service
+    from entroly.governance.domain import RiskLevel
+
+    monkeypatch.setattr(audit_module, "_global_log", None, raising=False)
+
+    service = get_authorization_service()
+    # A write at high risk is denied by the built-in read-only policy, which
+    # emits a governance event the subscriber should persist.
+    service.check("write", resource="src/app.py", risk_level=RiskLevel.HIGH)
+
+    log = audit_module.get_audit_log()
+    records = list(log.query(limit=20))
+    assert records, (
+        "no governance event was recorded; the audit subscriber is not "
+        "attached, so `audit verify` would report an intact empty chain"
+    )
+    ok, detail = log.verify_chain()
+    assert ok, f"recorded chain does not verify: {detail}"
