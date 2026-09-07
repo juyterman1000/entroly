@@ -403,13 +403,24 @@ class GovernanceAuditLog:
 
 # ── Event Bus Integration ────────────────────────────────────────────
 
-def make_audit_subscriber(log: "GovernanceAuditLog"):
-    """Create an event bus subscriber that auto-logs all governance events."""
+def make_audit_subscriber(log: "GovernanceAuditLog | None" = None):
+    """Create an event bus subscriber that auto-logs all governance events.
+
+    With no ``log``, the handler resolves the process-global log at emit time
+    rather than capturing one at creation. That matters because the bus and the
+    log are separate globals with separate lifetimes: a handler that closed over
+    an instance would keep writing to it after the global log was replaced, so
+    records would land in an object nothing reads while the live log stayed
+    empty -- and an empty log is what a clean audit looks like.
+
+    Pass an explicit ``log`` to bind one deliberately, e.g. for a private bus.
+    """
     from .events import GovernanceEvent
 
     def _handler(event: GovernanceEvent) -> None:
+        target = log if log is not None else get_audit_log()
         payload = dict(event.payload)
-        log.append(
+        target.append(
             event_id=event.event_id,
             event_type=event.event_type,
             agent_id=event.tracing.agent_id,
@@ -439,12 +450,41 @@ def get_audit_log() -> GovernanceAuditLog:
 
 
 def install_audit_subscriber(bus=None) -> None:
-    """Install the audit log as a wildcard subscriber on the event bus."""
+    """Install the audit log as a wildcard subscriber on the event bus.
+
+    Idempotent per bus. `subscribe` appends unconditionally, so without this
+    guard a second call attaches a second wildcard handler and every event is
+    appended twice -- and the two sinks in `append` then disagree. SQLite takes
+    it as `INSERT OR IGNORE` on `event_id` and drops the copy; the JSONL chain
+    is an unconditional write and keeps it. So `query` reports the true count
+    while `verify_chain`, which walks the JSONL, reports roughly double and
+    still calls the chain intact. Measured: one run logged 7 records by `query`
+    and "Chain intact (13 records verified)".
+
+    That is the worst shape for an audit defect -- inflated, self-consistent,
+    and endorsed by the integrity check meant to catch it.
+
+    A second call is ordinary, not pathological: `get_authorization_service`
+    installs on creation, and `reset=True` (or `reset_authorization_service`)
+    makes it create again within the same process.
+    """
     from .events import get_event_bus
     if bus is None:
         bus = get_event_bus()
-    log = get_audit_log()
-    bus.subscribe("*", make_audit_subscriber(log))
+    # Tracked on the bus so the marker dies with it. A module-level set keyed
+    # by id() would let a recycled id suppress a legitimate install.
+    if getattr(bus, "_entroly_audit_subscriber_installed", False):
+        return
+    # No log argument: the handler resolves the current global log per event,
+    # so this install stays correct if that log is later replaced.
+    bus.subscribe("*", make_audit_subscriber())
+    try:
+        bus._entroly_audit_subscriber_installed = True
+    except AttributeError:  # pragma: no cover - bus defining __slots__
+        logger.debug(
+            "Event bus rejects the install marker; duplicate audit subscribers "
+            "are possible on this bus."
+        )
 
 
 __all__ = [
