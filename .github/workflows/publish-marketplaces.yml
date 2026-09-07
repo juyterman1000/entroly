@@ -1,0 +1,38 @@
+name: Verify marketplace presence
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Daily. A channel that dies between releases should not wait for the
+    # next release to be noticed -- Smithery was dead for months.
+    - cron: "17 6 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  presence:
+    runs-on: ubuntu-latest
+    # ADVISORY until one full release cycle has run green. To promote:
+    # delete `continue-on-error` from the probe step. Do not promote early --
+    # a gate that reddens a healthy release gets disabled, and a disabled
+    # gate is how Smithery stayed dead.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Probe every distribution channel
+        id: probe
+        continue-on-error: true
+        run: |
+          version="$(python -c "import re,pathlib;print(re.search(r'__version__\s*=\s*\"([^\"]+)\"', pathlib.Path('entroly/__init__.py').read_text()).group(1))")"
+          python scripts/marketplace_presence.py --version "$version" --channel all
+
+      - name: Report
+        run: |
+          if [ "${{ steps.probe.outcome }}" = "failure" ]; then
+            echo "::warning::a distribution channel is not listing the current version"
+          fi
