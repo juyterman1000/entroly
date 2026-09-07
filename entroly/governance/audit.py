@@ -22,7 +22,14 @@ Storage layout::
     └── audit.jsonl     ← Append-only JSONL for tamper-evident chain
 
 The SQLite database is the query surface.  The JSONL file is the
-authoritative chain.  Both are written atomically.
+authoritative chain.
+
+The two are separate files, so they are not written atomically: a process
+killed between the two writes, or a failing disk, leaves one ahead of the
+other.  Rather than claim an atomicity the code does not have, `verify_chain`
+cross-checks the record counts and reports a disagreement, and the chain is
+anchored on the JSONL so the stores cannot silently drift apart.  A repeated
+`event_id` is rejected once, by the database, for both sinks.
 """
 from __future__ import annotations
 
@@ -202,6 +209,27 @@ class GovernanceAuditLog:
             logger.warning("Audit log initialization failed: %s", exc)
 
     def _last_chain_hash(self) -> str:
+        """Anchor the chain on the JSONL, which is the authoritative chain.
+
+        This read from SQLite, which is wrong whenever the two sinks disagree.
+        The next record would be hashed from the database's last hash but
+        appended after the JSONL's last line, so the link between those two
+        lines could not verify -- and `verify_chain` walks the JSONL, so it
+        reported "Chain broken" at a record nobody had touched.
+
+        Reproduced before this change: append an event, append it again, then
+        reopen the log as a new process would. The duplicate advanced the JSONL
+        past the database, the restart re-anchored on the database, and
+        verification turned a healthy log into a tampering alarm. A false alarm
+        is not a lesser failure than a missed one here -- an integrity check
+        that cries wolf is one operators learn to ignore.
+
+        SQLite remains the fallback for a log whose JSONL is missing or
+        unreadable, where it is the only anchor available.
+        """
+        from_chain = self._last_jsonl_chain_hash()
+        if from_chain is not None:
+            return from_chain
         try:
             if not self.db_path.exists():
                 return ""
@@ -213,6 +241,41 @@ class GovernanceAuditLog:
             return row[0] if row else ""
         except Exception:
             return ""
+
+    def _last_jsonl_chain_hash(self) -> str | None:
+        """The last record's chain hash, or None if the chain is unreadable.
+
+        Reads a bounded window from the end rather than scanning the file. The
+        JSONL is append-only and never rotated, so it grows without limit, and
+        this runs during initialization -- a full scan would make every process
+        that touches governance pay for the whole history.
+
+        None and "" mean different things: None is "no chain to anchor on, try
+        the database", "" is "the chain exists and starts from empty".
+        """
+        try:
+            if not self.jsonl_path.exists():
+                return None
+            size = self.jsonl_path.stat().st_size
+            if size == 0:
+                return None
+            window = 65536
+            with open(self.jsonl_path, "rb") as handle:
+                while True:
+                    start = max(0, size - window)
+                    handle.seek(start)
+                    lines = [ln for ln in handle.read(size - start).split(b"\n") if ln.strip()]
+                    # Seeking into the middle of the file can cut the first line
+                    # in half. Requiring a second line means the last one is
+                    # whole; reaching the start means there is nothing to cut.
+                    if start == 0 or len(lines) >= 2:
+                        if not lines:
+                            return None
+                        return str(json.loads(lines[-1].decode("utf-8")).get("chain_hash", ""))
+                    window *= 4
+        except Exception as exc:
+            logger.warning("Could not read the audit chain anchor: %s", exc)
+            return None
 
     def _compute_chain_hash(self, record: AuditRecord) -> str:
         """Chain hash: SHA-256 of (previous_hash + event_id + payload_json)."""
@@ -231,9 +294,28 @@ class GovernanceAuditLog:
         allowed: bool | None = None,
         payload: Mapping[str, Any] | None = None,
     ) -> AuditRecord:
-        """Append a record to the audit log. Idempotent on event_id."""
+        """Append a record to the audit log. Idempotent on event_id.
+
+        Both sinks obey that idempotence, decided once. They did not: SQLite
+        took the repeat as `INSERT OR IGNORE` and dropped it while the JSONL
+        appended unconditionally, so the two disagreed about what happened.
+        `query` read the deduplicated database and looked correct; `verify_chain`
+        walks the JSONL and certified the inflated copy. Measured on two events
+        appended three times: 2 rows, 3 chain lines, "Chain intact (3 records
+        verified)".
+
+        The database decides, because its UNIQUE constraint is the only check
+        that holds across processes -- an in-memory set of seen ids would not
+        survive a restart and would not see a second writer.
+        """
         with self._lock:
             self._ensure_initialized()
+
+            # Kept so the anchor can be rolled back. A duplicate must leave the
+            # chain exactly where it was: advancing it for a record that is
+            # never persisted makes the next real record hash from a link that
+            # exists nowhere.
+            prev_hash_before = self._prev_hash
 
             record = AuditRecord(
                 event_id=event_id,
@@ -255,10 +337,12 @@ class GovernanceAuditLog:
             self._prev_hash = record.chain_hash
 
             # Write to SQLite
+            stored_chain_hash: str | None = None
+            is_duplicate = False
             try:
                 conn = sqlite3.connect(str(self.db_path), timeout=10)
                 conn.execute("PRAGMA journal_mode=WAL")
-                conn.execute(
+                cursor = conn.execute(
                     """
                     INSERT OR IGNORE INTO governance_audit
                     (event_id, event_type, agent_id, session_id, org_id,
@@ -275,9 +359,41 @@ class GovernanceAuditLog:
                     ),
                 )
                 conn.commit()
+                # rowcount 0 means the UNIQUE constraint on event_id rejected
+                # it, which is the only way IGNORE suppresses a row here.
+                is_duplicate = cursor.rowcount == 0
+                if is_duplicate:
+                    existing = conn.execute(
+                        "SELECT chain_hash FROM governance_audit WHERE event_id = ?",
+                        (record.event_id,),
+                    ).fetchone()
+                    stored_chain_hash = existing[0] if existing else None
                 conn.close()
             except Exception as exc:
+                # A failed database write is not a duplicate. The JSONL is the
+                # authoritative chain, so the record still goes there and the
+                # divergence is left for `verify_chain` to report rather than
+                # dropping an audit record on the floor.
                 logger.warning("Audit DB write failed: %s", exc)
+
+            if is_duplicate:
+                self._prev_hash = prev_hash_before
+                logger.debug(
+                    "Audit event %s already recorded; skipping duplicate append.",
+                    record.event_id,
+                )
+                # Report the hash that is actually stored, not the one this call
+                # computed and discarded.
+                return (
+                    record if stored_chain_hash is None
+                    else AuditRecord(
+                        event_id=record.event_id, event_type=record.event_type,
+                        agent_id=record.agent_id, session_id=record.session_id,
+                        org_id=record.org_id, trace_id=record.trace_id,
+                        allowed=record.allowed, payload=record.payload,
+                        chain_hash=stored_chain_hash, created_at=record.created_at,
+                    )
+                )
 
             # Append to JSONL chain
             try:
@@ -367,9 +483,26 @@ class GovernanceAuditLog:
         return results
 
     def verify_chain(self, limit: int = 1000) -> tuple[bool, str]:
-        """Verify the JSONL chain hash integrity.
+        """Verify the JSONL chain, and that it agrees with the database.
 
-        Returns (True, "OK") if chain is intact, or (False, error_message).
+        Returns (True, detail) if intact, or (False, error_message).
+
+        The hash walk alone was not enough. It only asks whether each link
+        follows from the one before, so any self-consistent file passes --
+        including one carrying the same event twice, which is what a duplicate
+        subscriber produced. `query` read the deduplicated database and looked
+        right while this reported the inflated chain as intact.
+
+        So the record count is now cross-checked against the database. That is
+        the anchor a bare hash chain lacks: the chain cannot say how long it is
+        meant to be, but the database's row count can. It makes truncation of
+        the JSONL alone detectable, which it previously was not.
+
+        The anchor holds only while the database is intact. Anyone able to
+        truncate both sinks, or to fabricate a log with the same number of
+        records, still passes -- the chain is unkeyed, so write access is
+        enough to forge a consistent history. `entroly govern audit verify`
+        states that boundary, and the tests measure it in both directions.
         """
         self._ensure_initialized()
         if not self.jsonl_path.exists():
@@ -377,6 +510,8 @@ class GovernanceAuditLog:
 
         prev_hash = ""
         lines_checked = 0
+        seen_event_ids: set[str] = set()
+        truncated_by_limit = False
         try:
             with open(self.jsonl_path, "r", encoding="utf-8") as f:
                 for line in f:
@@ -391,14 +526,58 @@ class GovernanceAuditLog:
                             f"Chain broken at event {record.get('event_id')} "
                             f"(record {lines_checked + 1})"
                         )
+                    event_id = record["event_id"]
+                    if event_id in seen_event_ids:
+                        # Every event_id is unique by construction, so a repeat
+                        # is a record written twice, not two events.
+                        return False, (
+                            f"Event {event_id} appears more than once in the chain "
+                            f"(record {lines_checked + 1}); the log is inflated "
+                            "and does not describe what happened"
+                        )
+                    seen_event_ids.add(event_id)
                     prev_hash = record["chain_hash"]
                     lines_checked += 1
                     if lines_checked >= limit:
+                        truncated_by_limit = True
                         break
         except Exception as exc:
             return False, f"Verification error: {exc}"
 
+        if truncated_by_limit:
+            # Only a prefix was read, so the counts cannot be compared. Say so
+            # rather than implying the whole chain was verified.
+            return True, (
+                f"First {lines_checked} records verified (limit reached; "
+                "the rest of the chain was not read)"
+            )
+
+        db_count = self._db_record_count()
+        if db_count is not None and db_count != lines_checked:
+            return False, (
+                f"Audit stores disagree: the chain has {lines_checked} records, "
+                f"the database has {db_count}. One of them is not a record of "
+                "what happened."
+            )
+
         return True, f"Chain intact ({lines_checked} records verified)"
+
+    def _db_record_count(self) -> int | None:
+        """Row count in the query surface, or None if it cannot be read.
+
+        None is not zero: an unreadable database means the cross-check cannot
+        run, which must not be reported as the two stores agreeing.
+        """
+        try:
+            if not self.db_path.exists():
+                return None
+            conn = sqlite3.connect(str(self.db_path), timeout=5)
+            row = conn.execute("SELECT COUNT(*) FROM governance_audit").fetchone()
+            conn.close()
+            return int(row[0]) if row else None
+        except Exception as exc:
+            logger.warning("Could not count audit records for cross-check: %s", exc)
+            return None
 
 
 # ── Event Bus Integration ────────────────────────────────────────────

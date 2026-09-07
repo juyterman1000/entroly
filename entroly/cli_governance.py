@@ -224,25 +224,36 @@ def _cmd_audit(args: Any) -> int:
             "detail": detail,
             "jsonl_path": str(getattr(log, "jsonl_path", "") or ""),
             "db_path": str(getattr(log, "db_path", "") or ""),
-            # Measured, not assumed. Against a chain of five records this
-            # detects a payload edit and a deletion from the middle, and does
-            # NOT detect tail truncation, an edit whose chain was recomputed,
-            # or a wholly fabricated self-consistent log -- it reported "Chain
-            # intact" over attacker-written records granting admin. The chain
+            # Measured, not assumed, against a chain of five records. The chain
             # is unkeyed SHA-256, so write access to the file is enough to
-            # forge a consistent history. An earlier version of this string
+            # forge a consistent history; an earlier version of this string
             # claimed entries "were not altered after the fact", which is the
             # exact overclaim the trust invariants forbid.
-            "detects": ["payload edited in place", "record removed from the middle"],
+            #
+            # Verification also cross-checks the chain's length against the
+            # database. That is the anchor a bare hash chain lacks, and it is
+            # why truncating the chain alone is caught -- but the anchor holds
+            # only while the database is intact, so truncating both stores, or
+            # forging exactly as many records as the database holds, still
+            # passes. Every line below is pinned by a test in
+            # tests/test_audit_chain_claim_honesty.py.
+            "detects": [
+                "payload edited in place",
+                "record removed from the middle",
+                "the same event recorded twice",
+                "records truncated from the chain but not the database",
+                "a fabricated log of a different length than the database",
+            ],
             "does_not_detect": [
-                "records truncated from the end",
+                "records truncated from the chain and the database together",
                 "an edit whose chain hash was recomputed",
-                "a fabricated log that is internally consistent",
+                "a fabricated log holding as many records as the database",
             ],
             "claim_boundary": (
-                "The chain is unkeyed, so this detects accidental corruption and "
-                "naive edits, not a writer who recomputes it. It also does not "
-                "prove every action was recorded."
+                "The chain is unkeyed, so this detects accidental corruption, "
+                "naive edits, and the two stores disagreeing -- not a writer "
+                "who recomputes the chain and matches the record count. It "
+                "also does not prove every action was recorded."
             ),
         }
         _emit(payload, as_json=as_json)
