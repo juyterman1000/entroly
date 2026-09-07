@@ -340,6 +340,43 @@ jobs:
           python -m compileall -q entroly tests scripts
           ruff check entroly tests/test_*dogfood.py tests/test_mcp_protocol.py tests/test_memory_launcher.py scripts/public_artifact_dogfood.py
 
+      # Python dependencies were audited by pip-audit below; Rust ones were
+      # audited by nothing. `cargo clippy` is a lint, not an advisory check, so
+      # a RUSTSEC advisory against a crate in entroly-core reached a release
+      # with no signal anywhere in CI.
+      # 0.22 or newer is required, not preferred. 0.21.2 cannot parse the
+      # current RustSec database at all -- it aborts with "unsupported CVSS
+      # version: 4.0" on an advisory that uses CVSS 4.0 scoring. That exits
+      # non-zero with no vulnerability involved, so the gate below would have
+      # blocked every pull request with a failure that reads exactly like a
+      # security finding.
+      - name: Install Rust advisory scanner
+        run: cargo install cargo-audit --locked --version ^0.22
+
+      - name: Rust dependency advisory audit
+        run: |
+          set +e
+          # Both lock files, because entroly-engine has its own dependency
+          # closure and holds the SAST and selection code.
+          #
+          # RUSTSEC-2026-0176 and -0177 are open against pyo3 0.25.1 and are
+          # fixed only in 0.29.0, which is a breaking API migration across the
+          # PyO3 bindings. They are deferred here deliberately and visibly
+          # rather than left to fail the gate for everyone: an always-red gate
+          # gets bypassed, and then a genuinely new advisory arrives unnoticed.
+          # Remove these two flags with the PyO3 upgrade.
+          for lock in entroly-core/Cargo.lock entroly-engine/Cargo.lock; do
+            echo "== $lock =="
+            cargo audit --file "$lock" --deny warnings \
+              --ignore RUSTSEC-2026-0176 \
+              --ignore RUSTSEC-2026-0177
+            echo "$? $lock" >> "$RUNNER_TEMP/cargo-audit.exits"
+          done 2>&1 | tee "$RUNNER_TEMP/cargo-audit.log"
+          # Worst exit across both locks, so a finding in either one counts.
+          awk '{ if ($1 > worst) worst = $1 } END { print worst + 0 }' \
+            "$RUNNER_TEMP/cargo-audit.exits" > "$RUNNER_TEMP/cargo-audit.status"
+          exit 0
+
       - name: High-severity static security scan
         run: |
           set +e
@@ -383,9 +420,28 @@ jobs:
             ${{ runner.temp }}/pip-audit-requirements.txt
             ${{ runner.temp }}/pip-audit.log
             ${{ runner.temp }}/pip-audit.status
+            ${{ runner.temp }}/cargo-audit.log
+            ${{ runner.temp }}/cargo-audit.status
           if-no-files-found: error
 
       - name: Enforce security gates
         run: |
-          test "$(cat "$RUNNER_TEMP/bandit.status")" -eq 0
-          test "$(cat "$RUNNER_TEMP/pip-audit.status")" -eq 0
+          # Each scan runs under `set +e` so its log is uploaded as evidence
+          # even when it fails; this step is what turns those logs into a
+          # verdict. A scan added above without a line here runs and reports
+          # nothing, which is indistinguishable from not running it.
+          failed=0
+          for gate in bandit pip-audit cargo-audit; do
+            status_file="$RUNNER_TEMP/$gate.status"
+            if [ ! -f "$status_file" ]; then
+              echo "::error::$gate produced no status file; the scan did not run"
+              failed=1
+              continue
+            fi
+            status="$(cat "$status_file")"
+            if [ "$status" -ne 0 ]; then
+              echo "::error::$gate failed with exit status $status"
+              failed=1
+            fi
+          done
+          exit "$failed"
