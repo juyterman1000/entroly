@@ -2,10 +2,12 @@
   <img src="docs/assets/entroly_wordmark.svg" width="820" alt="Entroly">
 </p>
 
-<h1 align="center">Entroly — AI Token Efficiency, Context Compression & Context Assurance</h1>
+<h1 align="center">Entroly — Cut AI context cost and prove nothing was lost.</h1>
 
-<p align="center"><b>Reduce avoidable AI token usage and provider-bound context without losing control of critical evidence.</b><br>
-Select high-value evidence under explicit token budgets, compress context recoverably, keep originals recoverable, and emit auditable receipts — without replacing your model or agent architecture.</p>
+<p align="center"><b>Every selection emits a receipt: what was kept, what was omitted, and the handle that recovers the exact original bytes.</b><br>
+Compression you can undo, on your own repository, in one command — without replacing your model or agent architecture.</p>
+
+<p align="center"><code>pip install -U entroly && entroly go</code></p>
 <p align="center">
   <sub>Entroly is an open-source, local-first AI token-efficiency and Context Assurance layer: budgeted evidence selection, recoverable context compression, content-addressed evidence recovery, and auditable receipts. Works through proxy, MCP, plugin, wrapper, and SDK paths with Claude Code, Codex, OpenClaw, GitHub Copilot, Cursor, Aider, and OpenAI/Anthropic-compatible apps.</sub>
 </p>
@@ -20,8 +22,9 @@ Select high-value evidence under explicit token budgets, compress context recove
   <a href="https://github.com/juyterman1000/entroly"><img src="https://img.shields.io/github/stars/juyterman1000/entroly?style=social" alt="Entroly GitHub stars"></a>
 </p>
 
-<p align="center"><b>100,438 downloads · growing day by day</b><br>
-<sub>Measured across different distribution sources.</sub></p>
+<p align="center"><b>100,438 observed distribution events</b><br>
+<sub>PyPI installs, npm installs, release-binary downloads, and repository clones, summed across sources —
+<a href="docs/adoption-evidence.md">how this is counted, and what it does not mean</a>.</sub></p>
 
 <p align="center"><b>⭐ If Entroly is useful to you, please star the repository on GitHub.</b><br>
 <a href="https://github.com/juyterman1000/entroly">⭐ Star Entroly on GitHub</a> — it helps the project grow and reach more developers.</p>
