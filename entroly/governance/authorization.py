@@ -375,9 +375,6 @@ def get_authorization_service(
     if reset or _global_service is None:
         with _service_lock:
             if reset or _global_service is None:
-                _global_service = AuthorizationService.from_environment(
-                    header_value=header_value
-                )
                 # Start recording as soon as governance is used.
                 #
                 # `install_audit_subscriber` existed and nothing called it, so
@@ -391,6 +388,12 @@ def get_authorization_service(
                 # resolves its directory lazily and creates nothing until an
                 # event arrives. Failure to attach must not stop authorization
                 # working, so it degrades to a warning rather than raising.
+                #
+                # Ordered before construction, not after: `from_environment`
+                # resolves the identity, which emits `identity.resolved`. A
+                # subscriber attached afterwards misses it, and in a process
+                # that builds the service once -- the normal case -- that is
+                # the whole record of which agent this is.
                 try:
                     from .audit import install_audit_subscriber
 
@@ -401,6 +404,9 @@ def get_authorization_service(
                         "decisions will not be recorded.",
                         exc,
                     )
+                _global_service = AuthorizationService.from_environment(
+                    header_value=header_value
+                )
     return _global_service
 
 

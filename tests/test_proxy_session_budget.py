@@ -180,6 +180,45 @@ def test_unpriced_usage_is_not_debited(proxy, monkeypatch):
     assert proxy._budget_recorded_usd == pytest.approx(0.25)
 
 
+def test_the_first_identity_resolution_is_audited(tmp_path, monkeypatch):
+    """Attaching the subscriber after construction misses the founding record.
+
+    `from_environment` resolves the identity, and that emits
+    `identity.resolved`. Installing the subscriber afterwards means the event
+    has already been delivered to an empty handler list, so it is gone.
+
+    In a process that builds the service once -- the normal case -- that event
+    is the entire record of which agent is acting. Measured before the fix:
+    zero records existed after the only service creation the process made, so
+    the audit trail opened with the establishing entry already missing.
+    """
+    monkeypatch.setenv("ENTROLY_AUDIT_DIR", str(tmp_path / "audit"))
+    monkeypatch.setenv("ENTROLY_DIR", str(tmp_path / "state"))
+
+    import entroly.governance.audit as audit_module
+    from entroly.governance.authorization import get_authorization_service
+    from entroly.governance.events import reset_event_bus
+
+    monkeypatch.setattr(audit_module, "_global_log", None, raising=False)
+
+    # The bus must be reset, not just the service. It is a separate global
+    # that outlives both, and it carries the installed subscriber. Without
+    # this, an earlier test in the same process has already attached one, so
+    # the subscriber is present no matter when this call installs it -- and
+    # the ordering this test exists to pin becomes unobservable.
+    reset_event_bus()
+    try:
+        get_authorization_service()  # the only creation, as in a real process
+    finally:
+        reset_event_bus()  # leave no half-wired bus for the next test
+
+    types = {r["event_type"] for r in audit_module.get_audit_log().query(limit=20)}
+    assert "identity.resolved" in types, (
+        f"identity resolution was not audited (recorded: {sorted(types) or 'nothing'}); "
+        "the subscriber attaches after the event has already been dispatched"
+    )
+
+
 def test_the_audit_subscriber_installs_once_per_bus(tmp_path, monkeypatch):
     """Re-creating the service must not double-write every audit record.
 
