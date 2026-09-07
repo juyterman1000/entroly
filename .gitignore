@@ -122,3 +122,11 @@ benchmarks/simulated/
 tmp/
 /package.json
 /package-lock.json
+
+# Coverage artifacts. `pytest --cov` writes these into the working tree, and a
+# 3.4 MB coverage.json was one `git add -A` away from being committed.
+.coverage
+.coverage.*
+coverage.json
+coverage.xml
+htmlcov/

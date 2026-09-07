@@ -1,0 +1,65 @@
+name: CodeQL
+
+# Semantic static analysis, which the repository had none of. `bandit` is a
+# pattern matcher over single lines; CodeQL follows data flow across functions
+# and files, so it reaches the class of bug -- tainted input arriving at a sink
+# several calls away -- that a line-level scan structurally cannot see.
+#
+# `actions` is scanned as well as `python`. Twenty-five workflows run with
+# repository credentials, and a script-injection through an untrusted
+# `github.event` field is a supply-chain compromise of every artifact this
+# project publishes.
+#
+# Rust is analysed by `cargo clippy -D warnings` and `cargo audit` in
+# deep-dogfood.yml rather than here.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches:
+      - main
+      - "integration/**"
+  schedule:
+    # Advisories land after code does. A weekly run re-analyses an unchanged
+    # tree against updated queries, which a push-triggered scan never does.
+    - cron: "27 4 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: CodeQL / ${{ matrix.language }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      security-events: write   # required to upload results to code scanning
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, actions]
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          language: ${{ matrix.language }}
+          # security-extended adds lower-severity and higher-precision-cost
+          # queries. The default suite alone would leave this repository with
+          # roughly the coverage bandit already provides.
+          queries: security-extended
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{ matrix.language }}"

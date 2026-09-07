@@ -115,3 +115,39 @@ def test_binary_upload_does_not_publish_the_draft() -> None:
     assert re.search(r"(?m)^\s+draft:\s*true\s*$", match.group("body")), (
         "the upload step must set draft: true so only finalize-release publishes"
     )
+
+
+def test_every_security_scan_is_enforced() -> None:
+    """A scan that writes a status file nobody reads is decorative.
+
+    The security job deliberately runs each scanner under `set +e` with a
+    trailing `exit 0`, so its log uploads as evidence even on failure. That
+    makes the enforcement step the only thing standing between a finding and a
+    green check -- and adding a scanner without adding it there produces a job
+    that runs, reports, and passes regardless.
+
+    Asserting the property rather than a fixed list, so a fourth scanner fails
+    here instead of silently not counting.
+    """
+    workflow = (ROOT / ".github/workflows/deep-dogfood.yml").read_text(encoding="utf-8")
+    job = re.search(
+        r"(?ms)^  security-static:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:|\Z)", workflow
+    )
+    assert job is not None, "security-static job is missing"
+    body = job.group("body")
+
+    # Every scanner that records a verdict, taken from the writes themselves.
+    produced = set(re.findall(r'\$RUNNER_TEMP/([\w.-]+)\.status"', body))
+    assert produced, "no scanner writes a status file; the evidence pattern is gone"
+
+    enforce = re.search(
+        r"(?ms)^      - name: Enforce security gates\n(?P<body>.*?)(?=^      - |\Z)", body
+    )
+    assert enforce is not None, "the security gates are no longer enforced at all"
+    enforced_block = enforce.group("body")
+
+    unenforced = sorted(name for name in produced if name not in enforced_block)
+    assert not unenforced, (
+        f"these scanners run but no gate reads their result: {unenforced}. "
+        "They would report findings and still pass the job."
+    )
