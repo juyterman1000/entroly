@@ -313,9 +313,14 @@ jobs:
         shell: bash
         run: |
           version="$(python -c "import json;print(json.load(open('server.json'))['version'])")"
+          # Match `present` explicitly rather than trusting the exit code. The
+          # checker exits 0 on UNKNOWN as well, because UNKNOWN must never block
+          # a release elsewhere -- but here UNKNOWN means we could not confirm
+          # the publish landed, which is a reason to keep polling, not to pass.
           for attempt in $(seq 1 60); do
             if python scripts/marketplace_presence.py \
-                 --version "$version" --channel mcp-registry; then
+                 --version "$version" --channel mcp-registry | tee /dev/stderr \
+                 | grep -q ': present -'; then
               exit 0
             fi
             sleep 10
