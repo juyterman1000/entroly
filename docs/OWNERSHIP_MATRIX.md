@@ -126,11 +126,11 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `CHANGELOG.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `CITATION.cff` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `CLAUDE.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `CODE_OF_CONDUCT.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `../.github/CODE_OF_CONDUCT.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `CONTRIBUTING.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `Dockerfile` | build, install or CI operational script | - | orchestration | tests-fixtures-docs-packaging | - | - | - | - | - | canonical | low | operational glue; no shared semantics |
 | `Dockerfile.entroly` | build, install or CI operational script | - | orchestration | tests-fixtures-docs-packaging | - | - | - | - | - | canonical | low | operational glue; no shared semantics |
-| `GOVERNANCE.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `../.github/GOVERNANCE.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/research-update-2026-08.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `LICENSE` | repository support or licence file | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | none |  |
 | `MAINTAINERS.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
@@ -143,7 +143,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `SECURITY.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `SKILLS.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `STYLE_GUIDE.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `SUPPORT.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `../.github/SUPPORT.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `SUPPORTED_VERSIONS.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `TROUBLESHOOTING.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `algorithms/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |

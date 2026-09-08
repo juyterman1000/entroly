@@ -161,5 +161,5 @@ limitations. Do not generalize a result beyond the tested workload. See
 
 ## Community standards
 
-Participation is governed by [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Project
-roles and decision-making are described in [GOVERNANCE.md](GOVERNANCE.md).
+Participation is governed by [.github/CODE_OF_CONDUCT.md](.github/CODE_OF_CONDUCT.md). Project
+roles and decision-making are described in [.github/GOVERNANCE.md](.github/GOVERNANCE.md).

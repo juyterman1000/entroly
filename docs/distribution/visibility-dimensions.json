@@ -191,7 +191,7 @@
       "id": "community-social-proof",
       "name": "Community and social proof",
       "state": "partial",
-      "current_evidence": ["CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "docs/discord.html", ".github/ISSUE_TEMPLATE/independent-review.yml", ".github/ISSUE_TEMPLATE/integration-request.yml"],
+      "current_evidence": ["CONTRIBUTING.md", "../.github/CODE_OF_CONDUCT.md", "docs/discord.html", ".github/ISSUE_TEMPLATE/independent-review.yml", ".github/ISSUE_TEMPLATE/integration-request.yml"],
       "leadership_target": "Visible user stories, integration contributions, benchmark reproduction reports, and responsive issue handling.",
       "next_action": "Collect permissioned user stories and reproducibility reports while preserving failures and conflict disclosures."
     },
@@ -231,7 +231,7 @@
       "id": "governance-contribution",
       "name": "Governance and contributor experience",
       "state": "partial",
-      "current_evidence": ["CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "AGENTS.md", ".github/ISSUE_TEMPLATE/integration-request.yml"],
+      "current_evidence": ["CONTRIBUTING.md", "../.github/CODE_OF_CONDUCT.md", "AGENTS.md", ".github/ISSUE_TEMPLATE/integration-request.yml"],
       "leadership_target": "Clear contribution paths for product code, integrations, benchmarks, documentation, translations, and distribution maintenance.",
       "next_action": "Add ownership and review requirements for externally visible metadata, integrations, benchmark adapters, and translations."
     },
