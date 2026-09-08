@@ -17,7 +17,7 @@ branches for older releases.
 | `0.x` and older | Unsupported |
 
 Runtime and platform details are maintained in
-[SUPPORTED_VERSIONS.md](SUPPORTED_VERSIONS.md).
+[SUPPORTED_VERSIONS.md](docs/SUPPORTED_VERSIONS.md).
 
 ## Report a vulnerability privately
 

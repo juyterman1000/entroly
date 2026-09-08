@@ -87,7 +87,7 @@ cd ..
 5. Update documentation when behavior, configuration, or compatibility changes.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for system boundaries and
-[STYLE_GUIDE.md](STYLE_GUIDE.md) for code, error-message, and documentation
+[STYLE_GUIDE.md](docs/STYLE_GUIDE.md) for code, error-message, and documentation
 conventions.
 
 ## Run the relevant checks
