@@ -36,7 +36,7 @@ from verify_public_trust import collect_offline_failures  # noqa: E402
 README_TEXT = Path("README.md").read_text(encoding="utf-8")
 PYPI_TEXT = Path("PYPI_README.md").read_text(encoding="utf-8")
 PUBLIC_TEXT = README_TEXT + "\n" + PYPI_TEXT
-COOKBOOK_TEXT = Path("cookbook/README.md").read_text(encoding="utf-8")
+COOKBOOK_TEXT = Path("docs/cookbook/README.md").read_text(encoding="utf-8")
 FOR_TEAMS_TEXT = Path("docs/for-teams.md").read_text(encoding="utf-8")
 DOCS_DISCORD_TEXT = Path("docs/discord.html").read_text(encoding="utf-8")
 INSTALL_TEXT = Path("scripts/install.sh").read_text(encoding="utf-8")
