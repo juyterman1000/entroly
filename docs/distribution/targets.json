@@ -4,7 +4,7 @@
   "repository": "https://github.com/juyterman1000/entroly",
   "policy": {
     "prepared": "Entroly has the required product surface and repository-local submission copy, but no external submission is claimed.",
-    "submitted": "A maintainer has opened an external issue or pull request and recorded its URL.",
+    "submitted": "A maintainer has made an external submission and recorded it. Normally that means an issue or pull request whose URL is recorded in proof_url. Some channels submit through a form that produces no public artifact until review completes; for those, proof_url stays null and submitted_at plus submission_url carry the evidence instead. A form submission is still a submission -- do not record it as prepared -- but it is not published until the external project verifiably lists Entroly.",
     "published": "The external project currently contains a verifiable Entroly entry.",
     "blocked": "A concrete product, packaging, benchmark, or policy prerequisite is still missing.",
     "rejected": "The external maintainer declined the submission and the decision URL is recorded."
@@ -15,13 +15,14 @@
       "name": "Anthropic community plugin marketplace (claude-plugins-community)",
       "kind": "first-party-catalog",
       "priority": 0,
-      "status": "prepared",
+      "status": "submitted",
+      "submitted_at": "2026-09-08",
       "target_url": "https://github.com/anthropics/claude-plugins-community",
       "submission_url": "https://platform.claude.com/plugins/submit",
       "fit": ["claude-code", "plugin", "mcp", "context-engineering"],
       "required_assets": [".claude-plugin/marketplace.json", ".claude-plugin/plugin.json", "scripts/entroly-plugin-launch.mjs", "PRIVACY.md"],
       "proof_url": null,
-      "next_action": "Submit via the Console in-app form (the claude.ai form needs a Team/Enterprise org; Console is the individual-author path). NOT claude-plugins-official -- that one is curated at Anthropic's discretion with no application process, and the submission form does not add plugins to it. Copy staged in docs/distribution/staged-official-plugin-directory.md. `claude plugin validate --strict` already passes against a fresh clone of main, which is the same check the review pipeline runs. Disclose self_heal proactively; automated safety screening will surface it. The plugin slug 'entroly' is immutable once published. Mark published ONLY after 'entroly' appears in https://github.com/anthropics/claude-plugins-community/blob/main/.claude-plugin/marketplace.json -- approval pins a commit SHA and the public catalog syncs nightly, so there is a delay."
+      "next_action": "Submitted 2026-09-08 via the Console form; awaiting review. The form produces no public URL, so proof_url stays null until the listing exists -- see the `submitted` policy note. WAIT, do not resubmit: approval pins a commit SHA and the public catalog syncs nightly, so a delay is expected and is not a rejection. Poll https://github.com/anthropics/claude-plugins-community/blob/main/.claude-plugin/marketplace.json for the slug 'entroly' and flip to published only once it appears there, recording that catalog URL as proof_url. If it is declined, record the decision and set status to rejected rather than reverting to prepared. Submitted copy is preserved in docs/distribution/staged-official-plugin-directory.md. Note the slug 'entroly' is now immutable -- renaming it after listing breaks every existing install with plugin-not-found."
     },
     {
       "id": "claude-code-ultimate-guide",
