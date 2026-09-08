@@ -124,7 +124,7 @@ def test_no_orphaned_registered_commands():
 
     # Allow-list: commands that exist for plumbing / internal flows
     # and intentionally aren't headlined in the main README. (Several
-    # of these *are* documented in cookbook/README.md or per-command
+    # of these *are* documented in docs/cookbook/README.md or per-command
     # help pages — this test only checks the main README.)
     INTERNAL_ONLY = {
         "init", "feedback", "optimize", "status", "config", "telemetry",

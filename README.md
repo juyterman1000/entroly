@@ -454,7 +454,7 @@ Run `entroly doctor`. If that doesn't sort it, [open an issue](https://github.co
 - **[Limitations](docs/limitations.md)** — where Entroly helps, where it passes through, what it doesn't guarantee.
 - **[Public evidence policy](docs/public-evidence.md)** — claim tiers and package links.
 - **[Context Commits](docs/context-commits.md)** · **[Context Receipts](docs/DETAILS.md#context-receipts)** · **[Proof-guided recovery](docs/proof-guided-context-fixed-point.md)**
-- **[Cookbook](cookbook/README.md)** — copy-paste recipes.
+- **[Cookbook](docs/cookbook/README.md)** — copy-paste recipes.
 - **[Discord](https://juyterman1000.github.io/entroly/docs/discord.html)** · **[Discussions](https://github.com/juyterman1000/entroly/discussions)** · **[Issues](https://github.com/juyterman1000/entroly/issues)**
 
 > Compressing a *bad* selection is still a bad selection. Entroly ranks first, then compresses — so the model gets structure, not just fewer tokens.

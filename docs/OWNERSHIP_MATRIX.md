@@ -444,9 +444,9 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `benchmarks/work_graph_performance.py` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `benchmarks/write_witness_v3_report.py` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `codemeta.json` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `cookbook/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/cookbook/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `daemon.sh` | build, install or CI operational script | - | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | operational glue; no shared semantics |
-| `demo.tape` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `scripts/demo.tape` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `deploy/cloudflare-community-savings/.gitignore` | repository support or licence file | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | none |  |
 | `deploy/cloudflare-community-savings/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `deploy/cloudflare-community-savings/package-lock.json` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |

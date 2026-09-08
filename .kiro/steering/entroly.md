@@ -77,7 +77,7 @@ entroly health         # Codebase health grade (A–F)
 
 - [`README.md`](../../README.md) — the public face
 - [`docs/DETAILS.md`](../../docs/DETAILS.md) — architecture deep dive
-- [`cookbook/README.md`](../../cookbook/README.md) — usage recipes
+- [`docs/cookbook/README.md`](../../cookbook/README.md) — usage recipes
 - [`CLAUDE.md`](../../CLAUDE.md) — build/test reference for AI agents
 - [`bench/trust_bench.py`](../../bench/trust_bench.py) — 5-claim trust bench
 - [`tests/verify_claims.py`](../../tests/verify_claims.py) — third-party-runnable claim suite
