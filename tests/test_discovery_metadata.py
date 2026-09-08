@@ -44,16 +44,29 @@ def _toml_section(path: str, section: str) -> str:
 
 
 def test_readme_first_folds_explain_their_supported_product_profiles() -> None:
+    # The first two phrases are the frozen headline and promise. They are
+    # pinned verbatim so the positioning cannot drift silently -- which is the
+    # point of freezing it -- and so any deliberate change has to come here and
+    # say so. Changing the README headline without this line is what makes the
+    # discovery gate fail with a diff nobody reads.
+    #
+    # The remaining phrases are capability claims rather than wording, so they
+    # survive a rewrite of the headline and are what actually keeps the first
+    # fold explaining the product.
     readme_first_fold = _text("README.md")[:7_500].casefold()
     for phrase in (
-        "entroly — ai token efficiency, context compression & context assurance",
-        "reduce avoidable ai token usage and provider-bound context without losing control of critical evidence.",
+        "entroly — cut ai context cost and prove nothing was lost.",
+        "every selection emits a receipt: what was kept, what was omitted, and "
+        "the handle that recovers the exact original bytes.",
         "content-addressed evidence",
         "recoverable context compression",
         "token-efficiency",
         "local-first",
     ):
-        assert phrase in readme_first_fold
+        assert phrase in readme_first_fold, (
+            f"the README first fold no longer contains {phrase!r}; if the "
+            "positioning changed on purpose, update this list in the same commit"
+        )
     for client in (
         "claude code",
         "codex",
