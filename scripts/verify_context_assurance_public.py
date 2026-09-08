@@ -126,8 +126,8 @@ CLAIM_SENSITIVE_PUBLIC_FILES = (
     # while this scanner banned it everywhere else, because neither file was in
     # this tuple. BENCHMARKS.md asserted it four lines below its own measured
     # 3.6% LongBench result. Scanning them closes that gap.
-    "BENCHMARKS.md",
-    "RESEARCH.md",
+    "docs/BENCHMARKS.md",
+    "docs/RESEARCH.md",
     "docs/context-engineering.html",
     "docs/DETAILS.md",
     "docs/for-teams.md",
@@ -138,7 +138,7 @@ CLAIM_SENSITIVE_PUBLIC_FILES = (
     "docs/assets/demo_animated.svg",
     "docs/assets/demo.html",
     "docs/assets/value.svg",
-    "BIPT.md",
+    "docs/BIPT.md",
 )
 
 STALE_PUBLIC_CLAIMS = {

@@ -58,7 +58,7 @@ TARGETS = [
         r'^version:\s*[0-9]+\.[0-9]+\.[0-9]+', 'version: {v}'),
     ("entroly/integrations/hermes_context_engine/plugin.yaml",
         r'entroly>=[0-9]+\.[0-9]+\.[0-9]+', 'entroly>={v}'),
-    ("BENCHMARKS.md",
+    ("docs/BENCHMARKS.md",
         r'entroly-core [0-9]+\.[0-9]+\.[0-9]+', 'entroly-core {v}'),
     ("deploy/cloudflare-community-savings/package.json",
         r'"version"\s*:\s*"[0-9]+\.[0-9]+\.[0-9]+"', '"version": "{v}"'),

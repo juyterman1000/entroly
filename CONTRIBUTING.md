@@ -86,7 +86,7 @@ cd ..
    - public claims cite a reproducible artifact and limitations.
 5. Update documentation when behavior, configuration, or compatibility changes.
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for system boundaries and
+See [architecture.md](docs/architecture.md) for system boundaries and
 [STYLE_GUIDE.md](docs/STYLE_GUIDE.md) for code, error-message, and documentation
 conventions.
 
