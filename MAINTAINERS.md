@@ -16,6 +16,6 @@ Review ownership for release-critical paths is enforced through
 - Security: follow [SECURITY.md](SECURITY.md)
 - Conduct: `fastrunner10090@gmail.com`, subject `[Entroly conduct]`
 
-Maintainer status and succession follow [GOVERNANCE.md](GOVERNANCE.md). This
+Maintainer status and succession follow [.github/GOVERNANCE.md](.github/GOVERNANCE.md). This
 file should be updated in the same pull request that grants, changes, or removes
 repository authority.

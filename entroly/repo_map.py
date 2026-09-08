@@ -32,22 +32,6 @@ _ROOT_ROLE_MAP = {
     "CONTRIBUTING.md": ("contribution workflow", "root-doc"),
     "SECURITY.md": ("security policy", "root-doc"),
     "LICENSE": ("license", "root-doc"),
-    "extractor.py": ("one-off code extraction utility", "root-tool"),
-    "extractor_cogops.py": ("one-off CogOps extraction utility", "root-tool"),
-    "super_extractor.py": ("one-off repo summarization utility", "root-tool"),
-    "all_files_list.txt": ("generated repo inventory artifact", "root-artifact"),
-    "arch_summary.txt": ("generated architecture summary artifact", "root-artifact"),
-    "super_dump.txt": ("generated repository dump artifact", "root-artifact"),
-    "build_errors.txt": ("generated build log artifact", "root-artifact"),
-    "build_output.txt": ("generated build log artifact", "root-artifact"),
-    "ruff_errors.txt": ("generated lint artifact", "root-artifact"),
-    "job_logs.txt": ("generated job log artifact", "root-artifact"),
-    "test_output.txt": ("generated test artifact", "root-artifact"),
-    "test_output2.txt": ("generated test artifact", "root-artifact"),
-    "tuning_config.json": ("shared tuning defaults", "root-config"),
-    "test_cogops_smoke.py": ("Python CogOps integration smoke test", "root-test"),
-    "test_rust_cogops.py": ("Rust CogOps integration smoke test", "root-test"),
-    "test_auth.py": ("auth-focused regression test", "root-test"),
 }
 
 _PY_ROLE_MAP = {
@@ -85,7 +69,6 @@ _PY_ROLE_MAP = {
     "_docker_launcher.py": ("Docker launcher shim", "python-runtime"),
     "README.md": ("package-level README", "python-doc"),
     "pyproject.toml": ("package metadata", "python-meta"),
-    "tuning_config.json": ("package tuning defaults", "python-config"),
     "__init__.py": ("package entry metadata", "python-meta"),
 }
 
