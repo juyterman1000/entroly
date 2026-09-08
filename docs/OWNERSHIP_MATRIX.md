@@ -13,20 +13,20 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 
 | Outcome | Files |
 |---|---:|
-| `tests-fixtures-docs-packaging` | 1123 |
-| `python-host-orchestration` | 346 |
-| `node-host-orchestration` | 52 |
-| `rust-semantic-owner` | 39 |
-| `review-required` | 29 |
-| `pyo3-binding` | 27 |
-| `generated-build-artifact` | 16 |
-| `wasm-binding` | 8 |
-| **total** | **1640** |
+| `tests-fixtures-docs-packaging` | 1231 |
+| `python-host-orchestration` | 383 |
+| `node-host-orchestration` | 57 |
+| `rust-semantic-owner` | 41 |
+| `review-required` | 30 |
+| `pyo3-binding` | 29 |
+| `generated-build-artifact` | 15 |
+| `wasm-binding` | 10 |
+| **total** | **1796** |
 
 ## Actionable queues
 
 * **unknown ownership: 0** — must be zero for the section 24 gate.
-* **review-required: 29** — computation with no host or native signal.
+* **review-required: 30** — computation with no host or native signal.
 * **partial parity: 0** — engine modules reachable from one delivery runtime only.
 * **unexposed engine modules: 0** — reachable from no Python/npm delivery root after engine dependency closure.
 
@@ -49,6 +49,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 * `entroly/image_optimizer.py` — candidate Rust owner; classification needs a human decision
 * `entroly/localization.py` — candidate Rust owner; classification needs a human decision
 * `entroly/memory_kernels.py` — candidate Rust owner; classification needs a human decision
+* `entroly/ravs/beta_bounds.py` — candidate Rust owner; classification needs a human decision
 * `entroly/ravs/epr.py` — candidate Rust owner; classification needs a human decision
 * `entroly/ravs/spectral.py` — candidate Rust owner; classification needs a human decision
 * `entroly/rnr.py` — candidate Rust owner; classification needs a human decision
@@ -67,15 +68,22 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | path | current_role | runtime | semantic_or_orchestration | canonical_owner | rust_module_if_shared | python_surface | wasm_node_surface | tests | public_entrypoints | migration_status | compatibility_risk | notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | `.agents/skills/entroly-lobehub-audit/SKILL.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `.claude-plugin/commands/.gitkeep` | repository support or licence file | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | none |  |
+| `.claude-plugin/commands/entroly-first-run.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.claude-plugin/manifest.json` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `.claude-plugin/marketplace.json` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `.claude-plugin/plugin.json` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.claude/settings.json` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.devcontainer/devcontainer.json` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.dockerignore` | repository support or licence file | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | none |  |
+| `.env.example` | repository support or licence file | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | none |  |
 | `.gitattributes` | repository support or licence file | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | none |  |
 | `.githooks/pre-commit` | build, install or CI operational script | - | orchestration | tests-fixtures-docs-packaging | - | - | - | - | - | canonical | low | operational glue; no shared semantics |
 | `.githooks/pre-push` | build, install or CI operational script | - | orchestration | tests-fixtures-docs-packaging | - | - | - | - | - | canonical | low | operational glue; no shared semantics |
 | `.github-ignore` | repository support or licence file | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | none |  |
 | `.github/CODEOWNERS` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `.github/CODE_OF_CONDUCT.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `.github/GOVERNANCE.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.github/ISSUE_TEMPLATE/bug_report.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.github/ISSUE_TEMPLATE/config.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.github/ISSUE_TEMPLATE/evidence_report.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
@@ -83,6 +91,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `.github/ISSUE_TEMPLATE/independent-review.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.github/ISSUE_TEMPLATE/integration-request.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.github/PULL_REQUEST_TEMPLATE.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `.github/SUPPORT.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.github/actions/entroly-context-check/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.github/actions/entroly-context-check/action.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.github/dependabot.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
@@ -91,14 +100,18 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `.github/workflows/ci.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.github/workflows/cloudflare-community-savings.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.github/workflows/code-intelligence.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `.github/workflows/codeql.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.github/workflows/commit-identity-guard.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `.github/workflows/context-snapshot-parity.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.github/workflows/deep-dogfood.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `.github/workflows/distribution-freshness.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.github/workflows/entroly-publish.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.github/workflows/integration-workgraph-passive-dedupe.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.github/workflows/native-dogfood-diagnostic.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.github/workflows/onboarding-self-dogfood.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.github/workflows/public-trust.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.github/workflows/publish-core-wheels.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `.github/workflows/publish-marketplaces.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.github/workflows/publish-mcp-registry.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.github/workflows/publish-openclaw-clawhub.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.github/workflows/qccr-signature-completion-gate.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
@@ -122,37 +135,19 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `ARCHITECTURE.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `BENCHMARKS.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `BIPT.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `docs/research-programme.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `CHANGELOG.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `CITATION.cff` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `CLAUDE.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `../.github/CODE_OF_CONDUCT.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `CONTRIBUTING.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `Dockerfile` | build, install or CI operational script | - | orchestration | tests-fixtures-docs-packaging | - | - | - | - | - | canonical | low | operational glue; no shared semantics |
 | `Dockerfile.entroly` | build, install or CI operational script | - | orchestration | tests-fixtures-docs-packaging | - | - | - | - | - | canonical | low | operational glue; no shared semantics |
-| `../.github/GOVERNANCE.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `docs/research-update-2026-08.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `LICENSE` | repository support or licence file | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | none |  |
-| `MAINTAINERS.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `MIGRATION_GUIDE.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `NOTICE` | repository support or licence file | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | none |  |
 | `PRIVACY.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `PYPI_README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `RESEARCH.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `SECURITY.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `SKILLS.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `STYLE_GUIDE.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `../.github/SUPPORT.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `SUPPORTED_VERSIONS.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `TROUBLESHOOTING.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `algorithms/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `algorithms/bipt.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `algorithms/causal-cg.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `algorithms/cognitive-bus.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `algorithms/nkbe.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `algorithms/resonance.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `algorithms/system-1-system-2.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `bench/__init__.py` | python module | python | orchestration | python-host-orchestration | - | bench | - | pytest | - | canonical | low | no orchestration, native or computation signal; treated as glue |
 | `bench/accuracy.py` | host orchestration | python | orchestration | python-host-orchestration | - | bench.accuracy | - | pytest | - | canonical | low |  |
 | `bench/autotune.py` | host orchestration | python | orchestration | python-host-orchestration | - | bench.autotune | - | pytest | - | canonical | low |  |
@@ -221,6 +216,8 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `benchmarks/context-arena/adapters/base.py` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `benchmarks/context-arena/runner.py` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `benchmarks/context_commit_conformance.py` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `benchmarks/context_efficiency_baseline.py` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `benchmarks/context_efficiency_baseline.schema.json` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `benchmarks/context_efficiency_frontier.py` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `benchmarks/context_efficiency_openai.py` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `benchmarks/context_efficiency_report.py` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
@@ -444,9 +441,6 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `benchmarks/work_graph_performance.py` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `benchmarks/write_witness_v3_report.py` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `codemeta.json` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `docs/cookbook/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `daemon.sh` | build, install or CI operational script | - | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | operational glue; no shared semantics |
-| `scripts/demo.tape` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `deploy/cloudflare-community-savings/.gitignore` | repository support or licence file | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | none |  |
 | `deploy/cloudflare-community-savings/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `deploy/cloudflare-community-savings/package-lock.json` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
@@ -459,13 +453,20 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `docs/BENCHMARKS.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/DETAILS.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/ENTROLY_WIN_MASTER_PROMPT.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/MAINTAINERS.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/MIGRATION_GUIDE.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/OWNERSHIP_MATRIX.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/PR352_CLAUDE_WORKGRAPH_HANDOFF.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/PR352_CODEBASE_UNDERSTANDING_EVIDENCE.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/PR352_DEEP_CODEBASE_AUDIT_GATE.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/PR352_MASTER_IMPLEMENTATION_PROMPT.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/PR352_PREVIOUS_SESSION_COMPLETED_WORK.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/PR367_CODEX_TO_CLAUDE_HANDOFF.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/RELEASE.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/SKILLS.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/STYLE_GUIDE.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/SUPPORTED_VERSIONS.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/TROUBLESHOOTING.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/adaptive-context.html` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/adoption-evidence.json` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/adoption-evidence.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
@@ -474,6 +475,13 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `docs/agentic-harness-audit.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/ai-cost-optimization.html` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/ai-efficiency.html` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/algorithms/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/algorithms/bipt.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/algorithms/causal-cg.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/algorithms/cognitive-bus.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/algorithms/nkbe.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/algorithms/resonance.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/algorithms/system-1-system-2.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/architecture.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/architecture/ENTROLY_VERIFIED_MAP.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/architecture/model-intelligence.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
@@ -489,6 +497,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `docs/assets/logo.png` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/assets/neural_evidence_frontier.png` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/assets/neural_evidence_frontier.svg` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/assets/og-image.png` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/assets/openclaw_benchmark.png` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/assets/pipeline.svg` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/assets/proof_local.gif` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
@@ -508,6 +517,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `docs/benchmarks/compression-frontier.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/benchmarks/compression-gauntlet.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/benchmarks/compression-latency.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/benchmarks/context-efficiency-frontier-v2.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/benchmarks/context-efficiency-frontier.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/benchmarks/language-symbol-coverage.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/benchmarks/model-triggered-recovery.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
@@ -524,6 +534,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `docs/context-commits.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/context-control-plane.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/context-engineering.html` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/cookbook/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/cursor-context-guide.html` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/cursor-token-usage-fix.html` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/dashboard.css` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
@@ -531,11 +542,13 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `docs/dashboard.js` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/deep-dogfood-coverage.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/discord.html` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/discoverability-registry.json` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/distribution/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/distribution/competitive-visibility.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/distribution/submission-kit.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/distribution/targets.json` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/distribution/visibility-dimensions.json` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/distribution/windows-artifact-verification.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/eu-ai-act-article-12-session-logging.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/evidence-provenance-debt.json` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/examples/context_receipt.json` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
@@ -618,6 +631,9 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `docs/production-economics-continuity.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/prompt-compression.html` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/proof-guided-context-fixed-point.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/proofs/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/proofs/bipt/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/proofs/knapsack/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/provider-adapter-live-gateway.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/provider-compliance.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/provider-conformance.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
@@ -658,16 +674,23 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `docs/releases/v1.0.77.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/releases/v1.0.78.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/releases/v1.0.79.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/releases/v1.0.80.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/reliable-event-delivery.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/repo_file_map.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/research-programme.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/research-update-2026-08.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/research/agent-memory-literature-map-2026-07.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/research/competitive-reality-2026-07.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/research/context-efficiency-evaluation-2026.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/research/evidence-operations.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/research/exp1-reproducibility-matrix.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/research/exp1/.gitignore` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/research/exp1/capture_selection.py` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/research/exp1/freeze_corpus.py` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/research/exp1/repro_harness.py` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/research/prism-r-neural-compression.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/research/proof-carrying-dreams-README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/research/proof_carrying_dreams.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/research/source-authenticated-closure-retrieval.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/research/universal-code-intelligence.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/reviews/competitive-gap-ledger.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
@@ -696,11 +719,11 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `docs/tuning_strategies/monorepo.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/tuning_strategies/quality.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/value-attribution.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/verifiable-context-compression.html` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/verified-code-context.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/verified-dreaming.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/verified-efficiency-layer.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/what-is-context-rot.html` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `e178.tar.gz` | committed build artifact | - | neither | generated-build-artifact | - | - | - | - | - | excluded | medium | binary artifact tracked in git; should be produced by the build, not committed |
 | `entroly-core/Cargo.lock` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `entroly-core/Cargo.toml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `entroly-core/LICENSE` | repository support or licence file | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | none |  |
@@ -717,7 +740,9 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `entroly-core/src/compress/model_registry.rs` | PyO3 conversion/export | rust | orchestration | pyo3-binding | - | entroly_core | - | cargo test --lib / pytest | import entroly_core | canonical | medium | must stay transport-only |
 | `entroly-core/src/context_receipt_bindings.rs` | PyO3 conversion/export | rust | orchestration | pyo3-binding | - | entroly_core | - | cargo test --lib / pytest | import entroly_core | canonical | medium | must stay transport-only |
 | `entroly-core/src/context_receipts.rs` | PyO3 conversion/export | rust | orchestration | pyo3-binding | - | entroly_core | - | cargo test --lib / pytest | import entroly_core | canonical | medium | must stay transport-only |
+| `entroly-core/src/context_snapshot_bindings.rs` | PyO3 conversion/export | rust | orchestration | pyo3-binding | - | entroly_core | - | cargo test --lib / pytest | import entroly_core | canonical | medium | must stay transport-only |
 | `entroly-core/src/elc_native.rs` | PyO3 conversion/export | rust | orchestration | pyo3-binding | - | entroly_core | - | cargo test --lib / pytest | import entroly_core | canonical | medium | must stay transport-only |
+| `entroly-core/src/governance_bindings.rs` | PyO3 conversion/export | rust | orchestration | pyo3-binding | - | entroly_core | - | cargo test --lib / pytest | import entroly_core | canonical | medium | must stay transport-only |
 | `entroly-core/src/ipc.rs` | PyO3 conversion/export | rust | orchestration | pyo3-binding | - | entroly_core | - | cargo test --lib / pytest | import entroly_core | canonical | medium | must stay transport-only |
 | `entroly-core/src/lib.rs` | PyO3 conversion/export | rust | orchestration | pyo3-binding | - | entroly_core | - | cargo test --lib / pytest | import entroly_core | canonical | medium | must stay transport-only |
 | `entroly-core/src/memory/consolidation.rs` | PyO3 conversion/export | rust | orchestration | pyo3-binding | - | entroly_core | - | cargo test --lib / pytest | import entroly_core | canonical | medium | must stay transport-only |
@@ -756,6 +781,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `entroly-engine/src/engine_contracts.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | engine_contracts | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
 | `entroly-engine/src/entropy.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | entropy | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
 | `entroly-engine/src/fragment.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | fragment | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
+| `entroly-engine/src/governance.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | governance | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
 | `entroly-engine/src/guardrails.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | guardrails | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
 | `entroly-engine/src/health.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | health | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
 | `entroly-engine/src/hierarchical.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | hierarchical | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
@@ -777,6 +803,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `entroly-engine/src/trajectory.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | trajectory | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
 | `entroly-engine/src/trust_engine.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | trust_engine | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
 | `entroly-engine/src/utilization.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | utilization | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
+| `entroly-engine/src/verified_context_snapshot.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | verified_context_snapshot | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
 | `entroly-engine/src/work_graph.rs` | shared semantic owner | rust | semantic | rust-semantic-owner | work_graph | entroly-core | entroly-wasm | cargo test --lib | - | canonical | medium |  |
 | `entroly-qccr/Cargo.lock` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `entroly-qccr/Cargo.toml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
@@ -805,6 +832,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `entroly-wasm/js/evolution_daemon.js` | Node environment/integration glue | node | orchestration | node-host-orchestration | - | - | npm | npm test | npm package | canonical | medium |  |
 | `entroly-wasm/js/federation.js` | Node environment/integration glue | node | orchestration | node-host-orchestration | - | - | npm | npm test | npm package | canonical | medium |  |
 | `entroly-wasm/js/gateways.js` | Node environment/integration glue | node | orchestration | node-host-orchestration | - | - | npm | npm test | npm package | canonical | medium |  |
+| `entroly-wasm/js/governance.js` | Node environment/integration glue | node | orchestration | node-host-orchestration | - | - | npm | npm test | npm package | canonical | medium |  |
 | `entroly-wasm/js/multimodal.js` | Node environment/integration glue | node | orchestration | node-host-orchestration | - | - | npm | npm test | npm package | canonical | medium |  |
 | `entroly-wasm/js/repo_map.js` | Node environment/integration glue | node | orchestration | node-host-orchestration | - | - | npm | npm test | npm package | canonical | medium |  |
 | `entroly-wasm/js/server.js` | Node environment/integration glue | node | orchestration | node-host-orchestration | - | - | npm | npm test | npm package | canonical | medium |  |
@@ -814,6 +842,8 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `entroly-wasm/js/value_tracker.js` | Node environment/integration glue | node | orchestration | node-host-orchestration | - | - | npm | npm test | npm package | canonical | medium |  |
 | `entroly-wasm/js/vault.js` | Node environment/integration glue | node | orchestration | node-host-orchestration | - | - | npm | npm test | npm package | canonical | medium |  |
 | `entroly-wasm/js/vault_observer.js` | Node environment/integration glue | node | orchestration | node-host-orchestration | - | - | npm | npm test | npm package | canonical | medium |  |
+| `entroly-wasm/js/work_context_snapshot_store.d.ts` | Node environment/integration glue | node | orchestration | node-host-orchestration | - | - | npm | npm test | npm package | canonical | medium |  |
+| `entroly-wasm/js/work_context_snapshot_store.js` | Node environment/integration glue | node | orchestration | node-host-orchestration | - | - | npm | npm test | npm package | canonical | medium |  |
 | `entroly-wasm/js/work_graph.d.ts` | Node environment/integration glue | node | orchestration | node-host-orchestration | - | - | npm | npm test | npm package | canonical | medium |  |
 | `entroly-wasm/js/work_graph.js` | Node environment/integration glue | node | orchestration | node-host-orchestration | - | - | npm | npm test | npm package | canonical | medium |  |
 | `entroly-wasm/js/work_graph_content_digest.js` | Node environment/integration glue | node | orchestration | node-host-orchestration | - | - | npm | npm test | npm package | canonical | medium |  |
@@ -827,6 +857,8 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `entroly-wasm/package.json` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `entroly-wasm/src/cognitive_bus_bindings.rs` | wasm-bindgen conversion/export | rust | orchestration | wasm-binding | - | - | entroly-wasm | wasm-pack test | npm package | canonical | medium | must stay transport-only |
 | `entroly-wasm/src/context_receipt_bindings.rs` | wasm-bindgen conversion/export | rust | orchestration | wasm-binding | - | - | entroly-wasm | wasm-pack test | npm package | canonical | medium | must stay transport-only |
+| `entroly-wasm/src/context_snapshot_bindings.rs` | wasm-bindgen conversion/export | rust | orchestration | wasm-binding | - | - | entroly-wasm | wasm-pack test | npm package | canonical | medium | must stay transport-only |
+| `entroly-wasm/src/governance_bindings.rs` | wasm-bindgen conversion/export | rust | orchestration | wasm-binding | - | - | entroly-wasm | wasm-pack test | npm package | canonical | medium | must stay transport-only |
 | `entroly-wasm/src/lib.rs` | wasm-bindgen conversion/export | rust | orchestration | wasm-binding | - | - | entroly-wasm | wasm-pack test | npm package | canonical | medium | must stay transport-only |
 | `entroly-wasm/src/localization.rs` | wasm-bindgen conversion/export | rust | orchestration | wasm-binding | - | - | entroly-wasm | wasm-pack test | npm package | canonical | medium | must stay transport-only |
 | `entroly-wasm/src/nkbe_bindings.rs` | wasm-bindgen conversion/export | rust | orchestration | wasm-binding | - | - | entroly-wasm | wasm-pack test | npm package | canonical | medium | must stay transport-only |
@@ -855,7 +887,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `entroly/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `entroly/__init__.py` | python module | python | orchestration | python-host-orchestration | - | entroly | - | pytest | yes | canonical | low | no orchestration, native or computation signal; treated as glue |
 | `entroly/__main__.py` | python module | python | orchestration | python-host-orchestration | - | entroly.__main__ | - | pytest | yes | canonical | low | no orchestration, native or computation signal; treated as glue |
-| `entroly/_docker_launcher.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly._docker_launcher | - | pytest | yes | canonical | medium |  |
+| `entroly/_docker_launcher.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly._docker_launcher | - | pytest | - | canonical | low |  |
 | `entroly/_rust_launcher.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly._rust_launcher | - | pytest | - | canonical | low |  |
 | `entroly/adaptive_budget.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.adaptive_budget | - | pytest | yes | canonical | medium |  |
 | `entroly/adaptive_pruner.py` | Python surface over the native engine | python | orchestration | python-host-orchestration | - | entroly.adaptive_pruner | - | pytest | yes | canonical | high | on the native boundary; must keep a pure-Python fallback |
@@ -867,9 +899,11 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `entroly/auto_index.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.auto_index | - | pytest | yes | canonical | medium |  |
 | `entroly/autotune.py` | Python surface over the native engine | python | orchestration | python-host-orchestration | - | entroly.autotune | - | pytest | yes | canonical | high | on the native boundary; must keep a pure-Python fallback |
 | `entroly/behavioral_waste.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.behavioral_waste | - | pytest | yes | canonical | medium |  |
+| `entroly/belief_autoseed.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.belief_autoseed | - | pytest | yes | canonical | medium |  |
 | `entroly/belief_compiler.py` | Python surface over the native engine | python | orchestration | python-host-orchestration | - | entroly.belief_compiler | - | pytest | yes | canonical | high | on the native boundary; must keep a pure-Python fallback |
 | `entroly/benchmark_harness.py` | python module | python | orchestration | python-host-orchestration | - | entroly.benchmark_harness | - | pytest | - | canonical | low | no orchestration, native or computation signal; treated as glue |
 | `entroly/bin/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `entroly/browser_context.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.browser_context | - | pytest | - | canonical | low |  |
 | `entroly/cache_aligner.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.cache_aligner | - | pytest | yes | canonical | medium |  |
 | `entroly/cache_retention.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.cache_retention | - | pytest | yes | canonical | medium |  |
 | `entroly/cache_routing.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.cache_routing | - | pytest | yes | canonical | medium |  |
@@ -879,11 +913,14 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `entroly/change_pipeline.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.change_pipeline | - | pytest | yes | canonical | medium |  |
 | `entroly/checkpoint.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.checkpoint | - | pytest | yes | canonical | medium |  |
 | `entroly/checkpoint_relevance.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.checkpoint_relevance | - | pytest | yes | canonical | medium |  |
-| `entroly/cli.py` | Python surface over the native engine | python | orchestration | python-host-orchestration | - | entroly.cli | - | pytest | yes | canonical | high | on the native boundary; must keep a pure-Python fallback |
-| `entroly/cli_recover.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.cli_recover | - | pytest | yes | canonical | medium |  |
+| `entroly/cli.py` | Python surface over the native engine | python | orchestration | python-host-orchestration | - | entroly.cli | - | pytest | - | canonical | high | on the native boundary; must keep a pure-Python fallback |
+| `entroly/cli_context_workflows.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.cli_context_workflows | - | pytest | - | canonical | low |  |
+| `entroly/cli_governance.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.cli_governance | - | pytest | - | canonical | low |  |
+| `entroly/cli_recover.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.cli_recover | - | pytest | - | canonical | low |  |
 | `entroly/codec.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.codec | - | pytest | yes | canonical | medium |  |
 | `entroly/codecs_builtin.py` | python module | python | orchestration | python-host-orchestration | - | entroly.codecs_builtin | - | pytest | yes | canonical | low | no orchestration, native or computation signal; treated as glue |
 | `entroly/codecs_content.py` | python module | python | orchestration | python-host-orchestration | - | entroly.codecs_content | - | pytest | yes | canonical | low | no orchestration, native or computation signal; treated as glue |
+| `entroly/codecs_operational.py` | python module | python | orchestration | python-host-orchestration | - | entroly.codecs_operational | - | pytest | yes | canonical | low | no orchestration, native or computation signal; treated as glue |
 | `entroly/codecs_table.py` | python module | python | orchestration | python-host-orchestration | - | entroly.codecs_table | - | pytest | yes | canonical | low | no orchestration, native or computation signal; treated as glue |
 | `entroly/compression_dashboard.py` | python module | python | orchestration | python-host-orchestration | - | entroly.compression_dashboard | - | pytest | yes | canonical | low | no orchestration, native or computation signal; treated as glue |
 | `entroly/compression_mcp.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.compression_mcp | - | pytest | yes | canonical | medium |  |
@@ -915,11 +952,17 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `entroly/context_receipts/recover.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.context_receipts.recover | - | pytest | yes | canonical | medium |  |
 | `entroly/context_receipts/retrieval.py` | computation with no host or native signal | python | semantic? | review-required | - | entroly.context_receipts.retrieval | - | pytest | yes | review-required | high | candidate Rust owner; classification needs a human decision |
 | `entroly/context_receipts/selection.py` | python module | python | orchestration | python-host-orchestration | - | entroly.context_receipts.selection | - | pytest | yes | canonical | low | no orchestration, native or computation signal; treated as glue |
-| `entroly/context_receipts/store.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.context_receipts.store | - | pytest | yes | canonical | medium |  |
+| `entroly/context_receipts/store.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.context_receipts.store | - | pytest | - | canonical | low |  |
 | `entroly/context_scaffold.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.context_scaffold | - | pytest | yes | canonical | medium |  |
 | `entroly/context_sessions.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.context_sessions | - | pytest | yes | canonical | medium |  |
 | `entroly/control_plane.py` | python module | python | orchestration | python-host-orchestration | - | entroly.control_plane | - | pytest | yes | canonical | low | no orchestration, native or computation signal; treated as glue |
 | `entroly/controls_html.py` | python module | python | orchestration | python-host-orchestration | - | entroly.controls_html | - | pytest | yes | canonical | low | no orchestration, native or computation signal; treated as glue |
+| `entroly/copilot_capi_contract.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.copilot_capi_contract | - | pytest | yes | canonical | medium |  |
+| `entroly/copilot_capi_routing.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.copilot_capi_routing | - | pytest | yes | canonical | medium |  |
+| `entroly/copilot_cli_provider_contract.py` | python module | python | orchestration | python-host-orchestration | - | entroly.copilot_cli_provider_contract | - | pytest | yes | canonical | low | no orchestration, native or computation signal; treated as glue |
+| `entroly/copilot_subscription.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.copilot_subscription | - | pytest | yes | canonical | medium |  |
+| `entroly/copilot_subscription_session.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.copilot_subscription_session | - | pytest | yes | canonical | medium |  |
+| `entroly/copilot_subscription_transport.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.copilot_subscription_transport | - | pytest | yes | canonical | medium |  |
 | `entroly/cost_cortex.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.cost_cortex | - | pytest | yes | canonical | medium |  |
 | `entroly/counterfactual.py` | python module | python | orchestration | python-host-orchestration | - | entroly.counterfactual | - | pytest | yes | canonical | low | no orchestration, native or computation signal; treated as glue |
 | `entroly/coupling.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.coupling | - | pytest | - | canonical | low |  |
@@ -931,10 +974,11 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `entroly/data/conformal_calibration.json` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `entroly/data/tuning_defaults.json` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `entroly/docker_launcher_safe.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.docker_launcher_safe | - | pytest | yes | canonical | medium |  |
-| `entroly/dopt_selector.py` | computation with no host or native signal | python | semantic? | review-required | - | entroly.dopt_selector | - | pytest | yes | review-required | high | candidate Rust owner; classification needs a human decision |
+| `entroly/dopt_selector.py` | computation with no host or native signal | python | semantic? | review-required | - | entroly.dopt_selector | - | pytest | - | review-required | medium | candidate Rust owner; classification needs a human decision |
 | `entroly/e_value.py` | computation with no host or native signal | python | semantic? | review-required | - | entroly.e_value | - | pytest | yes | review-required | high | candidate Rust owner; classification needs a human decision |
 | `entroly/eicv.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.eicv | - | pytest | yes | canonical | medium |  |
 | `entroly/eicv_suppressor.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.eicv_suppressor | - | pytest | yes | canonical | medium |  |
+| `entroly/energy_value.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.energy_value | - | pytest | yes | canonical | medium |  |
 | `entroly/engine.py` | Python surface over the native engine | python | orchestration | python-host-orchestration | - | entroly.engine | - | pytest | yes | canonical | high | on the native boundary; must keep a pure-Python fallback |
 | `entroly/epistemic_router.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.epistemic_router | - | pytest | yes | canonical | medium |  |
 | `entroly/escalation.py` | python module | python | orchestration | python-host-orchestration | - | entroly.escalation | - | pytest | yes | canonical | low | no orchestration, native or computation signal; treated as glue |
@@ -947,9 +991,17 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `entroly/file_localizer.py` | python module | python | orchestration | python-host-orchestration | - | entroly.file_localizer | - | pytest | yes | canonical | low | no orchestration, native or computation signal; treated as glue |
 | `entroly/flow_orchestrator.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.flow_orchestrator | - | pytest | yes | canonical | medium |  |
 | `entroly/gateway_control_plane.py` | python module | python | orchestration | python-host-orchestration | - | entroly.gateway_control_plane | - | pytest | yes | canonical | low | no orchestration, native or computation signal; treated as glue |
+| `entroly/governance/__init__.py` | python module | python | orchestration | python-host-orchestration | - | entroly.governance | - | pytest | - | canonical | low | no orchestration, native or computation signal; treated as glue |
+| `entroly/governance/audit.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.governance.audit | - | pytest | yes | canonical | medium |  |
+| `entroly/governance/authorization.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.governance.authorization | - | pytest | yes | canonical | medium |  |
+| `entroly/governance/domain.py` | python module | python | orchestration | python-host-orchestration | - | entroly.governance.domain | - | pytest | yes | canonical | low | no orchestration, native or computation signal; treated as glue |
+| `entroly/governance/events.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.governance.events | - | pytest | yes | canonical | medium |  |
+| `entroly/governance/identity.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.governance.identity | - | pytest | yes | canonical | medium |  |
+| `entroly/governance/policy.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.governance.policy | - | pytest | yes | canonical | medium |  |
 | `entroly/guarded_selection.py` | computation with no host or native signal | python | semantic? | review-required | - | entroly.guarded_selection | - | pytest | - | review-required | medium | candidate Rust owner; classification needs a human decision |
 | `entroly/hardening.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.hardening | - | pytest | yes | canonical | medium |  |
 | `entroly/harness_budget.py` | computation with no host or native signal | python | semantic? | review-required | - | entroly.harness_budget | - | pytest | yes | review-required | high | candidate Rust owner; classification needs a human decision |
+| `entroly/history_audit.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.history_audit | - | pytest | - | canonical | low |  |
 | `entroly/image_optimizer.py` | computation with no host or native signal | python | semantic? | review-required | - | entroly.image_optimizer | - | pytest | yes | review-required | high | candidate Rust owner; classification needs a human decision |
 | `entroly/integrate_entroly_mcp.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.integrate_entroly_mcp | - | pytest | - | canonical | low |  |
 | `entroly/integrations/__init__.py` | python module | python | orchestration | python-host-orchestration | - | entroly.integrations | - | pytest | - | canonical | low | no orchestration, native or computation signal; treated as glue |
@@ -971,6 +1023,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `entroly/integrations/telegram_gateway.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.integrations.telegram_gateway | - | pytest | - | canonical | low |  |
 | `entroly/localization.py` | computation with no host or native signal | python | semantic? | review-required | - | entroly.localization | - | pytest | yes | review-required | high | candidate Rust owner; classification needs a human decision |
 | `entroly/long_term_memory.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.long_term_memory | - | pytest | yes | canonical | medium |  |
+| `entroly/mcp_sdk.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.mcp_sdk | - | pytest | yes | canonical | medium |  |
 | `entroly/memory.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.memory | - | pytest | yes | canonical | medium |  |
 | `entroly/memory_cli.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.memory_cli | - | pytest | yes | canonical | medium |  |
 | `entroly/memory_fabric.py` | Python surface over the native engine | python | orchestration | python-host-orchestration | - | entroly.memory_fabric | - | pytest | yes | canonical | high | on the native boundary; must keep a pure-Python fallback |
@@ -1001,7 +1054,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `entroly/online_learner.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.online_learner | - | pytest | yes | canonical | medium |  |
 | `entroly/openclaw_bridge.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.openclaw_bridge | - | pytest | - | canonical | low |  |
 | `entroly/optimization_ledger.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.optimization_ledger | - | pytest | yes | canonical | medium |  |
-| `entroly/parser_compatibility.py` | python module | python | orchestration | python-host-orchestration | - | entroly.parser_compatibility | - | pytest | yes | canonical | low | no orchestration, native or computation signal; treated as glue |
+| `entroly/parser_compatibility.py` | python module | python | orchestration | python-host-orchestration | - | entroly.parser_compatibility | - | pytest | - | canonical | low | no orchestration, native or computation signal; treated as glue |
 | `entroly/path_safety.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.path_safety | - | pytest | yes | canonical | medium |  |
 | `entroly/plugins.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.plugins | - | pytest | yes | canonical | medium |  |
 | `entroly/prefetch.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.prefetch | - | pytest | yes | canonical | medium |  |
@@ -1029,7 +1082,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `entroly/proxy_traffic_session.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.proxy_traffic_session | - | pytest | - | canonical | low |  |
 | `entroly/proxy_traffic_value.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.proxy_traffic_value | - | pytest | - | canonical | low |  |
 | `entroly/proxy_transform.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.proxy_transform | - | pytest | yes | canonical | medium |  |
-| `entroly/proxy_transport_final.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.proxy_transport_final | - | pytest | - | canonical | low |  |
+| `entroly/proxy_transport_final.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.proxy_transport_final | - | pytest | yes | canonical | medium |  |
 | `entroly/proxy_transport_safe.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.proxy_transport_safe | - | pytest | - | canonical | low |  |
 | `entroly/proxy_value_dashboard.py` | python module | python | orchestration | python-host-orchestration | - | entroly.proxy_value_dashboard | - | pytest | - | canonical | low | no orchestration, native or computation signal; treated as glue |
 | `entroly/proxy_value_otel.py` | python module | python | orchestration | python-host-orchestration | - | entroly.proxy_value_otel | - | pytest | - | canonical | low | no orchestration, native or computation signal; treated as glue |
@@ -1038,23 +1091,26 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `entroly/qccr.py` | python module | python | orchestration | python-host-orchestration | - | entroly.qccr | - | pytest | yes | canonical | low | no orchestration, native or computation signal; treated as glue |
 | `entroly/query_refiner.py` | Python surface over the native engine | python | orchestration | python-host-orchestration | - | entroly.query_refiner | - | pytest | yes | canonical | high | on the native boundary; must keep a pure-Python fallback |
 | `entroly/ravs/__init__.py` | python module | python | orchestration | python-host-orchestration | - | entroly.ravs | - | pytest | yes | canonical | low | no orchestration, native or computation signal; treated as glue |
+| `entroly/ravs/beta_bounds.py` | computation with no host or native signal | python | semantic? | review-required | - | entroly.ravs.beta_bounds | - | pytest | yes | review-required | high | candidate Rust owner; classification needs a human decision |
 | `entroly/ravs/capture.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.ravs.capture | - | pytest | yes | canonical | medium |  |
 | `entroly/ravs/collectors/__init__.py` | python module | python | orchestration | python-host-orchestration | - | entroly.ravs.collectors | - | pytest | - | canonical | low | no orchestration, native or computation signal; treated as glue |
 | `entroly/ravs/collectors/escalation.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.ravs.collectors.escalation | - | pytest | - | canonical | low |  |
 | `entroly/ravs/collectors/retry.py` | Python surface over the native engine | python | orchestration | python-host-orchestration | - | entroly.ravs.collectors.retry | - | pytest | - | canonical | high | on the native boundary; must keep a pure-Python fallback |
 | `entroly/ravs/compiler.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.ravs.compiler | - | pytest | yes | canonical | medium |  |
+| `entroly/ravs/conformal.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.ravs.conformal | - | pytest | yes | canonical | medium |  |
 | `entroly/ravs/controller.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.ravs.controller | - | pytest | yes | canonical | medium |  |
 | `entroly/ravs/ece.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.ravs.ece | - | pytest | yes | canonical | medium |  |
 | `entroly/ravs/epr.py` | computation with no host or native signal | python | semantic? | review-required | - | entroly.ravs.epr | - | pytest | yes | review-required | high | candidate Rust owner; classification needs a human decision |
 | `entroly/ravs/events.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.ravs.events | - | pytest | yes | canonical | medium |  |
 | `entroly/ravs/executors.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.ravs.executors | - | pytest | yes | canonical | medium |  |
 | `entroly/ravs/hook_classifier.py` | python module | python | orchestration | python-host-orchestration | - | entroly.ravs.hook_classifier | - | pytest | yes | canonical | low | no orchestration, native or computation signal; treated as glue |
-| `entroly/ravs/hooks.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.ravs.hooks | - | pytest | yes | canonical | medium |  |
+| `entroly/ravs/hooks.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.ravs.hooks | - | pytest | - | canonical | low |  |
 | `entroly/ravs/outcome_bridge.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.ravs.outcome_bridge | - | pytest | yes | canonical | medium |  |
 | `entroly/ravs/report.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.ravs.report | - | pytest | yes | canonical | medium |  |
 | `entroly/ravs/router.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.ravs.router | - | pytest | yes | canonical | medium |  |
 | `entroly/ravs/safe_executors.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.ravs.safe_executors | - | pytest | yes | canonical | medium |  |
 | `entroly/ravs/shadow.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.ravs.shadow | - | pytest | yes | canonical | medium |  |
+| `entroly/ravs/shadow_calibration.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.ravs.shadow_calibration | - | pytest | - | canonical | low |  |
 | `entroly/ravs/shadow_runner.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.ravs.shadow_runner | - | pytest | yes | canonical | medium |  |
 | `entroly/ravs/spectral.py` | computation with no host or native signal | python | semantic? | review-required | - | entroly.ravs.spectral | - | pytest | yes | review-required | high | candidate Rust owner; classification needs a human decision |
 | `entroly/ravs/verifiers.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.ravs.verifiers | - | pytest | yes | canonical | medium |  |
@@ -1109,18 +1165,19 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `entroly/repository_intelligence/workspace_dependencies.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.repository_intelligence.workspace_dependencies | - | pytest | - | canonical | low |  |
 | `entroly/repository_intelligence/workspace_transaction.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.repository_intelligence.workspace_transaction | - | pytest | - | canonical | low |  |
 | `entroly/repository_intelligence/write_authority.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.repository_intelligence.write_authority | - | pytest | - | canonical | low |  |
+| `entroly/response_contract.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.response_contract | - | pytest | - | canonical | low |  |
 | `entroly/reward_crystallizer.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.reward_crystallizer | - | pytest | yes | canonical | medium |  |
 | `entroly/rnr.py` | computation with no host or native signal | python | semantic? | review-required | - | entroly.rnr | - | pytest | - | review-required | medium | candidate Rust owner; classification needs a human decision |
-| `entroly/runtime_capabilities.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.runtime_capabilities | - | pytest | yes | canonical | medium |  |
-| `entroly/runtime_doctor.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.runtime_doctor | - | pytest | yes | canonical | medium |  |
-| `entroly/runtime_status.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.runtime_status | - | pytest | yes | canonical | medium |  |
+| `entroly/runtime_capabilities.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.runtime_capabilities | - | pytest | - | canonical | low |  |
+| `entroly/runtime_doctor.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.runtime_doctor | - | pytest | - | canonical | low |  |
+| `entroly/runtime_status.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.runtime_status | - | pytest | - | canonical | low |  |
 | `entroly/sdk.py` | Python surface over the native engine | python | orchestration | python-host-orchestration | - | entroly.sdk | - | pytest | yes | canonical | high | on the native boundary; must keep a pure-Python fallback |
 | `entroly/self_heal.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.self_heal | - | pytest | yes | canonical | medium |  |
 | `entroly/self_improving.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.self_improving | - | pytest | - | canonical | low |  |
 | `entroly/semantic_entropy.py` | computation with no host or native signal | python | semantic? | review-required | - | entroly.semantic_entropy | - | pytest | yes | review-required | high | candidate Rust owner; classification needs a human decision |
 | `entroly/semantic_resolution.py` | Python surface over the native engine | python | orchestration | python-host-orchestration | - | entroly.semantic_resolution | - | pytest | yes | canonical | high | on the native boundary; must keep a pure-Python fallback |
 | `entroly/server.py` | Python surface over the native engine | python | orchestration | python-host-orchestration | - | entroly.server | - | pytest | yes | canonical | high | on the native boundary; must keep a pure-Python fallback |
-| `entroly/session_attach.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.session_attach | - | pytest | yes | canonical | medium |  |
+| `entroly/session_attach.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.session_attach | - | pytest | - | canonical | low |  |
 | `entroly/session_intelligence.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.session_intelligence | - | pytest | yes | canonical | medium |  |
 | `entroly/session_rescue.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.session_rescue | - | pytest | yes | canonical | medium |  |
 | `entroly/shell_codec.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.shell_codec | - | pytest | yes | canonical | medium |  |
@@ -1146,7 +1203,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `entroly/verifiers/__init__.py` | python module | python | orchestration | python-host-orchestration | - | entroly.verifiers | - | pytest | yes | canonical | low | no orchestration, native or computation signal; treated as glue |
 | `entroly/verifiers/cache.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.verifiers.cache | - | pytest | yes | canonical | medium |  |
 | `entroly/verifiers/calibrator.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.verifiers.calibrator | - | pytest | yes | canonical | medium |  |
-| `entroly/verifiers/cli.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.verifiers.cli | - | pytest | yes | canonical | medium |  |
+| `entroly/verifiers/cli.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.verifiers.cli | - | pytest | - | canonical | low |  |
 | `entroly/verifiers/commit_alignment.py` | python module | python | orchestration | python-host-orchestration | - | entroly.verifiers.commit_alignment | - | pytest | yes | canonical | low | no orchestration, native or computation signal; treated as glue |
 | `entroly/verifiers/lang_js.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.verifiers.lang_js | - | pytest | yes | canonical | medium |  |
 | `entroly/verifiers/local_nli.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.verifiers.local_nli | - | pytest | yes | canonical | medium |  |
@@ -1160,20 +1217,25 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `entroly/verifiers/stave.py` | computation with no host or native signal | python | semantic? | review-required | - | entroly.verifiers.stave | - | pytest | yes | review-required | high | candidate Rust owner; classification needs a human decision |
 | `entroly/verifiers/symbol_resolution.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.verifiers.symbol_resolution | - | pytest | yes | canonical | medium |  |
 | `entroly/verifiers/type_check.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.verifiers.type_check | - | pytest | yes | canonical | medium |  |
-| `entroly/verify_claims.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.verify_claims | - | pytest | yes | canonical | medium |  |
+| `entroly/verify_claims.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.verify_claims | - | pytest | - | canonical | low |  |
 | `entroly/witness.py` | Python surface over the native engine | python | orchestration | python-host-orchestration | - | entroly.witness | - | pytest | yes | canonical | high | on the native boundary; must keep a pure-Python fallback |
 | `entroly/witness_atomic.py` | computation with no host or native signal | python | semantic? | review-required | - | entroly.witness_atomic | - | pytest | - | review-required | medium | candidate Rust owner; classification needs a human decision |
 | `entroly/witness_calibration.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.witness_calibration | - | pytest | yes | canonical | medium |  |
 | `entroly/witness_features.py` | computation with no host or native signal | python | semantic? | review-required | - | entroly.witness_features | - | pytest | yes | review-required | high | candidate Rust owner; classification needs a human decision |
 | `entroly/witness_risk_model.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.witness_risk_model | - | pytest | yes | canonical | medium |  |
 | `entroly/witness_training.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.witness_training | - | pytest | yes | canonical | medium |  |
+| `entroly/work_context_snapshot_store.py` | Python surface over the native engine | python | orchestration | python-host-orchestration | - | entroly.work_context_snapshot_store | - | pytest | - | canonical | high | on the native boundary; must keep a pure-Python fallback |
 | `entroly/work_graph.py` | python module | python | orchestration | python-host-orchestration | - | entroly.work_graph | - | pytest | yes | canonical | low | no orchestration, native or computation signal; treated as glue |
 | `entroly/work_graph_cli.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.work_graph_cli | - | pytest | - | canonical | low |  |
-| `entroly/work_graph_content_digest.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.work_graph_content_digest | - | pytest | - | canonical | low |  |
+| `entroly/work_graph_content_digest.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.work_graph_content_digest | - | pytest | yes | canonical | medium |  |
 | `entroly/work_graph_mcp.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.work_graph_mcp | - | pytest | - | canonical | low |  |
-| `entroly/work_graph_mcp_server.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.work_graph_mcp_server | - | pytest | - | canonical | low |  |
+| `entroly/work_graph_mcp_server.py` | python module | python | orchestration | python-host-orchestration | - | entroly.work_graph_mcp_server | - | pytest | yes | canonical | low | no orchestration, native or computation signal; treated as glue |
+| `entroly/work_graph_path_policy.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.work_graph_path_policy | - | pytest | yes | canonical | medium |  |
+| `entroly/work_graph_recovery_ack.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.work_graph_recovery_ack | - | pytest | yes | canonical | medium |  |
 | `entroly/work_graph_repo.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.work_graph_repo | - | pytest | yes | canonical | medium |  |
+| `entroly/work_graph_session.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.work_graph_session | - | pytest | yes | canonical | medium |  |
 | `entroly/work_graph_store.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.work_graph_store | - | pytest | - | canonical | low |  |
+| `entroly/work_graph_watcher.py` | host orchestration | python | orchestration | python-host-orchestration | - | entroly.work_graph_watcher | - | pytest | yes | canonical | medium |  |
 | `examples/__init__.py` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `examples/demo_full_experience.py` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `examples/demo_receipt_proof.py` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
@@ -1186,7 +1248,19 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `external_adapter/cache/backends/__init__.py` | python module | python | orchestration | python-host-orchestration | - | external_adapter.cache.backends | - | pytest | - | canonical | low | no orchestration, native or computation signal; treated as glue |
 | `external_adapter/cache/backends/sqlite.py` | python module | python | orchestration | python-host-orchestration | - | external_adapter.cache.backends.sqlite | - | pytest | - | canonical | low | no orchestration, native or computation signal; treated as glue |
 | `external_adapter/cache/compression_store.py` | python module | python | orchestration | python-host-orchestration | - | external_adapter.cache.compression_store | - | pytest | - | canonical | low | no orchestration, native or computation signal; treated as glue |
+| `index.html` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `install.sh` | build, install or CI operational script | - | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | operational glue; no shared semantics |
+| `integrations/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `integrations/codex/entroly/.codex-plugin/plugin.json` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `integrations/codex/entroly/.mcp.json` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `integrations/codex/entroly/entroly-bundle.json` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `integrations/codex/entroly/skills/entroly-evidence-operations/SKILL.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `integrations/codex/entroly/skills/entroly-evidence-operations/agents/openai.yaml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `integrations/codex/entroly/skills/entroly-evidence-operations/entroly-bundle.json` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `integrations/gemini/entroly/GEMINI.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `integrations/gemini/entroly/entroly-bundle.json` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `integrations/gemini/entroly/gemini-extension.json` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `integrations/gemini/entroly/skills/entroly-evidence-operations/SKILL.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `integrations/openclaw/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `integrations/openclaw/bridge-client.js` | Node environment/integration glue | node | orchestration | node-host-orchestration | - | - | npm | npm test | npm package | canonical | medium |  |
 | `integrations/openclaw/engine.js` | Node environment/integration glue | node | orchestration | node-host-orchestration | - | - | npm | npm test | npm package | canonical | medium |  |
@@ -1196,12 +1270,16 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `integrations/openclaw/proof-hooks.js` | Node environment/integration glue | node | orchestration | node-host-orchestration | - | - | npm | npm test | npm package | canonical | medium |  |
 | `integrations/openclaw/test/bridge-client.test.js` | Node environment/integration glue | node | orchestration | node-host-orchestration | - | - | npm | npm test | npm package | canonical | medium |  |
 | `integrations/openclaw/test/engine.test.js` | Node environment/integration glue | node | orchestration | node-host-orchestration | - | - | npm | npm test | npm package | canonical | medium |  |
+| `integrations/openclaw/test/proof-hooks-security.test.js` | Node environment/integration glue | node | orchestration | node-host-orchestration | - | - | npm | npm test | npm package | canonical | medium |  |
 | `integrations/openclaw/test/proof-hooks.test.js` | Node environment/integration glue | node | orchestration | node-host-orchestration | - | - | npm | npm test | npm package | canonical | medium |  |
 | `integrations/opencode/.opencode/plugins/entroly-context-assurance.ts` | Node environment/integration glue | node | orchestration | node-host-orchestration | - | - | npm | npm test | npm package | canonical | medium |  |
 | `integrations/opencode/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `integrations/opencode/opencode.jsonc` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `llms.txt` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `marketing/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `marketing/content/5-minute-setup-guide.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `marketing/content/comparison-matrix.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `marketing/content/cost-calculator.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `marketing/launch/community-and-newsletters.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `marketing/launch/product-hunt.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `marketing/launch/show-hn.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
@@ -1211,16 +1289,10 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `packaging/homebrew/entroly.rb` | build, install or CI operational script | - | orchestration | tests-fixtures-docs-packaging | - | - | - | - | - | canonical | low | operational glue; no shared semantics |
 | `packaging/nix/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `packaging/scoop/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `proofs/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `proofs/bipt/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `proofs/knapsack/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `packaging/scoop/entroly.json` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `pyproject.toml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `research/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `research/proof_carrying_dreams.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `robots.txt` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `ruff.toml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `run_real_mcp_test.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
-| `run_real_proxy_test.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `scripts/_release_artifacts.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/adoption_report.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/apply_elc_native_and_proxy_patch.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
@@ -1232,15 +1304,24 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `scripts/calc_savings.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/check_distribution_surface.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/check_external_name_policy.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
+| `scripts/check_proof_url_freshness.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
+| `scripts/check_version_staleness.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/ci_install_exact_head.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/clean_install_check.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/codebase_graph.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
+| `scripts/daemon.sh` | build, install or CI operational script | - | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | operational glue; no shared semantics |
+| `scripts/demo.tape` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `scripts/depmap.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
+| `scripts/entroly-plugin-launch.mjs` | Node environment/integration glue | node | orchestration | node-host-orchestration | - | - | npm | npm test | npm package | canonical | medium |  |
 | `scripts/extractor.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/extractor_cogops.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
+| `scripts/generate_og_image.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/git-hooks/pre-push` | build, install or CI operational script | - | orchestration | tests-fixtures-docs-packaging | - | - | - | - | - | canonical | low | operational glue; no shared semantics |
+| `scripts/install-agent-bundles.ps1` | build, install or CI operational script | - | orchestration | tests-fixtures-docs-packaging | - | - | - | - | - | canonical | low | operational glue; no shared semantics |
+| `scripts/install-agent-bundles.sh` | build, install or CI operational script | - | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | operational glue; no shared semantics |
 | `scripts/install-hooks.sh` | build, install or CI operational script | - | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | operational glue; no shared semantics |
 | `scripts/install.sh` | build, install or CI operational script | - | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | operational glue; no shared semantics |
+| `scripts/marketplace_presence.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/onboarding_self_dogfood.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/ownership_matrix.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/pr352_fix_context_delivery_fixture.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
@@ -1250,6 +1331,9 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `scripts/public_artifact_dogfood.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/readme_proof.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/render_readme_proof_videos.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
+| `scripts/run_real_mcp_test.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `scripts/run_real_proxy_test.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `scripts/self_sast_scan.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/smoke_cli.sh` | build, install or CI operational script | - | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | operational glue; no shared semantics |
 | `scripts/super_extractor.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/sync_model_registry.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
@@ -1259,6 +1343,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `scripts/vault_soak.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/verify_capability_coverage.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/verify_context_assurance_public.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
+| `scripts/verify_discoverability.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/verify_evidence_provenance.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/verify_public_trust.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/verify_readme.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
@@ -1267,8 +1352,11 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `scripts/verify_witness_live_openai.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/verify_witness_release.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/wire_native_elc_proxy_transform.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
+| `scripts/work_graph_soak.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `server.json` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `sitemap.xml` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `skills/entroly-evidence-operations/SKILL.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `skills/entroly-evidence-operations/entroly-bundle.json` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `smithery.yaml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `tests/_check_learning.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/_check_vault.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
@@ -1299,17 +1387,23 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `tests/test_apa.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_archetype.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_archetype_router.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_audit_chain_claim_honesty.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_audit_sink_consistency.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_auditable_receipts_layer.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_auroc_tie_correction.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_auth.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_auto_recovery.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_autotune_config_isolation.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_behavioral_waste.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_belief_autoseed.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_belief_compiler_identity.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_belief_conditioning.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_benchmark_harness.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_bipt.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_browser_context.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_build_stamp.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_build_topology.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_built_artifact_has_no_stale_versions.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_bump_version.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_cache_aligner_elc_hook.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_cache_retention.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
@@ -1340,6 +1434,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `tests/test_competitive_provenance.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_compliance_metadata.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_comprehensive_eval.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_compress_code_scaling.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_compress_inflation_guard.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_compress_with_receipt.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_compression_conformance.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
@@ -1357,9 +1452,11 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `tests/test_compression_retrieval_store.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_compression_verification_loop.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_conformal_cascade_breakthrough.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_conformal_routing.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_conservative_call_precision.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_container_user_journeys.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_context_bridge.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_context_byte_stability.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_context_check.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_context_commit.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_context_commit_benchmark.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
@@ -1373,12 +1470,19 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `tests/test_context_scaffold.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_context_sessions.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_context_trust_delivery.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_context_workflow_cli.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_contextbench_metrics.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_contextbench_runner_safety.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_contextbench_span_adapter.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_control_learning_snapshot.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_control_learning_snapshot_errors.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_control_plane.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_copilot_capi_contract.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_copilot_capi_routing.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_copilot_cli_provider_contract.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_copilot_subscription_composed_contract.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_copilot_subscription_route.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_copilot_subscription_session.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_cost_cortex.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_coupling.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_daemon_learning.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
@@ -1386,8 +1490,11 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `tests/test_daemon_learning_worker_lifecycle.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_daemon_network_security.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_daemon_worker_lifecycle.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_dashboard_autostart.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_dashboard_cogops_fallback.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_dashboard_context_health.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_dashboard_failing_panel_still_answers.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_dashboard_panel_resilience.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_dashboard_response_integrity.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_dashboard_security.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_dashboard_wiring.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
@@ -1396,19 +1503,26 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `tests/test_demo_dogfood.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_dependency_closure_integrity_benchmark.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_deterministic_exploration_defaults.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_discoverability_contract.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_discovery_metadata.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_distill.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_distribution_ci_coverage.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_distribution_surface.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_docker_launcher_trust.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_dockerignore_covers_build_context.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_docs_code_sync.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_doctor_check_accounting.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_dreaming.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_e2e.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_ebbiforge_integration.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_ecc.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_ece_integration.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_empty_context_guidance.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_empty_selection_is_explained.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_energy_value.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_engine_host_gc_policy.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_engine_isolation.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_entroly_dir_honored.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_escalation_breakthrough.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_event_delivery.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_event_delivery_partition.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
@@ -1419,6 +1533,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `tests/test_federation_crossagent.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_federation_e2e.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_feedback_journal_prune.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_first_run_copy.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_forge_live.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_fragment_guard_fail_closed.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_framework_request_adapters.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
@@ -1426,6 +1541,9 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `tests/test_gateway_control_plane.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_gateway_delivery.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_git_discovery_cannot_hang.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_governance.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_governance_cli_reachability.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_governance_native_conformance.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_gpt_5_6_discovery.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_gpt_5_6_registry.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_graph_namespace_collision.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
@@ -1435,9 +1553,12 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `tests/test_hardening.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_harness_budget.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_hermes_context_engine.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_history_audit.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_image_optimizer.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_index_chunk_idempotence.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_index_determinism.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_index_file_count_honesty.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_index_path_size_caps.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_index_reconciliation.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_integrations_smoke.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_intensive_functional.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
@@ -1452,14 +1573,17 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `tests/test_live_gateway_accounting.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_llms_discovery.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_lobehub_score_audit.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_local_savings_are_priced.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_localization.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_log_codec_collapses_repeats.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_log_templated_codec.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_marketplace_presence.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_mcp_discovery_surfaces.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_mcp_entrypoint_dogfood.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_mcp_payload_bounds.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_mcp_protocol.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_mcp_registry_manifest.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_mcp_sdk_guard.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_mcp_startup.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_mcp_wire_budget.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_memory_cli.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
@@ -1487,10 +1611,13 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `tests/test_neural_query_shift.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_no_assertionless_tests.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_no_match_honesty.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_no_stale_version_declarations.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_no_unsupported_theory_claims.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_omitted_preview_fidelity.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_onboarding_self_dogfood.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_online_prism.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_openclaw_bridge.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_operational_codecs.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_optimization_ledger.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_optimize_qccr_parity.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_outcome_bridge.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
@@ -1499,6 +1626,8 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `tests/test_pagerank_integration.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_parser_compatibility.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_pin_protection_split.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_plugin_launcher.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_plugin_marketplace_manifest.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_pr264_trust_hotfix.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_prefix_continuity.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_pricing.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
@@ -1524,6 +1653,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `tests/test_proxy_routing_authority.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_proxy_routing_official_guard.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_proxy_routing_safety.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_proxy_session_budget.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_proxy_session_rescue.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_proxy_stream_bounds.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_proxy_traffic_receipt.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
@@ -1539,13 +1669,16 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `tests/test_qccr_feedback.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_query_refinement_drift.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_query_semantics.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_ravs_confidence_bound.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_ravs_e2e.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_ravs_model_family_coverage.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_ravs_report.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_ravs_test_runner_trust.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_ravs_v1.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_ravs_v2.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_ravs_v3.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_ravs_v4.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_ravs_vault_fail_closed.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_read_delivery_cache.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_readme_features_langfuse.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_readme_proof.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
@@ -1560,9 +1693,14 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `tests/test_receipt_fragment_fidelity_benchmark.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_receipt_independent_verification.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_receipt_merkle_layer.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_receipt_path_containment.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_receipt_store_discovery.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_receipt_witness_layer.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_recover_states_what_it_returned.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_recoverable_receipts.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_recovery_count_is_labelled.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_recovery_default_wiring.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_recovery_fidelity_fuzz.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_recovery_policy_benchmark.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_recovery_public_export.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_recovery_resilience.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
@@ -1574,6 +1712,8 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `tests/test_release_sync_safety.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_release_version_sync.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_repo_map.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_reported_metric_honesty.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_reporting_honesty.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_repository_architecture_diff.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_repository_cache_retention.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_repository_graph_identity.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
@@ -1603,11 +1743,15 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `tests/test_repository_write_authority.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_resolution_feedback.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_resolution_override.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_response_contract.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_reward_crystallizer.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_routing_value_visibility.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_runtime_capabilities.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_runtime_doctor.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_runtime_status.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_rust_cogops.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_sast_rule_count_is_current.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_savings_baseline_honesty.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_sdk_content_aware.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_sdk_optimize_engine_parity.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_sdk_optimize_isolation.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
@@ -1620,6 +1764,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `tests/test_session_intelligence.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_session_protection_visibility.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_session_rescue.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_shadow_calibration.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_shell_profiles.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_simulate_degraded_engine.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_simulate_small_project.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
@@ -1651,6 +1796,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `tests/test_value_attribution.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_value_attribution_projection.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_value_attribution_receipt_integrity.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_value_measurement_gaps.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_value_tracker_dogfood.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_vault_faults.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_vault_groundedness.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
@@ -1658,7 +1804,9 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `tests/test_vault_integrity.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_vault_multiprocess.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_vault_network_lock.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_vault_provenance_readback.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_vault_time.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_vault_unsourced_belief_honesty.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_vault_usability.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_verified_code_context_benchmark.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_verified_efficiency.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
@@ -1667,16 +1815,22 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `tests/test_verified_world_model.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_verifier_plugins.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_verifier_service_concurrency.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_verify_claims_baseline_honesty.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_verify_claims_packaged.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_verify_readme_claims.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_version_surfaces_are_complete.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_visibility_release_sync.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_warm_start.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_wiring_smoke.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_witness.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_witness_continuous.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_witness_fail_closed_audit.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_witness_parity.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_witness_provider_shapes.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_work_context_snapshot_cross_runtime.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_work_context_snapshot_store.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_work_graph_attachment_scope_guard.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_work_graph_autostart_and_watch.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_work_graph_bindings.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_work_graph_canonical_identity.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_work_graph_cli.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
@@ -1692,11 +1846,14 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `tests/test_work_graph_mcp_server.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_work_graph_multiprocess.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_work_graph_packaging.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_work_graph_path_policy.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_work_graph_performance.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_work_graph_recovery_trust_gate.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_work_graph_repo.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_work_graph_store.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_work_graph_store_durability.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_workflow_guards.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `tests/test_workflow_path_filters_are_live.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_workspace_dependencies.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_workspace_dependency_index_integration.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/test_workspace_transaction.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
