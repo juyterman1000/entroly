@@ -1,6 +1,9 @@
 # ═══════════════════════════════════════════════════════════════════════════
 # Entroly Docker Image — Multi-platform (amd64 + arm64)
 #
+# This is the canonical, published image. `Dockerfile` at the repository root
+# is a minimal local-build fallback and is not what ships.
+#
 # Build: docker build -f Dockerfile.entroly -t entroly .
 # Default stdio MCP:
 #   docker run --rm -i entroly
