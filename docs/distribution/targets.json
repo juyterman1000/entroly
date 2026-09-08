@@ -95,11 +95,11 @@
       "priority": 2,
       "status": "prepared",
       "target_url": "https://github.com/vince-lam/awesome-local-llms",
-      "submission_url": "https://github.com/vince-lam/awesome-local-llms/pulls",
+      "submission_url": "https://github.com/vince-lam/awesome-local-llms/issues/new",
       "fit": ["local-first", "llm-infrastructure", "privacy"],
       "required_assets": ["PRIVACY.md", "llms.txt", "README.md"],
       "proof_url": null,
-      "next_action": "Submit the local indexing, selection, recovery, and default verification path with the proxy privacy boundary stated explicitly."
+      "next_action": "Open an ISSUE, not a pull request: the list is generated from a database and its README directs suggestions to the issue tracker, so a PR would be closed unmerged. Submit the local indexing, selection, recovery, and default verification path with the proxy privacy boundary stated explicitly. Copy staged in docs/distribution/staged-submissions.md."
     },
     {
       "id": "agentic-ai-landscape",
