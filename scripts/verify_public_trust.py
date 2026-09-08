@@ -28,10 +28,18 @@ _FALSE_POSITIVE_GUARANTEE = (
 _EXPLICIT_NON_GUARANTEE = (
     "does not promise a universal compression percentage or guaranteed bill reduction"
 )
+# Titles this checker recognises as the product identity. Matching one of them
+# is what enables the waiver block further down, so a README whose title is
+# absent from this tuple does not fail here -- it silently stops having its
+# known false positives waived, and the checker keeps exiting 0 while no longer
+# recognising the product at all. Add a new headline here in the same change
+# that publishes it; tests/test_public_trust.py asserts the live README title
+# is present, so forgetting fails loudly instead of degrading quietly.
 _SUPPORTED_README_TITLES = (
     "Entroly — The Open-Source Context OS for AI Agents",
     "Entroly — Drop-In Context Assurance to Lower AI Operational Cost",
     "Entroly — AI Token Efficiency, Context Compression & Context Assurance",
+    "Entroly — Cut AI context cost and prove nothing was lost.",
 )
 _TOKEN_AUTHORITY_REQUIRED = {
     "docs/token-economics.html": (

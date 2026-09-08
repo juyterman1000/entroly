@@ -73,3 +73,32 @@ def test_registry_publisher_is_not_vendored_and_is_checksum_pinned() -> None:
     )
     assert "sha256sum --check --strict" in workflow
     assert "| tar" not in workflow
+
+
+def test_the_live_readme_title_is_recognised_by_the_trust_checker() -> None:
+    """An unrecognised headline disables waivers instead of failing.
+
+    `verify_public_trust.py` only strips its known false positives when the
+    README title matches `_SUPPORTED_README_TITLES`. A title absent from that
+    tuple does not fail the checker -- the waiver block is skipped, the script
+    still exits 0, and the identity it exists to confirm quietly matches
+    nothing. That is the failure mode this repository keeps producing: a
+    control that stops applying without saying so.
+
+    Measured: changing the README headline left the checker green while the
+    tuple no longer contained any title present in the file.
+    """
+    import re
+
+    from scripts.verify_public_trust import _SUPPORTED_README_TITLES
+
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    heading = re.search(r"<h1[^>]*>(.*?)</h1>", readme, re.S)
+    assert heading is not None, "README.md has no <h1> headline"
+    title = heading.group(1).strip()
+
+    assert title in _SUPPORTED_README_TITLES, (
+        f"the README headline {title!r} is not in _SUPPORTED_README_TITLES, so "
+        "verify_public_trust.py silently stops waiving its known false "
+        "positives. Add the headline there in the same commit that publishes it."
+    )
