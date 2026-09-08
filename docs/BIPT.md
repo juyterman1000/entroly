@@ -48,7 +48,7 @@ provenance trace (IPD = 0.073)
 | Verification flow | Optional signal alongside semantic and execution checks |
 
 ```bash
-entroly verify-provenance --context path/to/source.py --output "your AI response"
+entroly witness --context-file path/to/source.py --output "your AI response"
 ```
 
 ```python
