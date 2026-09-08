@@ -144,3 +144,9 @@ htmlcov/
 /fix.py
 /g_arch.json
 /site/
+
+# Outreach strategy drafts. These describe how and when to approach external
+# maintainers and do not belong in a public repository; two were swept in by a
+# `git add -A` once already.
+marketing/launch/*strategy*.md
+marketing/launch/*recovery*.md
