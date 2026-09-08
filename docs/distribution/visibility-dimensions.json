@@ -79,7 +79,7 @@
       "id": "claude-plugin-skill",
       "name": "Claude plugin and Agent Skill visibility",
       "state": "partial",
-      "current_evidence": [".claude-plugin/manifest.json", "SKILLS.md", "docs/distribution/submission-kit.md"],
+      "current_evidence": [".claude-plugin/manifest.json", "docs/SKILLS.md", "docs/distribution/submission-kit.md"],
       "leadership_target": "Native Claude plugin metadata, managed instructions, Agent Skill documentation, and presence in Claude-specific catalogs.",
       "next_action": "Validate the installed Claude experience end to end and submit to the prepared Claude catalogs."
     },
@@ -191,7 +191,7 @@
       "id": "community-social-proof",
       "name": "Community and social proof",
       "state": "partial",
-      "current_evidence": ["CONTRIBUTING.md", "../.github/CODE_OF_CONDUCT.md", "docs/discord.html", ".github/ISSUE_TEMPLATE/independent-review.yml", ".github/ISSUE_TEMPLATE/integration-request.yml"],
+      "current_evidence": ["CONTRIBUTING.md", ".github/CODE_OF_CONDUCT.md", "docs/discord.html", ".github/ISSUE_TEMPLATE/independent-review.yml", ".github/ISSUE_TEMPLATE/integration-request.yml"],
       "leadership_target": "Visible user stories, integration contributions, benchmark reproduction reports, and responsive issue handling.",
       "next_action": "Collect permissioned user stories and reproducibility reports while preserving failures and conflict disclosures."
     },
@@ -231,7 +231,7 @@
       "id": "governance-contribution",
       "name": "Governance and contributor experience",
       "state": "partial",
-      "current_evidence": ["CONTRIBUTING.md", "../.github/CODE_OF_CONDUCT.md", "AGENTS.md", ".github/ISSUE_TEMPLATE/integration-request.yml"],
+      "current_evidence": ["CONTRIBUTING.md", ".github/CODE_OF_CONDUCT.md", "AGENTS.md", ".github/ISSUE_TEMPLATE/integration-request.yml"],
       "leadership_target": "Clear contribution paths for product code, integrations, benchmarks, documentation, translations, and distribution maintenance.",
       "next_action": "Add ownership and review requirements for externally visible metadata, integrations, benchmark adapters, and translations."
     },
@@ -239,7 +239,7 @@
       "id": "extension-ecosystem",
       "name": "Extension and addon ecosystem",
       "state": "partial",
-      "current_evidence": ["docs/product-surface.md", "cookbook/README.md", ".github/ISSUE_TEMPLATE/integration-request.yml"],
+      "current_evidence": ["docs/product-surface.md", "docs/cookbook/README.md", ".github/ISSUE_TEMPLATE/integration-request.yml"],
       "leadership_target": "A safe extension contract with discoverable community integrations, explicit permissions, version compatibility, and uninstall behavior.",
       "next_action": "Define a checksum-verifiable addon manifest and explicit permission model before promoting a community registry."
     },
