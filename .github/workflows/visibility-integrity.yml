@@ -14,7 +14,7 @@ on:
       - 'docs/independent-review-program.md'
       - 'docs/press-kit.md'
       - 'llms.txt'
-      - 'marketing/**'
+      - 'docs/marketing/**'
       - 'pyproject.toml'
       - 'scripts/bump_version.py'
       - 'scripts/check_distribution_surface.py'
@@ -37,7 +37,7 @@ on:
       - 'docs/independent-review-program.md'
       - 'docs/press-kit.md'
       - 'llms.txt'
-      - 'marketing/**'
+      - 'docs/marketing/**'
       - 'pyproject.toml'
       - 'scripts/bump_version.py'
       - 'scripts/check_distribution_surface.py'
@@ -91,8 +91,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          grep -RFl 'Status: prepared, not submitted.' marketing/launch/*.md >/dev/null
-          if grep -REi '\b(zero quality loss|guaranteed savings|best context (tool|engine|compressor))\b' marketing/launch; then
+          grep -RFl 'Status: prepared, not submitted.' docs/marketing/launch/*.md >/dev/null
+          if grep -REi '\b(zero quality loss|guaranteed savings|best context (tool|engine|compressor))\b' docs/marketing/launch; then
             echo '::error::Launch assets contain an unsupported claim.'
             exit 1
           fi
