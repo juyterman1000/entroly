@@ -231,7 +231,7 @@ payloads already committed to the real ledger.
 This is the proposed **Proof-Carrying Dreams** contribution: simulator-guided
 experiment selection behind a cryptographic and statistical model-influence
 firewall. The literature boundary and falsification plan are recorded in
-[`research/proof_carrying_dreams.md`](../research/proof_carrying_dreams.md).
+[`research/proof_carrying_dreams.md`](research/proof_carrying_dreams.md).
 
 The idle `DreamingLoop` currently uses the model only for proposal ranking and
 continues to save configurations through its pre-existing fixed benchmark
