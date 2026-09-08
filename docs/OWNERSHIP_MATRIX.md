@@ -13,7 +13,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 
 | Outcome | Files |
 |---|---:|
-| `tests-fixtures-docs-packaging` | 1228 |
+| `tests-fixtures-docs-packaging` | 1229 |
 | `python-host-orchestration` | 383 |
 | `node-host-orchestration` | 57 |
 | `rust-semantic-owner` | 41 |
@@ -21,7 +21,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `pyo3-binding` | 29 |
 | `generated-build-artifact` | 15 |
 | `wasm-binding` | 10 |
-| **total** | **1793** |
+| **total** | **1794** |
 
 ## Actionable queues
 
@@ -131,6 +131,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `.vscode/mcp.json` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `.vscode/settings.json` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `AGENTS.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `BENCHMARKS.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `CHANGELOG.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `CITATION.cff` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `CLAUDE.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
