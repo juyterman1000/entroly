@@ -43,15 +43,13 @@ INSTALL_TEXT = Path("scripts/install.sh").read_text(encoding="utf-8")
 OPENCLAW_TEXT = Path("integrations/openclaw/README.md").read_text(encoding="utf-8")
 
 # === Intentional public product profiles ===
-# The headline below is FROZEN. See marketing/POSITIONING.md for why, and read
-# it before editing this check.
+# The headline below is FROZEN. Read this comment before editing the check.
 #
-# This check has pinned the headline string through roughly ten rewrites, which
-# means each rewrite was accompanied by someone updating this line -- so it
-# recorded drift rather than preventing it. Star velocity tracked that drift:
-# ~148/week under a benefit-led headline, 2-3/week after it became category
-# nouns and then a keyword list. Updating this string to match a new headline is
-# not "fixing the test"; it is the drift.
+# This check pins the headline string. Historically each rewrite came with
+# someone updating this line, so it recorded drift rather than preventing it.
+# Updating this string to match a new headline is not "fixing the test"; it is
+# the drift. Change the headline only as a deliberate decision, not to make a
+# failing check pass.
 check(
     "README frozen positioning and Context Assurance identity",
     lambda: require(
@@ -67,7 +65,7 @@ check(
                 "local-first",
             )
         ),
-        "README no longer states the frozen positioning (see marketing/POSITIONING.md)",
+        "README no longer states the frozen positioning",
     ),
 )
 check(
