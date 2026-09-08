@@ -2,8 +2,7 @@
 
 Status: prepared, not submitted.
 
-Positioning is frozen — see `marketing/POSITIONING.md`. **No savings percentage
-in any of this copy**, in any language. The figure is decided by the configured
+**No savings percentage in any of this copy**, in any language. The figure is decided by the configured
 token budget before selection runs, so it measures the budget rather than the
 tool.
 

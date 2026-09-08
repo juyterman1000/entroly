@@ -2,7 +2,7 @@
 
 **Written before any measurement.** Verdict rules are fixed here and do not move
 after results are seen. This registers open question **Q-B** from
-`BREAKTHROUGH_RESEARCH.md`.
+`docs/research-programme.md`.
 
 ## Motivation — what is actually unmeasured
 

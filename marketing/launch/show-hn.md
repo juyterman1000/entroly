@@ -2,8 +2,7 @@
 
 Status: prepared, not submitted.
 
-Positioning is frozen — see `marketing/POSITIONING.md`. Do not add a savings
-percentage to this draft. The figure is decided by the configured token budget
+Do not add a savings percentage to this draft. The figure is decided by the configured token budget
 before selection runs, so it measures the budget rather than the tool.
 
 ## Title

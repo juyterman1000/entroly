@@ -1,8 +1,8 @@
 """Generate the social preview (Open Graph) image.
 
-The image is a build artifact, not hand-drawn, so the wording stays tied to
-`marketing/POSITIONING.md` instead of drifting independently. Re-run after any
-positioning change:
+The image is a build artifact, not hand-drawn, so the wording stays tied to the
+README headline instead of drifting independently. Re-run after any positioning
+change:
 
     python scripts/generate_og_image.py
 

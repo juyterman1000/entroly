@@ -21,7 +21,7 @@
       "fit": ["claude-code", "plugin", "mcp", "context-engineering"],
       "required_assets": [".claude-plugin/marketplace.json", ".claude-plugin/plugin.json", "scripts/entroly-plugin-launch.mjs", "PRIVACY.md"],
       "proof_url": null,
-      "next_action": "Submit via the Console in-app form (the claude.ai form needs a Team/Enterprise org; Console is the individual-author path). NOT claude-plugins-official -- that one is curated at Anthropic's discretion with no application process, and the submission form does not add plugins to it. Copy staged in docs/distribution/staged-official-plugin-directory.md. `claude plugin validate --strict` already passes against a fresh clone of main, which is the same check the review pipeline runs. Disclose self_heal proactively; automated safety screening will surface it. The plugin slug 'entroly' is immutable once published. Mark published ONLY after 'entroly' appears in https://github.com/anthropics/claude-plugins-community/blob/main/.claude-plugin/marketplace.json -- approval pins a commit SHA and the public catalog syncs nightly, so there is a delay."
+      "next_action": "Submit via the Console in-app form (the claude.ai form needs a Team/Enterprise org; Console is the individual-author path). NOT claude-plugins-official -- that one is curated at Anthropic's discretion with no application process, and the submission form does not add plugins to it. `claude plugin validate --strict` already passes against a fresh clone of main, which is the same check the review pipeline runs. Disclose self_heal proactively; automated safety screening will surface it. The plugin slug 'entroly' is immutable once published. Mark published ONLY after 'entroly' appears in https://github.com/anthropics/claude-plugins-community/blob/main/.claude-plugin/marketplace.json -- approval pins a commit SHA and the public catalog syncs nightly, so there is a delay."
     },
     {
       "id": "claude-code-ultimate-guide",
@@ -112,7 +112,7 @@
       "fit": ["local-first", "llm-infrastructure", "privacy"],
       "required_assets": ["PRIVACY.md", "llms.txt", "README.md"],
       "proof_url": null,
-      "next_action": "Open an ISSUE, not a pull request: the list is generated from a database and its README directs suggestions to the issue tracker, so a PR would be closed unmerged. Submit the local indexing, selection, recovery, and default verification path with the proxy privacy boundary stated explicitly. Copy staged in docs/distribution/staged-submissions.md."
+      "next_action": "Open an ISSUE, not a pull request: the list is generated from a database and its README directs suggestions to the issue tracker, so a PR would be closed unmerged. Submit the local indexing, selection, recovery, and default verification path with the proxy privacy boundary stated explicitly."
     },
     {
       "id": "agentic-ai-landscape",

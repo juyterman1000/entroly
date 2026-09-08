@@ -2,7 +2,7 @@
 """Does graph-aware selection beat chunk ranking on dependency-sensitive tasks?
 
 Protocol is fixed in GRAPH_LANE_PREREGISTRATION.md and was written before this
-was run. Registers open question Q-B from BREAKTHROUGH_RESEARCH.md.
+was run. Registers open question Q-B from docs/research-programme.md.
 
 A task is a caller symbol `S` in file `A` whose body calls `T`, defined in a
 different file `B`. The query names only `S` (and its docstring first line), so

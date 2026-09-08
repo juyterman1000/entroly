@@ -130,3 +130,17 @@ tmp/
 coverage.json
 coverage.xml
 htmlcov/
+
+# Source snapshots and stray archives. An 8 MB copy of this repository at
+# v1.0.78 was once committed here as e178.tar.gz; these patterns stop a
+# release tarball or scratch archive from landing in source control again.
+/*.tar.gz
+/*.tgz
+/*.zip
+/*.whl
+
+# Scratch files that accumulate at the root during development.
+/.tmp*
+/fix.py
+/g_arch.json
+/site/
