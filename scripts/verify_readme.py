@@ -43,14 +43,23 @@ INSTALL_TEXT = Path("scripts/install.sh").read_text(encoding="utf-8")
 OPENCLAW_TEXT = Path("integrations/openclaw/README.md").read_text(encoding="utf-8")
 
 # === Intentional public product profiles ===
+# The headline below is FROZEN. See marketing/POSITIONING.md for why, and read
+# it before editing this check.
+#
+# This check has pinned the headline string through roughly ten rewrites, which
+# means each rewrite was accompanied by someone updating this line -- so it
+# recorded drift rather than preventing it. Star velocity tracked that drift:
+# ~148/week under a benefit-led headline, 2-3/week after it became category
+# nouns and then a keyword list. Updating this string to match a new headline is
+# not "fixing the test"; it is the drift.
 check(
-    "README AI token efficiency and Context Assurance identity",
+    "README frozen positioning and Context Assurance identity",
     lambda: require(
         all(
             phrase in README_TEXT
             for phrase in (
-                "Entroly — AI Token Efficiency, Context Compression & Context Assurance",
-                "Reduce avoidable AI token usage and provider-bound context without losing control of critical evidence.",
+                "Entroly — Cut AI context cost and prove nothing was lost.",
+                "Every selection emits a receipt: what was kept, what was omitted, and the handle that recovers the exact original bytes.",
                 "content-addressed evidence",
                 "recoverable context compression",
                 "Context Assurance layer",
@@ -58,7 +67,7 @@ check(
                 "local-first",
             )
         ),
-        "README no longer states the AI token-efficiency and Context Assurance contract",
+        "README no longer states the frozen positioning (see marketing/POSITIONING.md)",
     ),
 )
 check(

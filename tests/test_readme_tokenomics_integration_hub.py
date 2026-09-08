@@ -53,8 +53,22 @@ def test_download_milestone_is_reconciled_and_not_called_users() -> None:
     assert total == ADOPTION["headline"]["events"] == 100_438
     assert ADOPTION["headline"]["unique_users"] is False
     assert ADOPTION["headline"]["successful_activations"] is False
-    assert "100,438 downloads" in README
-    assert "Measured across different distribution sources" in README
+
+    # The figure is published as "observed distribution events", not
+    # "downloads". It sums PyPI installs, npm installs, release-binary
+    # downloads and repository clones, so calling the total "downloads" names
+    # it after only one of its four components -- and one install is not one
+    # user, which is what the reconciliation above pins.
+    assert "100,438 observed distribution events" in README, (
+        "the headline figure must be published as observed distribution "
+        "events; naming it 'downloads' or 'users' overstates what was counted"
+    )
+    # The count is meaningless without what it is a count of, and where the
+    # method is written down.
+    assert "summed across sources" in README
+    assert "docs/adoption-evidence.md" in README, (
+        "the figure must link to how it is counted and what it does not mean"
+    )
 
 
 def test_requested_integration_names_are_discoverable_from_readme() -> None:

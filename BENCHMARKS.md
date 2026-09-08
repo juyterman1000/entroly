@@ -128,7 +128,7 @@ The harness now covers 7 public benchmarks across five evaluation axes:
 - **LongBench is the only benchmark where compression actually fires** — avg baseline context is 12,885 tokens vs. 12,423 after Entroly (3.6% saving), and retention lands at **104.9%** despite the context cut. The selector is correctly keeping the passages that contain the answer.
 - MMLU, TruthfulQA, GSM8K, and SQuAD have short system contexts that fit within the 50K budget — Entroly correctly passes through (no artificial noise injection). These serve as **regression guards** against the selector corrupting short-context prompts.
 - Needle contexts (4K–32K tokens) also fit within the 50K budget, so compression is not triggered there.
-- Real token savings appear on codebases with 100K+ token contexts (typical: 70–95% savings).
+- Savings scale with how far a workload's context exceeds the configured budget. Most benchmarks here fit inside the 50K budget, so compression rarely fires; LongBench is the one that does, at 3.6%. Codebase workloads with far larger contexts reduce more, but this harness does not measure them and **no universal savings range is claimed** — a reported percentage is bounded by the configured budget before selection runs, so it describes the budget as much as the selector.
 
 ### Reproduce
 
