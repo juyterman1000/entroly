@@ -1,45 +1,79 @@
-# Staged submission: Anthropic official plugin directory
+# Staged submission: Anthropic community plugin marketplace
 
 Status: **prepared, not submitted.**
 
-This is the highest-value distribution target currently open to us, and the one
-the marketplace work in PR #429 was actually for.
+## Correction to an earlier version of this file
 
-## Why this one matters more than the awesome lists
+An earlier draft targeted `claude-plugins-official` and pointed at
+`clau.de/plugin-directory-submission`. Both were wrong, and the docs are
+explicit about why:
 
-Our own marketplace is live — `/plugin marketplace add juyterman1000/entroly`
-works today. But it is only reachable by someone who already knows the
-repository exists. The official directory carries **291 plugins** and is what
-users browse from inside Claude Code without having heard of us.
+> The official marketplace, `claude-plugins-official`, is curated separately.
+> Anthropic decides which plugins to include at its discretion. **There is no
+> application process, and the submission form does not add plugins to the
+> official marketplace.**
 
-That is the difference between installable and discoverable, and it is the
-entire premise of the marketplace wedge.
+`clau.de/plugin-directory-submission` is a redirect into the plugins
+documentation, not a form. There is nothing to submit to the official
+marketplace, and no amount of preparation changes that.
+
+**The real target is the community marketplace**, `claude-community` —
+`anthropics/claude-plugins-community` — which is where third-party submissions
+land after review. Users add it with:
+
+```
+/plugin marketplace add anthropics/claude-plugins-community
+```
+
+and install from it as `@claude-community`.
+
+Being listed there is still the discovery win. Our own marketplace is only
+reachable by someone who already knows the repository exists.
 
 ## How to submit
 
-**A web form, not a pull request:** https://clau.de/plugin-directory-submission
+Two in-app forms, and which one applies depends on the account:
 
-Submissions are subject to Anthropic quality and security review. There is no
-PR to open and no issue to file, so this cannot be automated — someone has to
-fill the form.
+| Form | Requires |
+|---|---|
+| [claude.ai](https://claude.ai/admin-settings/directory/submissions/plugins/new) | A **Team or Enterprise** organization with directory-management access (Owners have it by default) |
+| [Console](https://platform.claude.com/plugins/submit) | Nothing extra — **this is the path for individual authors** not in a Team or Enterprise org |
 
-## Stated requirements, and where we stand
+Use the Console form unless the account is on a Team or Enterprise plan.
 
-| Requirement | Status | Evidence |
-|---|---|---|
-| Meets quality and security standards | Believed met | Apache-2.0; full CI matrix (wheels on five Python versions, Rust + Clippy, WASM drift, journey diagnostics on three operating systems); static security and dependency audit in CI |
-| Users can verify what MCP servers, files, or software are included | Met | `mcpServers` is declared in plain sight in `.claude-plugin/plugin.json`; the launcher is a readable ~40-line script at `scripts/entroly-plugin-launch.mjs`; whole repository is public |
-| Plugin homepage provides more information | Met | https://github.com/juyterman1000/entroly and https://juyterman1000.github.io/entroly/docs/index.html |
+## Pre-submission validation — done
 
-**One disclosure to make proactively in the submission**, because a security
-reviewer will find it and it is better volunteered than discovered: when the
-native engine is absent, `entroly/self_heal.py` installs `entroly-core` from
-PyPI before measuring. It is a package install — no code, prompts, or telemetry
-leave the machine — it is skipped when the engine is present, and
-`ENTROLY_NO_SELF_HEAL=1` disables it. It is documented in `PRIVACY.md`,
-`CLAUDE.md`, and the README. The reason it exists: without the native engine,
-selection never reads the query at all, so any figure reported would be
-arithmetic on the token budget rather than a result.
+The docs state the review pipeline runs `claude plugin validate` on every
+submission, alongside automated safety screening. Run against a **fresh clone of
+`main`**, not the working tree, so it reflects what a reviewer actually fetches:
+
+```
+$ claude plugin validate /tmp/entroly-clean --strict
+✔ Validation passed
+```
+
+`--strict` treats warnings as errors. It passed with none.
+
+Also verified on that fresh clone:
+
+- Every plugin file is tracked — `.claude-plugin/{marketplace,plugin,manifest}.json`,
+  `commands/entroly-first-run.md`, `scripts/entroly-plugin-launch.mjs`.
+- The launcher on a PATH carrying neither `uvx`, `npx`, nor `entroly` prints one
+  actionable line rather than failing silently. That is the path a reviewer on a
+  clean machine is most likely to hit.
+
+## What happens after approval
+
+Approved plugins are pinned to a **specific commit SHA** in
+`anthropics/claude-plugins-community`, and CI bumps the pin automatically as new
+commits land. The public catalog syncs nightly, so there is a delay between
+approval and the plugin becoming installable.
+
+To check whether it has landed, search the
+[community catalog](https://github.com/anthropics/claude-plugins-community/blob/main/.claude-plugin/marketplace.json)
+for `entroly`. **Do not mark this target `published` in `targets.json` until it
+appears there** — that is exactly the "prepared status recorded as published"
+failure this registry exists to prevent.
 
 ## Form content
 
@@ -48,11 +82,10 @@ arithmetic on the token budget rather than a result.
 ⚠️ **This slug is immutable once published.** Anthropic's documentation is
 explicit that a published `name` must never change, because users have it
 installed under that slug and renaming breaks their install with
-`plugin-not-found`. `entroly` matches `.claude-plugin/plugin.json` and
-`.claude-plugin/marketplace.json`. Do not submit a different slug, and do not
-change ours afterwards.
+`plugin-not-found`. It matches `.claude-plugin/plugin.json` and
+`.claude-plugin/marketplace.json`.
 
-**Marketplace / source repository:** https://github.com/juyterman1000/entroly
+**Repository:** https://github.com/juyterman1000/entroly
 
 **Homepage:** https://juyterman1000.github.io/entroly/docs/index.html
 
@@ -80,21 +113,20 @@ change ours afterwards.
 
 **Category:** developer tools / context engineering
 
+**Disclosure to volunteer**, because automated safety screening will surface it
+and volunteered reads very differently from discovered:
+
+> When the native engine is absent, `entroly/self_heal.py` installs
+> `entroly-core` from PyPI before measuring. It is a package install — no code,
+> prompts, or telemetry leave the machine — it is skipped when the engine is
+> present, and `ENTROLY_NO_SELF_HEAL=1` disables it. It is documented in
+> `PRIVACY.md`, `CLAUDE.md`, and the README. Without the native engine,
+> selection never reads the query, so any figure reported would be arithmetic on
+> the configured token budget rather than a result.
+
 ## Rules this copy is bound by
 
 From `marketing/POSITIONING.md`: **no savings percentage**, in the form or
-anywhere else. The figure is bounded by the configured token budget before
-selection runs. Also no "zero accuracy loss" — verification fails closed by
-design, and an unqualified accuracy claim contradicts the architecture.
-
-## Before submitting
-
-- [ ] Confirm the plugin installs from a clean machine that has neither `uv`
-      nor `entroly` on PATH — this is the fallback path the launcher exists for,
-      and the one most likely to be exercised by a reviewer.
-- [ ] Confirm `/plugin marketplace add juyterman1000/entroly` then
-      `/plugin install entroly@entroly` succeeds end to end.
-- [ ] Confirm the first-run command produces a readable receipt on a repository
-      the reviewer is likely to try — a small one, not just this repo.
-- [ ] Record the submission date and outcome in `targets.json` **after**
-      submitting, never before.
+anywhere else — the figure is bounded by the configured token budget before
+selection runs. And no "zero accuracy loss": verification fails closed by
+design, so an unqualified accuracy claim contradicts the architecture.

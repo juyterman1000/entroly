@@ -11,17 +11,17 @@
   },
   "targets": [
     {
-      "id": "anthropic-official-plugin-directory",
-      "name": "Anthropic official plugin directory (claude-plugins-official)",
+      "id": "anthropic-community-plugin-marketplace",
+      "name": "Anthropic community plugin marketplace (claude-plugins-community)",
       "kind": "first-party-catalog",
       "priority": 0,
       "status": "prepared",
-      "target_url": "https://github.com/anthropics/claude-plugins-official",
-      "submission_url": "https://clau.de/plugin-directory-submission",
+      "target_url": "https://github.com/anthropics/claude-plugins-community",
+      "submission_url": "https://platform.claude.com/plugins/submit",
       "fit": ["claude-code", "plugin", "mcp", "context-engineering"],
       "required_assets": [".claude-plugin/marketplace.json", ".claude-plugin/plugin.json", "scripts/entroly-plugin-launch.mjs", "PRIVACY.md"],
       "proof_url": null,
-      "next_action": "Submit via the web form -- there is no PR or issue path, so this cannot be automated. Copy staged in docs/distribution/staged-official-plugin-directory.md. Highest-value open target: our own marketplace is installable but only reachable by someone who already knows the repo; this catalog carries 291 plugins and is what users browse from inside Claude Code. Disclose self_heal proactively. The plugin slug 'entroly' is immutable once published."
+      "next_action": "Submit via the Console in-app form (the claude.ai form needs a Team/Enterprise org; Console is the individual-author path). NOT claude-plugins-official -- that one is curated at Anthropic's discretion with no application process, and the submission form does not add plugins to it. Copy staged in docs/distribution/staged-official-plugin-directory.md. `claude plugin validate --strict` already passes against a fresh clone of main, which is the same check the review pipeline runs. Disclose self_heal proactively; automated safety screening will surface it. The plugin slug 'entroly' is immutable once published. Mark published ONLY after 'entroly' appears in https://github.com/anthropics/claude-plugins-community/blob/main/.claude-plugin/marketplace.json -- approval pins a commit SHA and the public catalog syncs nightly, so there is a delay."
     },
     {
       "id": "claude-code-ultimate-guide",
