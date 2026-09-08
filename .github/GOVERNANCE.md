@@ -14,7 +14,7 @@ goal is to make decisions predictable while the contributor base grows.
   and enforce community standards.
 
 Current maintainers and ownership areas are listed in
-[MAINTAINERS.md](MAINTAINERS.md) and [`.github/CODEOWNERS`](.github/CODEOWNERS).
+[MAINTAINERS.md](../docs/MAINTAINERS.md) and [`.github/CODEOWNERS`](.github/CODEOWNERS).
 
 ## Decision principles
 
