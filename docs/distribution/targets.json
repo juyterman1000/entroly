@@ -11,6 +11,19 @@
   },
   "targets": [
     {
+      "id": "anthropic-official-plugin-directory",
+      "name": "Anthropic official plugin directory (claude-plugins-official)",
+      "kind": "first-party-catalog",
+      "priority": 0,
+      "status": "prepared",
+      "target_url": "https://github.com/anthropics/claude-plugins-official",
+      "submission_url": "https://clau.de/plugin-directory-submission",
+      "fit": ["claude-code", "plugin", "mcp", "context-engineering"],
+      "required_assets": [".claude-plugin/marketplace.json", ".claude-plugin/plugin.json", "scripts/entroly-plugin-launch.mjs", "PRIVACY.md"],
+      "proof_url": null,
+      "next_action": "Submit via the web form -- there is no PR or issue path, so this cannot be automated. Copy staged in docs/distribution/staged-official-plugin-directory.md. Highest-value open target: our own marketplace is installable but only reachable by someone who already knows the repo; this catalog carries 291 plugins and is what users browse from inside Claude Code. Disclose self_heal proactively. The plugin slug 'entroly' is immutable once published."
+    },
+    {
       "id": "claude-code-ultimate-guide",
       "name": "Claude Code Ultimate Guide",
       "kind": "developer-guide",
