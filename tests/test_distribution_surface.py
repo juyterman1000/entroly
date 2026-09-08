@@ -104,7 +104,7 @@ def test_gap_dimensions_have_executable_next_actions() -> None:
 
 
 def test_launch_assets_cannot_imply_publication() -> None:
-    launch_dir = ROOT / "marketing" / "launch"
+    launch_dir = ROOT / "docs" / "marketing" / "launch"
     launch_files = sorted(launch_dir.glob("*.md"))
 
     assert launch_files
@@ -130,7 +130,7 @@ def test_expanded_visibility_assets_are_owned_and_present() -> None:
         ".github/workflows/visibility-integrity.yml",
         "docs/choosing-context-assurance.md",
         "docs/localization/README.md",
-        "marketing/release-announcement-template.md",
+        "docs/marketing/release-announcement-template.md",
     )
     for relative in required:
         assert (ROOT / relative).is_file(), relative
@@ -141,7 +141,7 @@ def test_expanded_visibility_assets_are_owned_and_present() -> None:
         "/docs/press-kit.md",
         "/docs/choosing-context-assurance.md",
         "/docs/localization/",
-        "/marketing/",
+        "/docs/marketing/",
         "/CITATION.cff",
         "/codemeta.json",
         "/scripts/check_distribution_surface.py",
@@ -150,7 +150,7 @@ def test_expanded_visibility_assets_are_owned_and_present() -> None:
 
 
 def test_release_announcement_template_is_fail_closed() -> None:
-    template = (ROOT / "marketing/release-announcement-template.md").read_text(
+    template = (ROOT / "docs/marketing/release-announcement-template.md").read_text(
         encoding="utf-8"
     )
 

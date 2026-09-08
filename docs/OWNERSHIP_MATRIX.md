@@ -13,7 +13,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 
 | Outcome | Files |
 |---|---:|
-| `tests-fixtures-docs-packaging` | 1231 |
+| `tests-fixtures-docs-packaging` | 1230 |
 | `python-host-orchestration` | 383 |
 | `node-host-orchestration` | 57 |
 | `rust-semantic-owner` | 41 |
@@ -21,7 +21,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `pyo3-binding` | 29 |
 | `generated-build-artifact` | 15 |
 | `wasm-binding` | 10 |
-| **total** | **1796** |
+| **total** | **1795** |
 
 ## Actionable queues
 
@@ -601,16 +601,24 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `docs/llms.txt` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/lobehub-score-audit.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/localization/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/marketing/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/marketing/community_outreach.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/marketing/compliant_launch_pack.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/marketing/content/5-minute-setup-guide.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/marketing/content/comparison-matrix.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/marketing/content/cost-calculator.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/marketing/context_engineering_positioning.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/marketing/context_tool_evaluation.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/marketing/entroly_vs_external_adapter_seo.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/marketing/launch/community-and-newsletters.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/marketing/launch/product-hunt.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/marketing/launch/show-hn.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/marketing/launch_playbook.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/marketing/memory-os-demo-video.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/marketing/pr_offensive_pack.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/marketing/real-gain-demo-video.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/marketing/registry_submissions.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `docs/marketing/release-announcement-template.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/marketing/tutorial_devto.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/marketing/tutorial_reddit.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/mcp-server-guide.html` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
@@ -1276,14 +1284,6 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `integrations/opencode/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `integrations/opencode/opencode.jsonc` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `llms.txt` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `marketing/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `marketing/content/5-minute-setup-guide.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `marketing/content/comparison-matrix.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `marketing/content/cost-calculator.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `marketing/launch/community-and-newsletters.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `marketing/launch/product-hunt.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `marketing/launch/show-hn.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `marketing/release-announcement-template.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `packaging/aur/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `packaging/homebrew/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `packaging/homebrew/entroly.rb` | build, install or CI operational script | - | orchestration | tests-fixtures-docs-packaging | - | - | - | - | - | canonical | low | operational glue; no shared semantics |
@@ -1292,7 +1292,6 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `packaging/scoop/entroly.json` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `pyproject.toml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `robots.txt` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `ruff.toml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `scripts/_release_artifacts.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/adoption_report.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/apply_elc_native_and_proxy_patch.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |

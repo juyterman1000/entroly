@@ -85,10 +85,10 @@ REQUIRED_DISCOVERY_FILES = (
     Path("docs/distribution/targets.json"),
     Path("docs/distribution/visibility-dimensions.json"),
     Path("docs/distribution/competitive-visibility.md"),
-    Path("marketing/README.md"),
-    Path("marketing/launch/product-hunt.md"),
-    Path("marketing/launch/show-hn.md"),
-    Path("marketing/launch/community-and-newsletters.md"),
+    Path("docs/marketing/README.md"),
+    Path("docs/marketing/launch/product-hunt.md"),
+    Path("docs/marketing/launch/show-hn.md"),
+    Path("docs/marketing/launch/community-and-newsletters.md"),
     Path(".github/ISSUE_TEMPLATE/independent-review.yml"),
     Path(".github/ISSUE_TEMPLATE/integration-request.yml"),
 )
@@ -285,9 +285,9 @@ def _validate_citation_metadata(version: str, errors: list[str]) -> None:
 
 def _validate_launch_assets(errors: list[str]) -> None:
     launch_files = (
-        ROOT / "marketing/launch/product-hunt.md",
-        ROOT / "marketing/launch/show-hn.md",
-        ROOT / "marketing/launch/community-and-newsletters.md",
+        ROOT / "docs/marketing/launch/product-hunt.md",
+        ROOT / "docs/marketing/launch/show-hn.md",
+        ROOT / "docs/marketing/launch/community-and-newsletters.md",
     )
     for path in launch_files:
         content = path.read_text(encoding="utf-8")

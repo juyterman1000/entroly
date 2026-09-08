@@ -175,7 +175,7 @@
       "id": "launch-channels",
       "name": "Launch channels",
       "state": "partial",
-      "current_evidence": ["marketing/README.md", "marketing/launch/product-hunt.md", "marketing/launch/show-hn.md", "marketing/launch/community-and-newsletters.md"],
+      "current_evidence": ["docs/marketing/README.md", "docs/marketing/launch/product-hunt.md", "docs/marketing/launch/show-hn.md", "docs/marketing/launch/community-and-newsletters.md"],
       "leadership_target": "Evidence-bounded launch packages for Show HN, Product Hunt, relevant developer communities, and release-specific announcements.",
       "next_action": "Verify the released package and publish one technical launch at a time, then record public URLs and outcomes."
     },
@@ -183,7 +183,7 @@
       "id": "newsletters-media",
       "name": "Newsletters, podcasts, and technical media",
       "state": "partial",
-      "current_evidence": ["marketing/launch/community-and-newsletters.md", "docs/press-kit.md", "docs/independent-review-program.md"],
+      "current_evidence": ["docs/marketing/launch/community-and-newsletters.md", "docs/press-kit.md", "docs/independent-review-program.md"],
       "leadership_target": "Earn recurring independent coverage by providing reproducible stories, not paid or copied announcements.",
       "next_action": "Pitch technically relevant editors and reviewers around exact recovery, Context Receipts, neutral benchmarks, and local verification."
     },
