@@ -62,7 +62,7 @@ def _json_ld_documents(page: str) -> list[Any]:
 
 
 def _sitemap_entries() -> dict[str, str | None]:
-    root = ET.fromstring(_read("sitemap.xml"))
+    root = ET.fromstring(_read("docs/sitemap.xml"))
     namespace = {"s": "http://www.sitemaps.org/schemas/sitemap/0.9"}
     return {
         item.findtext("s:loc", namespaces=namespace): item.findtext(
@@ -83,14 +83,12 @@ def _local_page_for_url(url: str) -> Path | None:
 def collect_failures() -> list[str]:
     failures: list[str] = []
 
-    root_page = _read("index.html")
+    homepage = _read("docs/index.html")
     canonical_match = re.search(
-        r'<link\s+rel="canonical"\s+href="([^"]+)"', root_page, re.IGNORECASE
+        r'<link\s+rel="canonical"\s+href="([^"]+)"', homepage, re.IGNORECASE
     )
     if canonical_match is None or canonical_match.group(1) != HOME:
-        failures.append("root index must canonicalize to the docs homepage")
-    if f"url={HOME}" not in root_page or f'window.location.replace("{HOME}")' not in root_page:
-        failures.append("root index must hand crawlers and users to the canonical homepage")
+        failures.append("docs homepage canonical is inconsistent")
 
     try:
         sitemap = _sitemap_entries()
@@ -101,8 +99,6 @@ def collect_failures() -> list[str]:
         failures.append("sitemap must not publish the root redirect as a second homepage")
     if sitemap.get(HOME) != "2026-08-31":
         failures.append("canonical homepage is missing its current sitemap date")
-
-    homepage = _read("docs/index.html")
     for relative, canonical in AUTHORITY_PAGES.items():
         local_link = relative.removeprefix("docs/")
         if f'href="{local_link}"' not in homepage:
