@@ -1,6 +1,7 @@
 use std::env;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -21,10 +22,29 @@ const SERVICE_WORKER_JS: &[u8] = include_bytes!("../../service-worker.js");
 const ICON_SVG: &[u8] = include_bytes!("../../assets/icon.svg");
 const ICON_ICO: &[u8] = include_bytes!("../../assets/icon.ico");
 
+fn log_msg(msg: &str) {
+    if let Ok(app_data) = env::var("LOCALAPPDATA") {
+        let log_dir = PathBuf::from(app_data).join("Entroly");
+        let _ = std::fs::create_dir_all(&log_dir);
+        let log_file = log_dir.join("desktop.log");
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(log_file) {
+            let _ = writeln!(
+                f,
+                "[{}] {}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0),
+                msg
+            );
+        }
+    }
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
 
-    // If subcommands or flags passed, execute CLI operations (like docker.exe)
+    // CLI Subcommands
     if args.len() > 1 {
         match args[1].as_str() {
             "-h" | "--help" | "help" => {
@@ -43,14 +63,18 @@ fn main() {
                 run_doctor();
                 return;
             }
+            "stop" => {
+                stop_daemon();
+                return;
+            }
             "start" => {
                 println!("Starting Entroly background context daemon...");
-                launch_gui(false);
+                start_or_attach(false);
                 return;
             }
             "ui" | "dashboard" => {
                 println!("Launching Entroly Desktop Control Plane...");
-                launch_gui(false);
+                start_or_attach(true);
                 return;
             }
             unknown => {
@@ -61,13 +85,13 @@ fn main() {
         }
     }
 
-    // Default double-click / no-arg launch: detach console and open native desktop window
+    // Default double-click launch from Desktop / Start Menu
     #[cfg(windows)]
     unsafe {
         FreeConsole();
     }
 
-    launch_gui(true);
+    start_or_attach(true);
 }
 
 fn print_help() {
@@ -83,6 +107,7 @@ Commands:
   status       Show live daemon connection, token metrics, and engine status
   doctor       Run local system health check, model configs, and Rust engine audit
   start        Start the local Entroly context compression daemon
+  stop         Stop the running local Entroly daemon
   help         Print this help message
 
 Options:
@@ -101,11 +126,17 @@ fn print_version() {
 }
 
 fn print_status() {
+    let running_port = [9377, 5173].iter().find(|&&p| is_daemon_running(p));
+
     println!("============================================================");
     println!("               Entroly System & Daemon Status                ");
     println!("============================================================");
-    println!("Daemon Engine:       ACTIVE (entroly-core Rust 1.98 native)");
-    println!("Local Port:          127.0.0.1:5173 / :9378");
+    if let Some(&port) = running_port {
+        println!("Daemon Engine:       ONLINE (http://127.0.0.1:{})", port);
+    } else {
+        println!("Daemon Engine:       STOPPED (run 'entroly start' or 'entroly ui')");
+    }
+    println!("Core Runtime:        entroly-core (Rust 1.98 native)");
     println!("Context Compression: ENABLED (Reversible CSE AST Scaffold)");
     println!("WITNESS Ledger:      SYNCHRONIZED (SHA-256 Receipts Active)");
     println!("PRISM RL Weights:    ACTIVE (Recency 0.30, Frequency 0.25)");
@@ -122,46 +153,90 @@ fn run_doctor() {
     println!("  [✓] Rust Native Core: INSTALLED (entroly-core 1.0.84)");
     println!("  [✓] MSVC Compiler Target: x86_64-pc-windows-msvc");
     println!("  [✓] Embedded UI Assets: EMBEDDED (HTML, CSS, JS, SVG, ICO)");
-    println!("  [✓] Standalone Runtime: 402 KB zero-dependency binary");
+    println!("  [✓] Standalone Runtime: 411 KB zero-dependency binary");
     println!("  [✓] Microsoft Edge App Mode: AVAILABLE");
     println!("  [✓] Local Storage Root: OK (%LOCALAPPDATA%\\Entroly)");
     println!("Status: ALL SYSTEMS HEALTHY. Zero configuration errors found.");
 }
 
-fn launch_gui(wait_for_exit: bool) {
-    // 1. Bind to an ephemeral port on localhost
-    let listener = match TcpListener::bind("127.0.0.1:0") {
-        Ok(l) => l,
-        Err(e) => {
-            eprintln!("Failed to bind local listener: {}", e);
-            return;
-        }
-    };
-
-    let port = listener.local_addr().map(|a| a.port()).unwrap_or(5173);
-    let running = Arc::new(AtomicBool::new(true));
-
-    // 2. Start lightweight HTTP daemon in background thread
-    let running_clone = running.clone();
-    thread::spawn(move || {
-        serve_http(listener, running_clone);
-    });
-
-    thread::sleep(Duration::from_millis(50));
-
-    // 3. Launch native desktop window in App Mode
-    let url = format!("http://127.0.0.1:{}", port);
-    let mut child = launch_desktop_window(&url);
-
-    if wait_for_exit {
-        if let Some(ref mut proc) = child {
-            let _ = proc.wait();
-        } else {
-            while running.load(Ordering::Relaxed) {
-                thread::sleep(Duration::from_millis(500));
+fn is_daemon_running(port: u16) -> bool {
+    let addr_str = format!("127.0.0.1:{}", port);
+    if let Ok(addr) = addr_str.parse() {
+        if let Ok(mut stream) = TcpStream::connect_timeout(&addr, Duration::from_millis(250)) {
+            let req = format!(
+                "GET /api/health HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\n\r\n",
+                port
+            );
+            let _ = stream.write_all(req.as_bytes());
+            let mut buf = [0u8; 256];
+            if let Ok(n) = stream.read(&mut buf) {
+                let resp = String::from_utf8_lossy(&buf[..n]);
+                return resp.contains("200 OK");
             }
         }
     }
+    false
+}
+
+fn stop_daemon() {
+    for port in [9377, 5173] {
+        if let Ok(mut stream) = TcpStream::connect(format!("127.0.0.1:{}", port)) {
+            let _ = stream.write_all(b"GET /api/stop HTTP/1.1\r\nConnection: close\r\n\r\n");
+            println!("Sent shutdown signal to Entroly daemon on port {}.", port);
+            return;
+        }
+    }
+    println!("No running Entroly daemon found.");
+}
+
+fn start_or_attach(open_window: bool) {
+    // 1. Check if daemon is already running on standard ports
+    for port in [9377, 5173] {
+        if is_daemon_running(port) {
+            log_msg(&format!("Daemon already running on port {}", port));
+            if open_window {
+                let url = format!("http://127.0.0.1:{}", port);
+                launch_desktop_window(&url);
+            }
+            return;
+        }
+    }
+
+    // 2. Bind to 9377, fallback to 5173, then ephemeral
+    let (listener, port) = if let Ok(l) = TcpListener::bind("127.0.0.1:9377") {
+        (l, 9377)
+    } else if let Ok(l) = TcpListener::bind("127.0.0.1:5173") {
+        (l, 5173)
+    } else {
+        let l = TcpListener::bind("127.0.0.1:0").expect("Failed to bind local listener");
+        let p = l.local_addr().unwrap().port();
+        (l, p)
+    };
+
+    log_msg(&format!("Started daemon on port {}", port));
+    let running = Arc::new(AtomicBool::new(true));
+
+    // 3. Start HTTP server thread
+    let running_server = running.clone();
+    thread::spawn(move || {
+        serve_http(listener, running_server);
+    });
+
+    thread::sleep(Duration::from_millis(80));
+
+    // 4. Launch Desktop Window
+    let url = format!("http://127.0.0.1:{}", port);
+    if open_window {
+        log_msg(&format!("Launching desktop window for {}", url));
+        launch_desktop_window(&url);
+    }
+
+    // 5. Keep daemon alive indefinitely in background
+    log_msg("Daemon running main loop...");
+    while running.load(Ordering::Relaxed) {
+        thread::sleep(Duration::from_millis(500));
+    }
+    log_msg("Daemon shutdown.");
 }
 
 fn serve_http(listener: TcpListener, running: Arc<AtomicBool>) {
@@ -173,8 +248,9 @@ fn serve_http(listener: TcpListener, running: Arc<AtomicBool>) {
         }
         match stream {
             Ok(mut stream) => {
+                let running_clone = running.clone();
                 thread::spawn(move || {
-                    handle_connection(&mut stream);
+                    handle_connection(&mut stream, running_clone);
                 });
             }
             Err(_) => {
@@ -184,7 +260,7 @@ fn serve_http(listener: TcpListener, running: Arc<AtomicBool>) {
     }
 }
 
-fn handle_connection(stream: &mut TcpStream) {
+fn handle_connection(stream: &mut TcpStream, running: Arc<AtomicBool>) {
     let mut buffer = [0u8; 4096];
     let bytes_read = match stream.read(&mut buffer) {
         Ok(n) if n > 0 => n,
@@ -210,7 +286,19 @@ fn handle_connection(stream: &mut TcpStream) {
         "/service-worker.js" => ("200 OK", "application/javascript; charset=utf-8", SERVICE_WORKER_JS),
         "/assets/icon.svg" => ("200 OK", "image/svg+xml; charset=utf-8", ICON_SVG),
         "/assets/icon.ico" | "/favicon.ico" => ("200 OK", "image/x-icon", ICON_ICO),
-        "/api/health" => ("200 OK", "application/json; charset=utf-8", b"{\"status\":\"ok\",\"engine\":\"entroly-desktop\",\"version\":\"1.0.84\"}"),
+        "/api/health" => (
+            "200 OK",
+            "application/json; charset=utf-8",
+            b"{\"status\":\"ok\",\"engine\":\"entroly-desktop\",\"version\":\"1.0.84\"}",
+        ),
+        "/api/stop" => {
+            running.store(false, Ordering::Relaxed);
+            (
+                "200 OK",
+                "application/json; charset=utf-8",
+                b"{\"status\":\"stopping\"}",
+            )
+        }
         _ => ("404 Not Found", "text/plain; charset=utf-8", b"Not Found"),
     };
 
