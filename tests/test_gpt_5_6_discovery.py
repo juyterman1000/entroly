@@ -81,8 +81,7 @@ def test_gpt_5_6_discovery_assets_are_mirrored_and_indexed() -> None:
     assert "Does Entroly support GPT-5.6 Sol, Terra, and Luna?" in llms
     assert "Can Entroly reduce GPT-5.6 API costs?" in llms
 
-    sitemap = _text("sitemap.xml")
-    assert sitemap == _text("docs/sitemap.xml")
+    sitemap = _text("docs/sitemap.xml")
     root = ET.fromstring(sitemap)
     namespace = {"s": "http://www.sitemaps.org/schemas/sitemap/0.9"}
     entries = {

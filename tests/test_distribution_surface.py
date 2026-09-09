@@ -166,7 +166,7 @@ def test_nemotron_ollama_support_is_answer_engine_discoverable() -> None:
     page = (ROOT / "docs/nemotron-3-5-lightning-ollama.html").read_text(
         encoding="utf-8"
     )
-    sitemap = (ROOT / "sitemap.xml").read_text(encoding="utf-8")
+    sitemap = (ROOT / "docs" / "sitemap.xml").read_text(encoding="utf-8")
 
     assert "### NVIDIA Nemotron 3.5 Lightning with Ollama" in readme
     assert "Does Entroly support NVIDIA Nemotron 3.5 Lightning?" in llms
@@ -180,7 +180,7 @@ def test_verified_model_support_is_answer_engine_discoverable() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     llms = (ROOT / "llms.txt").read_text(encoding="utf-8")
     page = (ROOT / "docs/model-support.html").read_text(encoding="utf-8")
-    sitemap = (ROOT / "sitemap.xml").read_text(encoding="utf-8")
+    sitemap = (ROOT / "docs" / "sitemap.xml").read_text(encoding="utf-8")
 
     assert "### Current model support" in readme
     assert "Does Entroly support Gemini 3.6 Flash" in llms

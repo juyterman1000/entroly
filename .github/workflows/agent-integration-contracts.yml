@@ -28,8 +28,6 @@ on:
       - "docs/sitemap.xml"
       - "docs/llms.txt"
       - "docs/llms-full.txt"
-      - "robots.txt"
-      - "sitemap.xml"
       - "llms.txt"
       - "tests/test_agent_exact_recovery_integrations.py"
       - "tests/test_agent_integration_packages.py"

@@ -13,7 +13,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 
 | Outcome | Files |
 |---|---:|
-| `tests-fixtures-docs-packaging` | 1229 |
+| `tests-fixtures-docs-packaging` | 1226 |
 | `python-host-orchestration` | 383 |
 | `node-host-orchestration` | 57 |
 | `rust-semantic-owner` | 41 |
@@ -21,7 +21,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `pyo3-binding` | 29 |
 | `generated-build-artifact` | 15 |
 | `wasm-binding` | 10 |
-| **total** | **1794** |
+| **total** | **1791** |
 
 ## Actionable queues
 
@@ -137,7 +137,6 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `CLAUDE.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `CONTRIBUTING.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `Dockerfile` | build, install or CI operational script | - | orchestration | tests-fixtures-docs-packaging | - | - | - | - | - | canonical | low | operational glue; no shared semantics |
-| `Dockerfile.entroly` | build, install or CI operational script | - | orchestration | tests-fixtures-docs-packaging | - | - | - | - | - | canonical | low | operational glue; no shared semantics |
 | `LICENSE` | repository support or licence file | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | none |  |
 | `NOTICE` | repository support or licence file | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | none |  |
 | `PRIVACY.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
@@ -437,6 +436,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `benchmarks/work_graph_performance.py` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `benchmarks/write_witness_v3_report.py` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `codemeta.json` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `deploy/Dockerfile.entroly` | build, install or CI operational script | - | orchestration | tests-fixtures-docs-packaging | - | - | - | - | - | canonical | low | operational glue; no shared semantics |
 | `deploy/cloudflare-community-savings/.gitignore` | repository support or licence file | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | none |  |
 | `deploy/cloudflare-community-savings/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `deploy/cloudflare-community-savings/package-lock.json` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
@@ -445,7 +445,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `deploy/cloudflare-community-savings/src/index.js` | Node environment/integration glue | node | orchestration | node-host-orchestration | - | - | npm | npm test | npm package | canonical | medium |  |
 | `deploy/cloudflare-community-savings/test/worker.test.js` | Node environment/integration glue | node | orchestration | node-host-orchestration | - | - | npm | npm test | npm package | canonical | medium |  |
 | `deploy/cloudflare-community-savings/wrangler.jsonc` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `docker-compose.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
+| `deploy/docker-compose.yml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/BENCHMARKS.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/BIPT.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/DETAILS.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
@@ -1255,7 +1255,6 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `external_adapter/cache/backends/__init__.py` | python module | python | orchestration | python-host-orchestration | - | external_adapter.cache.backends | - | pytest | - | canonical | low | no orchestration, native or computation signal; treated as glue |
 | `external_adapter/cache/backends/sqlite.py` | python module | python | orchestration | python-host-orchestration | - | external_adapter.cache.backends.sqlite | - | pytest | - | canonical | low | no orchestration, native or computation signal; treated as glue |
 | `external_adapter/cache/compression_store.py` | python module | python | orchestration | python-host-orchestration | - | external_adapter.cache.compression_store | - | pytest | - | canonical | low | no orchestration, native or computation signal; treated as glue |
-| `index.html` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `install.sh` | build, install or CI operational script | - | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | operational glue; no shared semantics |
 | `integrations/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `integrations/codex/entroly/.codex-plugin/plugin.json` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
@@ -1290,7 +1289,6 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `packaging/scoop/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `packaging/scoop/entroly.json` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `pyproject.toml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `robots.txt` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `scripts/_release_artifacts.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/adoption_report.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/apply_elc_native_and_proxy_patch.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
@@ -1352,7 +1350,6 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `scripts/wire_native_elc_proxy_transform.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/work_graph_soak.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `server.json` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `sitemap.xml` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `skills/entroly-evidence-operations/SKILL.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `skills/entroly-evidence-operations/entroly-bundle.json` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `smithery.yaml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |

@@ -56,13 +56,13 @@ def _match(pattern: str, text: str) -> str:
     return match.group(1).strip()
 
 
-def test_root_and_docs_crawler_files_are_identical() -> None:
-    assert _text("robots.txt") == _text("docs/robots.txt")
-    assert _text("sitemap.xml") == _text("docs/sitemap.xml")
+def test_docs_crawler_files_exist() -> None:
+    assert (ROOT / "docs" / "robots.txt").is_file()
+    assert (ROOT / "docs" / "sitemap.xml").is_file()
 
 
 def test_search_and_answer_crawlers_are_explicitly_allowed() -> None:
-    robots = _text("robots.txt")
+    robots = _text("docs/robots.txt")
     for user_agent in (
         "Googlebot",
         "Bingbot",
@@ -78,7 +78,7 @@ def test_search_and_answer_crawlers_are_explicitly_allowed() -> None:
 
 
 def test_discovery_sitemap_is_current_and_complete() -> None:
-    root = ET.fromstring(_text("sitemap.xml"))
+    root = ET.fromstring(_text("docs/sitemap.xml"))
     namespace = {"s": "http://www.sitemaps.org/schemas/sitemap/0.9"}
     entries = {
         item.findtext("s:loc", namespaces=namespace): item.findtext(

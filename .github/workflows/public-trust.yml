@@ -30,7 +30,6 @@ on:
       - docs/discord.html
       - docs/public-evidence.md
       - docs/sitemap.xml
-      - sitemap.xml
       - llms.txt
       - docs/llms.txt
       # `docs/llms-full.txt`, not a root-level copy. This entry read

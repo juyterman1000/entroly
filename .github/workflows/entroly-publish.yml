@@ -138,7 +138,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: ./Dockerfile.entroly
+          file: ./deploy/Dockerfile.entroly
           push: true
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}

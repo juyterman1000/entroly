@@ -281,7 +281,7 @@ def test_base_wheel_declares_every_public_proxy_runtime() -> None:
 
 
 def test_dockerfile_uses_truthful_dispatch_and_mode_aware_health() -> None:
-    dockerfile = (ROOT / "Dockerfile.entroly").read_text(encoding="utf-8")
+    dockerfile = (ROOT / "deploy" / "Dockerfile.entroly").read_text(encoding="utf-8")
 
     assert 'ENTRYPOINT ["python", "-m", "entroly.container_entry"]' in dockerfile
     assert 'CMD ["python", "-m", "entroly.container_health"]' in dockerfile

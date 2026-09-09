@@ -27,8 +27,7 @@ class FileMapEntry:
 _ROOT_ROLE_MAP = {
     "README.md": ("product positioning and install surface", "root-doc"),
     "pyproject.toml": ("top-level Python packaging and workspace metadata", "root-meta"),
-    "Dockerfile.entroly": ("container runtime packaging", "root-ops"),
-    "docker-compose.yml": ("local multi-service runtime", "root-ops"),
+    "Dockerfile": ("container runtime packaging", "root-ops"),
     "CONTRIBUTING.md": ("contribution workflow", "root-doc"),
     "SECURITY.md": ("security policy", "root-doc"),
     "LICENSE": ("license", "root-doc"),
