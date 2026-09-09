@@ -34,9 +34,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-LANGFUSE_ROOT = Path(
-    os.environ.get("LANGFUSE_ROOT", r"C:\Users\abhis\langfuse\langfuse")
-)
+LANGFUSE_ROOT = Path(os.environ.get("LANGFUSE_ROOT", ""))
 
 # ── ANSI ──────────────────────────────────────────────────────────────
 GREEN = "\033[32m"

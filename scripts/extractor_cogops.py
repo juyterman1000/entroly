@@ -46,22 +46,26 @@ def extract_rust(filepath):
             current_doc = []
     return "\n".join(output)
 
-def main():
-    base_dir = r"C:\Users\abhis\cogops"
-    summary = []
-    for root, dirs, files in os.walk(base_dir):
-        if ".venv" in root or ".git" in root or "__pycache__" in root or "target" in root:
-            continue
-        for file in files:
-            path = os.path.join(root, file)
-            if file.endswith(".py"):
-                summary.append(f"\n=== File: {path} ===")
-                summary.append(extract_python(path))
-            elif file.endswith(".rs"):
-                summary.append(f"\n=== File: {path} ===")
-                summary.append(extract_rust(path))
+from pathlib import Path
 
-    with open(r"C:\Users\abhis\entroly\cogops_summary.txt", "w", encoding="utf-8") as f:
+
+def main():
+    base_dir = Path(os.environ.get("COGOPS_DIR", "cogops"))
+    summary = []
+    if base_dir.exists():
+        for root, dirs, files in os.walk(base_dir):
+            if ".venv" in root or ".git" in root or "__pycache__" in root or "target" in root:
+                continue
+            for file in files:
+                path = os.path.join(root, file)
+                if file.endswith(".py"):
+                    summary.append(f"\n=== File: {path} ===")
+                    summary.append(extract_python(path))
+                elif file.endswith(".rs"):
+                    summary.append(f"\n=== File: {path} ===")
+                    summary.append(extract_rust(path))
+
+    with open("cogops_summary.txt", "w", encoding="utf-8") as f:
         f.write("\n".join(summary))
 
 if __name__ == "__main__":

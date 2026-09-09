@@ -49,8 +49,11 @@ def extract_rust(filepath):
 
     return "\n".join(output)
 
+from pathlib import Path
+
+
 def main():
-    base_dir = r"C:\Users\abhis\entroly"
+    base_dir = Path(__file__).resolve().parents[1]
     summary = []
     for root, dirs, files in os.walk(base_dir):
         if ".venv" in root or ".git" in root or "__pycache__" in root or "target" in root:
@@ -64,7 +67,7 @@ def main():
                 summary.append(f"\n=== File: {path} ===")
                 summary.append(extract_rust(path))
 
-    with open("c:\\Users\\abhis\\entroly\\arch_summary.txt", "w", encoding="utf-8") as f:
+    with open(base_dir / "arch_summary.txt", "w", encoding="utf-8") as f:
         f.write("\n".join(summary))
 
 if __name__ == "__main__":

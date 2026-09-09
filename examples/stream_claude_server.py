@@ -32,7 +32,7 @@ html_page = """
         const ws = new WebSocket('ws://' + window.location.host + '/ws');
 
         ws.onopen = function() {
-            term.innerHTML += "<span style='color: #58a6ff'>C:\\\\Users\\\\abhis\\\\langfuse\\\\langfuse></span> entroly wrap claude -p \\"Explain how trace ingestion works in the worker package\\"\\n\\n";
+            term.innerHTML += "<span style='color: #58a6ff'>workspace/langfuse></span> entroly wrap claude -p \\"Explain how trace ingestion works in the worker package\\"\\n\\n";
             ws.send("start");
         };
 
@@ -87,7 +87,7 @@ async def handle_websocket(request):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
                 env=env,
-                cwd=r"C:\\Users\\abhis\\langfuse\\langfuse",
+                cwd=os.environ.get("LANGFUSE_ROOT", "."),
             )
 
             while True:

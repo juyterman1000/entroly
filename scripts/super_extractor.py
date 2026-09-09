@@ -50,20 +50,24 @@ def extract_generic(filepath):
     except:
         return ""
 
+from pathlib import Path
+
+
 def main():
+    root = Path(__file__).resolve().parents[1]
     dirs_to_scan = [
-        r"C:\Users\abhis\entroly",
+        root,
     ]
     summary = []
     processed_count = 0
     for base_dir in dirs_to_scan:
         if not os.path.exists(base_dir):
             continue
-        for root, dirs, files in os.walk(base_dir):
-            if any(skip in root for skip in [".git", "target", "__pycache__", ".venv", "node_modules"]):
+        for r, dirs, files in os.walk(base_dir):
+            if any(skip in r for skip in [".git", "target", "__pycache__", ".venv", "node_modules"]):
                 continue
             for file in files:
-                path = os.path.join(root, file)
+                path = os.path.join(r, file)
                 summary.append("\n=======================")
                 summary.append(f"FILE: {path}")
                 if file.endswith(".py"):
@@ -76,7 +80,7 @@ def main():
                     summary.append("Skipped full parse, generic file.")
                 processed_count += 1
 
-    with open(r"c:\Users\abhis\entroly\super_dump.txt", "w", encoding="utf-8") as f:
+    with open(root / "super_dump.txt", "w", encoding="utf-8") as f:
         f.write("\n".join(summary))
     print(f"Processed {processed_count} files into super_dump.txt")
 

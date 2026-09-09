@@ -13,7 +13,7 @@ Set WindowBar Colorful
 Set Framerate 30
 
 # Switch to the Langfuse monorepo directory
-Type "cd C:\Users\abhis\langfuse\langfuse"
+Type "cd ~/workspace/langfuse"
 Enter
 Sleep 1.5s
 

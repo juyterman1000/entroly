@@ -7,11 +7,14 @@ Validates that all 179 Obsidian belief files are properly connected:
   3. No contradictions (stale-vs-verified, confidence divergence)
   4. Coverage gaps against source tree
 """
+from pathlib import Path
 from entroly.vault import VaultConfig, VaultManager
 from entroly.verification_engine import VerificationEngine
 
+ROOT = Path(__file__).resolve().parents[1]
+
 # ── Bootstrap the vault with the correct config chain ──
-cfg = VaultConfig(base_path=r"c:\Users\abhis\entroly\.entroly\vault")
+cfg = VaultConfig(base_path=str(ROOT / ".entroly" / "vault"))
 vm  = VaultManager(config=cfg)
 ve  = VerificationEngine(vault=vm)
 
@@ -37,7 +40,7 @@ if d["contradiction_details"]:
         print(f"    [{c['severity']:6s}] {c['entity']}: {c['description']}")
 
 # ── Also run coverage gap analysis against the source tree ──
-gaps = ve.coverage_gaps(r"c:\Users\abhis\entroly\entroly")
+gaps = ve.coverage_gaps(str(ROOT / "entroly"))
 if gaps:
     print(f"\n  Coverage Gaps ({len(gaps)} source files without beliefs):")
     for g in gaps[:15]:
