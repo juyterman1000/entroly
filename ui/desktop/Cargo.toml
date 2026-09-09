@@ -1,0 +1,19 @@
+[package]
+name = "entroly-desktop"
+version = "1.0.84"
+edition = "2021"
+authors = ["Entroly Contributors <engineering@entroly.io>"]
+description = "Native standalone desktop application for Entroly Control Plane"
+
+[[bin]]
+name = "entroly"
+path = "src/main.rs"
+
+[[bin]]
+name = "EntrolySetup"
+path = "src/installer.rs"
+
+[dependencies]
+
+[build-dependencies]
+winres = "0.1"
