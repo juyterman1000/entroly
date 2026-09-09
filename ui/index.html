@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Entroly Control Plane — Desktop & Context Intelligence</title>
+  <link rel="icon" type="image/svg+xml" href="./assets/icon.svg">
+  <link rel="manifest" href="./manifest.json">
+  <meta name="theme-color" content="#080c14">
+  <link rel="stylesheet" href="./app.css">
+  <style>
+    /* Toast feedback styling */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      padding: 12px 20px;
+      background: rgba(16, 24, 40, 0.95);
+      border: 1px solid var(--emerald-500);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.6), 0 0 20px var(--emerald-glow);
+      border-radius: var(--radius-sm);
+      color: var(--emerald-400);
+      font-size: 13px;
+      font-weight: 600;
+      z-index: 2000;
+      opacity: 0;
+      transform: translateY(12px);
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      pointer-events: none;
+    }
+    .toast.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  </style>
+</head>
+<body>
+  <div id="app-root">
+    
+    <!-- Topbar HUD -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="brand-badge" onclick="window.location.reload()">
+          <img src="./assets/icon.svg" alt="Entroly" class="brand-icon">
+          <span class="brand-name">ENTROLY</span>
+          <span class="version-tag">v0.12.0</span>
+        </div>
+
+        <div class="status-cluster">
+          <div id="statusPill" class="status-pill">
+            <span class="status-dot"></span>
+            <span id="statusText">DAEMON :9377 ACTIVE</span>
+          </div>
+          <span id="latencyText" class="latency-pill">0.22ms p95</span>
+        </div>
+      </div>
+
+      <div class="topbar-center">
+        <div class="hud-counter">
+          <span class="hud-counter-label">Tokens Pruned</span>
+          <span id="topTokensPruned" class="hud-counter-value">1,428,500</span>
+        </div>
+        <div class="hud-counter">
+          <span class="hud-counter-label">Banked Value</span>
+          <span id="topBankedUsd" class="hud-counter-value">$14.28</span>
+        </div>
+      </div>
+
+      <div class="topbar-right">
+        <button id="btnCmdTrigger" class="btn-cmd" title="Open Command Palette">
+          <span>Command</span>
+          <kbd class="kbd-shortcut">⌘K</kbd>
+        </button>
+        <button id="btnCopyProof" class="btn-action" style="padding: 5px 12px; font-size: 11px;">
+          <span>Copy Proof</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Workspace Layout -->
+    <div class="workspace-layout">
+      
+      <!-- Sidebar Navigation -->
+      <nav class="sidebar">
+        <div class="nav-group">
+          <div class="nav-section-title">Control Plane</div>
+          <a class="nav-item active" data-tab="workbench">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            <span>Workbench</span>
+          </a>
+          <a class="nav-item" data-tab="receipts">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>WITNESS Receipts</span>
+            <span class="nav-badge">48</span>
+          </a>
+          <a class="nav-item" data-tab="radar">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
+              <path stroke-linecap="round" stroke-linejoin="round" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
+            </svg>
+            <span>PRISM RL Radar</span>
+          </a>
+          <a class="nav-item" data-tab="health">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <span>Security & Health</span>
+          </a>
+        </div>
+
+        <!-- Sidebar Footer: Agent Profile Attachment -->
+        <div class="agent-switcher">
+          <div class="agent-label">Attached Agent</div>
+          <select id="agentSelect" class="agent-select">
+            <option value="claude">Claude Code (via ANTHROPIC_BASE_URL)</option>
+            <option value="cursor">Cursor (via MCP Server :9377)</option>
+            <option value="openclaw">OpenClaw Context Engine</option>
+            <option value="codex">OpenAI Codex CLI</option>
+            <option value="copilot">GitHub Copilot</option>
+          </select>
+        </div>
+      </nav>
+
+      <!-- Main Content View Panes -->
+      <main class="content-pane">
+        
+        <!-- Metrics Hero Grid -->
+        <section class="metrics-hero-grid">
+          <div class="card card-hero-spark">
+            <div class="card-title">
+              <span>Token Pruning & Value Banked</span>
+              <span class="badge-verified">0.2ms P95 Engine</span>
+            </div>
+            <div class="card-big-value">1,428,500 <small style="font-size:16px; color:var(--text-subtle)">tokens</small></div>
+            <div class="card-subtitle">
+              <span class="val-up">▲ 92.4% reduction</span> vs raw context collector baseline
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Banked Value</div>
+            <div class="card-big-value" style="color:var(--cyan-400)">$14.28</div>
+            <div class="card-subtitle">Modeled @ $1.00 / 1M input tokens</div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">WITNESS Receipts</div>
+            <div class="card-big-value" style="color:var(--violet-400)">48 <small style="font-size:16px; color:var(--text-subtle)">verified</small></div>
+            <div class="card-subtitle">100% Cryptographic Integrity</div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Code Health</div>
+            <div class="card-big-value" style="color:var(--emerald-400)">A <small style="font-size:14px; color:var(--text-subtle)">94/100</small></div>
+            <div class="card-subtitle">0 Critical CWE Violations</div>
+          </div>
+        </section>
+
+        <!-- Tab 1: Context Compression & Diff Workbench -->
+        <section id="tab-workbench" class="tab-pane active">
+          <div class="card workbench-card">
+            <div class="workbench-header">
+              <div class="workbench-title-wrap">
+                <h2 class="workbench-title">Live Context Compression & Scaffold Workbench</h2>
+                <span class="badge-verified">Reversible Compression</span>
+              </div>
+              <div class="workbench-controls">
+                <div class="budget-slider-wrap">
+                  <span class="budget-label">Token Budget</span>
+                  <input type="range" id="budgetSlider" class="budget-slider" min="4000" max="128000" step="4000" value="32000">
+                  <span id="budgetValue" class="budget-value">32k</span>
+                </div>
+                <button id="btnPreset" class="btn-cmd">Switch Preset</button>
+                <button id="btnCompress" class="btn-action">Optimize Context</button>
+              </div>
+            </div>
+
+            <!-- Split Column Context Diff Viewer -->
+            <div class="diff-viewer">
+              <div class="diff-col">
+                <div class="diff-col-head left">
+                  <span>Raw Collected Context (Input)</span>
+                  <span id="originalCount" class="mono">0</span>
+                </div>
+                <textarea id="inputEditor" class="diff-editor" spellcheck="false" placeholder="Paste collected context, multi-file code dump, or prompt here..."></textarea>
+              </div>
+
+              <div class="diff-col">
+                <div class="diff-col-head right">
+                  <span>Reversibly Compressed & CSE Scaffold (Sent to LLM)</span>
+                  <div style="display:flex; gap:8px;">
+                    <span id="compressedCount" class="mono">0</span>
+                    <span id="savingsRatio" class="badge-verified">-0%</span>
+                  </div>
+                </div>
+                <div id="outputPreview" class="diff-editor" style="user-select:text;"></div>
+              </div>
+            </div>
+
+            <!-- Model Cost Savings Breakdown -->
+            <div class="workbench-footer">
+              <div class="model-pricing-pills">
+                <div class="pricing-pill">
+                  <span class="pricing-pill-model">Claude 3.7 Sonnet:</span>
+                  <span id="priceSonnet" class="pricing-pill-saved">$0.0000</span>
+                </div>
+                <div class="pricing-pill">
+                  <span class="pricing-pill-model">GPT-4o:</span>
+                  <span id="priceGpt" class="pricing-pill-saved">$0.0000</span>
+                </div>
+                <div class="pricing-pill">
+                  <span class="pricing-pill-model">DeepSeek R1:</span>
+                  <span id="priceR1" class="pricing-pill-saved">$0.0000</span>
+                </div>
+              </div>
+              <div style="font-size:11px; color:var(--text-subtle);">
+                Zero hallucination penalty: exact recovery guaranteed via token-hash receipts.
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Tab 2: WITNESS Receipts Ledger -->
+        <section id="tab-receipts" class="tab-pane">
+          <div class="card">
+            <div class="workbench-header">
+              <div>
+                <h2 class="workbench-title">Cryptographic WITNESS Context Assurance Chain</h2>
+                <p style="font-size:12px; color:var(--text-muted); margin-top:4px;">
+                  Auditable record of every context-selection decision. Hash-backed proofs guarantee context integrity and prevent poisoning.
+                </p>
+              </div>
+            </div>
+
+            <div class="receipts-table-wrap" style="margin-top:16px;">
+              <table class="table-glass">
+                <thead>
+                  <tr>
+                    <th>Receipt Hash</th>
+                    <th>Agent Source</th>
+                    <th>Query Intent</th>
+                    <th>Raw Tokens</th>
+                    <th>Kept Tokens</th>
+                    <th>Pruned %</th>
+                    <th>Recorded</th>
+                  </tr>
+                </thead>
+                <tbody id="receiptsTableBody">
+                  <!-- Injected via app.js -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- Tab 3: PRISM Reinforcement Learning Radar -->
+        <section id="tab-radar" class="tab-pane">
+          <div class="radar-grid">
+            <div class="card">
+              <div class="workbench-header">
+                <h2 class="workbench-title">PRISM Adaptive RL Weight Topology</h2>
+              </div>
+              <div class="radar-canvas-container">
+                <canvas id="radarCanvas"></canvas>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="workbench-header">
+                <h2 class="workbench-title">Scoring Dimensions</h2>
+              </div>
+              <div class="weights-slider-list" style="margin-top:20px;">
+                <div class="weight-row">
+                  <div class="weight-meta">
+                    <div class="weight-title">Recency</div>
+                    <div class="weight-desc">Recent file modifications</div>
+                  </div>
+                  <div class="weight-bar-track">
+                    <div class="weight-bar-fill" style="width: 75%; background: var(--cyan-400);"></div>
+                  </div>
+                  <span class="weight-val">0.30</span>
+                </div>
+
+                <div class="weight-row">
+                  <div class="weight-meta">
+                    <div class="weight-title">Frequency</div>
+                    <div class="weight-desc">Repetitive symbol lookups</div>
+                  </div>
+                  <div class="weight-bar-track">
+                    <div class="weight-bar-fill" style="width: 62%; background: var(--emerald-400);"></div>
+                  </div>
+                  <span class="weight-val">0.25</span>
+                </div>
+
+                <div class="weight-row">
+                  <div class="weight-meta">
+                    <div class="weight-title">Semantic</div>
+                    <div class="weight-desc">BM25 / vector relevance</div>
+                  </div>
+                  <div class="weight-bar-track">
+                    <div class="weight-bar-fill" style="width: 62%; background: var(--violet-400);"></div>
+                  </div>
+                  <span class="weight-val">0.25</span>
+                </div>
+
+                <div class="weight-row">
+                  <div class="weight-meta">
+                    <div class="weight-title">Entropy</div>
+                    <div class="weight-desc">Information density check</div>
+                  </div>
+                  <div class="weight-bar-track">
+                    <div class="weight-bar-fill" style="width: 50%; background: var(--amber-400);"></div>
+                  </div>
+                  <span class="weight-val">0.20</span>
+                </div>
+
+                <div class="weight-row">
+                  <div class="weight-meta">
+                    <div class="weight-title">Centrality</div>
+                    <div class="weight-desc">AST dependency graph hub</div>
+                  </div>
+                  <div class="weight-bar-track">
+                    <div class="weight-bar-fill" style="width: 37%; background: var(--rose-400);"></div>
+                  </div>
+                  <span class="weight-val">0.15</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Tab 4: Security & Code Health -->
+        <section id="tab-health" class="tab-pane">
+          <div class="card">
+            <div class="workbench-header">
+              <h2 class="workbench-title">Security Tripwires & Repository Health Matrix</h2>
+              <span class="badge-verified">RAVS Active</span>
+            </div>
+            
+            <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top:16px;">
+              <div style="padding:16px; background:var(--bg-surface); border-radius:var(--radius-sm); border:1px solid var(--glass-stroke);">
+                <div style="font-size:11px; text-transform:uppercase; color:var(--text-subtle);">Prompt Injection Scans</div>
+                <div style="font-size:24px; font-weight:800; color:var(--emerald-400); margin:6px 0;">0 Detected</div>
+                <div style="font-size:12px; color:var(--text-muted);">Zero malicious instruction injection in intercepted prompts</div>
+              </div>
+
+              <div style="padding:16px; background:var(--bg-surface); border-radius:var(--radius-sm); border:1px solid var(--glass-stroke);">
+                <div style="font-size:11px; text-transform:uppercase; color:var(--text-subtle);">Context Poisoning Trips</div>
+                <div style="font-size:24px; font-weight:800; color:var(--emerald-400); margin:6px 0;">0 Failures</div>
+                <div style="font-size:12px; color:var(--text-muted);">WITNESS verification checksums match across all receipts</div>
+              </div>
+
+              <div style="padding:16px; background:var(--bg-surface); border-radius:var(--radius-sm); border:1px solid var(--glass-stroke);">
+                <div style="font-size:11px; text-transform:uppercase; color:var(--text-subtle);">God Files & Bloat</div>
+                <div style="font-size:24px; font-weight:800; color:var(--cyan-400); margin:6px 0;">2 Pruned</div>
+                <div style="font-size:12px; color:var(--text-muted);">Files over 1,500 LOC automatically converted to CSE scaffolds</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </main>
+    </div>
+
+    <!-- Command Palette Modal (Cmd+K) -->
+    <div id="cmdModal" class="modal-overlay">
+      <div class="cmd-palette">
+        <div class="cmd-input-wrap">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="opacity:0.6">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+          </svg>
+          <input type="text" id="cmdInput" class="cmd-input" placeholder="Type a command or jump to surface...">
+        </div>
+        <div class="cmd-list">
+          <div class="cmd-item" data-action="workbench">
+            <div class="cmd-item-left">
+              <span>⚡</span>
+              <span>Open Context Compression Workbench</span>
+            </div>
+            <kbd class="kbd-shortcut">↵</kbd>
+          </div>
+          <div class="cmd-item" data-action="receipts">
+            <div class="cmd-item-left">
+              <span>🛡️</span>
+              <span>View Cryptographic WITNESS Receipts</span>
+            </div>
+          </div>
+          <div class="cmd-item" data-action="radar">
+            <div class="cmd-item-left">
+              <span>🧠</span>
+              <span>Inspect PRISM RL Weight Radar</span>
+            </div>
+          </div>
+          <div class="cmd-item" data-action="health">
+            <div class="cmd-item-left">
+              <span>🔒</span>
+              <span>View Security & SAST Health Matrix</span>
+            </div>
+          </div>
+          <div class="cmd-item" data-action="copy-env">
+            <div class="cmd-item-left">
+              <span>📋</span>
+              <span>Copy Agent Environment Variables</span>
+            </div>
+          </div>
+          <div class="cmd-item" data-action="toggle-daemon">
+            <div class="cmd-item-left">
+              <span>🔄</span>
+              <span>Toggle Live Daemon / Simulation Mode</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toastNotification" class="toast">Action completed</div>
+
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>
