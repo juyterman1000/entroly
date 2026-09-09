@@ -1,0 +1,36 @@
+{
+  "name": "Entroly Control Plane",
+  "short_name": "Entroly",
+  "description": "Auditable Context-Control Plane & Token Optimizer for AI Coding Agents",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#07090e",
+  "theme_color": "#0b0f19",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "./assets/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["developer-tools", "productivity", "utilities"],
+  "shortcuts": [
+    {
+      "name": "Context Simulator",
+      "url": "./index.html#simulator",
+      "description": "Test and inspect reversible context compression"
+    },
+    {
+      "name": "Witness Receipts",
+      "url": "./index.html#receipts",
+      "description": "Inspect cryptographic context assurance receipts"
+    },
+    {
+      "name": "PRISM RL Radar",
+      "url": "./index.html#radar",
+      "description": "View real-time reinforcement learning weights"
+    }
+  ]
+}

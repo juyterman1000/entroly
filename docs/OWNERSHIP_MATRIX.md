@@ -13,7 +13,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 
 | Outcome | Files |
 |---|---:|
-| `tests-fixtures-docs-packaging` | 1226 |
+| `tests-fixtures-docs-packaging` | 1233 |
 | `python-host-orchestration` | 383 |
 | `node-host-orchestration` | 57 |
 | `rust-semantic-owner` | 41 |
@@ -21,7 +21,7 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `pyo3-binding` | 29 |
 | `generated-build-artifact` | 15 |
 | `wasm-binding` | 10 |
-| **total** | **1791** |
+| **total** | **1798** |
 
 ## Actionable queues
 
@@ -1858,3 +1858,10 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `tests/test_zero_token_invariants.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/validate_scaffold_real.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
 | `tests/verify_claims.py` | test | python | neither | tests-fixtures-docs-packaging | - | - | - | self | - | n/a | none | maps to the behaviour it protects |
+| `ui/README.md` | desktop and web UI application asset | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | canonical | low | desktop and web UI client asset |
+| `ui/app.css` | desktop and web UI application asset | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | canonical | low | desktop and web UI client asset |
+| `ui/app.js` | desktop and web UI application asset | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | canonical | low | desktop and web UI client asset |
+| `ui/assets/icon.svg` | desktop and web UI application asset | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | canonical | low | desktop and web UI client asset |
+| `ui/index.html` | desktop and web UI application asset | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | canonical | low | desktop and web UI client asset |
+| `ui/manifest.json` | desktop and web UI application asset | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | canonical | low | desktop and web UI client asset |
+| `ui/service-worker.js` | desktop and web UI application asset | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | canonical | low | desktop and web UI client asset |

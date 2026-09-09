@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="50%" stop-color="#818cf8"/>
+      <stop offset="100%" stop-color="#c084fc"/>
+    </linearGradient>
+    <linearGradient id="coreGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#34d399" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#34d399" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="dropGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="16" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+
+  <!-- Ambient Glow -->
+  <circle cx="256" cy="256" r="220" fill="url(#glow)"/>
+
+  <!-- Outer Hexagonal Control Shield -->
+  <polygon points="256,40 440,146 440,366 256,472 72,366 72,146" 
+           fill="#0b0f19" stroke="url(#shieldGrad)" stroke-width="12" stroke-linejoin="round"
+           filter="url(#dropGlow)"/>
+
+  <!-- Inner Compression Grid Rings -->
+  <polygon points="256,84 400,168 400,344 256,428 112,344 112,168" 
+           fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="4"/>
+  <polygon points="256,128 360,188 360,324 256,384 152,324 152,188" 
+           fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="3"/>
+
+  <!-- Circuit / Synapse Traces -->
+  <line x1="256" y1="84" x2="256" y2="180" stroke="url(#shieldGrad)" stroke-width="6" stroke-linecap="round"/>
+  <line x1="112" y1="344" x2="190" y2="290" stroke="url(#shieldGrad)" stroke-width="6" stroke-linecap="round"/>
+  <line x1="400" y1="344" x2="322" y2="290" stroke="url(#shieldGrad)" stroke-width="6" stroke-linecap="round"/>
+
+  <!-- Central Context Core (Reversible Crystal) -->
+  <polygon points="256,180 322,228 322,284 256,332 190,284 190,228" 
+           fill="url(#coreGrad)" stroke="#6ee7b7" stroke-width="6" stroke-linejoin="round"/>
+  
+  <!-- Cryptographic Witness Anchor -->
+  <circle cx="256" cy="256" r="18" fill="#ffffff" filter="url(#dropGlow)"/>
+  <circle cx="256" cy="84" r="8" fill="#38bdf8"/>
+  <circle cx="400" cy="168" r="8" fill="#818cf8"/>
+  <circle cx="400" cy="344" r="8" fill="#c084fc"/>
+  <circle cx="256" cy="428" r="8" fill="#34d399"/>
+  <circle cx="112" cy="344" r="8" fill="#38bdf8"/>
+  <circle cx="112" cy="168" r="8" fill="#818cf8"/>
+</svg>

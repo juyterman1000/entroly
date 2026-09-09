@@ -364,6 +364,12 @@ def classify(path: str, ctx: dict) -> Row:
                    "-", "-", "-", "self", "-", "n/a", "none",
                    "maps to the behaviour it protects")
 
+    # ---- UI & Desktop application assets --------------------------------
+    if p.startswith("ui/"):
+        return Row(p, "desktop and web UI application asset", "-", "neither", TESTS_DOCS_PACKAGING,
+                   "-", "-", "-", "-", "-", "canonical", "low",
+                   "desktop and web UI client asset")
+
     if p.startswith(("docs/", "benchmarks/", "examples/", ".github/")) or name.endswith(
         (".md", ".yml", ".yaml", ".toml", ".cfg", ".txt", ".svg", ".html", ".css", ".jsonl", ".lock")
     ):
