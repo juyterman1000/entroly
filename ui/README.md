@@ -1,33 +1,45 @@
-# Entroly Desktop & Web UI Application
+# Entroly Desktop & CLI Application
 
-The `ui/` directory contains the standalone, desktop-ready control plane interface for Entroly.
+The `ui/` directory contains the standalone, desktop-ready control plane interface and native Windows binaries for Entroly.
 
-## Design Philosophy
+## Architecture: Just Like `docker.exe`
 
-- **Zero Clutter**: Pure HTML5, Vanilla CSS, and modular ES6 JavaScript. No heavy Node runtime, webpack, or `node_modules` required.
-- **Desktop First**: Features an ambient desktop topbar HUD, keyboard command palette (`Cmd+K` / `Ctrl+K`), installable PWA manifest, and offline service worker caching.
-- **Dual Connection**: Connects in real-time to the Entroly daemon (`localhost:9377` / `:9378`), falling back gracefully to an interactive high-fidelity simulation engine when offline.
+Entroly provides a dual-mode native Windows binary (`entroly.exe`) and a standalone 1-click installer (`EntrolySetup.exe`), matching the architecture of **Docker Desktop**:
 
-## Surfaces & Capabilities
+1. **Dual CLI & GUI Binary (`entroly.exe`)**:
+   - When run in a terminal: Functions as a fast CLI tool (`entroly --help`, `entroly status`, `entroly doctor`, `entroly start`).
+   - When run with `entroly ui` or double-clicked from the desktop: Launches the native standalone Control Plane desktop application.
+2. **Standalone 1-Click Installer (`EntrolySetup.exe`)**:
+   - Single executable installer (like `Docker Desktop Installer.exe`).
+   - Automatically installs binaries to `%LOCALAPPDATA%\Programs\Entroly`.
+   - Registers `entroly` into the Windows user `PATH` environment variable so it works in any terminal.
+   - Places `Entroly Desktop` shortcuts on the Desktop and Start Menu with the custom Entroly icon.
+3. **Zero Framework Bloat**:
+   - Pure native Rust binary (`411 KB`) embedding all web assets directly.
+   - Uses native Windows Edge/Chrome App Mode: zero Electron overhead, zero memory bloat, 60 FPS hardware-accelerated rendering.
 
-1. **Context Compression & Diff Workbench**:
-   - Live side-by-side context optimization viewer (pruned boilerplate highlighted vs preserved semantic interfaces).
-   - Real-time token budget slider with instant cost savings calculator across frontier models (Claude 3.7 Sonnet, GPT-4o, DeepSeek R1).
-2. **Cryptographic WITNESS Receipts Chain**:
-   - Auditable record of every context-selection decision with verifiable SHA-256 signatures.
-3. **PRISM Reinforcement Learning Radar**:
-   - Pure HTML5 Canvas radar chart visualizing real-time weights across Recency, Frequency, Semantic, Entropy, and Centrality.
-4. **Security & Health Matrix**:
-   - Tripwires for prompt injection attempts, context poisoning, and god-file bloat.
+---
 
-## Running the UI
+## Installation & Running
 
-### Method 1: Via the Entroly CLI
-```bash
-entroly dashboard
-# Or launch the full supervisor:
-entroly go
+### Option 1: 1-Click Installer Executable
+Double-click `ui/dist/EntrolySetup.exe` (or run it from PowerShell):
+```powershell
+& ui\dist\EntrolySetup.exe
 ```
 
-### Method 2: Direct Desktop / Browser Launch
-Simply open `ui/index.html` in any modern web browser or install it as a native standalone window via Chrome/Edge ("Install Entroly Control Plane").
+### Option 2: CLI Usage (Available Globally After Install)
+```powershell
+entroly --help     # Show help and CLI commands
+entroly --version  # View version and engine status
+entroly status     # Check live daemon metrics and health score
+entroly doctor     # Run full system diagnostics
+entroly ui         # Launch the desktop Control Plane window
+```
+
+### Option 3: Compile From Source
+```powershell
+cd ui/desktop
+cargo build --release --bin entroly
+cargo build --release --bin EntrolySetup
+```
