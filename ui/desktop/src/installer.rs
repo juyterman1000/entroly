@@ -47,8 +47,10 @@ fn main() {
     println!("[3/4] Creating Windows Desktop and Start Menu shortcuts...");
     create_shortcuts(&exe_path, &icon_path);
 
-    // 4. Launch Entroly Desktop
+    // 4. Launch Entroly Daemon & Desktop Window
     println!("[4/4] Launching Entroly Desktop Control Plane...");
+    let _ = Command::new(&exe_path).arg("start").spawn();
+    std::thread::sleep(std::time::Duration::from_millis(100));
     let _ = Command::new(&exe_path).arg("ui").spawn();
 
     println!();
