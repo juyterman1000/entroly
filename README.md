@@ -428,6 +428,56 @@ If you use an AI coding tool like Claude Code or Cursor, yes. Install it (`pip i
 Run `entroly doctor`. If that doesn't sort it, [open an issue](https://github.com/juyterman1000/entroly/issues) or ask in [Discussions](https://github.com/juyterman1000/entroly/discussions).
 </details>
 
+### Cross-agent shared memory
+
+Content-addressed store with SimHash deduplication and BM25 search. Multiple agents (Claude Code, Codex, Cursor) write and query the same knowledge base with provenance tracking.
+
+```python
+from entroly import shared_memory_write, shared_memory_search
+shared_memory_write("Auth uses JWT with RS256", agent_id="claude-code", tags=["auth"])
+results = shared_memory_search("authentication tokens")  # finds it, from any agent
+```
+
+### Output token reduction
+
+Three-layer pipeline: effort classification steers verbosity directives, `max_tokens` budgets cap generation, and post-generation distillation trims filler. A "yes/no" query gets 150 max tokens; a detailed architecture review gets 16,384.
+
+### Shell hook compression
+
+Command-specific patterns for git, npm, cargo, docker, pytest, kubectl, and terraform strip progress bars, deprecation warnings, and boilerplate while preserving errors and key results. Full output is recoverable via content-addressed handles.
+
+```bash
+entroly hook install     # adds transparent compression to your shell
+entroly hook status      # shows which shells have the hook
+```
+
+### Failure mining
+
+`entroly learn --deep` mines PRISM feedback, vault beliefs, evolution daemon, and checkpoint data for recurring failure patterns, then generates corrections for agent config files.
+
+---
+
+## How Entroly compares
+
+Entroly is the only tool that combines optimal selection (knapsack solver with provable guarantees) with auditable receipts (byte-offset fragments, SHA-256 digests, inspectable omissions) and verification (WITNESS grounding checks, EICV hallucination detection).
+
+| Capability | Entroly | Prompt compressors | Memory layers |
+|---|---|---|---|
+| Knapsack-optimal token selection | Yes (DP + greedy) | Heuristic | No |
+| Auditable context receipts | Yes (byte-offset, SHA-256) | No | No |
+| Cross-agent shared memory | Yes (SimHash dedup, BM25) | No | Yes |
+| Output token reduction | Yes (3-layer pipeline) | No | No |
+| Shell output compression | Yes (7 command patterns) | No | No |
+| Image/multimodal compression | Yes (resize + OCR) | No | No |
+| Grounding verification (WITNESS) | Yes (NLI-backed) | No | No |
+| Hallucination detection (EICV) | Yes (6-layer hierarchy) | No | No |
+| Bayesian model routing (RAVS) | Yes (fail-closed) | No | No |
+| Failure mining / self-improvement | Yes (PRISM feedback loop) | No | Partial |
+| TypeScript SDK + adapters | Yes (LangChain, LlamaIndex) | Partial | Partial |
+| Local-first (no cloud required) | Yes | Varies | No |
+| MCP protocol native | Yes (40+ tools) | No | No |
+| Rust-accelerated engine | Yes (PyO3 + WASM) | No | No |
+
 ---
 ## Docs & community
 

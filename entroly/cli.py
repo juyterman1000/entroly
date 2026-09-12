@@ -2716,6 +2716,39 @@ def cmd_unwrap(args):
 # ── Learn: Failure pattern analysis ──────────────────────────────────
 
 
+def cmd_hook(args):
+    """entroly hook — manage shell hook for transparent CLI compression."""
+    sub = getattr(args, "hook_action", None)
+    if sub is None:
+        print(f"\n{C.CYAN}{C.BOLD}  Entroly Shell Hook{C.RESET}")
+        print("  Usage: entroly hook [install|uninstall|status]\n")
+        return
+
+    from .shell_hook import install_hook, uninstall_hook, hook_status
+    if sub == "install":
+        shell = getattr(args, "shell", None) or None
+        result = install_hook(shell)
+        if result:
+            print(f"\n  {C.GREEN}Hook installed for {result}.{C.RESET}")
+            print(f"  Restart your shell or run: source ~/.{result}rc\n")
+        else:
+            print(f"\n  {C.RED}Could not detect shell. Use --shell bash|zsh|fish{C.RESET}\n")
+    elif sub == "uninstall":
+        shell = getattr(args, "shell", None) or None
+        result = uninstall_hook(shell)
+        if result:
+            print(f"\n  {C.GREEN}Hook removed from {result}.{C.RESET}\n")
+        else:
+            print(f"\n  {C.GRAY}No hook found to remove.{C.RESET}\n")
+    elif sub == "status":
+        status = hook_status()
+        print(f"\n{C.CYAN}{C.BOLD}  Shell Hook Status{C.RESET}")
+        for shell, installed in status.items():
+            icon = f"{C.GREEN}installed" if installed else f"{C.GRAY}not installed"
+            print(f"    {shell:8s} {icon}{C.RESET}")
+        print()
+
+
 def cmd_learn(args):
     """entroly learn — analyze session for failure patterns."""
     if getattr(args, "history", False):
@@ -2796,6 +2829,20 @@ def cmd_learn(args):
                 else:
                     print(f"\n  {C.GRAY}{fname} already has learnings section — remove the old one to refresh.{C.RESET}")
                 break
+
+    if getattr(args, "deep", False):
+        print(f"\n  {C.CYAN}{C.BOLD}Deep Analysis{C.RESET} (mining vault, PRISM, evolution...)\n")
+        from .learn import FailureMiner, learning_report
+        miner = FailureMiner()
+        min_occ = getattr(args, "min_occurrences", 2)
+        patterns = miner.mine(
+            sources=["prism", "vault", "evolution", "checkpoints"],
+            min_occurrences=min_occ,
+        )
+        if patterns:
+            print(learning_report(patterns))
+        else:
+            print(f"  {C.GRAY}No recurring failure patterns found.{C.RESET}")
 
     print()
 
@@ -4481,7 +4528,7 @@ def cmd_completions(args):
         "autotune", "benchmark", "simulate", "perf", "status", "config", "clean",
         "telemetry", "export", "import", "drift", "profile",
         "batch", "wrap", "unwrap", "trial", "shrink", "browser", "response",
-        "capabilities", "learn", "share", "demo",
+        "capabilities", "learn", "hook", "share", "demo",
         "doctor", "digest", "migrate", "role", "completions",
         "optimize", "ingest", "select", "receipt", "explain",
         "feedback", "compile", "verify", "sync",
@@ -7172,6 +7219,14 @@ def main():
     learn_parser.add_argument("--max-bytes", type=int, default=64 * 1024 * 1024)
     learn_parser.add_argument("--max-file-bytes", type=int, default=8 * 1024 * 1024)
     learn_parser.add_argument("--json", dest="json_output", action="store_true")
+    learn_parser.add_argument(
+        "--deep", action="store_true",
+        help="Deep failure mining: vault, PRISM, evolution, checkpoints",
+    )
+    learn_parser.add_argument(
+        "--min-occurrences", type=int, default=2, dest="min_occurrences",
+        help="Minimum occurrences for a pattern to surface (default: 2)",
+    )
 
     # entroly capabilities
     capabilities_parser = subparsers.add_parser(
@@ -7182,6 +7237,18 @@ def main():
         "--json", dest="json_output", action="store_true",
         help="Emit a stable machine-readable capability report",
     )
+
+    # entroly hook
+    hook_parser = subparsers.add_parser(
+        "hook",
+        help="Manage shell hook for transparent CLI output compression",
+    )
+    hook_sub = hook_parser.add_subparsers(dest="hook_action")
+    hook_install = hook_sub.add_parser("install", help="Install shell hook")
+    hook_install.add_argument("--shell", choices=["bash", "zsh", "fish"], help="Target shell")
+    hook_uninstall = hook_sub.add_parser("uninstall", help="Remove shell hook")
+    hook_uninstall.add_argument("--shell", choices=["bash", "zsh", "fish"], help="Target shell")
+    hook_sub.add_parser("status", help="Show hook installation status")
 
     # entroly doctor (Gap #52)
     doctor_parser = subparsers.add_parser(
@@ -7600,6 +7667,7 @@ def main():
         "response": cmd_response,
         "govern": cmd_govern,
         "learn": cmd_learn,
+        "hook": cmd_hook,
         "share": cmd_share,
         "ravs": cmd_ravs,
         "cache": cmd_cache,

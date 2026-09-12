@@ -1790,7 +1790,83 @@ def compress_with_receipt(
             source_sha256=content_digest(content),
             distortion_risk=0.0,
         )
-    # Smallest representation that is still lossless-or-recoverable. A codec
-    # that dropped content without a recovery reference is not offered here.
     usable = [r for r in reps if r.recovery is not None or r.text == content]
     return min(usable or reps, key=lambda r: r.token_cost)
+
+
+# ---------------------------------------------------------------------------
+# Cross-agent shared memory
+# ---------------------------------------------------------------------------
+
+def shared_memory_write(
+    content: str,
+    agent_id: str = "unknown",
+    tags: list[str] | None = None,
+) -> dict[str, Any] | None:
+    """Write to cross-agent shared memory. Returns entry dict, or None if deduplicated."""
+    from .shared_memory import SharedMemoryStore
+    entry = SharedMemoryStore().write(content, agent_id=agent_id, tags=tags)
+    return entry.to_dict() if entry else None
+
+
+def shared_memory_search(
+    query: str,
+    top_k: int = 5,
+    agent_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """Search cross-agent shared memory by BM25 relevance."""
+    from .shared_memory import SharedMemoryStore
+    return [e.to_dict() for e in SharedMemoryStore().search(query, top_k=top_k, agent_id=agent_id)]
+
+
+# ---------------------------------------------------------------------------
+# Output token reduction
+# ---------------------------------------------------------------------------
+
+def classify_effort(query: str) -> dict[str, Any]:
+    """Classify query effort level. Returns effort name, confidence, and max_tokens."""
+    from .output_steering import classify_effort as _classify, EFFORT_MAX_TOKENS
+    c = _classify(query)
+    return {
+        "effort": c.effort.name,
+        "confidence": c.confidence,
+        "reason": c.reason,
+        "max_tokens": EFFORT_MAX_TOKENS[c.effort],
+    }
+
+
+def steer_output(
+    messages: list[dict[str, Any]],
+    effort: str | None = None,
+) -> dict[str, Any]:
+    """Steer output verbosity. Returns modified messages + budget."""
+    from .output_steering import VerbositySteerer, Effort
+    steerer = VerbositySteerer()
+    if effort:
+        steerer.set_effort(effort)
+    modified, classification, max_tokens = steerer.auto_steer(messages)
+    return {
+        "messages": modified,
+        "effort": classification.effort.name,
+        "max_tokens": max_tokens,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Shell hook compression
+# ---------------------------------------------------------------------------
+
+def compress_shell(
+    text: str,
+    command: str = "",
+    max_lines: int = 50,
+) -> dict[str, Any]:
+    """Compress CLI output, preserving errors and key info."""
+    from .shell_hook import compress_shell_output
+    compressed, orig, comp, handle = compress_shell_output(text, command, max_lines)
+    return {
+        "compressed": compressed,
+        "original_lines": orig,
+        "compressed_lines": comp,
+        "recovery_handle": handle,
+    }

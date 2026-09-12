@@ -12,6 +12,7 @@
     "NOTICE",
     "index.js",
     "index.d.ts",
+    "adapters.js",
     "bin/entroly.js",
     "README.md"
   ],
