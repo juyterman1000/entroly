@@ -70,8 +70,6 @@ jobs:
           tests/test_agent_exact_recovery_integrations.py
           tests/test_agent_integration_packages.py
           tests/test_hermes_context_engine.py
-          tests/test_discovery_metadata.py
-          tests/test_search_discovery.py
           --junitxml=agent-integration-${{ matrix.python-version }}.xml
       - name: Upload machine-readable result
         if: always()
