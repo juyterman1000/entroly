@@ -1,11 +1,12 @@
 # Entroly agent compatibility
 
-Entroly integrates through four distinct paths. A client name in this document does **not** imply that every subscription, OAuth flow, model, or provider route is intercepted.
+Entroly integrates through five distinct paths. A client name in this document does **not** imply that every subscription, OAuth flow, model, or provider route is intercepted.
 
-1. **Native attachment or plugin** — the host registers Entroly as a scoped MCP or context engine.
-2. **One-command proxy launch** — Entroly starts a local proxy, sets the client's supported endpoint variables, and launches the client.
-3. **Automatic MCP configuration** — Entroly writes or merges the client's project/user MCP configuration.
-4. **Guided custom endpoint** — Entroly starts the proxy and prints a client-specific configuration block rather than mutating a versioned third-party schema.
+1. **Deterministic host hook** — the host runs Entroly on prompt submission before model planning and accepts bounded context returned by the hook.
+2. **Native attachment or plugin** — the host registers Entroly as a scoped MCP or context engine.
+3. **One-command proxy launch** — Entroly starts a local proxy, sets the client's supported endpoint variables, and launches the client.
+4. **Automatic MCP configuration** — Entroly writes or merges the client's project/user MCP configuration.
+5. **Guided custom endpoint** — Entroly starts the proxy and prints a client-specific configuration block rather than mutating a versioned third-party schema.
 
 Provider-bound token and cost measurements exist only when the request actually traverses the Entroly proxy. MCP-only integrations expose context selection, receipts, exact recovery, and verification tools, but do not automatically intercept every inference request made by the host.
 
@@ -13,14 +14,17 @@ Provider-bound token and cost measurements exist only when the request actually 
 
 | Agent or platform | Best Entroly path | Status | Authentication and routing boundary |
 |---|---|---|---|
-| Claude Code | Scoped MCP attachment; API-key proxy wrap | Native | Claude Pro/Max subscription sessions should use MCP. Public-API proxying requires `ANTHROPIC_API_KEY`. |
-| Codex CLI | Scoped MCP attachment; API-key proxy wrap | Native | ChatGPT-account mode can bypass `OPENAI_BASE_URL`; provider-bound measurement requires API-key or custom-provider routing. |
-| GitHub Copilot CLI | MCP for subscription sessions; custom-provider proxy for BYOK | Supported with mode boundary | MCP works with the signed-in CLI. Entroly does not claim interception of GitHub-hosted subscription inference. |
+| Claude Code | Bundled `UserPromptSubmit` hook plus scoped MCP | Deterministic pre-turn activation | The enabled plugin runs bounded local selection before planning. Public-API proxying still requires `ANTHROPIC_API_KEY`. |
+| VS Code / Copilot agent mode | Claude-format plugin hook where agent plugins are enabled; MCP otherwise | Deterministic hook is host-version dependent | Activation requires a VS Code build and plugin configuration that loads agent hooks. MCP alone remains advisory. |
+| GitHub Copilot CLI | Claude-compatible hook when supported; MCP for subscription sessions; custom-provider proxy for BYOK | Hook or mode-bounded | Entroly does not claim interception of GitHub-hosted subscription inference. |
+| Gemini CLI | Bundled `BeforeAgent` extension hook plus scoped MCP | Deterministic pre-turn activation | The enabled extension runs bounded local selection before planning. Provider traffic is separate unless routed through the proxy. |
+| Codex CLI / Codex app | Scoped MCP attachment; API-key proxy wrap | Advisory MCP or transport-enforced proxy | The current Codex plugin surface has no Entroly-owned pre-turn lifecycle hook. An activation receipt must not be inferred from installation. |
 | OpenClaw | ContextEngine plugin and scoped MCP attachment | Native | OpenClaw retains provider authentication; Entroly assembles context and emits receipts. |
-| Cursor | Automatic project MCP config; optional custom proxy endpoint | Automatic MCP | Restart Cursor after configuration. Proxy accounting exists only when the model route points through Entroly. |
+| Cursor | Automatic project MCP config; optional custom proxy endpoint | Advisory MCP or transport-enforced proxy | Restart Cursor after configuration. A model may skip MCP; activation is proven only by a receipt or intercepted request. |
+| Kiro | MCP or custom endpoint when supported by the installed version | Advisory until host hook validated | Entroly does not claim automatic per-turn activation without a tested lifecycle hook. |
+| IntelliJ / JetBrains AI agents | MCP or custom endpoint when supported by the installed plugin | Advisory until host hook validated | Entroly does not claim automatic per-turn activation without a tested lifecycle hook. |
 | Aider | Session-scoped OpenAI-compatible proxy | One command | Requires an API/provider route that accepts a custom endpoint. |
 | OpenCode | Session-scoped OpenAI-compatible proxy | One command | Provider authentication remains owned by OpenCode and its upstream. |
-| Gemini CLI | Session-scoped Gemini-compatible proxy | One command | Requires `GEMINI_API_KEY` for the provider-bound proxy path. |
 | Qwen Code | Session-scoped OpenAI-compatible proxy | One command | Confirm the selected provider honors `OPENAI_BASE_URL`. |
 | Cline | Printed OpenAI-compatible endpoint settings | Guided setup | Entroly does not silently mutate extension settings whose schema may change by version. |
 | Continue | Generated provider snippet | Guided setup | Confirm the active model entry uses the Entroly base URL. |
@@ -69,5 +73,7 @@ Compatibility is not inferred merely because a client uses the word “OpenAI-co
 ## Status policy
 
 A green status requires a code-backed setup path and a regression or end-to-end contract. Clients with documented custom endpoints but no Entroly request-flow test remain **guided** or **validation pending**. Hosted subscription interception is never inferred from MCP compatibility.
+
+Run `entroly activation status --json` in a project to distinguish `active` from `installed_but_unobserved`. `active` requires a local host-hook receipt. It does not prove token or cost savings; those require a matched baseline and provider-bound measurement.
 
 Preview a wrapper without changing configuration or launching the client with `entroly wrap <agent> --dry-run`; after a real proxy session, use the watchdog, receipt, or `entroly value` output to confirm that traffic actually traversed Entroly.

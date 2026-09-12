@@ -15,7 +15,9 @@
       "command": "node",
       "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/entroly-plugin-launch.mjs"],
       "env": {
-        "ENTROLY_NO_DOCKER": "1"
+        "ENTROLY_NO_DOCKER": "1",
+        "ENTROLY_MCP_PASSIVE": "1",
+        "ENTROLY_MAX_FILES": "200"
       }
     }
   }

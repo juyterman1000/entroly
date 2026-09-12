@@ -102,6 +102,8 @@ def test_codex_bundle_has_manifest_mcp_and_narrow_valid_skill() -> None:
     assert len(manifest["interface"]["defaultPrompt"]) <= 3
     assert mcp["mcpServers"]["entroly"]["args"] == ["serve"]
     assert mcp["mcpServers"]["entroly"]["env"]["ENTROLY_NO_DOCKER"] == "1"
+    assert mcp["mcpServers"]["entroly"]["env"]["ENTROLY_MCP_PASSIVE"] == "1"
+    assert mcp["mcpServers"]["entroly"]["env"]["ENTROLY_MAX_FILES"] == "200"
     assert "process exit code" in skill.lower()
     assert "provider billing" in skill.lower()
 
@@ -117,10 +119,30 @@ def test_claude_and_gemini_bundles_share_evidence_contract() -> None:
     gemini_skill = (
         gemini_root / "skills" / "entroly-evidence-operations" / "SKILL.md"
     ).read_text(encoding="utf-8")
+    claude_hooks = json.loads(
+        (ROOT / ".claude-plugin" / "hooks" / "hooks.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    gemini_hooks = json.loads(
+        (gemini_root / "hooks" / "hooks.json").read_text(encoding="utf-8")
+    )
 
     assert claude_manifest["skills"] == "./skills/"
+    claude_env = claude_manifest["mcpServers"]["entroly"]["env"]
+    assert claude_env["ENTROLY_MCP_PASSIVE"] == "1"
+    assert claude_env["ENTROLY_MAX_FILES"] == "200"
+    claude_command = claude_hooks["hooks"]["UserPromptSubmit"][0]["hooks"][0]
+    assert claude_command["type"] == "command"
+    assert claude_command["command"] == "node"
+    assert "activation" in claude_command["args"]
     assert gemini_manifest["name"] == "entroly"
     assert gemini_manifest["contextFileName"] == "GEMINI.md"
+    gemini_env = gemini_manifest["mcpServers"]["entroly"]["env"]
+    assert gemini_env["ENTROLY_MCP_PASSIVE"] == "1"
+    assert gemini_env["ENTROLY_MAX_FILES"] == "200"
+    gemini_command = gemini_hooks["hooks"]["BeforeAgent"][0]["hooks"][0]
+    assert "entroly activation hook" in gemini_command["command"]
     assert "matched operational experiment" in gemini_skill
 
 

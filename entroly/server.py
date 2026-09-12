@@ -2031,6 +2031,18 @@ def create_mcp_server(
         mem = stats.get("memory", {})
         ctx_eff = stats.get("context_efficiency", {})
         checkpoint = stats.get("checkpoint", {})
+        try:
+            from .agent_activation import activation_status
+
+            activation = activation_status(
+                Path(os.environ.get("ENTROLY_SOURCE", os.getcwd())).resolve()
+            )
+        except Exception as exc:
+            activation = {
+                "state": "status_unavailable",
+                "activation_events": 0,
+                "detail": f"{type(exc).__name__}: activation status unavailable",
+            }
 
         total_frags = session.get("total_fragments", 0)
         total_tokens = session.get("total_tokens_tracked", 0)
@@ -2125,6 +2137,7 @@ def create_mcp_server(
             }
 
         dashboard = {
+            "🧭 agent_activation": activation,
             "💰 money": {
                 "modeled_api_cost_avoided_usd": f"${cost_saved_usd:.4f}",
                 "tokens_saved_total": f"{real_tokens_saved:,}",

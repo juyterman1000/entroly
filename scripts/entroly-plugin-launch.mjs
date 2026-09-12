@@ -9,11 +9,20 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { delimiter, join } from "node:path";
 
-const CANDIDATES = [
+const requestedArgs = process.argv.slice(2);
+const SERVER_CANDIDATES = [
   { command: "uvx", args: ["--from", "entroly", "entroly"] },
   { command: "npx", args: ["-y", "entroly@latest"] },
   { command: "entroly", args: [] },
 ];
+// Hooks run once per prompt and must stay cheap. Prefer an installed Entroly
+// executable there; retain uvx-first behavior for the long-lived MCP server.
+const HOOK_CANDIDATES = [
+  { command: "entroly", args: [] },
+  { command: "uvx", args: ["--from", "entroly", "entroly"] },
+  { command: "npx", args: ["-y", "entroly@latest"] },
+];
+const CANDIDATES = requestedArgs.length > 0 ? HOOK_CANDIDATES : SERVER_CANDIDATES;
 
 // Resolve against PATH ourselves rather than passing `shell: true`. With a
 // shell, a missing command exits 1 like any other failure, and the chain
@@ -58,7 +67,7 @@ for (const candidate of CANDIDATES) {
   const executable = resolve(candidate.command);
   if (executable === null) continue;
 
-  const result = runCandidate(executable, candidate.args);
+  const result = runCandidate(executable, [...candidate.args, ...requestedArgs]);
   // A null status means the process never launched. The next candidate may
   // still work, so fall through instead of exiting -- this is exactly the
   // "installed but broken" case the shell-free design exists to detect.
