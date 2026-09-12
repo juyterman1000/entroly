@@ -50,8 +50,8 @@ export class CompressionViewPanel {
     this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
 
     this._panel.webview.onDidReceiveMessage(
-      (message) => {
-        if (message.command === 'copy') {
+      (message: { command: string; text?: string }) => {
+        if (message.command === 'copy' && message.text) {
           vscode.env.clipboard.writeText(message.text);
           vscode.window.showInformationMessage('✓ Entroly context copied to clipboard!');
         }

@@ -77,13 +77,27 @@ def compress_image(
     from PIL import Image
 
     # Load image
-    if isinstance(source, (str, Path)):
-        path = Path(source)
-        original_bytes = path.read_bytes()
-        img = Image.open(path)
-    else:
-        original_bytes = source
-        img = Image.open(io.BytesIO(source))
+    try:
+        if isinstance(source, (str, Path)):
+            path = Path(source)
+            original_bytes = path.read_bytes()
+            img = Image.open(path)
+        else:
+            original_bytes = source
+            img = Image.open(io.BytesIO(source))
+    except Exception as e:
+        logger.warning("Image compression failed to open image: %s", e)
+        orig_len = len(original_bytes) if "original_bytes" in locals() else 0
+        return CompressionResult(
+            original_size=orig_len,
+            compressed_size=orig_len,
+            reduction_pct=0.0,
+            format="unknown",
+            width=0,
+            height=0,
+            strategy="passthrough",
+            data=original_bytes if "original_bytes" in locals() else None,
+        )
 
     original_size = len(original_bytes)
     orig_w, orig_h = img.size

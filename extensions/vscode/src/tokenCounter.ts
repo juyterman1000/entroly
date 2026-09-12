@@ -21,7 +21,7 @@ export class TokenStatusBarManager {
     this.disposables.push(
       vscode.window.onDidChangeActiveTextEditor(() => this.update()),
       vscode.window.onDidChangeTextEditorSelection(() => this.update()),
-      vscode.workspace.onDidChangeTextDocument((e) => {
+      vscode.workspace.onDidChangeTextDocument((e: vscode.TextDocumentChangeEvent) => {
         if (vscode.window.activeTextEditor?.document === e.document) {
           this.update();
         }
