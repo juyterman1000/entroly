@@ -51,15 +51,11 @@ def test_openclaw_docs_use_a_publicly_verifiable_install_path() -> None:
     readme = (ROOT / "integrations" / "openclaw" / "README.md").read_text(
         encoding="utf-8"
     )
-    landing = (ROOT / "docs" / "openclaw-context-engine.html").read_text(
-        encoding="utf-8"
-    )
 
-    for document in (readme, landing):
-        assert "openclaw plugins install npm:entroly-openclaw" in document
-        assert "openclaw plugins enable entroly" in document
-        assert "openclaw gateway restart" in document
-        assert "openclaw plugins install clawhub:entroly-openclaw" not in document
+    assert "openclaw plugins install npm:entroly-openclaw" in readme
+    assert "openclaw plugins enable entroly" in readme
+    assert "openclaw gateway restart" in readme
+    assert "openclaw plugins install clawhub:entroly-openclaw" not in readme
 
 
 def test_hermes_exports_current_contract_adapter() -> None:

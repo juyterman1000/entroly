@@ -8,7 +8,7 @@ version: 1.0.83
 date-released: 2026-08-04
 license: Apache-2.0
 repository-code: "https://github.com/juyterman1000/entroly"
-url: "https://juyterman1000.github.io/entroly/docs/index.html"
+url: "https://github.com/juyterman1000/entroly"
 abstract: >-
   Entroly is an open-source, local-first Context Assurance layer for AI agents.
   It combines budget-aware evidence selection, recoverable compression,

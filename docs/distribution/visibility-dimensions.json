@@ -15,7 +15,7 @@
       "id": "category-positioning",
       "name": "Category positioning",
       "state": "strong",
-      "current_evidence": ["README.md", "llms.txt", "docs/index.html", "pyproject.toml"],
+      "current_evidence": ["README.md", "llms.txt", "pyproject.toml"],
       "leadership_target": "Own the Context Assurance category with one consistent definition across every package, registry, document, and external listing.",
       "next_action": "Keep Context Assurance as the primary category and Context OS as the architectural explanation; prevent tagline drift in release checks."
     },
@@ -39,7 +39,7 @@
       "id": "node-registry",
       "name": "Node and npm distribution",
       "state": "strong",
-      "current_evidence": ["entroly/npm/package.json", "entroly/npm-alias/package.json", "entroly-wasm/package.json", "server.json", ".claude-plugin/manifest.json"],
+      "current_evidence": ["entroly/npm/package.json", "entroly/npm-alias/package.json", "entroly-wasm/package.json", "server.json"],
       "leadership_target": "Node, WASM, npm CLI, and MCP users receive the same core contract and current install instructions as Python users.",
       "next_action": "Keep the primary `entroly` package, MCP bridge, WASM exports, docs, and version checks aligned."
     },
@@ -71,7 +71,7 @@
       "id": "mcp-discovery",
       "name": "MCP discovery and registries",
       "state": "partial",
-      "current_evidence": ["server.json", "entroly/compression_mcp.py", "docs/mcp-server-guide.html", "docs/distribution/targets.json"],
+      "current_evidence": ["server.json", "entroly/compression_mcp.py", "docs/distribution/targets.json"],
       "leadership_target": "Current manifests and verified listings across major MCP catalogs, with scoped roots, bounded outputs, and security documentation.",
       "next_action": "Submit the prepared catalog entries and record public PR or listing URLs before changing status."
     },
@@ -79,7 +79,7 @@
       "id": "claude-plugin-skill",
       "name": "Claude plugin and Agent Skill visibility",
       "state": "partial",
-      "current_evidence": [".claude-plugin/manifest.json", "docs/SKILLS.md", "docs/distribution/submission-kit.md"],
+      "current_evidence": ["docs/SKILLS.md", "docs/distribution/submission-kit.md"],
       "leadership_target": "Native Claude plugin metadata, managed instructions, Agent Skill documentation, and presence in Claude-specific catalogs.",
       "next_action": "Validate the installed Claude experience end to end and submit to the prepared Claude catalogs."
     },
@@ -87,7 +87,7 @@
       "id": "agent-integration-breadth",
       "name": "Agent and IDE integration breadth",
       "state": "strong",
-      "current_evidence": ["docs/agent-integrations.html", "docs/product-surface.md", ".github/workflows/agent-integration-contracts.yml"],
+      "current_evidence": ["docs/product-surface.md", ".github/workflows/agent-integration-contracts.yml"],
       "leadership_target": "Every claimed integration has an explicit path, bounded support status, installation instructions, and conformance evidence.",
       "next_action": "Convert compatibility claims into executable journeys wherever the host can be installed in CI."
     },
@@ -103,7 +103,7 @@
       "id": "owned-documentation",
       "name": "Owned documentation depth",
       "state": "strong",
-      "current_evidence": ["docs/index.html", "docs/DETAILS.md", "docs/BENCHMARKS.md", "docs/product-surface.md"],
+      "current_evidence": ["docs/DETAILS.md", "docs/BENCHMARKS.md", "docs/product-surface.md"],
       "leadership_target": "Task-specific pages for installation, integrations, security, benchmarks, troubleshooting, architecture, and limitations.",
       "next_action": "Keep the documentation information architecture concise and add pages only when they answer a distinct user query."
     },
@@ -111,7 +111,7 @@
       "id": "seo-technical",
       "name": "Technical SEO",
       "state": "strong",
-      "current_evidence": ["docs/index.html", "docs/robots.txt", "docs/sitemap.xml"],
+      "current_evidence": ["docs/robots.txt", "docs/sitemap.xml"],
       "leadership_target": "Canonical URLs, accurate metadata, structured data, sitemap coverage, stable titles, and crawlable task-specific pages.",
       "next_action": "Generate sitemap entries from the published-page inventory and fail CI when indexed pages or canonical URLs drift."
     },
@@ -191,7 +191,7 @@
       "id": "community-social-proof",
       "name": "Community and social proof",
       "state": "partial",
-      "current_evidence": ["CONTRIBUTING.md", ".github/CODE_OF_CONDUCT.md", "docs/discord.html", ".github/ISSUE_TEMPLATE/independent-review.yml", ".github/ISSUE_TEMPLATE/integration-request.yml"],
+      "current_evidence": ["CONTRIBUTING.md", ".github/CODE_OF_CONDUCT.md", ".github/ISSUE_TEMPLATE/independent-review.yml", ".github/ISSUE_TEMPLATE/integration-request.yml"],
       "leadership_target": "Visible user stories, integration contributions, benchmark reproduction reports, and responsive issue handling.",
       "next_action": "Collect permissioned user stories and reproducibility reports while preserving failures and conflict disclosures."
     },

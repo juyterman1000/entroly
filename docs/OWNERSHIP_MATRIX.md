@@ -151,12 +151,6 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `bench/colab_run.ipynb` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `bench/compare.py` | host orchestration | python | orchestration | python-host-orchestration | - | bench.compare | - | pytest | - | canonical | low |  |
 | `bench/evaluate.py` | Python surface over the native engine | python | orchestration | python-host-orchestration | - | bench.evaluate | - | pytest | - | canonical | high | on the native boundary; must keep a pure-Python fallback |
-| `bench/fix_nb.py` | python module | python | orchestration | python-host-orchestration | - | bench.fix_nb | - | pytest | - | canonical | low | no orchestration, native or computation signal; treated as glue |
-| `bench/fix_nb2.py` | python module | python | orchestration | python-host-orchestration | - | bench.fix_nb2 | - | pytest | - | canonical | low | no orchestration, native or computation signal; treated as glue |
-| `bench/fix_nb3.py` | python module | python | orchestration | python-host-orchestration | - | bench.fix_nb3 | - | pytest | - | canonical | low | no orchestration, native or computation signal; treated as glue |
-| `bench/fix_nb4.py` | python module | python | orchestration | python-host-orchestration | - | bench.fix_nb4 | - | pytest | - | canonical | low | no orchestration, native or computation signal; treated as glue |
-| `bench/fix_nb5.py` | python module | python | orchestration | python-host-orchestration | - | bench.fix_nb5 | - | pytest | - | canonical | low | no orchestration, native or computation signal; treated as glue |
-| `bench/fix_nb6.py` | python module | python | orchestration | python-host-orchestration | - | bench.fix_nb6 | - | pytest | - | canonical | low | no orchestration, native or computation signal; treated as glue |
 | `bench/looGLE_compare.py` | host orchestration | python | orchestration | python-host-orchestration | - | bench.looGLE_compare | - | pytest | - | canonical | low |  |
 | `bench/needle_heatmap.py` | host orchestration | python | orchestration | python-host-orchestration | - | bench.needle_heatmap | - | pytest | - | canonical | low |  |
 | `bench/quality_eval.py` | host orchestration | python | orchestration | python-host-orchestration | - | bench.quality_eval | - | pytest | - | canonical | low |  |
@@ -600,8 +594,6 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `docs/lobehub-score-audit.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/localization/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/marketing/README.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `docs/marketing/community_outreach.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `docs/marketing/compliant_launch_pack.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/marketing/content/5-minute-setup-guide.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/marketing/content/comparison-matrix.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/marketing/content/cost-calculator.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
@@ -613,7 +605,6 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `docs/marketing/launch/show-hn.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/marketing/launch_playbook.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/marketing/memory-os-demo-video.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
-| `docs/marketing/pr_offensive_pack.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/marketing/real-gain-demo-video.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/marketing/registry_submissions.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `docs/marketing/release-announcement-template.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
@@ -1291,7 +1282,6 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `pyproject.toml` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `scripts/_release_artifacts.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/adoption_report.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
-| `scripts/apply_elc_native_and_proxy_patch.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/apply_round7_runtime_fixes.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/audit_lobehub_score.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/benchmark_debug.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
@@ -1320,9 +1310,6 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `scripts/marketplace_presence.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/onboarding_self_dogfood.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/ownership_matrix.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
-| `scripts/pr352_fix_context_delivery_fixture.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
-| `scripts/pr352_fix_eicv_wasm_clock.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
-| `scripts/pr352_integrate_context_trust_delivery.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/proxy_e2e.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/public_artifact_dogfood.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/readme_proof.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
@@ -1347,7 +1334,6 @@ rows out of 280 and omitted 861 of 917 tracked Python modules.
 | `scripts/verify_release_readiness.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/verify_witness_live_openai.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/verify_witness_release.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
-| `scripts/wire_native_elc_proxy_transform.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `scripts/work_graph_soak.py` | developer/release tooling | python | orchestration | python-host-orchestration | - | - | - | - | - | canonical | low | not shipped in the wheel |
 | `server.json` | configuration, fixture or site data | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |
 | `skills/entroly-evidence-operations/SKILL.md` | documentation, packaging or CI | - | neither | tests-fixtures-docs-packaging | - | - | - | - | - | n/a | low |  |

@@ -26,9 +26,6 @@ Compression you can undo, on your own repository, in one command — without rep
 <sub>PyPI installs, npm installs, release-binary downloads, and repository clones, summed across sources —
 <a href="docs/adoption-evidence.md">how this is counted, and what it does not mean</a>.</sub></p>
 
-<p align="center"><b>⭐ If Entroly is useful to you, please star the repository on GitHub.</b><br>
-<a href="https://github.com/juyterman1000/entroly">⭐ Star Entroly on GitHub</a> — it helps the project grow and reach more developers.</p>
-
 <p align="center">
   <b>English · <a href="docs/i18n/README.zh.md">简体中文</a> · <a href="docs/i18n/README.zh-TW.md">繁體中文</a> · <a href="docs/i18n/README.ja.md">日本語</a> · <a href="docs/i18n/README.ko.md">한국어</a> · <a href="docs/i18n/README.es.md">Español</a> · <a href="docs/i18n/README.hi.md">हिन्दी</a> · <a href="docs/i18n/README.fr.md">Français</a> · <a href="docs/i18n/README.de.md">Deutsch</a> · <a href="docs/i18n/README.pt-BR.md">Português</a> · <a href="docs/i18n/README.it.md">Italiano</a> · <a href="docs/i18n/README.tr.md">Türkçe</a> · <a href="docs/i18n/README.vi.md">Tiếng Việt</a> · <a href="docs/i18n/README.id.md">Bahasa Indonesia</a> · <a href="docs/i18n/README.pl.md">Polski</a> · <a href="docs/i18n/README.nl.md">Nederlands</a> · <a href="docs/i18n/README.th.md">ไทย</a> · <a href="docs/i18n/README.sv.md">Svenska</a> · <a href="docs/i18n/README.cs.md">Čeština</a> · <a href="docs/i18n/README.tl.md">Tagalog</a> · <a href="docs/i18n/README.ro.md">Română</a></b>
 </p>

@@ -7,7 +7,7 @@
 # GitHub Releases page. For platforms without a prebuilt binary, build from
 # source:
 #   git clone --depth 1 https://github.com/juyterman1000/entroly
-#   cargo install --path entroly/entroly-core --bin entroly-rs --features proxy
+#   cargo install --path entroly-core --bin entroly-rs --features proxy
 set -eu
 
 REPO="juyterman1000/entroly"

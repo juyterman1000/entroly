@@ -6,7 +6,7 @@
   "description": "Open-source, local-first Context Assurance for AI agents with budget-aware evidence selection, recoverable compression, content-addressed retrieval, Context Receipts, and evidence verification.",
   "codeRepository": "https://github.com/juyterman1000/entroly",
   "issueTracker": "https://github.com/juyterman1000/entroly/issues",
-  "url": "https://juyterman1000.github.io/entroly/docs/index.html",
+  "url": "https://github.com/juyterman1000/entroly",
   "license": "https://spdx.org/licenses/Apache-2.0",
   "datePublished": "2026-08-04",
   "programmingLanguage": [

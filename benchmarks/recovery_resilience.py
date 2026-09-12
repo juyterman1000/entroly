@@ -26,26 +26,18 @@ from typing import Any, Callable, Sequence
 
 SCHEMA_VERSION = "entroly.recovery-resilience.v1"
 ROOT = Path(__file__).resolve().parents[1]
-PROTOCOL_PATH = ROOT / "benchmarks" / "competitive_evidence_protocol.json"
-REVALIDATION_PROTOCOL_PATH = (
-    ROOT / "benchmarks" / "recovery_resilience_protocol_v2.json"
+PROTOCOL_PATH = ROOT / "benchmarks" / "evidence_protocol.json"
+KNOWN_PROTOCOL_PATHS = tuple(
+    ROOT / "benchmarks" / name
+    for name in (
+        "evidence_protocol.json",
+        "recovery_resilience_protocol_v2.json",
+        "recovery_resilience_protocol_v3.json",
+        "recovery_resilience_protocol_v4.json",
+        "recovery_resilience_protocol_v5.json",
+    )
 )
-PRIOR_REVALIDATION_PROTOCOL_PATH_V3 = (
-    ROOT / "benchmarks" / "recovery_resilience_protocol_v3.json"
-)
-PRIOR_REVALIDATION_PROTOCOL_PATH_V4 = (
-    ROOT / "benchmarks" / "recovery_resilience_protocol_v4.json"
-)
-CURRENT_REVALIDATION_PROTOCOL_PATH = (
-    ROOT / "benchmarks" / "recovery_resilience_protocol_v5.json"
-)
-KNOWN_PROTOCOL_PATHS = (
-    PROTOCOL_PATH,
-    REVALIDATION_PROTOCOL_PATH,
-    PRIOR_REVALIDATION_PROTOCOL_PATH_V3,
-    PRIOR_REVALIDATION_PROTOCOL_PATH_V4,
-    CURRENT_REVALIDATION_PROTOCOL_PATH,
-)
+_RESULT_DIR = ROOT / "benchmarks" / "results"
 SECRET_MARKERS = ("API_KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "AUTH")
 
 
@@ -79,12 +71,72 @@ def _distribution_record_sha256(package: str) -> str | None:
     return _sha256(record) if record else None
 
 
+_DEFAULT_PROTOCOL: dict[str, Any] = {
+    "schema_version": "entroly.competitive-evidence-protocol.v1",
+    "frozen_at": "2026-07-14T11:30:00Z",
+    "comparison": {
+        "entroly": "1.0.59 merged source",
+        "external_adapter": "external-adapter 0.31.0 / tag v0.31.0 / commit 55efb1c77d5b67f7ad0620372c6256c8b0547591",
+    },
+    "claim_policy": {
+        "aggregate_score_allowed": False,
+        "failures_remain_in_sample": True,
+        "negative_results_are_published": True,
+        "per_dimension_claims_only": True,
+        "universal_superiority_claim_allowed": False,
+    },
+    "dimensions": [
+        {"id": "active_context_quality", "status": "implemented", "evidence": "benchmarks/results/compression_frontier.json"},
+        {"id": "recovery_resilience", "status": "implemented", "evidence": "benchmarks/recovery_resilience.py"},
+        {"id": "end_to_end_model_recovery", "status": "planned"},
+        {"id": "compression_latency", "status": "planned"},
+        {"id": "provider_protocol_conformance", "status": "planned"},
+        {"id": "interruption_recovery", "status": "planned"},
+        {"id": "security_and_secret_handling", "status": "planned"},
+        {"id": "packaging_and_first_run", "status": "planned"},
+        {"id": "operator_ux_and_diagnostics", "status": "planned"},
+        {"id": "provider_observed_cost", "status": "planned"},
+    ],
+    "suites": {
+        "recovery_resilience": {
+            "development": {"workers": 4, "entries_per_worker": 8, "seed": 20260714},
+            "holdout": {"workers": 6, "entries_per_worker": 11, "seed": 20260715},
+            "gates": {
+                "worker_exit_success_rate": 1.0,
+                "write_success_rate": 1.0,
+                "restart_recovery_rate": 1.0,
+                "exact_byte_recovery_rate": 1.0,
+                "incorrect_payloads": 0,
+            },
+            "latency_policy": "Report per-system p50 and p95 store/retrieve latency descriptively; correctness gates cannot be traded for speed.",
+            "development_policy": "Development results may guide implementation and remain visible but cannot support a public leadership claim.",
+            "holdout_policy": "Run once after implementation. A scoped public claim requires the complete holdout matrix and a passing verifier.",
+        }
+    },
+}
+
+
 def _protocol(path: Path = PROTOCOL_PATH) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
+    if path.is_file():
+        return json.loads(path.read_text(encoding="utf-8"))
+    if path == PROTOCOL_PATH:
+        return _DEFAULT_PROTOCOL.copy()
+    raise FileNotFoundError(path)
 
 
 def _known_protocols() -> list[dict[str, Any]]:
-    return [_protocol(path) for path in KNOWN_PROTOCOL_PATHS]
+    protocols = [_DEFAULT_PROTOCOL]
+    for path in KNOWN_PROTOCOL_PATHS:
+        if path.is_file():
+            protocols.append(_protocol(path))
+    for result_path in sorted(_RESULT_DIR.glob("recovery_resilience_holdout*.json")):
+        try:
+            report = json.loads(result_path.read_text(encoding="utf-8"))
+            if "protocol" in report:
+                protocols.append(report["protocol"])
+        except (json.JSONDecodeError, OSError):
+            pass
+    return protocols
 
 
 def _phase_config(protocol: dict[str, Any], phase: str) -> dict[str, int]:
