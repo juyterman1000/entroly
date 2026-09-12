@@ -18,11 +18,6 @@ on:
       # already covers, so nothing is lost by dropping it.
       - "integrations/openclaw/**"
       - "integrations/opencode/**"
-      - "docs/ai-cost-optimization.html"
-      - "docs/agent-integrations.html"
-      - "docs/openclaw-context-engine.html"
-      - "docs/hermes-context-engine.html"
-      - "docs/opencode-context-assurance.html"
       - "docs/product/entroly-simple-mode.md"
       - "docs/robots.txt"
       - "docs/sitemap.xml"
@@ -31,8 +26,6 @@ on:
       - "llms.txt"
       - "tests/test_agent_exact_recovery_integrations.py"
       - "tests/test_agent_integration_packages.py"
-      - "tests/test_discovery_metadata.py"
-      - "tests/test_search_discovery.py"
       - ".github/workflows/agent-integration-contracts.yml"
 
 permissions:

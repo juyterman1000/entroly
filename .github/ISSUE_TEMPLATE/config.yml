@@ -7,5 +7,5 @@ contact_links:
     url: https://github.com/juyterman1000/entroly/security/policy
     about: Report vulnerabilities privately. Never disclose secrets in an issue.
   - name: Documentation
-    url: https://juyterman1000.github.io/entroly/docs/index.html
+    url: https://github.com/juyterman1000/entroly
     about: Browse installation, architecture, and integration documentation.
