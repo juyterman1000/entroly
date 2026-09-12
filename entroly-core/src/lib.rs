@@ -6469,6 +6469,42 @@ fn py_shared_memory_is_near_duplicate(a: u64, b: u64, threshold: u32) -> bool {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// Shared Memory (cross-agent content-addressed store)
+// ═══════════════════════════════════════════════════════════════════
+
+/// Batch deduplication: given (id, content) pairs, detect near-duplicates.
+/// Returns list of (entry_id, is_duplicate, duplicate_of_id).
+#[pyfunction]
+fn py_shared_memory_batch_dedup(
+    entries: Vec<(String, String)>,
+    threshold: u32,
+) -> Vec<(String, bool, String)> {
+    entroly_engine::shared_memory::batch_dedup(&entries, threshold)
+}
+
+/// Search entries by BM25 relevance. Returns (index, score) pairs.
+#[pyfunction]
+fn py_shared_memory_search(
+    entries: Vec<String>,
+    query: &str,
+    top_k: usize,
+) -> Vec<(usize, f64)> {
+    entroly_engine::shared_memory::search_entries(&entries, query, top_k)
+}
+
+/// Compute SimHash fingerprint for content.
+#[pyfunction]
+fn py_shared_memory_fingerprint(text: &str) -> u64 {
+    entroly_engine::shared_memory::fingerprint(text)
+}
+
+/// Check if two fingerprints are near-duplicates.
+#[pyfunction]
+fn py_shared_memory_is_near_duplicate(a: u64, b: u64, threshold: u32) -> bool {
+    entroly_engine::shared_memory::is_near_duplicate(a, b, threshold)
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // Module definition
 // ═══════════════════════════════════════════════════════════════════
 
@@ -6559,6 +6595,11 @@ fn entroly_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<cognitive_bus::CognitiveBus>()?;
     // ── CogOps Epistemic Engine
     m.add_class::<cogops::CogOpsEngine>()?;
+    // ── Shared Memory (cross-agent content-addressed store)
+    m.add_function(wrap_pyfunction!(py_shared_memory_batch_dedup, m)?)?;
+    m.add_function(wrap_pyfunction!(py_shared_memory_search, m)?)?;
+    m.add_function(wrap_pyfunction!(py_shared_memory_fingerprint, m)?)?;
+    m.add_function(wrap_pyfunction!(py_shared_memory_is_near_duplicate, m)?)?;
     Ok(())
 }
 

@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Entroly Playground — Zero-Loss AI Context Compression & Receipts</title>
+  <meta name="description" content="Test Entroly in your browser: compress AI prompt context by 70%+, inspect cryptographic Merkle receipts, and prove zero accuracy loss with zero installation.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <!-- Background glow effects -->
+  <div class="ambient-glow glow-1"></div>
+  <div class="ambient-glow glow-2"></div>
+
+  <!-- Header -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand">
+        <a href="https://github.com/juyterman1000/entroly" target="_blank" rel="noopener" class="brand-link">
+          <div class="brand-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+              <polyline points="2 17 12 22 22 17"></polyline>
+              <polyline points="2 12 12 17 22 12"></polyline>
+            </svg>
+          </div>
+          <span class="brand-name">Entroly</span>
+        </a>
+        <span class="badge-pill">Playground v1.0</span>
+        <span class="badge-tag">Client-Side WASM Engine</span>
+      </div>
+      <nav class="nav-links">
+        <a href="../BENCHMARKS.md" class="nav-item">Benchmarks</a>
+        <a href="../docs/RESEARCH.md" class="nav-item">Research</a>
+        <a href="https://github.com/juyterman1000/entroly" target="_blank" rel="noopener" class="github-cta">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+          </svg>
+          <span>Star on GitHub</span>
+        </a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="main-wrapper">
+    <!-- Hero Banner -->
+    <section class="hero-banner">
+      <div class="hero-chip">
+        <span class="pulse-dot"></span>
+        Zero Installation · Runs 100% In-Browser · Cryptographically Auditable
+      </div>
+      <h1 class="hero-title">Cut Context Cost. <span class="gradient-text">Prove Nothing Was Lost.</span></h1>
+      <p class="hero-subtitle">
+        Entroly's 0-1 Knapsack engine selects the mathematically optimal subset of files to solve your task, emits a verifiable Merkle receipt with SHA-256 fragments, and proves what was kept, what was omitted, and why.
+      </p>
+    </section>
+
+    <!-- Workspace Grid -->
+    <div class="playground-grid">
+      <!-- Left Column: Input & Configuration -->
+      <section class="panel input-panel">
+        <div class="panel-header">
+          <div class="panel-title-group">
+            <div class="panel-num">1</div>
+            <h2>Context & Corpus Input</h2>
+          </div>
+          <!-- Source tabs -->
+          <div class="tab-pills" id="sourceTabs">
+            <button class="tab-pill active" data-tab="presets">Presets</button>
+            <button class="tab-pill" data-tab="custom">Custom Files</button>
+            <button class="tab-pill" data-tab="github">GitHub Fetch</button>
+          </div>
+        </div>
+
+        <div class="panel-body">
+          <!-- Tab 1: Presets -->
+          <div class="tab-content active" id="tabContentPresets">
+            <label class="field-label">Select realistic multi-file engineering scenario:</label>
+            <div class="preset-cards">
+              <div class="preset-card active" data-preset="payments">
+                <div class="preset-badge">E-Commerce / FinTech</div>
+                <div class="preset-title">Payment & Rate Limit Cascade</div>
+                <div class="preset-desc">4 files (1,840 tokens). Top-K misses rate_limiter.py; Entroly Knapsack fits all 3 critical spans.</div>
+              </div>
+              <div class="preset-card" data-preset="concurrency">
+                <div class="preset-badge">Systems / Rust</div>
+                <div class="preset-title">Deadlock & Eviction Race</div>
+                <div class="preset-desc">5 files (2,650 tokens). Knapsack preserves lock protocol and eviction without memory bloat.</div>
+              </div>
+              <div class="preset-card" data-preset="auth">
+                <div class="preset-badge">Fullstack / Node</div>
+                <div class="preset-title">JWT Token Refresh Vulnerability</div>
+                <div class="preset-desc">4 files (1,920 tokens). Pinpoints signature replay logic across auth middleware and session store.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab 2: Custom Files -->
+          <div class="tab-content" id="tabContentCustom">
+            <div class="custom-files-header">
+              <span class="file-list-count" id="customFileCount">1 file</span>
+              <button class="action-btn small" id="addFileBtn">+ Add File</button>
+            </div>
+            <div class="file-tabs-bar" id="customFileTabs"></div>
+            <div class="editor-wrap">
+              <textarea id="customFileContent" placeholder="Paste your file content here..." spellcheck="false"></textarea>
+            </div>
+          </div>
+
+          <!-- Tab 3: GitHub Fetch -->
+          <div class="tab-content" id="tabContentGithub">
+            <label class="field-label">GitHub Repository URL or owner/repo:</label>
+            <div class="input-group">
+              <input type="text" id="githubRepoInput" placeholder="e.g. pallets/flask or expressjs/express" class="text-input">
+              <button class="action-btn" id="fetchGithubBtn">Fetch Repo</button>
+            </div>
+            <p class="field-help">Fetches top source files directly via GitHub Public API to test compression client-side.</p>
+            <div id="githubFetchStatus" class="status-box hidden"></div>
+          </div>
+
+          <!-- Corpus Preview -->
+          <div class="corpus-summary-bar">
+            <div class="summary-metric">
+              <span class="summary-label">Total Files</span>
+              <span class="summary-val" id="corpusFilesCount">4</span>
+            </div>
+            <div class="summary-metric">
+              <span class="summary-label">Raw Tokens</span>
+              <span class="summary-val" id="corpusRawTokens">1,840</span>
+            </div>
+            <div class="summary-metric">
+              <span class="summary-label">Estimated Cost</span>
+              <span class="summary-val" id="corpusRawCost">$0.0055</span>
+            </div>
+          </div>
+
+          <!-- Divider -->
+          <div class="panel-divider"></div>
+
+          <!-- Target Query & Knapsack Configuration -->
+          <div class="config-section">
+            <div class="section-title">Target Query & Budget Constraints</div>
+
+            <label class="field-label" for="taskQueryInput">Agent Task / Prompt Intent:</label>
+            <textarea id="taskQueryInput" class="query-textarea" rows="2" placeholder="e.g., Fix order checkout timeout and handle rate limit 429 retries">Fix payment checkout failure and rate limit retry handling when gateway returns 429</textarea>
+
+            <div class="slider-group">
+              <div class="slider-header">
+                <span class="field-label">Target Token Budget:</span>
+                <span class="budget-display"><b id="budgetValue">450</b> tokens</span>
+              </div>
+              <input type="range" id="budgetSlider" min="200" max="2000" step="50" value="450" class="budget-range">
+              <div class="budget-ticks">
+                <span>200</span>
+                <span>450 (Default)</span>
+                <span>800</span>
+                <span>1200</span>
+                <span>2000</span>
+              </div>
+            </div>
+
+            <div class="options-grid">
+              <label class="option-check">
+                <input type="checkbox" id="checkReceipt" checked>
+                <span class="check-box"></span>
+                <span class="check-text">
+                  <b>Emit Merkle Receipt</b>
+                  <small>Generates SHA-256 byte proofs & recovery handles</small>
+                </span>
+              </label>
+
+              <label class="option-check">
+                <input type="checkbox" id="checkOmissionReason" checked>
+                <span class="check-box"></span>
+                <span class="check-text">
+                  <b>Audit Omissions</b>
+                  <small>Log exact utility-density drop rationale</small>
+                </span>
+              </label>
+            </div>
+
+            <button id="optimizeBtn" class="primary-btn">
+              <span class="btn-icon">⚡</span>
+              <span>Run Entroly 0-1 Knapsack Optimization</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Column: Results & Auditable Receipt -->
+      <section class="panel output-panel">
+        <div class="panel-header">
+          <div class="panel-title-group">
+            <div class="panel-num">2</div>
+            <h2>Provable Optimization & Receipts</h2>
+          </div>
+          <div class="tab-pills" id="outputTabs">
+            <button class="tab-pill active" data-tab="context">Optimized Context</button>
+            <button class="tab-pill" data-tab="receipt">Merkle Receipt</button>
+            <button class="tab-pill" data-tab="compare">Head-to-Head</button>
+            <button class="tab-pill" data-tab="omissions">Omissions (<span id="omissionCount">1</span>)</button>
+          </div>
+        </div>
+
+        <div class="panel-body">
+          <!-- Metrics HUD -->
+          <div class="metrics-hud">
+            <div class="hud-card">
+              <div class="hud-label">Tokens Delivered</div>
+              <div class="hud-value"><span id="hudDeliveredTokens">418</span> <small>/ <span id="hudBudget">450</span></small></div>
+              <div class="hud-sub">Fit in budget: <span class="text-emerald">100%</span></div>
+            </div>
+            <div class="hud-card highlight">
+              <div class="hud-label">Token Savings</div>
+              <div class="hud-value" id="hudSavingsPercent">77.3%</div>
+              <div class="hud-sub"><span id="hudSavedTokens">1,422</span> tokens saved</div>
+            </div>
+            <div class="hud-card">
+              <div class="hud-label">Cost Avoided</div>
+              <div class="hud-value" id="hudCostSaved">$0.0043</div>
+              <div class="hud-sub">Sonnet / GPT-4o base</div>
+            </div>
+            <div class="hud-card">
+              <div class="hud-label">Critical Catches</div>
+              <div class="hud-value text-cyan" id="hudCatches">3 / 3</div>
+              <div class="hud-sub">Auth + Pay + RateLimiter</div>
+            </div>
+          </div>
+
+          <!-- Tab Content 1: Context Output -->
+          <div class="output-tab-content active" id="outTabContext">
+            <div class="output-actions-bar">
+              <span class="output-status-indicator">
+                <span class="status-dot"></span>
+                Receipt Verified · Knapsack Optimal
+              </span>
+              <button class="action-btn small highlight" id="copyContextBtn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+                Copy Context for Claude / GPT
+              </button>
+            </div>
+            <pre class="code-view" id="optimizedCodeView"></pre>
+          </div>
+
+          <!-- Tab Content 2: Merkle Receipt -->
+          <div class="output-tab-content" id="outTabReceipt">
+            <div class="receipt-card">
+              <div class="receipt-header">
+                <div class="receipt-stamp">VERIFIED AUDIT RECEIPT</div>
+                <div class="receipt-id" id="receiptId">rcpt_7f8a9e2d1c0b</div>
+              </div>
+              <div class="receipt-row">
+                <span class="receipt-label">Schema:</span>
+                <span class="receipt-val">context-receipt.v1 (Merkle-CCR)</span>
+              </div>
+              <div class="receipt-row">
+                <span class="receipt-label">Merkle Root Hash:</span>
+                <code class="receipt-code" id="receiptMerkleRoot">e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855</code>
+              </div>
+              <div class="receipt-row">
+                <span class="receipt-label">Original Corpus Digest:</span>
+                <code class="receipt-code" id="receiptOriginalDigest">a8f94d12c0193e...</code>
+              </div>
+              <div class="receipt-row">
+                <span class="receipt-label">Source Spans Retained:</span>
+                <span class="receipt-val" id="receiptSpansRetained">3 fragments across 3 files</span>
+              </div>
+              <div class="receipt-row">
+                <span class="receipt-label">Reversibility Proof:</span>
+                <span class="receipt-val text-emerald">PASS (100% bit-exact byte recovery via handle)</span>
+              </div>
+
+              <div class="receipt-fragments-title">Selected Fragment Handles & Proofs:</div>
+              <div class="receipt-fragment-list" id="receiptFragmentList"></div>
+            </div>
+          </div>
+
+          <!-- Tab Content 3: Head to Head Comparison -->
+          <div class="output-tab-content" id="outTabCompare">
+            <div class="comparison-card">
+              <h3>Head-to-Head Context Selection: 450 Token Budget</h3>
+              <p class="comparison-desc">Why Naive FIFO and Greedy Top-K fail on multi-module real-world bugs:</p>
+
+              <div class="comparison-table-wrap">
+                <table class="comparison-table">
+                  <thead>
+                    <tr>
+                      <th>Strategy</th>
+                      <th>Files Retained</th>
+                      <th>Coverage</th>
+                      <th>Rate Limiter Retained?</th>
+                      <th>Token Cost</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr class="row-fifo">
+                      <td><b>Raw FIFO</b><br><small>First files until budget cutoff</small></td>
+                      <td><code>checkout.py</code> (partial)</td>
+                      <td>1 / 4 modules (25%)</td>
+                      <td><span class="badge-red">DROPPED</span></td>
+                      <td>450 tokens</td>
+                    </tr>
+                    <tr class="row-topk">
+                      <td><b>Top-K Greedy</b><br><small>Highest BM25 relevance score</small></td>
+                      <td><code>checkout.py</code> + <code>auth.py</code></td>
+                      <td>2 / 4 modules (50%)</td>
+                      <td><span class="badge-red">DROPPED (Budget exhausted)</span></td>
+                      <td>442 tokens</td>
+                    </tr>
+                    <tr class="row-entroly">
+                      <td><b>⚡ ENTROLY (Knapsack)</b><br><small>DP 0-1 budget optimization</small></td>
+                      <td><code>checkout.py</code> + <code>auth.py</code> + <code>rate_limiter.py</code></td>
+                      <td><b>3 / 4 modules (75%)</b></td>
+                      <td><span class="badge-green">RETAINED (Exact span fit)</span></td>
+                      <td><b>418 tokens</b></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="comparison-insight">
+                <div class="insight-icon">💡</div>
+                <div class="insight-text">
+                  <b>The Knapsack Advantage:</b> Greedy Top-K spent 350 tokens on non-critical comments in <code>checkout.py</code>, leaving no budget for <code>rate_limiter.py</code>. The LLM produced an insecure fix missing the 429 backoff. Entroly extracted high-density fragments across <b>all 3 necessary files</b>, staying under budget.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab Content 4: Omissions -->
+          <div class="output-tab-content" id="outTabOmissions">
+            <div class="omissions-container">
+              <div class="omissions-lead">
+                <b>Honest Context Accounting:</b> Every omitted span includes an inspectable reason and marginal density score.
+              </div>
+              <div class="omission-list" id="omissionList"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="app-footer">
+    <div class="footer-container">
+      <div class="footer-left">
+        <span>Entroly — Open Source Local-First Context Control Plane</span>
+        <span class="footer-bullet">·</span>
+        <a href="https://github.com/juyterman1000/entroly/blob/main/LICENSE">Apache 2.0</a>
+        <span class="footer-bullet">·</span>
+        <a href="../BENCHMARKS.md">Verified Benchmarks</a>
+      </div>
+      <div class="footer-right">
+        <code>pip install entroly && entroly go</code>
+      </div>
+    </div>
+  </footer>
+
+  <script src="engine.js"></script>
+</body>
+</html>
