@@ -114,15 +114,11 @@ client-specific setup in [agent compatibility](agent-compatibility.md).
 package provides a ContextEngine path, local bridge, receipts and optional
 proof-guided recovery. OpenClaw retains its agent loop and provider credentials.
 
-See [OpenClaw context engine](openclaw-context-engine.html).
-
 ### OpenCode
 
 **Direct and tested package integration.** Entroly provides local MCP setup and
 a compaction hook that preserves commands, errors, paths, symbols, verification
 status and exact-recovery handles.
-
-See [OpenCode context assurance](opencode-context-assurance.html).
 
 Entroly does not publish a separate model-specific OpenCode + DeepSeek claim in
 this matrix. A custom model route must satisfy the same endpoint,
@@ -179,9 +175,9 @@ See [Grok CLI boundary](agent-compatibility.md#grok-cli).
 | Simulation | `entroly simulate`, `entroly perf`, and [benchmark protocols](BENCHMARKS.md) |
 | API and product surface | [Product surface](product-surface.md) and [command reference](DETAILS.md#command-reference) |
 | Architecture | [Architecture](architecture.md) and [verified system map](architecture/ENTROLY_VERIFIED_MAP.md) |
-| Releases and CI/CD | [Release notes](releases/v1.0.77.md) and repository workflows under `.github/workflows/` |
+| Releases and CI/CD | Repository workflows under `.github/workflows/` |
 | Limitations | [Explicit limitations](limitations.md) |
-| Errors and troubleshooting | `entroly doctor`, [first-run diagnostics](first-run-trust.md), and [MCP troubleshooting](mcp-server-guide.html#troubleshooting) |
+| Errors and troubleshooting | `entroly doctor` and [first-run diagnostics](first-run-trust.md) |
 
 ## Verification policy
 
