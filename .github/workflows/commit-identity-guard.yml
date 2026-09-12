@@ -57,10 +57,35 @@ jobs:
 
           if event_name == "pull_request":
               rev = f'{event["pull_request"]["base"]["sha"]}..{event["pull_request"]["head"]["sha"]}'
+              revisions = [rev]
           else:
               before = event.get("before", "")
               after = event["after"]
-              rev = after if not before or set(before) == {"0"} else f"{before}..{after}"
+              if not before or set(before) == {"0"}:
+                  rev = after
+                  revisions = [after]
+              else:
+                  rev = f"{after} --not {before}"
+                  before_exists = subprocess.run(
+                      ["git", "cat-file", "-e", f"{before}^{{commit}}"],
+                      check=False,
+                      stdout=subprocess.DEVNULL,
+                      stderr=subprocess.DEVNULL,
+                  ).returncode == 0
+                  if before_exists:
+                      # Select commits introduced by the new tip without
+                      # assuming the push was fast-forward. This also handles
+                      # a pure rewind: there are no newly introduced commits.
+                      revisions = [after, "--not", before]
+                  else:
+                      # A force-pushed-away `before` object is not guaranteed
+                      # to remain fetchable. Validate the complete new
+                      # first-parent history instead of skipping the guard.
+                      print(
+                          f"Before commit {before} is unavailable; "
+                          "validating the complete new first-parent history"
+                      )
+                      revisions = [after]
 
           rows = subprocess.check_output(
               [
@@ -68,7 +93,7 @@ jobs:
                   "log",
                   "--first-parent",
                   "--format=%H%x1f%an%x1f%ae%x1f%cn%x1f%ce%x1e",
-                  rev,
+                  *revisions,
               ],
               text=True,
           )

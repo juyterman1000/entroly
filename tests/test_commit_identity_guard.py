@@ -308,3 +308,76 @@ def test_dependabot_commit_cannot_carry_hand_written_source(tmp_path: Path) -> N
 
     assert result.returncode == 1
     assert "author is dependabot[bot]" in result.stdout
+
+
+def test_rewind_push_does_not_treat_before_after_as_a_revision_range(
+    tmp_path: Path,
+) -> None:
+    """A force-push to an existing ancestor introduces no new commits.
+
+    Git rejects ``child..parent`` when the child is not an ancestor of the
+    parent. The push payload still contains exactly that ordering for a rewind,
+    so the guard must use a revision set that is valid for either direction.
+    """
+
+    repo, parent = _init_repo(tmp_path)
+    (repo / "README.md").write_text("newer tip\n", encoding="utf-8")
+    _git(repo, "add", "README.md")
+    owner = _identity_env(
+        author_name="juyterman1000",
+        author_email=OWNER_EMAIL,
+        committer_name="juyterman1000",
+        committer_email=OWNER_EMAIL,
+    )
+    _git(repo, "commit", "-m", "Temporary newer tip", env=owner)
+    child = _git(repo, "rev-parse", "HEAD")
+
+    result = _run_guard(
+        repo,
+        tmp_path,
+        event_name="push",
+        event=_push_event(child, parent),
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Commit identity OK" in result.stdout
+
+
+def test_divergent_force_push_still_rejects_new_untrusted_commit(
+    tmp_path: Path,
+) -> None:
+    """Handling a rewrite must not turn the identity guard into a bypass."""
+
+    repo, base = _init_repo(tmp_path)
+    (repo / "old.txt").write_text("old tip\n", encoding="utf-8")
+    _git(repo, "add", "old.txt")
+    owner = _identity_env(
+        author_name="juyterman1000",
+        author_email=OWNER_EMAIL,
+        committer_name="juyterman1000",
+        committer_email=OWNER_EMAIL,
+    )
+    _git(repo, "commit", "-m", "Old trusted tip", env=owner)
+    before = _git(repo, "rev-parse", "HEAD")
+
+    _git(repo, "checkout", "--detach", base)
+    (repo / "replacement.txt").write_text("replacement tip\n", encoding="utf-8")
+    _git(repo, "add", "replacement.txt")
+    untrusted = _identity_env(
+        author_name="Untrusted Contributor",
+        author_email="untrusted@example.com",
+        committer_name="Untrusted Contributor",
+        committer_email="untrusted@example.com",
+    )
+    _git(repo, "commit", "-m", "Replace main history", env=untrusted)
+    after = _git(repo, "rev-parse", "HEAD")
+
+    result = _run_guard(
+        repo,
+        tmp_path,
+        event_name="push",
+        event=_push_event(before, after),
+    )
+
+    assert result.returncode == 1
+    assert "author is Untrusted Contributor" in result.stdout
