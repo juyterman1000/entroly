@@ -75,7 +75,6 @@ REQUIRED_DISCOVERY_FILES = (
     Path("README.md"),
     Path("llms.txt"),
     Path("server.json"),
-    Path(".claude-plugin/manifest.json"),
     Path("CITATION.cff"),
     Path("codemeta.json"),
     Path("docs/press-kit.md"),
@@ -93,7 +92,7 @@ REQUIRED_DISCOVERY_FILES = (
     Path(".github/ISSUE_TEMPLATE/integration-request.yml"),
 )
 CANONICAL_REPOSITORY = "https://github.com/juyterman1000/entroly"
-CANONICAL_DOCUMENTATION = "https://juyterman1000.github.io/entroly/docs/index.html"
+CANONICAL_DOCUMENTATION = "https://github.com/juyterman1000/entroly"
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -332,7 +331,6 @@ def validate() -> list[str]:
 
     version = _project_version()
     server = _load_json(ROOT / "server.json")
-    plugin = _load_json(ROOT / ".claude-plugin/manifest.json")
     registry = _load_json(ROOT / "docs/distribution/targets.json")
     dimensions = _load_json(ROOT / "docs/distribution/visibility-dimensions.json")
 
@@ -340,30 +338,11 @@ def validate() -> list[str]:
         errors.append(
             f"server.json version {server.get('version')!r} does not match {version!r}"
         )
-    if plugin.get("version") != version:
-        errors.append(
-            ".claude-plugin/manifest.json version "
-            f"{plugin.get('version')!r} does not match {version!r}"
-        )
 
     if server.get("websiteUrl") not in {CANONICAL_REPOSITORY, CANONICAL_DOCUMENTATION}:
         errors.append("server.json websiteUrl is not an Entroly canonical URL")
     if server.get("repository", {}).get("url") != CANONICAL_REPOSITORY:
         errors.append("server.json repository.url is not canonical")
-    if plugin.get("repository") != CANONICAL_REPOSITORY:
-        errors.append("Claude plugin repository URL is not canonical")
-    if plugin.get("homepage") not in {CANONICAL_REPOSITORY, CANONICAL_DOCUMENTATION}:
-        errors.append("Claude plugin homepage is not an Entroly canonical URL")
-
-    npm_command = plugin.get("install", {}).get("alternatives", {}).get("npm")
-    if npm_command != "npm install -g entroly":
-        errors.append(
-            "Claude plugin npm alternative must use the primary `entroly` package"
-        )
-
-    documentation = plugin.get("documentation", {})
-    if documentation.get("benchmarks") != "docs/BENCHMARKS.md":
-        errors.append("Claude plugin benchmark documentation path is stale")
 
     _validate_targets(registry, errors)
     _validate_dimensions(dimensions, errors)

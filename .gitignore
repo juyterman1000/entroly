@@ -150,3 +150,26 @@ htmlcov/
 # `git add -A` once already.
 marketing/launch/*strategy*.md
 marketing/launch/*recovery*.md
+
+# Internal AI session artifacts (prompts, handoffs, work ledgers)
+docs/PR*_*.md
+docs/ENTROLY_WIN_MASTER_PROMPT.md
+
+# SEO landing pages (serve from a separate site, not the source repo)
+docs/*.html
+docs/assets/demo.html
+
+# Per-version release notes (use GitHub Releases or CHANGELOG.md)
+docs/releases/
+
+# Competitive analysis and iterated protocol drafts
+benchmarks/competitive_*
+benchmarks/model_recovery_protocol_v[2-9]*.json
+benchmarks/recovery_resilience_protocol_v[2-9]*.json
+
+# SEO/marketing tracking (internal)
+docs/discoverability-registry.json
+docs/capability-coverage.json
+
+# Plugin packaging (local-only)
+.claude-plugin/
