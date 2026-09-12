@@ -150,5 +150,3 @@ htmlcov/
 # `git add -A` once already.
 marketing/launch/*strategy*.md
 marketing/launch/*recovery*.md
-
-.claude-plugin/
