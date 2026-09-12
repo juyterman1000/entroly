@@ -26,6 +26,8 @@ vault/
 
 # Scratch / debug artifacts
 .tmp/
+tmp/
+.coverage
 tasks/
 logs/
 telemetry/
