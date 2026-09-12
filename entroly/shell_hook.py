@@ -243,8 +243,8 @@ def compress_shell_output(
     else:
         # Generic compression: remove blank lines and obvious progress
         compressed_lines = [
-            ln for ln in lines
-            if ln.strip() and not re.match(r"^[\s.#=\-]{4,}$", ln)
+            line for line in lines
+            if line.strip() and not re.match(r"^[\s.#=\-]{4,}$", line)
         ]
 
     if len(compressed_lines) > max_lines:

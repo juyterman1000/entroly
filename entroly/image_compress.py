@@ -20,8 +20,6 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
-
 logger = logging.getLogger(__name__)
 
 
@@ -111,6 +109,7 @@ def compress_image(
 
     # Compress
     buf = io.BytesIO()
+
     if target_format in ("jpeg", "jpg"):
         if img.mode == "RGBA":
             img = img.convert("RGB")
