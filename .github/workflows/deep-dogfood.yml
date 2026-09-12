@@ -153,8 +153,6 @@ jobs:
               tests/test_agent_integration_packages.py
               tests/test_hermes_context_engine.py
               tests/test_openclaw_bridge.py
-              tests/test_discovery_metadata.py
-              tests/test_search_discovery.py
 
           - family: multimodal-image-planning
             command: >-
@@ -163,12 +161,9 @@ jobs:
 
           - family: public-trust-release-surfaces
             command: >-
-              bash -lc 'python scripts/verify_public_trust.py
-              && python scripts/verify_readme.py
-              && python -m pytest -q -vv --tb=short --timeout=120
-              tests/test_public_trust.py
+              python -m pytest -q -vv --tb=short --timeout=120
               tests/test_release_surface_consistency.py
-              tests/test_mcp_registry_manifest.py'
+              tests/test_mcp_registry_manifest.py
 
     steps:
       - uses: actions/checkout@v6

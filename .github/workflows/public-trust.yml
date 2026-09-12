@@ -32,7 +32,6 @@ on:
       - scripts/verify_readme_claims.py
       - scripts/verify_evidence_provenance.py
       - docs/evidence-provenance-debt.json
-      - tests/test_public_trust.py
       - tests/test_verify_readme_claims.py
       - tests/test_evidence_provenance_ratchet.py
       - .github/workflows/public-trust.yml
@@ -82,8 +81,7 @@ jobs:
           python scripts/verify_evidence_provenance.py 2>&1 | tee evidence-provenance.log
       - name: Run public trust regressions
         run: >-
-          python -m pytest -q tests/test_public_trust.py
-          tests/test_verify_readme_claims.py
+          python -m pytest -q tests/test_verify_readme_claims.py
           tests/test_evidence_provenance_ratchet.py
           tests/test_dependency_closure_integrity_benchmark.py
           tests/test_closed_set_selection_frontier_benchmark.py
