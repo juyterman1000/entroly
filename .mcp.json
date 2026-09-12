@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "entroly": {
-      "command": "entroly",
+      "command": "C:\\Users\\abhis\\AppData\\Local\\Programs\\Python\\Python310\\Scripts\\entroly.exe",
       "args": ["serve"],
       "env": {
         "ENTROLY_NO_DOCKER": "1"

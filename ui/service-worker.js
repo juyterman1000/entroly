@@ -1,4 +1,4 @@
-const CACHE_NAME = 'entroly-ui-v1';
+const CACHE_NAME = 'entroly-ui-v3';
 const PRECACHE_ASSETS = [
   './',
   './index.html',
@@ -9,10 +9,11 @@ const PRECACHE_ASSETS = [
 ];
 
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(PRECACHE_ASSETS);
-    }).then(() => self.skipWaiting())
+    })
   );
 });
 
@@ -20,29 +21,29 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
-        keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
+        keys.map((key) => {
+          if (key !== CACHE_NAME) {
+            return caches.delete(key);
+          }
+        })
       );
     }).then(() => self.clients.claim())
   );
 });
 
+// Network-first strategy for development & local desktop
 self.addEventListener('fetch', (event) => {
-  if (event.request.url.includes('/api/')) {
-    // Dynamic daemon API requests: network first with graceful offline fallback
-    event.respondWith(
-      fetch(event.request).catch(() => {
-        return new Response(JSON.stringify({ status: 'offline', simulated: true }), {
-          headers: { 'Content-Type': 'application/json' }
-        });
-      })
-    );
-    return;
-  }
-
-  // Static shell assets: cache first, then network fallback
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      return cachedResponse || fetch(event.request);
-    })
+    fetch(event.request)
+      .then((networkResponse) => {
+        if (networkResponse && networkResponse.status === 200) {
+          const clone = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        }
+        return networkResponse;
+      })
+      .catch(() => {
+        return caches.match(event.request);
+      })
   );
 });
