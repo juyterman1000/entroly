@@ -990,6 +990,175 @@ code, pre, .mono {
 }
 
 /* ==========================================================================
+   13-Layer Context OS Architecture Matrix
+   ========================================================================== */
+
+.tier-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0 14px 0;
+  flex-wrap: wrap;
+}
+
+.tier-pill {
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--bg-surface);
+  border: 1px solid var(--glass-stroke);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.tier-pill:hover {
+  background: var(--bg-surface-hover);
+  color: var(--text-main);
+  border-color: var(--glass-stroke-hover);
+}
+
+.tier-pill.active {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: var(--cyan-400);
+  color: var(--cyan-400);
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.2);
+}
+
+.layers-matrix-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+.layer-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--glass-stroke);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+}
+
+.layer-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 3px;
+  height: 100%;
+  background: var(--layer-accent, var(--cyan-400));
+  opacity: 0.8;
+  transition: width 0.2s ease;
+}
+
+.layer-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--layer-accent, var(--cyan-400));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), 0 0 15px var(--layer-glow, rgba(56, 189, 248, 0.15));
+}
+
+.layer-card:hover::before {
+  width: 5px;
+}
+
+.layer-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.layer-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--glass-stroke);
+  color: var(--layer-accent, var(--cyan-400));
+}
+
+.layer-status-pill {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 12px;
+  background: rgba(16, 185, 129, 0.12);
+  color: var(--emerald-400);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  letter-spacing: 0.02em;
+}
+
+.layer-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-bottom: 6px;
+  letter-spacing: -0.01em;
+}
+
+.layer-surfaces {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 8px;
+}
+
+.surface-tag {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
+}
+
+.layer-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+
+.layer-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 10px;
+  border-top: 1px solid var(--glass-stroke);
+  font-size: 11px;
+}
+
+.layer-metric {
+  color: var(--cyan-400);
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 600;
+}
+
+.layer-inspect-link {
+  color: var(--text-subtle);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: color 0.15s;
+}
+
+.layer-card:hover .layer-inspect-link {
+  color: var(--text-main);
+}
+
+/* ==========================================================================
    Responsive Adaptations
    ========================================================================== */
 

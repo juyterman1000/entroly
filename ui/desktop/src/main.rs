@@ -63,6 +63,11 @@ fn main() {
                 run_doctor();
                 return;
             }
+            "start" | "serve" | "daemon" => {
+                println!("Starting Entroly background context daemon on http://127.0.0.1:9377...");
+                start_daemon_loop();
+                return;
+            }
             "ui" | "dashboard" => {
                 println!("Launching Entroly Desktop Control Plane...");
                 launch_gui();
@@ -167,6 +172,36 @@ fn is_daemon_running(port: u16) -> bool {
     false
 }
 
+fn start_daemon_loop() {
+    if is_daemon_running(9377) {
+        println!("Entroly daemon already active on http://127.0.0.1:9377");
+        return;
+    }
+
+    let (listener, port) = if let Ok(l) = TcpListener::bind("127.0.0.1:9377") {
+        (l, 9377)
+    } else if let Ok(l) = TcpListener::bind("127.0.0.1:5173") {
+        (l, 5173)
+    } else {
+        let l = TcpListener::bind("127.0.0.1:0").expect("Failed to bind local listener");
+        let p = l.local_addr().unwrap().port();
+        (l, p)
+    };
+
+    println!("Entroly daemon listening on http://127.0.0.1:{}", port);
+    log_msg(&format!("Daemon started on port {}", port));
+    let running = Arc::new(AtomicBool::new(true));
+
+    let running_server = running.clone();
+    thread::spawn(move || {
+        serve_http(listener, running_server);
+    });
+
+    while running.load(Ordering::Relaxed) {
+        thread::sleep(Duration::from_millis(500));
+    }
+}
+
 fn launch_gui() {
     // 1. If already running on 9377 or 5173, launch window and return
     for port in [9377, 5173] {
@@ -203,19 +238,14 @@ fn launch_gui() {
     // 4. Launch Desktop Window
     let url = format!("http://127.0.0.1:{}", port);
     log_msg(&format!("Launching desktop window: {}", url));
-    let mut child = launch_desktop_window(&url);
+    let _ = launch_desktop_window(&url);
 
-    // 5. Keep alive while the window process is running
-    if let Some(ref mut proc) = child {
-        log_msg("Waiting for desktop window process to exit...");
-        let _ = proc.wait();
-        log_msg("Desktop window closed by user. Exiting cleanly.");
-    } else {
-        // Fallback loop if launched via rundll32
-        while running.load(Ordering::Relaxed) {
-            thread::sleep(Duration::from_millis(500));
-        }
+    // 5. Keep daemon alive in background (like Docker Desktop)
+    log_msg("Entroly daemon running background event loop...");
+    while running.load(Ordering::Relaxed) {
+        thread::sleep(Duration::from_millis(500));
     }
+    log_msg("Entroly daemon shutdown.");
 }
 
 fn serve_http(listener: TcpListener, running: Arc<AtomicBool>) {
