@@ -1,0 +1,19 @@
+{
+  "name": "entroly",
+  "description": "Auditable context selection, exact recovery, and receipts for AI coding agents.",
+  "owner": {
+    "name": "juyterman1000",
+    "url": "https://github.com/juyterman1000"
+  },
+  "plugins": [
+    {
+      "name": "entroly",
+      "source": "./",
+      "description": "Evidence operations, auditable context selection, and exact recovery for AI coding agents.",
+      "version": "1.0.83",
+      "author": {
+        "name": "Entroly"
+      }
+    }
+  ]
+}
