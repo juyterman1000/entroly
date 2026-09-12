@@ -1,5 +1,5 @@
 """
-Comprehensive test suite for competitive feature modules:
+Tests for agent capability modules:
 - Cross-agent shared memory (entroly.shared_memory)
 - Output token reduction & steering (entroly.output_steering)
 - Shell hook output compression (entroly.shell_hook)
