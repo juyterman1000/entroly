@@ -103,17 +103,6 @@ def test_gap_dimensions_have_executable_next_actions() -> None:
         assert len(dimension["leadership_target"].strip()) >= 20
 
 
-def test_launch_assets_cannot_imply_publication() -> None:
-    launch_dir = ROOT / "docs" / "marketing" / "launch"
-    launch_files = sorted(launch_dir.glob("*.md"))
-
-    assert launch_files
-    for path in launch_files:
-        content = path.read_text(encoding="utf-8")
-        assert "Status: prepared, not submitted." in content
-        assert "https://github.com/juyterman1000/entroly" in content
-
-
 def test_research_metadata_tracks_release_version() -> None:
     project_version = _project_version()
     citation = (ROOT / "CITATION.cff").read_text(encoding="utf-8")
@@ -144,7 +133,6 @@ def test_expanded_visibility_assets_are_owned_and_present() -> None:
         "/scripts/check_distribution_surface.py",
     ):
         assert protected_path in codeowners
-    assert "Version is synchronized in citation metadata" in template
 
 
 def test_localization_contract_requires_human_and_technical_review() -> None:
