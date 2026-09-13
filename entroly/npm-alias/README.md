@@ -5,7 +5,20 @@ for AI agents with local compression, recovery, receipts, and verification.
 
 This package installs the current Node/WebAssembly Entroly runtime by depending
 on [`entroly-wasm`](https://www.npmjs.com/package/entroly-wasm), then exposes a
-short `entroly` binary that delegates to `entroly-wasm`.
+short `entroly` binary that delegates to `entroly-wasm`. It is also the portable
+Codex plugin package: the hook, MCP manifest, launcher, and skill ship together
+with that local runtime dependency.
+
+## Codex plugin
+
+```console
+codex plugin marketplace add juyterman1000/entroly --ref main
+codex plugin add entroly@entroly-public
+```
+
+Restart Codex and trust the bundled hook. After the next task, inspect the
+activation evidence with `entroly activation status`. Raw prompt and session
+text are not stored in activation receipts.
 
 ## Install
 

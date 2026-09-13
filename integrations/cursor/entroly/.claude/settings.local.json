@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "entroly activation hook --host cursor --budget 1200 --max-files 200",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

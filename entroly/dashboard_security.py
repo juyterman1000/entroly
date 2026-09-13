@@ -662,6 +662,14 @@ def install_dashboard_security() -> bool:
     """Install dashboard hardening exactly once and return whether it is usable."""
     global _INSTALLED, _HARDENING_ERRORS
     if _INSTALLED:
+        # Tests and embedded hosts may reload entroly.dashboard while this
+        # module remains live. Reassert the security boundary instead of
+        # treating the stale boolean as proof that the active exports are safe.
+        _dashboard.DashboardHandler = SafeDashboardHandler
+        _dashboard.start_dashboard = start_dashboard
+        package = sys.modules.get("entroly")
+        if package is not None and hasattr(package, "start_dashboard"):
+            setattr(package, "start_dashboard", start_dashboard)
         return not _HARDENING_ERRORS
 
     controls_html, controls_errors = _harden_controls_html(_controls.CONTROLS_HTML)

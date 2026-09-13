@@ -161,7 +161,7 @@ function resolveProjectFile(projectDir, relPath) {
  * @param {boolean} [force=false]
  * @returns {object} Summary with indexed file count, tokens, and duration.
  */
-function autoIndex(engine, projectDir, force = false) {
+function autoIndex(engine, projectDir, force = false, options = {}) {
   projectDir = projectDir || process.cwd();
   projectDir = path.resolve(projectDir);
 
@@ -181,7 +181,11 @@ function autoIndex(engine, projectDir, force = false) {
   if (!files.length) { files = walkFallback(projectDir); discovery = 'walk'; }
 
   const allIndexable = files.filter(shouldIndex);
-  const indexable = allIndexable.slice(0, MAX_FILES);
+  const requestedMaxFiles = Number.parseInt(options.maxFiles, 10);
+  const effectiveMaxFiles = Number.isFinite(requestedMaxFiles)
+    ? Math.max(1, Math.min(requestedMaxFiles, 1000))
+    : MAX_FILES;
+  const indexable = allIndexable.slice(0, effectiveMaxFiles);
 
   let indexed = 0, totalTokens = 0, skippedSize = 0, skippedRead = 0;
 

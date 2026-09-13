@@ -1,6 +1,6 @@
 # Entroly — VS Code Extension
 
-Cut AI context token costs by 70%+ with verifiable Merkle receipts right inside VS Code and Cursor.
+Select and compress repository context for AI tools with auditable receipts inside VS Code and Cursor.
 
 ---
 

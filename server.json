@@ -8,13 +8,13 @@
     "url": "https://github.com/juyterman1000/entroly",
     "source": "github"
   },
-  "version": "1.0.83",
+  "version": "1.0.84",
   "packages": [
     {
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "entroly",
-      "version": "1.0.83",
+      "version": "1.0.84",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"
@@ -24,7 +24,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "entroly-mcp",
-      "version": "1.0.83",
+      "version": "1.0.84",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"

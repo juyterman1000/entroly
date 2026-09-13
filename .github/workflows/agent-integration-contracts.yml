@@ -9,8 +9,21 @@ on:
       - "entroly/pyproject.toml"
       - "entroly/npm/package.json"
       - "entroly/npm-alias/package.json"
+      - "entroly/npm-alias/**"
       - "entroly-wasm/package.json"
+      - "entroly-wasm/js/activation.js"
+      - "entroly-wasm/js/auto_index.js"
+      - "entroly-wasm/js/cli.js"
       - "entroly/integrations/**"
+      - "entroly/agent_activation.py"
+      - "integrations/codex/**"
+      - "integrations/cursor/**"
+      - "integrations/gemini/**"
+      - "integrations/kiro/**"
+      - ".agents/plugins/marketplace.json"
+      - "hooks/**"
+      - "scripts/entroly-plugin-launch.mjs"
+      - "scripts/smoke_portable_plugin.js"
       # No `integrations/hermes/**` entry: that path is gitignored
       # (.gitignore:120), so no file under it can ever reach a commit and the
       # filter could never match on any pull request. The Hermes integration
@@ -78,3 +91,34 @@ jobs:
           name: agent-integration-${{ matrix.python-version }}
           path: agent-integration-${{ matrix.python-version }}.xml
           if-no-files-found: error
+
+  portable-plugin:
+    name: Portable plugin (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --locked
+      - name: Build and test the Node/WASM activation path
+        working-directory: entroly-wasm
+        run: |
+          npm run build
+          node test_activation.js
+      - name: Install the local runtime as the portable plugin dependency
+        working-directory: entroly/npm-alias
+        run: npm install --no-save --no-package-lock --ignore-scripts ../../entroly-wasm
+      - name: Check the npm plugin artifact
+        working-directory: entroly/npm-alias
+        run: npm pack --dry-run
+      - name: Exercise the packaged hook and MCP launcher
+        run: node scripts/smoke_portable_plugin.js entroly/npm-alias

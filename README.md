@@ -118,8 +118,11 @@ that safe to do:
 | 💰 **Your bill goes down** | Fewer words sent to the AI means a smaller invoice. How much depends on the job — see the [real numbers](#benchmarks) below. |
 | 🔍 **Nothing is lost** | Whatever Entroly sets aside is kept and can be pulled back *exactly* as it was, character for character. |
 | 🧾 **You can check its work** | Every decision comes with a receipt: what was kept, what was left out, and why. |
-**Do I have to change my code?** No. Entroly works with the tools you already
-use — Claude Code, Cursor, Copilot and 30+ others — and runs in the background.
+**Do I have to change my code?** No. On hosts with a verified prompt hook,
+Entroly runs before the model plans. MCP-only integrations remain callable
+tools that an agent may skip; API traffic is intercepted only when it is routed
+through the Entroly proxy. Check `entroly activation status --json` instead of
+assuming an installed integration is active.
 
 **Do I need to pay for anything to try it?** No. The two commands in the
 [Install](#install) section below run on your own machine, with no API key, and
@@ -196,8 +199,14 @@ only optional workspace, offline, provider, and proxy settings.
 | 🟢 **"I just want it on."** *(pip / Python user)* | `pip install -U entroly && entroly go` | Auto-detects your editor, wraps your agent, opens a dashboard showing tokens before and after |
 | **"I use Node, not Python."** *(npm user)* | `npm install -g entroly && entroly init` | Same engine, nothing Python required |
 | **"I want one binary, no runtime."** *(Rust user)* | `cargo build --release --bin entroly-rs --features proxy` (from `entroly-core/`) | A single native program with no dependencies |
-| **"I use Claude Code / Cursor / Windsurf / VS Code."** *(MCP user)* | `entroly attach create --client claude --project . --ttl 4h --install` (or `entroly init` for Cursor/VS Code) | Your editor gets compression, receipts, exact recovery, and evidence-backed work continuity as built-in tools — access expires on its own, and you change zero code |
+| **"I use Claude Code, Codex, Gemini CLI, or VS Code agent plugins."** *(plugin user)* | Install the Entroly plugin/extension for that host, submit one prompt, then run `entroly activation status --json` | A trusted prompt hook performs bounded local selection before planning; a receipt proves the hook ran |
+| **"I use Cursor with third-party configs enabled."** | `entroly activation install --host cursor --project .` | Merges a reversible Claude-compatible prompt hook; native Cursor MCP remains advisory |
+| **"I use Kiro IDE 1.x or CLI 3.x."** | `entroly activation install --host kiro --project .` | Installs a reversible project `PromptSubmit` hook whose stdout is added to agent context |
+| **"I use another MCP host."** | `entroly attach create --client claude --project . --ttl 4h --install` or the client-specific command in the compatibility matrix | Scoped Entroly tools and receipts; the model can still skip MCP unless the host has a verified lifecycle hook |
 | **"I'm building my own app in Python."** *(SDK user)* | `from entroly import compress, compress_messages, optimize` | Call it straight from your code, anywhere you assemble a prompt |
+
+Cursor MCP users can also use this one-click install link (no marketplace
+account required): [Add Entroly to Cursor](cursor://anysphere.cursor-deeplink/mcp/install?name=entroly&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImVudHJvbHktbWNwQDEuMC44NCIsInNlcnZlIl0sImVudiI6eyJFTlRST0xZX05PX0RPQ0tFUiI6IjEiLCJFTlRST0xZX01DUF9QQVNTSVZFIjoiMSIsIkVOVFJPTFlfTUFYX0ZJTEVTIjoiMjAwIn19).
 | **"I have an API key and my own app."** *(proxy user)* | `entroly proxy` → point `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` / `GOOGLE_GEMINI_BASE_URL` at `localhost:9377` | Every request gets optimized on the way past — no code changes on your side |
 
 <sub>**Runaway-session rescue — automatic on the proxy, callable everywhere else.**
@@ -328,17 +337,78 @@ Most context tools compress and hope. Entroly is an **auditable context control 
 
 ---
 ## Works with your stack
+
+Install the public Codex plugin from the Entroly repository:
+
+```console
+codex plugin marketplace add juyterman1000/entroly --ref main
+codex plugin add entroly@entroly-public
+```
+
+Restart Codex, review and trust the hook, then run `entroly activation status
+--json` after a task. The marketplace installs the local Node/WASM runtime with
+the plugin; the model does not have to remember to call an MCP tool before
+Entroly runs. A receipt proves that the hook executed and selected local
+context or made an explicit no-match decision. It does not prove token or cost
+savings without a matched provider-bound baseline.
+
+Install the same public repository as a Gemini CLI extension:
+
+```console
+gemini extensions install https://github.com/juyterman1000/entroly --ref main --consent
+```
+
+Restart Gemini CLI after installation. The repository root contains
+`gemini-extension.json` and `GEMINI.md`, so the command works without navigating
+into an integration subdirectory.
+
+For VS Code or Kiro, download the `entroly-vscode-*.vsix` asset from the latest
+[GitHub release](https://github.com/juyterman1000/entroly/releases/latest), then
+install it with **Extensions: Install from VSIX** or `code --install-extension`.
+The extension is self-contained and does not require an API key.
+
+JetBrains AI Assistant users can add the same server globally at **Settings →
+Tools → AI Assistant → Model Context Protocol (MCP)**:
+
+```json
+{
+  "mcpServers": {
+    "entroly": {
+      "command": "npx",
+      "args": ["-y", "entroly-mcp@1.0.84", "serve"],
+      "env": {
+        "ENTROLY_NO_DOCKER": "1",
+        "ENTROLY_MCP_PASSIVE": "1",
+        "ENTROLY_MAX_FILES": "200"
+      }
+    }
+  }
+}
+```
+
+The MCP path is provider-neutral: the host can use OpenAI, Anthropic, Google,
+Mistral, DeepSeek, Kimi, GLM, or a local model. There is no separate plugin
+marketplace for each model provider; the host's MCP or extension contract is
+the integration boundary.
+
 | Agent / platform | Path | Status |
 |---|---|---|
-| Claude Code | Scoped MCP attachment; API-key proxy | Native |
-| Codex CLI | Scoped MCP attachment; API-key proxy | Native |
+| Claude Code | Bundled `UserPromptSubmit` hook + scoped MCP | Deterministic after plugin enablement |
+| Codex CLI / app | Bundled `UserPromptSubmit` hook + scoped MCP | Deterministic after hook trust |
+| Gemini CLI | Bundled `BeforeAgent` hook + scoped MCP | Deterministic after extension enablement |
 | OpenClaw | Context-engine plugin + scoped MCP | Native |
-| Cursor / Windsurf / VS Code | Automatic MCP config | Automatic |
+| Cursor | Claude-compatible project hook; MCP or proxy fallback | Deterministic only when third-party configs are enabled |
+| Kiro IDE 1.x / CLI 3.x | Project `PromptSubmit` hook | Deterministic after project install |
+| VS Code / Copilot agent mode | Agent-plugin hook where supported; MCP fallback | Host-version dependent |
+| IntelliJ / JetBrains AI | MCP or supported custom endpoint | Advisory until a lifecycle hook is verified |
 | GitHub Copilot CLI | MCP (subscription) / proxy (BYOK) | Supported |
 | Cortex Code | SDK/library boundary only | Not validated as a wrap target |
 | Aider, OpenCode, and 30+ more | Session-scoped OpenAI-compatible proxy | One command |
 
-Status describes integration depth, not a savings guarantee — provider-observed savings require requests to actually traverse an Entroly proxy route. Entroly does not claim interception of GitHub-hosted subscription inference on Copilot's native path. Full compatibility matrix: **[docs/agent-compatibility.md](docs/agent-compatibility.md)**.
+Hook enforcement belongs to the host, so it is independent of whether that
+host runs an OpenAI, Anthropic, Gemini, Kimi, DeepSeek, Mistral, or GLM model.
+Status describes integration depth, not a savings guarantee. Provider-observed
+savings require requests to traverse an Entroly proxy route. Entroly does not claim interception of GitHub-hosted subscription inference on Copilot's native path. Full compatibility matrix: **[docs/agent-compatibility.md](docs/agent-compatibility.md)**.
 
 Entroly carries verified metadata for current models from OpenAI, Anthropic, Google, Meta, and others. It auto-discovers local Ollama models. Model-specific details: **[docs/DETAILS.md](docs/DETAILS.md)**.
 
