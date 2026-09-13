@@ -1,0 +1,2207 @@
+{
+  "identifier": "juyterman1000-entroly",
+  "name": "Entroly",
+  "version": "1.0.84",
+  "description": "Cut AI context cost and prove nothing was lost. Knapsack evidence selection, reversible context compression, 100% Merkle byte-recovery, and auditable receipts.",
+  "author": "juyterman1000",
+  "authorUrl": "https://github.com/juyterman1000",
+  "homepage": "https://github.com/juyterman1000/entroly",
+  "category": "developer",
+  "icon": "⚡",
+  "tags": [
+    "context-compression",
+    "token-optimization",
+    "mcp",
+    "codebase-intelligence",
+    "merkle-recovery",
+    "audit-receipts"
+  ],
+  "prompts": [
+    {
+      "name": "context_optimization_workflow",
+      "description": "Build a safe workflow for selecting the best context for a task."
+    },
+    {
+      "name": "context_verification_workflow",
+      "description": "Build an evidence-first verification workflow for an agent task."
+    }
+  ],
+  "resources": [
+    {
+      "uri": "entroly://health",
+      "name": "entroly_health_resource",
+      "description": "Return a bounded, secret-free Entroly runtime health summary."
+    },
+    {
+      "uri": "entroly://stats",
+      "name": "entroly_stats_resource",
+      "description": "Return bounded aggregate counters without source content or paths."
+    }
+  ],
+  "tools": [
+    {
+      "name": "remember_fragment",
+      "description": "Store a context fragment with automatic dedup and entropy scoring.\n\n        Fragments are fingerprinted via SimHash for O(1) duplicate detection.\n        Each fragment's information density is scored using Shannon entropy.\n        Duplicates are automatically merged with salience boosting.\n\n        Args:\n            content: The text content to store (code, tool output, etc.)\n            source: Origin label (e.g., 'file:utils.py', 'tool:grep')\n            token_count: Token count (auto-estimated if 0)\n            is_pinned: If True, prioritize exact inclusion within the pinned\n                budget reserve; excess pinned content remains a high-priority\n                compressed candidate so the total token ceiling stays honest.\n        ",
+      "inputSchema": {
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "source": {
+            "default": "",
+            "title": "Source",
+            "type": "string"
+          },
+          "token_count": {
+            "default": 0,
+            "title": "Token Count",
+            "type": "integer"
+          },
+          "is_pinned": {
+            "default": false,
+            "title": "Is Pinned",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "remember_fragmentArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "optimize_context",
+      "description": "Select a high-value context subset for a token budget.\n\n        Uses 0/1 Knapsack dynamic programming to maximize relevance within\n        the budget. Scores fragments on four dimensions: recency (Ebbinghaus\n        decay), access frequency (spaced repetition), semantic similarity\n        (SimHash), and information density (Shannon entropy).\n\n        QUERY REFINEMENT: Vague queries like \"fix the bug\" or \"add feature\"\n        are automatically expanded into precise master prompts using the files\n        already in memory. This improves context selection accuracy and reduces\n        hallucination from selecting wrong files. The response includes\n        query_refinement.refined_query so you can see what drove selection.\n\n        Output is ordered for optimal LLM attention: pinned/critical first,\n        high-dependency foundation files early, then by relevance.\n\n        This is the core tool — call it before sending context to the LLM.\n\n        Args:\n            token_budget: Maximum tokens allowed (default: 128K)\n            query: Current query/task for semantic relevance scoring (can be vague)\n        ",
+      "inputSchema": {
+        "properties": {
+          "token_budget": {
+            "default": 128000,
+            "title": "Token Budget",
+            "type": "integer"
+          },
+          "query": {
+            "default": "",
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "title": "optimize_contextArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "entroly_retrieve",
+      "description": "Retrieve exact source content omitted by compressed context.\n\n        Use the retrieval handle attached to a skeleton/reference fragment for\n        exact historical recovery. A visible source path also works and lazily\n        resolves the latest ingested version. With no argument, lists currently\n        materialized CCR entries without returning their content.\n\n        Args:\n            source_or_handle: Source path or content-addressed ``ccr:...`` handle.\n        ",
+      "inputSchema": {
+        "properties": {
+          "source_or_handle": {
+            "default": "",
+            "title": "Source Or Handle",
+            "type": "string"
+          }
+        },
+        "title": "entroly_retrieveArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "recall_relevant",
+      "description": "Semantic recall of the most relevant stored fragments.\n\n        Uses BM25 relevance ranking (recall_auto) with a feedback loop\n        (fragments that previously led to successful outputs are boosted).\n\n        Returns a slim ranked pointer list by default — source, score, and a\n        locating snippet — because full fragment bodies overflow the tool\n        result cap (a ``top_k=8`` recall is ~90KB). Pass ``full=True`` only\n        when you need the complete text of every hit.\n\n        Args:\n            query: The search query\n            top_k: Number of results to return\n            full: Return complete fragment bodies instead of the slim view\n        ",
+      "inputSchema": {
+        "properties": {
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "top_k": {
+            "default": 5,
+            "title": "Top K",
+            "type": "integer"
+          },
+          "full": {
+            "default": false,
+            "title": "Full",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "recall_relevantArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "record_outcome",
+      "description": "Record whether selected fragments led to a successful output.\n\n        This feeds the reinforcement learning loop: fragments that\n        contribute to successful outputs get boosted in future selections,\n        while unhelpful fragments get suppressed.\n\n        Args:\n            fragment_ids: Comma-separated fragment IDs\n            success: True if output was good, False if bad\n\n        NOTE on RAVS v1: this tool's success flag is also recorded into\n        the RAVS event log as an ``agent_self_report`` event with\n        ``strength=weak`` and ``include_in_default_training=False``.\n        Default labeling rules ignore it. Use the structured\n        ``record_test_result`` / ``record_command_exit`` /\n        ``record_ci_result`` tools for honest signals you want offline\n        evaluation to actually train against.\n        ",
+      "inputSchema": {
+        "properties": {
+          "fragment_ids": {
+            "title": "Fragment Ids",
+            "type": "string"
+          },
+          "success": {
+            "default": true,
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "fragment_ids"
+        ],
+        "title": "record_outcomeArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "record_test_result",
+      "description": "Record that tests RAN and either passed or failed for a request.\n\n        This is a STRONG signal — distinct from record_outcome which is\n        the agent's self-report. Call this when actual test execution\n        produced a real pass/fail outcome.\n\n        Args:\n            request_id: the trace_id from the optimize_context call\n            passed: True if all tests passed, False if any failed\n            suite: optional name of the test suite (e.g. \"pytest\", \"cargo test\")\n            details: optional short summary of what was tested\n        ",
+      "inputSchema": {
+        "properties": {
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          },
+          "passed": {
+            "title": "Passed",
+            "type": "boolean"
+          },
+          "suite": {
+            "default": "",
+            "title": "Suite",
+            "type": "string"
+          },
+          "details": {
+            "default": "",
+            "title": "Details",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "passed"
+        ],
+        "title": "record_test_resultArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "record_command_exit",
+      "description": "Record the exit code of a command that was generated and executed.\n\n        STRONG signal: a real subprocess produced a real exit code.\n        Convention: exit_code == 0 → \"success\", anything else → \"failure\".\n\n        Args:\n            request_id: the trace_id from the optimize_context call\n            exit_code: subprocess exit code; 0 = success\n            command: optional short representation of what was run\n        ",
+      "inputSchema": {
+        "properties": {
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          },
+          "exit_code": {
+            "title": "Exit Code",
+            "type": "integer"
+          },
+          "command": {
+            "default": "",
+            "title": "Command",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "exit_code"
+        ],
+        "title": "record_command_exitArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "record_ci_result",
+      "description": "Record CI pipeline pass/fail status for a request.\n\n        STRONG signal: CI is independent infrastructure that ran the\n        change and produced a verdict. The honest top of the signal\n        hierarchy.\n\n        Args:\n            request_id: the trace_id from the optimize_context call\n            passed: True if CI green, False if any required check failed\n            pipeline: e.g. \"github_actions\", \"gitlab_ci\", \"buildkite\"\n            url: optional link to the CI run\n        ",
+      "inputSchema": {
+        "properties": {
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          },
+          "passed": {
+            "title": "Passed",
+            "type": "boolean"
+          },
+          "pipeline": {
+            "default": "",
+            "title": "Pipeline",
+            "type": "string"
+          },
+          "url": {
+            "default": "",
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "passed"
+        ],
+        "title": "record_ci_resultArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "record_edit_outcome",
+      "description": "Record whether the user accepted, reverted, or retried an AI edit.\n\n        STRONG signal: user behavior directly indicates whether the generated\n        code was successful.\n\n        Args:\n            request_id: the trace_id from the optimize_context call\n            outcome: \"accepted\", \"reverted\", or \"retried\"\n            files_modified: number of files touched by the edit\n        ",
+      "inputSchema": {
+        "properties": {
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          },
+          "outcome": {
+            "title": "Outcome",
+            "type": "string"
+          },
+          "files_modified": {
+            "default": 0,
+            "title": "Files Modified",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "request_id",
+          "outcome"
+        ],
+        "title": "record_edit_outcomeArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "explain_context",
+      "description": "Explain why each fragment was included or excluded in the last optimization.\n\n        Shows per-fragment scoring breakdowns with all dimensions visible:\n        recency, frequency, semantic, entropy, feedback multiplier,\n        dependency boost, criticality, and composite score.\n\n        Also shows context sufficiency (what % of referenced symbols\n        have definitions included) and any exploration swaps.\n\n        Call this after optimize_context to understand selection decisions.\n        ",
+      "inputSchema": {
+        "properties": {},
+        "title": "explain_contextArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "create_context_receipt",
+      "description": "Create a Context Receipt from supplied documents.\n\n        ``documents_json`` may be:\n        - a JSON object mapping source path to text\n        - a JSON array of ``[source_path, text]`` pairs\n        - a JSON array of objects with ``source_path``/``text`` or\n          ``source``/``content`` keys\n\n        The receipt records selected context, omitted relevant context,\n        dependency links, fingerprints, token ratio, warnings, and risk\n        controls. It does not call an LLM.\n\n        Set ``recoverable=True`` to also persist a project-local recovery bundle,\n        so any omitted chunk can later be recovered byte-exact and verified via\n        ``recover_receipt_omission``.\n        ",
+      "inputSchema": {
+        "properties": {
+          "documents_json": {
+            "title": "Documents Json",
+            "type": "string"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "token_budget": {
+            "default": 8000,
+            "title": "Token Budget",
+            "type": "integer"
+          },
+          "chunk_tokens": {
+            "default": 360,
+            "title": "Chunk Tokens",
+            "type": "integer"
+          },
+          "overlap_tokens": {
+            "default": 32,
+            "title": "Overlap Tokens",
+            "type": "integer"
+          },
+          "recoverable": {
+            "default": false,
+            "title": "Recoverable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "documents_json",
+          "query"
+        ],
+        "title": "create_context_receiptArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "create_context_receipt_from_path",
+      "description": "Create a Context Receipt from a local document file or directory.\n\n        Supports text-like documents currently handled by the local receipt\n        ingester (.md, .txt, .rst). The result is deterministic and local.\n        ",
+      "inputSchema": {
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "token_budget": {
+            "default": 8000,
+            "title": "Token Budget",
+            "type": "integer"
+          },
+          "chunk_tokens": {
+            "default": 360,
+            "title": "Chunk Tokens",
+            "type": "integer"
+          },
+          "overlap_tokens": {
+            "default": 32,
+            "title": "Overlap Tokens",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path",
+          "query"
+        ],
+        "title": "create_context_receipt_from_pathArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "render_context_receipt",
+      "description": "Render a Context Receipt JSON artifact as a Markdown report.",
+      "inputSchema": {
+        "properties": {
+          "receipt_json": {
+            "title": "Receipt Json",
+            "type": "string"
+          }
+        },
+        "required": [
+          "receipt_json"
+        ],
+        "title": "render_context_receiptArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "explain_receipt_omission",
+      "description": "Explain why a chunk was omitted from a Context Receipt.",
+      "inputSchema": {
+        "properties": {
+          "receipt_json": {
+            "title": "Receipt Json",
+            "type": "string"
+          },
+          "chunk_id": {
+            "title": "Chunk Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "receipt_json",
+          "chunk_id"
+        ],
+        "title": "explain_receipt_omissionArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "recover_receipt_omission",
+      "description": "Recover the full text of context a Context Receipt omitted.\n\n        Receipts explain *what* was dropped; this hands back the exact content,\n        byte-for-byte. Works on receipts created with ``recoverable=True`` — the\n        recovery bundle is read from the local store. Pass ``chunk_id`` to recover\n        one chunk, or leave it empty to recover everything that was omitted.\n\n        Each result carries ``verified=true`` only when the returned text is\n        provably identical to what was omitted (matched against the chunk's\n        recorded fingerprint and a storage-integrity hash) — never a guess.\n        ",
+      "inputSchema": {
+        "properties": {
+          "receipt_json": {
+            "title": "Receipt Json",
+            "type": "string"
+          },
+          "chunk_id": {
+            "default": "",
+            "title": "Chunk Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "receipt_json"
+        ],
+        "title": "recover_receipt_omissionArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "prepare_proof_guided_context",
+      "description": "Prepare a durable proof-guided model request from local documents.\n\n        This tool performs only local selection, security checks, exact-recovery\n        commitments, and signed auditing. It does not call a model. Send the\n        returned ``request`` through the host's configured model route, then\n        pass the model text to ``advance_proof_guided_context``. The path must\n        remain inside the attached project root.\n        ",
+      "inputSchema": {
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "token_budget": {
+            "default": 8000,
+            "title": "Token Budget",
+            "type": "integer"
+          },
+          "max_rounds": {
+            "default": 3,
+            "title": "Max Rounds",
+            "type": "integer"
+          },
+          "recovery_token_budget": {
+            "default": 1200,
+            "title": "Recovery Token Budget",
+            "type": "integer"
+          },
+          "max_chunks_per_round": {
+            "default": 3,
+            "title": "Max Chunks Per Round",
+            "type": "integer"
+          },
+          "idempotency_key": {
+            "default": "",
+            "title": "Idempotency Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "query"
+        ],
+        "title": "prepare_proof_guided_contextArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "advance_proof_guided_context",
+      "description": "Verify one model round and return exact evidence or a final answer.\n\n        The operation is durable and idempotent. A continuation response has\n        ``status=awaiting_model`` and a new request whose committed prefix is\n        byte-identical. A terminal response returns a locally verified output.\n        No provider call is performed by Entroly.\n        ",
+      "inputSchema": {
+        "properties": {
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "model_output": {
+            "title": "Model Output",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "title": "Idempotency Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "model_output",
+          "idempotency_key"
+        ],
+        "title": "advance_proof_guided_contextArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "inspect_proof_guided_context",
+      "description": "Inspect the last durable proof-guided response without advancing it.",
+      "inputSchema": {
+        "properties": {
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "title": "inspect_proof_guided_contextArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "checkpoint_state",
+      "description": "Save state plus explicit decisions needed for safe continuation.",
+      "inputSchema": {
+        "properties": {
+          "task_description": {
+            "default": "",
+            "title": "Task Description",
+            "type": "string"
+          },
+          "current_step": {
+            "default": "",
+            "title": "Current Step",
+            "type": "string"
+          },
+          "decisions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Decisions"
+          },
+          "modified_files": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Modified Files"
+          },
+          "project": {
+            "default": "",
+            "title": "Project",
+            "type": "string"
+          }
+        },
+        "title": "checkpoint_stateArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "resume_state",
+      "description": "Resume by task relevance; omit query only for latest-checkpoint behavior.",
+      "inputSchema": {
+        "properties": {
+          "query": {
+            "default": "",
+            "title": "Query",
+            "type": "string"
+          },
+          "project": {
+            "default": "",
+            "title": "Project",
+            "type": "string"
+          }
+        },
+        "title": "resume_stateArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "prefetch_related",
+      "description": "Predict and pre-load context that will likely be needed next.\n\n        Combines static analysis (imports, callees, test files) with\n        learned co-access patterns to predict what the agent will need.\n\n        Args:\n            file_path: The file currently being accessed\n            source_content: The source code content (for static analysis)\n            language: Programming language (python, typescript, rust)\n        ",
+      "inputSchema": {
+        "properties": {
+          "file_path": {
+            "title": "File Path",
+            "type": "string"
+          },
+          "source_content": {
+            "default": "",
+            "title": "Source Content",
+            "type": "string"
+          },
+          "language": {
+            "default": "python",
+            "title": "Language",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_path"
+        ],
+        "title": "prefetch_relatedArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "get_stats",
+      "description": "Get comprehensive session statistics.\n\n        Shows token savings, duplicate detection counts, entropy\n        distribution, dependency graph stats, checkpoint status,\n        and cost estimates.\n        ",
+      "inputSchema": {
+        "properties": {},
+        "title": "get_statsArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "entroly_dashboard",
+      "description": "Show the real, live value Entroly is providing to YOUR session right now.\n\n        Pulls from actual engine state — not synthetic data. Shows:\n            Money saved: exact $ amounts from token optimization\n            Performance: sub-millisecond selection speed vs API latency\n            Bloat prevention: context compression ratio and memory footprint\n            Selection quality: per-fragment scoring and context sufficiency\n            Safety: duplicates caught, stale fragments filtered\n\n        Call this anytime to see exactly what Entroly is doing for you.\n        ",
+      "inputSchema": {
+        "properties": {},
+        "title": "entroly_dashboardArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "scan_for_vulnerabilities",
+      "description": "Scan code content for security vulnerabilities (SAST analysis).\n\n        Uses a 151-rule engine with taint-flow simulation and CVSS-inspired\n        scoring. Detects hardcoded secrets, SQL injection, path traversal,\n        command injection, insecure cryptography, unsafe deserialization,\n        XSS, and authentication misconfigurations.\n\n        Args:\n            content: The source code to scan.\n            source:  File path / identifier (used for language detection\n                     and confidence scoring). E.g. \"auth/login.py\".\n\n        Returns JSON with:\n            - findings: [{rule_id, cwe, severity, line_number, description,\n                          fix, confidence, taint_flow}]\n            - risk_score: CVSS-inspired aggregate [0.0, 10.0]\n            - critical_count, high_count, medium_count, low_count\n            - top_fix: most impactful remediation action\n        ",
+      "inputSchema": {
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "source": {
+            "default": "unknown",
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "scan_for_vulnerabilitiesArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "security_report",
+      "description": "Generate a session-wide security audit across all ingested fragments.\n\n        Scans every fragment in the current session and returns an aggregated\n        report showing: which fragments are most vulnerable, overall risk posture,\n        finding distribution by category, and the single most important fix.\n\n        Returns JSON with:\n            - fragments_scanned, fragments_with_findings\n            - critical_total, high_total, max_risk_score\n            - most_vulnerable_fragment (fragment_id)\n            - findings_by_category: {category: count}\n            - vulnerable_fragments: sorted list by risk_score\n        ",
+      "inputSchema": {
+        "properties": {},
+        "title": "security_reportArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "analyze_codebase_health",
+      "description": "Analyze the health of the ingested codebase.\n\n        Runs 5 analysis passes over all fragments in the current session:\n          1. Clone Detection — SimHash pairwise scan for Type-1/2/3 code clones\n          2. Dead Symbol Analysis — defined but never referenced symbols\n          3. God File Detection — files with > μ+2σ reverse dependencies\n          4. Architecture Violation Detection — cross-layer imports\n          5. Naming Convention Analysis — Python/Rust/React convention breaks\n\n        Returns a JSON HealthReport with:\n            - code_health_score [0–100] and health_grade (A/B/C/D/F)\n            - Per-dimension scores: duplication, dead_code, coupling, arch, naming\n            - clone_pairs, dead_symbols, god_files, arch_violations, naming_issues\n            - summary (human-readable) and top_recommendation (most impactful action)\n        ",
+      "inputSchema": {
+        "properties": {},
+        "title": "analyze_codebase_healthArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "ingest_diagram",
+      "description": "Ingest an architecture or flow diagram into the context memory.\n\n        Converts Mermaid, PlantUML, DOT/Graphviz, or informal diagram text into\n        a structured semantic fragment capturing nodes, edges, and relationships.\n        The result is stored as a normal context fragment and is retrievable\n        by optimize_context and recall_relevant.\n\n        Args:\n            diagram_text: Raw diagram source (Mermaid/PlantUML/DOT/text description).\n            source:       Identifier (e.g., 'arch_overview.mmd', 'db_schema.puml').\n            diagram_type: 'mermaid', 'plantuml', 'dot', 'text', or 'auto' (default).\n\n        Returns JSON with ingestion result (same as remember_fragment).\n        ",
+      "inputSchema": {
+        "properties": {
+          "diagram_text": {
+            "title": "Diagram Text",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "diagram_type": {
+            "default": "auto",
+            "title": "Diagram Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "diagram_text",
+          "source"
+        ],
+        "title": "ingest_diagramArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "ingest_voice",
+      "description": "Ingest a voice/meeting transcript into the context memory.\n\n        Converts pre-transcribed text (from Whisper, AssemblyAI, etc.) into a\n        structured fragment capturing decisions, action items, open questions,\n        technical vocabulary, and key discussion excerpts.\n\n        Args:\n            transcript: The full transcript text.\n            source:     Identifier (e.g., 'design_meeting_2026-03-07.txt').\n\n        Returns JSON with ingestion result plus:\n            - decisions, actions, open_questions (counts)\n            - tech_terms_identified\n        ",
+      "inputSchema": {
+        "properties": {
+          "transcript": {
+            "title": "Transcript",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "transcript",
+          "source"
+        ],
+        "title": "ingest_voiceArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "ingest_diff",
+      "description": "Ingest a code diff/patch into the context memory.\n\n        Converts a unified diff (git diff output) into a structured change summary:\n        intent classification (bug-fix/feature/refactor), symbols changed,\n        files modified, and line delta. Particularly useful for understanding\n        recent changes and their architectural impact.\n\n        Args:\n            diff_text:      Raw unified diff text (git diff output).\n            source:         Identifier (e.g., 'pr_42_auth_refactor.diff').\n            commit_message: Optional commit message for better intent classification.\n\n        Returns JSON with ingestion result plus:\n            - intent: bug-fix/feature/refactor/test/security/performance\n            - files_changed, added_lines, removed_lines\n            - symbols_changed: functions/classes modified\n        ",
+      "inputSchema": {
+        "properties": {
+          "diff_text": {
+            "title": "Diff Text",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "commit_message": {
+            "default": "",
+            "title": "Commit Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "diff_text",
+          "source"
+        ],
+        "title": "ingest_diffArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "epistemic_route",
+      "description": "Route a query through the CogOps Epistemic Ingress Controller.\n\n        Inspects 4 signals (intent, belief coverage, freshness, risk) and\n        selects one of 5 canonical flows:\n\n          ① Fast Answer:          Belief → Action (fresh, verified, low-risk)\n          ② Verify Before Answer: Belief → Verification → Action (stale/risky)\n          ③ Compile On Demand:    Truth → Belief → Verification → Action (no beliefs)\n          ④ Change-Driven:        Event → Truth → Belief → ... (PR/commit/incident)\n          ⑤ Self-Improvement:     Misses → Evolution → Belief (repeated failures)\n\n        Call this BEFORE optimize_context to understand how the system should\n        approach your query. Existing tools work exactly as before.\n\n        Args:\n            query: The user query or event description\n            is_event: True if this is a change-driven event (PR, commit, etc.)\n            event_type: Type of event (pr, commit, release, incident, scheduled)\n        ",
+      "inputSchema": {
+        "properties": {
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "is_event": {
+            "default": false,
+            "title": "Is Event",
+            "type": "boolean"
+          },
+          "event_type": {
+            "default": "",
+            "title": "Event Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "epistemic_routeArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "vault_status",
+      "description": "Show the current state of the CogOps Knowledge Vault.\n\n        Initializes the vault directory structure if needed, then returns\n        a coverage index: total beliefs, verification status, confidence\n        distribution, and routing statistics.\n\n        The vault is the persistent Living Exocortex — the system's\n        machine-auditable understanding of your codebase.\n        ",
+      "inputSchema": {
+        "properties": {},
+        "title": "vault_statusArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "vault_write_belief",
+      "description": "Write a belief artifact to the CogOps Knowledge Vault.\n\n        Beliefs are durable system understanding — what Entroly thinks\n        the codebase is. Each belief carries machine-auditable frontmatter:\n        claim_id, entity, status, confidence, sources, last_checked.\n\n        Args:\n            entity: The system entity this belief is about (e.g., 'auth::token_rotation')\n            title: Human-readable title\n            body: The belief content (markdown)\n            confidence: Machine-assigned confidence 0.0-1.0 (default: 0.7)\n            status: observed|inferred|verified|stale|hypothesis (default: inferred)\n            sources: Comma-separated source paths (e.g., 'src/auth.rs:142,src/token.rs:58')\n            derived_from: Comma-separated component names that produced this belief\n        ",
+      "inputSchema": {
+        "properties": {
+          "entity": {
+            "title": "Entity",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "confidence": {
+            "default": 0.7,
+            "title": "Confidence",
+            "type": "number"
+          },
+          "status": {
+            "default": "inferred",
+            "title": "Status",
+            "type": "string"
+          },
+          "sources": {
+            "default": "",
+            "title": "Sources",
+            "type": "string"
+          },
+          "derived_from": {
+            "default": "",
+            "title": "Derived From",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entity",
+          "title",
+          "body"
+        ],
+        "title": "vault_write_beliefArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "vault_query",
+      "description": "Query the CogOps Knowledge Vault for existing beliefs.\n\n        Use this to check what the system already knows before compiling\n        new understanding. Supports lookup by entity name or listing all.\n\n        Args:\n            entity: Entity name to look up (fuzzy match)\n            list_all: If True, return all beliefs with frontmatter summary\n        ",
+      "inputSchema": {
+        "properties": {
+          "entity": {
+            "default": "",
+            "title": "Entity",
+            "type": "string"
+          },
+          "list_all": {
+            "default": false,
+            "title": "List All",
+            "type": "boolean"
+          }
+        },
+        "title": "vault_queryArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "vault_write_action",
+      "description": "Write a task output or report to the CogOps Knowledge Vault.\n\n        Action artifacts are developer-facing outputs: PR briefs, answers,\n        architecture diagrams, slide decks, task reports. They live in\n        actions/ and are timestamped for traceability.\n\n        Args:\n            title: Title of the output\n            content: Full markdown content\n            action_type: Type tag (report, pr_brief, answer, diagram, context_pack)\n        ",
+      "inputSchema": {
+        "properties": {
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "action_type": {
+            "default": "report",
+            "title": "Action Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "content"
+        ],
+        "title": "vault_write_actionArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "vault_time_travel",
+      "description": "Query the vault's bitemporal belief ledger — memory time travel.\n\n        Every belief write is versioned in an append-only, hash-chained\n        ledger. This tool answers questions like \"what did the vault know\n        last Tuesday?\" and \"what changed between two dates?\".\n\n        Args:\n            action: One of:\n                as_of — snapshot of beliefs visible at `when`\n                diff — what changed between `from_when` and `to_when`\n                timeline — version history for `entity`\n                verify_chain — tamper-check the ledger hash chain\n                seed — backfill the ledger from pre-ledger belief files\n                redact — erase belief bodies (by `entity` or `claim_id`)\n                    via a chained tombstone; content is deleted, the hash\n                    chain stays verifiable\n            when: ISO-8601 instant for as_of (e.g., '2026-07-14T00:00:00+00:00')\n            from_when: ISO-8601 start instant for diff\n            to_when: ISO-8601 end instant for diff\n            entity: Entity name for timeline\n            time_axis: 'transaction' = what the vault knew at that instant\n                (default); 'valid' = what had been verified as of that instant\n        ",
+      "inputSchema": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "when": {
+            "default": "",
+            "title": "When",
+            "type": "string"
+          },
+          "from_when": {
+            "default": "",
+            "title": "From When",
+            "type": "string"
+          },
+          "to_when": {
+            "default": "",
+            "title": "To When",
+            "type": "string"
+          },
+          "entity": {
+            "default": "",
+            "title": "Entity",
+            "type": "string"
+          },
+          "time_axis": {
+            "default": "transaction",
+            "title": "Time Axis",
+            "type": "string"
+          },
+          "claim_id": {
+            "default": "",
+            "title": "Claim Id",
+            "type": "string"
+          },
+          "reason": {
+            "default": "user_requested_erasure",
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "vault_time_travelArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "vault_hygiene_scan",
+      "description": "Scan vault beliefs against each other for knowledge decay.\n\n        Report-only living-context maintenance: pairwise ESG contradiction\n        detection between beliefs, near-duplicate merge suggestions,\n        staleness flags, and confidence flapping (entities whose recorded\n        confidence keeps reversing across ledger versions). Never rewrites\n        or deletes a belief — act on the suggestions explicitly.\n\n        Args:\n            contradiction_threshold: min ESG contradiction_fraction to flag\n                a belief pair (default 0.5)\n            max_age_days: beliefs unchecked for longer are flagged stale\n                (default 30)\n        ",
+      "inputSchema": {
+        "properties": {
+          "contradiction_threshold": {
+            "default": 0.5,
+            "title": "Contradiction Threshold",
+            "type": "number"
+          },
+          "max_age_days": {
+            "default": 30,
+            "title": "Max Age Days",
+            "type": "integer"
+          }
+        },
+        "title": "vault_hygiene_scanArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "prepare_task_dream",
+      "description": "Prepare an expiring, receipt-backed task skill before agent work.\n\n        The capsule combines safe cross-session MemoryOS recall, optional\n        hippocampal long-term memory, current repository fragments, non-stale\n        beliefs, and already-promoted skills. Recalled text is evidence rather\n        than authority and is prompt-injection scanned. Root AGENTS.md and\n        CLAUDE.md files are never modified.\n\n        Args:\n            task: The concrete task the agent is about to perform.\n            agent_id: MemoryOS identity used for scoped recall.\n            token_budget: Approximate maximum capsule tokens (256-8000).\n            persist: Write SKILL.md and receipt.json under .entroly/task_dreams.\n        ",
+      "inputSchema": {
+        "properties": {
+          "task": {
+            "title": "Task",
+            "type": "string"
+          },
+          "agent_id": {
+            "default": "default",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "token_budget": {
+            "default": 1600,
+            "title": "Token Budget",
+            "type": "integer"
+          },
+          "persist": {
+            "default": true,
+            "title": "Persist",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "task"
+        ],
+        "title": "prepare_task_dreamArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "compile_beliefs",
+      "description": "Compile source code into belief artifacts (Truth → Belief pipeline).\n\n        Scans a directory for source files (.py, .rs, .ts, .js), extracts\n        code entities (classes, functions, structs, traits, imports),\n        resolves cross-file dependencies, and writes belief artifacts to\n        the vault with full frontmatter (claim_id, entity, status,\n        confidence, sources, last_checked, derived_from).\n\n        Args:\n            directory: Path to scan. Defaults to the project root.\n            max_files: Maximum files to process (default: 200)\n        ",
+      "inputSchema": {
+        "properties": {
+          "directory": {
+            "default": "",
+            "title": "Directory",
+            "type": "string"
+          },
+          "max_files": {
+            "default": 200,
+            "title": "Max Files",
+            "type": "integer"
+          }
+        },
+        "title": "compile_beliefsArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "verify_beliefs",
+      "description": "Run a full verification pass on all beliefs in the vault.\n\n        Checks for:\n        - Staleness (beliefs past their freshness window)\n        - Contradictions (conflicting claims about the same entity)\n        - Confidence divergence between same-entity beliefs\n        - Low confidence scores\n\n        Writes verification artifacts to vault/verification/.\n        ",
+      "inputSchema": {
+        "properties": {},
+        "title": "verify_beliefsArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "blast_radius",
+      "description": "Analyze the blast radius of file changes on existing beliefs.\n\n        Given a list of changed files, determines which beliefs need\n        re-verification, which may be invalidated, and the overall risk\n        level (low/medium/high).\n\n        Args:\n            changed_files: Comma-separated list of changed file paths\n        ",
+      "inputSchema": {
+        "properties": {
+          "changed_files": {
+            "title": "Changed Files",
+            "type": "string"
+          }
+        },
+        "required": [
+          "changed_files"
+        ],
+        "title": "blast_radiusArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "process_change",
+      "description": "Process a code change through the Change-Driven pipeline (Flow ④).\n\n        Full pipeline: Diff → ChangeSet → Review → Blast Radius → Vault\n\n        Classifies intent (bugfix/feature/refactor/test/security/performance),\n        runs code review (hardcoded secrets, TODOs, broad exceptions, unsafe),\n        computes belief impact, and returns a structured PR brief.\n\n        Args:\n            diff_text: Raw unified diff text (git diff output)\n            commit_message: Optional commit message for intent classification\n            pr_title: Optional PR title\n        ",
+      "inputSchema": {
+        "properties": {
+          "diff_text": {
+            "title": "Diff Text",
+            "type": "string"
+          },
+          "commit_message": {
+            "default": "",
+            "title": "Commit Message",
+            "type": "string"
+          },
+          "pr_title": {
+            "default": "",
+            "title": "Pr Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "diff_text"
+        ],
+        "title": "process_changeArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "execute_flow",
+      "description": "Execute a full canonical epistemic flow end-to-end.\n\n        Routes the query through the Epistemic Ingress Controller (4 signals:\n        intent, belief coverage, freshness, risk), then chains the appropriate\n        pipeline steps automatically:\n\n          ① Fast Answer:         Belief → Action\n          ② Verify Before Answer: Belief → Verification → Action\n          ③ Compile On Demand:   Truth → Belief → Verification → Action\n          ④ Change-Driven:       Event → Truth → Belief → Verification → Action\n          ⑤ Self-Improvement:    Misses → Verification → Evolution → Belief\n\n        Args:\n            query: The user query or event description\n            diff_text: Raw diff for change-driven flows (Flow ④)\n            is_event: True if this is a change-driven event\n            event_type: Type of event (pr, commit, release, incident, scheduled)\n        ",
+      "inputSchema": {
+        "properties": {
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "diff_text": {
+            "default": "",
+            "title": "Diff Text",
+            "type": "string"
+          },
+          "is_event": {
+            "default": false,
+            "title": "Is Event",
+            "type": "boolean"
+          },
+          "event_type": {
+            "default": "",
+            "title": "Event Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "execute_flowArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "create_skill",
+      "description": "Create a new skill from a capability gap (Evolution layer).\n\n        When the system repeatedly fails on a topic, this generates a\n        full skill package in vault/evolution/skills/<skill-id>/:\n        - SKILL.md — procedure/SOP\n        - tool.py — executable Python tool\n        - metrics.json — fitness tracking\n        - tests/test_cases.json — regression tests\n\n        Args:\n            entity_key: The entity this skill handles (e.g., 'protobuf_analysis')\n            failing_queries: Pipe-separated list of failing queries\n            intent: The intent class for this skill\n        ",
+      "inputSchema": {
+        "properties": {
+          "entity_key": {
+            "title": "Entity Key",
+            "type": "string"
+          },
+          "failing_queries": {
+            "title": "Failing Queries",
+            "type": "string"
+          },
+          "intent": {
+            "default": "",
+            "title": "Intent",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entity_key",
+          "failing_queries"
+        ],
+        "title": "create_skillArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "manage_skills",
+      "description": "Manage the CogOps skill lifecycle (Evolution layer).\n\n        Actions:\n        - list: Show all skills with status, fitness, and run counts\n        - benchmark: Run test cases and compute fitness score (0.0-1.0)\n        - promote: Promote (fitness >= 0.7) or prune (fitness <= 0.3)\n\n        Args:\n            action: list | benchmark | promote\n            skill_id: Required for benchmark/promote actions\n        ",
+      "inputSchema": {
+        "properties": {
+          "action": {
+            "default": "list",
+            "title": "Action",
+            "type": "string"
+          },
+          "skill_id": {
+            "default": "",
+            "title": "Skill Id",
+            "type": "string"
+          }
+        },
+        "title": "manage_skillsArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "coverage_gaps",
+      "description": "Find source files with no corresponding belief in the vault.\n\n        Scans a directory for source files (.py, .rs, .ts, .js) and checks\n        which ones have no belief artifact. Useful for identifying blind\n        spots before running compile_beliefs.\n\n        Args:\n            directory: Path to scan. Defaults to the project root.\n        ",
+      "inputSchema": {
+        "properties": {
+          "directory": {
+            "default": "",
+            "title": "Directory",
+            "type": "string"
+          }
+        },
+        "title": "coverage_gapsArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "refresh_beliefs",
+      "description": "Mark beliefs as stale after file changes (Flow ④ doc-refresh).\n\n        Given changed files, finds related beliefs and marks their status\n        as 'stale' so the next verify_beliefs pass will flag them for\n        re-compilation.\n\n        Args:\n            changed_files: Comma-separated list of changed file paths\n        ",
+      "inputSchema": {
+        "properties": {
+          "changed_files": {
+            "title": "Changed Files",
+            "type": "string"
+          }
+        },
+        "required": [
+          "changed_files"
+        ],
+        "title": "refresh_beliefsArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "sync_workspace_changes",
+      "description": "Synchronize workspace file changes into the belief and verification layers.\n\n        Detects new, modified, and deleted source files, marks affected beliefs stale,\n        recompiles changed files into fresh beliefs, runs a verification pass, and writes\n        a sync report into actions/.\n        ",
+      "inputSchema": {
+        "properties": {
+          "directory": {
+            "default": "",
+            "title": "Directory",
+            "type": "string"
+          },
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          },
+          "max_files": {
+            "default": 100,
+            "title": "Max Files",
+            "type": "integer"
+          }
+        },
+        "title": "sync_workspace_changesArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "repo_file_map",
+      "description": "Return the canonical Entroly file map across the Python, Rust core, and WASM repos.\n\n        Use this to understand ownership boundaries and where logic currently lives.\n        Supported formats: markdown, json.\n        ",
+      "inputSchema": {
+        "properties": {
+          "format": {
+            "default": "markdown",
+            "title": "Format",
+            "type": "string"
+          }
+        },
+        "title": "repo_file_mapArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "start_workspace_listener",
+      "description": "Start a background workspace listener that continuously feeds repo changes into CogOps.\n\n        This is the long-running change-driven bridge from repo activity into Belief CI.\n        ",
+      "inputSchema": {
+        "properties": {
+          "directory": {
+            "default": "",
+            "title": "Directory",
+            "type": "string"
+          },
+          "interval_s": {
+            "default": 120,
+            "title": "Interval S",
+            "type": "integer"
+          },
+          "force_initial": {
+            "default": false,
+            "title": "Force Initial",
+            "type": "boolean"
+          },
+          "max_files": {
+            "default": 100,
+            "title": "Max Files",
+            "type": "integer"
+          }
+        },
+        "title": "start_workspace_listenerArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "vault_search",
+      "description": "Full-text search across all belief artifacts in the vault.\n\n        Uses TF-IDF ranking with entity-name boosting (3x) to find the\n        most relevant beliefs. Much cheaper than listing all beliefs —\n        returns only the top matches with excerpts.\n\n        Args:\n            query: Natural language search query (e.g., \"how does knapsack work?\")\n            top_k: Maximum number of results to return (default: 5)\n        ",
+      "inputSchema": {
+        "properties": {
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "top_k": {
+            "default": 5,
+            "title": "Top K",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "vault_searchArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "compile_docs",
+      "description": "Compile markdown documentation files into belief artifacts.\n\n        Ingests project-level docs (README.md, ARCHITECTURE.md, docs/,\n        CONTRIBUTING.md, etc.) into the vault as documentation beliefs\n        with confidence 0.80 (human-authored > machine-inferred code beliefs).\n\n        Args:\n            directory: Project root to scan. Defaults to the project root.\n            max_files: Maximum doc files to process (default: 50)\n        ",
+      "inputSchema": {
+        "properties": {
+          "directory": {
+            "default": "",
+            "title": "Directory",
+            "type": "string"
+          },
+          "max_files": {
+            "default": 50,
+            "title": "Max Files",
+            "type": "integer"
+          }
+        },
+        "title": "compile_docsArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "export_training_data",
+      "description": "Export vault beliefs as JSONL training data for LLM finetuning.\n\n        Generates instruction-following pairs from compiled beliefs:\n        question about entity → belief body as answer. Filters out stale\n        and low-confidence beliefs. Output is OpenAI-compatible JSONL.\n\n        Uses PRISM scoring dimensions for quality-weighted sampling:\n        only beliefs with confidence >= 0.5 and non-stale status are\n        included in the training set.\n\n        Args:\n            output_path: Path to write JSONL file (default: training_data.jsonl)\n            format: Output format, currently only 'jsonl' supported\n        ",
+      "inputSchema": {
+        "properties": {
+          "output_path": {
+            "default": "training_data.jsonl",
+            "title": "Output Path",
+            "type": "string"
+          },
+          "format": {
+            "default": "jsonl",
+            "title": "Format",
+            "type": "string"
+          }
+        },
+        "title": "export_training_dataArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "verify_provenance",
+      "description": "Verify that LLM-generated code is grounded in the provided context.\n\n        Uses BIPT (Byte-level Information Provenance Tracer) to measure how\n        much of each identifier in the generated code originates from the\n        context. Returns an Identifier Provenance Deficit (IPD) score:\n\n          IPD = 0.0  → fully grounded (all identifiers come from context)\n          IPD = 1.0  → fully invented (no identifiers match context)\n\n        Use this after an LLM generates code to check for hallucinated APIs,\n        invented function names, or fabricated imports before accepting output.\n\n        Args:\n            code: The LLM-generated code to verify\n            context: The repository context that was provided to the LLM\n        ",
+      "inputSchema": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "context": {
+            "default": "",
+            "title": "Context",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "verify_provenanceArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "verify_and_repair",
+      "description": "Verify LLM-generated code and suggest repairs for hallucinations.\n\n        Combines BIPT verification with rejection analysis to identify\n        hallucinated identifiers and suggest which real APIs/symbols from\n        the context should be used instead.\n\n        This is a single-shot verification + feedback tool — it does NOT\n        call an LLM. For the full repair loop (FORGE), use the Python SDK:\n          from entroly.verifiers import forge_loop\n\n        Args:\n            prompt: The original user request that generated the code\n            code: The LLM-generated code to verify\n            context: The repository context provided to the LLM\n        ",
+      "inputSchema": {
+        "properties": {
+          "prompt": {
+            "title": "Prompt",
+            "type": "string"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "context": {
+            "default": "",
+            "title": "Context",
+            "type": "string"
+          }
+        },
+        "required": [
+          "prompt",
+          "code"
+        ],
+        "title": "verify_and_repairArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "verify_response",
+      "description": "Verify an AI-generated response for hallucination using the 4-signal fusion cascade.\n\n        Runs the same hallucination detection pipeline as the proxy (WITNESS + ECE + EPR + Spectral)\n        but callable directly from any MCP client. Use this after generating a response to check\n        for factual claims that aren't grounded in the provided context.\n\n        Returns a structured verification report with:\n          - fused_risk: Combined hallucination probability [0.0 = safe, 1.0 = hallucinated]\n          - verdict: \"pass\", \"warn\", or \"flag\"\n          - per-signal scores (entity_coverage_gap, ece_curvature, epr_rate, spectral_consistency)\n          - flagged_claims: List of specific claims that may be hallucinated\n          - recommendation: Suggested action (accept / review / reject)\n\n        All computation is 100% local — zero LLM calls, zero API calls.\n\n        Args:\n            response: The AI-generated text to verify\n            context: The source context that was provided to the AI\n            prompt: The original user prompt/query (helps calibrate verification)\n        ",
+      "inputSchema": {
+        "properties": {
+          "response": {
+            "title": "Response",
+            "type": "string"
+          },
+          "context": {
+            "default": "",
+            "title": "Context",
+            "type": "string"
+          },
+          "prompt": {
+            "default": "",
+            "title": "Prompt",
+            "type": "string"
+          }
+        },
+        "required": [
+          "response"
+        ],
+        "title": "verify_responseArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "eicv_verify_claim",
+      "description": "Verify a single claim against evidence using the EICV pipeline.\n\n        Returns a structured EICVCertificate with:\n          - phi: epistemic support density [0=fully hallucinated, 1=fully grounded]\n          - hallucination_score: 1 - phi\n          - decision: \"supported\" | \"abstain\" | \"hallucinated\"\n          - layer_scores: per-layer breakdown (T(G), NLI, RNR, gamma, H_sem)\n          - n_claim_atoms / n_ev_atoms: structural decomposition counts\n          - unsupported_fraction: fraction of claim atoms with no support\n          - contradiction_fraction: fraction with active contradiction\n          - elapsed_ms: per-call latency\n\n        Computed locally with no neural model and no LLM calls. Accuracy\n        on public benchmarks (FEVER, SQuAD v2, HaluEval-QA) is documented\n        in benchmarks/results/. False-positive and false-negative rates are\n        non-zero — review those JSONs before relying on the output for\n        compliance-sensitive decisions.\n\n        Args:\n            evidence: The grounding context (retrieved passages, source material)\n            claim: The single claim to verify against evidence\n            profile: \"rag\" | \"qa\" | \"summarization\" | \"dialogue\" | \"fact_check\"\n                | \"default\". Selects the abstain decision band.\n        ",
+      "inputSchema": {
+        "properties": {
+          "evidence": {
+            "title": "Evidence",
+            "type": "string"
+          },
+          "claim": {
+            "title": "Claim",
+            "type": "string"
+          },
+          "profile": {
+            "default": "rag",
+            "title": "Profile",
+            "type": "string"
+          }
+        },
+        "required": [
+          "evidence",
+          "claim"
+        ],
+        "title": "eicv_verify_claimArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "eicv_suppress_hallucinations",
+      "description": "Verify an LLM response and optionally rewrite hallucinated claims.\n\n        Returns the (possibly rewritten) output and per-claim audit trail.\n        Computation is fully local — no neural model, no LLM calls.\n\n        Modes:\n          audit    — analyze only; no rewrite. Use for telemetry/dashboards.\n          annotate — keep output; append verification warnings at end.\n          strict   — graduated 4-action policy:\n                       supported → PASS (no change)\n                       abstain   → HEDGE (append \"[unverified]\")\n                       hallucinated → SUPPRESS (remove claim sentence)\n\n        Profiles tune the abstain band:\n          rag (default) — strict, for retrieval-augmented generation\n          qa            — moderate-strict for QA outputs\n          summarization — tolerant of paraphrase\n          dialogue      — broader abstain band\n          fact_check    — hardest (FEVER-like setting)\n\n        Returns SuppressionResult with:\n          - rewritten_output: the (possibly modified) response\n          - n_claims / n_supported / n_abstained / n_hallucinated\n          - suppressed_count / warned_count\n          - hallucination_rate: 0..1 (n_hallucinated / n_claims)\n          - certificates: list of per-claim EICVCertificate\n          - latency_ms\n\n        Accuracy on public datasets is documented in benchmarks/results/.\n        False-positive and false-negative rates are non-zero — a\n        truthful claim can be wrongly suppressed, and a false claim can\n        pass through. Audit-mode is the safe default for compliance-\n        sensitive applications.\n\n        Args:\n            context: The grounding evidence the LLM was supposed to use\n            output: The LLM's response text to verify and possibly rewrite\n            profile: Suppression profile (default \"rag\")\n            mode: \"audit\" | \"annotate\" | \"strict\" (default \"strict\")\n        ",
+      "inputSchema": {
+        "properties": {
+          "context": {
+            "title": "Context",
+            "type": "string"
+          },
+          "output": {
+            "title": "Output",
+            "type": "string"
+          },
+          "profile": {
+            "default": "rag",
+            "title": "Profile",
+            "type": "string"
+          },
+          "mode": {
+            "default": "strict",
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "context",
+          "output"
+        ],
+        "title": "eicv_suppress_hallucinationsArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "smart_read",
+      "description": "Read a file at an automatic or caller-chosen resolution.\n\n        By default SRP selects the optimal resolution per code block from\n        query relevance and token budget:\n          - Blocks matching the query → FULL (complete source)\n          - Related blocks → MEDIUM (signature + docstring)\n          - Peripheral blocks → LOW (name only)\n          - Irrelevant blocks → SKIP (omitted)\n\n        This reduces output by prioritizing query-relevant blocks. Use\n        ``resolution=\"full\"`` whenever exact source text is required.\n\n        Automatic selection is the right default and cannot be right for every\n        question. Measured on this repository, a signature-level view answered\n        12/12 questions whose evidence lives in a signature and 0/20 whose\n        evidence lives in a function body. Pass `resolution` when you already\n        know which kind of question you are asking.\n\n        Args:\n            file_path: Path to the file to read\n            query: What you're looking for (improves relevance scoring)\n            budget: Target token budget for the output (default: 1000)\n            resolution: Choose \"full\", \"medium\", \"diff\", \"structure\", or\n                \"low\"; empty means automatic. \"full\" returns the complete\n                original text.\n                \"diff\" requires `previous_source` and returns a whole-file\n                unified diff. \"structure\" returns declarations, signatures,\n                and imports while eliding implementation bodies when a useful\n                native outline is available; otherwise it returns full source\n                and reports `structure_backend=\"full-fallback\"`. Pinned output\n                is not demoted to fit the budget; the response reports\n                `over_budget` instead.\n            previous_source: Required baseline when resolution is \"diff\".\n            line_start: First line of an exact inclusive range (1-indexed).\n                Must be supplied together with `line_end` and cannot be\n                combined with `resolution`.\n            line_end: Last line of an exact inclusive range (1-indexed).\n            fresh: Bypass same-session re-read suppression and return the\n                rendered output in full.\n            read_scope: Optional caller scope for isolating parallel agents\n                that intentionally share one MCP connection.\n\n        An exact repeated delivery returns only an opaque ``~NNN`` handle.\n        That handle means the rendered output is byte-identical to content\n        already delivered in this MCP session. Pass ``fresh=true`` to expand\n        it. Caller-selected FULL and line ranges return raw text on cache miss;\n        they are not wrapped in JSON, so their text remains exact.\n        ",
+      "inputSchema": {
+        "properties": {
+          "file_path": {
+            "title": "File Path",
+            "type": "string"
+          },
+          "query": {
+            "default": "",
+            "title": "Query",
+            "type": "string"
+          },
+          "budget": {
+            "default": 1000,
+            "title": "Budget",
+            "type": "integer"
+          },
+          "resolution": {
+            "default": "",
+            "title": "Resolution",
+            "type": "string"
+          },
+          "previous_source": {
+            "default": "",
+            "title": "Previous Source",
+            "type": "string"
+          },
+          "line_start": {
+            "default": 0,
+            "title": "Line Start",
+            "type": "integer"
+          },
+          "line_end": {
+            "default": 0,
+            "title": "Line End",
+            "type": "integer"
+          },
+          "fresh": {
+            "default": false,
+            "title": "Fresh",
+            "type": "boolean"
+          },
+          "read_scope": {
+            "default": "",
+            "title": "Read Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_path"
+        ],
+        "title": "smart_readArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "security_scan",
+      "description": "Scan content for prompt injection attacks and security threats.\n\n        Detects:\n          - Direct instruction overrides (\"ignore previous instructions\")\n          - Role reassignment attempts (\"you are now a...\")\n          - Unicode steganography (zero-width chars, directional overrides)\n          - Base64-encoded instruction payloads\n          - Repetition flooding (context window domination)\n          - XML/tag-based role spoofing\n\n        Use this to verify untrusted content before including it in prompts.\n\n        Args:\n            content: The text content to scan\n            source: Source identifier for threat location reporting\n        ",
+      "inputSchema": {
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "source": {
+            "default": "<unknown>",
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "security_scanArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "work_state",
+      "description": "Inspect persisted shared work state without appending a polling event.",
+      "inputSchema": {
+        "properties": {
+          "project": {
+            "default": "",
+            "title": "Project",
+            "type": "string"
+          },
+          "now_ms": {
+            "default": 0,
+            "title": "Now Ms",
+            "type": "integer"
+          }
+        },
+        "title": "work_stateArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "work_claim",
+      "description": "Record explicit agent work plus a bounded advisory scope lease.",
+      "inputSchema": {
+        "properties": {
+          "agent_id": {
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "task_title": {
+            "title": "Task Title",
+            "type": "string"
+          },
+          "project": {
+            "default": "",
+            "title": "Project",
+            "type": "string"
+          },
+          "task_id": {
+            "default": "",
+            "title": "Task Id",
+            "type": "string"
+          },
+          "session_id": {
+            "default": "",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "scope_paths": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Scope Paths"
+          },
+          "scope_symbols": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Scope Symbols"
+          },
+          "ttl_seconds": {
+            "default": 900.0,
+            "title": "Ttl Seconds",
+            "type": "number"
+          }
+        },
+        "required": [
+          "agent_id",
+          "task_title"
+        ],
+        "title": "work_claimArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "work_resume",
+      "description": "Recover unfinished work and optionally seal a no-handoff proof.",
+      "inputSchema": {
+        "properties": {
+          "project": {
+            "default": "",
+            "title": "Project",
+            "type": "string"
+          },
+          "workstream_id": {
+            "default": "",
+            "title": "Workstream Id",
+            "type": "string"
+          },
+          "max_evidence": {
+            "default": 128,
+            "title": "Max Evidence",
+            "type": "integer"
+          },
+          "to_agent": {
+            "default": "",
+            "title": "To Agent",
+            "type": "string"
+          }
+        },
+        "title": "work_resumeArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "work_handoff",
+      "description": "Create a graph-bound handoff receipt and complete continuation proof.",
+      "inputSchema": {
+        "properties": {
+          "from_agent": {
+            "title": "From Agent",
+            "type": "string"
+          },
+          "to_agent": {
+            "title": "To Agent",
+            "type": "string"
+          },
+          "workstream_id": {
+            "title": "Workstream Id",
+            "type": "string"
+          },
+          "project": {
+            "default": "",
+            "title": "Project",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from_agent",
+          "to_agent",
+          "workstream_id"
+        ],
+        "title": "work_handoffArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "work_record_context",
+      "description": "Attach a canonical ContextReceipt to its exact WorkScope.",
+      "inputSchema": {
+        "properties": {
+          "receipt": {
+            "additionalProperties": true,
+            "title": "Receipt",
+            "type": "object"
+          },
+          "project": {
+            "default": "",
+            "title": "Project",
+            "type": "string"
+          },
+          "agent_id": {
+            "default": "",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "session_id": {
+            "default": "",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "receipt"
+        ],
+        "title": "work_record_contextArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "work_compile_context",
+      "description": "Compile verified code context and record its Work Graph receipt.",
+      "inputSchema": {
+        "properties": {
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "project": {
+            "default": "",
+            "title": "Project",
+            "type": "string"
+          },
+          "workstream_id": {
+            "default": "",
+            "title": "Workstream Id",
+            "type": "string"
+          },
+          "agent_id": {
+            "default": "",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "session_id": {
+            "default": "",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "token_budget": {
+            "default": 2000,
+            "title": "Token Budget",
+            "type": "integer"
+          },
+          "max_hops": {
+            "default": 2,
+            "title": "Max Hops",
+            "type": "integer"
+          },
+          "max_fragments": {
+            "default": 24,
+            "title": "Max Fragments",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "work_compile_contextArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "work_context_fault",
+      "description": "Fault exact omitted code from a context token or verified context object.",
+      "inputSchema": {
+        "properties": {
+          "context": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Context"
+          },
+          "context_ref": {
+            "title": "Context Ref",
+            "type": "string"
+          },
+          "recovery_handle": {
+            "additionalProperties": true,
+            "title": "Recovery Handle",
+            "type": "object"
+          },
+          "project": {
+            "default": "",
+            "title": "Project",
+            "type": "string"
+          },
+          "workstream_id": {
+            "default": "",
+            "title": "Workstream Id",
+            "type": "string"
+          },
+          "agent_id": {
+            "default": "",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "session_id": {
+            "default": "",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "token_budget": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Token Budget"
+          }
+        },
+        "required": [
+          "context",
+          "context_ref",
+          "recovery_handle"
+        ],
+        "title": "work_context_faultArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "work_record_memory",
+      "description": "Attach provenance-bearing memory without trusting raw model prose.",
+      "inputSchema": {
+        "properties": {
+          "memory": {
+            "additionalProperties": true,
+            "title": "Memory",
+            "type": "object"
+          },
+          "project": {
+            "default": "",
+            "title": "Project",
+            "type": "string"
+          },
+          "now_ms": {
+            "default": 0,
+            "title": "Now Ms",
+            "type": "integer"
+          },
+          "superseded_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Superseded Ids"
+          }
+        },
+        "required": [
+          "memory"
+        ],
+        "title": "work_record_memoryArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "work_record_execution",
+      "description": "Atomically record route, observable execution and exact-head verification.",
+      "inputSchema": {
+        "properties": {
+          "route": {
+            "additionalProperties": true,
+            "title": "Route",
+            "type": "object"
+          },
+          "outcome": {
+            "additionalProperties": true,
+            "title": "Outcome",
+            "type": "object"
+          },
+          "verification": {
+            "additionalProperties": true,
+            "title": "Verification",
+            "type": "object"
+          },
+          "project": {
+            "default": "",
+            "title": "Project",
+            "type": "string"
+          },
+          "invalidated_commitments": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Invalidated Commitments"
+          }
+        },
+        "required": [
+          "route",
+          "outcome",
+          "verification"
+        ],
+        "title": "work_record_executionArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "work_session_status",
+      "description": "Report the automatic takeover performed when this server started.",
+      "inputSchema": {
+        "properties": {
+          "project": {
+            "default": "",
+            "title": "Project",
+            "type": "string"
+          }
+        },
+        "title": "work_session_statusArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "work_modifications",
+      "description": "Modifications recorded between observations by the workspace watcher.\n\n        A point-in-time refresh shows what a file looks like now. This shows\n        that it changed at 14:02 and again at 14:07, which a refresh cannot.\n        Empty when the watcher is disabled.\n        ",
+      "inputSchema": {
+        "properties": {
+          "project": {
+            "default": "",
+            "title": "Project",
+            "type": "string"
+          },
+          "drain": {
+            "default": false,
+            "title": "Drain",
+            "type": "boolean"
+          }
+        },
+        "title": "work_modificationsArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "work_acknowledge_recovery",
+      "description": "Accept responsibility for recovered work state so acting is allowed.",
+      "inputSchema": {
+        "properties": {
+          "token": {
+            "title": "Token",
+            "type": "string"
+          },
+          "project": {
+            "default": "",
+            "title": "Project",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "work_acknowledge_recoveryArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "shared_memory_write",
+      "description": "Write to cross-agent shared memory. Deduplicates near-identical entries via SimHash.",
+      "inputSchema": {
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "agent_id": {
+            "default": "unknown",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "session_id": {
+            "default": "",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "tags": {
+            "default": "",
+            "title": "Tags",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "shared_memory_writeArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "shared_memory_search",
+      "description": "Search cross-agent shared memory by relevance. Returns entries from all agents.",
+      "inputSchema": {
+        "properties": {
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "top_k": {
+            "default": 5,
+            "title": "Top K",
+            "type": "integer"
+          },
+          "agent_id": {
+            "default": "",
+            "title": "Agent Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "shared_memory_searchArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "shared_memory_list",
+      "description": "List shared memory entries, optionally filtered by agent or tag.",
+      "inputSchema": {
+        "properties": {
+          "agent_id": {
+            "default": "",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "tag": {
+            "default": "",
+            "title": "Tag",
+            "type": "string"
+          },
+          "limit": {
+            "default": 20,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "title": "shared_memory_listArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "shared_memory_forget",
+      "description": "Remove a shared memory entry by ID.",
+      "inputSchema": {
+        "properties": {
+          "entry_id": {
+            "title": "Entry Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entry_id"
+        ],
+        "title": "shared_memory_forgetArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "shared_memory_stats",
+      "description": "Get cross-agent shared memory statistics.",
+      "inputSchema": {
+        "properties": {},
+        "title": "shared_memory_statsArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "steer_output",
+      "description": "Classify query effort and return output steering directives + max_tokens budget.",
+      "inputSchema": {
+        "properties": {
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "effort": {
+            "default": "",
+            "title": "Effort",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "steer_outputArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "compress_shell",
+      "description": "Compress CLI output (git, npm, cargo, pytest, etc.) preserving errors and key info.",
+      "inputSchema": {
+        "properties": {
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "command": {
+            "default": "",
+            "title": "Command",
+            "type": "string"
+          },
+          "max_lines": {
+            "default": 50,
+            "title": "Max Lines",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "compress_shellArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "recover_shell",
+      "description": "Recover full CLI output from a compression handle.",
+      "inputSchema": {
+        "properties": {
+          "handle": {
+            "title": "Handle",
+            "type": "string"
+          }
+        },
+        "required": [
+          "handle"
+        ],
+        "title": "recover_shellArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "compress_image",
+      "description": "Compress an image for vision model input, with optional OCR text extraction.",
+      "inputSchema": {
+        "properties": {
+          "image_path": {
+            "title": "Image Path",
+            "type": "string"
+          },
+          "max_dimension": {
+            "default": 1024,
+            "title": "Max Dimension",
+            "type": "integer"
+          },
+          "quality": {
+            "default": 80,
+            "title": "Quality",
+            "type": "integer"
+          },
+          "extract_text": {
+            "default": false,
+            "title": "Extract Text",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "image_path"
+        ],
+        "title": "compress_imageArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "learn_from_failures",
+      "description": "Mine failure patterns from PRISM, vault, and evolution data. Optionally apply corrections.",
+      "inputSchema": {
+        "properties": {
+          "deep": {
+            "default": false,
+            "title": "Deep",
+            "type": "boolean"
+          },
+          "min_occurrences": {
+            "default": 2,
+            "title": "Min Occurrences",
+            "type": "integer"
+          },
+          "auto_apply": {
+            "default": false,
+            "title": "Auto Apply",
+            "type": "boolean"
+          }
+        },
+        "title": "learn_from_failuresArguments",
+        "type": "object"
+      }
+    }
+  ]
+}
