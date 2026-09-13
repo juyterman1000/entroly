@@ -194,6 +194,15 @@ def test_root_gemini_extension_is_github_installable() -> None:
     assert server["env"]["ENTROLY_MCP_PASSIVE"] == "1"
 
 
+def test_root_dot_mcp_is_directory_installable() -> None:
+    config = json.loads((ROOT / ".mcp.json").read_text(encoding="utf-8"))
+    server = config["mcpServers"]["entroly"]
+
+    assert server["command"] == "npx"
+    assert server["args"] == ["-y", "entroly-mcp@1.0.84", "serve"]
+    assert server["env"]["ENTROLY_MCP_PASSIVE"] == "1"
+
+
 def test_claude_and_gemini_bundles_share_evidence_contract() -> None:
     claude_manifest = json.loads(
         (ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
