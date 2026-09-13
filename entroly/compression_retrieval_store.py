@@ -973,15 +973,9 @@ def _estimate_tokens(text: str) -> int:
 
 
 def _count_o200k_tokens(text: str) -> int:
-    try:
-        import tiktoken
-    except ImportError:
-        # A byte is a conservative upper bound for a tokenizer piece. Base
-        # installs intentionally keep benchmark tokenizers optional, so this
-        # path may return less context but can never violate the public cap.
-        return len(_exact_bytes(text))
+    from .tokens import count_tokens
 
-    return len(tiktoken.get_encoding("o200k_base").encode(text))
+    return count_tokens(text)
 
 
 def _bounded_exact_excerpt(

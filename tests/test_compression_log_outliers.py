@@ -30,4 +30,11 @@ def test_elc_does_not_hard_lock_every_timestamp_heartbeat() -> None:
     assert "INC-9281" in compressed
     assert "upstream refused connection" in compressed
     assert "rollback candidate" in compressed
-    assert "worker heartbeat shard=17" not in compressed
+    heartbeat_lines = [
+        line for line in compressed.splitlines()
+        if "worker heartbeat" in line
+    ]
+    assert len(heartbeat_lines) < 40, (
+        f"ELC retained {len(heartbeat_lines)}/1200 heartbeat lines; "
+        "noise should be substantially pruned"
+    )

@@ -1385,7 +1385,7 @@
         "syntax_valid": true
       }
     ],
-    "extractor_sha256": "7ab642179ea4c77c71d502f9abde064a8c5850dd9e7130b53038838c395a5cd2",
+    "extractor_sha256": "7d79ca6fef9f68a4851f71a0f090f6c2fb75c7674f15d543f6be11f96b6eba13",
     "label": "worktree",
     "summary": {
       "declaration_bearing_languages": 37,

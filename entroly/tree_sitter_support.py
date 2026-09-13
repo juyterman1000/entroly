@@ -970,13 +970,84 @@ def validate_structural_syntax(
     return not bool(getattr(root, "has_error", True))
 
 
+@dataclass
+class CodeChunk:
+    """A group of structural spans packed within a token budget."""
+
+    spans: list[StructuralSpan]
+    tokens: int
+    file_path: str
+    start_line: int
+    end_line: int
+
+    @property
+    def text(self) -> str:
+        return "\n\n".join(s.source for s in self.spans)
+
+
+def chunk_spans(
+    spans: list[StructuralSpan],
+    *,
+    max_tokens: int = 2000,
+    file_path: str = "",
+) -> list[CodeChunk]:
+    """Pack structural spans into chunks of at most *max_tokens*.
+
+    Each span is measured using the canonical token counter. Spans that
+    individually exceed *max_tokens* are placed in their own single-span
+    chunk (never silently dropped).
+    """
+    from .tokens import count_tokens
+
+    if not spans:
+        return []
+
+    measured: list[tuple[StructuralSpan, int]] = []
+    for span in spans:
+        measured.append((span, count_tokens(span.source)))
+
+    chunks: list[CodeChunk] = []
+    current_spans: list[StructuralSpan] = []
+    current_tokens = 0
+
+    for span, tok in measured:
+        separator_cost = count_tokens("\n\n") if current_spans else 0
+        if current_spans and current_tokens + separator_cost + tok > max_tokens:
+            chunks.append(CodeChunk(
+                spans=current_spans,
+                tokens=current_tokens,
+                file_path=file_path,
+                start_line=current_spans[0].start_line,
+                end_line=current_spans[-1].end_line,
+            ))
+            current_spans = []
+            current_tokens = 0
+            separator_cost = 0
+
+        current_spans.append(span)
+        current_tokens += separator_cost + tok
+
+    if current_spans:
+        chunks.append(CodeChunk(
+            spans=current_spans,
+            tokens=current_tokens,
+            file_path=file_path,
+            start_line=current_spans[0].start_line,
+            end_line=current_spans[-1].end_line,
+        ))
+
+    return chunks
+
+
 __all__ = [
+    "CodeChunk",
     "LANGUAGE_BY_SUFFIX",
     "StructuralCall",
     "StructuralExtraction",
     "StructuralProfile",
     "StructuralSpan",
     "available_parser_languages",
+    "chunk_spans",
     "extract_structural_calls",
     "extract_structural_calls_report",
     "extract_structural_profiles",

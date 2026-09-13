@@ -15,7 +15,6 @@ import hashlib
 import json
 from collections import OrderedDict
 from dataclasses import dataclass
-from functools import lru_cache
 from typing import Any, Mapping
 
 
@@ -23,24 +22,11 @@ def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-@lru_cache(maxsize=1)
-def _token_encoding():
-    try:
-        import tiktoken
-
-        return tiktoken.get_encoding("o200k_base")
-    except (ImportError, ValueError):
-        return None
-
-
 def count_tokens(text: str) -> int:
     """Count o200k tokens, with an explicitly conservative local fallback."""
-    if not text:
-        return 0
-    encoding = _token_encoding()
-    if encoding is not None:
-        return len(encoding.encode(text))
-    return max(1, (len(text) + 3) // 4)
+    from .tokens import count_tokens as _count
+
+    return _count(text)
 
 
 def _contract_digest(contract: Mapping[str, Any]) -> str:

@@ -5176,6 +5176,48 @@ class PromptCompilerProxy:
                     headers=out_headers,
                 )
 
+            # ── 400: context-window overflow → trim messages and retry once ──
+            if (
+                response.status_code == 400
+                and recovery_depth == 0
+                and isinstance(body.get("messages"), list)
+            ):
+                try:
+                    err_body = response.json()
+                except Exception:
+                    err_body = {}
+                err_obj = err_body.get("error", {})
+                err_code = err_obj.get("code", "") if isinstance(err_obj, dict) else ""
+                err_type = err_obj.get("type", "") if isinstance(err_obj, dict) else ""
+                err_msg = (
+                    err_obj.get("message", "") if isinstance(err_obj, dict) else str(err_obj)
+                ).lower()
+                is_overflow = (
+                    err_code == "context_length_exceeded"
+                    or "maximum context length" in err_msg
+                    or "exceeds the maximum number of tokens" in err_msg
+                    or (err_type == "invalid_request_error" and "token" in err_msg)
+                )
+                if is_overflow:
+                    from .tokens import trim_messages as _trim
+
+                    original_count = len(body["messages"])
+                    trimmed = _trim(
+                        body["messages"],
+                        max_tokens=int(context_window_for_model(body.get("model", "")) * 0.85),
+                        strategy="last",
+                        include_system=True,
+                    )
+                    if len(trimmed) < original_count:
+                        logger.info(
+                            "Context overflow: trimming %d→%d messages and retrying",
+                            original_count,
+                            len(trimmed),
+                        )
+                        body = {**body, "messages": trimmed}
+                        attempts += 1
+                        continue
+
             # Success — break out of retry loop
             break
 

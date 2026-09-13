@@ -3580,6 +3580,130 @@ def cmd_value(args):
 
 
 
+def _parse_duration(spec: str) -> float:
+    """Parse a human duration like '1h', '24h', '7d' into a timestamp."""
+    import re as _re
+    spec = spec.strip()
+    m = _re.fullmatch(r"(\d+(?:\.\d+)?)\s*(s|m|h|d|w)", spec)
+    if m:
+        value, unit = float(m.group(1)), m.group(2)
+        multipliers = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
+        return time.time() - value * multipliers[unit]
+    from datetime import datetime, timezone
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
+        try:
+            dt = datetime.strptime(spec, fmt).replace(tzinfo=timezone.utc)
+            return dt.timestamp()
+        except ValueError:
+            continue
+    raise ValueError(f"cannot parse time spec: {spec!r} (use e.g. 24h, 7d, or ISO date)")
+
+
+def cmd_usage(args):
+    """entroly usage — query provider usage and spend."""
+    from .usage_ledger import UsageLedger
+
+    db_path = args.db
+    if not db_path:
+        db_path = os.environ.get("ENTROLY_USAGE_LEDGER", "").strip()
+    if not db_path:
+        db_path = str(_ENTROLY_DIR / "usage-ledger.sqlite3")
+
+    if not Path(db_path).is_file():
+        if getattr(args, "json_output", False):
+            print(json.dumps({"error": "no usage ledger found", "path": db_path}))
+        else:
+            print(f"\n  {C.YELLOW}No usage ledger found at {db_path}{C.RESET}")
+            print(
+                "  Set ENTROLY_USAGE_LEDGER or run the proxy with "
+                "ENTROLY_USAGE_LEDGER=<path> to start recording."
+            )
+        return 1
+
+    ledger = UsageLedger(db_path)
+    try:
+        filters: dict[str, str] = {}
+        if args.model:
+            filters["model"] = args.model
+        if args.provider:
+            filters["provider"] = args.provider
+
+        since = _parse_duration(args.since) if args.since else None
+        until = _parse_duration(args.until) if args.until else None
+
+        if getattr(args, "csv_output", False):
+            print(ledger.export_csv(since=since, until=until, **filters), end="")
+            return
+
+        if getattr(args, "json_output", False):
+            summary = ledger.summary(**filters)
+            events = ledger.query(
+                since=since, until=until, limit=args.limit, **filters
+            )
+            from dataclasses import asdict
+            output = {
+                "summary": summary,
+                "events": [
+                    {
+                        "request_id": e.request_id,
+                        "occurred_at": e.occurred_at,
+                        "provider": e.provider,
+                        "model": e.model,
+                        "cost_micro_usd": e.cost_micro_usd,
+                        "cache_savings_micro_usd": e.cache_savings_micro_usd,
+                        "tokens": asdict(e.usage),
+                    }
+                    for e in events
+                ],
+                "total_events": ledger.count(since=since, until=until, **filters),
+            }
+            print(json.dumps(output, indent=2, sort_keys=True))
+            return
+
+        summary = ledger.summary(**filters)
+        total = ledger.count(since=since, until=until, **filters)
+        events = ledger.query(
+            since=since, until=until, limit=args.limit, **filters
+        )
+
+        print(f"\n{C.CYAN}{C.BOLD}  Provider Usage Ledger{C.RESET}\n")
+        print(f"  {C.BOLD}Summary{C.RESET}")
+        cost_usd = summary["cost_micro_usd"] / 1_000_000
+        savings_usd = summary["cache_savings_micro_usd"] / 1_000_000
+        print(f"    Requests: {summary['requests']:,}")
+        print(
+            f"    Cost: {C.GREEN}${cost_usd:.4f}{C.RESET}  |  "
+            f"Cache savings: {C.GREEN}${savings_usd:.4f}{C.RESET}"
+        )
+        print(
+            f"    Cache hit ratio: "
+            f"{summary['cache_hit_token_ratio']:.1%}"
+        )
+        if summary["unpriced_requests"]:
+            print(
+                f"    {C.YELLOW}Unpriced: {summary['unpriced_requests']:,} "
+                f"requests{C.RESET}"
+            )
+
+        if events:
+            print(f"\n  {C.BOLD}Recent events{C.RESET} ({total:,} total)\n")
+            from datetime import datetime, timezone
+            for e in events:
+                ts = datetime.fromtimestamp(e.occurred_at, tz=timezone.utc)
+                ts_str = ts.strftime("%Y-%m-%d %H:%M")
+                cost = e.cost_micro_usd / 1_000_000
+                total_tok = e.usage.total_tokens
+                print(
+                    f"    {C.GRAY}{ts_str}{C.RESET}  "
+                    f"{e.provider}/{e.model}  "
+                    f"{total_tok:,} tok  "
+                    f"${cost:.4f}"
+                )
+        print()
+    finally:
+        ledger.close()
+
+
 def cmd_share(args):
     """entroly share — generate a shareable Context Report Card."""
     print(f"\n{C.CYAN}{C.BOLD}  Entroly Share{C.RESET} -- generate your Context Report Card\n")
@@ -7005,6 +7129,47 @@ def main():
         help="Emit machine-readable status or flush output",
     )
 
+    # entroly usage
+    usage_parser = subparsers.add_parser(
+        "usage",
+        help="Query provider usage and spend from the usage ledger",
+    )
+    usage_parser.add_argument(
+        "--since",
+        default=None,
+        help="Show events after this time (e.g. 1h, 24h, 7d, or ISO timestamp)",
+    )
+    usage_parser.add_argument(
+        "--until",
+        default=None,
+        help="Show events before this time (ISO timestamp)",
+    )
+    usage_parser.add_argument(
+        "--model", default=None,
+        help="Filter by model name",
+    )
+    usage_parser.add_argument(
+        "--provider", default=None,
+        help="Filter by provider name",
+    )
+    usage_parser.add_argument(
+        "--limit", type=int, default=20,
+        help="Maximum events to list (default: 20)",
+    )
+    usage_parser.add_argument(
+        "--csv", dest="csv_output", action="store_true",
+        help="Export matching events as CSV",
+    )
+    usage_parser.add_argument(
+        "--json", dest="json_output", action="store_true",
+        help="Emit machine-readable JSON output",
+    )
+    usage_parser.add_argument(
+        "--db",
+        default=None,
+        help="Path to usage ledger SQLite file",
+    )
+
     # entroly clean
     clean_parser = subparsers.add_parser(
         "clean",
@@ -7737,6 +7902,7 @@ def main():
         "ravs": cmd_ravs,
         "cache": cmd_cache,
         "daemon": cmd_daemon,
+        "usage": cmd_usage,
     }
 
     handler = _dispatch.get(args.command)

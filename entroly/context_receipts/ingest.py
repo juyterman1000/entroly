@@ -213,7 +213,9 @@ def normalize_document_pairs(documents: object) -> list[tuple[str, str]]:
 
 
 def estimate_tokens(text: str) -> int:
-    return max(1, len(TOKEN_RE.findall(text)))
+    from entroly.tokens import count_tokens
+
+    return count_tokens(text)
 
 
 def _byte_offset(text: str, char_offset: int) -> int:

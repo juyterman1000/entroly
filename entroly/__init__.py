@@ -64,6 +64,8 @@ try:
 except ImportError:
     pass  # Graceful degradation if dependencies missing
 
+from .tokens import count_tokens, trim_messages  # noqa: F401
+
 # Context Commit: portable, content-addressed proof of what an agent received.
 try:
     from .context_commit import (  # noqa: F401
