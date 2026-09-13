@@ -7,10 +7,8 @@
     {
       "name": "entroly",
       "source": {
-        "source": "npm",
-        "package": "entroly",
-        "version": "latest",
-        "registry": "https://registry.npmjs.org"
+        "source": "local",
+        "path": "./integrations/codex/entroly"
       },
       "policy": {
         "installation": "AVAILABLE",

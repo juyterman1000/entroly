@@ -20,10 +20,10 @@ codex plugin marketplace add juyterman1000/entroly --ref main
 codex plugin add entroly@entroly-public
 ```
 
-The public marketplace entry installs the `entroly` npm package as a portable
-plugin. That package declares the exact `entroly-wasm` runtime dependency, so
-its prompt hook and MCP server use the installed runtime rather than fetching a
-runner on every turn. Codex asks the user to review and trust bundled hooks.
+The public marketplace entry installs the bundled portable plugin from the
+signed Git checkout. The separately published `entroly` npm package declares
+the exact `entroly-wasm` runtime dependency for npm-based installs. Codex asks
+the user to review and trust bundled hooks.
 Restart Codex after installation, run one task, and confirm a recent receipt
 with `entroly activation status --json`.
 
