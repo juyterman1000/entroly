@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+PRODUCT_VERSION = re.search(
+    r'^version\s*=\s*"([^"]+)"',
+    (ROOT / "pyproject.toml").read_text(encoding="utf-8"),
+    re.MULTILINE,
+).group(1)
 
 
 def test_opencode_package_loads_local_mcp_and_compaction_hook() -> None:
@@ -169,7 +175,7 @@ def test_root_agent_plugin_surface_is_cursor_installable() -> None:
 
     assert plugin["$schema"].endswith("/plugin.schema.json")
     assert plugin["name"] == "entroly"
-    assert plugin["version"] == "1.0.84"
+    assert plugin["version"] == PRODUCT_VERSION
     assert mcp["$schema"].endswith("/mcp.schema.json")
     server = mcp["mcpServers"]["entroly"]
     assert server["type"] == "stdio"
@@ -185,7 +191,7 @@ def test_root_gemini_extension_is_github_installable() -> None:
     context = ROOT / "GEMINI.md"
 
     assert manifest["name"] == "entroly"
-    assert manifest["version"] == "1.0.84"
+    assert manifest["version"] == PRODUCT_VERSION
     assert manifest["contextFileName"] == "GEMINI.md"
     assert context.is_file()
     server = manifest["mcpServers"]["entroly"]
@@ -199,7 +205,7 @@ def test_root_dot_mcp_is_directory_installable() -> None:
     server = config["mcpServers"]["entroly"]
 
     assert server["command"] == "npx"
-    assert server["args"] == ["-y", "entroly-mcp@1.0.84", "serve"]
+    assert server["args"] == ["-y", f"entroly-mcp@{PRODUCT_VERSION}", "serve"]
     assert server["env"]["ENTROLY_MCP_PASSIVE"] == "1"
 
 
