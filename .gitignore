@@ -171,7 +171,6 @@ benchmarks/recovery_resilience_protocol_v[2-9]*.json
 
 # SEO/marketing tracking (internal)
 docs/discoverability-registry.json
-docs/capability-coverage.json
 
 # Plugin packaging (local-only)
 .claude-plugin/
