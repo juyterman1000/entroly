@@ -104,6 +104,9 @@ TARGETS = [
     (".claude-plugin/marketplace.json",
         r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     (".mcpb-build/manifest.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
+    ("plugin.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
+    ("gemini-extension.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
+    (".mcp.json", r'entroly-mcp@[0-9]+\.[0-9]+\.[0-9]+', 'entroly-mcp@{v}'),
     # Agent bundles and per-host extension manifests. Each declares the product
     # version to its host, and none of them was in this list -- a bump left
     # seven surfaces behind, which `tests/test_version_surfaces_are_complete.py`

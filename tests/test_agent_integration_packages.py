@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+PRODUCT_VERSION = re.search(
+    r'^version\s*=\s*"([^"]+)"',
+    (ROOT / "pyproject.toml").read_text(encoding="utf-8"),
+    re.MULTILINE,
+).group(1)
 
 
 def test_opencode_package_loads_local_mcp_and_compaction_hook() -> None:
@@ -161,6 +167,53 @@ def test_codex_portable_and_marketplace_surfaces_are_synchronized() -> None:
     assert 'args: [packagedCli, "serve"]' in launcher
     assert "plugin.json" in package["files"]
     assert "hooks/hooks.json" in package["files"]
+
+
+def test_root_agent_plugin_surface_is_cursor_installable() -> None:
+    plugin = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
+    mcp = json.loads((ROOT / "mcp.json").read_text(encoding="utf-8"))
+
+    assert plugin["$schema"].endswith("/plugin.schema.json")
+    assert plugin["name"] == "entroly"
+    assert plugin["version"] == PRODUCT_VERSION
+    assert mcp["$schema"].endswith("/mcp.schema.json")
+    server = mcp["mcpServers"]["entroly"]
+    assert server["type"] == "stdio"
+    assert server["command"] == "node"
+    assert server["args"] == ["${PLUGIN_ROOT}/scripts/entroly-plugin-launch.mjs"]
+    assert server["env"]["ENTROLY_MCP_PASSIVE"] == "1"
+
+
+def test_root_gemini_extension_is_github_installable() -> None:
+    manifest = json.loads(
+        (ROOT / "gemini-extension.json").read_text(encoding="utf-8")
+    )
+    context = ROOT / "GEMINI.md"
+
+    assert manifest["name"] == "entroly"
+    assert manifest["version"] == PRODUCT_VERSION
+    assert manifest["contextFileName"] == "GEMINI.md"
+    assert context.is_file()
+    server = manifest["mcpServers"]["entroly"]
+    assert server["command"] == "entroly"
+    assert server["args"] == ["serve"]
+    assert server["env"]["ENTROLY_MCP_PASSIVE"] == "1"
+
+
+def test_root_dot_mcp_is_directory_installable() -> None:
+    config = json.loads((ROOT / ".mcp.json").read_text(encoding="utf-8"))
+    server = config["mcpServers"]["entroly"]
+
+    assert server["command"] == "npx"
+    assert server["args"] == ["-y", f"entroly-mcp@{PRODUCT_VERSION}", "serve"]
+    assert server["env"]["ENTROLY_MCP_PASSIVE"] == "1"
+
+
+def test_glama_metadata_declares_repository_maintainer() -> None:
+    metadata = json.loads((ROOT / "glama.json").read_text(encoding="utf-8"))
+
+    assert metadata["$schema"] == "https://glama.ai/mcp/schemas/server.json"
+    assert metadata["maintainers"] == ["juyterman1000"]
 
 
 def test_claude_and_gemini_bundles_share_evidence_contract() -> None:

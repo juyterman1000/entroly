@@ -203,6 +203,9 @@ only optional workspace, offline, provider, and proxy settings.
 | **"I use Kiro IDE 1.x or CLI 3.x."** | `entroly activation install --host kiro --project .` | Installs a reversible project `PromptSubmit` hook whose stdout is added to agent context |
 | **"I use another MCP host."** | `entroly attach create --client claude --project . --ttl 4h --install` or the client-specific command in the compatibility matrix | Scoped Entroly tools and receipts; the model can still skip MCP unless the host has a verified lifecycle hook |
 | **"I'm building my own app in Python."** *(SDK user)* | `from entroly import compress, compress_messages, optimize` | Call it straight from your code, anywhere you assemble a prompt |
+
+Cursor MCP users can also use this one-click install link (no marketplace
+account required): [Add Entroly to Cursor](cursor://anysphere.cursor-deeplink/mcp/install?name=entroly&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImVudHJvbHktbWNwQDEuMC44NCIsInNlcnZlIl0sImVudiI6eyJFTlRST0xZX05PX0RPQ0tFUiI6IjEiLCJFTlRST0xZX01DUF9QQVNTSVZFIjoiMSIsIkVOVFJPTFlfTUFYX0ZJTEVTIjoiMjAwIn19).
 | **"I have an API key and my own app."** *(proxy user)* | `entroly proxy` → point `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` / `GOOGLE_GEMINI_BASE_URL` at `localhost:9377` | Every request gets optimized on the way past — no code changes on your side |
 
 <sub>**Runaway-session rescue — automatic on the proxy, callable everywhere else.**
@@ -347,6 +350,45 @@ the plugin; the model does not have to remember to call an MCP tool before
 Entroly runs. A receipt proves that the hook executed and selected local
 context or made an explicit no-match decision. It does not prove token or cost
 savings without a matched provider-bound baseline.
+
+Install the same public repository as a Gemini CLI extension:
+
+```console
+gemini extensions install https://github.com/juyterman1000/entroly --ref main --consent
+```
+
+Restart Gemini CLI after installation. The repository root contains
+`gemini-extension.json` and `GEMINI.md`, so the command works without navigating
+into an integration subdirectory.
+
+For VS Code or Kiro, download the `entroly-vscode-*.vsix` asset from the latest
+[GitHub release](https://github.com/juyterman1000/entroly/releases/latest), then
+install it with **Extensions: Install from VSIX** or `code --install-extension`.
+The extension is self-contained and does not require an API key.
+
+JetBrains AI Assistant users can add the same server globally at **Settings →
+Tools → AI Assistant → Model Context Protocol (MCP)**:
+
+```json
+{
+  "mcpServers": {
+    "entroly": {
+      "command": "npx",
+      "args": ["-y", "entroly-mcp@1.0.84", "serve"],
+      "env": {
+        "ENTROLY_NO_DOCKER": "1",
+        "ENTROLY_MCP_PASSIVE": "1",
+        "ENTROLY_MAX_FILES": "200"
+      }
+    }
+  }
+}
+```
+
+The MCP path is provider-neutral: the host can use OpenAI, Anthropic, Google,
+Mistral, DeepSeek, Kimi, GLM, or a local model. There is no separate plugin
+marketplace for each model provider; the host's MCP or extension contract is
+the integration boundary.
 
 | Agent / platform | Path | Status |
 |---|---|---|

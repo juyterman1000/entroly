@@ -27,6 +27,38 @@ the user to review and trust bundled hooks.
 Restart Codex after installation, run one task, and confirm a recent receipt
 with `entroly activation status --json`.
 
+Public Gemini CLI install (Git required):
+
+```console
+gemini extensions install https://github.com/juyterman1000/entroly --ref main --consent
+```
+
+The repository root is a complete Gemini extension. Restart Gemini CLI after
+installing; extension management changes take effect on restart.
+
+VS Code and Kiro users can install the versioned `entroly-vscode-*.vsix` file
+from the [latest GitHub release](https://github.com/juyterman1000/entroly/releases/latest)
+using **Extensions: Install from VSIX** or `code --install-extension`.
+
+JetBrains AI Assistant users can add Entroly globally from **Settings | Tools |
+AI Assistant | Model Context Protocol (MCP)** with:
+
+```json
+{
+  "mcpServers": {
+    "entroly": {
+      "command": "npx",
+      "args": ["-y", "entroly-mcp@1.0.84", "serve"],
+      "env": {
+        "ENTROLY_NO_DOCKER": "1",
+        "ENTROLY_MCP_PASSIVE": "1",
+        "ENTROLY_MAX_FILES": "200"
+      }
+    }
+  }
+}
+```
+
 Windows PowerShell:
 
 ```powershell
@@ -58,6 +90,9 @@ uses Cursor's documented Claude-hook compatibility mode:
 ```console
 entroly activation install --host cursor --project .
 ```
+
+For MCP-only use, Cursor can add the published server through this one-click
+[MCP install link](cursor://anysphere.cursor-deeplink/mcp/install?name=entroly&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImVudHJvbHktbWNwQDEuMC44NCIsInNlcnZlIl0sImVudiI6eyJFTlRST0xZX05PX0RPQ0tFUiI6IjEiLCJFTlRST0xZX01DUF9QQVNTSVZFIjoiMSIsIkVOVFJPTFlfTUFYX0ZJTEVTIjoiMjAwIn19).
 
 Kiro IDE 1.x and CLI 3.x accept context from successful `PromptSubmit` command
 stdout:

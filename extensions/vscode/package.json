@@ -4,6 +4,12 @@
   "description": "Select and compress repository context for AI tools with auditable receipts.",
   "version": "1.0.84",
   "publisher": "entroly",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/juyterman1000/entroly.git",
+    "directory": "extensions/vscode"
+  },
+  "license": "Apache-2.0",
   "engines": {
     "vscode": "^1.75.0"
   },
