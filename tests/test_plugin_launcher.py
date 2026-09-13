@@ -17,12 +17,16 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _run(env_path: str, extra_env: dict | None = None) -> subprocess.CompletedProcess:
+def _run(
+    env_path: str,
+    extra_env: dict | None = None,
+    args: list[str] | None = None,
+) -> subprocess.CompletedProcess:
     env = dict(os.environ)
     env["PATH"] = env_path
     env.update(extra_env or {})
     return subprocess.run(
-        ["node", str(LAUNCHER)],
+        ["node", str(LAUNCHER), *(args or [])],
         capture_output=True,
         text=True,
         timeout=60,
@@ -90,6 +94,29 @@ def test_falls_through_to_npx_when_uvx_is_absent(tmp_path: Path) -> None:
 
     assert result.returncode == 0
     assert marker.read_text(encoding="utf-8") == "npx -y entroly@latest"
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="fake PATH executables need .cmd shims on Windows",
+)
+def test_hook_prefers_installed_entroly_and_forwards_arguments(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    marker = tmp_path / "invoked.txt"
+    executable = fake_bin / "entroly"
+    executable.write_text(
+        '#!/bin/sh\nprintf "%s" "$*" > "{marker}"\nexit 0\n'.format(marker=marker),
+        encoding="utf-8",
+    )
+    executable.chmod(0o755)
+
+    node_dir = str(Path(shutil.which("node")).parent)
+    args = ["activation", "hook", "--host", "claude-code"]
+    result = _run(f"{fake_bin}{os.pathsep}{node_dir}", args=args)
+
+    assert result.returncode == 0
+    assert marker.read_text(encoding="utf-8") == " ".join(args)
 
 
 @pytest.mark.skipif(

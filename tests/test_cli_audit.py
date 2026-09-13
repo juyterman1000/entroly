@@ -132,6 +132,7 @@ def test_no_orphaned_registered_commands():
         "migrate", "role", "completions", "compile", "sync", "search",
         "docs", "share", "finetune", "learn", "verify", "verify-code",
         "autotune", "digest", "health", "witness", "audit", "uninstall",
+        "activation",
     }
     orphaned = registered - readme_claimed - INTERNAL_ONLY
     assert not orphaned, (
