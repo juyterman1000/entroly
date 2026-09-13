@@ -52,12 +52,18 @@ AI Assistant | Model Context Protocol (MCP)** with:
       "env": {
         "ENTROLY_NO_DOCKER": "1",
         "ENTROLY_MCP_PASSIVE": "1",
+        "ENTROLY_MCP_PROFILE": "public",
         "ENTROLY_MAX_FILES": "200"
       }
     }
   }
 }
 ```
+
+The public MCP profile is the default marketplace surface. It keeps the first
+run focused on context, receipts, continuity, and verification. Set
+`ENTROLY_MCP_PROFILE=full` for the advanced research, vault, evolution, and
+security tools.
 
 Windows PowerShell:
 
