@@ -40,6 +40,7 @@ Commands:
     entroly browser     Build a recoverable accessibility evidence envelope
     entroly response    Manage reversible agent response contracts
     entroly capabilities Report installed runtime capabilities offline
+    entroly activation   Run or inspect deterministic host-hook activation
 """
 
 from __future__ import annotations
@@ -211,6 +212,43 @@ def _check_first_run() -> None:
         _FIRST_RUN_MARKER.write_text("1")
     except OSError:
         pass
+
+
+def cmd_activation(args):
+    """Run a host lifecycle hook or inspect locally recorded activations."""
+    from .agent_activation import activation_status, parse_hook_input, run_hook
+
+    if args.activation_action == "status":
+        report = activation_status(
+            Path(args.project).expanduser() if args.project else Path.cwd()
+        )
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return 0
+
+    try:
+        payload = parse_hook_input(sys.stdin.read())
+        result = run_hook(
+            payload,
+            host=args.host,
+            token_budget=args.budget,
+            max_files=args.max_files,
+        )
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
+        event = "BeforeAgent" if args.host == "gemini" else "UserPromptSubmit"
+        result = {
+            "hookSpecificOutput": {
+                "hookEventName": event,
+                "additionalContext": (
+                    "Entroly activation failed before parsing the host event: "
+                    f"{type(exc).__name__}. Continue the task and report the "
+                    "integration as inactive."
+                ),
+            },
+            "systemMessage": "Entroly activation input was invalid",
+            "suppressOutput": True,
+        }
+    print(json.dumps(result, separators=(",", ":"), sort_keys=True))
+    return 0
 
 
 def _version_is_newer(candidate: str, current: str) -> bool:
@@ -6893,6 +6931,31 @@ def main():
         help="Emit a machine-readable Context Value Receipt",
     )
 
+    activation_parser = subparsers.add_parser(
+        "activation",
+        help="Run or inspect deterministic agent-host activation",
+    )
+    activation_subparsers = activation_parser.add_subparsers(
+        dest="activation_action", required=True
+    )
+    activation_hook = activation_subparsers.add_parser(
+        "hook", help="Read one host hook event from stdin and emit hook JSON"
+    )
+    activation_hook.add_argument(
+        "--host",
+        default="auto",
+        choices=["auto", "claude-code", "gemini", "vscode-copilot", "compatible"],
+    )
+    activation_hook.add_argument("--budget", type=int, default=1200)
+    activation_hook.add_argument("--max-files", type=int, default=200)
+    activation_status_parser = activation_subparsers.add_parser(
+        "status", help="Show observed host-hook activations for this project"
+    )
+    activation_status_parser.add_argument("--project", default=None)
+    activation_status_parser.add_argument(
+        "--json", dest="json_output", action="store_true"
+    )
+
     # entroly status
     status_parser = subparsers.add_parser(
         "status",
@@ -7580,6 +7643,7 @@ def main():
         (args.command == "value" and getattr(args, "json_output", False))
         or (args.command == "learn" and getattr(args, "history", False)
             and getattr(args, "json_output", False))
+        or args.command == "activation"
         or (args.command in {"trial", "browser", "response"}
             and getattr(args, "json_output", False))
         or (args.command == "trial" and getattr(args, "report", None))
@@ -7619,6 +7683,7 @@ def main():
         "go": cmd_go,
         "dashboard": cmd_dashboard,
         "value": cmd_value,
+        "activation": cmd_activation,
         "health": cmd_health,
         "autotune": cmd_autotune,
         "proxy": cmd_proxy,

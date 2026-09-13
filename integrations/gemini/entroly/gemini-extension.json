@@ -10,7 +10,9 @@
         "serve"
       ],
       "env": {
-        "ENTROLY_NO_DOCKER": "1"
+        "ENTROLY_NO_DOCKER": "1",
+        "ENTROLY_MCP_PASSIVE": "1",
+        "ENTROLY_MAX_FILES": "200"
       }
     }
   }

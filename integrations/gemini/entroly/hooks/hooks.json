@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "BeforeAgent": [
+      {
+        "matcher": "*",
+        "sequential": true,
+        "hooks": [
+          {
+            "type": "command",
+            "name": "entroly-activation",
+            "command": "entroly activation hook --host gemini --budget 1200 --max-files 200",
+            "description": "Select bounded local context before agent planning and record activation evidence.",
+            "timeout": 30000
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Activate Entroly before every agent turn without relying on model tool choice.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/scripts/entroly-plugin-launch.mjs",
+              "activation",
+              "hook",
+              "--host",
+              "auto",
+              "--budget",
+              "1200",
+              "--max-files",
+              "200"
+            ],
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
