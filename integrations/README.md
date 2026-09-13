@@ -91,6 +91,9 @@ uses Cursor's documented Claude-hook compatibility mode:
 entroly activation install --host cursor --project .
 ```
 
+For MCP-only use, Cursor can add the published server through this one-click
+[MCP install link](cursor://anysphere.cursor-deeplink/mcp/install?name=entroly&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImVudHJvbHktbWNwQDEuMC44NCIsInNlcnZlIl0sImVudiI6eyJFTlRST0xZX05PX0RPQ0tFUiI6IjEiLCJFTlRST0xZX01DUF9QQVNTSVZFIjoiMSIsIkVOVFJPTFlfTUFYX0ZJTEVTIjoiMjAwIn19).
+
 Kiro IDE 1.x and CLI 3.x accept context from successful `PromptSubmit` command
 stdout:
 
