@@ -178,6 +178,22 @@ def test_root_agent_plugin_surface_is_cursor_installable() -> None:
     assert server["env"]["ENTROLY_MCP_PASSIVE"] == "1"
 
 
+def test_root_gemini_extension_is_github_installable() -> None:
+    manifest = json.loads(
+        (ROOT / "gemini-extension.json").read_text(encoding="utf-8")
+    )
+    context = ROOT / "GEMINI.md"
+
+    assert manifest["name"] == "entroly"
+    assert manifest["version"] == "1.0.84"
+    assert manifest["contextFileName"] == "GEMINI.md"
+    assert context.is_file()
+    server = manifest["mcpServers"]["entroly"]
+    assert server["command"] == "entroly"
+    assert server["args"] == ["serve"]
+    assert server["env"]["ENTROLY_MCP_PASSIVE"] == "1"
+
+
 def test_claude_and_gemini_bundles_share_evidence_contract() -> None:
     claude_manifest = json.loads(
         (ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
