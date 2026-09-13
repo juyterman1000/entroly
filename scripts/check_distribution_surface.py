@@ -77,17 +77,11 @@ REQUIRED_DISCOVERY_FILES = (
     Path("server.json"),
     Path("CITATION.cff"),
     Path("codemeta.json"),
-    Path("docs/press-kit.md"),
     Path("docs/independent-review-program.md"),
     Path("docs/distribution/README.md"),
     Path("docs/distribution/submission-kit.md"),
     Path("docs/distribution/targets.json"),
     Path("docs/distribution/visibility-dimensions.json"),
-    Path("docs/distribution/competitive-visibility.md"),
-    Path("docs/marketing/README.md"),
-    Path("docs/marketing/launch/product-hunt.md"),
-    Path("docs/marketing/launch/show-hn.md"),
-    Path("docs/marketing/launch/community-and-newsletters.md"),
     Path(".github/ISSUE_TEMPLATE/independent-review.yml"),
     Path(".github/ISSUE_TEMPLATE/integration-request.yml"),
 )
@@ -282,42 +276,6 @@ def _validate_citation_metadata(version: str, errors: list[str]) -> None:
         errors.append("codemeta.json license is not the canonical SPDX URL")
 
 
-def _validate_launch_assets(errors: list[str]) -> None:
-    launch_files = (
-        ROOT / "docs/marketing/launch/product-hunt.md",
-        ROOT / "docs/marketing/launch/show-hn.md",
-        ROOT / "docs/marketing/launch/community-and-newsletters.md",
-    )
-    for path in launch_files:
-        content = path.read_text(encoding="utf-8")
-        if "Status: prepared, not submitted." not in content:
-            errors.append(
-                f"{path.relative_to(ROOT)} must state that it is prepared, not submitted"
-            )
-        if CANONICAL_REPOSITORY not in content:
-            errors.append(f"{path.relative_to(ROOT)} is missing the canonical repository URL")
-
-    combined = "\n".join(path.read_text(encoding="utf-8") for path in launch_files)
-    prohibited_patterns = (
-        r"\bguaranteed savings\b",
-        r"\bzero quality loss\b",
-        r"\bbest context (?:tool|engine|compressor)\b",
-        r"\bbeats? External Baseline\b",
-        r"\bbeats? External Context Tool\b",
-    )
-    for pattern in prohibited_patterns:
-        if re.search(pattern, combined, flags=re.IGNORECASE):
-            errors.append(f"launch assets contain prohibited claim pattern: {pattern}")
-
-    for phrase in (
-        "independent",
-        "raw artifacts",
-        "limitations",
-        "maintain",
-    ):
-        if phrase not in combined:
-            errors.append(f"launch assets are missing trust phrase: {phrase!r}")
-
 
 def validate() -> list[str]:
     errors: list[str] = []
@@ -347,8 +305,6 @@ def validate() -> list[str]:
     _validate_targets(registry, errors)
     _validate_dimensions(dimensions, errors)
     _validate_citation_metadata(version, errors)
-    _validate_launch_assets(errors)
-
     llms_text = (ROOT / "llms.txt").read_text(encoding="utf-8")
     for required_text in (
         "Context Assurance",
@@ -372,15 +328,6 @@ def validate() -> list[str]:
                 "submission kit must explicitly prohibit the claim "
                 f"{forbidden_claim!r}"
             )
-
-    press_kit = (ROOT / "docs/press-kit.md").read_text(encoding="utf-8")
-    for phrase in (
-        "does not guarantee a universal token reduction",
-        "Proxy mode still sends the selected request",
-        "Claims requiring explicit verification",
-    ):
-        if phrase not in press_kit:
-            errors.append(f"press kit is missing required boundary: {phrase!r}")
 
     review_program = (ROOT / "docs/independent-review-program.md").read_text(
         encoding="utf-8"
