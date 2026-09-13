@@ -22,39 +22,10 @@ Compression you can undo, on your own repository, in one command — without rep
   <a href="https://github.com/juyterman1000/entroly"><img src="https://img.shields.io/github/stars/juyterman1000/entroly?style=social" alt="Entroly GitHub stars"></a>
 </p>
 
-<p align="center"><b>100,438 observed distribution events</b><br>
-<sub>PyPI installs, npm installs, release-binary downloads, and repository clones, summed across sources —
-<a href="docs/adoption-evidence.md">how this is counted, and what it does not mean</a>.</sub></p>
-
-<p align="center">
-  <b>English · <a href="docs/i18n/README.zh.md">简体中文</a> · <a href="docs/i18n/README.zh-TW.md">繁體中文</a> · <a href="docs/i18n/README.ja.md">日本語</a> · <a href="docs/i18n/README.ko.md">한국어</a> · <a href="docs/i18n/README.es.md">Español</a> · <a href="docs/i18n/README.hi.md">हिन्दी</a> · <a href="docs/i18n/README.fr.md">Français</a> · <a href="docs/i18n/README.de.md">Deutsch</a> · <a href="docs/i18n/README.pt-BR.md">Português</a> · <a href="docs/i18n/README.it.md">Italiano</a> · <a href="docs/i18n/README.tr.md">Türkçe</a> · <a href="docs/i18n/README.vi.md">Tiếng Việt</a> · <a href="docs/i18n/README.id.md">Bahasa Indonesia</a> · <a href="docs/i18n/README.pl.md">Polski</a> · <a href="docs/i18n/README.nl.md">Nederlands</a> · <a href="docs/i18n/README.th.md">ไทย</a> · <a href="docs/i18n/README.sv.md">Svenska</a> · <a href="docs/i18n/README.cs.md">Čeština</a> · <a href="docs/i18n/README.tl.md">Tagalog</a> · <a href="docs/i18n/README.ro.md">Română</a></b>
-</p>
-
-## ⚡ Live Token Savings
-
-<p align="center"><b>Tokens saved</b> · <b>Estimated cost avoided</b> · <b>Compression savings</b> · <b>Tool-schema deferral savings</b></p>
-
-| Live metric | Meaning | Source of truth |
-|---|---|---|
-| **Tokens saved** | Cumulative tokens reduced by the active Entroly workload | Local value ledger plus `entroly.proxy.tokens.saved` / `entroly_proxy_tokens_saved_total` |
-| **Estimated cost avoided** | Modeled USD value of provider-bound input reduction using configured pricing | Local value ledger; provider invoice remains billing truth |
-| **Compression tokens saved** | Canonical whole-request savings excluding measured tool-schema deferral | `entroly.proxy.tokens.compression_saved` / `entroly_proxy_compression_tokens_saved_total` |
-| **Tool-schema tokens deferred** | Savings from a caller explicitly limiting the active tool set with `X-Entroly-Active-Tools` | `entroly.proxy.tokens.tool_schema_saved` / `entroly_proxy_tool_schema_tokens_saved_total` |
-
-> **Live means measured by Entroly, not a fabricated global number.** Exact totals stay in each installation's local Value Receipt. Separately opted-in proxy installations may contribute a conservative community lower bound: every provider-bound delta is rounded down to whole 1,000-token units and whole cents before upload, with no prompt, content, model, price, or exact per-request value. It is not an exact worldwide total or provider invoice. Run `entroly value`, `entroly value --json`, or open `entroly dashboard` for your exact local cumulative totals. For the public-counter contract and proxy metrics, see [Live tokenomics](docs/live-tokenomics.md) and [Metrics & Monitoring](docs/grafana/README.md).
-
-Tool schemas are never hidden by a relevance guess. To opt in for a request,
-send a comma-separated active set such as
-`X-Entroly-Active-Tools: search_files,read_file`. Forced tool choices and
-unnamed provider tools remain available; an invalid or non-matching set leaves
-the request unchanged.
-
-<p align="center"><a href="docs/live-tokenomics.md">Measurement contract</a> · <a href="docs/ai-efficiency.html">AI efficiency hub</a> · <a href="docs/ai-cost-optimization.html">Cost methodology</a> · <a href="docs/grafana/README.md">Metrics & monitoring</a> · <a href="docs/telemetry-privacy.md">Privacy-safe telemetry</a></p>
-
 ---
 
 <p align="center">
-  <b><a href="#-live-token-savings">Token savings</a> · <a href="#integration-hub">Integrations</a> · <a href="#what-is-entroly-in-plain-english">What is it?</a> · <a href="#install">Install</a> · <a href="#quickstart--by-how-you-work">Quickstart</a> · <a href="#see-it-work-in-30-seconds">See it work</a> · <a href="#benchmarks">Benchmarks</a> · <a href="#common-questions">Questions</a></b>
+  <b><a href="#what-is-entroly-in-plain-english">What is it?</a> · <a href="#install">Install</a> · <a href="#quickstart--by-how-you-work">Quickstart</a> · <a href="#benchmarks">Benchmarks</a> · <a href="#common-questions">Questions</a></b>
 </p>
 
 ---
@@ -281,77 +252,7 @@ Runs as a **CLI**, **Python/TypeScript SDK**, **MCP server**, **HTTP proxy**, or
 
 Status describes integration depth, not a savings guarantee — provider-observed savings require requests to actually traverse an Entroly proxy route. Entroly does not claim interception of GitHub-hosted subscription inference on Copilot's native path. Full compatibility matrix: **[docs/agent-compatibility.md](docs/agent-compatibility.md)**.
 
-### Current model support
-
-Entroly carries verified public metadata for GPT-5.6 Sol, Terra, and Luna; Gemini 3.6 Flash; and Gemini 3.5 Flash-Lite, and it can discover installed NVIDIA Nemotron 3.5 Lightning Ollama tags. Gated or private-preview announcements are not promoted into the verified matrix without a usable public model ID and limits. For example, Gemini 3.5 Flash Cyber remains outside the generally available matrix because its documented CodeMender access is restricted to selected governments and trusted partners. See **[Verified model support](docs/model-support.html)** for model IDs, transport paths, limits, and availability boundaries.
-
-### Why does my AI coding agent miss files in a large codebase?
-
-Because something decided which files it was allowed to see, and that decision is usually invisible. A codebase is larger than any context window, so a tool picks what fits — and if it assumes a smaller window than your model actually has, it drops evidence that would have fitted. The agent then says *"I don't see where that is handled"*, and it reads like a model failure when it was a budgeting one.
-
-Entroly makes that decision explicit: it records each model's published limits so it fills the window you are paying for, and every fragment it drops appears in a receipt with the reason. **On a 1.67M-token codebase, knowing the real limit is the difference between carrying 7% and 52% of the repository as evidence in one request.**
-
-### GPT-6 Astra and Muse Spark 1.3
-
-**Does Entroly support GPT-6 Astra? Yes.** Entroly fills up to **869,500 tokens** on GPT-6 Astra (`openai/gpt-6-astra`) and **865,076** on Muse Spark 1.3 (`meta/muse-spark-1.3`), instead of the 121,600-token default it applies to models it cannot identify. Both work through the proxy, MCP, plugin, and SDK paths with Claude Code, Codex, Cursor, and OpenAI-compatible apps — no separate configuration.
-
-| Model | Model ID | Context window | Max output | Tokens Entroly will fill |
-|---|---|---:|---:|---:|
-| GPT-6 Astra | `openai/gpt-6-astra` | 1,050,000 | 128,000 | **869,500** |
-| Muse Spark 1.3 | `meta/muse-spark-1.3` | 1,048,576 | 131,072 | **865,076** |
-| Muse Spark 1.3 Contributor | `meta/muse-spark-1.3-contributor` | 1,048,576 | 131,072 | **865,076** |
-
-**Why this matters:** when a context tool does not know a model's real limit, it assumes a small one and compresses harder than it needs to. Evidence gets dropped that would have fitted. Your agent then answers "I don't see where that is handled" — not because the model ran out of room, but because the tool guessed the room was smaller. Entroly records each model's published limits so that never happens silently, and every dropped fragment still appears in the receipt with the reason it was dropped.
-
-**What it does not do:** this does not make requests cheaper — long-context requests cost what the provider charges. It removes an artificial ceiling on evidence, so hard questions can draw on more of the codebase when they need to. Entroly reserves output tokens plus an uncertainty margin, which is why the usable figure sits below the raw window.
-
-Both models resolve at **announced** trust from their public announcements, with tools, vision, and reasoning controls. Neither carries price metadata — the announcements describe pricing tiers without publishing rates, so Entroly reports no cost estimate for them rather than inventing one. Rates and `verified` trust follow when the first-party model pages publish them.
-
-### Kimi K3, GLM-5.3, and GLM-5.3-Flash
-
-Entroly carries published metadata and list pricing for Moonshot AI's **Kimi K3**
-and Z.ai's **GLM-5.3** and **GLM-5.3-Flash**, so Context Receipts, budget
-resolution, and cost accounting work on those routes without configuration.
-
-| Model | Context window | Input / output per 1M | Vision |
-|---|---|---|---|
-| `kimi-k3` | 1,048,576 | $3.00 / $15.00 | yes |
-| `glm-5.3` | 1,000,000 | $1.40 / $4.40 | no |
-| `glm-5.3-flash` | 1,048,576 | $0.15 / $0.50 | yes |
-
-These are **announced** records, not verified ones: the figures come from
-published provider specifications rather than a request Entroly has observed.
-Announced records are not promoted into the verified matrix, and OpenClaw's
-budget resolution rejects them in favour of an explicit host budget or an
-operator `fallbackTokenBudget`. Set `ENTROLY_PRICING_FILE` to substitute
-negotiated rates without waiting for a release.
-
-`glm-5.3` and `glm-5.3-flash` are a flagship and a cheap sibling on one
-provider, which is the shape RAVS model routing looks for. Priced at the list
-rates above, routing a 100K-token request from `glm-5.3` to `glm-5.3-flash` is
-worth **$0.125**, and from `kimi-k3` **$0.285**. Routing stays behind an
-explicit authorisation because it substitutes the model on a live request;
-Entroly measures what the swap would be worth first, so the decision is made
-against evidence rather than a guess.
-
-A million-token window does not remove the reason to select context. A million
-tokens of prompt costs a million tokens of prefill on every turn, and published
-long-context evaluations report weaker retrieval for evidence buried in the
-middle of very long inputs. A large window is budget you now get to spend
-deliberately.
-
-### NVIDIA Nemotron 3.5 Lightning with Ollama
-
-Entroly supports `nemotron-3.5-lightning` through its existing local Ollama discovery and OpenAI-compatible proxy path. This is a model-neutral integration: Entroly manages evidence selection, budgets, recovery handles, Context Receipts, and optional verification around the request; Ollama runs the model.
-
-```bash
-ollama pull nemotron-3.5-lightning
-python -m entroly.models discover ollama --inspect-ollama-context
-# Set ENTROLY_OPENAI_BASE=http://127.0.0.1:11434 in your shell, then:
-entroly proxy
-```
-
-Ollama lists the standard `nemotron-3.5-lightning` tag as a 30B mixture-of-experts model with 3B active parameters and a 1M context window. Its Apple-silicon `30b-mlx` tag is listed separately with a 256K window, so Entroly discovers the installed tag's metadata instead of assuming that every build has the same limit. Local Ollama inference can keep model prompts on the device; agent tools, configured remote providers, and other applications retain their own network and privacy boundaries. [Compatibility, setup, and official sources](docs/nemotron-3-5-lightning-ollama.html).
+Entroly carries verified metadata for current models from OpenAI, Anthropic, Google, Meta, and others. It auto-discovers local Ollama models. Model-specific details: **[docs/DETAILS.md](docs/DETAILS.md)**.
 
 ---
 ## When to use it · when to skip it
@@ -429,32 +330,16 @@ Run `entroly doctor`. If that doesn't sort it, [open an issue](https://github.co
 </details>
 
 ---
-## Docs & community
+## Documentation
 
-- **[AI efficiency hub](docs/ai-efficiency.html)** — token economics, AI cost optimization, memory, hallucination reduction, model routing, adaptive context, and verified code intelligence.
-- **[AI cost optimization](docs/ai-cost-optimization.html)** — provider-bound input savings, billing boundaries, and workload-specific measurement.
-- **[Token economics](docs/token-economics.html)** — token saving, context compression, cache-aware context control, and more room in the context window.
-- **[Best token compression tools](docs/token-compression-tools.html)** — comparison across 6 token reduction surfaces, ratios, byte-exact recoverability, and benchmark results.
-- **[Memory OS](docs/memory-os.html)** — budget-aware working, episodic, and semantic memory.
-- **[Hallucination reduction](docs/hallucination-reduction.html)** — WITNESS evidence-support verification.
-- **[Guarded model routing](docs/model-routing.html)** — RAVS routing, uncertainty control, and fail-closed escalation.
-- **[Adaptive context](docs/adaptive-context.html)** — bounded self-improving context.
-- **[Verified Code Context](docs/verified-code-context.md)** — parser-backed repository intelligence, typed graphs, architecture, value flow, LSP enrichment, source verification, and refactoring contracts.
-- **[Full benchmark evidence](docs/BENCHMARKS.md)** — every number, protocol, artifact, and caveat.
-- **[Model-triggered recovery holdout](docs/benchmarks/model-triggered-recovery.md)** — frozen recovery protocol, evidence boundary, and reproduction details.
-- **[Context Commit conformance artifact](benchmarks/results/context_commit_conformance.json)** — checked-in conformance evidence for Context Commit contracts.
-- **[Product surface map](docs/product-surface.md)** — CLI, SDK, MCP, proxy, verification, memory, security.
-- **[Architecture & full spec](docs/DETAILS.md)** — Rust modules, compression, provenance, command reference.
-- **[Agent compatibility](docs/agent-compatibility.md)** — every supported client and its exact authentication boundary.
-- **[First-run trust guide](docs/first-run-trust.md)** — exactly what to run before wiring a paid model key.
-- **[For teams](docs/for-teams.md)** — ROI, security, deployment one-pager.
+- **[Architecture & internals](docs/DETAILS.md)** — Rust modules, compression pipeline, provenance, command reference.
+- **[Benchmarks](docs/BENCHMARKS.md)** — every number, protocol, artifact, and caveat.
+- **[Agent compatibility](docs/agent-compatibility.md)** — every supported client and its authentication boundary.
 - **[Limitations](docs/limitations.md)** — where Entroly helps, where it passes through, what it doesn't guarantee.
-- **[Public evidence policy](docs/public-evidence.md)** — claim tiers and package links.
-- **[Context Commits](docs/context-commits.md)** · **[Context Receipts](docs/DETAILS.md#context-receipts)** · **[Proof-guided recovery](docs/proof-guided-context-fixed-point.md)**
+- **[Product surface map](docs/product-surface.md)** — CLI, SDK, MCP, proxy, verification, memory, security.
+- **[First-run trust](docs/first-run-trust.md)** — what to run before wiring a paid model key.
 - **[Cookbook](docs/cookbook/README.md)** — copy-paste recipes.
-- **[Discord](https://juyterman1000.github.io/entroly/docs/discord.html)** · **[Discussions](https://github.com/juyterman1000/entroly/discussions)** · **[Issues](https://github.com/juyterman1000/entroly/issues)**
-
-> Compressing a *bad* selection is still a bad selection. Entroly ranks first, then compresses — so the model gets structure, not just fewer tokens.
+- **[Discussions](https://github.com/juyterman1000/entroly/discussions)** · **[Issues](https://github.com/juyterman1000/entroly/issues)**
 
 <p align="center"><sub>Apache-2.0 · local-first · no outbound analytics by default</sub></p>
 <p align="center"><code>pip install entroly && entroly go</code></p>

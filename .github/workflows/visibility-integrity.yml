@@ -12,9 +12,7 @@ on:
       - 'docs/BENCHMARKS.md'
       - 'docs/distribution/**'
       - 'docs/independent-review-program.md'
-      - 'docs/press-kit.md'
       - 'llms.txt'
-      - 'docs/marketing/**'
       - 'pyproject.toml'
       - 'scripts/bump_version.py'
       - 'scripts/check_distribution_surface.py'
@@ -35,9 +33,7 @@ on:
       - 'docs/BENCHMARKS.md'
       - 'docs/distribution/**'
       - 'docs/independent-review-program.md'
-      - 'docs/press-kit.md'
       - 'llms.txt'
-      - 'docs/marketing/**'
       - 'pyproject.toml'
       - 'scripts/bump_version.py'
       - 'scripts/check_distribution_surface.py'
@@ -87,12 +83,3 @@ jobs:
           tests/test_bump_version.py
           -q
 
-      - name: Verify launch assets remain drafts
-        shell: bash
-        run: |
-          set -euo pipefail
-          grep -RFl 'Status: prepared, not submitted.' docs/marketing/launch/*.md >/dev/null
-          if grep -REi '\b(zero quality loss|guaranteed savings|best context (tool|engine|compressor))\b' docs/marketing/launch; then
-            echo '::error::Launch assets contain an unsupported claim.'
-            exit 1
-          fi

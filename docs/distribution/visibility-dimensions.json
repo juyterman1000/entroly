@@ -175,7 +175,7 @@
       "id": "launch-channels",
       "name": "Launch channels",
       "state": "partial",
-      "current_evidence": ["docs/marketing/README.md", "docs/marketing/launch/product-hunt.md", "docs/marketing/launch/show-hn.md", "docs/marketing/launch/community-and-newsletters.md"],
+      "current_evidence": [],
       "leadership_target": "Evidence-bounded launch packages for Show HN, Product Hunt, relevant developer communities, and release-specific announcements.",
       "next_action": "Verify the released package and publish one technical launch at a time, then record public URLs and outcomes."
     },
@@ -183,7 +183,7 @@
       "id": "newsletters-media",
       "name": "Newsletters, podcasts, and technical media",
       "state": "partial",
-      "current_evidence": ["docs/marketing/launch/community-and-newsletters.md", "docs/press-kit.md", "docs/independent-review-program.md"],
+      "current_evidence": ["docs/independent-review-program.md"],
       "leadership_target": "Earn recurring independent coverage by providing reproducible stories, not paid or copied announcements.",
       "next_action": "Pitch technically relevant editors and reviewers around exact recovery, Context Receipts, neutral benchmarks, and local verification."
     },
@@ -215,7 +215,7 @@
       "id": "press-media-kit",
       "name": "Press and media kit",
       "state": "strong",
-      "current_evidence": ["docs/press-kit.md", "docs/assets/logo.png", "docs/assets/entroly_wordmark.svg", "docs/assets/proof_local.gif"],
+      "current_evidence": ["docs/assets/logo.png", "docs/assets/entroly_wordmark.svg", "docs/assets/proof_local.gif"],
       "leadership_target": "Approved descriptions, logos, screenshots, project facts, claim rules, and reproducible demo commands in one maintained location.",
       "next_action": "Keep media assets and approved facts synchronized with releases and reject invented customer, company, funding, or adoption claims."
     },
