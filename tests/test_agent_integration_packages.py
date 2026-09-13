@@ -121,7 +121,7 @@ def test_codex_bundle_has_manifest_mcp_and_narrow_valid_skill() -> None:
     assert "provider billing" in skill.lower()
 
 
-def test_codex_portable_and_npm_marketplace_surfaces_are_synchronized() -> None:
+def test_codex_portable_and_marketplace_surfaces_are_synchronized() -> None:
     integration = ROOT / "integrations" / "codex" / "entroly"
     npm_plugin = ROOT / "entroly" / "npm-alias"
     marketplace = json.loads(
@@ -139,10 +139,8 @@ def test_codex_portable_and_npm_marketplace_surfaces_are_synchronized() -> None:
     assert portable_mcp["$schema"].endswith("/mcp.schema.json")
     assert portable["extensions"]["com.openai"]["hooks"] == "./hooks/hooks.json"
     assert entry["source"] == {
-        "source": "npm",
-        "package": "entroly",
-        "version": "latest",
-        "registry": "https://registry.npmjs.org",
+        "source": "local",
+        "path": "./integrations/codex/entroly",
     }
     assert package["version"] == portable["version"]
     for relative in (
