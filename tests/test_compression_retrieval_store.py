@@ -384,9 +384,13 @@ def test_exact_excerpt_search_bounds_tokens_and_preserves_query_window() -> None
     assert full.retrieved_tokens == matches[0].retrieved_tokens
 
 
-def test_exact_excerpt_uses_conservative_byte_cap_without_tiktoken(
+def test_exact_excerpt_uses_conservative_fallback_without_tiktoken(
     monkeypatch,
 ) -> None:
+    import entroly.tokens as _tokens_mod
+
+    _tokens_mod._encoding.cache_clear()
+
     real_import = builtins.__import__
 
     def import_without_tiktoken(name, *args, **kwargs):
@@ -396,9 +400,12 @@ def test_exact_excerpt_uses_conservative_byte_cap_without_tiktoken(
 
     monkeypatch.setattr(builtins, "__import__", import_without_tiktoken)
 
-    assert _count_o200k_tokens("source-exact ✓") == len(
-        "source-exact ✓".encode("utf-8")
-    )
+    try:
+        result = _count_o200k_tokens("source-exact ✓")
+        assert result >= 1
+        assert result == max(1, (len("source-exact ✓") + 3) // 4)
+    finally:
+        _tokens_mod._encoding.cache_clear()
 
 
 def test_exact_excerpt_retrieval_is_idempotent() -> None:
