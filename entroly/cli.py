@@ -61,7 +61,7 @@ from pathlib import Path
 try:
     from entroly import __version__
 except ImportError:
-    __version__ = "1.0.83"
+    __version__ = "1.0.84"
 
 from entroly.config import (
     load_active_tuning_config as _load_active_tuning_config,
@@ -216,7 +216,14 @@ def _check_first_run() -> None:
 
 def cmd_activation(args):
     """Run a host lifecycle hook or inspect locally recorded activations."""
-    from .agent_activation import activation_status, parse_hook_input, run_hook
+    from .agent_activation import (
+        activation_status,
+        configure_cursor_hook,
+        configure_kiro_hook,
+        hook_context,
+        parse_hook_input,
+        run_hook,
+    )
 
     if args.activation_action == "status":
         report = activation_status(
@@ -224,6 +231,21 @@ def cmd_activation(args):
         )
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0
+
+    if args.activation_action in {"install", "uninstall"}:
+        if args.host == "kiro":
+            report = configure_kiro_hook(
+                Path(args.project),
+                uninstall=args.activation_action == "uninstall",
+                force=getattr(args, "force", False),
+            )
+        else:
+            report = configure_cursor_hook(
+                Path(args.project),
+                uninstall=args.activation_action == "uninstall",
+            )
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return 2 if report["status"] == "conflict" else 0
 
     try:
         payload = parse_hook_input(sys.stdin.read())
@@ -247,7 +269,13 @@ def cmd_activation(args):
             "systemMessage": "Entroly activation input was invalid",
             "suppressOutput": True,
         }
-    print(json.dumps(result, separators=(",", ":"), sort_keys=True))
+    output_format = args.output_format
+    if output_format == "auto":
+        output_format = "context" if args.host == "kiro" else "json"
+    if output_format == "context":
+        print(hook_context(result))
+    else:
+        print(json.dumps(result, separators=(",", ":"), sort_keys=True))
     return 0
 
 
@@ -4151,7 +4179,7 @@ def cmd_doctor(args):
         # to compiling an ancient sdist. Bust the cache + upgrade pip
         # first — that fixes it without any compile.
         print(f"    {C.GRAY}Fix:  python -m pip install --no-cache-dir -U pip && "
-              f"python -m pip install --no-cache-dir -U \"entroly-core>=1.0.83\"{C.RESET}")
+              f"python -m pip install --no-cache-dir -U \"entroly-core>=1.0.84\"{C.RESET}")
         print(f"    {C.GRAY}(If pip still compiles from source and fails on "
               f"a new Python, your pip is too old to{C.RESET}")
         print(f"    {C.GRAY} match the abi3 wheel — upgrading pip is the "
@@ -6161,7 +6189,7 @@ def cmd_docs(args):
         result = engine.compile_docs(target, max_files)
     except ImportError:
         print(f"  {C.RED}entroly_core not installed — docs compilation requires the Rust engine.{C.RESET}")
-        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.83\"{C.RESET}\n")
+        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.84\"{C.RESET}\n")
         return
 
     print(f"  {C.GREEN}Docs found:{C.RESET}      {result.get('docs_found', 0)}")
@@ -6204,7 +6232,7 @@ def cmd_finetune(args):
         result = engine.export_training_data(output, "jsonl")
     except ImportError:
         print(f"  {C.RED}entroly_core not installed — training export requires the Rust engine.{C.RESET}")
-        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.83\"{C.RESET}\n")
+        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.84\"{C.RESET}\n")
         return
 
     print(f"  {C.GREEN}Beliefs used:{C.RESET}     {result.get('beliefs_used', 0)}")
@@ -7068,10 +7096,25 @@ def main():
     activation_hook.add_argument(
         "--host",
         default="auto",
-        choices=["auto", "claude-code", "gemini", "vscode-copilot", "compatible"],
+        choices=[
+            "auto",
+            "codex",
+            "claude-code",
+            "cursor",
+            "gemini",
+            "kiro",
+            "vscode-copilot",
+            "compatible",
+        ],
     )
     activation_hook.add_argument("--budget", type=int, default=1200)
     activation_hook.add_argument("--max-files", type=int, default=200)
+    activation_hook.add_argument(
+        "--output-format",
+        choices=["auto", "json", "context"],
+        default="auto",
+        help="Host output contract; auto emits context text for Kiro and JSON otherwise",
+    )
     activation_status_parser = activation_subparsers.add_parser(
         "status", help="Show observed host-hook activations for this project"
     )
@@ -7079,6 +7122,20 @@ def main():
     activation_status_parser.add_argument(
         "--json", dest="json_output", action="store_true"
     )
+    for action in ("install", "uninstall"):
+        activation_config = activation_subparsers.add_parser(
+            action, help=f"{action.capitalize()} a managed project activation hook"
+        )
+        activation_config.add_argument(
+            "--host", choices=["cursor", "kiro"], required=True
+        )
+        activation_config.add_argument("--project", default=".")
+        if action == "install":
+            activation_config.add_argument(
+                "--force",
+                action="store_true",
+                help="Back up an existing target before installing",
+            )
 
     # entroly status
     status_parser = subparsers.add_parser(

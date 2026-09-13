@@ -18,10 +18,10 @@ Provider-bound token and cost measurements exist only when the request actually 
 | VS Code / Copilot agent mode | Claude-format plugin hook where agent plugins are enabled; MCP otherwise | Deterministic hook is host-version dependent | Activation requires a VS Code build and plugin configuration that loads agent hooks. MCP alone remains advisory. |
 | GitHub Copilot CLI | Claude-compatible hook when supported; MCP for subscription sessions; custom-provider proxy for BYOK | Hook or mode-bounded | Entroly does not claim interception of GitHub-hosted subscription inference. |
 | Gemini CLI | Bundled `BeforeAgent` extension hook plus scoped MCP | Deterministic pre-turn activation | The enabled extension runs bounded local selection before planning. Provider traffic is separate unless routed through the proxy. |
-| Codex CLI / Codex app | Scoped MCP attachment; API-key proxy wrap | Advisory MCP or transport-enforced proxy | The current Codex plugin surface has no Entroly-owned pre-turn lifecycle hook. An activation receipt must not be inferred from installation. |
+| Codex CLI / Codex app | Bundled `UserPromptSubmit` hook plus scoped MCP | Deterministic pre-turn activation after hook trust | Codex requires the user to review and trust plugin hooks. Until a receipt exists, installation alone is reported as unobserved. The Codex IDE extension does not currently load plugins. |
 | OpenClaw | ContextEngine plugin and scoped MCP attachment | Native | OpenClaw retains provider authentication; Entroly assembles context and emits receipts. |
-| Cursor | Automatic project MCP config; optional custom proxy endpoint | Advisory MCP or transport-enforced proxy | Restart Cursor after configuration. A model may skip MCP; activation is proven only by a receipt or intercepted request. |
-| Kiro | MCP or custom endpoint when supported by the installed version | Advisory until host hook validated | Entroly does not claim automatic per-turn activation without a tested lifecycle hook. |
+| Cursor | Claude-compatible `UserPromptSubmit` hook when third-party configurations are enabled; MCP or proxy otherwise | Deterministic hook only in Claude-compatibility mode | Cursor's native `beforeSubmitPrompt` response cannot inject context. Run `entroly activation install --host cursor --project .`, enable Cursor's third-party configurations, and require an activation receipt. |
+| Kiro IDE 1.x / CLI 3.x | Project `PromptSubmit` hook | Deterministic pre-turn activation | Kiro supplies the prompt in `USER_PROMPT` and adds successful command stdout to agent context. Install with `entroly activation install --host kiro --project .`. |
 | IntelliJ / JetBrains AI agents | MCP or custom endpoint when supported by the installed plugin | Advisory until host hook validated | Entroly does not claim automatic per-turn activation without a tested lifecycle hook. |
 | Aider | Session-scoped OpenAI-compatible proxy | One command | Requires an API/provider route that accepts a custom endpoint. |
 | OpenCode | Session-scoped OpenAI-compatible proxy | One command | Provider authentication remains owned by OpenCode and its upstream. |
@@ -35,6 +35,19 @@ Provider-bound token and cost measurements exist only when the request actually 
 | Oh My Pi | Custom provider in `~/.omp/agent/models.yml` | Guided setup | Stored OAuth credentials are not assumed to be valid for an arbitrary proxy. |
 | ZCode | Custom OpenAI/Anthropic-compatible base URL | Guided setup | Confirm the chosen provider and authentication mode permit a custom URL. |
 | Cortex Code | SDK/library boundary only | Not validated as a wrap target | No official, tested endpoint contract is currently documented by Entroly. |
+
+## Codex public plugin
+
+```console
+codex plugin marketplace add juyterman1000/entroly --ref main
+codex plugin add entroly@entroly-public
+```
+
+The marketplace resolves the portable plugin from npm and installs its declared
+Node/WASM dependency without running package lifecycle scripts. The bundled
+`UserPromptSubmit` hook runs before agent planning after the user trusts it; the
+MCP server is a separate tool surface. Verify execution from receipts rather
+than installation state alone.
 
 ## GitHub Copilot CLI
 
@@ -74,6 +87,6 @@ Compatibility is not inferred merely because a client uses the word “OpenAI-co
 
 A green status requires a code-backed setup path and a regression or end-to-end contract. Clients with documented custom endpoints but no Entroly request-flow test remain **guided** or **validation pending**. Hosted subscription interception is never inferred from MCP compatibility.
 
-Run `entroly activation status --json` in a project to distinguish `active` from `installed_but_unobserved`. `active` requires a local host-hook receipt. It does not prove token or cost savings; those require a matched baseline and provider-bound measurement.
+Run `entroly activation status --json` in a project to distinguish `active`, `observed_degraded`, and `unobserved`. `active` requires a native hook run that either selected context or reached a valid no-match decision. `unobserved` does not prove that integration files are installed. No state proves token or cost savings; those require a matched baseline and provider-bound measurement.
 
 Preview a wrapper without changing configuration or launching the client with `entroly wrap <agent> --dry-run`; after a real proxy session, use the watchdog, receipt, or `entroly value` output to confirm that traffic actually traversed Entroly.

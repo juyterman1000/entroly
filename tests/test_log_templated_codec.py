@@ -23,7 +23,7 @@ import re
 
 import pytest
 
-from entroly.codec import RecoveryStore
+from entroly.codec import RecoveryStore, estimate_tokens
 from entroly.codecs_builtin import default_registry
 
 
@@ -61,7 +61,7 @@ def test_templated_logs_actually_compress() -> None:
     """The measured defect: this shape used to reduce by 0%."""
     rep = _templated(UNIFORM)
     assert rep is not None, "no templated representation offered"
-    assert rep.token_cost < (len(UNIFORM) // 4) * 0.8
+    assert rep.token_cost < estimate_tokens(UNIFORM) * 0.8
 
 
 def test_distinct_status_codes_do_not_merge() -> None:

@@ -1,0 +1,17 @@
+{
+  "description": "Activate Entroly before every Codex turn without relying on model tool choice.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/scripts/entroly-plugin-launch.mjs\" activation hook --host codex --budget 1200 --max-files 200",
+            "timeout": 30,
+            "statusMessage": "Selecting task-relevant context with Entroly"
+          }
+        ]
+      }
+    ]
+  }
+}

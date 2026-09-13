@@ -1,0 +1,46 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "entroly",
+  "version": "1.0.84",
+  "description": "Automatic, evidence-bounded context activation and auditable context operations for AI coding agents.",
+  "author": {
+    "name": "Entroly",
+    "url": "https://github.com/juyterman1000/entroly"
+  },
+  "homepage": "https://github.com/juyterman1000/entroly",
+  "repository": "https://github.com/juyterman1000/entroly",
+  "license": "Apache-2.0",
+  "keywords": [
+    "context",
+    "coding-agents",
+    "receipts",
+    "verification",
+    "mcp"
+  ],
+  "extensions": {
+    "com.openai": {
+      "hooks": "./hooks/hooks.json",
+      "interface": {
+        "displayName": "Entroly",
+        "shortDescription": "Activate bounded repo context before each task",
+        "longDescription": "Runs local context selection from a host lifecycle hook, records activation receipts, and provides auditable context operations. Receipts report observed selection and never claim provider savings without a matched baseline.",
+        "developerName": "Entroly",
+        "category": "Developer Tools",
+        "capabilities": [
+          "automatic-context-activation",
+          "context-receipts",
+          "exact-recovery",
+          "mcp"
+        ],
+        "websiteURL": "https://github.com/juyterman1000/entroly",
+        "privacyPolicyURL": "https://github.com/juyterman1000/entroly/blob/main/PRIVACY.md",
+        "defaultPrompt": [
+          "Show whether Entroly activated for this repository and explain the latest receipt.",
+          "Select the most relevant repository evidence for this task within a 1200-token budget.",
+          "Audit this task's context cost without making unsupported savings claims."
+        ],
+        "brandColor": "#6366F1"
+      }
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Entroly pre-turn activation",
+      "description": "Select bounded local context before agent planning and record activation evidence.",
+      "trigger": "PromptSubmit",
+      "action": {
+        "type": "command",
+        "command": "entroly activation hook --host kiro --output-format context --budget 1200 --max-files 200"
+      },
+      "timeout": 30,
+      "enabled": true
+    }
+  ]
+}
