@@ -163,6 +163,21 @@ def test_codex_portable_and_marketplace_surfaces_are_synchronized() -> None:
     assert "hooks/hooks.json" in package["files"]
 
 
+def test_root_agent_plugin_surface_is_cursor_installable() -> None:
+    plugin = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
+    mcp = json.loads((ROOT / "mcp.json").read_text(encoding="utf-8"))
+
+    assert plugin["$schema"].endswith("/plugin.schema.json")
+    assert plugin["name"] == "entroly"
+    assert plugin["version"] == "1.0.84"
+    assert mcp["$schema"].endswith("/mcp.schema.json")
+    server = mcp["mcpServers"]["entroly"]
+    assert server["type"] == "stdio"
+    assert server["command"] == "node"
+    assert server["args"] == ["${PLUGIN_ROOT}/scripts/entroly-plugin-launch.mjs"]
+    assert server["env"]["ENTROLY_MCP_PASSIVE"] == "1"
+
+
 def test_claude_and_gemini_bundles_share_evidence_contract() -> None:
     claude_manifest = json.loads(
         (ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")

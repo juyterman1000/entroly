@@ -1,0 +1,20 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "entroly",
+  "version": "1.0.84",
+  "description": "Auditable context selection, exact recovery, and receipts for AI coding agents.",
+  "author": {
+    "name": "Entroly",
+    "url": "https://github.com/juyterman1000/entroly"
+  },
+  "homepage": "https://github.com/juyterman1000/entroly",
+  "repository": "https://github.com/juyterman1000/entroly",
+  "license": "Apache-2.0",
+  "keywords": [
+    "context",
+    "coding-agents",
+    "receipts",
+    "verification",
+    "mcp"
+  ]
+}
