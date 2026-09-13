@@ -378,12 +378,18 @@ Tools → AI Assistant → Model Context Protocol (MCP)**:
       "env": {
         "ENTROLY_NO_DOCKER": "1",
         "ENTROLY_MCP_PASSIVE": "1",
+        "ENTROLY_MCP_PROFILE": "public",
         "ENTROLY_MAX_FILES": "200"
       }
     }
   }
 }
 ```
+
+MCP marketplace installs expose the compact `public` profile by default so
+agents see the core context, receipt, continuity, and verification tools first.
+Set `ENTROLY_MCP_PROFILE=full` only when you want the advanced research,
+vault, evolution, and security tools in the same MCP server.
 
 The MCP path is provider-neutral: the host can use OpenAI, Anthropic, Google,
 Mistral, DeepSeek, Kimi, GLM, or a local model. There is no separate plugin
