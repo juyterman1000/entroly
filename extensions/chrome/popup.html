@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Entroly Context Compressor</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <div class="header">
+      <div class="brand">
+        <div class="icon">⚡</div>
+        <span class="title">Entroly</span>
+      </div>
+      <span class="version">v1.0.0</span>
+    </div>
+
+    <div class="repo-card" id="repoCard">
+      <div class="repo-label">ACTIVE REPO</div>
+      <div class="repo-name" id="repoName">Detecting GitHub repository...</div>
+    </div>
+
+    <div class="quick-stats">
+      <div class="stat-box">
+        <span class="stat-num" id="statAvgSavings">77%</span>
+        <span class="stat-desc">Avg Savings</span>
+      </div>
+      <div class="stat-box">
+        <span class="stat-num" id="statRetention">100%</span>
+        <span class="stat-desc">Accuracy Retained</span>
+      </div>
+    </div>
+
+    <div class="action-section">
+      <button class="primary-btn" id="openPlaygroundBtn">
+        <span>🚀 Open Web Playground</span>
+      </button>
+      <button class="secondary-btn" id="copyRepoMarkdownBtn">
+        <span>📋 Copy Repo Context Link</span>
+      </button>
+    </div>
+
+    <div class="footer">
+      <span>Zero-loss Merkle receipts</span> · <a href="https://github.com/juyterman1000/entroly" target="_blank">Docs</a>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

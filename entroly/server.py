@@ -4011,9 +4011,8 @@ def create_mcp_server(
                 "content_hash": result.content_hash,
                 "scan_time_ms": round(result.scan_time_ms, 2),
             }, indent=2)
-        except Exception as e:
-            return json.dumps({"error": str(e)})
-
+        except Exception:
+            pass
     # The installed default MCP surface is the product convergence point. Keep
     # the focused Work Graph entrypoint for compatibility, but do not require a
     # user to configure a second server to get continuity after installing
@@ -4021,6 +4020,194 @@ def create_mcp_server(
     from .work_graph_mcp_server import register_work_graph_tools
 
     register_work_graph_tools(mcp)
+
+    # ── Cross-Agent Shared Memory ────────────────────────────────────
+
+    @mcp.tool()
+    async def shared_memory_write(
+        content: str,
+        agent_id: str = "unknown",
+        session_id: str = "",
+        tags: str = "",
+    ) -> str:
+        """Write to cross-agent shared memory. Deduplicates near-identical entries via SimHash."""
+        from .shared_memory import SharedMemoryStore
+        store = SharedMemoryStore()
+        tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
+        entry = store.write(content, agent_id=agent_id, session_id=session_id, tags=tag_list)
+        if entry is None:
+            return json.dumps({"status": "deduplicated", "message": "Near-duplicate already exists"})
+        return json.dumps({
+            "status": "written",
+            "entry_id": entry.entry_id,
+            "content_hash": entry.content_hash,
+            "agent_id": entry.agent_id,
+        })
+
+    @mcp.tool()
+    async def shared_memory_search(
+        query: str,
+        top_k: int = 5,
+        agent_id: str = "",
+    ) -> str:
+        """Search cross-agent shared memory by relevance. Returns entries from all agents."""
+        from .shared_memory import SharedMemoryStore
+        store = SharedMemoryStore()
+        results = store.search(query, top_k=top_k, agent_id=agent_id or None)
+        return json.dumps([{
+            "entry_id": e.entry_id,
+            "content": e.content,
+            "agent_id": e.agent_id,
+            "tags": e.tags,
+            "content_hash": e.content_hash,
+        } for e in results], indent=2)
+
+    @mcp.tool()
+    async def shared_memory_list(
+        agent_id: str = "",
+        tag: str = "",
+        limit: int = 20,
+    ) -> str:
+        """List shared memory entries, optionally filtered by agent or tag."""
+        from .shared_memory import SharedMemoryStore
+        store = SharedMemoryStore()
+        entries = store.list_entries(agent_id=agent_id or None, tag=tag or None, limit=limit)
+        return json.dumps([{
+            "entry_id": e.entry_id,
+            "content": e.content[:200],
+            "agent_id": e.agent_id,
+            "tags": e.tags,
+            "timestamp": e.timestamp,
+        } for e in entries], indent=2)
+
+    @mcp.tool()
+    async def shared_memory_forget(entry_id: str) -> str:
+        """Remove a shared memory entry by ID."""
+        from .shared_memory import SharedMemoryStore
+        store = SharedMemoryStore()
+        removed = store.forget(entry_id)
+        return json.dumps({"removed": removed, "entry_id": entry_id})
+
+    @mcp.tool()
+    async def shared_memory_stats() -> str:
+        """Get cross-agent shared memory statistics."""
+        from .shared_memory import SharedMemoryStore
+        store = SharedMemoryStore()
+        return json.dumps(store.stats(), indent=2)
+
+    # ── Output Token Reduction ───────────────────────────────────────
+
+    @mcp.tool()
+    async def steer_output(
+        query: str,
+        effort: str = "",
+    ) -> str:
+        """Classify query effort and return output steering directives + max_tokens budget."""
+        from .output_steering import classify_effort, Effort, EFFORT_DIRECTIVES, EFFORT_MAX_TOKENS
+        if effort:
+            eff = Effort[effort.upper()]
+            directive = EFFORT_DIRECTIVES[eff]
+            max_tokens = EFFORT_MAX_TOKENS[eff]
+            return json.dumps({
+                "effort": eff.name,
+                "max_tokens": max_tokens,
+                "directive": directive,
+                "source": "manual",
+            })
+        classification = classify_effort(query)
+        return json.dumps({
+            "effort": classification.effort.name,
+            "confidence": classification.confidence,
+            "reason": classification.reason,
+            "max_tokens": EFFORT_MAX_TOKENS[classification.effort],
+            "directive": EFFORT_DIRECTIVES[classification.effort],
+            "source": "auto",
+        })
+
+    # ── Shell Hook ───────────────────────────────────────────────────
+
+    @mcp.tool()
+    async def compress_shell(
+        text: str,
+        command: str = "",
+        max_lines: int = 50,
+    ) -> str:
+        """Compress CLI output (git, npm, cargo, pytest, etc.) preserving errors and key info."""
+        from .shell_hook import compress_shell_output
+        compressed, orig, comp, handle = compress_shell_output(text, command, max_lines)
+        return json.dumps({
+            "compressed": compressed,
+            "original_lines": orig,
+            "compressed_lines": comp,
+            "savings_pct": round((1 - comp / max(orig, 1)) * 100, 1),
+            "recovery_handle": handle,
+        })
+
+    @mcp.tool()
+    async def recover_shell(handle: str) -> str:
+        """Recover full CLI output from a compression handle."""
+        from .shell_hook import recover_shell_output
+        original = recover_shell_output(handle)
+        if original is None:
+            return json.dumps({"error": "Recovery handle not found or expired"})
+        return original
+
+    # ── Image Compression ────────────────────────────────────────────
+
+    @mcp.tool()
+    async def compress_image(
+        image_path: str,
+        max_dimension: int = 1024,
+        quality: int = 80,
+        extract_text: bool = False,
+    ) -> str:
+        """Compress an image for vision model input, with optional OCR text extraction."""
+        from .image_compress import compress_image as _compress, estimate_vision_tokens
+        try:
+            result = _compress(
+                image_path,
+                max_dimension=max_dimension,
+                quality=quality,
+                extract_text=extract_text,
+            )
+            orig_tokens = estimate_vision_tokens(result["original_width"], result["original_height"])
+            new_tokens = estimate_vision_tokens(result["width"], result["height"])
+            result["original_vision_tokens"] = orig_tokens
+            result["vision_tokens"] = new_tokens
+            result["token_savings"] = orig_tokens - new_tokens
+            return json.dumps(result, indent=2)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    # ── Failure Mining ───────────────────────────────────────────────
+
+    @mcp.tool()
+    async def learn_from_failures(
+        deep: bool = False,
+        min_occurrences: int = 2,
+        auto_apply: bool = False,
+    ) -> str:
+        """Mine failure patterns from PRISM, vault, and evolution data. Optionally apply corrections."""
+        from .learn import FailureMiner, learning_report
+        sources = ["prism"]
+        if deep:
+            sources.extend(["vault", "evolution", "checkpoints"])
+        miner = FailureMiner()
+        patterns = miner.mine(sources=sources, min_occurrences=min_occurrences)
+        if not patterns:
+            return json.dumps({"patterns": [], "message": "No recurring failure patterns found"})
+        if auto_apply:
+            corrections = miner.generate_corrections(patterns)
+            applied = miner.apply_corrections(corrections, dry_run=False)
+            return json.dumps({
+                "patterns_found": len(patterns),
+                "corrections_applied": applied,
+                "report": learning_report(patterns),
+            })
+        return json.dumps({
+            "patterns_found": len(patterns),
+            "report": learning_report(patterns),
+        })
 
     _apply_mcp_access_policy(
         mcp,
@@ -4342,7 +4529,7 @@ def main():
     try:
         from entroly import __version__ as _version
     except Exception:
-        _version = "1.0.83"
+        _version = "1.0.84"
     logger.info(f"Starting Entroly MCP server v{_version} ({engine_type} engine)")
     mcp, engine = create_mcp_server()
 

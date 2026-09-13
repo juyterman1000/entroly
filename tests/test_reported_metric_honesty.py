@@ -112,7 +112,13 @@ def test_omitted_evidence_pressure_fails_closed_when_the_listing_truncates(
     prefer_rust,
 ):
     """The control must not read ``low`` while most relevant evidence is withheld."""
-    receipt = _receipt(_corpus(300), budget=3920, prefer_rust=prefer_rust)
+    corpus = _corpus(300)
+    probe = _receipt(corpus[:5], budget=10**7, prefer_rust=prefer_rust)
+    avg_tok = probe["compression_ratio"]["selected_tokens"] / max(
+        1, probe["risk_summary"]["selected_chunks"]
+    )
+    budget = int(avg_tok * 145)
+    receipt = _receipt(corpus, budget=budget, prefer_rust=prefer_rust)
     risk = receipt["risk_summary"]
     selected = risk["selected_chunks"]
     listed_relevant = risk["omitted_relevant_chunks"]

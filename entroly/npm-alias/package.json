@@ -1,6 +1,6 @@
 {
   "name": "entroly",
-  "version": "1.0.83",
+  "version": "1.0.84",
   "description": "Node/WASM Context Assurance for AI agents: reduce avoidable token usage with local evidence selection, receipts, exact recovery, and verification.",
   "main": "index.js",
   "types": "index.d.ts",
@@ -12,17 +12,25 @@
     "NOTICE",
     "index.js",
     "index.d.ts",
+    "adapters.js",
     "bin/entroly.js",
-    "README.md"
+    "README.md",
+    "plugin.json",
+    "mcp.json",
+    ".codex-plugin/plugin.json",
+    ".mcp.json",
+    "hooks/hooks.json",
+    "scripts/entroly-plugin-launch.mjs",
+    "skills/entroly-evidence-operations"
   ],
   "dependencies": {
-    "entroly-wasm": "1.0.83"
+    "entroly-wasm": "1.0.84"
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/juyterman1000/entroly.git"
   },
-  "homepage": "https://github.com/juyterman1000/entroly",
+  "homepage": "https://juyterman1000.github.io/entroly/docs/index.html",
   "bugs": {
     "url": "https://github.com/juyterman1000/entroly/issues"
   },

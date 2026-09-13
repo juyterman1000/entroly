@@ -1,0 +1,99 @@
+{
+  "name": "entroly-vscode",
+  "displayName": "Entroly — Context Compression & Receipts",
+  "description": "Select and compress repository context for AI tools with auditable receipts.",
+  "version": "1.0.84",
+  "publisher": "entroly",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/juyterman1000/entroly.git",
+    "directory": "extensions/vscode"
+  },
+  "license": "Apache-2.0",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "AI",
+    "Programming Languages",
+    "Linters",
+    "Other"
+  ],
+  "keywords": [
+    "context compression",
+    "token optimizer",
+    "merkle receipt",
+    "claude",
+    "copilot",
+    "cursor",
+    "llm",
+    "entroly"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "entroly.compressSelection",
+        "title": "Entroly: Compress Selection into Optimal Context",
+        "category": "Entroly"
+      },
+      {
+        "command": "entroly.compressFile",
+        "title": "Entroly: Compress Current File for Prompt",
+        "category": "Entroly"
+      },
+      {
+        "command": "entroly.viewReceipt",
+        "title": "Entroly: Inspect Cryptographic Merkle Receipt",
+        "category": "Entroly"
+      },
+      {
+        "command": "entroly.openPlayground",
+        "title": "Entroly: Open Interactive Web Playground",
+        "category": "Entroly"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "entroly.compressSelection",
+        "key": "ctrl+alt+e",
+        "mac": "cmd+alt+e",
+        "when": "editorHasSelection"
+      }
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "Entroly Configuration",
+      "properties": {
+        "entroly.tokenBudget": {
+          "type": "number",
+          "default": 450,
+          "description": "Default target token budget for knapsack selection"
+        },
+        "entroly.showStatusBarTokens": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show live token count in the VS Code status bar"
+        },
+        "entroly.useCliIfAvailable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use local 'entroly' CLI / MCP server if installed on the host"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^18.11.18",
+    "@types/vscode": "^1.75.0",
+    "typescript": "^5.0.4"
+  }
+}

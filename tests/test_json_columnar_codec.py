@@ -29,7 +29,7 @@ import json
 
 import pytest
 
-from entroly.codec import RecoveryStore
+from entroly.codec import RecoveryStore, estimate_tokens
 from entroly.codecs_builtin import default_registry
 from entroly.universal_compress import _is_load_bearing_key
 
@@ -78,7 +78,7 @@ def test_identifier_dense_payloads_actually_compress() -> None:
     payload = json.dumps(IDENTIFIER_ROWS)
     rep = _columnar_for(payload)
     assert rep is not None
-    original_tokens = len(payload) // 4
+    original_tokens = estimate_tokens(payload)
     assert rep.token_cost < original_tokens * 0.9, (
         f"columnar form saved almost nothing: {rep.token_cost} vs "
         f"{original_tokens}"
@@ -132,7 +132,7 @@ def test_a_column_that_is_all_identifiers_still_compresses_a_little() -> None:
     rendered = json.loads(rep.text)
     assert rendered["id"] == [r["id"] for r in rows]
     assert rendered["sku"] == [r["sku"] for r in rows]
-    assert rep.token_cost < len(payload) // 4
+    assert rep.token_cost < estimate_tokens(payload)
 
 
 def test_evidence_sample_is_bounded() -> None:

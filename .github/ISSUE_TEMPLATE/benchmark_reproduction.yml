@@ -1,0 +1,45 @@
+name: Benchmark Reproduction Report
+description: Report results or discrepancies from reproducing Entroly accuracy and context benchmarks.
+title: "[Benchmark]: "
+labels: ["benchmarks", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to verify Entroly benchmarks! Entroly is built on verifiable evidence.
+        Please provide the exact command, environment, and Wilson 95% confidence intervals observed.
+  - type: input
+    id: benchmark_name
+    attributes:
+      label: Benchmark Suite
+      description: Which benchmark suite was tested? (e.g., NeedleInAHaystack, GSM8K, SQuAD 2.0, MMLU, TruthfulQA, LongBench)
+      placeholder: e.g. GSM8K / NeedleInAHaystack
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction_command
+    attributes:
+      label: Exact Reproduction Command
+      description: What command did you execute?
+      value: "python -m bench.accuracy --benchmark all --budget 50000"
+    validations:
+      required: true
+  - type: textarea
+    id: observed_results
+    attributes:
+      label: Observed Results vs Baseline
+      description: Please share the baseline and Entroly retention numbers, sample size (n), and Wilson 95% CI.
+      placeholder: |
+        - Baseline: 85.0% [76.7-90.7%]
+        - Entroly: 86.0% [77.9-91.5%]
+        - Retention: 101.2%
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment Details
+      description: OS, Python version, Rust version, Model used, Provider API.
+      placeholder: "Ubuntu 22.04, Python 3.11, gpt-4o-mini via OpenAI API"
+    validations:
+      required: true

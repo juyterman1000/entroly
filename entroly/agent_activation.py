@@ -17,6 +17,7 @@ import os
 import tempfile
 import time
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -26,8 +27,20 @@ SCHEMA_VERSION = "entroly.agent-activation.v1"
 DEFAULT_TOKEN_BUDGET = 1_200
 DEFAULT_MAX_FILES = 200
 DEFAULT_MAX_SOURCES = 5
+MAX_TOKEN_BUDGET = 8_000
+MAX_FILES_PER_HOOK = 1_000
 MAX_HOOK_INPUT_BYTES = 1_048_576
 MAX_PROMPT_CHARS = 16_000
+MAX_CONTEXT_CHARS = 32_000
+LOCK_WAIT_SECONDS = 2.0
+LOCK_STALE_SECONDS = 60.0
+ACTIVE_FRESHNESS_SECONDS = 7 * 24 * 60 * 60
+KIRO_HOOK_NAME = "Entroly pre-turn activation"
+KIRO_HOOK_RELATIVE_PATH = Path(".kiro/hooks/entroly-activation.json")
+CURSOR_HOOK_RELATIVE_PATH = Path(".claude/settings.local.json")
+CURSOR_HOOK_COMMAND = (
+    "entroly activation hook --host cursor --budget 1200 --max-files 200"
+)
 
 
 @dataclass(frozen=True)
@@ -75,6 +88,7 @@ def _fragment_content(fragment: Mapping[str, Any]) -> str:
         fragment.get("content")
         or fragment.get("compressed_content")
         or fragment.get("text")
+        or fragment.get("preview")
         or ""
     )
 
@@ -84,6 +98,41 @@ def _engine_fragment_count(engine: Any) -> int:
     if bool(getattr(engine, "_use_rust", False)):
         return int(engine._rust.fragment_count())
     return len(getattr(engine, "_fragments", {}))
+
+
+@contextmanager
+def _activation_lock(checkpoint_dir: Path):
+    """Bound concurrent cache refreshes without blocking prompt submission."""
+
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = checkpoint_dir / ".activation.lock"
+    deadline = time.monotonic() + LOCK_WAIT_SECONDS
+    acquired = False
+    while True:
+        try:
+            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                json.dump({"pid": os.getpid(), "created_at_unix": time.time()}, stream)
+            acquired = True
+            break
+        except FileExistsError:
+            try:
+                if time.time() - lock_path.stat().st_mtime > LOCK_STALE_SECONDS:
+                    lock_path.unlink()
+                    continue
+            except OSError:
+                pass
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(0.025)
+    try:
+        yield acquired
+    finally:
+        if acquired:
+            try:
+                lock_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 def _select_with_engine(
@@ -114,35 +163,49 @@ def _select_with_engine(
 
     project_key = _project_fingerprint(project_dir)
     checkpoint_dir = _default_state_dir().parent / "hook-checkpoints" / project_key
-    engine = EntrolyEngine(EntrolyConfig(checkpoint_dir=checkpoint_dir))
+    with _activation_lock(checkpoint_dir) as acquired:
+        if not acquired:
+            return ActivationSelection(
+                status="busy",
+                sources=(),
+                context="",
+                selected_tokens=0,
+                native_engine=True,
+                detail=(
+                    "another activation is refreshing this project; no context "
+                    "was injected"
+                ),
+            )
 
-    if not bool(getattr(engine, "_use_rust", False)):
-        return ActivationSelection(
-            status="degraded",
-            sources=(),
-            context="",
-            selected_tokens=0,
-            native_engine=False,
-            detail=(
-                "native query-conditioned selection is unavailable; no context "
-                "was injected"
-            ),
-        )
+        engine = EntrolyEngine(EntrolyConfig(checkpoint_dir=checkpoint_dir))
 
-    # The hook owns a dedicated project cache, separate from the MCP server's
-    # index. Reconcile on each task so injected code cannot silently lag edits.
-    index_result = auto_index(engine, str(project_dir))
-    if _engine_fragment_count(engine) == 0:
-        return ActivationSelection(
-            status="not_applicable",
-            sources=(),
-            context="",
-            selected_tokens=0,
-            native_engine=True,
-            detail=str(index_result.get("status", "no indexable files")),
-        )
+        if not bool(getattr(engine, "_use_rust", False)):
+            return ActivationSelection(
+                status="degraded",
+                sources=(),
+                context="",
+                selected_tokens=0,
+                native_engine=False,
+                detail=(
+                    "native query-conditioned selection is unavailable; no context "
+                    "was injected"
+                ),
+            )
 
-    result = engine.optimize_context(token_budget=token_budget, query=query)
+        # The hook owns a dedicated project cache, separate from the MCP server's
+        # index. Reconcile on each task so injected code cannot silently lag edits.
+        index_result = auto_index(engine, str(project_dir), seed_beliefs=False)
+        if _engine_fragment_count(engine) == 0:
+            return ActivationSelection(
+                status="not_applicable",
+                sources=(),
+                context="",
+                selected_tokens=0,
+                native_engine=True,
+                detail=str(index_result.get("status", "no indexable files")),
+            )
+
+        result = engine.optimize_context(token_budget=token_budget, query=query)
     selected = result.get("selected_fragments") or result.get("selected") or []
     selected = [item for item in selected if isinstance(item, Mapping)]
     if not selected:
@@ -158,20 +221,36 @@ def _select_with_engine(
     sources: list[str] = []
     blocks: list[str] = []
     selected_tokens = 0
+    context_chars = 0
     for item in selected[:DEFAULT_MAX_SOURCES]:
         source = _relative_source(
             item.get("source") or item.get("source_path") or item.get("path"),
             project_dir,
         )
         content = _fragment_content(item)
+        remaining = max(0, MAX_CONTEXT_CHARS - context_chars)
+        content = content[:remaining]
         if source and source not in sources:
             sources.append(source)
         if content:
             blocks.append(f"SOURCE: {source or '<unknown>'}\n{content}")
+            context_chars += len(content)
         try:
             selected_tokens += max(0, int(item.get("token_count", 0) or 0))
         except (TypeError, ValueError):
             pass
+        if context_chars >= MAX_CONTEXT_CHARS:
+            break
+
+    if not blocks:
+        return ActivationSelection(
+            status="no_match",
+            sources=tuple(sources),
+            context="",
+            selected_tokens=selected_tokens,
+            native_engine=True,
+            detail="selected fragments did not contain usable context",
+        )
 
     from .hardening import sanitize_injected_context
 
@@ -197,6 +276,12 @@ def _infer_host(payload: Mapping[str, Any], requested: str) -> str:
     event = str(payload.get("hook_event_name") or "")
     if event == "BeforeAgent":
         return "gemini"
+    if os.environ.get("CURSOR_PROJECT_DIR"):
+        return "cursor"
+    if os.environ.get("CODEX_HOME"):
+        return "codex"
+    if os.environ.get("USER_PROMPT"):
+        return "kiro"
     if os.environ.get("VSCODE_PID") or os.environ.get("TERM_PROGRAM") == "vscode":
         return "vscode-copilot"
     if event == "UserPromptSubmit":
@@ -210,13 +295,17 @@ def _hook_event(payload: Mapping[str, Any]) -> str:
 
 def _prompt(payload: Mapping[str, Any]) -> str:
     value = payload.get("prompt")
-    if not isinstance(value, str):
-        return ""
+    if not isinstance(value, str) or not value.strip():
+        # Kiro's PromptSubmit contract exposes the user text through this
+        # environment variable while sending session metadata on stdin.
+        value = os.environ.get("USER_PROMPT", "")
     return value.strip()[:MAX_PROMPT_CHARS]
 
 
 def _project_dir(payload: Mapping[str, Any]) -> Path:
     raw = payload.get("cwd")
+    if not isinstance(raw, str) or not raw.strip():
+        raw = os.environ.get("CURSOR_PROJECT_DIR")
     candidate = Path(raw) if isinstance(raw, str) and raw.strip() else Path.cwd()
     try:
         resolved = candidate.expanduser().resolve()
@@ -245,6 +334,249 @@ def _write_receipt(receipt: Mapping[str, Any], state_dir: Path) -> Path:
         except OSError:
             pass
     return destination
+
+
+def _kiro_hook_document() -> dict[str, Any]:
+    return {
+        "version": "v1",
+        "hooks": [
+            {
+                "name": KIRO_HOOK_NAME,
+                "description": (
+                    "Select bounded local context before agent planning and record "
+                    "activation evidence."
+                ),
+                "trigger": "PromptSubmit",
+                "action": {
+                    "type": "command",
+                    "command": (
+                        "entroly activation hook --host kiro --output-format "
+                        "context --budget 1200 --max-files 200"
+                    ),
+                },
+                "timeout": 30,
+                "enabled": True,
+            }
+        ],
+    }
+
+
+def _is_managed_kiro_hook(document: object) -> bool:
+    if not isinstance(document, Mapping):
+        return False
+    hooks = document.get("hooks")
+    return (
+        isinstance(hooks, list)
+        and len(hooks) == 1
+        and isinstance(hooks[0], Mapping)
+        and hooks[0].get("name") == KIRO_HOOK_NAME
+        and hooks[0].get("trigger") == "PromptSubmit"
+    )
+
+
+def configure_kiro_hook(
+    project_dir: Path,
+    *,
+    uninstall: bool = False,
+    force: bool = False,
+) -> dict[str, Any]:
+    """Install or reversibly disable Entroly's dedicated Kiro project hook."""
+
+    project = project_dir.expanduser().resolve()
+    if not project.is_dir():
+        raise ValueError(f"project directory does not exist: {project}")
+    target = project / KIRO_HOOK_RELATIVE_PATH
+    desired = _kiro_hook_document()
+
+    existing: object = None
+    if target.exists():
+        try:
+            existing = json.loads(target.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            existing = None
+
+    if uninstall:
+        if not target.exists():
+            return {"status": "not_installed", "host": "kiro", "path": str(target)}
+        if not _is_managed_kiro_hook(existing):
+            return {
+                "status": "conflict",
+                "host": "kiro",
+                "path": str(target),
+                "detail": "refusing to move an unrecognized hook file",
+            }
+        disabled = target.with_name(
+            f"{target.name}.entroly-disabled-{time.strftime('%Y%m%d%H%M%S')}-"
+            f"{uuid.uuid4().hex[:8]}"
+        )
+        target.replace(disabled)
+        return {
+            "status": "disabled",
+            "host": "kiro",
+            "path": str(target),
+            "recoverable_at": str(disabled),
+        }
+
+    if existing == desired:
+        return {"status": "already_installed", "host": "kiro", "path": str(target)}
+
+    if target.exists():
+        if not force:
+            return {
+                "status": "conflict",
+                "host": "kiro",
+                "path": str(target),
+                "detail": "target exists; use --force to create a timestamped backup",
+            }
+    backup = _replace_json_with_backup(target, desired)
+
+    result: dict[str, Any] = {
+        "status": "installed",
+        "host": "kiro",
+        "path": str(target),
+    }
+    if backup is not None:
+        result["backup"] = str(backup)
+    return result
+
+
+def _cursor_hook_entry() -> dict[str, Any]:
+    return {
+        "matcher": "*",
+        "hooks": [
+            {
+                "type": "command",
+                "command": CURSOR_HOOK_COMMAND,
+                "timeout": 30,
+            }
+        ],
+    }
+
+
+def _is_managed_cursor_entry(entry: object) -> bool:
+    if not isinstance(entry, Mapping):
+        return False
+    commands = entry.get("hooks")
+    return (
+        isinstance(commands, list)
+        and len(commands) == 1
+        and isinstance(commands[0], Mapping)
+        and commands[0].get("command") == CURSOR_HOOK_COMMAND
+    )
+
+
+def _replace_json_with_backup(
+    target: Path, document: Mapping[str, Any]
+) -> Path | None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(
+        prefix=".entroly-config-", suffix=".json", dir=str(target.parent)
+    )
+    backup: Path | None = None
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
+            json.dump(document, stream, indent=2)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        if target.exists():
+            backup = target.with_name(
+                f"{target.name}.entroly-backup-"
+                f"{time.strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+            )
+            target.replace(backup)
+        try:
+            os.replace(temp_name, target)
+        except OSError:
+            if backup is not None and not target.exists():
+                backup.replace(target)
+            raise
+    finally:
+        Path(temp_name).unlink(missing_ok=True)
+    return backup
+
+
+def configure_cursor_hook(
+    project_dir: Path,
+    *,
+    uninstall: bool = False,
+) -> dict[str, Any]:
+    """Merge a Claude-compatible prompt hook used by Cursor into local settings."""
+
+    project = project_dir.expanduser().resolve()
+    if not project.is_dir():
+        raise ValueError(f"project directory does not exist: {project}")
+    target = project / CURSOR_HOOK_RELATIVE_PATH
+    if target.exists():
+        try:
+            document = json.loads(target.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return {
+                "status": "conflict",
+                "host": "cursor",
+                "path": str(target),
+                "detail": "refusing to rewrite settings that are not valid JSON",
+            }
+        if not isinstance(document, dict):
+            return {
+                "status": "conflict",
+                "host": "cursor",
+                "path": str(target),
+                "detail": "refusing to rewrite settings that are not a JSON object",
+            }
+    else:
+        document = {}
+
+    hooks = document.setdefault("hooks", {})
+    if not isinstance(hooks, dict):
+        return {
+            "status": "conflict",
+            "host": "cursor",
+            "path": str(target),
+            "detail": "settings hooks field is not an object",
+        }
+    entries = hooks.setdefault("UserPromptSubmit", [])
+    if not isinstance(entries, list):
+        return {
+            "status": "conflict",
+            "host": "cursor",
+            "path": str(target),
+            "detail": "UserPromptSubmit settings are not a list",
+        }
+
+    managed = [index for index, item in enumerate(entries) if _is_managed_cursor_entry(item)]
+    if uninstall:
+        if not managed:
+            return {"status": "not_installed", "host": "cursor", "path": str(target)}
+        hooks["UserPromptSubmit"] = [
+            item for index, item in enumerate(entries) if index not in managed
+        ]
+        backup = _replace_json_with_backup(target, document)
+        return {
+            "status": "disabled",
+            "host": "cursor",
+            "path": str(target),
+            "recoverable_at": str(backup) if backup is not None else None,
+        }
+
+    if managed:
+        return {
+            "status": "already_installed",
+            "host": "cursor",
+            "path": str(target),
+            "manual_requirement": "enable Cursor third-party skills and configurations",
+        }
+    entries.append(_cursor_hook_entry())
+    backup = _replace_json_with_backup(target, document)
+    result: dict[str, Any] = {
+        "status": "installed",
+        "host": "cursor",
+        "path": str(target),
+        "manual_requirement": "enable Cursor third-party skills and configurations",
+    }
+    if backup is not None:
+        result["backup"] = str(backup)
+    return result
 
 
 def _additional_context(receipt: Mapping[str, Any], selection: ActivationSelection) -> str:
@@ -292,8 +624,8 @@ def run_hook(
             selection = (selector or _select_with_engine)(
                 query,
                 project_dir,
-                max(256, int(token_budget)),
-                max(1, int(max_files)),
+                min(MAX_TOKEN_BUDGET, max(256, int(token_budget))),
+                min(MAX_FILES_PER_HOOK, max(1, int(max_files))),
             )
         except Exception as exc:  # fail open: the user's task must still run
             selection = ActivationSelection(
@@ -348,12 +680,18 @@ def run_hook(
             "hookEventName": event,
             "additionalContext": _additional_context(receipt, selection),
         },
-        "systemMessage": (
-            f"Entroly activation: {selection.status} "
-            f"({len(selection.sources)} sources, {receipt['elapsed_ms']} ms)"
-        ),
         "suppressOutput": True,
     }
+
+
+def hook_context(output: Mapping[str, Any]) -> str:
+    """Extract context for hosts, such as Kiro, that consume stdout as text."""
+
+    specific = output.get("hookSpecificOutput")
+    if not isinstance(specific, Mapping):
+        return ""
+    context = specific.get("additionalContext")
+    return context if isinstance(context, str) else ""
 
 
 def parse_hook_input(raw: str) -> dict[str, Any]:
@@ -397,18 +735,52 @@ def activation_status(
         key=lambda item: float(item.get("recorded_at_unix", 0) or 0),
         default=None,
     )
+    effective_receipts = [
+        item
+        for item in receipts
+        if item.get("status") in {"activated", "no_match"}
+        and item.get("native_engine") is True
+    ]
+    latest_is_effective = latest in effective_receipts
+    latest_age_seconds = (
+        max(0.0, time.time() - float(latest.get("recorded_at_unix", 0) or 0))
+        if latest is not None
+        else None
+    )
+    if (
+        latest_is_effective
+        and latest_age_seconds is not None
+        and latest_age_seconds <= ACTIVE_FRESHNESS_SECONDS
+    ):
+        state = "active"
+    elif latest_is_effective:
+        state = "stale"
+    elif receipts:
+        state = "observed_degraded"
+    else:
+        state = "unobserved"
+
     return {
         "schema_version": SCHEMA_VERSION,
         "project_fingerprint": _project_fingerprint(project),
         "source_root": str(project),
-        "state": "active" if receipts else "installed_but_unobserved",
+        "state": state,
         "activation_events": len(receipts),
+        "effective_activation_events": len(effective_receipts),
         "by_status": by_status,
         "by_host": by_host,
         "latest": latest,
+        "latest_effective": max(
+            effective_receipts,
+            key=lambda item: float(item.get("recorded_at_unix", 0) or 0),
+            default=None,
+        ),
+        "latest_age_seconds": latest_age_seconds,
+        "active_freshness_seconds": ACTIVE_FRESHNESS_SECONDS,
         "claim_boundary": (
-            "Installed means files/config exist; active requires at least one "
-            "locally recorded host-hook activation."
+            "Active requires a recent native hook run that selected context or "
+            "reached a valid no-match decision. Unobserved does not prove "
+            "installation."
         ),
     }
 
@@ -416,6 +788,9 @@ def activation_status(
 __all__ = [
     "ActivationSelection",
     "activation_status",
+    "configure_cursor_hook",
+    "configure_kiro_hook",
+    "hook_context",
     "parse_hook_input",
     "run_hook",
 ]

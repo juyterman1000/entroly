@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "Entroly — Context Compression & Receipts for GitHub",
+  "version": "1.0.84",
+  "description": "Select and compress GitHub repository context for AI tools with auditable receipts.",
+  "permissions": [
+    "activeTab",
+    "contextMenus",
+    "storage",
+    "clipboardWrite"
+  ],
+  "host_permissions": [
+    "https://github.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Entroly Context Compressor"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://github.com/*/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

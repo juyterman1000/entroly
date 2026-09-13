@@ -7,6 +7,10 @@
 <p align="center"><b>Every selection emits a receipt: what was kept, what was omitted, and the handle that recovers the exact original bytes.</b><br>
 Compression you can undo, on your own repository, in one command — without replacing your model or agent architecture.</p>
 
+<p align="center">
+  <img src="docs/assets/entroly-demo.svg" alt="Entroly compresses 1.4M tokens to 120K with zero accuracy loss and a Merkle receipt" width="820">
+</p>
+
 <p align="center"><code>pip install -U entroly && entroly go</code></p>
 <p align="center">
   <sub>Entroly is an open-source, local-first AI token-efficiency and Context Assurance layer: budgeted evidence selection, recoverable context compression, content-addressed evidence recovery, and auditable receipts. Works through proxy, MCP, plugin, wrapper, and SDK paths with Claude Code, Codex, OpenClaw, GitHub Copilot, Cursor, Aider, and OpenAI/Anthropic-compatible apps.</sub>
@@ -20,8 +24,59 @@ Compression you can undo, on your own repository, in one command — without rep
   <a href="benchmarks/results/receipt_fragment_fidelity_default.json"><img src="https://img.shields.io/badge/Source_spans-5%2C117%2F5%2C117_verified-0A7B83" alt="5,117 of 5,117 native source fragments independently verified"></a>
   <a href="benchmarks/results/receipt_public_integrity.json"><img src="https://img.shields.io/badge/SDK_recovery-13%2F13_exact-blueviolet" alt="13 of 13 public SDK recovery probes exactly matched their source spans"></a>
   <a href="https://github.com/juyterman1000/entroly"><img src="https://img.shields.io/github/stars/juyterman1000/entroly?style=social" alt="Entroly GitHub stars"></a>
+  <a href="https://github.com/juyterman1000/entroly/actions"><img src="https://img.shields.io/github/actions/workflow/status/juyterman1000/entroly/ci.yml?label=CI" alt="CI status"></a>
+  <a href="https://github.com/juyterman1000/entroly/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22"><img src="https://img.shields.io/badge/contributions-welcome-brightgreen" alt="Contributions welcome"></a>
 </p>
 
+<p align="center">
+  <b>English · <a href="docs/i18n/README.zh.md">简体中文</a> · <a href="docs/i18n/README.zh-TW.md">繁體中文</a> · <a href="docs/i18n/README.ja.md">日本語</a> · <a href="docs/i18n/README.ko.md">한국어</a> · <a href="docs/i18n/README.es.md">Español</a> · <a href="docs/i18n/README.hi.md">हिन्दी</a> · <a href="docs/i18n/README.fr.md">Français</a> · <a href="docs/i18n/README.de.md">Deutsch</a> · <a href="docs/i18n/README.pt-BR.md">Português</a> · <a href="docs/i18n/README.it.md">Italiano</a> · <a href="docs/i18n/README.tr.md">Türkçe</a> · <a href="docs/i18n/README.vi.md">Tiếng Việt</a> · <a href="docs/i18n/README.id.md">Bahasa Indonesia</a> · <a href="docs/i18n/README.pl.md">Polski</a> · <a href="docs/i18n/README.nl.md">Nederlands</a> · <a href="docs/i18n/README.th.md">ไทย</a> · <a href="docs/i18n/README.sv.md">Svenska</a> · <a href="docs/i18n/README.cs.md">Čeština</a> · <a href="docs/i18n/README.tl.md">Tagalog</a> · <a href="docs/i18n/README.ro.md">Română</a></b>
+</p>
+
+## Accuracy Retention
+
+> Does Entroly compression degrade LLM answer quality? **No.** All 6 confidence intervals overlap baseline.
+
+<sub>Model: <code>gpt-4o-mini</code> · Budget: 50K tokens · Wilson 95% CI · Reproduce: <code>python -m bench.accuracy --benchmark all</code></sub>
+
+| Benchmark | n | Baseline (95% CI) | Entroly (95% CI) | Retention | Token Savings |
+|---|---|---|---|---|---|
+| **NeedleInAHaystack** | 20 | 100.0% [83.9–100%] | 100.0% [83.9–100%] | **100.0%** | 0.0% |
+| **GSM8K** | 100 | 85.0% [76.7–90.7%] | 86.0% [77.9–91.5%] | **101.2%** | 3.6% |
+| **SQuAD 2.0** | 100 | 84.0% [75.6–89.9%] | 83.0% [74.5–89.1%] | **98.8%** | 0.8% |
+| **MMLU** (4-way MCQ) | 100 | 82.0% [73.3–88.3%] | 85.0% [76.7–90.7%] | **103.7%** | 0.0% |
+| **TruthfulQA** (MC1) | 100 | 72.0% [62.5–79.9%] | 73.0% [63.6–80.7%] | **101.4%** | 0.1% |
+| **LongBench** (HotpotQA) | 100 | 57.0% [47.2–66.3%] | 59.8% [49.8–69.0%] | **104.9%** | 3.6% |
+
+<sub>Average retention <b>101.7%</b> — accuracy is statistically indistinguishable from raw context across all benchmarks.</sub>
+
+### Context Selection Quality
+
+<sub>19-fragment corpus · 300-token budget · 3 real-world queries · Reproduce: <code>entroly benchmark</code></sub>
+
+| Metric | RAW (Naive FIFO) | TOP-K (Cody/Copilot-style) | **ENTROLY (Knapsack)** |
+|---|---|---|---|
+| Avg fragments selected | 6.0 | 6.0 | **8.7** |
+| Avg module coverage | 3.0 | 3.7 | **8.7** |
+| Total SAST catches | 0 | 0 | **3** |
+
+<sub>Entroly sees <b>8.7 modules</b> where TOP-K sees 3.7 — it includes auth, payments, AND rate limiting. TOP-K misses the rate limiter. <a href="BENCHMARKS.md">Full methodology, CIs, and reproduce commands →</a></sub>
+
+---
+
+## Research
+
+Entroly implements six research-grade algorithms with production implementations:
+
+| Algorithm | What it does | Implementation |
+|---|---|---|
+| **BIPT** | Byte-level hallucination detection via Kolmogorov-inspired provenance tracing | [`provenance_tracer.py`](entroly/verifiers/provenance_tracer.py) |
+| **NKBE** | Nash-KKT multi-agent token budget equilibrium | [`nkbe.rs`](entroly-core/src/nkbe.rs) |
+| **Causal Context Graph** | Intervention-aware fragment feedback learning | [`causal.rs`](entroly-core/src/causal.rs) |
+| **Cognitive Bus** | ISA event routing with KL-divergence priority | [`cognitive_bus.rs`](entroly-core/src/cognitive_bus.rs) |
+| **Resonance Matrix** | Supermodular pairwise fragment value learning | [`resonance.rs`](entroly-core/src/resonance.rs) |
+| **System 1 <> 2** | Dual-process verified-belief bridge (proxy <> vault) | [`coupling.py`](entroly/coupling.py) |
+
+> [Read the full research documentation](docs/RESEARCH.md) · [Cite Entroly](CITATION.cff)
 ---
 
 <p align="center">
@@ -62,8 +117,11 @@ that safe to do:
 | 💰 **Your bill goes down** | Fewer words sent to the AI means a smaller invoice. How much depends on the job — see the [real numbers](#benchmarks) below. |
 | 🔍 **Nothing is lost** | Whatever Entroly sets aside is kept and can be pulled back *exactly* as it was, character for character. |
 | 🧾 **You can check its work** | Every decision comes with a receipt: what was kept, what was left out, and why. |
-**Do I have to change my code?** No. Entroly works with the tools you already
-use — Claude Code, Cursor, Copilot and 30+ others — and runs in the background.
+**Do I have to change my code?** No. On hosts with a verified prompt hook,
+Entroly runs before the model plans. MCP-only integrations remain callable
+tools that an agent may skip; API traffic is intercepted only when it is routed
+through the Entroly proxy. Check `entroly activation status --json` instead of
+assuming an installed integration is active.
 
 **Do I need to pay for anything to try it?** No. The two commands in the
 [Install](#install) section below run on your own machine, with no API key, and
@@ -140,8 +198,14 @@ only optional workspace, offline, provider, and proxy settings.
 | 🟢 **"I just want it on."** *(pip / Python user)* | `pip install -U entroly && entroly go` | Auto-detects your editor, wraps your agent, opens a dashboard showing tokens before and after |
 | **"I use Node, not Python."** *(npm user)* | `npm install -g entroly && entroly init` | Same engine, nothing Python required |
 | **"I want one binary, no runtime."** *(Rust user)* | `cargo build --release --bin entroly-rs --features proxy` (from `entroly-core/`) | A single native program with no dependencies |
-| **"I use Claude Code / Cursor / Windsurf / VS Code."** *(MCP user)* | `entroly attach create --client claude --project . --ttl 4h --install` (or `entroly init` for Cursor/VS Code) | Your editor gets compression, receipts, exact recovery, and evidence-backed work continuity as built-in tools — access expires on its own, and you change zero code |
+| **"I use Claude Code, Codex, Gemini CLI, or VS Code agent plugins."** *(plugin user)* | Install the Entroly plugin/extension for that host, submit one prompt, then run `entroly activation status --json` | A trusted prompt hook performs bounded local selection before planning; a receipt proves the hook ran |
+| **"I use Cursor with third-party configs enabled."** | `entroly activation install --host cursor --project .` | Merges a reversible Claude-compatible prompt hook; native Cursor MCP remains advisory |
+| **"I use Kiro IDE 1.x or CLI 3.x."** | `entroly activation install --host kiro --project .` | Installs a reversible project `PromptSubmit` hook whose stdout is added to agent context |
+| **"I use another MCP host."** | `entroly attach create --client claude --project . --ttl 4h --install` or the client-specific command in the compatibility matrix | Scoped Entroly tools and receipts; the model can still skip MCP unless the host has a verified lifecycle hook |
 | **"I'm building my own app in Python."** *(SDK user)* | `from entroly import compress, compress_messages, optimize` | Call it straight from your code, anywhere you assemble a prompt |
+
+Cursor MCP users can also use this one-click install link (no marketplace
+account required): [Add Entroly to Cursor](cursor://anysphere.cursor-deeplink/mcp/install?name=entroly&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImVudHJvbHktbWNwQDEuMC44NCIsInNlcnZlIl0sImVudiI6eyJFTlRST0xZX05PX0RPQ0tFUiI6IjEiLCJFTlRST0xZX01DUF9QQVNTSVZFIjoiMSIsIkVOVFJPTFlfTUFYX0ZJTEVTIjoiMjAwIn19).
 | **"I have an API key and my own app."** *(proxy user)* | `entroly proxy` → point `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` / `GOOGLE_GEMINI_BASE_URL` at `localhost:9377` | Every request gets optimized on the way past — no code changes on your side |
 
 <sub>**Runaway-session rescue — automatic on the proxy, callable everywhere else.**
@@ -235,22 +299,115 @@ Recovery, latency, and head-to-head frontier results are in **[docs/BENCHMARKS.m
 - **Doesn't wreck your caching** — keeps the unchanging parts of your prompt stable so your provider's discount for repeated text still applies.
 - **Rescues sessions before they crash** — when a conversation grows too big, it trims recoverable output instead of letting the provider reject the request mid-task.
 - **Can route cheap work to cheap models** — optional and fail-closed when uncertain.
+- **Cross-agent shared memory** — Claude, Codex, Cursor, and Gemini can read and write the same compressed context store with automatic SimHash deduplication and agent provenance tracking.
+- **Output token reduction** — effort-based routing classifies query complexity and steers model verbosity, reducing output tokens alongside input tokens.
+- **Shell hook compression** — transparent CLI output compression for git, npm, cargo, docker, pytest, kubectl, and terraform. Preserves errors and warnings, strips progress bars and boilerplate.
+- **Image compression** — 40-90% reduction on screenshots and diagrams for vision API calls, with optional OCR text extraction.
+- **Failure mining** — `entroly learn --deep` mines session data for recurring failure patterns and writes corrections to CLAUDE.md, .cursorrules, and other agent configs.
 
 Runs as a **CLI**, **Python/TypeScript SDK**, **MCP server**, **HTTP proxy**, or **library import**. Full surface map: **[docs/product-surface.md](docs/product-surface.md)**. Architecture and Rust internals: **[docs/DETAILS.md](docs/DETAILS.md)**.
 
 ---
+## How Entroly compares
+
+Most context tools compress and hope. Entroly is an **auditable context control plane** — every selection is receipted, every compression is reversible, and every claim is verifiable.
+
+| Capability | Entroly | Baseline A | Baseline B | Baseline C |
+|---|:---:|:---:|:---:|:---:|
+| Knapsack-optimal token selection | **yes** | no | no | no |
+| Auditable context receipts | **yes** | no | partial | no |
+| Hallucination detection (WITNESS) | **yes** | no | no | no |
+| Fail-closed model routing (RAVS) | **yes** | no | no | no |
+| Cross-agent shared memory | **yes** | yes | partial | no |
+| Output token reduction | **yes** | yes | no | no |
+| Reversible compression (CCR) | **yes** | yes | yes | no |
+| KV-cache alignment | **yes** | yes | yes | no |
+| Shell hook compression | **yes** | no | yes | no |
+| Image/multimodal compression | **yes** | yes | no | no |
+| Rust-accelerated engine | **yes** | no | yes | no |
+| Self-improving (evolution daemon) | **yes** | partial | no | no |
+| Persistent vault with beliefs | **yes** | no | yes | no |
+| MCP server | **yes** | yes | yes | no |
+| HTTP proxy | **yes** | yes | no | no |
+| TypeScript SDK + framework adapters | **yes** | yes | no | yes |
+| Python SDK | **yes** | yes | no | yes |
+
+**What's different:** Entroly is the only tool that combines optimal selection (knapsack solver with provable guarantees) with auditable receipts (byte-offset fragments, SHA-256 digests, inspectable omissions) and verification (WITNESS grounding checks, EICV hallucination detection). Competitors compress tokens — Entroly compresses tokens *and proves what was kept, what was dropped, and why*.
+
+---
 ## Works with your stack
+
+Install the public Codex plugin from the Entroly repository:
+
+```console
+codex plugin marketplace add juyterman1000/entroly --ref main
+codex plugin add entroly@entroly-public
+```
+
+Restart Codex, review and trust the hook, then run `entroly activation status
+--json` after a task. The marketplace installs the local Node/WASM runtime with
+the plugin; the model does not have to remember to call an MCP tool before
+Entroly runs. A receipt proves that the hook executed and selected local
+context or made an explicit no-match decision. It does not prove token or cost
+savings without a matched provider-bound baseline.
+
+Install the same public repository as a Gemini CLI extension:
+
+```console
+gemini extensions install https://github.com/juyterman1000/entroly --ref main --consent
+```
+
+Restart Gemini CLI after installation. The repository root contains
+`gemini-extension.json` and `GEMINI.md`, so the command works without navigating
+into an integration subdirectory.
+
+For VS Code or Kiro, download the `entroly-vscode-*.vsix` asset from the latest
+[GitHub release](https://github.com/juyterman1000/entroly/releases/latest), then
+install it with **Extensions: Install from VSIX** or `code --install-extension`.
+The extension is self-contained and does not require an API key.
+
+JetBrains AI Assistant users can add the same server globally at **Settings →
+Tools → AI Assistant → Model Context Protocol (MCP)**:
+
+```json
+{
+  "mcpServers": {
+    "entroly": {
+      "command": "npx",
+      "args": ["-y", "entroly-mcp@1.0.84", "serve"],
+      "env": {
+        "ENTROLY_NO_DOCKER": "1",
+        "ENTROLY_MCP_PASSIVE": "1",
+        "ENTROLY_MAX_FILES": "200"
+      }
+    }
+  }
+}
+```
+
+The MCP path is provider-neutral: the host can use OpenAI, Anthropic, Google,
+Mistral, DeepSeek, Kimi, GLM, or a local model. There is no separate plugin
+marketplace for each model provider; the host's MCP or extension contract is
+the integration boundary.
+
 | Agent / platform | Path | Status |
 |---|---|---|
-| Claude Code | Scoped MCP attachment; API-key proxy | Native |
-| Codex CLI | Scoped MCP attachment; API-key proxy | Native |
+| Claude Code | Bundled `UserPromptSubmit` hook + scoped MCP | Deterministic after plugin enablement |
+| Codex CLI / app | Bundled `UserPromptSubmit` hook + scoped MCP | Deterministic after hook trust |
+| Gemini CLI | Bundled `BeforeAgent` hook + scoped MCP | Deterministic after extension enablement |
 | OpenClaw | Context-engine plugin + scoped MCP | Native |
-| Cursor / Windsurf / VS Code | Automatic MCP config | Automatic |
+| Cursor | Claude-compatible project hook; MCP or proxy fallback | Deterministic only when third-party configs are enabled |
+| Kiro IDE 1.x / CLI 3.x | Project `PromptSubmit` hook | Deterministic after project install |
+| VS Code / Copilot agent mode | Agent-plugin hook where supported; MCP fallback | Host-version dependent |
+| IntelliJ / JetBrains AI | MCP or supported custom endpoint | Advisory until a lifecycle hook is verified |
 | GitHub Copilot CLI | MCP (subscription) / proxy (BYOK) | Supported |
 | Cortex Code | SDK/library boundary only | Not validated as a wrap target |
 | Aider, OpenCode, and 30+ more | Session-scoped OpenAI-compatible proxy | One command |
 
-Status describes integration depth, not a savings guarantee — provider-observed savings require requests to actually traverse an Entroly proxy route. Entroly does not claim interception of GitHub-hosted subscription inference on Copilot's native path. Full compatibility matrix: **[docs/agent-compatibility.md](docs/agent-compatibility.md)**.
+Hook enforcement belongs to the host, so it is independent of whether that
+host runs an OpenAI, Anthropic, Gemini, Kimi, DeepSeek, Mistral, or GLM model.
+Status describes integration depth, not a savings guarantee. Provider-observed
+savings require requests to traverse an Entroly proxy route. Entroly does not claim interception of GitHub-hosted subscription inference on Copilot's native path. Full compatibility matrix: **[docs/agent-compatibility.md](docs/agent-compatibility.md)**.
 
 Entroly carries verified metadata for current models from OpenAI, Anthropic, Google, Meta, and others. It auto-discovers local Ollama models. Model-specific details: **[docs/DETAILS.md](docs/DETAILS.md)**.
 
@@ -288,7 +445,7 @@ entroly govern audit verify                    # exit non-zero on a broken chain
 
 Authorization is deny-by-default and every denial names the policy and the reason it gave. `audit verify` checks that recorded entries were not altered after the fact — it does not prove every action was recorded, and `govern status` reports the state of the local control plane only, not an attestation that each agent action passed through it. Identity tokens are unsigned unless `ENTROLY_IDENTITY_KEY` is set, and the credential is never printed.
 
-Also available: `entroly wrap`, `entroly unwrap`, `entroly serve`, `entroly daemon`, `entroly dashboard`, `entroly demo`, `entroly capabilities`, `entroly ingest`, `entroly select`, `entroly receipt`, `entroly explain`, `entroly context-commit`, `entroly proof`, `entroly benchmark`, `entroly cache`, `entroly ravs`, `entroly perf`, `entroly batch`. Full description: [command reference](docs/DETAILS.md#command-reference).
+Also available: `entroly wrap`, `entroly unwrap`, `entroly serve`, `entroly daemon`, `entroly dashboard`, `entroly demo`, `entroly capabilities`, `entroly ingest`, `entroly select`, `entroly receipt`, `entroly explain`, `entroly context-commit`, `entroly proof`, `entroly benchmark`, `entroly cache`, `entroly ravs`, `entroly perf`, `entroly batch`, `entroly usage`. Full description: [command reference](docs/DETAILS.md#command-reference).
 
 ---
 ## Common questions
@@ -328,6 +485,56 @@ If you use an AI coding tool like Claude Code or Cursor, yes. Install it (`pip i
 <br>
 Run `entroly doctor`. If that doesn't sort it, [open an issue](https://github.com/juyterman1000/entroly/issues) or ask in [Discussions](https://github.com/juyterman1000/entroly/discussions).
 </details>
+
+### Cross-agent shared memory
+
+Content-addressed store with SimHash deduplication and BM25 search. Multiple agents (Claude Code, Codex, Cursor) write and query the same knowledge base with provenance tracking.
+
+```python
+from entroly import shared_memory_write, shared_memory_search
+shared_memory_write("Auth uses JWT with RS256", agent_id="claude-code", tags=["auth"])
+results = shared_memory_search("authentication tokens")  # finds it, from any agent
+```
+
+### Output token reduction
+
+Three-layer pipeline: effort classification steers verbosity directives, `max_tokens` budgets cap generation, and post-generation distillation trims filler. A "yes/no" query gets 150 max tokens; a detailed architecture review gets 16,384.
+
+### Shell hook compression
+
+Command-specific patterns for git, npm, cargo, docker, pytest, kubectl, and terraform strip progress bars, deprecation warnings, and boilerplate while preserving errors and key results. Full output is recoverable via content-addressed handles.
+
+```bash
+entroly hook install     # adds transparent compression to your shell
+entroly hook status      # shows which shells have the hook
+```
+
+### Failure mining
+
+`entroly learn --deep` mines PRISM feedback, vault beliefs, evolution daemon, and checkpoint data for recurring failure patterns, then generates corrections for agent config files.
+
+---
+
+## How Entroly compares
+
+Entroly is the only tool that combines optimal selection (knapsack solver with provable guarantees) with auditable receipts (byte-offset fragments, SHA-256 digests, inspectable omissions) and verification (WITNESS grounding checks, EICV hallucination detection).
+
+| Capability | Entroly | Prompt compressors | Memory layers |
+|---|---|---|---|
+| Knapsack-optimal token selection | Yes (DP + greedy) | Heuristic | No |
+| Auditable context receipts | Yes (byte-offset, SHA-256) | No | No |
+| Cross-agent shared memory | Yes (SimHash dedup, BM25) | No | Yes |
+| Output token reduction | Yes (3-layer pipeline) | No | No |
+| Shell output compression | Yes (7 command patterns) | No | No |
+| Image/multimodal compression | Yes (resize + OCR) | No | No |
+| Grounding verification (WITNESS) | Yes (NLI-backed) | No | No |
+| Hallucination detection (EICV) | Yes (6-layer hierarchy) | No | No |
+| Bayesian model routing (RAVS) | Yes (fail-closed) | No | No |
+| Failure mining / self-improvement | Yes (PRISM feedback loop) | No | Partial |
+| TypeScript SDK + adapters | Yes (LangChain, LlamaIndex) | Partial | Partial |
+| Local-first (no cloud required) | Yes | Varies | No |
+| MCP protocol native | Yes (40+ tools) | No | No |
+| Rust-accelerated engine | Yes (PyO3 + WASM) | No | No |
 
 ---
 ## Documentation

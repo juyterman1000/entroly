@@ -1,0 +1,20 @@
+{
+  "name": "entroly-public",
+  "interface": {
+    "displayName": "Entroly"
+  },
+  "plugins": [
+    {
+      "name": "entroly",
+      "source": {
+        "source": "local",
+        "path": "./integrations/codex/entroly"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

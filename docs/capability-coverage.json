@@ -1,0 +1,229 @@
+{
+  "schema_version": "entroly.capability-coverage.v1",
+  "capabilities": [
+    {
+      "id": "context_compression",
+      "status": "production",
+      "implementation": [
+        "entroly/engine.py",
+        "entroly/sdk.py",
+        "entroly-engine/src/knapsack.rs",
+        "entroly-engine/src/knapsack_sds.rs",
+        "entroly-engine/src/entropy.rs",
+        "entroly-engine/src/bm25.rs",
+        "entroly-engine/src/semantic_dedup.rs",
+        "entroly-core/src/cogops.rs"
+      ],
+      "tests": [
+        "tests/test_e2e.py::test_knapsack_selects_optimal_subset",
+        "tests/test_ios.py::test_diverse_selection_over_redundant"
+      ],
+      "docs": [
+        "docs/DETAILS.md",
+        "docs/BENCHMARKS.md"
+      ],
+      "package_surfaces": ["python-sdk", "cli", "mcp", "proxy", "rust"],
+      "public_entrypoints": ["entroly.sdk.compress", "entroly.sdk.compress_messages"],
+      "limitations": "Submodular diversity penalty can break monotonicity; no tight worst-case ratio is claimed for IOS. Benchmark sample sizes are n=20-50 per row."
+    },
+    {
+      "id": "context_receipts",
+      "status": "production",
+      "implementation": [
+        "entroly/context_receipts/models.py"
+      ],
+      "tests": [
+        "tests/test_context_receipts.py::test_selector_adds_transitive_dependency_closure_atomically"
+      ],
+      "docs": [
+        "docs/receipt-proof-layer.md"
+      ],
+      "package_surfaces": ["python-sdk", "mcp"],
+      "public_entrypoints": ["entroly.sdk.compress_with_receipt"],
+      "limitations": "Receipt fragments carry exact UTF-8 byte offsets; cross-backend byte-fidelity is not yet fully verified."
+    },
+    {
+      "id": "epistemic_routing",
+      "status": "production",
+      "implementation": [
+        "entroly/epistemic_router.py",
+        "entroly/flow_orchestrator.py",
+        "entroly/query_refiner.py"
+      ],
+      "tests": [
+        "tests/test_deep_functional.py::test_rapid_fire_ingest"
+      ],
+      "docs": [
+        "docs/architecture.md"
+      ],
+      "package_surfaces": ["python-sdk", "mcp"],
+      "public_entrypoints": ["entroly.epistemic_router.route"],
+      "limitations": "Routing heuristics are empirical; no formal optimality guarantee on flow selection."
+    },
+    {
+      "id": "ravs_model_routing",
+      "status": "production",
+      "implementation": [
+        "entroly/ravs/router.py",
+        "entroly/ravs/verifiers.py",
+        "entroly/ravs/capture.py",
+        "entroly/ravs/controller.py"
+      ],
+      "tests": [
+        "tests/test_conformal_routing.py::test_the_minimum_falls_out_of_the_bound"
+      ],
+      "docs": [
+        "docs/DETAILS.md"
+      ],
+      "package_surfaces": ["python-sdk", "mcp"],
+      "public_entrypoints": ["entroly.ravs.router.route"],
+      "limitations": "Fail-closed: unknown or low-confidence routes to Opus. Bayesian confidence tracking requires observed outcomes to calibrate."
+    },
+    {
+      "id": "witness_verification",
+      "status": "production",
+      "implementation": [
+        "entroly/witness.py",
+        "entroly-core/src/witness.rs"
+      ],
+      "tests": [
+        "tests/test_witness_continuous.py::test_entity_precision_in_signed_unit"
+      ],
+      "docs": [
+        "docs/DETAILS.md"
+      ],
+      "package_surfaces": ["python-sdk", "mcp"],
+      "public_entrypoints": ["entroly.witness.verify"],
+      "limitations": "Default mode without NLI backend can certify contradicted claims as grounded."
+    },
+    {
+      "id": "vault_beliefs",
+      "status": "production",
+      "implementation": [
+        "entroly/vault.py"
+      ],
+      "tests": [
+        "tests/test_deep_functional.py::test_unicode_binary"
+      ],
+      "docs": [
+        "docs/architecture.md"
+      ],
+      "package_surfaces": ["python-sdk", "mcp"],
+      "public_entrypoints": ["entroly.vault.write_belief", "entroly.vault.query"],
+      "limitations": "Every write must include claim_id, entity, confidence, and sources. Token-negative learning contract applies."
+    },
+    {
+      "id": "http_proxy",
+      "status": "production",
+      "implementation": [
+        "entroly/proxy.py"
+      ],
+      "tests": [
+        "tests/test_proxy_providers.py::test_proxy_startup_numeric_env_values_fall_back_when_invalid"
+      ],
+      "docs": [
+        "docs/compression-proxy.md"
+      ],
+      "package_surfaces": ["python-sdk", "cli", "proxy"],
+      "public_entrypoints": ["entroly proxy"],
+      "limitations": "Provider adapters are best-effort; new API formats may require adapter updates."
+    },
+    {
+      "id": "cli",
+      "status": "production",
+      "implementation": [
+        "entroly/cli.py"
+      ],
+      "tests": [
+        "tests/test_cli.py::test_free_port_does_not_terminate_existing_listener"
+      ],
+      "docs": [
+        "docs/TROUBLESHOOTING.md"
+      ],
+      "package_surfaces": ["python-sdk", "cli"],
+      "public_entrypoints": ["entroly"],
+      "limitations": "20+ subcommands; some require native engine for full performance."
+    },
+    {
+      "id": "mcp_server",
+      "status": "production",
+      "implementation": [
+        "entroly/server.py"
+      ],
+      "tests": [
+        "tests/test_e2e.py::test_knapsack_selects_optimal_subset"
+      ],
+      "docs": [
+        "docs/DETAILS.md"
+      ],
+      "package_surfaces": ["python-sdk", "mcp"],
+      "public_entrypoints": ["entroly"],
+      "limitations": "STDIO transport only; HTTP proxy is separate."
+    },
+    {
+      "id": "security_scanning",
+      "status": "production",
+      "implementation": [
+        "entroly-engine/src/sast.rs"
+      ],
+      "tests": [
+        "tests/test_security_hardening.py::test_proxy_sidecar_rejects_cross_origin_browser_requests"
+      ],
+      "docs": [
+        "docs/DETAILS.md"
+      ],
+      "package_surfaces": ["python-sdk", "cli", "mcp", "rust"],
+      "public_entrypoints": ["entroly security-scan"],
+      "limitations": "151 static rules; no taint analysis or inter-procedural flow tracking."
+    },
+    {
+      "id": "shared_memory",
+      "status": "production",
+      "implementation": [
+        "entroly/shared_memory.py",
+        "entroly-engine/src/shared_memory.rs"
+      ],
+      "tests": [
+        "tests/test_agent_capabilities.py::test_shared_memory_write_and_read"
+      ],
+      "docs": [
+        "docs/memory-fabric.md"
+      ],
+      "package_surfaces": ["python-sdk", "mcp", "rust"],
+      "public_entrypoints": ["entroly.sdk.shared_memory_write", "entroly.sdk.shared_memory_search"],
+      "limitations": "SimHash-based dedup uses 64-bit fingerprints; collision rate increases with corpus size."
+    },
+    {
+      "id": "output_steering",
+      "status": "production",
+      "implementation": [
+        "entroly/output_steering.py"
+      ],
+      "tests": [
+        "tests/test_agent_capabilities.py::test_classify_effort_edge_cases"
+      ],
+      "docs": [
+        "docs/DETAILS.md"
+      ],
+      "package_surfaces": ["python-sdk", "mcp"],
+      "public_entrypoints": ["entroly.sdk.classify_effort", "entroly.sdk.steer_output"],
+      "limitations": "Effort classification is heuristic; edge cases between effort levels are not deterministic."
+    },
+    {
+      "id": "image_compression",
+      "status": "production",
+      "implementation": [
+        "entroly/image_compress.py"
+      ],
+      "tests": [
+        "tests/test_agent_capabilities.py::test_image_compress_handles_invalid_bytes"
+      ],
+      "docs": [
+        "docs/DETAILS.md"
+      ],
+      "package_surfaces": ["python-sdk", "mcp"],
+      "public_entrypoints": ["entroly.image_compress.compress_image"],
+      "limitations": "Requires Pillow optional dependency. OCR extraction requires pytesseract or easyocr."
+    }
+  ]
+}

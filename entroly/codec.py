@@ -383,7 +383,9 @@ def pareto_prune(representations: list[Representation]) -> list[Representation]:
 
 
 def estimate_tokens(text: str) -> int:
-    return max(1, len(text) // 4)
+    from .tokens import count_tokens
+
+    return count_tokens(text)
 
 
 def verify_all(

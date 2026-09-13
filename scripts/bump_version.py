@@ -48,6 +48,11 @@ TARGETS = [
     ("entroly/npm/package.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     ("entroly/npm-alias/package.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     ("entroly/npm-alias/package.json", r'"entroly-wasm"\s*:\s*"[^"]+"', '"entroly-wasm": "{v}"'),
+    ("entroly/npm-alias/plugin.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
+    ("entroly/npm-alias/.codex-plugin/plugin.json",
+        r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
+    ("entroly/npm-alias/skills/entroly-evidence-operations/entroly-bundle.json",
+        r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     ("integrations/openclaw/package.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     # Surfaces the 1.0.82 bump had to fix by hand. They were corrected in that
     # release but never added here, so the next bump would have left them
@@ -58,8 +63,11 @@ TARGETS = [
         r'^version:\s*[0-9]+\.[0-9]+\.[0-9]+', 'version: {v}'),
     ("entroly/integrations/hermes_context_engine/plugin.yaml",
         r'entroly>=[0-9]+\.[0-9]+\.[0-9]+', 'entroly>={v}'),
-    ("docs/BENCHMARKS.md",
-        r'entroly-core [0-9]+\.[0-9]+\.[0-9]+', 'entroly-core {v}'),
+    # docs/BENCHMARKS.md contains immutable historical experiment versions.
+    # Rewriting those during a release would falsify benchmark provenance.
+    ("BENCHMARKS.md",
+        r'Engine version: `entroly-core [0-9]+\.[0-9]+\.[0-9]+`',
+        'Engine version: `entroly-core {v}`'),
     ("deploy/cloudflare-community-savings/package.json",
         r'"version"\s*:\s*"[0-9]+\.[0-9]+\.[0-9]+"', '"version": "{v}"'),
     # Version examples shown to a human filling in a manual-dispatch field or an
@@ -96,6 +104,9 @@ TARGETS = [
     (".claude-plugin/marketplace.json",
         r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     (".mcpb-build/manifest.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
+    ("plugin.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
+    ("gemini-extension.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
+    (".mcp.json", r'entroly-mcp@[0-9]+\.[0-9]+\.[0-9]+', 'entroly-mcp@{v}'),
     # Agent bundles and per-host extension manifests. Each declares the product
     # version to its host, and none of them was in this list -- a bump left
     # seven surfaces behind, which `tests/test_version_surfaces_are_complete.py`
@@ -103,6 +114,8 @@ TARGETS = [
     ("skills/entroly-evidence-operations/entroly-bundle.json",
         r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     ("integrations/codex/entroly/.codex-plugin/plugin.json",
+        r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
+    ("integrations/codex/entroly/plugin.json",
         r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     ("integrations/codex/entroly/entroly-bundle.json",
         r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
@@ -112,6 +125,9 @@ TARGETS = [
         r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     ("integrations/gemini/entroly/gemini-extension.json",
         r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
+    ("extensions/chrome/manifest.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
+    ("extensions/firefox/manifest.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
+    ("extensions/vscode/package.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     ("server.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     ("CITATION.cff", r'^version:\s*[^\s]+\s*$', 'version: {v}'),
     ("codemeta.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),

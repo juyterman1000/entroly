@@ -24,7 +24,7 @@ Quick Setup (Claude Code)::
 
 """
 
-__version__ = "1.0.83"
+__version__ = "1.0.84"
 
 # Explicit repair for library users. The CLI restores a missing native engine
 # automatically, but an import path must never do that: installing a package
@@ -58,9 +58,13 @@ try:
         create_context_receipt,
         explain_receipt_omission,
         render_context_receipt,
+        shared_memory_search,
+        shared_memory_write,
     )
 except ImportError:
     pass  # Graceful degradation if dependencies missing
+
+from .tokens import count_tokens, trim_messages  # noqa: F401
 
 # Context Commit: portable, content-addressed proof of what an agent received.
 try:

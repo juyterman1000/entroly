@@ -61,7 +61,7 @@ from pathlib import Path
 try:
     from entroly import __version__
 except ImportError:
-    __version__ = "1.0.83"
+    __version__ = "1.0.84"
 
 from entroly.config import (
     load_active_tuning_config as _load_active_tuning_config,
@@ -216,7 +216,14 @@ def _check_first_run() -> None:
 
 def cmd_activation(args):
     """Run a host lifecycle hook or inspect locally recorded activations."""
-    from .agent_activation import activation_status, parse_hook_input, run_hook
+    from .agent_activation import (
+        activation_status,
+        configure_cursor_hook,
+        configure_kiro_hook,
+        hook_context,
+        parse_hook_input,
+        run_hook,
+    )
 
     if args.activation_action == "status":
         report = activation_status(
@@ -224,6 +231,21 @@ def cmd_activation(args):
         )
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0
+
+    if args.activation_action in {"install", "uninstall"}:
+        if args.host == "kiro":
+            report = configure_kiro_hook(
+                Path(args.project),
+                uninstall=args.activation_action == "uninstall",
+                force=getattr(args, "force", False),
+            )
+        else:
+            report = configure_cursor_hook(
+                Path(args.project),
+                uninstall=args.activation_action == "uninstall",
+            )
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return 2 if report["status"] == "conflict" else 0
 
     try:
         payload = parse_hook_input(sys.stdin.read())
@@ -247,7 +269,13 @@ def cmd_activation(args):
             "systemMessage": "Entroly activation input was invalid",
             "suppressOutput": True,
         }
-    print(json.dumps(result, separators=(",", ":"), sort_keys=True))
+    output_format = args.output_format
+    if output_format == "auto":
+        output_format = "context" if args.host == "kiro" else "json"
+    if output_format == "context":
+        print(hook_context(result))
+    else:
+        print(json.dumps(result, separators=(",", ":"), sort_keys=True))
     return 0
 
 
@@ -2754,6 +2782,39 @@ def cmd_unwrap(args):
 # ── Learn: Failure pattern analysis ──────────────────────────────────
 
 
+def cmd_hook(args):
+    """entroly hook — manage shell hook for transparent CLI compression."""
+    sub = getattr(args, "hook_action", None)
+    if sub is None:
+        print(f"\n{C.CYAN}{C.BOLD}  Entroly Shell Hook{C.RESET}")
+        print("  Usage: entroly hook [install|uninstall|status]\n")
+        return
+
+    from .shell_hook import install_hook, uninstall_hook, hook_status
+    if sub == "install":
+        shell = getattr(args, "shell", None) or None
+        result = install_hook(shell)
+        if result:
+            print(f"\n  {C.GREEN}Hook installed for {result}.{C.RESET}")
+            print(f"  Restart your shell or run: source ~/.{result}rc\n")
+        else:
+            print(f"\n  {C.RED}Could not detect shell. Use --shell bash|zsh|fish{C.RESET}\n")
+    elif sub == "uninstall":
+        shell = getattr(args, "shell", None) or None
+        result = uninstall_hook(shell)
+        if result:
+            print(f"\n  {C.GREEN}Hook removed from {result}.{C.RESET}\n")
+        else:
+            print(f"\n  {C.GRAY}No hook found to remove.{C.RESET}\n")
+    elif sub == "status":
+        status = hook_status()
+        print(f"\n{C.CYAN}{C.BOLD}  Shell Hook Status{C.RESET}")
+        for shell, installed in status.items():
+            icon = f"{C.GREEN}installed" if installed else f"{C.GRAY}not installed"
+            print(f"    {shell:8s} {icon}{C.RESET}")
+        print()
+
+
 def cmd_learn(args):
     """entroly learn — analyze session for failure patterns."""
     if getattr(args, "history", False):
@@ -2834,6 +2895,20 @@ def cmd_learn(args):
                 else:
                     print(f"\n  {C.GRAY}{fname} already has learnings section — remove the old one to refresh.{C.RESET}")
                 break
+
+    if getattr(args, "deep", False):
+        print(f"\n  {C.CYAN}{C.BOLD}Deep Analysis{C.RESET} (mining vault, PRISM, evolution...)\n")
+        from .learn import FailureMiner, learning_report
+        miner = FailureMiner()
+        min_occ = getattr(args, "min_occurrences", 2)
+        patterns = miner.mine(
+            sources=["prism", "vault", "evolution", "checkpoints"],
+            min_occurrences=min_occ,
+        )
+        if patterns:
+            print(learning_report(patterns))
+        else:
+            print(f"  {C.GRAY}No recurring failure patterns found.{C.RESET}")
 
     print()
 
@@ -3533,6 +3608,130 @@ def cmd_value(args):
 
 
 
+def _parse_duration(spec: str) -> float:
+    """Parse a human duration like '1h', '24h', '7d' into a timestamp."""
+    import re as _re
+    spec = spec.strip()
+    m = _re.fullmatch(r"(\d+(?:\.\d+)?)\s*(s|m|h|d|w)", spec)
+    if m:
+        value, unit = float(m.group(1)), m.group(2)
+        multipliers = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
+        return time.time() - value * multipliers[unit]
+    from datetime import datetime, timezone
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
+        try:
+            dt = datetime.strptime(spec, fmt).replace(tzinfo=timezone.utc)
+            return dt.timestamp()
+        except ValueError:
+            continue
+    raise ValueError(f"cannot parse time spec: {spec!r} (use e.g. 24h, 7d, or ISO date)")
+
+
+def cmd_usage(args):
+    """entroly usage — query provider usage and spend."""
+    from .usage_ledger import UsageLedger
+
+    db_path = args.db
+    if not db_path:
+        db_path = os.environ.get("ENTROLY_USAGE_LEDGER", "").strip()
+    if not db_path:
+        db_path = str(_ENTROLY_DIR / "usage-ledger.sqlite3")
+
+    if not Path(db_path).is_file():
+        if getattr(args, "json_output", False):
+            print(json.dumps({"error": "no usage ledger found", "path": db_path}))
+        else:
+            print(f"\n  {C.YELLOW}No usage ledger found at {db_path}{C.RESET}")
+            print(
+                "  Set ENTROLY_USAGE_LEDGER or run the proxy with "
+                "ENTROLY_USAGE_LEDGER=<path> to start recording."
+            )
+        return 1
+
+    ledger = UsageLedger(db_path)
+    try:
+        filters: dict[str, str] = {}
+        if args.model:
+            filters["model"] = args.model
+        if args.provider:
+            filters["provider"] = args.provider
+
+        since = _parse_duration(args.since) if args.since else None
+        until = _parse_duration(args.until) if args.until else None
+
+        if getattr(args, "csv_output", False):
+            print(ledger.export_csv(since=since, until=until, **filters), end="")
+            return
+
+        if getattr(args, "json_output", False):
+            summary = ledger.summary(**filters)
+            events = ledger.query(
+                since=since, until=until, limit=args.limit, **filters
+            )
+            from dataclasses import asdict
+            output = {
+                "summary": summary,
+                "events": [
+                    {
+                        "request_id": e.request_id,
+                        "occurred_at": e.occurred_at,
+                        "provider": e.provider,
+                        "model": e.model,
+                        "cost_micro_usd": e.cost_micro_usd,
+                        "cache_savings_micro_usd": e.cache_savings_micro_usd,
+                        "tokens": asdict(e.usage),
+                    }
+                    for e in events
+                ],
+                "total_events": ledger.count(since=since, until=until, **filters),
+            }
+            print(json.dumps(output, indent=2, sort_keys=True))
+            return
+
+        summary = ledger.summary(**filters)
+        total = ledger.count(since=since, until=until, **filters)
+        events = ledger.query(
+            since=since, until=until, limit=args.limit, **filters
+        )
+
+        print(f"\n{C.CYAN}{C.BOLD}  Provider Usage Ledger{C.RESET}\n")
+        print(f"  {C.BOLD}Summary{C.RESET}")
+        cost_usd = summary["cost_micro_usd"] / 1_000_000
+        savings_usd = summary["cache_savings_micro_usd"] / 1_000_000
+        print(f"    Requests: {summary['requests']:,}")
+        print(
+            f"    Cost: {C.GREEN}${cost_usd:.4f}{C.RESET}  |  "
+            f"Cache savings: {C.GREEN}${savings_usd:.4f}{C.RESET}"
+        )
+        print(
+            f"    Cache hit ratio: "
+            f"{summary['cache_hit_token_ratio']:.1%}"
+        )
+        if summary["unpriced_requests"]:
+            print(
+                f"    {C.YELLOW}Unpriced: {summary['unpriced_requests']:,} "
+                f"requests{C.RESET}"
+            )
+
+        if events:
+            print(f"\n  {C.BOLD}Recent events{C.RESET} ({total:,} total)\n")
+            from datetime import datetime, timezone
+            for e in events:
+                ts = datetime.fromtimestamp(e.occurred_at, tz=timezone.utc)
+                ts_str = ts.strftime("%Y-%m-%d %H:%M")
+                cost = e.cost_micro_usd / 1_000_000
+                total_tok = e.usage.total_tokens
+                print(
+                    f"    {C.GRAY}{ts_str}{C.RESET}  "
+                    f"{e.provider}/{e.model}  "
+                    f"{total_tok:,} tok  "
+                    f"${cost:.4f}"
+                )
+        print()
+    finally:
+        ledger.close()
+
+
 def cmd_share(args):
     """entroly share — generate a shareable Context Report Card."""
     print(f"\n{C.CYAN}{C.BOLD}  Entroly Share{C.RESET} -- generate your Context Report Card\n")
@@ -3980,7 +4179,7 @@ def cmd_doctor(args):
         # to compiling an ancient sdist. Bust the cache + upgrade pip
         # first — that fixes it without any compile.
         print(f"    {C.GRAY}Fix:  python -m pip install --no-cache-dir -U pip && "
-              f"python -m pip install --no-cache-dir -U \"entroly-core>=1.0.83\"{C.RESET}")
+              f"python -m pip install --no-cache-dir -U \"entroly-core>=1.0.84\"{C.RESET}")
         print(f"    {C.GRAY}(If pip still compiles from source and fails on "
               f"a new Python, your pip is too old to{C.RESET}")
         print(f"    {C.GRAY} match the abi3 wheel — upgrading pip is the "
@@ -4519,7 +4718,7 @@ def cmd_completions(args):
         "autotune", "benchmark", "simulate", "perf", "status", "config", "clean",
         "telemetry", "export", "import", "drift", "profile",
         "batch", "wrap", "unwrap", "trial", "shrink", "browser", "response",
-        "capabilities", "learn", "share", "demo",
+        "capabilities", "learn", "hook", "share", "demo",
         "doctor", "digest", "migrate", "role", "completions",
         "optimize", "ingest", "select", "receipt", "explain",
         "feedback", "compile", "verify", "sync",
@@ -5990,7 +6189,7 @@ def cmd_docs(args):
         result = engine.compile_docs(target, max_files)
     except ImportError:
         print(f"  {C.RED}entroly_core not installed — docs compilation requires the Rust engine.{C.RESET}")
-        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.83\"{C.RESET}\n")
+        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.84\"{C.RESET}\n")
         return
 
     print(f"  {C.GREEN}Docs found:{C.RESET}      {result.get('docs_found', 0)}")
@@ -6033,7 +6232,7 @@ def cmd_finetune(args):
         result = engine.export_training_data(output, "jsonl")
     except ImportError:
         print(f"  {C.RED}entroly_core not installed — training export requires the Rust engine.{C.RESET}")
-        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.83\"{C.RESET}\n")
+        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.84\"{C.RESET}\n")
         return
 
     print(f"  {C.GREEN}Beliefs used:{C.RESET}     {result.get('beliefs_used', 0)}")
@@ -6897,10 +7096,25 @@ def main():
     activation_hook.add_argument(
         "--host",
         default="auto",
-        choices=["auto", "claude-code", "gemini", "vscode-copilot", "compatible"],
+        choices=[
+            "auto",
+            "codex",
+            "claude-code",
+            "cursor",
+            "gemini",
+            "kiro",
+            "vscode-copilot",
+            "compatible",
+        ],
     )
     activation_hook.add_argument("--budget", type=int, default=1200)
     activation_hook.add_argument("--max-files", type=int, default=200)
+    activation_hook.add_argument(
+        "--output-format",
+        choices=["auto", "json", "context"],
+        default="auto",
+        help="Host output contract; auto emits context text for Kiro and JSON otherwise",
+    )
     activation_status_parser = activation_subparsers.add_parser(
         "status", help="Show observed host-hook activations for this project"
     )
@@ -6908,6 +7122,20 @@ def main():
     activation_status_parser.add_argument(
         "--json", dest="json_output", action="store_true"
     )
+    for action in ("install", "uninstall"):
+        activation_config = activation_subparsers.add_parser(
+            action, help=f"{action.capitalize()} a managed project activation hook"
+        )
+        activation_config.add_argument(
+            "--host", choices=["cursor", "kiro"], required=True
+        )
+        activation_config.add_argument("--project", default=".")
+        if action == "install":
+            activation_config.add_argument(
+                "--force",
+                action="store_true",
+                help="Back up an existing target before installing",
+            )
 
     # entroly status
     status_parser = subparsers.add_parser(
@@ -6956,6 +7184,47 @@ def main():
     telem_parser.add_argument(
         "--json", dest="json_output", action="store_true",
         help="Emit machine-readable status or flush output",
+    )
+
+    # entroly usage
+    usage_parser = subparsers.add_parser(
+        "usage",
+        help="Query provider usage and spend from the usage ledger",
+    )
+    usage_parser.add_argument(
+        "--since",
+        default=None,
+        help="Show events after this time (e.g. 1h, 24h, 7d, or ISO timestamp)",
+    )
+    usage_parser.add_argument(
+        "--until",
+        default=None,
+        help="Show events before this time (ISO timestamp)",
+    )
+    usage_parser.add_argument(
+        "--model", default=None,
+        help="Filter by model name",
+    )
+    usage_parser.add_argument(
+        "--provider", default=None,
+        help="Filter by provider name",
+    )
+    usage_parser.add_argument(
+        "--limit", type=int, default=20,
+        help="Maximum events to list (default: 20)",
+    )
+    usage_parser.add_argument(
+        "--csv", dest="csv_output", action="store_true",
+        help="Export matching events as CSV",
+    )
+    usage_parser.add_argument(
+        "--json", dest="json_output", action="store_true",
+        help="Emit machine-readable JSON output",
+    )
+    usage_parser.add_argument(
+        "--db",
+        default=None,
+        help="Path to usage ledger SQLite file",
     )
 
     # entroly clean
@@ -7235,6 +7504,14 @@ def main():
     learn_parser.add_argument("--max-bytes", type=int, default=64 * 1024 * 1024)
     learn_parser.add_argument("--max-file-bytes", type=int, default=8 * 1024 * 1024)
     learn_parser.add_argument("--json", dest="json_output", action="store_true")
+    learn_parser.add_argument(
+        "--deep", action="store_true",
+        help="Deep failure mining: vault, PRISM, evolution, checkpoints",
+    )
+    learn_parser.add_argument(
+        "--min-occurrences", type=int, default=2, dest="min_occurrences",
+        help="Minimum occurrences for a pattern to surface (default: 2)",
+    )
 
     # entroly capabilities
     capabilities_parser = subparsers.add_parser(
@@ -7245,6 +7522,18 @@ def main():
         "--json", dest="json_output", action="store_true",
         help="Emit a stable machine-readable capability report",
     )
+
+    # entroly hook
+    hook_parser = subparsers.add_parser(
+        "hook",
+        help="Manage shell hook for transparent CLI output compression",
+    )
+    hook_sub = hook_parser.add_subparsers(dest="hook_action")
+    hook_install = hook_sub.add_parser("install", help="Install shell hook")
+    hook_install.add_argument("--shell", choices=["bash", "zsh", "fish"], help="Target shell")
+    hook_uninstall = hook_sub.add_parser("uninstall", help="Remove shell hook")
+    hook_uninstall.add_argument("--shell", choices=["bash", "zsh", "fish"], help="Target shell")
+    hook_sub.add_parser("status", help="Show hook installation status")
 
     # entroly doctor (Gap #52)
     doctor_parser = subparsers.add_parser(
@@ -7665,10 +7954,12 @@ def main():
         "response": cmd_response,
         "govern": cmd_govern,
         "learn": cmd_learn,
+        "hook": cmd_hook,
         "share": cmd_share,
         "ravs": cmd_ravs,
         "cache": cmd_cache,
         "daemon": cmd_daemon,
+        "usage": cmd_usage,
     }
 
     handler = _dispatch.get(args.command)
