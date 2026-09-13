@@ -27,6 +27,19 @@ the user to review and trust bundled hooks.
 Restart Codex after installation, run one task, and confirm a recent receipt
 with `entroly activation status --json`.
 
+Public Gemini CLI install (Git required):
+
+```console
+gemini extensions install https://github.com/juyterman1000/entroly --ref main --consent
+```
+
+The repository root is a complete Gemini extension. Restart Gemini CLI after
+installing; extension management changes take effect on restart.
+
+VS Code and Kiro users can install the versioned `entroly-vscode-*.vsix` file
+from the [latest GitHub release](https://github.com/juyterman1000/entroly/releases/latest)
+using **Extensions: Install from VSIX** or `code --install-extension`.
+
 Windows PowerShell:
 
 ```powershell

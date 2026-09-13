@@ -348,6 +348,21 @@ Entroly runs. A receipt proves that the hook executed and selected local
 context or made an explicit no-match decision. It does not prove token or cost
 savings without a matched provider-bound baseline.
 
+Install the same public repository as a Gemini CLI extension:
+
+```console
+gemini extensions install https://github.com/juyterman1000/entroly --ref main --consent
+```
+
+Restart Gemini CLI after installation. The repository root contains
+`gemini-extension.json` and `GEMINI.md`, so the command works without navigating
+into an integration subdirectory.
+
+For VS Code or Kiro, download the `entroly-vscode-*.vsix` asset from the latest
+[GitHub release](https://github.com/juyterman1000/entroly/releases/latest), then
+install it with **Extensions: Install from VSIX** or `code --install-extension`.
+The extension is self-contained and does not require an API key.
+
 | Agent / platform | Path | Status |
 |---|---|---|
 | Claude Code | Bundled `UserPromptSubmit` hook + scoped MCP | Deterministic after plugin enablement |
