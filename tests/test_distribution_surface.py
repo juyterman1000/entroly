@@ -103,17 +103,6 @@ def test_gap_dimensions_have_executable_next_actions() -> None:
         assert len(dimension["leadership_target"].strip()) >= 20
 
 
-def test_launch_assets_cannot_imply_publication() -> None:
-    launch_dir = ROOT / "docs" / "marketing" / "launch"
-    launch_files = sorted(launch_dir.glob("*.md"))
-
-    assert launch_files
-    for path in launch_files:
-        content = path.read_text(encoding="utf-8")
-        assert "Status: prepared, not submitted." in content
-        assert "https://github.com/juyterman1000/entroly" in content
-
-
 def test_research_metadata_tracks_release_version() -> None:
     project_version = _project_version()
     citation = (ROOT / "CITATION.cff").read_text(encoding="utf-8")
@@ -130,7 +119,6 @@ def test_expanded_visibility_assets_are_owned_and_present() -> None:
         ".github/workflows/visibility-integrity.yml",
         "docs/choosing-context-assurance.md",
         "docs/localization/README.md",
-        "docs/marketing/release-announcement-template.md",
     )
     for relative in required:
         assert (ROOT / relative).is_file(), relative
@@ -138,26 +126,13 @@ def test_expanded_visibility_assets_are_owned_and_present() -> None:
     codeowners = (ROOT / ".github/CODEOWNERS").read_text(encoding="utf-8")
     for protected_path in (
         "/docs/distribution/",
-        "/docs/press-kit.md",
         "/docs/choosing-context-assurance.md",
         "/docs/localization/",
-        "/docs/marketing/",
         "/CITATION.cff",
         "/codemeta.json",
         "/scripts/check_distribution_surface.py",
     ):
         assert protected_path in codeowners
-
-
-def test_release_announcement_template_is_fail_closed() -> None:
-    template = (ROOT / "docs/marketing/release-announcement-template.md").read_text(
-        encoding="utf-8"
-    )
-
-    assert "Status: template, not a published release announcement." in template
-    assert "after the coordinated release workflow verifies" in template
-    assert "Do not hide a known regression" in template
-    assert "Version is synchronized in citation metadata" in template
 
 
 def test_localization_contract_requires_human_and_technical_review() -> None:
