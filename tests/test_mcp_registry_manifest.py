@@ -61,6 +61,15 @@ def test_mcp_registry_identity_and_package_contract() -> None:
         assert package["runtimeHint"] == expected_runtime[key]
         assert package["transport"] == {"type": "stdio"}
         assert package.get("packageArguments", []) == []
+        environment = {
+            item["name"]: item["value"]
+            for item in package.get("environmentVariables", [])
+        }
+        assert environment == {
+            "ENTROLY_MCP_PROFILE": "public",
+            "ENTROLY_MCP_PASSIVE": "1",
+            "ENTROLY_NO_DOCKER": "1",
+        }
 
 
 def test_registry_package_ownership_proofs_are_canonical() -> None:
