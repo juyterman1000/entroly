@@ -203,6 +203,13 @@ def test_root_dot_mcp_is_directory_installable() -> None:
     assert server["env"]["ENTROLY_MCP_PASSIVE"] == "1"
 
 
+def test_glama_metadata_declares_repository_maintainer() -> None:
+    metadata = json.loads((ROOT / "glama.json").read_text(encoding="utf-8"))
+
+    assert metadata["$schema"] == "https://glama.ai/mcp/schemas/server.json"
+    assert metadata["maintainers"] == ["juyterman1000"]
+
+
 def test_claude_and_gemini_bundles_share_evidence_contract() -> None:
     claude_manifest = json.loads(
         (ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")
