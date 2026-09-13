@@ -8,6 +8,8 @@ cross-process durability for gateway and dashboard readers.
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import sqlite3
 import threading
@@ -498,26 +500,7 @@ class UsageLedger:
             ).fetchone()
         if row is None:
             return None
-        return UsageEvent(
-            request_id=row["request_id"],
-            provider=row["provider"],
-            model=row["model"],
-            usage=TokenUsage(
-                uncached_input_tokens=row["uncached_input_tokens"],
-                cache_read_tokens=row["cache_read_tokens"],
-                cache_write_tokens=row["cache_write_tokens"],
-                output_tokens=row["output_tokens"],
-            ),
-            cost_micro_usd=row["cost_micro_usd"],
-            cache_savings_micro_usd=row["cache_savings_micro_usd"],
-            occurred_at=row["occurred_at"],
-            team=row["team"],
-            tool=row["tool"],
-            project=row["project"],
-            conversation_id=row["conversation_id"],
-            pricing_source=row["pricing_source"],
-            metadata=json.loads(row["metadata_json"]),
-        )
+        return self._row_to_event(row)
 
     def record_usage(
         self,
@@ -664,6 +647,130 @@ class UsageLedger:
         uncached = result["uncached_input_tokens"]
         result["cache_hit_token_ratio"] = cached / max(1, cached + uncached)
         return result
+
+    def query(
+        self,
+        *,
+        since: float | None = None,
+        until: float | None = None,
+        limit: int = 100,
+        offset: int = 0,
+        **filters: str,
+    ) -> list[UsageEvent]:
+        unknown = set(filters) - self._FILTER_COLUMNS
+        if unknown:
+            raise ValueError(f"unsupported filters: {sorted(unknown)}")
+
+        clauses: list[str] = []
+        values: list[object] = []
+        if since is not None:
+            clauses.append("occurred_at >= ?")
+            values.append(float(since))
+        if until is not None:
+            clauses.append("occurred_at <= ?")
+            values.append(float(until))
+        for column, value in sorted(filters.items()):
+            clauses.append(f"{column} = ?")
+            values.append(value)
+
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        values.extend([max(1, min(limit, 10_000)), max(0, offset)])
+
+        with self._lock:
+            rows = self._conn.execute(
+                f"""
+                SELECT * FROM usage_events
+                {where}
+                ORDER BY occurred_at DESC
+                LIMIT ? OFFSET ?
+                """,
+                values,
+            ).fetchall()
+
+        return [self._row_to_event(row) for row in rows]
+
+    def count(
+        self,
+        *,
+        since: float | None = None,
+        until: float | None = None,
+        **filters: str,
+    ) -> int:
+        unknown = set(filters) - self._FILTER_COLUMNS
+        if unknown:
+            raise ValueError(f"unsupported filters: {sorted(unknown)}")
+
+        clauses: list[str] = []
+        values: list[object] = []
+        if since is not None:
+            clauses.append("occurred_at >= ?")
+            values.append(float(since))
+        if until is not None:
+            clauses.append("occurred_at <= ?")
+            values.append(float(until))
+        for column, value in sorted(filters.items()):
+            clauses.append(f"{column} = ?")
+            values.append(value)
+
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        with self._lock:
+            row = self._conn.execute(
+                f"SELECT COUNT(*) FROM usage_events {where}", values
+            ).fetchone()
+        return int(row[0])
+
+    def export_csv(
+        self,
+        *,
+        since: float | None = None,
+        until: float | None = None,
+        **filters: str,
+    ) -> str:
+        events = self.query(
+            since=since, until=until, limit=10_000, **filters
+        )
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow([
+            "request_id", "occurred_at", "provider", "model",
+            "team", "tool", "project", "conversation_id",
+            "uncached_input_tokens", "cache_read_tokens",
+            "cache_write_tokens", "output_tokens",
+            "cost_micro_usd", "cache_savings_micro_usd",
+            "pricing_source",
+        ])
+        for e in events:
+            writer.writerow([
+                e.request_id, e.occurred_at, e.provider, e.model,
+                e.team, e.tool, e.project, e.conversation_id,
+                e.usage.uncached_input_tokens, e.usage.cache_read_tokens,
+                e.usage.cache_write_tokens, e.usage.output_tokens,
+                e.cost_micro_usd, e.cache_savings_micro_usd,
+                e.pricing_source,
+            ])
+        return buf.getvalue()
+
+    def _row_to_event(self, row: sqlite3.Row) -> UsageEvent:
+        return UsageEvent(
+            request_id=row["request_id"],
+            provider=row["provider"],
+            model=row["model"],
+            usage=TokenUsage(
+                uncached_input_tokens=row["uncached_input_tokens"],
+                cache_read_tokens=row["cache_read_tokens"],
+                cache_write_tokens=row["cache_write_tokens"],
+                output_tokens=row["output_tokens"],
+            ),
+            cost_micro_usd=row["cost_micro_usd"],
+            cache_savings_micro_usd=row["cache_savings_micro_usd"],
+            occurred_at=row["occurred_at"],
+            team=row["team"],
+            tool=row["tool"],
+            project=row["project"],
+            conversation_id=row["conversation_id"],
+            pricing_source=row["pricing_source"],
+            metadata=json.loads(row["metadata_json"]),
+        )
 
     def close(self) -> None:
         with self._lock:

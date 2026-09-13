@@ -255,3 +255,115 @@ def test_explicit_zero_cache_write_rate_is_not_replaced() -> None:
     )
 
     assert pricing.cache_write_rate == 0
+
+
+def _seed_ledger(ledger, n=5):
+    """Insert n events with predictable timestamps and dimensions."""
+    from entroly.usage_ledger import TokenUsage
+
+    pricing = UsagePricing.from_values(
+        input_per_million=10,
+        cache_read_per_million=1,
+        output_per_million=20,
+    )
+    base_time = 1_700_000_000.0
+    for i in range(n):
+        ledger.record_usage(
+            request_id=f"req-{i}",
+            provider="anthropic" if i % 2 == 0 else "openai",
+            model="opus" if i % 2 == 0 else "gpt-4o",
+            usage=TokenUsage(
+                uncached_input_tokens=100 * (i + 1),
+                cache_read_tokens=50 * (i + 1),
+                output_tokens=20 * (i + 1),
+            ),
+            pricing=pricing,
+            occurred_at=base_time + i * 3600,
+            team="platform",
+            project="test",
+        )
+    return base_time
+
+
+def test_query_returns_events_in_reverse_chronological_order() -> None:
+    with UsageLedger() as ledger:
+        base = _seed_ledger(ledger)
+        events = ledger.query(limit=10)
+
+    assert len(events) == 5
+    assert events[0].request_id == "req-4"
+    assert events[-1].request_id == "req-0"
+    for i in range(len(events) - 1):
+        assert events[i].occurred_at >= events[i + 1].occurred_at
+
+
+def test_query_filters_by_time_range() -> None:
+    with UsageLedger() as ledger:
+        base = _seed_ledger(ledger)
+        events = ledger.query(
+            since=base + 3600, until=base + 3 * 3600, limit=10
+        )
+
+    assert len(events) == 3
+    request_ids = {e.request_id for e in events}
+    assert request_ids == {"req-1", "req-2", "req-3"}
+
+
+def test_query_filters_by_provider() -> None:
+    with UsageLedger() as ledger:
+        _seed_ledger(ledger)
+        events = ledger.query(provider="anthropic", limit=10)
+
+    assert all(e.provider == "anthropic" for e in events)
+    assert len(events) == 3
+
+
+def test_query_respects_limit_and_offset() -> None:
+    with UsageLedger() as ledger:
+        _seed_ledger(ledger)
+        page1 = ledger.query(limit=2, offset=0)
+        page2 = ledger.query(limit=2, offset=2)
+
+    assert len(page1) == 2
+    assert len(page2) == 2
+    assert page1[0].request_id != page2[0].request_id
+
+
+def test_count_matches_query_length() -> None:
+    with UsageLedger() as ledger:
+        _seed_ledger(ledger)
+        total = ledger.count()
+        filtered = ledger.count(provider="openai")
+
+    assert total == 5
+    assert filtered == 2
+
+
+def test_export_csv_contains_header_and_all_events() -> None:
+    import csv as _csv
+    import io
+
+    with UsageLedger() as ledger:
+        _seed_ledger(ledger, n=3)
+        output = ledger.export_csv()
+
+    reader = _csv.reader(io.StringIO(output))
+    rows = list(reader)
+    assert rows[0][0] == "request_id"
+    assert len(rows) == 4
+    assert rows[1][2] in ("anthropic", "openai")
+
+
+def test_export_csv_respects_filters() -> None:
+    import csv as _csv
+    import io
+
+    with UsageLedger() as ledger:
+        _seed_ledger(ledger, n=5)
+        output = ledger.export_csv(provider="anthropic")
+
+    reader = _csv.reader(io.StringIO(output))
+    rows = list(reader)
+    assert len(rows) == 4
+    for row in rows[1:]:
+        assert row[2] == "anthropic"

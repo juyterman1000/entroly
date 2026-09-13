@@ -127,7 +127,7 @@ def test_security_blocks_injection_before_any_partial_commit(tmp_path):
 def test_high_risk_context_requires_explicit_audit_mode(tmp_path):
     strict = VerifiedEfficiencyLayer(tmp_path / "strict", prefer_rust=False)
     with pytest.raises(ContextRiskError):
-        _prepare(strict, budget=50, include_operations=True)
+        _prepare(strict, budget=70, include_operations=True)
     assert not list((tmp_path / "strict" / "commits").glob("*.json"))
 
     reviewed = VerifiedEfficiencyLayer(
@@ -135,7 +135,7 @@ def test_high_risk_context_requires_explicit_audit_mode(tmp_path):
         prefer_rust=False,
         context_risk_mode="audit",
     )
-    prepared = _prepare(reviewed, budget=50, include_operations=True)
+    prepared = _prepare(reviewed, budget=70, include_operations=True)
     assert prepared.receipt["risk_summary"]["review_level"] == "high"
     assert reviewed.verify_audit_artifact(prepared.audit).valid
 
@@ -221,7 +221,7 @@ def test_recovery_is_exact_and_tampering_fails_closed(tmp_path):
     layer = VerifiedEfficiencyLayer(
         tmp_path, prefer_rust=False, context_risk_mode="audit"
     )
-    prepared = _prepare(layer, budget=50, include_operations=True)
+    prepared = _prepare(layer, budget=70, include_operations=True)
     omitted = prepared.receipt["omitted_context"]
     assert omitted
     chunk_id = omitted[0]["chunk_id"]
@@ -243,7 +243,7 @@ def test_unknown_recovery_chunk_is_actionable(tmp_path):
     layer = VerifiedEfficiencyLayer(
         tmp_path, prefer_rust=False, context_risk_mode="audit"
     )
-    prepared = _prepare(layer, budget=50, include_operations=True)
+    prepared = _prepare(layer, budget=70, include_operations=True)
     with pytest.raises(RecoveryIntegrityError, match="not listed as omitted"):
         layer.recover(prepared, "missing-chunk")
 

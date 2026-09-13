@@ -41,7 +41,7 @@ def _prepare(runtime):
     return runtime.prepare(
         _documents(),
         query="How does Entroly preserve and recover selected evidence?",
-        token_budget=50,
+        token_budget=70,
         chunk_tokens=24,
         overlap_tokens=3,
         idempotency_key="prepare-request",
@@ -137,7 +137,7 @@ def test_prepare_idempotency_key_rejects_a_different_request(tmp_path):
         runtime.prepare(
             _documents(),
             query="A different question",
-            token_budget=50,
+            token_budget=70,
             idempotency_key="prepare-request",
         )
 

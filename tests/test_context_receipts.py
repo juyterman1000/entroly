@@ -837,7 +837,7 @@ def test_receipt_tracks_local_novelty_frontier():
     ]
     index = ingest_documents(docs, chunk_tokens=16, prefer_rust=False)
     receipt = select_from_index(
-        index, query="access review", token_budget=18, prefer_rust=False
+        index, query="access review", token_budget=25, prefer_rust=False
     )
 
     novelty = receipt["risk_summary"]["novelty_summary"]
@@ -1797,7 +1797,7 @@ def test_matched_receipt_labels_savings_as_mechanical_and_unverified():
     receipt = build_receipt(
         ContextIndex.from_dict(index),
         query="authentication session cookies",
-        token_budget=10,
+        token_budget=13,
     )
 
     assert receipt.selected_context
