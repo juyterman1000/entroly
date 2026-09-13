@@ -40,6 +40,25 @@ VS Code and Kiro users can install the versioned `entroly-vscode-*.vsix` file
 from the [latest GitHub release](https://github.com/juyterman1000/entroly/releases/latest)
 using **Extensions: Install from VSIX** or `code --install-extension`.
 
+JetBrains AI Assistant users can add Entroly globally from **Settings | Tools |
+AI Assistant | Model Context Protocol (MCP)** with:
+
+```json
+{
+  "mcpServers": {
+    "entroly": {
+      "command": "npx",
+      "args": ["-y", "entroly-mcp@1.0.84", "serve"],
+      "env": {
+        "ENTROLY_NO_DOCKER": "1",
+        "ENTROLY_MCP_PASSIVE": "1",
+        "ENTROLY_MAX_FILES": "200"
+      }
+    }
+  }
+}
+```
+
 Windows PowerShell:
 
 ```powershell

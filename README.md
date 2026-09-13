@@ -363,6 +363,30 @@ For VS Code or Kiro, download the `entroly-vscode-*.vsix` asset from the latest
 install it with **Extensions: Install from VSIX** or `code --install-extension`.
 The extension is self-contained and does not require an API key.
 
+JetBrains AI Assistant users can add the same server globally at **Settings →
+Tools → AI Assistant → Model Context Protocol (MCP)**:
+
+```json
+{
+  "mcpServers": {
+    "entroly": {
+      "command": "npx",
+      "args": ["-y", "entroly-mcp@1.0.84", "serve"],
+      "env": {
+        "ENTROLY_NO_DOCKER": "1",
+        "ENTROLY_MCP_PASSIVE": "1",
+        "ENTROLY_MAX_FILES": "200"
+      }
+    }
+  }
+}
+```
+
+The MCP path is provider-neutral: the host can use OpenAI, Anthropic, Google,
+Mistral, DeepSeek, Kimi, GLM, or a local model. There is no separate plugin
+marketplace for each model provider; the host's MCP or extension contract is
+the integration boundary.
+
 | Agent / platform | Path | Status |
 |---|---|---|
 | Claude Code | Bundled `UserPromptSubmit` hook + scoped MCP | Deterministic after plugin enablement |
