@@ -102,7 +102,7 @@ def _compute_simhash(content: str) -> int:
     v = [0] * 64
     tokens = content.lower().split()
     for token in tokens:
-        h = int(hashlib.md5(token.encode()).hexdigest(), 16) & ((1 << 64) - 1)
+        h = int(hashlib.md5(token.encode(), usedforsecurity=False).hexdigest(), 16) & ((1 << 64) - 1)
         for i in range(64):
             if h & (1 << i):
                 v[i] += 1

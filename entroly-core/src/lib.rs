@@ -48,7 +48,7 @@ pub use entroly_engine::query_persona;
 pub(crate) use entroly_engine::resonance;
 pub(crate) use entroly_engine::sast;
 pub(crate) use entroly_engine::semantic_dedup;
-pub mod shared_memory;
+pub(crate) use entroly_engine::shared_memory;
 /// Measurement-only probe for the 64-bit SimHash selection path.
 /// Test-gated: contributes nothing to the shipped library.
 #[cfg(test)]

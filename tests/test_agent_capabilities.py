@@ -32,7 +32,7 @@ from entroly.shell_hook import (
     recover_shell_output,
     PATTERNS,
 )
-from entroly.image_compress import compress_image, CompressionResult
+from entroly.image_compress import compress_image, CompressionResult, _has_pillow
 from entroly.learn import FailurePattern, Correction, FailureMiner
 import entroly.sdk as sdk
 
@@ -168,6 +168,7 @@ def test_shell_hook_recovery():
 # 4. Multimodal & Image Compression Tests
 # ---------------------------------------------------------------------------
 
+@pytest.mark.skipif(not _has_pillow(), reason="Pillow not installed")
 def test_image_compress_handles_invalid_bytes():
     result = compress_image(b"not a real image stream", max_dimension=800)
     assert isinstance(result, CompressionResult)

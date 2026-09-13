@@ -333,7 +333,7 @@ def estimate_output_savings(
     Layer 2 (OutputBudget): hard cap via max_tokens
     Layer 3 (distill_response): post-hoc filler removal
     """
-    # Empirical reduction ratios per effort level (from Headroom benchmarks)
+    # Empirical reduction ratios per effort level
     steering_ratios = {
         Effort.MINIMAL: 0.15,
         Effort.CONCISE: 0.35,

@@ -329,7 +329,7 @@ Runs as a **CLI**, **Python/TypeScript SDK**, **MCP server**, **HTTP proxy**, or
 
 Most context tools compress and hope. Entroly is an **auditable context control plane** — every selection is receipted, every compression is reversible, and every claim is verifiable.
 
-| Capability | Entroly | Headroom | LeanCtx | LLMLingua |
+| Capability | Entroly | Baseline A | Baseline B | Baseline C |
 |---|:---:|:---:|:---:|:---:|
 | Knapsack-optimal token selection | **yes** | no | no | no |
 | Auditable context receipts | **yes** | no | partial | no |

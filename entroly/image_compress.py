@@ -20,7 +20,10 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
+
 logger = logging.getLogger(__name__)
+
+MIN_QUALITY = 10
 
 
 @dataclass
@@ -54,20 +57,7 @@ def compress_image(
     extract_text: bool = False,
     max_bytes: int | None = None,
 ) -> CompressionResult:
-    """
-    Compress an image for LLM context.
-
-    Args:
-        source: File path or raw bytes
-        max_dimension: Maximum width or height in pixels
-        quality: JPEG/WebP quality (1-100)
-        target_format: Force output format (webp, jpeg, png)
-        extract_text: If True, attempt OCR text extraction
-        max_bytes: Target maximum file size in bytes
-
-    Returns:
-        CompressionResult with compressed data and metadata
-    """
+    """Compress an image for LLM context injection."""
     if not _has_pillow():
         raise RuntimeError(
             "Image compression requires Pillow. Install with: "
@@ -76,34 +66,34 @@ def compress_image(
 
     from PIL import Image
 
-    # Load image
+    original_bytes: bytes | None = None
     try:
         if isinstance(source, (str, Path)):
             path = Path(source)
             original_bytes = path.read_bytes()
             img = Image.open(path)
         else:
-            original_bytes = source
-            img = Image.open(io.BytesIO(source))
-    except Exception as e:
-        logger.warning("Image compression failed to open image: %s", e)
-        orig_len = len(original_bytes) if "original_bytes" in locals() else 0
+            original_bytes = bytes(source)
+            img = Image.open(io.BytesIO(original_bytes))
+        img.load()
+    except Exception as exc:
+        logger.warning("Image compression failed to open image: %s", exc)
+        fallback_size = len(original_bytes) if original_bytes is not None else 0
         return CompressionResult(
-            original_size=orig_len,
-            compressed_size=orig_len,
+            original_size=fallback_size,
+            compressed_size=fallback_size,
             reduction_pct=0.0,
             format="unknown",
             width=0,
             height=0,
             strategy="passthrough",
-            data=original_bytes if "original_bytes" in locals() else None,
+            data=original_bytes,
         )
 
     original_size = len(original_bytes)
     orig_w, orig_h = img.size
-    strategy_parts = []
+    strategy_parts: list[str] = []
 
-    # Strategy 1: Resize if larger than max_dimension
     if max(orig_w, orig_h) > max_dimension:
         ratio = max_dimension / max(orig_w, orig_h)
         new_w = int(orig_w * ratio)
@@ -113,7 +103,6 @@ def compress_image(
     else:
         new_w, new_h = orig_w, orig_h
 
-    # Strategy 2: Format selection
     if target_format is None:
         if img.mode == "RGBA" or _is_diagram(img):
             target_format = "png"
@@ -121,44 +110,22 @@ def compress_image(
             target_format = "webp"
     strategy_parts.append("convert")
 
-    # Compress
-    buf = io.BytesIO()
+    compressed_data = _encode(img, target_format, quality)
 
-    if target_format in ("jpeg", "jpg"):
-        if img.mode == "RGBA":
-            img = img.convert("RGB")
-        img.save(buf, format="JPEG", quality=quality, optimize=True)
-    elif target_format == "webp":
-        img.save(buf, format="WebP", quality=quality, method=4)
-    else:
-        img.save(buf, format="PNG", optimize=True)
-
-    compressed_data = buf.getvalue()
-
-    # If still too large, reduce quality iteratively
-    if max_bytes and len(compressed_data) > max_bytes:
-        for q in range(quality - 10, 10, -10):
-            buf = io.BytesIO()
-            if target_format in ("jpeg", "jpg"):
-                img.save(buf, format="JPEG", quality=q, optimize=True)
-            elif target_format == "webp":
-                img.save(buf, format="WebP", quality=q, method=4)
-            else:
-                break
-            compressed_data = buf.getvalue()
+    if max_bytes and len(compressed_data) > max_bytes and target_format not in ("png",):
+        for q in range(max(quality - 10, MIN_QUALITY), MIN_QUALITY - 1, -10):
+            compressed_data = _encode(img, target_format, q)
             if len(compressed_data) <= max_bytes:
                 break
 
     compressed_size = len(compressed_data)
 
-    # Strategy 3: OCR text extraction (optional)
     extracted_text = None
     if extract_text:
         extracted_text = _extract_text(img)
         if extracted_text and len(extracted_text) > 20:
             strategy_parts.append("ocr")
 
-    # Build data URI for embedding
     mime = {
         "png": "image/png",
         "jpeg": "image/jpeg",
@@ -183,40 +150,43 @@ def compress_image(
     )
 
 
-def _is_diagram(img) -> bool:
-    """Heuristic: detect if image is a diagram/screenshot vs photograph."""
-    from PIL import Image
+def _encode(img, fmt: str, quality: int) -> bytes:
+    buf = io.BytesIO()
+    if fmt in ("jpeg", "jpg"):
+        out = img.convert("RGB") if img.mode == "RGBA" else img
+        out.save(buf, format="JPEG", quality=quality, optimize=True)
+    elif fmt == "webp":
+        img.save(buf, format="WebP", quality=quality, method=4)
+    else:
+        img.save(buf, format="PNG", optimize=True)
+    return buf.getvalue()
 
+
+def _is_diagram(img) -> bool:
+    """Heuristic: low colour diversity implies diagram/screenshot, not photo."""
     if img.mode == "RGBA":
         return True
 
-    # Sample pixels and check color diversity
+    from PIL import Image
     small = img.resize((32, 32), Image.NEAREST)
     pixels = list(small.getdata())
     if not pixels:
         return False
 
-    if isinstance(pixels[0], tuple):
-        unique = len(set(pixels))
-    else:
-        unique = len(set(pixels))
-
-    # Diagrams tend to have few unique colors (<100 in 32x32 = 1024 pixels)
+    unique = len(set(pixels))
     return unique < 200
 
 
 def _extract_text(img) -> str | None:
     """Extract text from image using available OCR."""
-    # Try pytesseract if available
     try:
         import pytesseract
         text = pytesseract.image_to_string(img)
         if text and text.strip():
             return text.strip()
-    except (ImportError, Exception):
+    except Exception:
         pass
 
-    # Try easyocr if available
     try:
         import easyocr
         import numpy as np
@@ -224,38 +194,27 @@ def _extract_text(img) -> str | None:
         results = reader.readtext(np.array(img))
         if results:
             return "\n".join(r[1] for r in results)
-    except (ImportError, Exception):
+    except Exception:
         pass
 
     return None
 
 
 def estimate_vision_tokens(width: int, height: int, detail: str = "auto") -> int:
-    """
-    Estimate vision API token cost for an image.
-
-    Based on OpenAI's vision pricing model:
-    - low detail: 85 tokens fixed
-    - high detail: 85 base + 170 per 512x512 tile
-    """
+    """Estimate vision API token cost based on tile-based pricing."""
     if detail == "low":
         return 85
 
-    # Scale to fit within 2048x2048
     if max(width, height) > 2048:
         ratio = 2048 / max(width, height)
         width = int(width * ratio)
         height = int(height * ratio)
 
-    # Scale shortest side to 768
     if min(width, height) > 768:
         ratio = 768 / min(width, height)
         width = int(width * ratio)
         height = int(height * ratio)
 
-    # Count 512x512 tiles
     tiles_w = (width + 511) // 512
     tiles_h = (height + 511) // 512
-    total_tiles = tiles_w * tiles_h
-
-    return 85 + 170 * total_tiles
+    return 85 + 170 * tiles_w * tiles_h
