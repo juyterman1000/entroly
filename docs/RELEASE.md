@@ -111,8 +111,7 @@ Only after package availability is verified:
 
 1. Mark the version current in `CHANGELOG.md`.
 2. Publish the reviewed GitHub release notes.
-3. Use `docs/marketing/release-announcement-template.md` for channel-specific drafts.
-4. Include only channels that are publicly available and verified.
+3. Include only channels that are publicly available and verified.
 5. Record relevant public URLs in the distribution registry.
 
 Announcements must preserve workload caveats, limitations, and the distinction

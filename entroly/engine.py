@@ -295,7 +295,6 @@ def _py_knapsack_optimize(
     candidates = [f for f in fragments if not f.is_pinned]
 
     pinned_tokens = sum(f.token_count for f in pinned)
-    max(0, token_budget - pinned_tokens)
 
     # Score and sort candidates by relevance/token ratio (greedy)
     scored = []

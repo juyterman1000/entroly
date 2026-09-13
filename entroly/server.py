@@ -127,24 +127,6 @@ from .engine import (  # noqa: E402,F401
 # compatible.
 
 
-# ══════════════════════════════════════════════════════════════════════
-# Pure-Python fallback implementations (used when Rust engine unavailable)
-# ══════════════════════════════════════════════════════════════════════
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # Configure logging to stderr (MCP requires stdout for JSON-RPC)
 logging.basicConfig(
     level=logging.INFO,
