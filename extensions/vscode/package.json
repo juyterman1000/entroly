@@ -2,7 +2,7 @@
   "name": "entroly-vscode",
   "displayName": "Entroly — Context Compression & Receipts",
   "description": "Cut AI context costs by 70%+ with verifiable Merkle receipts for Claude Code, GitHub Copilot, Cursor, and OpenAI.",
-  "version": "1.0.0",
+  "version": "1.0.83",
   "publisher": "entroly",
   "engines": {
     "vscode": "^1.75.0"
