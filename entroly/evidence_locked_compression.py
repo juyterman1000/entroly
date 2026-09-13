@@ -121,9 +121,9 @@ class _LineScore:
 
 
 def estimate_tokens(text: str) -> int:
-    if not text:
-        return 0
-    return max(1, int(len(text) / _CHARS_PER_TOKEN) + 1)
+    from .tokens import count_tokens
+
+    return count_tokens(text)
 
 
 def detect_heavy_content_type(text: str) -> str:
