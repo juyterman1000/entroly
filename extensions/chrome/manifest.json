@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "Entroly — Context Compression & Receipts for GitHub",
+  "version": "1.0.83",
+  "description": "Compress GitHub repositories and source code by 70%+ for Claude, GPT-4, and Cursor with verifiable Merkle receipts.",
+  "permissions": [
+    "activeTab",
+    "contextMenus",
+    "storage",
+    "clipboardWrite"
+  ],
+  "host_permissions": [
+    "https://github.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Entroly Context Compressor"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://github.com/*/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

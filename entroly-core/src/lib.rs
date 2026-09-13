@@ -48,6 +48,7 @@ pub use entroly_engine::query_persona;
 pub(crate) use entroly_engine::resonance;
 pub(crate) use entroly_engine::sast;
 pub(crate) use entroly_engine::semantic_dedup;
+pub(crate) use entroly_engine::shared_memory;
 /// Measurement-only probe for the 64-bit SimHash selection path.
 /// Test-gated: contributes nothing to the shipped library.
 #[cfg(test)]
@@ -6434,6 +6435,40 @@ impl PyDedupIndex {
         self.inner.size()
     }
 }
+
+// ── Shared memory bindings ──────────────────────────────────────────
+
+#[pyfunction]
+fn py_shared_memory_batch_dedup(
+    entries: Vec<(String, String)>,
+    threshold: u32,
+) -> Vec<(String, bool, String)> {
+    shared_memory::batch_dedup(
+        &entries.iter().map(|(a, b)| (a.clone(), b.clone())).collect::<Vec<_>>(),
+        threshold,
+    )
+}
+
+#[pyfunction]
+fn py_shared_memory_search(
+    entries: Vec<String>,
+    query: &str,
+    top_k: usize,
+) -> Vec<(usize, f64)> {
+    shared_memory::search_entries(&entries, query, top_k)
+}
+
+#[pyfunction]
+fn py_shared_memory_fingerprint(text: &str) -> u64 {
+    shared_memory::fingerprint(text)
+}
+
+#[pyfunction]
+fn py_shared_memory_is_near_duplicate(a: u64, b: u64, threshold: u32) -> bool {
+    shared_memory::is_near_duplicate(a, b, threshold)
+}
+
+
 // ═══════════════════════════════════════════════════════════════════
 // Module definition
 // ═══════════════════════════════════════════════════════════════════
@@ -6459,6 +6494,11 @@ fn entroly_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_simhash, m)?)?;
     m.add_function(wrap_pyfunction!(py_hamming_distance, m)?)?;
     m.add_function(wrap_pyfunction!(py_information_score, m)?)?;
+    // ── Shared memory
+    m.add_function(wrap_pyfunction!(py_shared_memory_batch_dedup, m)?)?;
+    m.add_function(wrap_pyfunction!(py_shared_memory_search, m)?)?;
+    m.add_function(wrap_pyfunction!(py_shared_memory_fingerprint, m)?)?;
+    m.add_function(wrap_pyfunction!(py_shared_memory_is_near_duplicate, m)?)?;
     m.add_function(wrap_pyfunction!(py_conditional_information_score, m)?)?;
     // ── Knapsack / Ebbinghaus
     m.add_function(wrap_pyfunction!(py_knapsack_optimize, m)?)?;

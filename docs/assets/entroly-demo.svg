@@ -1,0 +1,173 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 380" font-family="'SF Mono','Fira Code','Cascadia Code',monospace" font-size="13">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0a0e1a"/>
+      <stop offset="100%" style="stop-color:#0f1629"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#38bdf8"/>
+      <stop offset="100%" style="stop-color:#a855f7"/>
+    </linearGradient>
+    <linearGradient id="green" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#10b981"/>
+      <stop offset="100%" style="stop-color:#34d399"/>
+    </linearGradient>
+    <linearGradient id="red" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#ef4444"/>
+      <stop offset="100%" style="stop-color:#f87171"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <style>
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes slideRight { from { transform: translateX(-20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    @keyframes pulse { 0%,100% { opacity: 0.6; } 50% { opacity: 1; } }
+    @keyframes flowDash { from { stroke-dashoffset: 20; } to { stroke-dashoffset: 0; } }
+    @keyframes shrinkBar { from { width: 200px; } to { width: 17px; } }
+    @keyframes countDown { 0% { opacity: 1; } 100% { opacity: 1; } }
+    @keyframes checkMark { from { stroke-dashoffset: 20; } to { stroke-dashoffset: 0; } }
+
+    .phase1 { animation: fadeIn 0.6s ease-out 0.3s both; }
+    .phase2 { animation: fadeIn 0.6s ease-out 1.0s both; }
+    .phase3 { animation: fadeIn 0.6s ease-out 1.8s both; }
+    .phase4 { animation: fadeIn 0.6s ease-out 2.6s both; }
+    .phase5 { animation: fadeIn 0.6s ease-out 3.2s both; }
+
+    .flow-arrow { stroke-dasharray: 6 4; animation: flowDash 0.8s linear infinite; }
+    .pulse { animation: pulse 2s ease-in-out infinite; }
+  </style>
+
+  <!-- Background -->
+  <rect width="840" height="380" rx="12" fill="url(#bg)"/>
+  <rect x="1" y="1" width="838" height="378" rx="11" fill="none" stroke="#1e293b" stroke-width="1"/>
+
+  <!-- Title bar -->
+  <rect x="20" y="14" width="800" height="32" rx="6" fill="#111827" stroke="#1e293b" stroke-width="0.5"/>
+  <circle cx="38" cy="30" r="5" fill="#ef4444" opacity="0.8"/>
+  <circle cx="54" cy="30" r="5" fill="#f59e0b" opacity="0.8"/>
+  <circle cx="70" cy="30" r="5" fill="#10b981" opacity="0.8"/>
+  <text x="420" y="34" fill="#94a3b8" text-anchor="middle" font-size="11" font-weight="600">entroly — context compression pipeline</text>
+
+  <!-- PHASE 1: Raw input -->
+  <g class="phase1">
+    <rect x="30" y="62" width="200" height="100" rx="8" fill="#1e1030" stroke="#7c3aed" stroke-width="1" opacity="0.9"/>
+    <text x="130" y="82" fill="#c084fc" text-anchor="middle" font-size="10" font-weight="700" letter-spacing="1">RAW CONTEXT</text>
+    <text x="130" y="108" fill="#f1f5f9" text-anchor="middle" font-size="26" font-weight="800">1,428,500</text>
+    <text x="130" y="124" fill="#94a3b8" text-anchor="middle" font-size="10">input tokens</text>
+    <text x="130" y="148" fill="url(#red)" text-anchor="middle" font-size="14" font-weight="700">$4.29 per request</text>
+  </g>
+
+  <!-- Flow arrow 1 -->
+  <g class="phase2">
+    <line x1="240" y1="112" x2="300" y2="112" stroke="#38bdf8" stroke-width="2" class="flow-arrow"/>
+    <polygon points="300,106 314,112 300,118" fill="#38bdf8" opacity="0.9"/>
+  </g>
+
+  <!-- PHASE 2: Entroly Engine -->
+  <g class="phase2">
+    <rect x="320" y="55" width="200" height="114" rx="10" fill="#0c1a2e" stroke="url(#accent)" stroke-width="1.5"/>
+    <rect x="320" y="55" width="200" height="26" rx="10" fill="url(#accent)" opacity="0.15"/>
+    <text x="420" y="72" fill="#38bdf8" text-anchor="middle" font-size="10" font-weight="800" letter-spacing="1.5">⚡ ENTROLY ENGINE</text>
+
+    <text x="335" y="96" fill="#64748b" font-size="9">1.</text>
+    <text x="348" y="96" fill="#e2e8f0" font-size="9.5">PRISM entropy scoring</text>
+
+    <text x="335" y="112" fill="#64748b" font-size="9">2.</text>
+    <text x="348" y="112" fill="#e2e8f0" font-size="9.5">Knapsack DP selection</text>
+
+    <text x="335" y="128" fill="#64748b" font-size="9">3.</text>
+    <text x="348" y="128" fill="#e2e8f0" font-size="9.5">SAST security scan</text>
+
+    <text x="335" y="144" fill="#64748b" font-size="9">4.</text>
+    <text x="348" y="144" fill="#e2e8f0" font-size="9.5">AST skeleton + CCR handles</text>
+
+    <text x="420" y="162" fill="#475569" text-anchor="middle" font-size="8.5">P95 latency: 0.2ms (Rust + SIMD)</text>
+  </g>
+
+  <!-- Flow arrow 2 -->
+  <g class="phase3">
+    <line x1="530" y1="112" x2="590" y2="112" stroke="#10b981" stroke-width="2" class="flow-arrow"/>
+    <polygon points="590,106 604,112 590,118" fill="#10b981" opacity="0.9"/>
+  </g>
+
+  <!-- PHASE 3: Optimized output -->
+  <g class="phase3">
+    <rect x="610" y="62" width="200" height="100" rx="8" fill="#0a1f1a" stroke="#10b981" stroke-width="1" opacity="0.9"/>
+    <text x="710" y="82" fill="#34d399" text-anchor="middle" font-size="10" font-weight="700" letter-spacing="1">OPTIMIZED</text>
+    <text x="710" y="108" fill="#f1f5f9" text-anchor="middle" font-size="26" font-weight="800">120,000</text>
+    <text x="710" y="124" fill="#94a3b8" text-anchor="middle" font-size="10">tokens (−91.6%)</text>
+    <text x="710" y="148" fill="url(#green)" text-anchor="middle" font-size="14" font-weight="700">$0.36 per request</text>
+  </g>
+
+  <!-- PHASE 4: Receipt + Recovery -->
+  <g class="phase4">
+    <!-- Receipt card -->
+    <rect x="30" y="186" width="380" height="170" rx="8" fill="#111827" stroke="#1e293b" stroke-width="1"/>
+    <rect x="30" y="186" width="380" height="28" rx="8" fill="#1a1a2e"/>
+    <text x="45" y="204" fill="#f59e0b" font-size="10" font-weight="700" letter-spacing="1">🧾 CONTEXT RECEIPT (Merkle-attested)</text>
+
+    <text x="45" y="232" fill="#64748b" font-size="9">merkle_root</text>
+    <text x="155" y="232" fill="#38bdf8" font-size="9">sha256:7f3a..c9e1</text>
+
+    <text x="45" y="250" fill="#64748b" font-size="9">tokens_original</text>
+    <text x="155" y="250" fill="#e2e8f0" font-size="9">1,428,500</text>
+
+    <text x="45" y="268" fill="#64748b" font-size="9">tokens_selected</text>
+    <text x="155" y="268" fill="#10b981" font-size="9">120,000</text>
+
+    <text x="45" y="286" fill="#64748b" font-size="9">recovery_handles</text>
+    <text x="155" y="286" fill="#a855f7" font-size="9">1,847 spans → byte-exact restore</text>
+
+    <text x="45" y="304" fill="#64748b" font-size="9">sast_violations</text>
+    <text x="155" y="304" fill="#ef4444" font-size="9">3 CWEs flagged (suppressed)</text>
+
+    <text x="45" y="322" fill="#64748b" font-size="9">witness_signature</text>
+    <text x="155" y="322" fill="#f59e0b" font-size="9">HMAC-SHA256 ✓ tamper-evident</text>
+
+    <text x="45" y="344" fill="#475569" font-size="8.5" font-style="italic">Alter one byte → receipt invalidates. Run: entroly verify-receipt</text>
+  </g>
+
+  <!-- Accuracy retention card -->
+  <g class="phase5">
+    <rect x="430" y="186" width="380" height="170" rx="8" fill="#111827" stroke="#1e293b" stroke-width="1"/>
+    <rect x="430" y="186" width="380" height="28" rx="8" fill="#0a1f1a"/>
+    <text x="445" y="204" fill="#10b981" font-size="10" font-weight="700" letter-spacing="1">📊 ACCURACY RETENTION (6 benchmarks)</text>
+
+    <!-- Benchmark mini-bars -->
+    <text x="445" y="230" fill="#94a3b8" font-size="9">NeedleInHaystack</text>
+    <rect x="580" y="222" width="180" height="10" rx="3" fill="#1e293b"/>
+    <rect x="580" y="222" width="180" height="10" rx="3" fill="url(#green)" opacity="0.8"/>
+    <text x="770" y="230" fill="#10b981" font-size="9" font-weight="600">100%</text>
+
+    <text x="445" y="250" fill="#94a3b8" font-size="9">GSM8K</text>
+    <rect x="580" y="242" width="180" height="10" rx="3" fill="#1e293b"/>
+    <rect x="580" y="242" width="182" height="10" rx="3" fill="url(#green)" opacity="0.8"/>
+    <text x="770" y="250" fill="#10b981" font-size="9" font-weight="600">101%</text>
+
+    <text x="445" y="270" fill="#94a3b8" font-size="9">SQuAD 2.0</text>
+    <rect x="580" y="262" width="180" height="10" rx="3" fill="#1e293b"/>
+    <rect x="580" y="262" width="178" height="10" rx="3" fill="url(#green)" opacity="0.8"/>
+    <text x="770" y="270" fill="#10b981" font-size="9" font-weight="600">99%</text>
+
+    <text x="445" y="290" fill="#94a3b8" font-size="9">MMLU</text>
+    <rect x="580" y="282" width="180" height="10" rx="3" fill="#1e293b"/>
+    <rect x="580" y="282" width="187" height="10" rx="3" fill="url(#green)" opacity="0.8"/>
+    <text x="770" y="290" fill="#10b981" font-size="9" font-weight="600">104%</text>
+
+    <text x="445" y="310" fill="#94a3b8" font-size="9">TruthfulQA</text>
+    <rect x="580" y="302" width="180" height="10" rx="3" fill="#1e293b"/>
+    <rect x="580" y="302" width="182" height="10" rx="3" fill="url(#green)" opacity="0.8"/>
+    <text x="770" y="310" fill="#10b981" font-size="9" font-weight="600">101%</text>
+
+    <text x="445" y="330" fill="#94a3b8" font-size="9">LongBench</text>
+    <rect x="580" y="322" width="180" height="10" rx="3" fill="#1e293b"/>
+    <rect x="580" y="322" width="189" height="10" rx="3" fill="url(#green)" opacity="0.8"/>
+    <text x="770" y="330" fill="#10b981" font-size="9" font-weight="600">105%</text>
+
+    <text x="620" y="352" fill="#94a3b8" text-anchor="middle" font-size="9">Avg retention: <tspan fill="#10b981" font-weight="700">101.7%</tspan> — zero accuracy loss</text>
+  </g>
+</svg>

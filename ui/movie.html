@@ -1,0 +1,1706 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Entroly: The Codebase Movie — A 13-Layer Context OS Documentary</title>
+  <link rel="icon" type="image/svg+xml" href="./assets/icon.svg">
+  <meta name="theme-color" content="#05070d">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-space: #05070f;
+      --bg-surface: #0a0e1a;
+      --bg-surface-glass: rgba(13, 19, 36, 0.75);
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-active: rgba(56, 189, 248, 0.4);
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      
+      --cyan: #38bdf8;
+      --cyan-glow: rgba(56, 189, 248, 0.35);
+      --emerald: #10b981;
+      --emerald-glow: rgba(16, 185, 129, 0.35);
+      --purple: #a855f7;
+      --purple-glow: rgba(168, 85, 247, 0.35);
+      --amber: #f59e0b;
+      --amber-glow: rgba(245, 158, 11, 0.35);
+      --pink: #ec4899;
+      --pink-glow: rgba(236, 72, 153, 0.35);
+      --indigo: #6366f1;
+      --indigo-glow: rgba(99, 102, 241, 0.35);
+
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+      --radius-full: 9999px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background-color: var(--bg-space);
+      color: var(--text-main);
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+      display: flex;
+      flex-direction: column;
+      user-select: none;
+    }
+
+    /* Ambient background canvas */
+    #bgCanvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    /* Cinema Container */
+    .cinema-viewport {
+      position: relative;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      max-width: 1600px;
+      margin: 0 auto;
+      width: 100%;
+      padding: 16px 24px 20px;
+      gap: 16px;
+    }
+
+    /* Header Nav */
+    .cinema-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 48px;
+      padding: 0 16px;
+      background: var(--bg-surface-glass);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-family: 'Outfit', sans-serif;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      font-size: 16px;
+      text-transform: uppercase;
+      color: #fff;
+    }
+
+    .brand-film-badge {
+      font-size: 10px;
+      background: linear-gradient(135deg, var(--cyan), var(--purple));
+      color: #000;
+      padding: 2px 8px;
+      border-radius: var(--radius-full);
+      font-weight: 900;
+      letter-spacing: 0.05em;
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .btn-nav {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      padding: 6px 14px;
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+      text-decoration: none;
+    }
+
+    .btn-nav:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .btn-sound {
+      border-color: rgba(56, 189, 248, 0.3);
+      color: var(--cyan);
+    }
+
+    .btn-sound.muted {
+      color: var(--text-dim);
+      border-color: var(--border-subtle);
+    }
+
+    /* Main Theater Stage */
+    .theater-stage {
+      flex: 1;
+      position: relative;
+      background: radial-gradient(circle at center, rgba(16, 24, 45, 0.75) 0%, rgba(5, 7, 15, 0.95) 100%);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8), inset 0 0 80px rgba(0, 0, 0, 0.5);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transition: border-color 0.5s ease, box-shadow 0.5s ease;
+    }
+
+    /* Ambient Glow behind stage */
+    .theater-glow {
+      position: absolute;
+      inset: -2px;
+      border-radius: calc(var(--radius-lg) + 2px);
+      background: linear-gradient(135deg, var(--cyan-glow), transparent 60%, var(--purple-glow));
+      z-index: -1;
+      opacity: 0.4;
+      filter: blur(24px);
+      transition: background 0.8s ease, opacity 0.8s ease;
+    }
+
+    /* Film Screen Area */
+    .screen-content {
+      flex: 1;
+      padding: 32px 48px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+      overflow-y: auto;
+      scrollbar-width: none;
+    }
+    .screen-content::-webkit-scrollbar { display: none; }
+
+    /* Scene Header */
+    .scene-meta {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 12px;
+    }
+
+    .scene-number-badge {
+      font-family: 'Outfit', sans-serif;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      padding: 4px 12px;
+      background: rgba(255,255,255,0.06);
+      border-radius: var(--radius-full);
+      border: 1px solid var(--border-subtle);
+    }
+
+    .scene-layer-tag {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      color: var(--cyan);
+      text-transform: uppercase;
+    }
+
+    .scene-title {
+      font-family: 'Outfit', sans-serif;
+      font-size: 38px;
+      font-weight: 900;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      background: linear-gradient(135deg, #ffffff 40%, #94a3b8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 8px;
+      max-width: 1000px;
+    }
+
+    .scene-subtitle {
+      font-size: 16px;
+      color: var(--text-muted);
+      line-height: 1.5;
+      max-width: 900px;
+      margin-bottom: 24px;
+    }
+
+    /* Dynamic Files Grid in Scene */
+    .scene-files-container {
+      margin-bottom: 24px;
+    }
+
+    .files-header-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-dim);
+      font-weight: 700;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .files-header-label::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border-subtle);
+    }
+
+    .files-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 14px;
+    }
+
+    .file-card {
+      background: rgba(15, 23, 42, 0.6);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 16px 18px;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .file-card:hover {
+      transform: translateY(-3px);
+      background: rgba(22, 33, 60, 0.85);
+      border-color: var(--border-active);
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5), 0 0 20px var(--cyan-glow);
+    }
+
+    .file-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 4px;
+      height: 100%;
+      background: var(--cyan);
+      opacity: 0.8;
+    }
+
+    .file-card-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .file-lang-pill {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--cyan);
+      text-transform: uppercase;
+    }
+
+    .file-loc {
+      font-size: 11px;
+      color: var(--text-dim);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .file-path {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      font-weight: 600;
+      color: #fff;
+      word-break: break-all;
+      margin-bottom: 6px;
+    }
+
+    .file-role {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.4;
+      margin-bottom: 8px;
+    }
+
+    .file-badge-guarantee {
+      font-size: 10px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: var(--radius-full);
+      background: rgba(16, 185, 129, 0.12);
+      color: var(--emerald);
+      border: 1px solid rgba(16, 185, 129, 0.25);
+      font-weight: 600;
+    }
+
+    /* Visual Architecture Flow Animation */
+    .flow-diagram-panel {
+      background: rgba(8, 12, 24, 0.7);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 16px 20px;
+      margin-top: auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      position: relative;
+    }
+
+    .flow-step {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .flow-node {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .flow-node-title {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .flow-node-detail {
+      font-size: 10px;
+      color: var(--text-dim);
+    }
+
+    .flow-arrow {
+      color: var(--cyan);
+      font-size: 18px;
+      animation: pulseArrow 1.5s infinite;
+    }
+
+    @keyframes pulseArrow {
+      0%, 100% { opacity: 0.4; transform: translateX(0); }
+      50% { opacity: 1; transform: translateX(4px); }
+    }
+
+    /* Subtitles / Narration Bar */
+    .subtitles-bar {
+      min-height: 60px;
+      background: rgba(5, 7, 15, 0.85);
+      backdrop-filter: blur(16px);
+      border-top: 1px solid var(--border-subtle);
+      padding: 12px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+    }
+
+    .subtitles-text {
+      font-size: 15px;
+      font-weight: 500;
+      color: #e2e8f0;
+      line-height: 1.5;
+      max-width: 1100px;
+      letter-spacing: 0.01em;
+    }
+
+    /* Player Controls Bar */
+    .controls-bar {
+      height: 64px;
+      background: var(--bg-surface-glass);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    }
+
+    .controls-left, .controls-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 220px;
+    }
+    .controls-right { justify-content: flex-end; }
+
+    .btn-ctrl {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border-radius: var(--radius-full);
+      transition: all 0.2s ease;
+    }
+    .btn-ctrl:hover {
+      color: #fff;
+      background: rgba(255,255,255,0.08);
+    }
+
+    .btn-play-pause {
+      width: 44px;
+      height: 44px;
+      background: linear-gradient(135deg, var(--cyan), #0284c7);
+      color: #000;
+      font-weight: 900;
+      box-shadow: 0 0 20px var(--cyan-glow);
+    }
+    .btn-play-pause:hover {
+      transform: scale(1.06);
+      background: linear-gradient(135deg, #7dd3fc, #38bdf8);
+      color: #000;
+    }
+
+    .timeline-wrapper {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 0 24px;
+    }
+
+    .timeline-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--text-dim);
+    }
+
+    .timeline-track {
+      height: 6px;
+      background: rgba(255,255,255,0.1);
+      border-radius: var(--radius-full);
+      position: relative;
+      cursor: pointer;
+      overflow: hidden;
+    }
+
+    .timeline-progress {
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--cyan), var(--purple));
+      border-radius: var(--radius-full);
+      transition: width 0.1s linear;
+    }
+
+    .scene-ticks {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      justify-content: space-between;
+      pointer-events: none;
+    }
+
+    .scene-tick {
+      width: 2px;
+      height: 100%;
+      background: rgba(0,0,0,0.6);
+    }
+
+    .speed-select {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      border-radius: var(--radius-sm);
+      padding: 4px 8px;
+      font-size: 11px;
+      font-family: 'JetBrains Mono', monospace;
+      cursor: pointer;
+    }
+
+    /* Modal / Inspector Drawer */
+    .inspector-modal {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: min(650px, 90vw);
+      height: 100vh;
+      background: rgba(10, 14, 26, 0.95);
+      backdrop-filter: blur(28px);
+      border-left: 1px solid var(--border-active);
+      box-shadow: -20px 0 60px rgba(0,0,0,0.8);
+      z-index: 1000;
+      transform: translateX(100%);
+      transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex;
+      flex-direction: column;
+      padding: 32px 36px;
+      gap: 20px;
+    }
+
+    .inspector-modal.open {
+      transform: translateX(0);
+    }
+
+    .inspector-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border-subtle);
+      padding-bottom: 16px;
+    }
+
+    .inspector-title {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 18px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .inspector-layer {
+      font-size: 12px;
+      color: var(--cyan);
+      font-weight: 600;
+      margin-top: 4px;
+    }
+
+    .inspector-close {
+      background: rgba(255,255,255,0.06);
+      border: none;
+      color: var(--text-muted);
+      width: 32px;
+      height: 32px;
+      border-radius: var(--radius-full);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+    }
+    .inspector-close:hover { background: rgba(255,255,255,0.15); color: #fff; }
+
+    .inspector-body {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      scrollbar-width: thin;
+    }
+
+    .inspector-section-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-dim);
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .inspector-desc {
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    .code-preview {
+      background: #05070d;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 14px 18px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      color: #38bdf8;
+      overflow-x: auto;
+      line-height: 1.5;
+      white-space: pre;
+    }
+
+    .contract-box {
+      background: rgba(16, 185, 129, 0.08);
+      border: 1px solid rgba(16, 185, 129, 0.25);
+      border-radius: var(--radius-sm);
+      padding: 12px 16px;
+      font-size: 12px;
+      color: #a7f3d0;
+      line-height: 1.5;
+    }
+
+    /* Modal Backdrop */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(4px);
+      z-index: 999;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+    .modal-backdrop.visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    @media (max-width: 900px) {
+      .cinema-viewport { padding: 10px; }
+      .scene-title { font-size: 26px; }
+      .screen-content { padding: 20px; }
+      .files-grid { grid-template-columns: 1fr; }
+      .flow-diagram-panel { flex-direction: column; align-items: flex-start; }
+      .flow-arrow { transform: rotate(90deg); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Ambient WebGL / Canvas Background -->
+  <canvas id="bgCanvas"></canvas>
+
+  <div class="cinema-viewport">
+    
+    <!-- Top Navigation -->
+    <header class="cinema-nav">
+      <div class="brand">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10" stroke="var(--cyan)"/>
+          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" stroke="var(--purple)"/>
+        </svg>
+        <span>ENTROLY</span>
+        <span class="brand-film-badge">CODEBASE CINEMA</span>
+      </div>
+
+      <div class="nav-actions">
+        <button id="btnSound" class="btn-nav btn-sound" title="Toggle Cinematic Soundtrack (Web Audio Synth)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+          </svg>
+          <span id="soundLabel">SOUNDTRACK: ON</span>
+        </button>
+
+        <a href="./index.html" class="btn-nav" title="Switch to Executive Control Plane HUD">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="7"></rect>
+            <rect x="14" y="3" width="7" height="7"></rect>
+            <rect x="14" y="14" width="7" height="7"></rect>
+            <rect x="3" y="14" width="7" height="7"></rect>
+          </svg>
+          <span>HUD DASHBOARD</span>
+        </a>
+      </div>
+    </header>
+
+    <!-- Main Movie Screen -->
+    <main class="theater-stage" id="theaterStage">
+      <div class="theater-glow" id="theaterGlow"></div>
+
+      <div class="screen-content" id="screenContent">
+        <div>
+          <div class="scene-meta">
+            <span class="scene-number-badge" id="sceneBadge">SCENE 01 / 11</span>
+            <span class="scene-layer-tag" id="sceneLayerTag">PROLOGUE</span>
+          </div>
+
+          <h1 class="scene-title" id="sceneTitle">The Crisis of Context Rot</h1>
+          <p class="scene-subtitle" id="sceneSubtitle">Why coding agents degrade in long sessions: token bloat, lost-in-the-middle phenomena, and spiraling model invoices.</p>
+        </div>
+
+        <div class="scene-files-container">
+          <div class="files-header-label">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+            </svg>
+            Active Architectural Components & Source Files (Click to Inspect)
+          </div>
+          <div class="files-grid" id="filesGrid">
+            <!-- Injected by JavaScript -->
+          </div>
+        </div>
+
+        <div class="flow-diagram-panel" id="flowPanel">
+          <!-- Injected by JavaScript -->
+        </div>
+      </div>
+
+      <!-- Closed-caption Narration -->
+      <div class="subtitles-bar">
+        <p class="subtitles-text" id="subtitlesText">Loading Entroly narrative script...</p>
+      </div>
+    </main>
+
+    <!-- Player Controls Bar -->
+    <footer class="controls-bar">
+      <div class="controls-left">
+        <button class="btn-ctrl" id="btnPrev" title="Previous Scene ([)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="19 20 9 12 19 4 19 20"></polygon>
+            <line x1="5" y1="19" x2="5" y2="5"></line>
+          </svg>
+        </button>
+
+        <button class="btn-ctrl btn-play-pause" id="btnPlayPause" title="Play / Pause (Spacebar)">
+          <svg id="playIcon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+          </svg>
+          <svg id="pauseIcon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style="display:none;">
+            <rect x="6" y="4" width="4" height="16"></rect>
+            <rect x="14" y="4" width="4" height="16"></rect>
+          </svg>
+        </button>
+
+        <button class="btn-ctrl" id="btnNext" title="Next Scene (])">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="5 4 15 12 5 20 5 4"></polygon>
+            <line x1="19" y1="5" x2="19" y2="19"></line>
+          </svg>
+        </button>
+
+        <span style="font-family:'JetBrains Mono'; font-size:12px; color:var(--text-muted); margin-left:8px;" id="timeDisplay">00:00 / 05:30</span>
+      </div>
+
+      <div class="timeline-wrapper">
+        <div class="timeline-meta">
+          <span id="currentSceneName">Prologue: Context Rot</span>
+          <span id="sceneProgressText">Scene 1 of 11</span>
+        </div>
+        <div class="timeline-track" id="timelineTrack">
+          <div class="timeline-progress" id="timelineProgress"></div>
+          <div class="scene-ticks" id="sceneTicks"></div>
+        </div>
+      </div>
+
+      <div class="controls-right">
+        <select class="speed-select" id="speedSelect" title="Playback Speed">
+          <option value="0.75">0.75x</option>
+          <option value="1.0" selected>1.0x (Cinema)</option>
+          <option value="1.5">1.5x</option>
+          <option value="2.0">2.0x (Speedrun)</option>
+        </select>
+
+        <button class="btn-ctrl" id="btnFullscreen" title="Fullscreen Mode (F)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+          </svg>
+        </button>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Modal Backdrop -->
+  <div class="modal-backdrop" id="modalBackdrop"></div>
+
+  <!-- Interactive File Inspector Drawer -->
+  <aside class="inspector-modal" id="inspectorModal">
+    <div class="inspector-header">
+      <div>
+        <h2 class="inspector-title" id="inspectFilePath">entroly-engine/src/prism.rs</h2>
+        <div class="inspector-layer" id="inspectLayer">Layer 1: Context Engine & Optimization</div>
+      </div>
+      <button class="inspector-close" id="btnCloseInspector">&times;</button>
+    </div>
+
+    <div class="inspector-body">
+      <div>
+        <div class="inspector-section-label">Architectural Role & Work Done</div>
+        <p class="inspector-desc" id="inspectRole">Description...</p>
+      </div>
+
+      <div>
+        <div class="inspector-section-label">Core Mechanical Algorithms</div>
+        <p class="inspector-desc" id="inspectAlgo">Algorithms...</p>
+      </div>
+
+      <div>
+        <div class="inspector-section-label">Source Code Sample (Excerpt)</div>
+        <pre class="code-preview" id="inspectCode">fn example() {}</pre>
+      </div>
+
+      <div>
+        <div class="inspector-section-label">Fail-Closed Operating Contract</div>
+        <div class="contract-box" id="inspectContract">Guaranteed Contract...</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Cinema Script & Interactive Controller -->
+  <script>
+    /* -------------------------------------------------------------
+       SCENE DATA: 11 Scenes Covering All Layers & Key Files
+       ------------------------------------------------------------- */
+    const SCENES = [
+      {
+        id: 1,
+        badge: "SCENE 01 / 11",
+        layer: "PROLOGUE",
+        title: "The Crisis of Context Rot",
+        subtitle: "Why AI agents degrade in long sessions: exponential token bloat, forgotten instructions, and the lost-in-the-middle catastrophe.",
+        themeColor: "#38bdf8",
+        narration: "As developer sessions stretch over hours, AI context windows fill with redundant logs, obsolete diffs, and duplicate definitions. The model loses grounding, hallucinating code while token costs skyrocket. Entroly was engineered to solve this fundamentally.",
+        files: [
+          {
+            path: "docs/what-is-context-rot.html",
+            lang: "HTML / SEO",
+            loc: "529 lines",
+            role: "Comprehensive scientific thesis on context degradation and attention dilution in large language models.",
+            algo: "Shannon entropy decay models, attention heatmaps, and lost-in-the-middle error distribution graphs.",
+            code: `<!-- Context Rot Scientific Definition -->\n<p>Context rot is the progressive decay of model reasoning fidelity caused by irrelevant tokens displacing answer-critical repository evidence.</p>`,
+            contract: "Defines the exact problem statement and benchmark thresholds across frontier models."
+          },
+          {
+            path: "docs/public-evidence.md",
+            lang: "Markdown",
+            loc: "245 lines",
+            role: "Ground-truth evidence ledger binding every numeric claim to committed artifacts and verifiable hashes.",
+            algo: "Evidence hashes, reproduction command verification, and zero-hallucination bounds.",
+            code: `## Pinned Public Evidence Ledger\n- 5,117/5,117 native source fragments byte-exact\n- 13/13 public SDK recovery probes matching\n- 0 unbacked marketing claims`,
+            contract: "Strict honesty contract: no claim without a committed artifact and reproducibility CLI."
+          }
+        ],
+        flow: [
+          { title: "Raw Context Collector", detail: "1.4M input tokens" },
+          { title: "Attention Dilution", detail: "Context Rot: 68% error spike" },
+          { title: "Entroly Intervention", detail: "Knapsack Budget: 120k tokens" }
+        ]
+      },
+      {
+        id: 2,
+        badge: "SCENE 02 / 11",
+        layer: "LAYER 1 & 2: NATIVE RUST ENGINE",
+        title: "PRISM: Submodular Context Optimization",
+        subtitle: "The 0.2ms P95 SIMD engine: Knapsack dynamic programming, Shannon entropy scoring, and AST dependency graph ranking.",
+        themeColor: "#38bdf8",
+        narration: "Rather than heuristic string chopping, Entroly compiles to high-performance native Rust. In less than a millisecond, it computes the Shannon entropy of each fragment and solves the submodular knapsack problem to pick the globally optimal set of files.",
+        files: [
+          {
+            path: "entroly-core/src/lib.rs",
+            lang: "Rust / PyO3",
+            loc: "480 lines",
+            role: "Native PyO3 FFI bridge exposing Rust acceleration to Python, WASM, and CLI entry points.",
+            algo: "Direct memory mapping, zero-copy Python byte buffers, SIMD vectorization.",
+            code: `#[pyfunction]\npub fn optimize_context(\n    py: Python,\n    fragments: Vec<ContextFragment>,\n    budget_tokens: usize,\n) -> PyResult<OptimizationResult> {\n    let plan = engine::solve_knapsack(&fragments, budget_tokens)?;\n    Ok(plan.into())\n}`,
+            contract: "P95 execution latency < 0.25ms; deterministic output across x86_64, arm64, and wasm32."
+          },
+          {
+            path: "entroly-engine/src/prism.rs",
+            lang: "Rust",
+            loc: "1,240 lines",
+            role: "PRISM (Polynomial Reinforcement for Information-Scored Memory) engine & Shannon entropy evaluator.",
+            algo: "H(X) = -sum(p(x) * log2(p(x))), SimHash 64-bit Hamming distance dedup, BM25 text relevance.",
+            code: `pub fn score_fragment(text: &str, query: &str) -> f64 {\n    let entropy = calculate_shannon_entropy(text);\n    let bm25 = compute_bm25_relevance(text, query);\n    let simhash = simhash_64(text);\n    (entropy * 0.4) + (bm25 * 0.6)\n}`,
+            contract: "Zero token loss for designated protected spans; strictly bounded knapsack budget."
+          },
+          {
+            path: "entroly-engine/src/knapsack.rs",
+            lang: "Rust",
+            loc: "620 lines",
+            role: "Exact and submodular dynamic programming solvers for multi-constraint context budgeting.",
+            algo: "0-1 Knapsack DP with branch-and-bound optimization and diminishing marginal utility penalties.",
+            code: `pub fn knapsack_dp(items: &[Item], budget: usize) -> Vec<Item> {\n    let mut dp = vec![0.0; budget + 1];\n    for item in items {\n        for w in (item.tokens..=budget).rev() {\n            dp[w] = dp[w].max(dp[w - item.tokens] + item.utility);\n        }\n    }\n    backtrack_selection(&dp, items, budget)\n}`,
+            contract: "Never exceeds token budget by even 1 token; mathematically optimal selection."
+          }
+        ],
+        flow: [
+          { title: "Query + Codebase", detail: "AST graph extraction" },
+          { title: "PRISM Scoring", detail: "Entropy + BM25 + SimHash" },
+          { title: "Rust Knapsack DP", detail: "Optimal 120k context package" }
+        ]
+      },
+      {
+        id: 3,
+        badge: "SCENE 03 / 11",
+        layer: "LAYER 3 & 4: VERIFICATION & CAUSALITY",
+        title: "EICV & Embedded SAST Security",
+        subtitle: "Deterministic hallucination prevention without remote model calls, paired with a 55-rule AST security scanner.",
+        themeColor: "#10b981",
+        narration: "Output verification must never make surprise outbound API calls. Entroly's Evidence-Invariant Causal Verification (EICV) uses AST graph unification to verify that generated code causal assertions match verified repository truth.",
+        files: [
+          {
+            path: "entroly-engine/src/eicv.rs",
+            lang: "Rust",
+            loc: "890 lines",
+            role: "Evidence-Invariant Causal Verification (EICV) engine validating claims against evidence.",
+            algo: "Causal DAG assertion checking, entity-relation unification, four-state hedge/suppress policy.",
+            code: `pub fn verify_claim(claim: &Claim, evidence: &[Evidence]) -> VerificationVerdict {\n    match causal_unification(claim, evidence) {\n        Unification::Grounded => VerificationVerdict::Pass,\n        Unification::Contradicted => VerificationVerdict::Suppress,\n        Unification::Unverifiable => VerificationVerdict::Hedge,\n    }\n}`,
+            contract: "Fail-closed: unverified claims are suppressed or hedged; zero network egress during verification."
+          },
+          {
+            path: "entroly-engine/src/sast.rs",
+            lang: "Rust",
+            loc: "780 lines",
+            role: "Embedded 55-rule Static Application Security Testing (SAST) analyzer.",
+            algo: "AST pattern matching for CWE-89 (SQLi), CWE-79 (XSS), hardcoded secrets, and unsafe memory.",
+            code: `pub fn scan_ast(ast: &ProgramAst) -> Vec<SecurityViolation> {\n    let mut violations = Vec::new();\n    check_cwe_secrets(ast, &mut violations);\n    check_sql_injection(ast, &mut violations);\n    violations\n}`,
+            contract: "0 Critical CWE violations tolerated in verified output."
+          }
+        ],
+        flow: [
+          { title: "Generated Output", detail: "Candidate code from LLM" },
+          { title: "EICV Causal Validator", detail: "Graph match vs evidence" },
+          { title: "SAST Rule Scan", detail: "55 CWE checks passed" }
+        ]
+      },
+      {
+        id: 4,
+        badge: "SCENE 04 / 11",
+        layer: "LAYER 5 & 6: REVERSIBLE COMPRESSION",
+        title: "Context Receipts & Reversible Codecs",
+        subtitle: "Lossless AST skeletons, JSON folding, and Content-Addressed Retrieval (CCR) ensuring every omitted byte is recoverable.",
+        themeColor: "#a855f7",
+        narration: "When Entroly compresses files, it does not throw bytes into the void. It generates reversible skeletons, stripping comments and function bodies while embedding cryptographic handles so the agent can expand any omitted section instantly.",
+        files: [
+          {
+            path: "entroly/ccr.py",
+            lang: "Python",
+            loc: "520 lines",
+            role: "Content-Addressed Context Recovery (CCR) orchestrator.",
+            algo: "Merkle content-addressing (SHA-256), chunk-level delta indexing, exact byte retrieval.",
+            code: `class ContextRecovery:\n    def recover_handle(self, handle: str) -> bytes:\n        chunk = self.store.get(handle)\n        if not chunk or not verify_hash(chunk, handle):\n            raise IntegrityViolation("Corrupted recovery chunk")\n        return chunk`,
+            contract: "Byte-exact roundtrip guarantee: recover(handle) == original_source_bytes."
+          },
+          {
+            path: "entroly/universal_compress.py",
+            lang: "Python",
+            loc: "610 lines",
+            role: "Universal multi-language AST pruning engine for Python, TypeScript, JSON, and prose.",
+            algo: "Grammar-aware AST skeleton extraction, docstring preservation, indent-aware folding.",
+            code: `def universal_compress(text: str, target_ratio: float, mode: str) -> tuple[str, Receipt, int]:\n    if mode == "code":\n        return ast_skeleton_compress(text, target_ratio)\n    return semantic_entropy_prune(text, target_ratio)`,
+            contract: "Preserves function signatures, class declarations, and import topology intact."
+          },
+          {
+            path: "entroly/evidence_locked_compression.py",
+            lang: "Python",
+            loc: "740 lines",
+            role: "Evidence-Locked Compression (ELC) locking crucial diagnostic evidence into uncompressible anchors.",
+            algo: "Anchor identification, priority queue pinning, knapsack remainder distribution.",
+            code: `def lock_evidence_spans(text: str, query: str) -> list[Anchor]:\n    anchors = find_stacktraces(text)\n    anchors.extend(find_symbol_definitions(text, query))\n    return pin_immutable_spans(anchors)`,
+            contract: "Locked evidence spans will never be pruned regardless of budget pressure."
+          }
+        ],
+        flow: [
+          { title: "Original Source Code", detail: "Functions, bodies, docstrings" },
+          { title: "AST Skeleton + ELC", detail: "Signatures kept, bodies folded" },
+          { title: "CCR Handles Emitted", detail: "Byte-exact recovery on demand" }
+        ]
+      },
+      {
+        id: 5,
+        badge: "SCENE 05 / 11",
+        layer: "LAYER 7: AUDITABLE ATTESTATION",
+        title: "Cryptographic WITNESS & Merkle Proofs",
+        subtitle: "Auditability as a first-class citizen: every token pruned emits a tamper-evident Context Receipt.",
+        themeColor: "#10b981",
+        narration: "Trust before speed. WITNESS builds a Merkle tree of every fragment selected and omitted. If a model ever gives a suspicious answer, the receipt proves conclusively what context was visible to the model at that exact millisecond.",
+        files: [
+          {
+            path: "entroly/witness.py",
+            lang: "Python",
+            loc: "910 lines",
+            role: "Cryptographic WITNESS attestation plane for context integrity.",
+            algo: "Merkle DAG computation, HMAC-SHA256 signature, fail-closed verification loop.",
+            code: `class WitnessEngine:\n    def attest_context(self, selected: list[Span], omitted: list[Span]) -> ContextReceipt:\n        root_hash = compute_merkle_root(selected, omitted)\n        signature = sign_receipt(root_hash, self.signing_key)\n        return ContextReceipt(root_hash=root_hash, signature=signature, timestamp_ms=now_ms())`,
+            contract: "Tamper-evident: altering a single byte in the prompt invalidates the Merkle receipt."
+          },
+          {
+            path: "entroly/context_receipts/receipts.py",
+            lang: "Python",
+            loc: "430 lines",
+            role: "Standardized JSON Schema serializing Merkle evidence receipts.",
+            algo: "RFC 6902 JSON patch integration, ISO 8601 millisecond timestamps.",
+            code: `class ContextReceipt(BaseModel):\n    schema_version: str = "1.0.0"\n    request_id: str\n    merkle_root: str\n    tokens_original: int\n    tokens_selected: int\n    recovery_handles: dict[str, str]`,
+            contract: "Deterministic JSON serialization matching Python and WASM bindings."
+          }
+        ],
+        flow: [
+          { title: "Context Selection", detail: "Spans selected & omitted" },
+          { title: "Merkle Tree Hashing", detail: "SHA-256 DAG generation" },
+          { title: "Signed Context Receipt", detail: "Immutable cryptographic proof" }
+        ]
+      },
+      {
+        id: 6,
+        badge: "SCENE 06 / 11",
+        layer: "LAYER 8 & 9: MEMORY OS",
+        title: "Epistemic Knowledge Vault & Memory Fabric",
+        subtitle: "Persistent cross-session memory: belief reconciliation, skill evolution, and anti-drift verification.",
+        themeColor: "#ec4899",
+        narration: "Agents shouldn't start from zero every session. The Epistemic Knowledge Vault stores verified beliefs, architecture facts, and user corrections, reconciling contradictions automatically and providing warm-starts with zero token cost.",
+        files: [
+          {
+            path: "entroly/vault.py",
+            lang: "Python",
+            loc: "1,180 lines",
+            role: "Epistemic Knowledge Vault managing long-term agent memory and facts.",
+            algo: "Belief revision (Alchourrón-Gärdenfors-Makinson AGM), confidence weighting, TTL eviction.",
+            code: `class EpistemicVault:\n    def record_belief(self, subject: str, predicate: str, confidence: float, source: str):\n        existing = self.query(subject)\n        reconciled = self.reconcile_conflicts(existing, predicate, confidence)\n        self.persist(subject, reconciled)`,
+            contract: "Never emits ungrounded beliefs; contradictory facts trigger automated resolution."
+          },
+          {
+            path: "entroly/memory_fabric.py",
+            lang: "Python",
+            loc: "850 lines",
+            role: "High-throughput multi-agent memory fabric with SQLite and in-memory caching.",
+            algo: "Concurrent reader/writer locks, vector semantic clustering, zero-copy deserialization.",
+            code: `class MemoryFabric:\n    def recall_work_context(self, repo_id: str, query: str) -> list[MemoryItem]:\n        embedding = self.embed(query)\n        return self.search_hybrid(repo_id, embedding, top_k=8)`,
+            contract: "Zero token consumption on cold retrieval; instant sub-millisecond recall."
+          },
+          {
+            path: "entroly/esg.py",
+            lang: "Python",
+            loc: "490 lines",
+            role: "Epistemic State Graph maintaining transitive relations across repository components.",
+            algo: "Directed graph reachability, topological sort of dependent modules, cycle detection.",
+            code: `class EpistemicStateGraph:\n    def find_transitive_impact(self, modified_files: set[str]) -> set[str]:\n        impacted = set(modified_files)\n        for file in modified_files:\n            impacted.update(self.graph.successors(file))\n        return impacted`,
+            contract: "Maintains complete dependency closure across multi-file refactoring operations."
+          }
+        ],
+        flow: [
+          { title: "Agent Interactions", detail: "Facts, corrections, discoveries" },
+          { title: "Epistemic Vault", detail: "Conflict reconciliation & graph" },
+          { title: "Warm-Start Context", detail: "0-token instant recall" }
+        ]
+      },
+      {
+        id: 7,
+        badge: "SCENE 07 / 11",
+        layer: "LAYER 10: INTELLIGENT ROUTING",
+        title: "RAVS & Bayesian Model Routing",
+        subtitle: "Dynamic model routing across Claude 3.7 Sonnet, GPT-5.6, Nemotron, and local Ollama using Thompson Sampling.",
+        themeColor: "#f59e0b",
+        narration: "Not every task needs the most expensive frontier model. The Reliable Agentic Verification & Selection (RAVS) layer models historical success probabilities using Bayesian priors, routing code queries to the most cost-effective provider.",
+        files: [
+          {
+            path: "entroly/ravs/beta_bounds.py",
+            lang: "Python",
+            loc: "380 lines",
+            role: "Bayesian Beta-binomial confidence bounds for model family performance.",
+            algo: "Beta distribution posterior updating, Thompson sampling, Clopper-Pearson exact confidence intervals.",
+            code: `def update_model_prior(alpha: float, beta: float, success: bool) -> tuple[float, float]:\n    if success:\n        return alpha + 1.0, beta\n    return alpha, beta + 1.0`,
+            contract: "Mathematically bounded exploration risk; eliminates inferior models automatically."
+          },
+          {
+            path: "entroly/model_router.py",
+            lang: "Python",
+            loc: "720 lines",
+            role: "Autonomous task-to-model dispatcher based on complexity and latency budgets.",
+            algo: "Cost-utility Pareto frontier optimization, fallback failover ladder.",
+            code: `def select_optimal_model(task_complexity: float, budget_usd: float) -> str:\n    candidates = registry.get_capable_models(task_complexity)\n    return max(candidates, key=lambda m: m.expected_utility(budget_usd))`,
+            contract: "Never routes to unconfigured or degraded endpoints; strict fallback guarantee."
+          },
+          {
+            path: "entroly/models/registry.json",
+            lang: "JSON",
+            loc: "350 lines",
+            role: "Comprehensive catalog of supported frontier, mid-tier, and local model capabilities and token pricing.",
+            algo: "Verified pricing provenance, context window ceilings, reasoning level definitions.",
+            code: `{\n  "id": "anthropic/claude-3-7-sonnet",\n  "context_window": 200000,\n  "input_price_per_m": 3.00,\n  "cached_price_per_m": 0.30\n}`,
+            contract: "All model IDs and pricing strictly corroborated against vendor documentation."
+          }
+        ],
+        flow: [
+          { title: "Incoming Request", detail: "Query + Task Complexity" },
+          { title: "Bayesian RAVS Router", detail: "Thompson sampling over priors" },
+          { title: "Optimal Provider Target", detail: "Claude / GPT-5.6 / Local Ollama" }
+        ]
+      },
+      {
+        id: 8,
+        badge: "SCENE 08 / 11",
+        layer: "LAYER 11: PROXY & PROTOCOL GATEWAY",
+        title: "High-Throughput Reverse Proxy & Cache Aligner",
+        subtitle: "Transparent drop-in Anthropic and OpenAI HTTP reverse proxy on :9377 with KV-cache prefix optimization.",
+        themeColor: "#f59e0b",
+        narration: "Entroly wraps seamlessly around any coding agent without modifying agent source code. Operating as an HTTP reverse proxy on port 9377, it intercepts requests, aligns cache prefixes for 90% provider cache hits, and enforces hard spend caps.",
+        files: [
+          {
+            path: "entroly/proxy.py",
+            lang: "Python",
+            loc: "1,450 lines",
+            role: "High-throughput asynchronous Starlette/HTTPX reverse proxy daemon.",
+            algo: "HTTP/1.1 & HTTP/2 streaming pipeline, SSE chunk re-encoding, backpressure management.",
+            code: `async def proxy_handler(request: Request) -> StreamingResponse:\n    body = await request.json()\n    optimized_body, receipt = await transform_prompt(body)\n    async with httpx.AsyncClient() as client:\n        resp = await client.send(upstream_req, stream=True)\n        return StreamingResponse(resp.aiter_bytes(), headers=receipt_headers)`,
+            contract: "Zero semantic alteration of non-context fields; SSE streaming pass-through."
+          },
+          {
+            path: "entroly/cache_aligner.py",
+            lang: "Python",
+            loc: "480 lines",
+            role: "KV-cache prefix alignment engine maximizing Anthropic and OpenAI prompt cache reuse.",
+            algo: "Prefix normalization, canonical whitespace ordering, stable breakpoint injection.",
+            code: `def align_cache_prefix(messages: list[dict]) -> list[dict]:\n    # Preserve identical token prefix across consecutive turns\n    system_prompt = canonicalize_whitespace(messages[0]["content"])\n    messages[0]["content"] = system_prompt\n    return insert_cache_control_breakpoints(messages)`,
+            contract: "Guarantees 100% stable prefix across session turns for maximum cache discount."
+          },
+          {
+            path: "entroly/session_budget.py",
+            lang: "Python",
+            loc: "390 lines",
+            role: "Real-time session token and monetary spend ceiling enforcer.",
+            algo: "Token counting token bucket, atomic cost accumulator, 429 budget breach suppressor.",
+            code: `class SessionBudgetGuard:\n    def check_and_debit(self, session_id: str, cost_usd: float):\n        current = self.get_spend(session_id)\n        if current + cost_usd > self.hard_cap_usd:\n            raise BudgetExceededException(f"Session {session_id} exceeded \${self.hard_cap_usd}")\n        self.debit(session_id, cost_usd)`,
+            contract: "Fail-closed: immediately halts proxy calls if hard financial limits are reached."
+          }
+        ],
+        flow: [
+          { title: "Agent HTTP Request", detail: "POST /v1/messages (:9377)" },
+          { title: "KV-Cache Aligner", detail: "Prefix stabilization & budgeting" },
+          { title: "Upstream Provider", detail: "Anthropic / OpenAI with cache hit" }
+        ]
+      },
+      {
+        id: 9,
+        badge: "SCENE 09 / 11",
+        layer: "LAYER 12: MCP & AGENT ECOSYSTEMS",
+        title: "Model Context Protocol & Ecosystem Bridges",
+        subtitle: "Universal interoperability: Claude Code, Cursor, Windsurf, OpenClaw, and standard MCP JSON-RPC.",
+        themeColor: "#6366f1",
+        narration: "Entroly connects to every modern AI tool. Running as an official Model Context Protocol server via stdio, it exposes contextual tools directly to Claude Code, Cursor, and OpenClaw agents without external dependencies.",
+        files: [
+          {
+            path: "entroly/server.py",
+            lang: "Python",
+            loc: "890 lines",
+            role: "Standard Model Context Protocol (MCP) JSON-RPC stdio and SSE server.",
+            algo: "JSON-RPC 2.0 protocol dispatch, async tool handlers, schema validation.",
+            code: `async def handle_mcp_call(tool_name: str, args: dict) -> dict:\n    if tool_name == "entroly_optimize_context":\n        return await engine.optimize(args["text"], args["budget"])\n    elif tool_name == "entroly_recover_span":\n        return await ccr.recover(args["handle"])`,
+            contract: "Fully compliant with official Anthropic MCP 2024-11-05 specifications."
+          },
+          {
+            path: "entroly/cli.py",
+            lang: "Python",
+            loc: "1,220 lines",
+            role: "Unified developer CLI: entroly wrap, entroly doctor, entroly simulate, entroly health.",
+            algo: "Subcommand dispatcher, system diagnostics, automated agent wrapper injector.",
+            code: `def main():\n    parser = build_cli_parser()\n    args = parser.parse_args()\n    if args.command == "wrap":\n        wrap_agent_environment(args.agent)\n    elif args.command == "doctor":\n        run_runtime_diagnostics()`,
+            contract: "Non-zero exit codes on any diagnostic failure; zero silent crashes."
+          },
+          {
+            path: "integrations/openclaw/engine.js",
+            lang: "JavaScript",
+            loc: "450 lines",
+            role: "Native JavaScript bridge connecting OpenClaw Context Engine with Entroly WASM.",
+            algo: "TypedArray buffer transfer, WASM memory linear mapping, event bridge.",
+            code: `class OpenClawContextEngine {\n  async optimize(rawContext, tokenBudget) {\n    const wasmOut = this.wasmInstance.exports.universal_compress(rawContext, tokenBudget);\n    return parseWasmResult(wasmOut);\n  }\n}`,
+            contract: "Parity between Node/WASM bindings and native Rust engine."
+          }
+        ],
+        flow: [
+          { title: "MCP Client (Claude Code)", detail: "stdio JSON-RPC handshake" },
+          { title: "Entroly MCP Server", detail: "Tools: optimize, recover, digest" },
+          { title: "Agent Workflow", detail: "Lean, verified evidence injection" }
+        ]
+      },
+      {
+        id: 10,
+        badge: "SCENE 10 / 11",
+        layer: "LAYER 13: ECONOMIC GOVERNANCE",
+        title: "Economic Governance & Autonomous Daemon",
+        subtitle: "Audit-ready value ledger, modeled $1.00/1M ROI tracking, and zero-maintenance daemon self-healing.",
+        themeColor: "#38bdf8",
+        narration: "How much did you actually save? The Economic Governance engine tracks real token reductions against conservative baseline models. A self-healing background daemon keeps indexes fresh and monitors runtime health automatically.",
+        files: [
+          {
+            path: "entroly/economic_governance.py",
+            lang: "Python",
+            loc: "670 lines",
+            role: "Executive economic governance engine computing realized ROI and value banked.",
+            algo: "Baseline vs compressed delta modeling, provider list-price matching, conservative rounding.",
+            code: `class EconomicGovernance:\n    def compute_value_banked(self, tokens_saved: int, model_id: str) -> float:\n        rate_per_m = self.pricing_catalog.get(model_id, 1.00)\n        return (tokens_saved / 1_000_000.0) * rate_per_m`,
+            contract: "Honesty guarantee: never claims savings without explicit baseline and model ID."
+          },
+          {
+            path: "entroly/usage_ledger.py",
+            lang: "Python",
+            loc: "580 lines",
+            role: "Cryptographically append-only SQLite ledger of all token transactions and sessions.",
+            algo: "WAL mode SQLite, SHA-256 block linking, periodic VACUUM and integrity check.",
+            code: `class UsageLedger:\n    def record_transaction(self, tx: UsageTransaction):\n        self.db.execute(\n            "INSERT INTO ledger (timestamp, model, tokens_saved, cost_avoided, hash) VALUES (?, ?, ?, ?, ?)",\n            (tx.ts, tx.model, tx.saved, tx.avoided, tx.hash)\n        )`,
+            contract: "Crash-resilient; zero data loss across power or process terminations."
+          },
+          {
+            path: "entroly/daemon.py",
+            lang: "Python",
+            loc: "810 lines",
+            role: "Autonomous background service managing indexing, warm starts, and self-healing.",
+            algo: "File system watchers, incremental debounced re-indexing, process tree reaper.",
+            code: `class EntrolyDaemon:\n    def run_maintenance_loop(self):\n        while self.running:\n            self.check_memory_pressure()\n            self.evict_expired_checkpoints()\n            self.vacuum_sqlite_ledger()\n            sleep(60)`,
+            contract: "Zero zombie processes; guaranteed graceful SIGTERM shutdown."
+          }
+        ],
+        flow: [
+          { title: "Live Token Savings", detail: "1,428,500 tokens pruned" },
+          { title: "Economic Ledger", detail: "Banked Value: $14.28" },
+          { title: "Daemon Self-Heal", detail: "0-maintenance autonomous health" }
+        ]
+      },
+      {
+        id: 11,
+        badge: "SCENE 11 / 11",
+        layer: "EPILOGUE",
+        title: "The 13-Layer Verified Context OS",
+        subtitle: "A unified, auditable control plane for AI coding agents: from SIMD Rust kernels to executive governance.",
+        themeColor: "#10b981",
+        narration: "From SIMD-accelerated Rust submodular optimization to cryptographic Merkle attestation and real-time economic ledgers, Entroly transforms chaotic AI contexts into a deterministic, auditable, and cost-effective operating system.",
+        files: [
+          {
+            path: "docs/product-surface.md",
+            lang: "Markdown",
+            loc: "310 lines",
+            role: "Comprehensive specification of the 13 canonical Context OS layers and contracts.",
+            algo: "Layer taxonomy, verification gates, cross-layer dependency rules.",
+            code: `# The 13 Canonical Layers of Entroly\n1. Engine & Native Optimization\n2. PRISM Dynamic Knapsack\n3. EICV Causal Verification\n4. SAST Security Engine\n5. Reversible Compression (CCR)\n6. ELC & Evidence Locking\n7. Cryptographic WITNESS\n8. Epistemic Knowledge Vault\n9. Memory Fabric\n10. Bayesian Model Routing (RAVS)\n11. High-Throughput Proxy\n12. Model Context Protocol (MCP)\n13. Economic Governance & Daemon`,
+            contract: "The single source of architectural truth governing the Entroly repository."
+          },
+          {
+            path: "pyproject.toml",
+            lang: "TOML",
+            loc: "190 lines",
+            role: "Root packaging manifest coordinating Python, maturin Rust core, and test matrix.",
+            algo: "PEP 621 metadata, optional [full] dependencies, build-system configuration.",
+            code: `[project]\nname = "entroly"\nversion = "1.0.84"\ndescription = "Context OS for AI coding agents"\ndependencies = ["httpx", "starlette", "pydantic"]\n\n[build-system]\nrequires = ["maturin>=1.5,<2.0"]\nbuild-backend = "maturin"`,
+            contract: "Python 3.10–3.14 parity; maturin release builds."
+          }
+        ],
+        flow: [
+          { title: "13 Unified Layers", detail: "Complete Context OS" },
+          { title: "Zero Trust Gaps", detail: "100% Cryptographic Verification" },
+          { title: "Production Ready", detail: "40/40 CI Suites Passing" }
+        ]
+      }
+    ];
+
+    /* -------------------------------------------------------------
+       WEB AUDIO SYNTHESIZER: Ambient Cinematic Sci-Fi Drone
+       ------------------------------------------------------------- */
+    class CinemaSynth {
+      constructor() {
+        this.ctx = null;
+        this.masterGain = null;
+        this.filter = null;
+        this.oscillators = [];
+        this.isPlaying = false;
+      }
+
+      init() {
+        if (this.ctx) return;
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        this.ctx = new AudioContext();
+
+        this.masterGain = this.ctx.createGain();
+        this.masterGain.gain.setValueAtTime(0.12, this.ctx.currentTime);
+
+        this.filter = this.ctx.createBiquadFilter();
+        this.filter.type = "lowpass";
+        this.filter.frequency.setValueAtTime(450, this.ctx.currentTime);
+        this.filter.Q.setValueAtTime(4, this.ctx.currentTime);
+
+        this.filter.connect(this.masterGain);
+        this.masterGain.connect(this.ctx.destination);
+
+        // Low root drone frequencies (D-minor chord: D2, A2, D3, F3)
+        const freqs = [73.42, 110.00, 146.83, 174.61];
+        freqs.forEach((f, idx) => {
+          const osc = this.ctx.createOscillator();
+          osc.type = idx % 2 === 0 ? "sawtooth" : "sine";
+          osc.frequency.setValueAtTime(f, this.ctx.currentTime);
+
+          // Subtle LFO modulation for organic analog feel
+          const lfo = this.ctx.createOscillator();
+          lfo.frequency.setValueAtTime(0.15 + idx * 0.08, this.ctx.currentTime);
+          const lfoGain = this.ctx.createGain();
+          lfoGain.gain.setValueAtTime(1.5, this.ctx.currentTime);
+          lfo.connect(lfoGain);
+          lfoGain.connect(osc.frequency);
+          lfo.start();
+
+          osc.connect(this.filter);
+          osc.start();
+          this.oscillators.push(osc);
+        });
+
+        this.isPlaying = true;
+      }
+
+      setThemeFrequency(themeColor) {
+        if (!this.filter || !this.ctx) return;
+        let targetFreq = 450;
+        if (themeColor.includes("38bdf8")) targetFreq = 520; // Cyan
+        else if (themeColor.includes("10b981")) targetFreq = 380; // Emerald
+        else if (themeColor.includes("a855f7")) targetFreq = 600; // Purple
+        else if (themeColor.includes("f59e0b")) targetFreq = 480; // Amber
+        else if (themeColor.includes("ec4899")) targetFreq = 650; // Pink
+
+        this.filter.frequency.exponentialRampToValueAtTime(targetFreq, this.ctx.currentTime + 1.5);
+      }
+
+      toggleMute() {
+        if (!this.ctx) {
+          this.init();
+          return true;
+        }
+        if (this.masterGain.gain.value > 0.001) {
+          this.masterGain.gain.setValueAtTime(0.0, this.ctx.currentTime);
+          this.isPlaying = false;
+          return false;
+        } else {
+          this.masterGain.gain.setValueAtTime(0.12, this.ctx.currentTime);
+          this.isPlaying = true;
+          return true;
+        }
+      }
+    }
+
+    /* -------------------------------------------------------------
+       BACKGROUND CANVAS PARTICLE & STARFIELD VISUALIZER
+       ------------------------------------------------------------- */
+    const canvas = document.getElementById('bgCanvas');
+    const ctx = canvas.getContext('2d');
+    let particles = [];
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      initParticles();
+    }
+
+    function initParticles() {
+      particles = [];
+      const count = Math.floor(window.innerWidth / 16);
+      for (let i = 0; i < count; i++) {
+        particles.push({
+          x: Math.random() * canvas.width,
+          y: Math.random() * canvas.height,
+          radius: Math.random() * 1.6 + 0.4,
+          speedY: -(Math.random() * 0.4 + 0.1),
+          alpha: Math.random() * 0.7 + 0.2
+        });
+      }
+    }
+
+    function renderCanvas() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      // Subtle background grid
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.015)';
+      ctx.lineWidth = 1;
+      const gridSize = 60;
+      for (let x = 0; x < canvas.width; x += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, canvas.height);
+        ctx.stroke();
+      }
+      for (let y = 0; y < canvas.height; y += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+        ctx.stroke();
+      }
+
+      // Rising particles
+      ctx.fillStyle = '#38bdf8';
+      particles.forEach(p => {
+        p.y += p.speedY;
+        if (p.y < 0) p.y = canvas.height;
+        ctx.globalAlpha = p.alpha;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.globalAlpha = 1.0;
+
+      requestAnimationFrame(renderCanvas);
+    }
+
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+    renderCanvas();
+
+    /* -------------------------------------------------------------
+       MOVIE PLAYER ENGINE & STATE MACHINE
+       ------------------------------------------------------------- */
+    let currentSceneIdx = 0;
+    let isPlaying = true;
+    let playbackSpeed = 1.0;
+    const SCENE_DURATION = 12000;
+    let sceneStartTime = Date.now();
+    let animFrameId = null;
+
+    const synth = new CinemaSynth();
+
+    // DOM Elements
+    const sceneBadge = document.getElementById('sceneBadge');
+    const sceneLayerTag = document.getElementById('sceneLayerTag');
+    const sceneTitle = document.getElementById('sceneTitle');
+    const sceneSubtitle = document.getElementById('sceneSubtitle');
+    const filesGrid = document.getElementById('filesGrid');
+    const flowPanel = document.getElementById('flowPanel');
+    const subtitlesText = document.getElementById('subtitlesText');
+    const theaterStage = document.getElementById('theaterStage');
+    const theaterGlow = document.getElementById('theaterGlow');
+    const timelineProgress = document.getElementById('timelineProgress');
+    const timelineTrack = document.getElementById('timelineTrack');
+    const timeDisplay = document.getElementById('timeDisplay');
+    const currentSceneName = document.getElementById('currentSceneName');
+    const sceneProgressText = document.getElementById('sceneProgressText');
+    const btnPlayPause = document.getElementById('btnPlayPause');
+    const playIcon = document.getElementById('playIcon');
+    const pauseIcon = document.getElementById('pauseIcon');
+    const btnPrev = document.getElementById('btnPrev');
+    const btnNext = document.getElementById('btnNext');
+    const btnSound = document.getElementById('btnSound');
+    const soundLabel = document.getElementById('soundLabel');
+    const speedSelect = document.getElementById('speedSelect');
+    const btnFullscreen = document.getElementById('btnFullscreen');
+
+    // Inspector Modal DOM
+    const inspectorModal = document.getElementById('inspectorModal');
+    const modalBackdrop = document.getElementById('modalBackdrop');
+    const btnCloseInspector = document.getElementById('btnCloseInspector');
+    const inspectFilePath = document.getElementById('inspectFilePath');
+    const inspectLayer = document.getElementById('inspectLayer');
+    const inspectRole = document.getElementById('inspectRole');
+    const inspectAlgo = document.getElementById('inspectAlgo');
+    const inspectCode = document.getElementById('inspectCode');
+    const inspectContract = document.getElementById('inspectContract');
+
+    // Setup Timeline Ticks
+    const sceneTicks = document.getElementById('sceneTicks');
+    SCENES.forEach((_, idx) => {
+      const tick = document.createElement('div');
+      tick.className = 'scene-tick';
+      sceneTicks.appendChild(tick);
+    });
+
+    function formatTime(seconds) {
+      const m = Math.floor(seconds / 60);
+      const s = Math.floor(seconds % 60);
+      return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    }
+
+    function loadScene(idx) {
+      if (idx < 0) idx = 0;
+      if (idx >= SCENES.length) idx = 0;
+      currentSceneIdx = idx;
+      const scene = SCENES[currentSceneIdx];
+
+      // Update Header & Texts
+      sceneBadge.textContent = scene.badge;
+      sceneLayerTag.textContent = scene.layer;
+      sceneLayerTag.style.color = scene.themeColor;
+      sceneTitle.textContent = scene.title;
+      sceneSubtitle.textContent = scene.subtitle;
+      currentSceneName.textContent = scene.title;
+      sceneProgressText.textContent = `Scene ${scene.id} of ${SCENES.length}`;
+
+      // Update Subtitles with typing effect
+      typeSubtitles(scene.narration);
+
+      // Update Theme Visuals
+      theaterStage.style.borderColor = `${scene.themeColor}55`;
+      theaterGlow.style.background = `linear-gradient(135deg, ${scene.themeColor}55, transparent 60%, var(--purple-glow))`;
+      synth.setThemeFrequency(scene.themeColor);
+
+      // Render Files Grid
+      filesGrid.innerHTML = '';
+      scene.files.forEach(f => {
+        const card = document.createElement('div');
+        card.className = 'file-card';
+        card.style.setProperty('--cyan', scene.themeColor);
+        card.innerHTML = `
+          <div class="file-card-top">
+            <span class="file-lang-pill" style="color:${scene.themeColor};">${f.lang}</span>
+            <span class="file-loc">${f.loc}</span>
+          </div>
+          <div class="file-path">${f.path}</div>
+          <div class="file-role">${f.role}</div>
+          <div class="file-badge-guarantee">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+            </svg>
+            ${f.contract.split(';')[0]}
+          </div>
+        `;
+        card.addEventListener('click', () => openInspector(f, scene.layer));
+        filesGrid.appendChild(card);
+      });
+
+      // Render Flow Diagram
+      flowPanel.innerHTML = '';
+      scene.flow.forEach((step, index) => {
+        const stepDiv = document.createElement('div');
+        stepDiv.className = 'flow-step';
+        stepDiv.innerHTML = `
+          <div class="flow-node">
+            <div class="flow-node-title">${step.title}</div>
+            <div class="flow-node-detail">${step.detail}</div>
+          </div>
+          ${index < scene.flow.length - 1 ? '<div class="flow-arrow">&rarr;</div>' : ''}
+        `;
+        flowPanel.appendChild(stepDiv);
+      });
+
+      sceneStartTime = Date.now();
+    }
+
+    let typeInterval = null;
+    function typeSubtitles(text) {
+      if (typeInterval) clearInterval(typeInterval);
+      subtitlesText.textContent = '';
+      let i = 0;
+      typeInterval = setInterval(() => {
+        if (i < text.length) {
+          subtitlesText.textContent += text.charAt(i);
+          i++;
+        } else {
+          clearInterval(typeInterval);
+        }
+      }, 16 / playbackSpeed);
+    }
+
+    function openInspector(file, layer) {
+      inspectFilePath.textContent = file.path;
+      inspectLayer.textContent = layer;
+      inspectRole.textContent = file.role;
+      inspectAlgo.textContent = file.algo;
+      inspectCode.textContent = file.code;
+      inspectContract.textContent = file.contract;
+
+      inspectorModal.classList.add('open');
+      modalBackdrop.classList.add('visible');
+    }
+
+    function closeInspector() {
+      inspectorModal.classList.remove('open');
+      modalBackdrop.classList.remove('visible');
+    }
+
+    btnCloseInspector.addEventListener('click', closeInspector);
+    modalBackdrop.addEventListener('click', closeInspector);
+
+    /* Animation & Progress Loop */
+    function updateLoop() {
+      if (isPlaying) {
+        const now = Date.now();
+        const effectiveDuration = SCENE_DURATION / playbackSpeed;
+        const elapsed = now - sceneStartTime;
+
+        // Overall progress
+        const totalDuration = (SCENE_DURATION / playbackSpeed) * SCENES.length;
+        const totalElapsed = (currentSceneIdx * effectiveDuration) + elapsed;
+        const totalFraction = Math.min(1.0, totalElapsed / totalDuration);
+
+        timelineProgress.style.width = `${totalFraction * 100}%`;
+        timeDisplay.textContent = `${formatTime(totalElapsed / 1000)} / ${formatTime(totalDuration / 1000)}`;
+
+        if (elapsed >= effectiveDuration) {
+          loadScene(currentSceneIdx + 1);
+        }
+      }
+      animFrameId = requestAnimationFrame(updateLoop);
+    }
+
+    /* Player Controls Event Handlers */
+    function togglePlayPause() {
+      isPlaying = !isPlaying;
+      if (isPlaying) {
+        sceneStartTime = Date.now();
+        playIcon.style.display = 'none';
+        pauseIcon.style.display = 'block';
+      } else {
+        playIcon.style.display = 'block';
+        pauseIcon.style.display = 'none';
+      }
+    }
+
+    btnPlayPause.addEventListener('click', togglePlayPause);
+
+    btnPrev.addEventListener('click', () => {
+      loadScene(currentSceneIdx - 1);
+    });
+
+    btnNext.addEventListener('click', () => {
+      loadScene(currentSceneIdx + 1);
+    });
+
+    speedSelect.addEventListener('change', (e) => {
+      playbackSpeed = parseFloat(e.target.value);
+    });
+
+    timelineTrack.addEventListener('click', (e) => {
+      const rect = timelineTrack.getBoundingClientRect();
+      const clickFraction = (e.clientX - rect.left) / rect.width;
+      const targetScene = Math.floor(clickFraction * SCENES.length);
+      loadScene(targetScene);
+    });
+
+    // Sound Toggle
+    btnSound.addEventListener('click', () => {
+      const on = synth.toggleMute();
+      if (on) {
+        btnSound.classList.remove('muted');
+        soundLabel.textContent = "SOUNDTRACK: ON";
+      } else {
+        btnSound.classList.add('muted');
+        soundLabel.textContent = "SOUNDTRACK: MUTED";
+      }
+    });
+
+    // Fullscreen Toggle
+    btnFullscreen.addEventListener('click', () => {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      } else {
+        document.exitFullscreen().catch(() => {});
+      }
+    });
+
+    // Keyboard Shortcuts
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space') {
+        e.preventDefault();
+        togglePlayPause();
+      } else if (e.code === 'BracketLeft') {
+        loadScene(currentSceneIdx - 1);
+      } else if (e.code === 'BracketRight') {
+        loadScene(currentSceneIdx + 1);
+      } else if (e.code === 'KeyF') {
+        btnFullscreen.click();
+      } else if (e.code === 'Escape') {
+        closeInspector();
+      }
+    });
+
+    // Start playback
+    loadScene(0);
+    playIcon.style.display = 'none';
+    pauseIcon.style.display = 'block';
+    animFrameId = requestAnimationFrame(updateLoop);
+
+    // Auto-init audio on first user gesture
+    window.addEventListener('click', () => {
+      synth.init();
+    }, { once: true });
+  </script>
+</body>
+</html>

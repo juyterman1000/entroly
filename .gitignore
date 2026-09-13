@@ -26,6 +26,8 @@ vault/
 
 # Scratch / debug artifacts
 .tmp/
+tmp/
+.coverage
 tasks/
 logs/
 telemetry/
@@ -169,7 +171,6 @@ benchmarks/recovery_resilience_protocol_v[2-9]*.json
 
 # SEO/marketing tracking (internal)
 docs/discoverability-registry.json
-docs/capability-coverage.json
 
 # Developer-local MCP config
 .mcp.json

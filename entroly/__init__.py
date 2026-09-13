@@ -58,6 +58,8 @@ try:
         create_context_receipt,
         explain_receipt_omission,
         render_context_receipt,
+        shared_memory_search,
+        shared_memory_write,
     )
 except ImportError:
     pass  # Graceful degradation if dependencies missing

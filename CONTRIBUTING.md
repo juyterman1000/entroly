@@ -14,9 +14,14 @@ well-proven changes are preferred to broad changes that are difficult to review.
   the implementation. This avoids spending time on a direction that cannot be
   maintained safely.
 
-Good first contributions include documentation corrections, focused regression
-tests, reproducible compatibility fixes, and benchmark fixtures with clear
-provenance. Issues labelled
+Good first contributions include:
+- **Benchmark Reproductions**: Running the benchmark suite across different LLM providers and reporting Wilson 95% CIs.
+- **Language / Framework Adapters**: Adding context extractors for additional languages or frameworks.
+- **Web Playground Scenarios**: Adding realistic debugging corpora to [`playground/`](playground/).
+- **Browser & IDE Extensions**: Improving status bar metrics or adding keyboard shortcuts in [`extensions/`](extensions/).
+- **Documentation & i18n**: Correcting guides or translating the README.
+
+Issues labelled
 [`good first issue`](https://github.com/juyterman1000/entroly/labels/good%20first%20issue)
 are intended to be independently completable.
 

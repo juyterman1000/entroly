@@ -26,18 +26,33 @@ Entroly provides a dual-mode native Windows binary (`entroly.exe`) and a standal
 Double-click `ui/dist/EntrolySetup.exe` (or run it from PowerShell):
 ```powershell
 & ui\dist\EntrolySetup.exe
+
+# Unattended / Silent installation (for CI or automated setups)
+& ui\dist\EntrolySetup.exe --silent --no-launch
+
+# Clean uninstall
+& ui\dist\EntrolySetup.exe --uninstall
 ```
 
 ### Option 2: CLI Usage (Available Globally After Install)
 ```powershell
-entroly --help     # Show help and CLI commands
-entroly --version  # View version and engine status
-entroly status     # Check live daemon metrics and health score
-entroly doctor     # Run full system diagnostics
-entroly ui         # Launch the desktop Control Plane window
+entroly --help                           # Show help and CLI commands
+entroly --version                        # View version and engine status
+entroly status                           # Check live daemon metrics and health score
+entroly doctor                           # Run full system diagnostics
+entroly ui                               # Launch the desktop Control Plane window
+entroly playground                       # Launch interactive Web Playground in native App Mode
+entroly compress <file> --budget 500     # Compress source code into prompt-ready context with Merkle receipts
+entroly benchmark                        # Run empirical context selection & accuracy benchmark
 ```
 
 ### Option 3: Compile From Source
+You can use the 1-click automated build script:
+```powershell
+& ui\build.ps1
+```
+
+Or manually with Cargo from `ui/desktop`:
 ```powershell
 cd ui/desktop
 cargo build --release --bin entroly
