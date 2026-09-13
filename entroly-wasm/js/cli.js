@@ -20,6 +20,12 @@ const { persistIndex, loadIndex } = require('./checkpoint');
 const { EntrolyMCPServer } = require('./server');
 const { runAutotune } = require('./autotune');
 const { getTracker } = require('./value_tracker');
+const {
+  activationStatus,
+  hookContext,
+  parseHookInput,
+  runHook,
+} = require('./activation');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -300,6 +306,53 @@ function cmdAutotune(args) {
   runAutotune(iterations, 5000, benchOnly);
 }
 
+function optionValue(args, name, fallback) {
+  const index = args.indexOf(name);
+  return index >= 0 && index + 1 < args.length ? args[index + 1] : fallback;
+}
+
+function cmdActivation(args) {
+  const action = args[0];
+  const rest = args.slice(1);
+  if (action === 'status') {
+    const project = optionValue(rest, '--project', process.cwd());
+    console.log(JSON.stringify(activationStatus(project), null, 2));
+    return;
+  }
+  if (action !== 'hook') {
+    console.error('Usage: entroly activation hook|status [options]');
+    process.exitCode = 2;
+    return;
+  }
+  const host = optionValue(rest, '--host', 'auto');
+  const outputFormat = optionValue(rest, '--output-format', 'auto');
+  const tokenBudget = optionValue(rest, '--budget', '1200');
+  const maxFiles = optionValue(rest, '--max-files', '200');
+  let result;
+  try {
+    result = runHook(parseHookInput(fs.readFileSync(0, 'utf8')), {
+      host,
+      tokenBudget,
+      maxFiles,
+    });
+  } catch (error) {
+    const event = host === 'gemini' ? 'BeforeAgent' : 'UserPromptSubmit';
+    result = {
+      hookSpecificOutput: {
+        hookEventName: event,
+        additionalContext:
+          `Entroly activation failed before parsing the host event: ${error.name}. ` +
+          'Continue the task and report the integration as inactive.',
+      },
+      suppressOutput: true,
+    };
+  }
+  const resolvedFormat = outputFormat === 'auto'
+    ? (host === 'kiro' ? 'context' : 'json')
+    : outputFormat;
+  console.log(resolvedFormat === 'context' ? hookContext(result) : JSON.stringify(result));
+}
+
 function cmdHelp() {
   console.log(banner());
   console.log();
@@ -317,6 +370,7 @@ function cmdHelp() {
   console.log(`    ${C.CYAN}value${C.RESET}      Show evidence-classified context value`);
   console.log(`    ${C.CYAN}status${C.RESET}     Check environment status`);
   console.log(`    ${C.CYAN}autotune${C.RESET}   Run autonomous self-tuning (args: [iterations] [--bench-only])`);
+  console.log(`    ${C.CYAN}activation${C.RESET} Run or inspect deterministic host-hook activation`);
   console.log(`    ${C.CYAN}clean${C.RESET}      Clear cached state`);
   console.log();
   console.log(`  ${C.BOLD}Examples:${C.RESET}`);
@@ -342,6 +396,7 @@ switch (cmd) {
   case 'clean': cmdClean(); break;
   case 'status': cmdStatus(); break;
   case 'autotune': case 'tune': cmdAutotune(args); break;
+  case 'activation': cmdActivation(args); break;
   case '--version': case '-v': console.log(VERSION); break;
   case '--help': case '-h': cmdHelp(); break;
   default:

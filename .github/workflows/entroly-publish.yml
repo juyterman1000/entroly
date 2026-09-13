@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       release_version:
-        description: 'Version to publish manually, for example 1.0.83. Leave blank for Docker-only run.'
+        description: 'Version to publish manually, for example 1.0.84. Leave blank for Docker-only run.'
         required: false
         type: string
 
@@ -401,7 +401,17 @@ jobs:
       - name: Update package.json version
         working-directory: entroly/npm-alias
         run: |
-          node -e "const fs=require('fs'); const p=require('./package.json'); p.version=process.env.RELEASE_VERSION; p.dependencies['entroly-wasm']=process.env.RELEASE_VERSION; fs.writeFileSync('package.json', JSON.stringify(p, null, 2)+'\n')"
+          node -e "const fs=require('fs'); const p=require('./package.json'); p.version=process.env.RELEASE_VERSION; p.dependencies['entroly-wasm']=process.env.RELEASE_VERSION; fs.writeFileSync('package.json', JSON.stringify(p, null, 2)+'\n'); for (const f of ['plugin.json', '.codex-plugin/plugin.json']) { const m=JSON.parse(fs.readFileSync(f)); m.version=process.env.RELEASE_VERSION; fs.writeFileSync(f, JSON.stringify(m, null, 2)+'\n'); }"
+
+      - name: Install exact runtime and smoke portable plugin
+        working-directory: entroly/npm-alias
+        run: npm install --no-save --no-package-lock --ignore-scripts "entroly-wasm@${RELEASE_VERSION}"
+
+      - name: Verify hook, MCP handshake, and package contents
+        run: |
+          node scripts/smoke_portable_plugin.js entroly/npm-alias
+          cd entroly/npm-alias
+          npm pack --dry-run
 
       - name: Publish entroly alias to npm
         working-directory: entroly/npm-alias

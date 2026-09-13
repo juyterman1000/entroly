@@ -48,6 +48,11 @@ TARGETS = [
     ("entroly/npm/package.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     ("entroly/npm-alias/package.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     ("entroly/npm-alias/package.json", r'"entroly-wasm"\s*:\s*"[^"]+"', '"entroly-wasm": "{v}"'),
+    ("entroly/npm-alias/plugin.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
+    ("entroly/npm-alias/.codex-plugin/plugin.json",
+        r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
+    ("entroly/npm-alias/skills/entroly-evidence-operations/entroly-bundle.json",
+        r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     ("integrations/openclaw/package.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     # Surfaces the 1.0.82 bump had to fix by hand. They were corrected in that
     # release but never added here, so the next bump would have left them
@@ -58,8 +63,11 @@ TARGETS = [
         r'^version:\s*[0-9]+\.[0-9]+\.[0-9]+', 'version: {v}'),
     ("entroly/integrations/hermes_context_engine/plugin.yaml",
         r'entroly>=[0-9]+\.[0-9]+\.[0-9]+', 'entroly>={v}'),
-    ("docs/BENCHMARKS.md",
-        r'entroly-core [0-9]+\.[0-9]+\.[0-9]+', 'entroly-core {v}'),
+    # docs/BENCHMARKS.md contains immutable historical experiment versions.
+    # Rewriting those during a release would falsify benchmark provenance.
+    ("BENCHMARKS.md",
+        r'Engine version: `entroly-core [0-9]+\.[0-9]+\.[0-9]+`',
+        'Engine version: `entroly-core {v}`'),
     ("deploy/cloudflare-community-savings/package.json",
         r'"version"\s*:\s*"[0-9]+\.[0-9]+\.[0-9]+"', '"version": "{v}"'),
     # Version examples shown to a human filling in a manual-dispatch field or an
@@ -103,6 +111,8 @@ TARGETS = [
     ("skills/entroly-evidence-operations/entroly-bundle.json",
         r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     ("integrations/codex/entroly/.codex-plugin/plugin.json",
+        r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
+    ("integrations/codex/entroly/plugin.json",
         r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     ("integrations/codex/entroly/entroly-bundle.json",
         r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),

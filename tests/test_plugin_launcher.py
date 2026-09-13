@@ -71,7 +71,7 @@ def test_prefers_uvx_and_passes_the_expected_arguments(tmp_path: Path) -> None:
     result = _run(f"{fake_bin}{os.pathsep}{node_dir}")
 
     assert result.returncode == 0
-    assert marker.read_text(encoding="utf-8") == "--from entroly entroly"
+    assert marker.read_text(encoding="utf-8") == "--from entroly entroly serve"
 
 
 @pytest.mark.skipif(
@@ -93,7 +93,7 @@ def test_falls_through_to_npx_when_uvx_is_absent(tmp_path: Path) -> None:
     result = _run(f"{fake_bin}{os.pathsep}{node_dir}")
 
     assert result.returncode == 0
-    assert marker.read_text(encoding="utf-8") == "npx -y entroly@latest"
+    assert marker.read_text(encoding="utf-8") == "npx -y entroly@latest serve"
 
 
 @pytest.mark.skipif(

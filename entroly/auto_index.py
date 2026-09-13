@@ -1377,6 +1377,8 @@ def auto_index(
     engine: EntrolyEngine,
     project_dir: str | None = None,
     force: bool = False,
+    *,
+    seed_beliefs: bool = True,
 ) -> dict:
     """Serialize the full index lifecycle with incremental reconciliation."""
     mutation_lock = getattr(engine, "_index_mutation_lock", None)
@@ -1395,12 +1397,13 @@ def auto_index(
     # an unchanged tree, so repeated indexing in one session compiles once.
     # Fail-open by construction: start_autoseed never raises, and a vault that
     # cannot be written costs a panel rather than the session.
-    try:
-        from .belief_autoseed import start_autoseed
+    if seed_beliefs:
+        try:
+            from .belief_autoseed import start_autoseed
 
-        start_autoseed(project_dir)
-    except Exception as exc:  # noqa: BLE001 - indexing must not fail on this
-        logger.debug("belief autoseed not started: %s", exc)
+            start_autoseed(project_dir)
+        except Exception as exc:  # noqa: BLE001 - indexing must not fail on this
+            logger.debug("belief autoseed not started: %s", exc)
     return result
 
 

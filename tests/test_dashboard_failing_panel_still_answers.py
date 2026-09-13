@@ -29,9 +29,13 @@ def dashboard(monkeypatch):
     monkeypatch.setenv("ENTROLY_DIR", tempfile.mkdtemp())
     from entroly import dashboard as module
 
+    original_context_health = module.DashboardHandler._handle_context_health
     server = module.start_dashboard(port=0)
-    yield module, server, server.server_address[1]
-    server.shutdown()
+    try:
+        yield module, server, server.server_address[1]
+    finally:
+        server.shutdown()
+        module.DashboardHandler._handle_context_health = original_context_health
 
 
 def _get(port: int, path: str) -> tuple[str, bytes]:
