@@ -59,8 +59,8 @@ def test_claimed_point_remains_external_not_fabricated() -> None:
 
 
 def test_public_mcp_profile_keeps_marketplace_tool_surface_small(tmp_path, monkeypatch) -> None:
-    """Default MCP startup should not expose the whole research control plane."""
-    monkeypatch.delenv("ENTROLY_MCP_PROFILE", raising=False)
+    """Marketplace startup should not expose the whole research control plane."""
+    monkeypatch.setenv("ENTROLY_MCP_PROFILE", "public")
     monkeypatch.setenv("ENTROLY_DIR", str(tmp_path / "entroly"))
     from entroly.server import _PUBLIC_MCP_TOOLS, create_mcp_server
 
@@ -68,12 +68,28 @@ def test_public_mcp_profile_keeps_marketplace_tool_surface_small(tmp_path, monke
     tools = set(server._tool_manager._tools)
 
     assert tools == set(_PUBLIC_MCP_TOOLS)
-    assert len(tools) == 17
+    assert len(tools) == 19
+    assert "entroly_retrieve" in tools
+    assert "remember_fragment" in tools
     assert "eicv_suppress_hallucinations" not in tools
     assert "export_training_data" not in tools
     assert "start_workspace_listener" not in tools
     assert server._prompt_manager._prompts
     assert server._resource_manager._resources
+
+
+def test_unconfigured_mcp_profile_preserves_existing_clients(tmp_path, monkeypatch) -> None:
+    """A direct or legacy entrypoint must retain the established full contract."""
+    monkeypatch.delenv("ENTROLY_MCP_PROFILE", raising=False)
+    monkeypatch.setenv("ENTROLY_DIR", str(tmp_path / "entroly"))
+    from entroly.server import _PUBLIC_MCP_TOOLS, create_mcp_server
+
+    server, _engine = create_mcp_server()
+    tools = set(server._tool_manager._tools)
+
+    assert len(tools) > len(_PUBLIC_MCP_TOOLS)
+    assert _PUBLIC_MCP_TOOLS < tools
+    assert {"entroly_retrieve", "remember_fragment", "work_handoff", "work_state"} <= tools
 
 
 def test_full_mcp_profile_preserves_advanced_tool_surface(tmp_path, monkeypatch) -> None:

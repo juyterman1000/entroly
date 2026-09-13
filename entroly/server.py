@@ -155,11 +155,12 @@ def _mcp_passive_mode() -> bool:
 
 _MCP_PROFILE_ENV = "ENTROLY_MCP_PROFILE"
 _FULL_MCP_PROFILES = {"full", "all", "legacy", "research"}
-_PUBLIC_MCP_PROFILES = {"", "public", "default", "marketplace", "core"}
+_PUBLIC_MCP_PROFILES = {"public", "marketplace", "core"}
 _PUBLIC_MCP_TOOLS = frozenset(
     {
         "checkpoint_state",
         "create_context_receipt",
+        "entroly_retrieve",
         "explain_receipt_omission",
         "get_stats",
         "optimize_context",
@@ -168,6 +169,7 @@ _PUBLIC_MCP_TOOLS = frozenset(
         "record_command_exit",
         "record_test_result",
         "recover_receipt_omission",
+        "remember_fragment",
         "render_context_receipt",
         "repo_file_map",
         "resume_state",
@@ -182,18 +184,19 @@ _PUBLIC_MCP_TOOLS = frozenset(
 def _mcp_profile_name() -> str:
     """Return the requested MCP surface profile."""
 
-    raw = os.environ.get(_MCP_PROFILE_ENV, "public").strip().lower()
+    raw = os.environ.get(_MCP_PROFILE_ENV, "full").strip().lower()
     if raw in _FULL_MCP_PROFILES:
         return "full"
     if raw in _PUBLIC_MCP_PROFILES:
         return "public"
     logger.warning(
-        "Unknown %s=%r; using public MCP profile. Set %s=full for all tools.",
+        "Unknown %s=%r; using the backwards-compatible full MCP profile. "
+        "Set %s=public for the compact marketplace surface.",
         _MCP_PROFILE_ENV,
         raw,
         _MCP_PROFILE_ENV,
     )
-    return "public"
+    return "full"
 
 
 def _mcp_profile_allowed_tools(profile: str) -> set[str] | None:
@@ -501,9 +504,9 @@ def create_mcp_server(
             "At the start of each task, call recall_relevant once with a concise "
             "task-derived query, top_k=3, and full=false before loading broader "
             "context. Use smart_read or optimize_context for substantial context. "
-            "The default public MCP profile exposes a compact, non-overlapping "
-            "tool set for marketplaces; set ENTROLY_MCP_PROFILE=full to expose "
-            "advanced research, vault, evolution, and security tools."
+            "Marketplace packages can select a compact, non-overlapping public "
+            "profile with ENTROLY_MCP_PROFILE=public; the standard entrypoint "
+            "keeps the backwards-compatible full tool surface."
         ),
     )
     # MCP SDK 1.x does not expose `version` on FastMCP's constructor. Without
