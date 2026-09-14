@@ -71,6 +71,11 @@ claudecode/
 *.swp
 *.swo
 
+# JetBrains plugin build and sandbox state
+extensions/jetbrains/.gradle/
+extensions/jetbrains/.intellijPlatform/
+extensions/jetbrains/build/
+
 # .vscode and .claude: track the shared project files, ignore personal overrides.
 .vscode/*
 !.vscode/mcp.json
