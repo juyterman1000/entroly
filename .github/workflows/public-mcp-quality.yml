@@ -1,0 +1,54 @@
+name: Public MCP Tool Quality
+
+on:
+  pull_request:
+    paths:
+      - "Dockerfile"
+      - "smithery.yaml"
+      - "server.json"
+      - "marketplace.json"
+      - "entroly/server.py"
+      - "tests/test_lobehub_score_audit.py"
+      - "tests/test_agent_integration_packages.py"
+      - ".github/workflows/public-mcp-quality.yml"
+  push:
+    branches: [main]
+    paths:
+      - "Dockerfile"
+      - "smithery.yaml"
+      - "server.json"
+      - "marketplace.json"
+      - "entroly/server.py"
+      - "tests/test_lobehub_score_audit.py"
+      - "tests/test_agent_integration_packages.py"
+      - ".github/workflows/public-mcp-quality.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-mcp-quality-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  tdqs:
+    name: TDQS public catalog
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - name: Install exact-head Entroly
+        run: python scripts/ci_install_exact_head.py
+      - name: Reject public tool-schema regressions
+        run: >-
+          npx -y mcp-tdqs@0.2.0 lint
+          --command "env ENTROLY_MCP_PROFILE=public ENTROLY_MCP_PASSIVE=1 ENTROLY_NO_DOCKER=1 python -m entroly.server"
+          --fail-on warning
+          --format text
