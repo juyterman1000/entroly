@@ -184,6 +184,7 @@ def test_edit_order_does_not_affect_the_index(tmp_path: Path) -> None:
         reverse_root, cache_dir=reverse_cache
     )
 
+    assert set(forward.files) == set(reverse.files) == set(final_files)
     _assert_same_index(forward, reverse, "forward vs reverse edit order")
 
 
