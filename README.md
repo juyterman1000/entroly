@@ -26,6 +26,7 @@ Compression you can undo, on your own repository, in one command — without rep
   <a href="https://github.com/juyterman1000/entroly"><img src="https://img.shields.io/github/stars/juyterman1000/entroly?style=social" alt="Entroly GitHub stars"></a>
   <a href="https://github.com/juyterman1000/entroly/actions"><img src="https://img.shields.io/github/actions/workflow/status/juyterman1000/entroly/ci.yml?label=CI" alt="CI status"></a>
   <a href="https://github.com/juyterman1000/entroly/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22"><img src="https://img.shields.io/badge/contributions-welcome-brightgreen" alt="Contributions welcome"></a>
+  <a href="https://lobehub.com/mcp/juyterman1000-entroly"><img src="https://lobehub.com/badge/mcp/juyterman1000-entroly" alt="LobeHub MCP"></a>
 </p>
 
 <p align="center">

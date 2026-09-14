@@ -1,0 +1,22 @@
+{
+  "name": "entroly",
+  "version": "1.0.84",
+  "description": "Auditable context-control plane for Antigravity: knapsack evidence selection, reversible context compression, 100% Merkle byte-recovery, and auditable receipts.",
+  "author": {
+    "name": "Entroly Authors",
+    "url": "https://github.com/juyterman1000/entroly"
+  },
+  "homepage": "https://github.com/juyterman1000/entroly",
+  "repository": "https://github.com/juyterman1000/entroly",
+  "license": "Apache-2.0",
+  "keywords": [
+    "antigravity",
+    "plugin",
+    "context-intelligence",
+    "token-optimization",
+    "compression",
+    "mcp",
+    "merkle-recovery",
+    "witness"
+  ]
+}

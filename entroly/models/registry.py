@@ -17,6 +17,26 @@ from urllib.parse import urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
+class AttentionArchitecture(str, Enum):
+    """Attention mechanism family — drives budget shaping in ECDB.
+
+    FULL_MHA_GQA:     Standard dense or grouped-query attention (GPT, Claude, Gemini).
+                      Prefix-cache-friendly; budget follows existing ECDB curve.
+    LATENT_MLA:       Multi-head Latent Attention (DeepSeek v2/v3). Compressed KV
+                      cache allows efficient long-context but reshapes attention
+                      distribution.
+    LINEAR_HYBRID_GDN: Linear-time hybrids (Mamba, RWKV, Gated Delta Networks).
+                      Quality degrades beyond ~4K tokens of injected context.
+    SPARSE_DSA:       Dynamic Sparse Attention (Mixtral-style routing, sliding
+                      window). Budget can expand but with selectivity constraints.
+    """
+
+    FULL_MHA_GQA = "full_mha_gqa"
+    LATENT_MLA = "latent_mla"
+    LINEAR_HYBRID_GDN = "linear_hybrid_gdn"
+    SPARSE_DSA = "sparse_dsa"
+
+
 class RegistryTrust(str, Enum):
     """How strongly Entroly can rely on a model capability record."""
 
@@ -40,6 +60,7 @@ class ModelCapability:
     reasoning_levels: tuple[str, ...]
     input_price_per_million: float | None
     output_price_per_million: float | None
+    attention_profile: AttentionArchitecture | None
     trust: RegistryTrust
     source: str
     verified_at: str | None
@@ -76,6 +97,17 @@ class ModelCapability:
             for alias in (_normalise_name(item) for item in value.get("aliases", ()))
             if alias
         )
+        raw_profile = value.get("attention_profile")
+        if raw_profile is not None:
+            try:
+                attn = AttentionArchitecture(raw_profile)
+            except ValueError:
+                raise ValueError(
+                    f"invalid attention_profile for {model_id!r}: {raw_profile!r}"
+                )
+        else:
+            attn = _infer_attention_profile(model_id)
+
         return cls(
             id=model_id,
             provider=provider,
@@ -88,6 +120,7 @@ class ModelCapability:
             reasoning_levels=tuple(str(item) for item in value.get("reasoning_levels", ())),
             input_price_per_million=_optional_float(value.get("input_price_per_million")),
             output_price_per_million=_optional_float(value.get("output_price_per_million")),
+            attention_profile=attn,
             trust=RegistryTrust(value.get("trust", default_trust.value)),
             source=str(value.get("source", "unknown")).strip() or "unknown",
             verified_at=_optional_iso_date(value.get("verified_at"), field="verified_at"),
@@ -118,6 +151,7 @@ class ModelCapability:
             "reasoning_levels": list(self.reasoning_levels),
             "input_price_per_million": self.input_price_per_million,
             "output_price_per_million": self.output_price_per_million,
+            "attention_profile": self.attention_profile.value if self.attention_profile else None,
             "trust": self.trust.value,
             "source": self.source,
             "verified_at": self.verified_at,
@@ -353,6 +387,30 @@ class _NoRedirect(HTTPRedirectHandler):
         raise HTTPError(req.full_url, code, "redirects disabled", headers, fp)
 
 
+_MLA_PREFIXES = ("deepseek",)
+_LINEAR_PREFIXES = ("mamba", "rwkv", "based-", "gdn-")
+_SPARSE_PREFIXES = ("mixtral",)
+
+
+def _infer_attention_profile(model_id: str) -> AttentionArchitecture | None:
+    """Best-effort classification from model id when the registry omits it."""
+    lowered = model_id.lower()
+    for prefix in _MLA_PREFIXES:
+        if prefix in lowered:
+            return AttentionArchitecture.LATENT_MLA
+    for prefix in _LINEAR_PREFIXES:
+        if prefix in lowered:
+            return AttentionArchitecture.LINEAR_HYBRID_GDN
+    for prefix in _SPARSE_PREFIXES:
+        if prefix in lowered:
+            return AttentionArchitecture.SPARSE_DSA
+    for family in ("gpt-", "claude-", "gemini-", "o1", "o3", "o4", "glm-",
+                    "nemotron", "muse-spark", "kimi-", "qwen"):
+        if family in lowered:
+            return AttentionArchitecture.FULL_MHA_GQA
+    return None
+
+
 def _normalise_name(value: object) -> str:
     return str(value or "").strip().lower()
 
@@ -576,6 +634,7 @@ def discover_ollama_models(
                 reasoning_levels=(),
                 input_price_per_million=None,
                 output_price_per_million=None,
+                attention_profile=_infer_attention_profile(name),
                 trust=RegistryTrust.DISCOVERED,
                 source=f"{base}/api/tags",
                 verified_at=None,
@@ -621,6 +680,7 @@ def discover_openai_compatible_models(
                 reasoning_levels=(),
                 input_price_per_million=None,
                 output_price_per_million=None,
+                attention_profile=_infer_attention_profile(name),
                 trust=RegistryTrust.DISCOVERED,
                 source=f"{base}/v1/models",
                 verified_at=None,
@@ -722,6 +782,7 @@ def discover_openrouter_models(
                 output_price_per_million=_openrouter_price_per_million(
                     pricing.get("completion")
                 ),
+                attention_profile=_infer_attention_profile(model_id),
                 trust=RegistryTrust.DISCOVERED,
                 source=endpoint,
                 verified_at=None,

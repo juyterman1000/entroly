@@ -639,6 +639,7 @@ def _compress_message_content(
         return compress(content, budget=budget, profile=profile)
 
     try:
+        from .context_receipts.embedding_scorer import default_scorer
         from .context_receipts.ingest import ingest_documents
         from .context_receipts.retrieval import rank_chunks
         from .context_receipts.selection import select_context
@@ -660,7 +661,7 @@ def _compress_message_content(
         if len(index.chunks) < 2:
             return compress(content, budget=budget, profile=profile)
 
-        ranked = rank_chunks(index, query)
+        ranked = rank_chunks(index, query, semantic_scorer=default_scorer())
         selection = select_context(
             index,
             ranked,

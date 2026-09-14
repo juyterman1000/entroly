@@ -10,6 +10,7 @@ from dataclasses import asdict
 from typing import Any
 
 from .dependencies import detect_dependencies
+from .embedding_scorer import default_scorer
 from .models import (
     SCHEMA_VERSION,
     CompressionRatio,
@@ -431,7 +432,7 @@ def build_receipt(
 ) -> ContextReceipt:
     safe_token_budget = max(0, _int_or_default(token_budget))
     safe_query = "" if query is None else str(query)
-    ranked = rank_chunks(index, safe_query)
+    ranked = rank_chunks(index, safe_query, semantic_scorer=default_scorer())
     dependencies = detect_dependencies(index)
     selection = select_context(
         index, ranked, dependencies, token_budget=safe_token_budget

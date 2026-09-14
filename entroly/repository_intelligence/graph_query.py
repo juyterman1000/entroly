@@ -110,20 +110,42 @@ def _resolve(
         return "resolved", [_file_node(normalized)]
     symbol_query = clean[7:] if clean.startswith("symbol:") else clean
     lowered = symbol_query.lower()
-    matches = sorted(
-        (
-            _symbol_node(symbol.symbol_id)
-            for symbol in index.symbols.values()
-            if lowered in {
-                symbol.symbol_id.lower(),
-                symbol.qualified_name.lower(),
-                symbol.name.lower(),
-            }
-        )
+
+    exact = sorted(
+        _symbol_node(symbol.symbol_id)
+        for symbol in index.symbols.values()
+        if lowered
+        in {
+            symbol.symbol_id.lower(),
+            symbol.qualified_name.lower(),
+            symbol.name.lower(),
+        }
     )
-    if len(matches) == 1:
-        return "resolved", matches
-    return ("ambiguous" if matches else "not-found"), matches[:100]
+    if exact:
+        if len(exact) == 1:
+            return "resolved", exact
+        return "ambiguous", exact[:100]
+
+    prefix = sorted(
+        _symbol_node(symbol.symbol_id)
+        for symbol in index.symbols.values()
+        if symbol.name.lower().startswith(lowered)
+        or symbol.qualified_name.lower().startswith(lowered)
+    )
+    if prefix:
+        if len(prefix) == 1:
+            return "resolved", prefix
+        return "ambiguous", prefix[:100]
+
+    substring = sorted(
+        _symbol_node(symbol.symbol_id)
+        for symbol in index.symbols.values()
+        if lowered in symbol.name.lower()
+        or lowered in symbol.qualified_name.lower()
+    )
+    if len(substring) == 1:
+        return "resolved", substring
+    return ("ambiguous" if substring else "not-found"), substring[:100]
 
 
 def _graph(
