@@ -493,10 +493,10 @@ class SpeculativeAssembler:
     def _load_file(self, rel_path: str) -> str | None:
         """Safely load file content from the repo."""
         try:
-            target = (self._repo_root / rel_path).resolve()
-            if not str(target).startswith(str(self._repo_root)):
-                return None
-            if not target.is_file():
+            from .path_safety import resolve_file_within_resolved
+
+            target = resolve_file_within_resolved(self._repo_root, rel_path)
+            if target is None:
                 return None
             if target.stat().st_size > 100_000:
                 return None
