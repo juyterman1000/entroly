@@ -379,12 +379,19 @@ Tools → AI Assistant → Model Context Protocol (MCP)**:
       "env": {
         "ENTROLY_NO_DOCKER": "1",
         "ENTROLY_MCP_PASSIVE": "1",
+        "ENTROLY_MCP_PROFILE": "public",
         "ENTROLY_MAX_FILES": "200"
       }
     }
   }
 }
 ```
+
+MCP marketplace and plugin manifests select the compact `public` profile so
+agents see the core context, receipt, continuity, recovery, and verification
+tools first. A direct `entroly serve` invocation remains backwards compatible
+and exposes the full tool surface. You can choose either behavior explicitly
+with `ENTROLY_MCP_PROFILE=public` or `ENTROLY_MCP_PROFILE=full`.
 
 The MCP path is provider-neutral: the host can use OpenAI, Anthropic, Google,
 Mistral, DeepSeek, Kimi, GLM, or a local model. There is no separate plugin
