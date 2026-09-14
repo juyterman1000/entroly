@@ -160,25 +160,263 @@ _PUBLIC_MCP_TOOLS = frozenset(
     {
         "checkpoint_state",
         "create_context_receipt",
-        "entroly_retrieve",
-        "explain_receipt_omission",
-        "get_stats",
+        "get_session_stats",
         "optimize_context",
         "recall_relevant",
-        "record_ci_result",
-        "record_command_exit",
         "record_test_result",
         "recover_receipt_omission",
         "remember_fragment",
-        "render_context_receipt",
-        "repo_file_map",
+        "read_source_file",
         "resume_state",
-        "smart_read",
-        "verify_provenance",
+        "retrieve_context",
         "verify_response",
-        "work_resume",
     }
 )
+
+_PUBLIC_MCP_TOOL_ALIASES = {
+    "entroly_retrieve": "retrieve_context",
+    "get_stats": "get_session_stats",
+    "smart_read": "read_source_file",
+}
+
+
+_FULL_MCP_INSTRUCTIONS = (
+    "Information-theoretic context optimization for AI coding agents. "
+    "Knapsack-optimal token budgeting, Shannon entropy scoring, "
+    "SimHash deduplication, predictive pre-fetch, and checkpoint/resume. "
+    "Use work_resume for evidence-backed cross-session or cross-vendor continuity. "
+    "At the start of each task, call recall_relevant once with a concise "
+    "task-derived query, top_k=3, and full=false before loading broader "
+    "context. Use smart_read or optimize_context for substantial context. "
+    "Marketplace packages can select a compact, non-overlapping public "
+    "profile with ENTROLY_MCP_PROFILE=public; the standard entrypoint "
+    "keeps the backwards-compatible full tool surface."
+)
+
+_PUBLIC_MCP_INSTRUCTIONS = (
+    "Local context control for coding agents. Start a task with recall_relevant. "
+    "Use read_source_file for a known workspace path, remember_fragment for "
+    "caller-supplied text, and optimize_context for a token-bounded bundle. "
+    "Use create_context_receipt when selection needs an audit trail, then "
+    "recover_receipt_omission for omitted receipt chunks or retrieve_context for "
+    "a CCR handle. Use checkpoint_state and resume_state across interruptions. "
+    "verify_response estimates grounding against supplied evidence; it is not an "
+    "external fact-check. record_test_result records a test that already ran. "
+    "get_session_stats reports local counters and estimates."
+)
+
+
+def _prepare_public_mcp_surface(mcp: Any) -> None:
+    """Expose a small, predictable tool catalog for public MCP directories.
+
+    The full surface remains available through the explicit ``full`` profile.
+    Public aliases regularize names without breaking established full-profile
+    clients, while descriptions make boundaries and side effects explicit.
+    """
+    from mcp.types import ToolAnnotations
+
+    tools = mcp._tool_manager._tools
+    for internal_name, public_name in _PUBLIC_MCP_TOOL_ALIASES.items():
+        tool = tools.pop(internal_name)
+        tool.name = public_name
+        tools[public_name] = tool
+
+    metadata: dict[str, dict[str, Any]] = {
+        "remember_fragment": {
+            "description": (
+                "Store caller-supplied text in Entroly's local fragment index. "
+                "Use this for transient text or tool output that is not already a "
+                "workspace file; use read_source_file for a file and recall_relevant "
+                "to search stored fragments. The context firewall may reject unsafe "
+                "content. This writes local Entroly state and makes no network call."
+            ),
+            "annotations": (False, False, False, False),
+            "parameters": {
+                "content": "Text to scan and store in the local fragment index.",
+                "source": "Optional provenance label such as file:utils.py or tool:pytest.",
+                "token_count": "Known token count; use 0 to let Entroly estimate it.",
+                "is_pinned": "Prioritize the fragment within the bounded pinned reserve.",
+            },
+        },
+        "optimize_context": {
+            "description": (
+                "Select a token-budgeted context bundle from stored fragments for one "
+                "task. Use this after fragments have been indexed. Unlike "
+                "recall_relevant, it optimizes the whole bundle against token_budget; "
+                "unlike read_source_file, it does not read a requested path. It updates "
+                "local access statistics and makes no network call."
+            ),
+            "annotations": (False, False, False, False),
+            "parameters": {
+                "token_budget": "Maximum estimated tokens in the selected context bundle.",
+                "query": "Task description used to score fragment relevance.",
+            },
+        },
+        "retrieve_context": {
+            "description": (
+                "Recover exact content from a CCR retrieval handle or materialized "
+                "source reference. Use this when compressed context includes a ccr: "
+                "handle. Use read_source_file for a current workspace file and "
+                "recover_receipt_omission for an omitted receipt chunk. This is a "
+                "read-only local lookup and makes no network call."
+            ),
+            "annotations": (True, False, True, False),
+            "parameters": {
+                "source_or_handle": "CCR handle or previously materialized source path; empty lists available entries.",
+            },
+        },
+        "recall_relevant": {
+            "description": (
+                "Search Entroly's stored fragment index for the best task matches. Use "
+                "this for a ranked lookup when no token-bounded bundle is needed; use "
+                "optimize_context to assemble a complete budgeted context. The default "
+                "returns compact pointers, while full returns stored bodies. This reads "
+                "local state and makes no network call."
+            ),
+            "annotations": (True, False, True, False),
+            "parameters": {
+                "query": "Search terms derived from the current task.",
+                "top_k": "Maximum number of ranked fragments to return.",
+                "full": "Return complete stored bodies instead of compact pointers.",
+            },
+        },
+        "record_test_result": {
+            "description": (
+                "Attach an already-observed test pass or failure to an optimization "
+                "trace. Use only after a real test command ran; this tool does not run "
+                "tests, inspect CI, or independently validate the claim. It appends a "
+                "local evidence event and makes no network call."
+            ),
+            "annotations": (False, False, False, False),
+            "parameters": {
+                "request_id": "Trace identifier returned by the relevant optimize_context call.",
+                "passed": "True only when every test required by the named suite passed.",
+                "suite": "Optional test-suite name such as pytest or cargo test.",
+                "details": "Optional bounded summary of the observed test execution.",
+            },
+        },
+        "create_context_receipt": {
+            "description": (
+                "Create an auditable context-selection receipt from caller-supplied "
+                "documents. Use this when you need selected and omitted chunks, "
+                "fingerprints, warnings, and recovery metadata. It does not read "
+                "workspace files or call a model. recoverable=true writes a local "
+                "content-addressed recovery bundle."
+            ),
+            "annotations": (False, False, False, False),
+            "parameters": {
+                "documents_json": "JSON object, pairs, or objects that map source labels to document text.",
+                "query": "Task used to select relevant document chunks.",
+                "token_budget": "Maximum estimated tokens selected into the receipt.",
+                "chunk_tokens": "Target size of each source chunk in estimated tokens.",
+                "overlap_tokens": "Estimated tokens repeated between adjacent chunks.",
+                "recoverable": "Persist omitted text locally for verified later recovery.",
+            },
+        },
+        "recover_receipt_omission": {
+            "description": (
+                "Recover omitted text from a recoverable Context Receipt and verify its "
+                "stored hashes. Use this only with receipt JSON created using "
+                "recoverable=true. Use retrieve_context for a CCR handle. This reads the "
+                "local recovery store, does not modify source files, and makes no "
+                "network call."
+            ),
+            "annotations": (True, False, True, False),
+            "parameters": {
+                "receipt_json": "Complete JSON returned by create_context_receipt.",
+                "chunk_id": "Specific omitted chunk to recover; empty recovers every omitted chunk.",
+            },
+        },
+        "checkpoint_state": {
+            "description": (
+                "Persist Entroly task state and explicit continuation metadata locally. "
+                "Use before a planned handoff, restart, or context loss; use resume_state "
+                "to restore it. This writes a local checkpoint, does not edit source "
+                "files, and makes no network call."
+            ),
+            "annotations": (False, False, False, False),
+            "parameters": {
+                "task_description": "Concise description used to identify the checkpoint later.",
+                "current_step": "Last completed step or next action for continuation.",
+                "decisions": "Important decisions that a resumed agent must preserve.",
+                "modified_files": "Workspace paths already changed during the task.",
+                "project": "Optional project path or identifier used to scope recovery.",
+            },
+        },
+        "resume_state": {
+            "description": (
+                "Restore a local Entroly checkpoint into the current engine. Use after a "
+                "restart or context loss; use checkpoint_state to create checkpoints and "
+                "recall_relevant for read-only fragment search. This changes in-memory "
+                "Entroly state, does not edit source files, and makes no network call."
+            ),
+            "annotations": (False, False, False, False),
+            "parameters": {
+                "query": "Optional task terms; empty selects the latest checkpoint.",
+                "project": "Optional project path or identifier used to narrow matching.",
+            },
+        },
+        "get_session_stats": {
+            "description": (
+                "Read current Entroly session counters, selection statistics, checkpoint "
+                "status, and locally estimated token or cost fields. Use for diagnostics "
+                "after work has run. Estimates are not provider billing evidence. This "
+                "is read-only and makes no network call."
+            ),
+            "annotations": (True, False, True, False),
+            "parameters": {},
+        },
+        "verify_response": {
+            "description": (
+                "Estimate whether an AI response is grounded in caller-supplied context "
+                "using Entroly's local verification signals. Use after generation to "
+                "identify claims requiring review. A pass is a risk estimate, not formal "
+                "proof or external fact-checking. The tool is read-only and makes no "
+                "model or network call."
+            ),
+            "annotations": (True, False, True, False),
+            "parameters": {
+                "response": "AI-generated text whose claims should be checked.",
+                "context": "Source evidence that was actually available to the AI.",
+                "prompt": "Original user request used only to calibrate the local analysis.",
+            },
+        },
+        "read_source_file": {
+            "description": (
+                "Read one current workspace file at an exact or relevance-based "
+                "resolution. Use this for a known path; use recall_relevant to search "
+                "stored fragments and retrieve_context for a CCR handle. resolution=full "
+                "or a line range returns exact source text. It reads only within the "
+                "configured project root and makes no network call."
+            ),
+            "annotations": (True, False, True, True),
+            "parameters": {
+                "file_path": "Workspace-relative path constrained to the configured project root.",
+                "query": "Optional task terms used for automatic relevance-based resolution.",
+                "budget": "Target output size in estimated tokens for automatic resolution.",
+                "resolution": "One of full, medium, diff, structure, low, or empty for automatic selection.",
+                "previous_source": "Required baseline text when resolution is diff.",
+                "line_start": "First line of an exact inclusive range; pair with line_end.",
+                "line_end": "Last line of an exact inclusive range; pair with line_start.",
+                "fresh": "Return content again instead of a same-session repeat-delivery handle.",
+                "read_scope": "Optional cache-isolation key for agents sharing one MCP connection.",
+            },
+        },
+    }
+
+    for name, item in metadata.items():
+        tool = tools[name]
+        tool.description = item["description"]
+        read_only, destructive, idempotent, open_world = item["annotations"]
+        tool.annotations = ToolAnnotations(
+            readOnlyHint=read_only,
+            destructiveHint=destructive,
+            idempotentHint=idempotent,
+            openWorldHint=open_world,
+        )
+        properties = tool.parameters.get("properties", {})
+        for parameter, description in item["parameters"].items():
+            properties[parameter]["description"] = description
 
 
 def _mcp_profile_name() -> str:
@@ -205,30 +443,6 @@ def _mcp_profile_allowed_tools(profile: str) -> set[str] | None:
     if profile == "full":
         return None
     return set(_PUBLIC_MCP_TOOLS)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 # ══════════════════════════════════════════════════════════════════════
 # MCP Server Definition
@@ -494,21 +708,10 @@ def create_mcp_server(
         raise
     profile = _mcp_profile_name()
 
-    mcp = FastMCP(
-        "entroly",
-        instructions=(
-            "Information-theoretic context optimization for AI coding agents. "
-            "Knapsack-optimal token budgeting, Shannon entropy scoring, "
-            "SimHash deduplication, predictive pre-fetch, and checkpoint/resume. "
-            "Use work_resume for evidence-backed cross-session or cross-vendor continuity. "
-            "At the start of each task, call recall_relevant once with a concise "
-            "task-derived query, top_k=3, and full=false before loading broader "
-            "context. Use smart_read or optimize_context for substantial context. "
-            "Marketplace packages can select a compact, non-overlapping public "
-            "profile with ENTROLY_MCP_PROFILE=public; the standard entrypoint "
-            "keeps the backwards-compatible full tool surface."
-        ),
+    instructions = (
+        _PUBLIC_MCP_INSTRUCTIONS if profile == "public" else _FULL_MCP_INSTRUCTIONS
     )
+    mcp = FastMCP("entroly", instructions=instructions)
     # MCP SDK 1.x does not expose `version` on FastMCP's constructor. Without
     # this, initialize reports the SDK version rather than the Entroly version.
     try:
@@ -4387,6 +4590,8 @@ def create_mcp_server(
     effective_allowed_tools = allowed_tools
     profile_limited = False
     if effective_allowed_tools is None:
+        if profile == "public":
+            _prepare_public_mcp_surface(mcp)
         effective_allowed_tools = _mcp_profile_allowed_tools(profile)
         profile_limited = effective_allowed_tools is not None
 

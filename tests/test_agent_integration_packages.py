@@ -220,6 +220,17 @@ def test_glama_metadata_declares_repository_maintainer() -> None:
     assert metadata["maintainers"] == ["juyterman1000"]
 
 
+def test_public_registry_launchers_select_compact_mcp_profile() -> None:
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    assert "ENV ENTROLY_MCP_PROFILE=public" in dockerfile
+    assert "ENTROLY_MCP_PASSIVE=1" in dockerfile
+    assert "ENTROLY_NO_DOCKER=1" in dockerfile
+
+    smithery = (ROOT / "smithery.yaml").read_text(encoding="utf-8")
+    assert 'ENTROLY_MCP_PROFILE: "public"' in smithery
+    assert 'ENTROLY_MCP_PASSIVE: "1"' in smithery
+
+
 def test_claude_and_gemini_bundles_share_evidence_contract() -> None:
     claude_manifest = json.loads(
         (ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")

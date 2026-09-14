@@ -206,7 +206,7 @@ only optional workspace, offline, provider, and proxy settings.
 | **"I'm building my own app in Python."** *(SDK user)* | `from entroly import compress, compress_messages, optimize` | Call it straight from your code, anywhere you assemble a prompt |
 
 Cursor MCP users can also use this one-click install link (no marketplace
-account required): [Add Entroly to Cursor](cursor://anysphere.cursor-deeplink/mcp/install?name=entroly&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImVudHJvbHktbWNwQDEuMC44NCIsInNlcnZlIl0sImVudiI6eyJFTlRST0xZX05PX0RPQ0tFUiI6IjEiLCJFTlRST0xZX01DUF9QQVNTSVZFIjoiMSIsIkVOVFJPTFlfTUFYX0ZJTEVTIjoiMjAwIn19).
+account required): [Add Entroly to Cursor](cursor://anysphere.cursor-deeplink/mcp/install?name=entroly&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImVudHJvbHktbWNwQDEuMC44NCIsInNlcnZlIl0sImVudiI6eyJFTlRST0xZX05PX0RPQ0tFUiI6IjEiLCJFTlRST0xZX01DUF9QQVNTSVZFIjoiMSIsIkVOVFJPTFlfTUNQX1BST0ZJTEUiOiJwdWJsaWMiLCJFTlRST0xZX01BWF9GSUxFUyI6IjIwMCJ9fQ).
 | **"I have an API key and my own app."** *(proxy user)* | `entroly proxy` → point `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` / `GOOGLE_GEMINI_BASE_URL` at `localhost:9377` | Every request gets optimized on the way past — no code changes on your side |
 
 <sub>**Runaway-session rescue — automatic on the proxy, callable everywhere else.**

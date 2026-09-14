@@ -68,40 +68,70 @@ def test_public_mcp_profile_keeps_marketplace_tool_surface_small(tmp_path, monke
     tools = set(server._tool_manager._tools)
 
     assert tools == set(_PUBLIC_MCP_TOOLS)
-    assert len(tools) == 19
-    assert "entroly_retrieve" in tools
+    assert len(tools) == 12
+    assert "retrieve_context" in tools
+    assert "read_source_file" in tools
+    assert "get_session_stats" in tools
     assert "remember_fragment" in tools
+    assert "entroly_retrieve" not in tools
+    assert "smart_read" not in tools
+    assert "get_stats" not in tools
     assert "eicv_suppress_hallucinations" not in tools
     assert "export_training_data" not in tools
     assert "start_workspace_listener" not in tools
     assert server._prompt_manager._prompts
     assert server._resource_manager._resources
 
+    for tool in server._tool_manager._tools.values():
+        assert tool.annotations is not None
+        properties = tool.parameters.get("properties", {})
+        assert all(prop.get("description") for prop in properties.values())
+
+    instructions = server._mcp_server.instructions
+    assert "read_source_file" in instructions
+    assert "retrieve_context" in instructions
+    assert "smart_read" not in instructions
+    assert "work_resume" not in instructions
+
 
 def test_unconfigured_mcp_profile_preserves_existing_clients(tmp_path, monkeypatch) -> None:
     """A direct or legacy entrypoint must retain the established full contract."""
     monkeypatch.delenv("ENTROLY_MCP_PROFILE", raising=False)
     monkeypatch.setenv("ENTROLY_DIR", str(tmp_path / "entroly"))
-    from entroly.server import _PUBLIC_MCP_TOOLS, create_mcp_server
+    from entroly.server import (
+        _PUBLIC_MCP_TOOL_ALIASES,
+        _PUBLIC_MCP_TOOLS,
+        create_mcp_server,
+    )
 
     server, _engine = create_mcp_server()
     tools = set(server._tool_manager._tools)
+    internal_public_tools = (
+        set(_PUBLIC_MCP_TOOLS) - set(_PUBLIC_MCP_TOOL_ALIASES.values())
+    ) | set(_PUBLIC_MCP_TOOL_ALIASES)
 
     assert len(tools) > len(_PUBLIC_MCP_TOOLS)
-    assert _PUBLIC_MCP_TOOLS < tools
+    assert internal_public_tools < tools
     assert {"entroly_retrieve", "remember_fragment", "work_handoff", "work_state"} <= tools
 
 
 def test_full_mcp_profile_preserves_advanced_tool_surface(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("ENTROLY_MCP_PROFILE", "full")
     monkeypatch.setenv("ENTROLY_DIR", str(tmp_path / "entroly"))
-    from entroly.server import _PUBLIC_MCP_TOOLS, create_mcp_server
+    from entroly.server import (
+        _PUBLIC_MCP_TOOL_ALIASES,
+        _PUBLIC_MCP_TOOLS,
+        create_mcp_server,
+    )
 
     server, _engine = create_mcp_server()
     tools = set(server._tool_manager._tools)
+    internal_public_tools = (
+        set(_PUBLIC_MCP_TOOLS) - set(_PUBLIC_MCP_TOOL_ALIASES.values())
+    ) | set(_PUBLIC_MCP_TOOL_ALIASES)
 
     assert len(tools) > len(_PUBLIC_MCP_TOOLS)
-    assert _PUBLIC_MCP_TOOLS < tools
+    assert internal_public_tools < tools
     assert "eicv_suppress_hallucinations" in tools
     assert "export_training_data" in tools
     assert "start_workspace_listener" in tools

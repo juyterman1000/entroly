@@ -13,7 +13,9 @@ startCommand:
   commandFunction: |-
     (config) => {
       const env = {
-        ENTROLY_NO_DOCKER: "1"
+        ENTROLY_NO_DOCKER: "1",
+        ENTROLY_MCP_PASSIVE: "1",
+        ENTROLY_MCP_PROFILE: "public"
       };
       if (config.DEBUG) {
         env.ENTROLY_DEBUG = "1";
