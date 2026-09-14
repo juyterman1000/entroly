@@ -1,0 +1,44 @@
+<idea-plugin>
+    <id>io.github.juyterman1000.entroly</id>
+    <name>Entroly</name>
+    <vendor email="fastrunner10090@gmail.com" url="https://github.com/juyterman1000/entroly">Entroly</vendor>
+
+    <description><![CDATA[
+        <p>Connect JetBrains AI Assistant to Entroly's local, open-source MCP server.</p>
+        <p>The plugin provides a guided setup action that copies a version-pinned MCP
+        configuration and opens JetBrains's MCP settings. Entroly supplies bounded
+        context selection, auditable receipts, exact recovery, and verification tools.</p>
+        <p>No telemetry is collected. The plugin does not silently change IDE settings,
+        install software, or intercept model-provider traffic.</p>
+    ]]></description>
+
+    <change-notes><![CDATA[
+        <p>Initial release:</p>
+        <ul>
+            <li>Copy a version-pinned Entroly MCP configuration.</li>
+            <li>Open AI Assistant MCP settings from the Tools menu.</li>
+            <li>Check whether the local npx runtime is available.</li>
+            <li>Link directly to public setup documentation and support.</li>
+        </ul>
+    ]]></change-notes>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <applicationConfigurable
+                id="io.github.juyterman1000.entroly.settings"
+                parentId="tools"
+                instance="io.github.juyterman1000.entroly.EntrolyConfigurable"
+                displayName="Entroly"/>
+    </extensions>
+
+    <actions>
+        <action
+                id="io.github.juyterman1000.entroly.ConfigureAction"
+                class="io.github.juyterman1000.entroly.ConfigureEntrolyAction"
+                text="Configure Entroly for AI Assistant"
+                description="Copy the Entroly MCP configuration and open AI Assistant settings">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+        </action>
+    </actions>
+</idea-plugin>
