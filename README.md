@@ -386,6 +386,11 @@ Tools → AI Assistant → Model Context Protocol (MCP)**:
 }
 ```
 
+The repository also ships a free, open-source JetBrains plugin that guides this
+setup from **Tools → Configure Entroly for AI Assistant**, checks the local
+runtime on request, and keeps the evidence boundary visible. See
+[`extensions/jetbrains`](extensions/jetbrains/README.md).
+
 MCP marketplace and plugin manifests select the compact `public` profile so
 agents see the core context, receipt, continuity, recovery, and verification
 tools first. A direct `entroly serve` invocation remains backwards compatible
