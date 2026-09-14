@@ -19,5 +19,11 @@ COPY . /app
 # Install the application and its dependencies
 RUN pip install --no-cache-dir .[full]
 
+# Public registries build this root Dockerfile. Keep their agent-facing catalog
+# compact while leaving direct/native clients free to request the full profile.
+ENV ENTROLY_MCP_PROFILE=public \
+    ENTROLY_MCP_PASSIVE=1 \
+    ENTROLY_NO_DOCKER=1
+
 # Set the entrypoint to run the MCP server
 ENTRYPOINT ["entroly", "serve"]
