@@ -19,6 +19,7 @@ import tempfile
 import threading
 import time
 from collections import deque
+from pathlib import Path
 import pytest
 
 
@@ -121,6 +122,11 @@ def mcp_server():
             # make requests depend on external state.
             "ENTROLY_FEDERATION": "0",
             "ENTROLY_NO_DOCKER": "1",
+            # A scratch cwd otherwise resolves a different installed checkout.
+            "PYTHONPATH": str(Path(__file__).resolve().parents[1]),
+            "ENTROLY_DIR": str(Path(scratch) / ".entroly"),
+            "ENTROLY_ENABLE_SELF_HEAL": "0",
+            "ENTROLY_DISABLE_TELEMETRY": "1",
         },
     )
     stderr_tail = _start_output_pumps(proc)

@@ -10,10 +10,10 @@
 
 ## Strategies Compared
 
-| Strategy | What it does | Used by |
+| Strategy | What it does | Scope |
 |---|---|---|
-| **RAW (Naive FIFO)** | Stuff tokens in file-system order until budget exhausted | Most RAG pipelines |
-| **TOP-K (Cosine)** | Rank by query similarity, take top-K that fit | Cursor, Copilot, Cody |
+| **RAW (Naive FIFO)** | Stuff tokens in file-system order until budget exhausted | Local baseline |
+| **TOP-K (Cosine)** | Rank by query similarity, take top-K that fit | Local baseline, not those products |
 | **ENTROLY (Knapsack)** | Entropy-scored knapsack optimization + dedup + dep graph + SAST | Entroly |
 
 ---
@@ -26,7 +26,7 @@
 | Strategy | Fragments | Tokens | Utilization | Info Density | Relevance | Module Coverage | SAST Catches |
 |---|---|---|---|---|---|---|---|
 | RAW (Naive FIFO) | 6 | 295 | 98% | 0.751 | 50% | 3 | 0 |
-| TOP-K (Cody-style) | 6 | 290 | 97% | 0.686 | 50% | 3 | 0 |
+| TOP-K (local baseline) | 6 | 290 | 97% | 0.686 | 50% | 3 | 0 |
 | **ENTROLY (Knapsack)** | 9 | 300 | 100% | 0.721 | 75% | 9 | 1 |
 
 ### Query: "fix the SQL injection vulnerability in the search endpoint"
@@ -34,7 +34,7 @@
 | Strategy | Fragments | Tokens | Utilization | Info Density | Relevance | Module Coverage | SAST Catches |
 |---|---|---|---|---|---|---|---|
 | RAW (Naive FIFO) | 6 | 295 | 98% | 0.751 | 14% | 3 | 0 |
-| TOP-K (Cody-style) | 6 | 300 | 100% | 0.702 | 14% | 4 | 0 |
+| TOP-K (local baseline) | 6 | 300 | 100% | 0.702 | 14% | 4 | 0 |
 | **ENTROLY (Knapsack)** | 9 | 300 | 100% | 0.721 | 29% | 9 | 1 |
 
 ### Query: "add a refund button to the dashboard"
@@ -42,7 +42,7 @@
 | Strategy | Fragments | Tokens | Utilization | Info Density | Relevance | Module Coverage | SAST Catches |
 |---|---|---|---|---|---|---|---|
 | RAW (Naive FIFO) | 6 | 295 | 98% | 0.751 | 20% | 3 | 0 |
-| TOP-K (Cody-style) | 6 | 295 | 98% | 0.747 | 60% | 4 | 0 |
+| TOP-K (local baseline) | 6 | 295 | 98% | 0.747 | 60% | 4 | 0 |
 | **ENTROLY (Knapsack)** | 8 | 270 | 90% | 0.777 | 40% | 8 | 1 |
 
 ---
@@ -80,11 +80,11 @@ entroly benchmark --project /path/to/your/code
 
 ## Methodology
 
-All strategies operate on the **same corpus** with the **same token budget**. No cherry-picking.
+All strategies operate on the **same corpus** with the **same token budget**. The small fixture is not representative of all tasks.
 
 - **Info density** = Shannon entropy × (1 − boilerplate ratio) — higher means more useful information per token
-- **Module coverage** = unique top-level directories represented — higher means broader codebase understanding
-- **SAST catches** = security vulnerabilities surfaced in the context window — higher means safer code generation
+- **Module coverage** = unique top-level directories represented — a coverage proxy, not measured understanding
+- **SAST catches** = security vulnerabilities surfaced in the context window — fixture detections, not measured code-generation safety
 - **Relevance** = fraction of query terms present in selected context
 
 > **Note**: These benchmarks run on a synthetic but realistic corpus. Real-world numbers depend on your codebase structure, query patterns, and token budget. Run `entroly benchmark` to see your own numbers.
@@ -93,7 +93,8 @@ All strategies operate on the **same corpus** with the **same token budget**. No
 
 ## LLM Accuracy Retention (2026-04-22)
 
-> Does Entroly compression degrade LLM answer quality? **No.**
+> Historical maintainer-reported results, not independently reproduced here.
+> This experiment does not establish that compression preserves answer quality.
 
 Model: `gpt-4o-mini` | Budget: 50,000 tokens | Wilson 95% Confidence Intervals
 
@@ -124,8 +125,8 @@ The harness now covers 7 public benchmarks across five evaluation axes:
 
 ### Interpretation
 
-- **All 6 CIs overlap baseline** — accuracy is statistically indistinguishable from raw context on every benchmark. The point estimates lean slightly positive (average retention 101.7%), but within noise.
-- **LongBench is the only benchmark where compression actually fires** — avg baseline context is 12,885 tokens vs. 12,423 after Entroly (3.6% saving), and retention lands at **104.9%** despite the context cut. The selector is correctly keeping the passages that contain the answer.
+- **Overlapping marginal CIs do not establish equivalence or non-inferiority.** The reported SQuAD score decreased from 84% to 83%. A paired evaluation with a predefined acceptable loss and adequate sample size is needed. The reported intervals are retained as historical values, not revalidated uncertainty estimates; Wilson intervals apply to binary outcomes, not averaged partial-credit scores.
+- **Token reduction in this table is only 0–3.6%.** LongBench reports 12,885 baseline tokens versus 12,423 selected tokens. This does not establish quality under aggressive compression or identify why the answer score changed.
 - MMLU, TruthfulQA, GSM8K, and SQuAD have short system contexts that fit within the 50K budget — Entroly correctly passes through (no artificial noise injection). These serve as **regression guards** against the selector corrupting short-context prompts.
 - Needle contexts (4K–32K tokens) also fit within the 50K budget, so compression is not triggered there.
 - Savings scale with how far a workload's context exceeds the configured budget. Most benchmarks here fit inside the 50K budget, so compression rarely fires; LongBench is the one that does, at 3.6%. Codebase workloads with far larger contexts reduce more, but this harness does not measure them and **no universal savings range is claimed** — a reported percentage is bounded by the configured budget before selection runs, so it describes the budget as much as the selector.
@@ -144,7 +145,7 @@ python -m bench.accuracy --benchmark truthfulqa --samples 100
 python -m bench.accuracy --benchmark longbench  --samples 100
 ```
 
-Engine version: `entroly-core 1.0.84` (BM25+GGCR retrieval, IOS selection, hierarchical Bayesian prior)
+Historical engine provenance: not established by these result files. The repository version is not evidence of the version used in the historical run.
 
 That line read `v0.9.0` until it was corrected in 1.0.82. It had been written in
 the v1.0 founding commit and never moved again, so it named a pre-1.0 engine for

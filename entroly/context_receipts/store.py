@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -54,15 +56,14 @@ def latest_pointer_path(start: str | Path | None = None) -> Path:
 
 def ensure_store(path: Path | None = None) -> Path:
     path = resolve_store() if path is None else Path(path)
-    path.mkdir(parents=True, exist_ok=True)
+    path.mkdir(parents=True, exist_ok=True, mode=0o700)
     return path
 
 
 def write_json(path: str | Path, data: dict[str, Any]) -> Path:
-    target = Path(path)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(data, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
-    return target
+    return write_text(
+        path, json.dumps(data, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+    )
 
 
 def read_json(path: str | Path) -> dict[str, Any]:
@@ -70,9 +71,28 @@ def read_json(path: str | Path) -> dict[str, Any]:
 
 
 def write_text(path: str | Path, text: str) -> Path:
+    """Atomically replace an artifact with private POSIX permissions.
+
+    Windows files inherit the parent directory's ACL. This is neither encryption
+    nor protection from another process running as the same user. Existing
+    directories keep their permissions; select a trusted parent directory.
+    """
     target = Path(path)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(text, encoding="utf-8")
+    target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if target.is_symlink():
+        raise ValueError("refusing to overwrite a symlinked receipt artifact")
+    descriptor, name = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
+    temporary = Path(name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as stream:
+            if os.name == "posix":
+                os.fchmod(stream.fileno(), 0o600)
+            stream.write(text)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
     return target
 
 
@@ -86,7 +106,7 @@ def default_report_path(receipt_id: str) -> Path:
 
 def set_latest_receipt(path: str | Path) -> None:
     ensure_store()
-    latest_pointer_path().write_text(str(Path(path)), encoding="utf-8")
+    write_text(latest_pointer_path(), str(Path(path)))
 
 
 def latest_receipt_path() -> Path | None:

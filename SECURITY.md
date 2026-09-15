@@ -59,7 +59,8 @@ For a confirmed vulnerability, maintainers will:
   selected request data to the provider chosen by the operator.
 - Context Receipts and Context Commits may contain source material or exact
   recovery data. Protect them with the same access and retention policy as the
-  source repository.
+  source repository. See [recovery-data security](docs/recovery-data-security.md)
+  for locations, permissions, retention, deletion, and threat-model limits.
 - Content addressing detects mutation; it does not prove operator identity
   unless an authenticated signing or attestation path is used.
 - Remote model-registry discovery is opt-in. Local ranking, verification, and

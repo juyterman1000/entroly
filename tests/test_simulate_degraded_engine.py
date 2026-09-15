@@ -13,9 +13,8 @@ questions -- including the nonsense control "banana bicycle weather forecast tun
 sandwich" -- produced a byte-identical 23 fragments / 7,588 tokens and the same
 "76.29% saved".
 
-Normally nobody sees this: `_auto_repair_before_measuring` installs the engine
-first. These tests cover the paths where repair cannot run -- offline, CI,
-PEP 668, `ENTROLY_NO_SELF_HEAL=1`.
+Startup repair is off by default. These tests cover degraded behavior and the
+explicit repair boundary, including offline, CI, and PEP 668 environments.
 
 The contract is **label, do not withhold**. An earlier version suppressed the
 number entirely. That was honest and useless: a first run that reports nothing
@@ -36,6 +35,14 @@ import pytest
 
 from entroly import self_heal
 from entroly.cli import _print_local_simulation
+
+
+@pytest.fixture(autouse=True)
+def isolated_repair_policy(monkeypatch):
+    for name in (self_heal.ENV_ENABLE, self_heal.ENV_DISABLE,
+                 self_heal.ENV_AIR_GAP, self_heal.ENV_GUARD):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(self_heal, "_attempted_in_this_process", False)
 
 
 def _report(*, query_conditioned: bool) -> dict:
@@ -161,6 +168,7 @@ def test_repair_does_not_recurse_after_reexec(monkeypatch: pytest.MonkeyPatch) -
     readiness check would re-exec forever.
     """
     monkeypatch.setenv(self_heal.ENV_GUARD, "1")
+    monkeypatch.setenv(self_heal.ENV_ENABLE, "1")
     monkeypatch.setattr(self_heal, "native_engine_ready", lambda: False)
 
     outcome = self_heal.repair_native()
@@ -194,7 +202,7 @@ def test_externally_managed_python_is_never_written_to(
 
     assert self_heal._installer_command() is None
 
-    ok, detail = self_heal.install_native_engine()
+    ok, detail = self_heal.install_native_engine(authorized=True)
     assert ok is False
     assert "externally managed" in detail
 

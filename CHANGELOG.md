@@ -1,18 +1,33 @@
 # Entroly changelog
 
-This file is the stable entry point for user-facing release history. Detailed,
-version-specific notes live under [`docs/releases/`](docs/releases/).
+This file is the stable entry point for user-facing release history. Published
+version-specific notes live in [GitHub Releases](https://github.com/juyterman1000/entroly/releases).
+
+## Unreleased
+
+- Runtime native-engine repair now requires explicit consent. Install
+  `entroly-core` yourself, call `entroly.repair()`, or opt in to startup repair
+  with `ENTROLY_ENABLE_SELF_HEAL=1`. `ENTROLY_NO_SELF_HEAL=1` and
+  `ENTROLY_AIR_GAP=1` override consent. Missing-native diagnostics remain visible.
+- Corrected the PEP 668 marker path so repair respects externally managed Python.
+- Context Receipt and Context Commit file writes use atomic replacement and
+  private POSIX file modes. Windows inherits directory ACLs; existing directory
+  permissions and unencrypted storage remain operator responsibilities.
+- Corrected privacy/telemetry disclosures and removed unsupported accuracy and
+  unnamed-product comparison claims. Privacy diagnostics no longer certify the
+  absence of network traffic. Historical loss cases remain documented.
+
+These changes are not part of the published releases below until a patch release
+is completed. See [recovery-data security](docs/recovery-data-security.md).
 
 ## Current release
 
-- [`v1.0.75`](docs/releases/v1.0.75.md)
+- [`v1.0.84`](https://github.com/juyterman1000/entroly/releases/tag/entroly-v1.0.84)
 
 ## Recent releases
 
-- [`v1.0.73`](docs/releases/v1.0.73.md)
-- [`v1.0.68`](docs/releases/v1.0.68.md)
-- [`v1.0.55`](docs/releases/v1.0.55.md)
-- [`v1.0.54`](docs/releases/v1.0.54.md)
+- [`v1.0.83`](https://github.com/juyterman1000/entroly/releases/tag/entroly-v1.0.83)
+- [`v1.0.82`](https://github.com/juyterman1000/entroly/releases/tag/entroly-v1.0.82)
 
 ## Changelog contract
 
