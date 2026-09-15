@@ -46,6 +46,11 @@ from typing import Any
 
 logger = logging.getLogger("entroly.self_improving")
 
+try:
+    from .selection_pressure import estimate_contributions_5d as _estimate_5d
+except ImportError:
+    _estimate_5d = None
+
 
 # ── Reward signals ───────────────────────────────────────────────────────
 
@@ -313,11 +318,18 @@ class SelfImprovingLoop:
             utilization=utilization,
         )
 
-        contributions = estimate_contributions(
-            witness_score=summary_score,
-            evidence_adequacy=adequacy,
-            utilization=utilization,
-        )
+        if _estimate_5d is not None:
+            contributions = _estimate_5d(
+                witness_score=summary_score,
+                evidence_adequacy=adequacy,
+                utilization=utilization,
+            )
+        else:
+            contributions = estimate_contributions(
+                witness_score=summary_score,
+                evidence_adequacy=adequacy,
+                utilization=utilization,
+            )
 
         feedback = SelectionFeedback(
             timestamp=time.time(),
@@ -359,7 +371,10 @@ class SelfImprovingLoop:
             n_total_omissions=n_total_omissions,
         )
 
-        contributions = estimate_contributions(n_recovered=n_recovered)
+        if _estimate_5d is not None:
+            contributions = _estimate_5d(n_recovered=n_recovered)
+        else:
+            contributions = estimate_contributions(n_recovered=n_recovered)
 
         feedback = SelectionFeedback(
             timestamp=time.time(),
