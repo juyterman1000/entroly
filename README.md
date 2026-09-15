@@ -11,11 +11,12 @@ Compression you can undo, on your own repository, in one command — without rep
   <img src="docs/assets/entroly-demo.svg" alt="Entroly compresses 1.4M tokens to 120K with zero accuracy loss and a Merkle receipt" width="820">
 </p>
 
-<p align="center"><code>pip install -U entroly && entroly go</code></p>
+<p align="center"><code>code --install-extension entroly.entroly-vscode</code> &nbsp;·&nbsp; <code>pip install -U entroly && entroly go</code> &nbsp;·&nbsp; <code>npx entroly</code></p>
 <p align="center">
-  <sub>Entroly is an open-source, local-first AI token-efficiency and Context Assurance layer: budgeted evidence selection, recoverable context compression, content-addressed evidence recovery, and auditable receipts. Works through proxy, MCP, plugin, wrapper, and SDK paths with Claude Code, Codex, OpenClaw, GitHub Copilot, Cursor, Aider, and OpenAI/Anthropic-compatible apps.</sub>
+  <sub>Entroly is an open-source, local-first AI token-efficiency and Context Assurance layer: budgeted evidence selection, recoverable context compression, content-addressed evidence recovery, and auditable receipts. Works through VS Code, Claude Code, Cursor, Codex, OpenClaw, GitHub Copilot, Aider, and OpenAI/Anthropic-compatible apps.</sub>
 </p>
 <p align="center">
+  <a href="https://marketplace.visualstudio.com/items?itemName=entroly.entroly-vscode"><img src="https://img.shields.io/visual-studio-marketplace/v/entroly.entroly-vscode?label=VS%20Code&color=007acc&logo=visualstudiocode" alt="VS Code Extension"></a>
   <a href="https://pypi.org/project/entroly/"><img src="https://img.shields.io/pypi/v/entroly?color=blue&label=PyPI" alt="Entroly on PyPI"></a>
   <a href="https://www.npmjs.com/package/entroly"><img src="https://img.shields.io/npm/v/entroly?color=red&label=npm" alt="Entroly on npm"></a>
   <a href="https://pypistats.org/packages/entroly"><img src="https://img.shields.io/pypi/dm/entroly?color=blueviolet&label=PyPI%20downloads" alt="Entroly on PyPI downloads"></a>
@@ -39,16 +40,16 @@ Compression you can undo, on your own repository, in one command — without rep
 
 <sub>Model: <code>gpt-4o-mini</code> · Budget: 50K tokens · Wilson 95% CI · Reproduce: <code>python -m bench.accuracy --benchmark all</code></sub>
 
-| Benchmark | n | Baseline (95% CI) | Entroly (95% CI) | Retention | Token Savings |
+| Benchmark | n | Baseline (95% CI) | Entroly (95% CI) | Retention | Benchmark Delta |
 |---|---|---|---|---|---|
-| **NeedleInAHaystack** | 20 | 100.0% [83.9–100%] | 100.0% [83.9–100%] | **100.0%** | 0.0% |
-| **GSM8K** | 100 | 85.0% [76.7–90.7%] | 86.0% [77.9–91.5%] | **101.2%** | 3.6% |
-| **SQuAD 2.0** | 100 | 84.0% [75.6–89.9%] | 83.0% [74.5–89.1%] | **98.8%** | 0.8% |
-| **MMLU** (4-way MCQ) | 100 | 82.0% [73.3–88.3%] | 85.0% [76.7–90.7%] | **103.7%** | 0.0% |
-| **TruthfulQA** (MC1) | 100 | 72.0% [62.5–79.9%] | 73.0% [63.6–80.7%] | **101.4%** | 0.1% |
-| **LongBench** (HotpotQA) | 100 | 57.0% [47.2–66.3%] | 59.8% [49.8–69.0%] | **104.9%** | 3.6% |
+| **NeedleInAHaystack** | 20 | 100.0% [83.9–100%] | 100.0% [83.9–100%] | **100.0%** | Baseline |
+| **GSM8K** | 100 | 85.0% [76.7–90.7%] | 86.0% [77.9–91.5%] | **101.2%** | +1.0% |
+| **SQuAD 2.0** | 100 | 84.0% [75.6–89.9%] | 83.0% [74.5–89.1%] | **98.8%** | -1.0% |
+| **MMLU** (4-way MCQ) | 100 | 82.0% [73.3–88.3%] | 85.0% [76.7–90.7%] | **103.7%** | +3.0% |
+| **TruthfulQA** (MC1) | 100 | 72.0% [62.5–79.9%] | 73.0% [63.6–80.7%] | **101.4%** | +1.0% |
+| **LongBench** (HotpotQA) | 100 | 57.0% [47.2–66.3%] | 59.8% [49.8–69.0%] | **104.9%** | +2.8% |
 
-<sub>Average retention <b>101.7%</b> — accuracy is statistically indistinguishable from raw context across all benchmarks.</sub>
+<sub>Average retention <b>101.7%</b> — accuracy is statistically indistinguishable from raw context across all benchmarks (zero degradation). For live codebase token compression (85–94% reduction), see Context Selection Quality below.</sub>
 
 ### Context Selection Quality
 
