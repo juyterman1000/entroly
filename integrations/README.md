@@ -52,12 +52,19 @@ AI Assistant | Model Context Protocol (MCP)** with:
       "env": {
         "ENTROLY_NO_DOCKER": "1",
         "ENTROLY_MCP_PASSIVE": "1",
+        "ENTROLY_MCP_PROFILE": "public",
         "ENTROLY_MAX_FILES": "200"
       }
     }
   }
 }
 ```
+
+Marketplace and plugin manifests select the compact public MCP profile. It
+keeps the first run focused on context, receipts, continuity, exact recovery,
+and verification. A direct `entroly serve` invocation remains backwards
+compatible and exposes the full surface; choose explicitly with
+`ENTROLY_MCP_PROFILE=public` or `ENTROLY_MCP_PROFILE=full`.
 
 Windows PowerShell:
 

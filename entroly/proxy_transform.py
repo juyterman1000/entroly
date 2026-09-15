@@ -21,7 +21,8 @@ import os as _os
 import re as _re
 from typing import Any
 
-from .proxy_config import ProxyConfig, context_window_for_model
+from .models.registry import AttentionArchitecture, _infer_attention_profile
+from .proxy_config import ProxyConfig, context_window_for_model, model_resolution_for_model
 
 
 def detect_provider(
@@ -259,6 +260,10 @@ def compute_token_budget(model: str, config: ProxyConfig) -> int:
 # in real IDE usage) while allowing generous budgets for ambiguous tasks.
 # ══════════════════════════════════════════════════════════════════════
 
+_LINEAR_BUDGET_CEILING = 4096
+_EXPANDED_BUDGET_CEILING = 16384
+
+
 def compute_dynamic_budget(
     model: str,
     config: ProxyConfig,
@@ -270,8 +275,11 @@ def compute_dynamic_budget(
     ECDB: Entropy-Calibrated Dynamic Budget — replaces fixed 15% fraction
     with an information-theoretic budget that adapts to each request.
 
-    All parameters are configurable via ProxyConfig (sourced from
-    tuning_config.json → autotune daemon). No hardcoded constants.
+    Architecture-aware shaping (Spec 1):
+    - LINEAR_HYBRID_GDN: ceiling at 4K — quality degrades with large injection.
+    - LATENT_MLA / SPARSE_DSA: expanded ceiling (16K) — compressed KV / sparse
+      routing tolerates more context without proportional cost.
+    - FULL_MHA_GQA / unknown: standard ECDB curve (prefix-cache-friendly).
 
     Args:
         model: LLM model name (for context window lookup).
@@ -280,28 +288,34 @@ def compute_dynamic_budget(
         total_fragments: Number of fragments in the engine.
 
     Returns:
-        Token budget (int), always in [ecdb_min_budget, ecdb_max_fraction × window].
+        Token budget (int), always in [ecdb_min_budget, architecture-adjusted ceiling].
     """
-    window = context_window_for_model(model)
-    base = config.context_fraction  # e.g., 0.15
+    resolution = model_resolution_for_model(model)
+    window = resolution.context_window
+    base = config.context_fraction
 
-    # Query factor: sigmoid on vagueness
-    # Steepness and range are configurable via autotune
     v = max(0.0, min(1.0, vagueness))
     z = config.ecdb_sigmoid_steepness * (v - 0.5)
     query_factor = config.ecdb_sigmoid_base + config.ecdb_sigmoid_range / (1.0 + math.exp(-z))
 
-    # Codebase factor: scales with project size
     codebase_factor = min(
         config.ecdb_codebase_cap,
         0.5 + max(total_fragments, 1) / config.ecdb_codebase_divisor,
     )
 
-    # Raw budget
     raw = base * window * query_factor * codebase_factor
 
-    # Clamp to bounds
     max_budget = int(window * config.ecdb_max_fraction)
+
+    if resolution.capability:
+        attn = resolution.capability.attention_profile
+    else:
+        attn = _infer_attention_profile(model)
+    if attn is AttentionArchitecture.LINEAR_HYBRID_GDN:
+        max_budget = min(max_budget, _LINEAR_BUDGET_CEILING)
+    elif attn in (AttentionArchitecture.LATENT_MLA, AttentionArchitecture.SPARSE_DSA):
+        max_budget = min(max(max_budget, _EXPANDED_BUDGET_CEILING), window)
+
     budget = max(config.ecdb_min_budget, min(max_budget, int(raw)))
 
     return budget

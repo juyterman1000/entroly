@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from collections.abc import Mapping, Sequence
@@ -395,6 +396,101 @@ def _split_large_block(
     return chunks
 
 
+_ENTROPY_SLICING_ENABLED = os.environ.get("ENTROLY_ENTROPY_SLICE", "1") != "0"
+_logger = logging.getLogger("entroly.ingest")
+
+
+def _entropy_split_large_block(
+    source_text: str,
+    block: dict[str, object],
+    *,
+    chunk_tokens: int,
+    overlap_tokens: int,
+) -> list[dict[str, object]]:
+    """Split a large block using entropy-spike boundaries when available.
+
+    Falls back to fixed-step ``_split_large_block`` when entropy slicing is
+    disabled, when the block is too short for meaningful entropy analysis,
+    or when no spikes are detected.
+    """
+    if not _ENTROPY_SLICING_ENABLED:
+        return _split_large_block(
+            source_text, block,
+            chunk_tokens=chunk_tokens, overlap_tokens=overlap_tokens,
+        )
+
+    block_text = str(block["text"])
+    block_start = int(block["start"])
+    approx_chars = chunk_tokens * 4
+
+    if len(block_text) < 800:
+        return _split_large_block(
+            source_text, block,
+            chunk_tokens=chunk_tokens, overlap_tokens=overlap_tokens,
+        )
+
+    try:
+        from entroly.entropy_spike import find_split_points
+
+        split_pts = find_split_points(
+            block_text,
+            max_splits=max(1, len(block_text) // approx_chars),
+            min_segment_chars=max(100, approx_chars // 2),
+        )
+    except Exception:
+        return _split_large_block(
+            source_text, block,
+            chunk_tokens=chunk_tokens, overlap_tokens=overlap_tokens,
+        )
+
+    if not split_pts:
+        return _split_large_block(
+            source_text, block,
+            chunk_tokens=chunk_tokens, overlap_tokens=overlap_tokens,
+        )
+
+    boundaries = [0] + split_pts + [len(block_text)]
+    chunks: list[dict[str, object]] = []
+
+    for i in range(len(boundaries) - 1):
+        seg_start = boundaries[i]
+        seg_end = boundaries[i + 1]
+        seg_text = block_text[seg_start:seg_end]
+        seg_tokens = estimate_tokens(seg_text)
+
+        if seg_tokens > chunk_tokens:
+            sub_block = {
+                "text": seg_text,
+                "start": block_start + seg_start,
+                "end": block_start + seg_end,
+                "heading": block.get("heading"),
+                "page": block.get("page"),
+            }
+            chunks.extend(
+                _split_large_block(
+                    source_text, sub_block,
+                    chunk_tokens=chunk_tokens, overlap_tokens=overlap_tokens,
+                )
+            )
+        elif seg_text.strip():
+            chunks.append({
+                "text": source_text[block_start + seg_start : block_start + seg_end],
+                "start": block_start + seg_start,
+                "end": block_start + seg_end,
+                "heading": block.get("heading"),
+                "page": block.get("page"),
+            })
+
+    _logger.debug(
+        "Entropy slicing: %d spikes -> %d chunks for %d-char block",
+        len(split_pts), len(chunks), len(block_text),
+    )
+    return chunks if chunks else _split_large_block(
+        source_text, block,
+        chunk_tokens=chunk_tokens, overlap_tokens=overlap_tokens,
+    )
+
+
 def _chunk_document(
     source_path: str,
     text: str,
@@ -443,7 +539,7 @@ def _chunk_document(
         if btokens > chunk_tokens:
             flush()
             chunks_raw.extend(
-                _split_large_block(
+                _entropy_split_large_block(
                     text,
                     block,
                     chunk_tokens=chunk_tokens,

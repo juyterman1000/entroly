@@ -44,7 +44,7 @@ from starlette.routing import Route
 
 from .adaptive_budget import AdaptiveBudgetModel, extract_features
 from .context_scaffold import generate_scaffold
-from .proxy_config import ProxyConfig, context_window_for_model, provider_capability
+from .proxy_config import ProxyConfig, context_window_for_model, model_resolution_for_model, provider_capability
 from .proxy_transform import (
     compute_dynamic_budget,
     compute_token_budget,
@@ -85,7 +85,7 @@ from .provider_policy import (
     ProviderTarget,
 )
 from .optimization_ledger import OptimizationEvent, OptimizationLedger, SavingsTier
-from .stable_prefix import conversation_anchor
+from .stable_prefix import compute_zone_budgets, conversation_anchor
 from .session_rescue import (
     SessionRescueController,
     SessionRescuePolicy,
@@ -1104,6 +1104,14 @@ class PromptCompilerProxy:
         # cache observations remain available in-memory for routing decisions.
         self._cache_router = CacheAwareRouter()
         self._prefix_continuity = PrefixContinuityGuard()
+
+        self._grounding_gate = None
+        if os.environ.get("ENTROLY_CONTEXT_GROUNDING", "1").lower() in {"1", "true", "yes", "on"}:
+            try:
+                from .context_grounding import ContextGroundingGate
+                self._grounding_gate = ContextGroundingGate()
+            except Exception:
+                pass
         ledger_path = os.environ.get("ENTROLY_USAGE_LEDGER", "").strip()
         catalog_path = os.environ.get("ENTROLY_PRICING_CATALOG", "").strip()
         self._usage_ledger = UsageLedger(ledger_path) if ledger_path else None
@@ -3457,6 +3465,40 @@ class PromptCompilerProxy:
         except Exception as e:
             logger.debug("Cost Cortex clamp skipped: %s", e)
 
+        # ── Zone Budget: attention-aware live-zone allocation ──
+        try:
+            resolution = model_resolution_for_model(model or "")
+            attn = resolution.capability.attention_profile if resolution.capability else None
+            sys_tokens = 0
+            hist_tokens = 0
+            msgs = body.get("messages") or body.get("input") or body.get("contents")
+            if isinstance(msgs, list):
+                for msg in msgs:
+                    if not isinstance(msg, dict):
+                        continue
+                    role = str(msg.get("role", ""))
+                    content = msg.get("content", "")
+                    est = len(str(content)) // 4 if content else 0
+                    if role == "system":
+                        sys_tokens += est
+                    else:
+                        hist_tokens += est
+            zone = compute_zone_budgets(
+                token_budget,
+                attention_profile=attn,
+                system_tokens=sys_tokens,
+                history_tokens=hist_tokens,
+            )
+            if zone.live < token_budget:
+                logger.debug(
+                    "Zone budget: total=%d sys=%d hist=%d live=%d attn=%s",
+                    token_budget, zone.system, zone.history, zone.live,
+                    zone.attention_profile,
+                )
+                token_budget = zone.live
+        except Exception as e:
+            logger.debug("Zone budget skipped: %s", e)
+
         # Rate-Distortion self-correction: shift IOS toward full-resolution
         # fragments when quality declines (budget stays unchanged).
         if self._enable_passive_feedback:
@@ -3513,6 +3555,20 @@ class PromptCompilerProxy:
                 logger.debug("OutcomeBridge caching failed: %s", e)
 
         selected = result.get("selected_fragments", [])
+
+        if selected and self._grounding_gate is not None:
+            try:
+                selected, grounding_report = self._grounding_gate.filter_fragments(selected)
+                if grounding_report.demoted:
+                    logger.info(
+                        "Grounding: %d/%d fragments demoted (threshold=%.2f)",
+                        grounding_report.demoted,
+                        grounding_report.total,
+                        self._grounding_gate._threshold,
+                    )
+            except Exception as e:
+                logger.debug("Context grounding skipped: %s", e)
+
         # Render the hierarchy from the query-conditioned BM25+PRISM selection.
         # The old path seeded HCC independently with SimHash similarity, which
         # discarded the stronger optimizer signal already computed here.

@@ -1,0 +1,51 @@
+name: JetBrains Plugin
+
+on:
+  pull_request:
+    paths:
+      - "extensions/jetbrains/**"
+      - ".github/workflows/jetbrains-plugin.yml"
+      - "pyproject.toml"
+  push:
+    branches: [main]
+    paths:
+      - "extensions/jetbrains/**"
+      - ".github/workflows/jetbrains-plugin.yml"
+      - "pyproject.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jetbrains-plugin-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  verify:
+    name: Build and verify JetBrains plugin
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: extensions/jetbrains
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v5
+
+      - name: Build, test, and run Marketplace verification
+        run: ./gradlew --no-daemon test buildPlugin verifyPluginStructure verifyPlugin
+
+      - name: Upload verified Marketplace archive
+        uses: actions/upload-artifact@v6
+        with:
+          name: entroly-jetbrains-plugin
+          path: extensions/jetbrains/build/distributions/*.zip
+          if-no-files-found: error

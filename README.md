@@ -26,6 +26,7 @@ Compression you can undo, on your own repository, in one command — without rep
   <a href="https://github.com/juyterman1000/entroly"><img src="https://img.shields.io/github/stars/juyterman1000/entroly?style=social" alt="Entroly GitHub stars"></a>
   <a href="https://github.com/juyterman1000/entroly/actions"><img src="https://img.shields.io/github/actions/workflow/status/juyterman1000/entroly/ci.yml?label=CI" alt="CI status"></a>
   <a href="https://github.com/juyterman1000/entroly/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22"><img src="https://img.shields.io/badge/contributions-welcome-brightgreen" alt="Contributions welcome"></a>
+  <a href="https://lobehub.com/mcp/juyterman1000-entroly"><img src="https://lobehub.com/badge/mcp/juyterman1000-entroly" alt="LobeHub MCP"></a>
 </p>
 
 <p align="center">
@@ -205,7 +206,7 @@ only optional workspace, offline, provider, and proxy settings.
 | **"I'm building my own app in Python."** *(SDK user)* | `from entroly import compress, compress_messages, optimize` | Call it straight from your code, anywhere you assemble a prompt |
 
 Cursor MCP users can also use this one-click install link (no marketplace
-account required): [Add Entroly to Cursor](cursor://anysphere.cursor-deeplink/mcp/install?name=entroly&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImVudHJvbHktbWNwQDEuMC44NCIsInNlcnZlIl0sImVudiI6eyJFTlRST0xZX05PX0RPQ0tFUiI6IjEiLCJFTlRST0xZX01DUF9QQVNTSVZFIjoiMSIsIkVOVFJPTFlfTUFYX0ZJTEVTIjoiMjAwIn19).
+account required): [Add Entroly to Cursor](cursor://anysphere.cursor-deeplink/mcp/install?name=entroly&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImVudHJvbHktbWNwQDEuMC44NCIsInNlcnZlIl0sImVudiI6eyJFTlRST0xZX05PX0RPQ0tFUiI6IjEiLCJFTlRST0xZX01DUF9QQVNTSVZFIjoiMSIsIkVOVFJPTFlfTUNQX1BST0ZJTEUiOiJwdWJsaWMiLCJFTlRST0xZX01BWF9GSUxFUyI6IjIwMCJ9fQ).
 | **"I have an API key and my own app."** *(proxy user)* | `entroly proxy` → point `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` / `GOOGLE_GEMINI_BASE_URL` at `localhost:9377` | Every request gets optimized on the way past — no code changes on your side |
 
 <sub>**Runaway-session rescue — automatic on the proxy, callable everywhere else.**
@@ -312,27 +313,44 @@ Runs as a **CLI**, **Python/TypeScript SDK**, **MCP server**, **HTTP proxy**, or
 
 Most context tools compress and hope. Entroly is an **auditable context control plane** — every selection is receipted, every compression is reversible, and every claim is verifiable.
 
-| Capability | Entroly | Baseline A | Baseline B | Baseline C |
-|---|:---:|:---:|:---:|:---:|
-| Knapsack-optimal token selection | **yes** | no | no | no |
-| Auditable context receipts | **yes** | no | partial | no |
-| Hallucination detection (WITNESS) | **yes** | no | no | no |
-| Fail-closed model routing (RAVS) | **yes** | no | no | no |
-| Cross-agent shared memory | **yes** | yes | partial | no |
-| Output token reduction | **yes** | yes | no | no |
-| Reversible compression (CCR) | **yes** | yes | yes | no |
-| KV-cache alignment | **yes** | yes | yes | no |
-| Shell hook compression | **yes** | no | yes | no |
-| Image/multimodal compression | **yes** | yes | no | no |
-| Rust-accelerated engine | **yes** | no | yes | no |
-| Self-improving (evolution daemon) | **yes** | partial | no | no |
-| Persistent vault with beliefs | **yes** | no | yes | no |
-| MCP server | **yes** | yes | yes | no |
-| HTTP proxy | **yes** | yes | no | no |
-| TypeScript SDK + framework adapters | **yes** | yes | no | yes |
-| Python SDK | **yes** | yes | no | yes |
+### Compression-quality frontier (September 2026)
 
-**What's different:** Entroly is the only tool that combines optimal selection (knapsack solver with provable guarantees) with auditable receipts (byte-offset fragments, SHA-256 digests, inspectable omissions) and verification (WITNESS grounding checks, EICV hallucination detection). Competitors compress tokens — Entroly compresses tokens *and proves what was kept, what was dropped, and why*.
+Every tool measured on its own published benchmarks. Different datasets — not apple-to-apple — but the compression-retention tradeoff is comparable.
+
+| Tool | Best Compression | Answer / Evidence Retention | Approach |
+|---|---:|---:|---|
+| **Entroly** | **95.1%** | **100%** evidence, **101.7%** avg accuracy | Knapsack DP + BM25 + SimHash + depgraph (Rust) |
+| SuperCompress | 65.4% | 99.4% (180/181) | Query-aware compiler engine |
+| Baseline D | 47–92% bench / 4.8% prod median | 97–100% bench | Content router + ML model |
+| [LLMLingua-2](https://github.com/microsoft/LLMLingua) | ~95% (20x) | 95–98% | Per-token perplexity via small LM |
+| The Token Company | 10–40% | ~full (claimed) | Commercial API |
+| TokenShift | 12–21% | not published | 17 heuristic optimizations (Rust) |
+| [RECOMP](https://arxiv.org/abs/2310.04408) | ~83% (6x) | minimal loss | RAG-specific extractive + abstractive |
+| [500xCompressor](https://aclanthology.org/2025.acl-long.1219) | up to 99.8% (480x) | 62–73% (~30% drop) | Extreme learned compression (ACL 2025) |
+| [Gisting](https://arxiv.org/abs/2304.08467) | ~96% (26x) | not reported | Requires base-model retraining |
+| [ACON](https://arxiv.org/abs/2510.00615) | 25–30% | preserves accuracy | Agent-specific context optimization |
+
+<sub>Sources: [PointFive 2026 guide](https://www.pointfive.co/guides/top-prompt-compression-solutions-2026), [SuperCompress benchmarks](https://www.supercompress.dev/benchmarks), published tool docs. "Baseline D" is anonymized per project policy. Entroly numbers link to frozen JSON artifacts in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).</sub>
+
+### What only Entroly has
+
+| Capability | Entroly | LLMLingua-2 | SuperCompress | Baseline D | Others |
+|---|:---:|:---:|:---:|:---:|:---:|
+| Knapsack-optimal token selection | **yes** | no | no | no | no |
+| Auditable context receipts (byte-offset, SHA-256) | **yes** | no | no | no | no |
+| Hallucination detection (WITNESS, AUROC 0.7976) | **yes** | no | no | no | no |
+| Bayesian online learning (zero LLM cost) | **yes** | no | no | no | no |
+| Deterministic replay (128/128) | **yes** | no | no | no | no |
+| Cross-process byte-exact recovery (66/66) | **yes** | no | no | no | no |
+| Source integrity verification (5,117/5,117) | **yes** | no | no | no | no |
+| Dependency graph resolution | **yes** | no | no | no | no |
+| Fail-closed model routing (RAVS) | **yes** | no | no | no | no |
+| Self-improving evolved skills | **yes** | no | no | no | no |
+| No external model required | **yes (Rust)** | no (needs GPT-2/LLaMA) | **yes** | **yes** | varies |
+| Cross-agent shared memory | **yes** | no | no | no | no |
+| MCP server + HTTP proxy + SDK | **yes** | no | no | partial | varies |
+
+**What's different:** Entroly is the only tool that combines optimal selection (knapsack solver), auditable receipts (byte-offset fragments, SHA-256 digests, inspectable omissions), verification (WITNESS grounding, EICV hallucination detection), and zero-cost Bayesian learning (5D PRISM weights). Each competitor has one piece of this; Entroly has the full stack.
 
 ---
 ## Works with your stack
@@ -378,12 +396,24 @@ Tools → AI Assistant → Model Context Protocol (MCP)**:
       "env": {
         "ENTROLY_NO_DOCKER": "1",
         "ENTROLY_MCP_PASSIVE": "1",
+        "ENTROLY_MCP_PROFILE": "public",
         "ENTROLY_MAX_FILES": "200"
       }
     }
   }
 }
 ```
+
+The repository also ships a free, open-source JetBrains plugin that guides this
+setup from **Tools → Configure Entroly for AI Assistant**, checks the local
+runtime on request, and keeps the evidence boundary visible. See
+[`extensions/jetbrains`](extensions/jetbrains/README.md).
+
+MCP marketplace and plugin manifests select the compact `public` profile so
+agents see the core context, receipt, continuity, recovery, and verification
+tools first. A direct `entroly serve` invocation remains backwards compatible
+and exposes the full tool surface. You can choose either behavior explicitly
+with `ENTROLY_MCP_PROFILE=public` or `ENTROLY_MCP_PROFILE=full`.
 
 The MCP path is provider-neutral: the host can use OpenAI, Anthropic, Google,
 Mistral, DeepSeek, Kimi, GLM, or a local model. There is no separate plugin

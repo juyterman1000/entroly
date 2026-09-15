@@ -40,7 +40,9 @@ import threading
 import uuid
 from functools import lru_cache, wraps
 from pathlib import Path
-from typing import Any, Callable
+from typing import Annotated, Any, Callable
+
+from pydantic import Field
 
 try:
     from mcp.server.fastmcp import Context as MCPContext
@@ -151,28 +153,296 @@ def _mcp_passive_mode() -> bool:
     }
 
 
+_MCP_PROFILE_ENV = "ENTROLY_MCP_PROFILE"
+_FULL_MCP_PROFILES = {"full", "all", "legacy", "research"}
+_PUBLIC_MCP_PROFILES = {"public", "marketplace", "core"}
+_PUBLIC_MCP_TOOLS = frozenset(
+    {
+        "checkpoint_state",
+        "create_context_receipt",
+        "get_session_stats",
+        "optimize_context",
+        "recall_relevant",
+        "record_test_result",
+        "recover_receipt_omission",
+        "remember_fragment",
+        "read_source_file",
+        "resume_state",
+        "retrieve_context",
+        "verify_response",
+    }
+)
+
+_PUBLIC_MCP_TOOL_ALIASES = {
+    "entroly_retrieve": "retrieve_context",
+    "get_stats": "get_session_stats",
+    "smart_read": "read_source_file",
+}
 
 
+_FULL_MCP_INSTRUCTIONS = (
+    "Information-theoretic context optimization for AI coding agents. "
+    "Knapsack-optimal token budgeting, Shannon entropy scoring, "
+    "SimHash deduplication, predictive pre-fetch, and checkpoint/resume. "
+    "Use work_resume for evidence-backed cross-session or cross-vendor continuity. "
+    "At the start of each task, call recall_relevant once with a concise "
+    "task-derived query, top_k=3, and full=false before loading broader "
+    "context. Use smart_read or optimize_context for substantial context. "
+    "Marketplace packages can select a compact, non-overlapping public "
+    "profile with ENTROLY_MCP_PROFILE=public; the standard entrypoint "
+    "keeps the backwards-compatible full tool surface."
+)
+
+_PUBLIC_MCP_INSTRUCTIONS = (
+    "Local context control for coding agents. Start a task with recall_relevant. "
+    "Use read_source_file for a known workspace path, remember_fragment for "
+    "caller-supplied text, and optimize_context for a token-bounded bundle. "
+    "Use create_context_receipt when selection needs an audit trail, then "
+    "recover_receipt_omission for omitted receipt chunks or retrieve_context for "
+    "a CCR handle. Use checkpoint_state and resume_state across interruptions. "
+    "verify_response estimates grounding against supplied evidence; it is not an "
+    "external fact-check. record_test_result records a test that already ran. "
+    "get_session_stats reports local counters and estimates."
+)
 
 
+def _prepare_public_mcp_surface(mcp: Any) -> None:
+    """Expose a small, predictable tool catalog for public MCP directories.
+
+    The full surface remains available through the explicit ``full`` profile.
+    Public aliases regularize names without breaking established full-profile
+    clients, while descriptions make boundaries and side effects explicit.
+    """
+    from mcp.types import ToolAnnotations
+
+    tools = mcp._tool_manager._tools
+    for internal_name, public_name in _PUBLIC_MCP_TOOL_ALIASES.items():
+        tool = tools.pop(internal_name)
+        tool.name = public_name
+        tools[public_name] = tool
+
+    metadata: dict[str, dict[str, Any]] = {
+        "remember_fragment": {
+            "description": (
+                "Store caller-supplied text in Entroly's local fragment index. "
+                "Use this for transient text or tool output that is not already a "
+                "workspace file; use read_source_file for a file and recall_relevant "
+                "to search stored fragments. The context firewall may reject unsafe "
+                "content. This writes local Entroly state and makes no network call."
+            ),
+            "annotations": (False, False, False, False),
+            "parameters": {
+                "content": "Text to scan and store in the local fragment index.",
+                "source": "Optional provenance label such as file:utils.py or tool:pytest.",
+                "token_count": "Known token count; use 0 to let Entroly estimate it.",
+                "is_pinned": "Prioritize the fragment within the bounded pinned reserve.",
+            },
+        },
+        "optimize_context": {
+            "description": (
+                "Select a token-budgeted context bundle from stored fragments for one "
+                "task. Use this after fragments have been indexed. Unlike "
+                "recall_relevant, it optimizes the whole bundle against token_budget; "
+                "unlike read_source_file, it does not read a requested path. It updates "
+                "local access statistics and makes no network call."
+            ),
+            "annotations": (False, False, False, False),
+            "parameters": {
+                "token_budget": "Maximum estimated tokens in the selected context bundle.",
+                "query": "Task description used to score fragment relevance.",
+            },
+        },
+        "retrieve_context": {
+            "description": (
+                "Recover exact content from a CCR retrieval handle or materialized "
+                "source reference. Use this when compressed context includes a ccr: "
+                "handle. Use read_source_file for a current workspace file and "
+                "recover_receipt_omission for an omitted receipt chunk. This is a "
+                "read-only local lookup and makes no network call."
+            ),
+            "annotations": (True, False, True, False),
+            "parameters": {
+                "source_or_handle": "CCR handle or previously materialized source path; empty lists available entries.",
+            },
+        },
+        "recall_relevant": {
+            "description": (
+                "Search Entroly's stored fragment index for the best task matches. Use "
+                "this for a ranked lookup when no token-bounded bundle is needed; use "
+                "optimize_context to assemble a complete budgeted context. The default "
+                "returns compact pointers, while full returns stored bodies. This reads "
+                "local state and makes no network call."
+            ),
+            "annotations": (True, False, True, False),
+            "parameters": {
+                "query": "Search terms derived from the current task.",
+                "top_k": "Maximum number of ranked fragments to return.",
+                "full": "Return complete stored bodies instead of compact pointers.",
+            },
+        },
+        "record_test_result": {
+            "description": (
+                "Attach an already-observed test pass or failure to an optimization "
+                "trace. Use only after a real test command ran; this tool does not run "
+                "tests, inspect CI, or independently validate the claim. It appends a "
+                "local evidence event and makes no network call."
+            ),
+            "annotations": (False, False, False, False),
+            "parameters": {
+                "request_id": "Trace identifier returned by the relevant optimize_context call.",
+                "passed": "True only when every test required by the named suite passed.",
+                "suite": "Optional test-suite name such as pytest or cargo test.",
+                "details": "Optional bounded summary of the observed test execution.",
+            },
+        },
+        "create_context_receipt": {
+            "description": (
+                "Create an auditable context-selection receipt from caller-supplied "
+                "documents. Use this when you need selected and omitted chunks, "
+                "fingerprints, warnings, and recovery metadata. It does not read "
+                "workspace files or call a model. recoverable=true writes a local "
+                "content-addressed recovery bundle."
+            ),
+            "annotations": (False, False, False, False),
+            "parameters": {
+                "documents_json": "JSON object, pairs, or objects that map source labels to document text.",
+                "query": "Task used to select relevant document chunks.",
+                "token_budget": "Maximum estimated tokens selected into the receipt.",
+                "chunk_tokens": "Target size of each source chunk in estimated tokens.",
+                "overlap_tokens": "Estimated tokens repeated between adjacent chunks.",
+                "recoverable": "Persist omitted text locally for verified later recovery.",
+            },
+        },
+        "recover_receipt_omission": {
+            "description": (
+                "Recover omitted text from a recoverable Context Receipt and verify its "
+                "stored hashes. Use this only with receipt JSON created using "
+                "recoverable=true. Use retrieve_context for a CCR handle. This reads the "
+                "local recovery store, does not modify source files, and makes no "
+                "network call."
+            ),
+            "annotations": (True, False, True, False),
+            "parameters": {
+                "receipt_json": "Complete JSON returned by create_context_receipt.",
+                "chunk_id": "Specific omitted chunk to recover; empty recovers every omitted chunk.",
+            },
+        },
+        "checkpoint_state": {
+            "description": (
+                "Persist Entroly task state and explicit continuation metadata locally. "
+                "Use before a planned handoff, restart, or context loss; use resume_state "
+                "to restore it. This writes a local checkpoint, does not edit source "
+                "files, and makes no network call."
+            ),
+            "annotations": (False, False, False, False),
+            "parameters": {
+                "task_description": "Concise description used to identify the checkpoint later.",
+                "current_step": "Last completed step or next action for continuation.",
+                "decisions": "Important decisions that a resumed agent must preserve.",
+                "modified_files": "Workspace paths already changed during the task.",
+                "project": "Optional project path or identifier used to scope recovery.",
+            },
+        },
+        "resume_state": {
+            "description": (
+                "Restore a local Entroly checkpoint into the current engine. Use after a "
+                "restart or context loss; use checkpoint_state to create checkpoints and "
+                "recall_relevant for read-only fragment search. This changes in-memory "
+                "Entroly state, does not edit source files, and makes no network call."
+            ),
+            "annotations": (False, False, False, False),
+            "parameters": {
+                "query": "Optional task terms; empty selects the latest checkpoint.",
+                "project": "Optional project path or identifier used to narrow matching.",
+            },
+        },
+        "get_session_stats": {
+            "description": (
+                "Read current Entroly session counters, selection statistics, checkpoint "
+                "status, and locally estimated token or cost fields. Use for diagnostics "
+                "after work has run. Estimates are not provider billing evidence. This "
+                "is read-only and makes no network call."
+            ),
+            "annotations": (True, False, True, False),
+            "parameters": {},
+        },
+        "verify_response": {
+            "description": (
+                "Estimate whether an AI response is grounded in caller-supplied context "
+                "using Entroly's local verification signals. Use after generation to "
+                "identify claims requiring review. A pass is a risk estimate, not formal "
+                "proof or external fact-checking. The tool is read-only and makes no "
+                "model or network call."
+            ),
+            "annotations": (True, False, True, False),
+            "parameters": {
+                "response": "AI-generated text whose claims should be checked.",
+                "context": "Source evidence that was actually available to the AI.",
+                "prompt": "Original user request used only to calibrate the local analysis.",
+            },
+        },
+        "read_source_file": {
+            "description": (
+                "Read one current workspace file at an exact or relevance-based "
+                "resolution. Use this for a known path; use recall_relevant to search "
+                "stored fragments and retrieve_context for a CCR handle. resolution=full "
+                "or a line range returns exact source text. It reads only within the "
+                "configured project root and makes no network call."
+            ),
+            "annotations": (True, False, True, True),
+            "parameters": {
+                "file_path": "Workspace-relative path constrained to the configured project root.",
+                "query": "Optional task terms used for automatic relevance-based resolution.",
+                "budget": "Target output size in estimated tokens for automatic resolution.",
+                "resolution": "One of full, medium, diff, structure, low, or empty for automatic selection.",
+                "previous_source": "Required baseline text when resolution is diff.",
+                "line_start": "First line of an exact inclusive range; pair with line_end.",
+                "line_end": "Last line of an exact inclusive range; pair with line_start.",
+                "fresh": "Return content again instead of a same-session repeat-delivery handle.",
+                "read_scope": "Optional cache-isolation key for agents sharing one MCP connection.",
+            },
+        },
+    }
+
+    for name, item in metadata.items():
+        tool = tools[name]
+        tool.description = item["description"]
+        read_only, destructive, idempotent, open_world = item["annotations"]
+        tool.annotations = ToolAnnotations(
+            readOnlyHint=read_only,
+            destructiveHint=destructive,
+            idempotentHint=idempotent,
+            openWorldHint=open_world,
+        )
+        properties = tool.parameters.get("properties", {})
+        for parameter, description in item["parameters"].items():
+            properties[parameter]["description"] = description
 
 
+def _mcp_profile_name() -> str:
+    """Return the requested MCP surface profile."""
+
+    raw = os.environ.get(_MCP_PROFILE_ENV, "full").strip().lower()
+    if raw in _FULL_MCP_PROFILES:
+        return "full"
+    if raw in _PUBLIC_MCP_PROFILES:
+        return "public"
+    logger.warning(
+        "Unknown %s=%r; using the backwards-compatible full MCP profile. "
+        "Set %s=public for the compact marketplace surface.",
+        _MCP_PROFILE_ENV,
+        raw,
+        _MCP_PROFILE_ENV,
+    )
+    return "full"
 
 
+def _mcp_profile_allowed_tools(profile: str) -> set[str] | None:
+    """Return the tool allowlist for an MCP profile, or None for all tools."""
 
-
-
-
-
-
-
-
-
-
-
-
-
-
+    if profile == "full":
+        return None
+    return set(_PUBLIC_MCP_TOOLS)
 
 # ══════════════════════════════════════════════════════════════════════
 # MCP Server Definition
@@ -375,6 +645,7 @@ def _apply_mcp_access_policy(
     *,
     allowed_tools: set[str] | None,
     authorize_tool: Callable[[str], None] | None,
+    hide_non_tool_surfaces: bool = True,
 ) -> None:
     """Remove ungranted tools and guard every remaining invocation."""
     tools = mcp._tool_manager._tools
@@ -389,9 +660,10 @@ def _apply_mcp_access_policy(
         # Static prompts and even bounded resources would otherwise remain
         # callable after a grant was revoked because FastMCP 1.x has no public
         # per-resource authorization hook.
-        mcp._resource_manager._resources.clear()
-        mcp._resource_manager._templates.clear()
-        mcp._prompt_manager._prompts.clear()
+        if hide_non_tool_surfaces:
+            mcp._resource_manager._resources.clear()
+            mcp._resource_manager._templates.clear()
+            mcp._prompt_manager._prompts.clear()
     for name, tool in list(tools.items()):
         if allowed_tools is not None and name not in allowed_tools:
             mcp.remove_tool(name)
@@ -434,19 +706,12 @@ def create_mcp_server(
     except RuntimeError as exc:
         logger.error(str(exc))
         raise
+    profile = _mcp_profile_name()
 
-    mcp = FastMCP(
-        "entroly",
-        instructions=(
-            "Information-theoretic context optimization for AI coding agents. "
-            "Knapsack-optimal token budgeting, Shannon entropy scoring, "
-            "SimHash deduplication, predictive pre-fetch, and checkpoint/resume. "
-            "Use work_resume for evidence-backed cross-session or cross-vendor continuity. "
-            "At the start of each task, call recall_relevant once with a concise "
-            "task-derived query, top_k=3, and full=false before loading broader "
-            "context. Use smart_read or optimize_context for substantial context."
-        ),
+    instructions = (
+        _PUBLIC_MCP_INSTRUCTIONS if profile == "public" else _FULL_MCP_INSTRUCTIONS
     )
+    mcp = FastMCP("entroly", instructions=instructions)
     # MCP SDK 1.x does not expose `version` on FastMCP's constructor. Without
     # this, initialize reports the SDK version rather than the Entroly version.
     try:
@@ -1629,22 +1894,40 @@ def create_mcp_server(
 
     @mcp.tool()
     def record_ci_result(
-        request_id: str,
-        passed: bool,
-        pipeline: str = "",
-        url: str = "",
+        request_id: Annotated[
+            str,
+            Field(description="Exact request_id returned by optimize_context for the work being checked."),
+        ],
+        passed: Annotated[
+            bool,
+            Field(description="True only when every required CI check passed; false when a required check failed."),
+        ],
+        pipeline: Annotated[
+            str,
+            Field(description="Short CI provider or pipeline name, such as github_actions, gitlab_ci, or buildkite."),
+        ] = "",
+        url: Annotated[
+            str,
+            Field(description="Optional CI run URL stored as provenance; Entroly does not fetch or trust this URL."),
+        ] = "",
     ) -> str:
-        """Record CI pipeline pass/fail status for a request.
+        """Record an externally produced CI pass/fail result for an optimization request.
 
-        STRONG signal: CI is independent infrastructure that ran the
-        change and produced a verdict. The honest top of the signal
-        hierarchy.
+        Use this only after CI actually ran. It appends a strong RAVS outcome
+        event and may promote the request-bound result into verified task
+        memory. It does not run CI, fetch ``url``, inspect the repository, or
+        prove that the supplied pipeline name or URL is genuine. Repeated calls
+        append repeated events; callers should submit one result per request.
+
+        Use ``record_test_result`` for a test-suite result and
+        ``record_command_exit`` for one subprocess exit code. The returned JSON
+        reports ``recorded``, ``skipped`` (event log unavailable), or ``error``.
 
         Args:
-            request_id: the trace_id from the optimize_context call
-            passed: True if CI green, False if any required check failed
-            pipeline: e.g. "github_actions", "gitlab_ci", "buildkite"
-            url: optional link to the CI run
+            request_id: Exact trace ID from the relevant optimize_context call.
+            passed: Whether every required CI check passed.
+            pipeline: Optional CI provider or pipeline identifier.
+            url: Optional provenance link; it is stored but never fetched.
         """
         return _record_honest(
             request_id=request_id,
@@ -1797,8 +2080,26 @@ def create_mcp_server(
             return json.dumps({"status": "error", "reason": str(exc)}, indent=2)
 
     @mcp.tool()
-    def render_context_receipt(receipt_json: str) -> str:
-        """Render a Context Receipt JSON artifact as a Markdown report."""
+    def render_context_receipt(
+        receipt_json: Annotated[
+            str,
+            Field(description="Complete JSON text returned by create_context_receipt or optimize_context; do not pass Markdown."),
+        ],
+    ) -> str:
+        """Render a Context Receipt JSON artifact as a Markdown audit report.
+
+        Use this after ``create_context_receipt`` when a human-readable report
+        is needed. The conversion is local and read-only: it does not call a
+        model, reread source files, recover omitted content, or modify the
+        receipt store. For one omitted chunk use ``explain_receipt_omission``;
+        for exact original content use ``recover_receipt_omission``. The result
+        is Markdown on success and a bounded error string when the JSON is
+        malformed or the receipt shape is unsupported.
+
+        Args:
+            receipt_json: The complete JSON receipt artifact, not a receipt ID,
+                excerpt, or already-rendered Markdown.
+        """
         try:
             from .sdk import render_context_receipt as _render_context_receipt
 
@@ -1949,8 +2250,34 @@ def create_mcp_server(
         }, indent=2)
 
     @mcp.tool()
-    def resume_state(query: str = "", project: str = "") -> str:
-        """Resume by task relevance; omit query only for latest-checkpoint behavior."""
+    def resume_state(
+        query: Annotated[
+            str,
+            Field(description="Optional task terms used to select the most relevant checkpoint; empty loads the latest checkpoint."),
+        ] = "",
+        project: Annotated[
+            str,
+            Field(description="Optional project path or identifier used to scope relevance matching."),
+        ] = "",
+    ) -> str:
+        """Restore a local checkpoint into the current engine and return continuity metadata.
+
+        Use this after a restart or context loss when prior task state should be
+        restored. Supplying ``query`` selects a relevant checkpoint; leaving it
+        empty loads the latest checkpoint. ``project`` narrows relevance
+        matching. The tool changes in-memory Entroly state and reads the local
+        checkpoint store, but does not edit source files or call a model. It
+        returns ``resumed``, ``no_checkpoint_found``, or
+        ``no_relevant_checkpoint_found`` with bounded metadata and recovery
+        context.
+
+        Use ``checkpoint_state`` to create a checkpoint and ``recall_relevant``
+        when you only need read-only fragment search without restoring state.
+
+        Args:
+            query: Optional task description or terms for relevance matching.
+            project: Optional project scope for relevance matching.
+        """
         result = engine.resume(query=query, project=project)
         return json.dumps(result, indent=2)
 
@@ -3143,15 +3470,40 @@ def create_mcp_server(
 
     @mcp.tool()
     def sync_workspace_changes(
-        directory: str = "",
-        force: bool = False,
-        max_files: int = 100,
+        directory: Annotated[
+            str,
+            Field(description="Workspace directory to scan; empty uses the server project root and paths stay root-confined."),
+        ] = "",
+        force: Annotated[
+            bool,
+            Field(description="Rescan all discovered source files even when the saved snapshot reports no changes."),
+        ] = False,
+        max_files: Annotated[
+            int,
+            Field(ge=1, le=10000, description="Maximum changed files processed in this pass; use later passes for the remaining backlog."),
+        ] = 100,
     ) -> str:
-        """Synchronize workspace file changes into the belief and verification layers.
+        """Reconcile workspace changes into Entroly's local belief and verification layers.
 
-        Detects new, modified, and deleted source files, marks affected beliefs stale,
-        recompiles changed files into fresh beliefs, runs a verification pass, and writes
-        a sync report into actions/.
+        Use this for one explicit synchronization pass after edits. It detects
+        new, modified, and deleted supported source files, marks affected
+        beliefs stale, recompiles changed files, runs verification, and writes
+        a bounded sync report plus listener state under the local Entroly vault.
+        It never writes source files. ``force`` requests a full rescan and
+        ``max_files`` limits changed files processed in this pass; unprocessed
+        changes remain pending for a later pass. Invalid or outside-root
+        directories return a structured error.
+
+        Use ``start_workspace_listener`` for periodic background polling,
+        ``refresh_beliefs`` when only invalidation is needed, and
+        ``verify_beliefs`` when files are already compiled and only verification
+        is required. The JSON result includes status, counts, verification
+        summary, action path, and per-file errors.
+
+        Args:
+            directory: Optional root-confined workspace directory.
+            force: Whether to ignore the saved snapshot and rescan.
+            max_files: Positive per-pass changed-file limit (1-10000).
         """
         target_path = _project_directory(directory)
         if target_path is None:
@@ -3190,14 +3542,40 @@ def create_mcp_server(
 
     @mcp.tool()
     def start_workspace_listener(
-        directory: str = "",
-        interval_s: int = 120,
-        force_initial: bool = False,
-        max_files: int = 100,
+        directory: Annotated[
+            str,
+            Field(description="Workspace directory to watch; empty uses the server project root and remains root-confined."),
+        ] = "",
+        interval_s: Annotated[
+            int,
+            Field(ge=1, le=86400, description="Polling interval in seconds (1-86400); lower values consume more filesystem work."),
+        ] = 120,
+        force_initial: Annotated[
+            bool,
+            Field(description="Run an initial full synchronization before the first interval elapses."),
+        ] = False,
+        max_files: Annotated[
+            int,
+            Field(ge=1, le=10000, description="Maximum changed files processed per poll (1-10000); backlog remains for later polls."),
+        ] = 100,
     ) -> str:
-        """Start a background workspace listener that continuously feeds repo changes into CogOps.
+        """Start one daemon-scoped background listener for workspace changes.
 
-        This is the long-running change-driven bridge from repo activity into Belief CI.
+        Use this when periodic change detection is required across the current
+        MCP process. It is a long-running bridge into CogOps/Belief CI, not a
+        one-shot sync; use ``sync_workspace_changes`` for a single pass. Each
+        poll reads supported files within the selected root and may write local
+        beliefs, verification results, a sync report, and listener state. It
+        never edits source files or calls a model. Starting an already-running
+        listener is safe and returns ``already_running``. Because the listener
+        is daemon-scoped, stop it by shutting down the MCP process; a later
+        process starts with no running background thread.
+
+        Args:
+            directory: Optional root-confined workspace directory.
+            interval_s: Poll interval in seconds.
+            force_initial: Whether to run a full initial scan.
+            max_files: Positive changed-file limit per poll.
         """
         target_path = _project_directory(directory)
         if target_path is None:
@@ -4209,10 +4587,19 @@ def create_mcp_server(
             "report": learning_report(patterns),
         })
 
+    effective_allowed_tools = allowed_tools
+    profile_limited = False
+    if effective_allowed_tools is None:
+        if profile == "public":
+            _prepare_public_mcp_surface(mcp)
+        effective_allowed_tools = _mcp_profile_allowed_tools(profile)
+        profile_limited = effective_allowed_tools is not None
+
     _apply_mcp_access_policy(
         mcp,
-        allowed_tools=allowed_tools,
+        allowed_tools=effective_allowed_tools,
         authorize_tool=authorize_tool,
+        hide_non_tool_surfaces=not profile_limited,
     )
     return mcp, engine
 

@@ -120,6 +120,13 @@ proof-guided recovery. OpenClaw retains its agent loop and provider credentials.
 a compaction hook that preserves commands, errors, paths, symbols, verification
 status and exact-recovery handles.
 
+### Google Antigravity
+
+**Direct and tested first-class plugin.** The `.agents/plugins/entroly` plugin packages
+Entroly's MCP server, token-budgeted selection rules, and the
+`entroly-context-control` skill for Google Antigravity (AGY CLI, Antigravity IDE,
+and Antigravity 2.0).
+
 Entroly does not publish a separate model-specific OpenCode + DeepSeek claim in
 this matrix. A custom model route must satisfy the same endpoint,
 authentication, request-shape and watchdog requirements as every other

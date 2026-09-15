@@ -1,6 +1,7 @@
 """Verified model-intelligence registry for Entroly."""
 
 from .registry import (
+    AttentionArchitecture,
     DiscoveryReport,
     ModelCapability,
     ModelRegistry,
@@ -16,6 +17,7 @@ from .registry import (
 )
 
 __all__ = [
+    "AttentionArchitecture",
     "DiscoveryReport",
     "ModelCapability",
     "ModelRegistry",

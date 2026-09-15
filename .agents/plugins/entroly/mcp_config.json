@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "entroly": {
+      "command": "python",
+      "args": ["-m", "entroly.server"],
+      "env": {
+        "ENTROLY_MCP_PASSIVE": "0"
+      }
+    }
+  }
+}

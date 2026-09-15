@@ -12,7 +12,11 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
-from typing import Any, Iterable, Mapping, Sequence
+from enum import Enum
+from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence
+
+if TYPE_CHECKING:
+    from .models.registry import AttentionArchitecture
 
 _SECTION_RE = re.compile(r"^[a-z][a-z0-9_.-]{0,63}$")
 
@@ -172,11 +176,93 @@ def conversation_anchor(
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+class PrefixZone(str, Enum):
+    """Explicit zones in the outbound prompt layout.
+
+    SYSTEM:  Byte-stable policy, tool schemas, and instructions. Rewritten only
+             when policy changes — provider cache reuse starts here.
+    HISTORY: Append-only conversation turns. Each new turn extends the sequence;
+             prior turns are never modified.
+    LIVE:    Dynamic injected context (Entroly evidence). Changes every turn and
+             is positioned at the tail so it never invalidates zones 1-2.
+    """
+
+    SYSTEM = "system"
+    HISTORY = "history"
+    LIVE = "live"
+
+
+@dataclass(frozen=True, slots=True)
+class ZoneBudget:
+    """Token budget allocation across the three prefix zones."""
+
+    system: int
+    history: int
+    live: int
+    attention_profile: str | None
+
+    @property
+    def total(self) -> int:
+        return self.system + self.history + self.live
+
+
+def compute_zone_budgets(
+    total_budget: int,
+    *,
+    attention_profile: "AttentionArchitecture | None" = None,
+    system_tokens: int = 0,
+    history_tokens: int = 0,
+) -> ZoneBudget:
+    """Split a token budget across the three prefix zones.
+
+    The system and history zones are treated as fixed costs — they consume
+    whatever they need, and the live zone gets the remainder. The attention
+    architecture clamps the live zone ceiling: linear hybrids get less
+    dynamic context, MLA/sparse models can absorb more.
+
+    Args:
+        total_budget: Total available tokens from ECDB.
+        attention_profile: Model's attention architecture (from Spec 1).
+        system_tokens: Estimated tokens consumed by zone 1 (system prompt).
+        history_tokens: Estimated tokens consumed by zone 2 (conversation).
+
+    Returns:
+        ZoneBudget with per-zone allocations. live may be 0 if zones 1-2
+        already exhaust the budget.
+    """
+    from .models.registry import AttentionArchitecture
+
+    fixed = system_tokens + history_tokens
+    remaining = max(0, total_budget - fixed)
+
+    if attention_profile is AttentionArchitecture.LINEAR_HYBRID_GDN:
+        live_ceiling = 2048
+    elif attention_profile in (
+        AttentionArchitecture.LATENT_MLA,
+        AttentionArchitecture.SPARSE_DSA,
+    ):
+        live_ceiling = min(remaining, 12288)
+    else:
+        live_ceiling = remaining
+
+    live = min(remaining, live_ceiling)
+
+    return ZoneBudget(
+        system=system_tokens,
+        history=history_tokens,
+        live=live,
+        attention_profile=attention_profile.value if attention_profile else None,
+    )
+
+
 __all__ = [
     "CanonicalPrefixBuilder",
     "PrefixSection",
+    "PrefixZone",
     "StablePrompt",
+    "ZoneBudget",
     "canonical_content",
     "canonical_json",
+    "compute_zone_budgets",
     "conversation_anchor",
 ]

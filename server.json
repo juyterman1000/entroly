@@ -16,6 +16,20 @@
       "identifier": "entroly",
       "version": "1.0.84",
       "runtimeHint": "uvx",
+      "environmentVariables": [
+        {
+          "name": "ENTROLY_MCP_PROFILE",
+          "value": "public"
+        },
+        {
+          "name": "ENTROLY_MCP_PASSIVE",
+          "value": "1"
+        },
+        {
+          "name": "ENTROLY_NO_DOCKER",
+          "value": "1"
+        }
+      ],
       "transport": {
         "type": "stdio"
       }
@@ -26,6 +40,20 @@
       "identifier": "entroly-mcp",
       "version": "1.0.84",
       "runtimeHint": "npx",
+      "environmentVariables": [
+        {
+          "name": "ENTROLY_MCP_PROFILE",
+          "value": "public"
+        },
+        {
+          "name": "ENTROLY_MCP_PASSIVE",
+          "value": "1"
+        },
+        {
+          "name": "ENTROLY_NO_DOCKER",
+          "value": "1"
+        }
+      ],
       "transport": {
         "type": "stdio"
       }

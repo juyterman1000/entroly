@@ -33,12 +33,16 @@ References:
 
 from __future__ import annotations
 
+import logging
 import os
 import re
+import threading
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger("entroly.prefetch")
 
 
 @dataclass
@@ -382,3 +386,131 @@ class PrefetchEngine:
             "total_predictions": self._total_predictions,
             "hit_rate": round(hit_rate, 4),
         }
+
+
+@dataclass(frozen=True, slots=True)
+class AssembledFragment:
+    """A pre-loaded fragment ready for injection into the next turn."""
+
+    path: str
+    content: str
+    reason: str
+    confidence: float
+    token_estimate: int
+
+
+class SpeculativeAssembler:
+    """Pre-assemble context from prefetch predictions for the next turn.
+
+    Resolves predicted file paths against the repo, loads content up to a
+    token budget, and caches the assembled fragments. On the next query,
+    the engine can incorporate these without re-reading disk.
+
+    Thread-safe: assembly can run in a background thread while the current
+    response streams.
+    """
+
+    def __init__(
+        self,
+        repo_root: str,
+        prefetch_engine: PrefetchEngine,
+        max_assembly_tokens: int = 4096,
+        min_confidence: float = 0.4,
+    ) -> None:
+        self._repo_root = Path(repo_root).resolve()
+        self._prefetch = prefetch_engine
+        self._max_tokens = max_assembly_tokens
+        self._min_confidence = min_confidence
+        self._lock = threading.Lock()
+        self._assembled: dict[str, list[AssembledFragment]] = {}
+        self._assembly_count = 0
+        self._cache_hits = 0
+
+    def assemble_for(
+        self,
+        trigger_path: str,
+        source_content: str,
+        language: str = "python",
+    ) -> list[AssembledFragment]:
+        """Predict and pre-load context for the next query.
+
+        Returns the assembled fragments (also cached internally for
+        retrieval via ``get_cached``).
+        """
+        predictions = self._prefetch.predict(
+            trigger_path, source_content, language
+        )
+        qualified = [
+            p for p in predictions if p.confidence >= self._min_confidence
+        ]
+
+        fragments: list[AssembledFragment] = []
+        budget_used = 0
+
+        for pred in qualified:
+            if budget_used >= self._max_tokens:
+                break
+
+            content = self._load_file(pred.path)
+            if content is None:
+                continue
+
+            est_tokens = (len(content) + 3) // 4
+            if budget_used + est_tokens > self._max_tokens:
+                remaining = self._max_tokens - budget_used
+                content = content[: remaining * 4]
+                est_tokens = remaining
+
+            fragments.append(AssembledFragment(
+                path=pred.path,
+                content=content,
+                reason=pred.reason,
+                confidence=pred.confidence,
+                token_estimate=est_tokens,
+            ))
+            budget_used += est_tokens
+
+        with self._lock:
+            self._assembled[trigger_path] = fragments
+            self._assembly_count += 1
+
+        if fragments:
+            logger.debug(
+                "Speculative assembly: %d fragments (~%d tokens) for %s",
+                len(fragments), budget_used, trigger_path,
+            )
+
+        return fragments
+
+    def get_cached(self, trigger_path: str) -> list[AssembledFragment] | None:
+        """Return pre-assembled fragments for a trigger, if available."""
+        with self._lock:
+            cached = self._assembled.pop(trigger_path, None)
+            if cached is not None:
+                self._cache_hits += 1
+            return cached
+
+    def _load_file(self, rel_path: str) -> str | None:
+        """Safely load file content from the repo."""
+        try:
+            from .path_safety import resolve_file_within_resolved
+
+            target = resolve_file_within_resolved(self._repo_root, rel_path)
+            if target is None:
+                return None
+            if target.stat().st_size > 100_000:
+                return None
+            return target.read_text(encoding="utf-8", errors="replace")
+        except (OSError, ValueError):
+            return None
+
+    def stats(self) -> dict[str, Any]:
+        with self._lock:
+            return {
+                "assemblies": self._assembly_count,
+                "cache_hits": self._cache_hits,
+                "pending": len(self._assembled),
+                "hit_rate": round(
+                    self._cache_hits / max(self._assembly_count, 1), 4
+                ),
+            }

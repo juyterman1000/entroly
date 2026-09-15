@@ -115,6 +115,7 @@ def test_codex_bundle_has_manifest_mcp_and_narrow_valid_skill() -> None:
     ]
     assert mcp["mcpServers"]["entroly"]["env"]["ENTROLY_NO_DOCKER"] == "1"
     assert mcp["mcpServers"]["entroly"]["env"]["ENTROLY_MCP_PASSIVE"] == "1"
+    assert mcp["mcpServers"]["entroly"]["env"]["ENTROLY_MCP_PROFILE"] == "public"
     assert mcp["mcpServers"]["entroly"]["env"]["ENTROLY_MAX_FILES"] == "200"
     command = hooks["hooks"]["UserPromptSubmit"][0]["hooks"][0]
     assert command["type"] == "command"
@@ -182,6 +183,7 @@ def test_root_agent_plugin_surface_is_cursor_installable() -> None:
     assert server["command"] == "node"
     assert server["args"] == ["${PLUGIN_ROOT}/scripts/entroly-plugin-launch.mjs"]
     assert server["env"]["ENTROLY_MCP_PASSIVE"] == "1"
+    assert server["env"]["ENTROLY_MCP_PROFILE"] == "public"
 
 
 def test_root_gemini_extension_is_github_installable() -> None:
@@ -198,6 +200,7 @@ def test_root_gemini_extension_is_github_installable() -> None:
     assert server["command"] == "entroly"
     assert server["args"] == ["serve"]
     assert server["env"]["ENTROLY_MCP_PASSIVE"] == "1"
+    assert server["env"]["ENTROLY_MCP_PROFILE"] == "public"
 
 
 def test_root_dot_mcp_is_directory_installable() -> None:
@@ -207,6 +210,7 @@ def test_root_dot_mcp_is_directory_installable() -> None:
     assert server["command"] == "npx"
     assert server["args"] == ["-y", f"entroly-mcp@{PRODUCT_VERSION}", "serve"]
     assert server["env"]["ENTROLY_MCP_PASSIVE"] == "1"
+    assert server["env"]["ENTROLY_MCP_PROFILE"] == "public"
 
 
 def test_glama_metadata_declares_repository_maintainer() -> None:
@@ -214,6 +218,17 @@ def test_glama_metadata_declares_repository_maintainer() -> None:
 
     assert metadata["$schema"] == "https://glama.ai/mcp/schemas/server.json"
     assert metadata["maintainers"] == ["juyterman1000"]
+
+
+def test_public_registry_launchers_select_compact_mcp_profile() -> None:
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    assert "ENV ENTROLY_MCP_PROFILE=public" in dockerfile
+    assert "ENTROLY_MCP_PASSIVE=1" in dockerfile
+    assert "ENTROLY_NO_DOCKER=1" in dockerfile
+
+    smithery = (ROOT / "smithery.yaml").read_text(encoding="utf-8")
+    assert 'ENTROLY_MCP_PROFILE: "public"' in smithery
+    assert 'ENTROLY_MCP_PASSIVE: "1"' in smithery
 
 
 def test_claude_and_gemini_bundles_share_evidence_contract() -> None:
@@ -237,6 +252,7 @@ def test_claude_and_gemini_bundles_share_evidence_contract() -> None:
     assert claude_manifest["skills"] == "./skills/"
     claude_env = claude_manifest["mcpServers"]["entroly"]["env"]
     assert claude_env["ENTROLY_MCP_PASSIVE"] == "1"
+    assert claude_env["ENTROLY_MCP_PROFILE"] == "public"
     assert claude_env["ENTROLY_MAX_FILES"] == "200"
     claude_command = claude_hooks["hooks"]["UserPromptSubmit"][0]["hooks"][0]
     assert claude_command["type"] == "command"
@@ -246,6 +262,7 @@ def test_claude_and_gemini_bundles_share_evidence_contract() -> None:
     assert gemini_manifest["contextFileName"] == "GEMINI.md"
     gemini_env = gemini_manifest["mcpServers"]["entroly"]["env"]
     assert gemini_env["ENTROLY_MCP_PASSIVE"] == "1"
+    assert gemini_env["ENTROLY_MCP_PROFILE"] == "public"
     assert gemini_env["ENTROLY_MAX_FILES"] == "200"
     gemini_command = gemini_hooks["hooks"]["BeforeAgent"][0]["hooks"][0]
     assert "entroly activation hook" in gemini_command["command"]
