@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Entroly Model Support: GPT-5.6, Gemini 3.6, Gemini 3.5 Flash-Lite, Nemotron</title>
+  <meta name="description" content="Verified Entroly model support for GPT-5.6, Gemini 3.6 Flash, Gemini 3.5 Flash-Lite, and NVIDIA Nemotron 3.5 Lightning, with API, Ollama, privacy, and availability boundaries.">
+  <meta name="keywords" content="Entroly model support, GPT-5.6 context optimization, Gemini 3.6 Flash context compression, Gemini 3.5 Flash-Lite token optimization, Nemotron 3.5 Lightning Ollama, AI agent context management, AEO, GEO">
+  <link rel="canonical" href="https://juyterman1000.github.io/entroly/docs/model-support.html">
+  <meta property="og:title" content="Verified Entroly model support">
+  <meta property="og:description" content="Public model IDs, context limits, transport paths, and fail-closed availability boundaries.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://juyterman1000.github.io/entroly/docs/model-support.html">
+  <style>
+    :root { color-scheme: dark; --bg:#090d14; --card:#111827; --text:#e5edf7; --muted:#a9b7ca; --line:#2b3a50; --accent:#7dd3fc; --ok:#86efac; --warn:#fde68a; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font:16px/1.65 system-ui,-apple-system,Segoe UI,sans-serif; }
+    main { max-width:980px; margin:auto; padding:56px 24px 80px; }
+    h1 { font-size:clamp(2.2rem,6vw,4.4rem); line-height:1.05; margin:.2em 0; }
+    h2 { margin-top:2.2em; }
+    p, li { color:var(--muted); }
+    a { color:var(--accent); }
+    code { color:#c4b5fd; }
+    .eyebrow { color:var(--accent); font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+    .lead { font-size:1.2rem; max-width:780px; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:20px; margin:18px 0; }
+    table { width:100%; border-collapse:collapse; display:block; overflow-x:auto; }
+    th, td { padding:12px; border:1px solid var(--line); text-align:left; vertical-align:top; min-width:155px; }
+    th { color:var(--text); }
+    .ok { color:var(--ok); font-weight:700; }
+    .guard { color:var(--warn); font-weight:700; }
+  </style>
+  <script type="application/ld+json">
+  [
+    {
+      "@context": "https://schema.org",
+      "@type": "TechArticle",
+      "headline": "Verified Entroly model support",
+      "description": "Verified model IDs, context limits, transport paths, and availability boundaries for Entroly context optimization.",
+      "dateModified": "2026-08-11",
+      "author": {"@type": "Organization", "name": "Entroly"},
+      "mainEntityOfPage": "https://juyterman1000.github.io/entroly/docs/model-support.html"
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Which current models does Entroly support with verified metadata?",
+          "acceptedAnswer": {"@type": "Answer", "text": "Entroly carries verified public metadata for GPT-5.6 Sol, Terra, and Luna; Gemini 3.6 Flash; Gemini 3.5 Flash-Lite; and discovers installed NVIDIA Nemotron 3.5 Lightning Ollama tags. The request must traverse the corresponding Entroly route."}
+        },
+        {
+          "@type": "Question",
+          "name": "Does Entroly support Gemini 3.5 Flash Cyber?",
+          "acceptedAnswer": {"@type": "Answer", "text": "Entroly does not advertise Gemini 3.5 Flash Cyber as a generally available API model. Google says CodeMender access with that model is restricted to selected governments and trusted partners."}
+        },
+        {
+          "@type": "Question",
+          "name": "Does listing a model guarantee token or dollar savings?",
+          "acceptedAnswer": {"@type": "Answer", "text": "No. Compatibility means Entroly can apply its context contract on a supported route. Savings depend on the request, selected evidence, caching, output usage, and whether provider-bound traffic actually traverses Entroly."}
+        }
+      ]
+    }
+  ]
+  </script>
+</head>
+<body>
+<main>
+  <p class="eyebrow">Model compatibility · verified 2026-08-11</p>
+  <h1>Verified model support, without announcement inflation.</h1>
+  <p class="lead">Entroly selects and compresses context before a request reaches the model. It does not run hosted models itself. A verified listing requires a public model ID and official limits, or an inspectable local Ollama tag.</p>
+
+  <div class="card">
+    <strong>What stays the same across models</strong>
+    <p>Budget-aware evidence selection, exact recovery handles, Context Receipts, optional verification, and conservative accounting. Provider tools, authentication, model execution, retention, and billing remain controlled by the configured provider or local runtime.</p>
+  </div>
+
+  <h2>Current verified matrix</h2>
+  <table>
+    <thead><tr><th>Model</th><th>Verified ID or tag</th><th>Entroly route</th><th>Limits used by the registry</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>GPT-5.6 Sol</td><td><code>gpt-5.6-sol</code>; alias <code>gpt-5.6</code></td><td>OpenAI API proxy or supported agent path</td><td>1.05M context; 128K output</td><td class="ok">Verified</td></tr>
+      <tr><td>GPT-5.6 Terra</td><td><code>gpt-5.6-terra</code></td><td>OpenAI API proxy or supported agent path</td><td>1.05M context; 128K output</td><td class="ok">Verified</td></tr>
+      <tr><td>GPT-5.6 Luna</td><td><code>gpt-5.6-luna</code></td><td>OpenAI API proxy or supported agent path</td><td>1.05M context; 128K output</td><td class="ok">Verified</td></tr>
+      <tr><td>Gemini 3.6 Flash</td><td><code>gemini-3.6-flash</code></td><td>Gemini API proxy</td><td>1,048,576 input; 65,536 output</td><td class="ok">Verified</td></tr>
+      <tr><td>Gemini 3.5 Flash-Lite</td><td><code>gemini-3.5-flash-lite</code></td><td>Gemini API proxy</td><td>1,048,576 input; 65,536 output</td><td class="ok">Verified</td></tr>
+      <tr><td>NVIDIA Nemotron 3.5 Lightning</td><td><code>nemotron-3.5-lightning</code> or installed variant</td><td>Loopback Ollama discovery + OpenAI-compatible proxy</td><td>Discovered from the installed tag</td><td class="ok">Verified at runtime</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Gated or unverified announcements</h2>
+  <p>Entroly does not manufacture model slugs or silently assign a large context window to a headline. Unknown models receive a visible conservative fallback until the registry or local discovery can establish stronger metadata.</p>
+  <table>
+    <thead><tr><th>Announcement</th><th>Why it is not in the verified public matrix</th></tr></thead>
+    <tbody>
+      <tr><td>Gemini 3.5 Flash Cyber</td><td class="guard">Google says CodeMender access with this model is restricted to selected governments and trusted partners.</td></tr>
+      <tr><td>Meta Muse Spark</td><td class="guard">Meta describes the API as a private preview for selected users.</td></tr>
+      <tr><td>GPT-5.6 Cyber, Claude Opus 5, Muse Glimmer-30B, Muse Spark 1.2, Shieldstral 1.0</td><td class="guard">No official generally usable API model ID and complete public limits were verified for this release. Entroly therefore makes no exact-support claim yet.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Configure a supported route</h2>
+  <pre><code># Gemini API path
+set GOOGLE_GEMINI_BASE_URL=http://127.0.0.1:9377
+entroly proxy
+
+# Local Ollama path
+python -m entroly.models discover ollama --inspect-ollama-context</code></pre>
+  <p>Use <code>export</code> instead of <code>set</code> on macOS/Linux. A model appearing here does not guarantee savings; use Entroly receipts and provider usage to measure the actual workload.</p>
+
+  <h2>Official sources</h2>
+  <ul>
+    <li><a href="https://developers.openai.com/api/docs/guides/latest-model">OpenAI GPT-5.6 model guidance</a></li>
+    <li><a href="https://ai.google.dev/gemini-api/docs/latest-model">Google Gemini 3.6 Flash and 3.5 Flash-Lite guide</a></li>
+    <li><a href="https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite">Google Gemini 3.5 Flash-Lite model specification</a></li>
+    <li><a href="https://cloud.google.com/security/codemender">Google CodeMender and Gemini 3.5 Flash Cyber access boundary</a></li>
+    <li><a href="https://ai.meta.com/blog/introducing-muse-spark-msl/">Meta Muse Spark private API preview</a></li>
+    <li><a href="https://ollama.com/library/nemotron-3.5-lightning">Ollama Nemotron 3.5 Lightning tags</a></li>
+  </ul>
+  <p><a href="../README.md">README</a> · <a href="gpt-5-6-sol-terra-luna.html">GPT-5.6 details</a> · <a href="nemotron-3-5-lightning-ollama.html">Nemotron/Ollama details</a></p>
+</main>
+</body>
+</html>
