@@ -2,13 +2,13 @@
   <img src="docs/assets/entroly_wordmark.svg" width="820" alt="Entroly">
 </p>
 
-<h1 align="center">Entroly — Cut AI context cost and prove nothing was lost.</h1>
+<h1 align="center">Entroly — Select AI context with auditable recovery.</h1>
 
-<p align="center"><b>Every selection emits a receipt: what was kept, what was omitted, and the handle that recovers the exact original bytes.</b><br>
+<p align="center"><b>Receipt-backed selection records: what was kept, what was omitted, and the handle that recovers the exact original bytes.</b><br>
 Compression you can undo, on your own repository, in one command — without replacing your model or agent architecture.</p>
 
 <p align="center">
-  <img src="docs/assets/entroly-demo.svg" alt="Entroly compresses 1.4M tokens to 120K with zero accuracy loss and a Merkle receipt" width="820">
+  <img src="docs/assets/entroly-demo.svg" alt="Entroly context selection and receipt workflow illustration" width="820">
 </p>
 
 <p align="center"><code>code --install-extension entroly.entroly-vscode</code> &nbsp;·&nbsp; <code>pip install -U entroly && entroly go</code> &nbsp;·&nbsp; <code>npx entroly</code></p>
@@ -22,7 +22,7 @@ Compression you can undo, on your own repository, in one command — without rep
   <a href="https://pypistats.org/packages/entroly"><img src="https://img.shields.io/pypi/dm/entroly?color=blueviolet&label=PyPI%20downloads" alt="Entroly on PyPI downloads"></a>
   <a href="https://www.npmjs.com/package/entroly"><img src="https://img.shields.io/npm/dm/entroly?color=orange&label=npm%20downloads" alt="Entroly on npm downloads"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-green" alt="Apache-2.0 license"></a>
-  <a href="benchmarks/results/receipt_fragment_fidelity_default.json"><img src="https://img.shields.io/badge/Source_spans-5%2C117%2F5%2C117_verified-0A7B83" alt="5,117 of 5,117 native source fragments independently verified"></a>
+  <a href="benchmarks/results/receipt_fragment_fidelity_default.json"><img src="https://img.shields.io/badge/Source_spans-5%2C117%2F5%2C117_verified-0A7B83" alt="Repository artifact: 5,117 of 5,117 native source spans passed fidelity checks"></a>
   <a href="benchmarks/results/receipt_public_integrity.json"><img src="https://img.shields.io/badge/SDK_recovery-13%2F13_exact-blueviolet" alt="13 of 13 public SDK recovery probes exactly matched their source spans"></a>
   <a href="https://github.com/juyterman1000/entroly"><img src="https://img.shields.io/github/stars/juyterman1000/entroly?style=social" alt="Entroly GitHub stars"></a>
   <a href="https://github.com/juyterman1000/entroly/actions"><img src="https://img.shields.io/github/actions/workflow/status/juyterman1000/entroly/ci.yml?label=CI" alt="CI status"></a>
@@ -36,7 +36,10 @@ Compression you can undo, on your own repository, in one command — without rep
 
 ## Accuracy Retention
 
-> Does Entroly compression degrade LLM answer quality? **No.** All 6 confidence intervals overlap baseline.
+> **Historical maintainer-reported experiment, not a quality guarantee.** The
+> table below reports one 50K-token-budget run. Overlapping confidence intervals
+> do not establish equivalence or rule out degradation. These results have not
+> been independently reproduced here.
 
 <sub>Model: <code>gpt-4o-mini</code> · Budget: 50K tokens · Wilson 95% CI · Reproduce: <code>python -m bench.accuracy --benchmark all</code></sub>
 
@@ -49,13 +52,19 @@ Compression you can undo, on your own repository, in one command — without rep
 | **TruthfulQA** (MC1) | 100 | 72.0% [62.5–79.9%] | 73.0% [63.6–80.7%] | **101.4%** | +1.0% |
 | **LongBench** (HotpotQA) | 100 | 57.0% [47.2–66.3%] | 59.8% [49.8–69.0%] | **104.9%** | +2.8% |
 
-<sub>Average retention <b>101.7%</b> — accuracy is statistically indistinguishable from raw context across all benchmarks (zero degradation). For live codebase token compression (85–94% reduction), see Context Selection Quality below.</sub>
+<sub>The reported SQuAD score fell from 84% to 83%. Retention ratios above 100%
+can reflect sampling or model variability. The displayed intervals are historical
+reported values, not a validated paired comparison; Wilson intervals require
+binary outcomes and do not justify uncertainty for averaged partial-credit scores.
+Establishing non-inferiority needs a predefined tolerance, paired per-task outcomes,
+appropriate uncertainty estimates, and adequate sample size. These results cannot
+be extrapolated to more aggressive compression or other models.</sub>
 
 ### Context Selection Quality
 
-<sub>19-fragment corpus · 300-token budget · 3 real-world queries · Reproduce: <code>entroly benchmark</code></sub>
+<sub>19-fragment synthetic corpus · 300-token budget · 3 fixture queries · Reproduce: <code>entroly benchmark</code></sub>
 
-| Metric | RAW (Naive FIFO) | TOP-K (Cody/Copilot-style) | **ENTROLY (Knapsack)** |
+| Metric | RAW (Naive FIFO) | TOP-K (local baseline) | **ENTROLY (Knapsack)** |
 |---|---|---|---|
 | Avg fragments selected | 6.0 | 6.0 | **8.7** |
 | Avg module coverage | 3.0 | 3.7 | **8.7** |
@@ -67,7 +76,9 @@ Compression you can undo, on your own repository, in one command — without rep
 
 ## Research
 
-Entroly implements six research-grade algorithms with production implementations:
+Entroly includes the following research-oriented implementations. A module's
+presence does not establish production reliability, mathematical novelty, or
+independent validation; consult its implementation and evaluation limitations.
 
 | Algorithm | What it does | Implementation |
 |---|---|---|
@@ -112,12 +123,11 @@ when they only needed page 47.
 **Entroly finds page 47.**
 
 It sits between your code and the AI, reads everything, and passes along only
-the parts that matter for the question actually being asked. Three things make
-that safe to do:
+the parts selected for the question. Three properties to evaluate on your task:
 |  |  |
 |---|---|
 | 💰 **Your bill goes down** | Fewer words sent to the AI means a smaller invoice. How much depends on the job — see the [real numbers](#benchmarks) below. |
-| 🔍 **Nothing is lost** | Whatever Entroly sets aside is kept and can be pulled back *exactly* as it was, character for character. |
+| 🔍 **Recoverable originals** | Receipt-backed recovery retains source material locally. Exact recovery requires the referenced store and source bytes to remain available; it does not guarantee answer quality. |
 | 🧾 **You can check its work** | Every decision comes with a receipt: what was kept, what was left out, and why. |
 **Do I have to change my code?** No. On hosts with a verified prompt hook,
 Entroly runs before the model plans. MCP-only integrations remain callable
@@ -128,8 +138,8 @@ assuming an installed integration is active.
 **Do I need to pay for anything to try it?** No. The two commands in the
 [Install](#install) section below run on your own machine, with no API key, and
 show you real numbers on your own project before you connect anything paid.
-(They will install the native engine from PyPI if it is missing — see the note
-under [Install](#install).)
+(Missing native-engine support is reported without downloading packages — see
+the note under [Install](#install).)
 
 ---
 ## Install
@@ -173,13 +183,13 @@ entroly simulate
 
 <sub>Both run locally. Neither one calls an AI or costs anything.</sub>
 
-<sub>One exception to "offline": if the native engine is missing, Entroly installs
-it from PyPI before measuring, because without it selection cannot read your
-query and any savings figure would be budget arithmetic rather than a measured
-result. That is the only outbound call these commands make, it is a package
-install and nothing about your code leaves the machine, and it does not happen
-when the engine is already present. Set `ENTROLY_NO_SELF_HEAL=1` to disable it —
-Entroly then reports the figure explicitly labelled as unearned.</sub>
+<sub>Runtime package repair is **off by default**. If the native engine is missing,
+query-conditioned selection is unavailable and reduction figures are labelled
+unearned. Install it explicitly with `python -m pip install -U entroly-core`, call
+`entroly.repair()` from Python, or set `ENTROLY_ENABLE_SELF_HEAL=1` to permit
+startup repair. This downloads through the configured package index (normally
+PyPI). `ENTROLY_NO_SELF_HEAL=1` and `ENTROLY_AIR_GAP=1` override repair consent.
+See [Privacy](PRIVACY.md) and [recovery-data security](docs/recovery-data-security.md).</sub>
 
 Extras (`entroly[proxy]`, `entroly[native]`, `entroly[full]`), the standalone
 Rust binary, and uninstall steps: [Engine & install options](docs/DETAILS.md#engine--install-options).
@@ -312,46 +322,15 @@ Runs as a **CLI**, **Python/TypeScript SDK**, **MCP server**, **HTTP proxy**, or
 ---
 ## How Entroly compares
 
-Most context tools compress and hope. Entroly is an **auditable context control plane** — every selection is receipted, every compression is reversible, and every claim is verifiable.
+Entroly combines budgeted selection, source-span receipts, and optional
+verification. These are distinct guarantees: a receipt records retained and
+omitted material; recovery checks source integrity; WITNESS/EICV checks can still
+produce false positives or false negatives. Solver objectives approximate useful
+context and do not prove that the chosen context is sufficient for a task.
 
-### Compression-quality frontier (September 2026)
-
-Every tool measured on its own published benchmarks. Different datasets — not apple-to-apple — but the compression-retention tradeoff is comparable.
-
-| Tool | Best Compression | Answer / Evidence Retention | Approach |
-|---|---:|---:|---|
-| **Entroly** | **95.1%** | **100%** evidence, **101.7%** avg accuracy | Knapsack DP + BM25 + SimHash + depgraph (Rust) |
-| SuperCompress | 65.4% | 99.4% (180/181) | Query-aware compiler engine |
-| Baseline D | 47–92% bench / 4.8% prod median | 97–100% bench | Content router + ML model |
-| [LLMLingua-2](https://github.com/microsoft/LLMLingua) | ~95% (20x) | 95–98% | Per-token perplexity via small LM |
-| The Token Company | 10–40% | ~full (claimed) | Commercial API |
-| TokenShift | 12–21% | not published | 17 heuristic optimizations (Rust) |
-| [RECOMP](https://arxiv.org/abs/2310.04408) | ~83% (6x) | minimal loss | RAG-specific extractive + abstractive |
-| [500xCompressor](https://aclanthology.org/2025.acl-long.1219) | up to 99.8% (480x) | 62–73% (~30% drop) | Extreme learned compression (ACL 2025) |
-| [Gisting](https://arxiv.org/abs/2304.08467) | ~96% (26x) | not reported | Requires base-model retraining |
-| [ACON](https://arxiv.org/abs/2510.00615) | 25–30% | preserves accuracy | Agent-specific context optimization |
-
-<sub>Sources: [PointFive 2026 guide](https://www.pointfive.co/guides/top-prompt-compression-solutions-2026), [SuperCompress benchmarks](https://www.supercompress.dev/benchmarks), published tool docs. "Baseline D" is anonymized per project policy. Entroly numbers link to frozen JSON artifacts in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).</sub>
-
-### What only Entroly has
-
-| Capability | Entroly | LLMLingua-2 | SuperCompress | Baseline D | Others |
-|---|:---:|:---:|:---:|:---:|:---:|
-| Knapsack-optimal token selection | **yes** | no | no | no | no |
-| Auditable context receipts (byte-offset, SHA-256) | **yes** | no | no | no | no |
-| Hallucination detection (WITNESS, AUROC 0.7976) | **yes** | no | no | no | no |
-| Bayesian online learning (zero LLM cost) | **yes** | no | no | no | no |
-| Deterministic replay (128/128) | **yes** | no | no | no | no |
-| Cross-process byte-exact recovery (66/66) | **yes** | no | no | no | no |
-| Source integrity verification (5,117/5,117) | **yes** | no | no | no | no |
-| Dependency graph resolution | **yes** | no | no | no | no |
-| Fail-closed model routing (RAVS) | **yes** | no | no | no | no |
-| Self-improving evolved skills | **yes** | no | no | no | no |
-| No external model required | **yes (Rust)** | no (needs GPT-2/LLaMA) | **yes** | **yes** | varies |
-| Cross-agent shared memory | **yes** | no | no | no | no |
-| MCP server + HTTP proxy + SDK | **yes** | no | no | partial | varies |
-
-**What's different:** Entroly is the only tool that combines optimal selection (knapsack solver), auditable receipts (byte-offset fragments, SHA-256 digests, inspectable omissions), verification (WITNESS grounding, EICV hallucination detection), and zero-cost Bayesian learning (5D PRISM weights). Each competitor has one piece of this; Entroly has the full stack.
+Compare tools on the same task set, version, model, token budget, and quality
+criterion. The local TOP-K fixture does not measure any commercial product. We
+do not provide an independently reproduced cross-product comparison here.
 
 ---
 ## Works with your stack
@@ -484,19 +463,29 @@ Also available: `entroly wrap`, `entroly unwrap`, `entroly serve`, `entroly daem
 <details>
 <summary><b>Will this change my code or my files?</b></summary>
 <br>
-No. Entroly reads your files and decides what to send to the AI. It never edits, moves, or deletes anything in your project.
+Context selection reads source files. Entroly also writes local indexes, receipts,
+recovery data, and configuration when you run the corresponding setup or learning
+commands. Review generated agent configuration before enabling it.
 </details>
 
 <details>
 <summary><b>Does my code get uploaded anywhere?</b></summary>
 <br>
-No. All selecting, compressing, and checking happens on your own machine. Your code is never uploaded, and there are no analytics on by default. Entroly makes exactly one kind of outbound call of its own: if the native engine is missing it installs that package from PyPI, because without it selection cannot read your query. That is a package download — no code, prompts, or telemetry are sent — and `ENTROLY_NO_SELF_HEAL=1` turns it off. Otherwise the only thing that leaves your computer is the request you were already sending to your AI provider, just smaller.
+Local selection and deterministic verification run on your machine. A configured
+cloud provider receives the request, including selected code and prompts. Optional
+WITNESS NLI can send evidence and claims to OpenAI. Product telemetry is off by
+default but can upload allowlisted events after consent and endpoint configuration.
+Package repair is also opt-in. Read [Privacy](PRIVACY.md) before enabling a network
+feature and [recovery-data security](docs/recovery-data-security.md) before sharing
+receipts or diagnostic bundles.
 </details>
 
 <details>
 <summary><b>What if it leaves out something important?</b></summary>
 <br>
-Nothing is thrown away. Anything left out is stored and can be restored exactly as it was — `entroly recover` gives you back the original, character for character, and it's verified against a fingerprint.
+Receipt-backed compression retains recovery material. `entroly recover` verifies
+the original against its recorded digest and length. Missing, deleted, or corrupt
+recovery data can prevent recovery. A receipt does not make an agent answer correct.
 </details>
 
 <details>
@@ -546,28 +535,6 @@ entroly hook status      # shows which shells have the hook
 
 ---
 
-## How Entroly compares
-
-Entroly is the only tool that combines optimal selection (knapsack solver with provable guarantees) with auditable receipts (byte-offset fragments, SHA-256 digests, inspectable omissions) and verification (WITNESS grounding checks, EICV hallucination detection).
-
-| Capability | Entroly | Prompt compressors | Memory layers |
-|---|---|---|---|
-| Knapsack-optimal token selection | Yes (DP + greedy) | Heuristic | No |
-| Auditable context receipts | Yes (byte-offset, SHA-256) | No | No |
-| Cross-agent shared memory | Yes (SimHash dedup, BM25) | No | Yes |
-| Output token reduction | Yes (3-layer pipeline) | No | No |
-| Shell output compression | Yes (7 command patterns) | No | No |
-| Image/multimodal compression | Yes (resize + OCR) | No | No |
-| Grounding verification (WITNESS) | Yes (NLI-backed) | No | No |
-| Hallucination detection (EICV) | Yes (6-layer hierarchy) | No | No |
-| Bayesian model routing (RAVS) | Yes (fail-closed) | No | No |
-| Failure mining / self-improvement | Yes (PRISM feedback loop) | No | Partial |
-| TypeScript SDK + adapters | Yes (LangChain, LlamaIndex) | Partial | Partial |
-| Local-first (no cloud required) | Yes | Varies | No |
-| MCP protocol native | Yes (40+ tools) | No | No |
-| Rust-accelerated engine | Yes (PyO3 + WASM) | No | No |
-
----
 ## Documentation
 
 - **[Architecture & internals](docs/DETAILS.md)** — Rust modules, compression pipeline, provenance, command reference.
