@@ -331,3 +331,64 @@ python -m benchmarks.receipt_fragment_fidelity sdk-verify benchmarks/results/rec
 · [inspect the public-SDK probe](../benchmarks/results/receipt_public_integrity.json)
 · [see the capability-to-proof map](capability-coverage.json)
 · [submit a counterexample](https://github.com/juyterman1000/entroly/issues/new?template=evidence_report.yml)
+
+---
+
+## Market comparison (September 2026)
+
+Where Entroly sits on the compression-quality frontier relative to every known
+tool in the category. Each tool measured on its own published benchmarks —
+different datasets and definitions, so this is directional, not controlled.
+
+### Compression-quality frontier
+
+| Tool | Best Compression | Answer / Evidence Retention | Latency | Approach |
+|---|---:|---:|---:|---|
+| **Entroly** | **95.1%** | **100%** evidence, **101.7%** avg accuracy | 28.4 ms | Knapsack DP + BM25 + SimHash + depgraph (Rust) |
+| SuperCompress | 65.4% | 99.4% (180/181) | ~47 ms | Query-aware compiler engine |
+| Baseline D | 47–92% bench / 4.8% prod median | 97–100% bench | 52 ms proxy | Content router + ML model |
+| [LLMLingua-2](https://github.com/microsoft/LLMLingua) | ~95% (20x) | 95–98% | +LM inference | Per-token perplexity via small LM (GPT-2/LLaMA) |
+| The Token Company | 10–40% | ~full (claimed) | sub-100 ms | Commercial API (Bear-2) |
+| TokenShift | 12–21% | not published | N/A | 17 heuristic optimizations (Rust binary) |
+| [ACON](https://arxiv.org/abs/2510.00615) | 25–30% | preserves accuracy | N/A | Agent-specific context optimization |
+| [RECOMP](https://arxiv.org/abs/2310.04408) | ~83% (6x) | minimal loss at 6% | N/A | RAG-specific extractive + abstractive |
+| [Gisting](https://arxiv.org/abs/2304.08467) | ~96% (26x) | not reported | 4.2% speedup | Requires base-model retraining |
+| [500xCompressor](https://aclanthology.org/2025.acl-long.1219) | up to 99.8% (480x) | 62–73% (~30% drop) | N/A | Extreme learned compression (ACL 2025) |
+
+### Unique capabilities
+
+No other tool in the category offers any of these:
+
+- **Context receipts** with byte-offset spans, SHA-256 digests, and recoverable omissions
+- **Hallucination detection** (WITNESS: 84.92% accuracy, AUROC 0.7976 on 16,000 held-out HaluEval-QA decisions)
+- **Bayesian online learning** (5D Dirichlet-REINFORCE, zero LLM cost)
+- **Deterministic replay** (128/128 conformance, Python + Rust modes)
+- **Cross-process byte-exact recovery** (66/66 payloads after restart)
+- **Source integrity verification** (5,117/5,117 native fragments, 11,986/11,986 Python fallback)
+- **Fail-closed model routing** (RAVS: Bayesian confidence, routes to Opus when uncertain)
+- **Evolved skills with fitness gating** (synthesis from failure clusters, promotion at fitness ≥ 0.7)
+
+### Benchmark-vs-production gap
+
+A known industry-wide issue: Baseline D reports 47–92% compression on
+curated benchmarks but their own production telemetry across 50,000+ sessions
+shows a **4.8% median** (6.9% P75). Entroly's gauntlet is synthetic too — the
+honest next step is production telemetry. Run `entroly simulate` on your own
+workload rather than trusting any tool's headline number.
+
+### Sources
+
+- [PointFive Top 10 Prompt Compression Solutions (2026)](https://www.pointfive.co/guides/top-prompt-compression-solutions-2026)
+- [SuperCompress benchmarks](https://www.supercompress.dev/benchmarks)
+- Baseline D accuracy benchmarks and production telemetry: see the tool's published docs (anonymized per project naming policy)
+- [LLMLingua-2 (ACL 2024)](https://arxiv.org/abs/2403.12968)
+- [500xCompressor (ACL 2025)](https://aclanthology.org/2025.acl-long.1219)
+- [RECOMP (ICLR 2024)](https://arxiv.org/abs/2310.04408)
+- [ACON (2025)](https://arxiv.org/abs/2510.00615)
+
+<sub>Each tool's numbers are taken from its own published benchmarks and docs.
+Different datasets, budgets, and definitions apply — this is not a controlled
+head-to-head. Entroly's own numbers link to frozen JSON artifacts with SHA-256
+digests and reproduce commands above. "Baseline D" is anonymized per project
+naming policy; the tool is publicly identifiable from its description and star
+count.</sub>

@@ -1059,6 +1059,15 @@ class EntrolyEngine:
             prior_strength=20.0,
         )
 
+        # ── Selection Pressure: resonance homeostasis + collapse detection ──
+        from .selection_pressure import CollapseDetector, ResonanceHomeostasis
+        self._resonance_homeostasis = ResonanceHomeostasis(
+            base_resonance=getattr(self.config, "weight_resonance", 0.10),
+        )
+        self._collapse_detector = CollapseDetector(
+            homeostasis=self._resonance_homeostasis,
+        )
+
         # ── Reward-driven skill crystallization ───────────────────
         # Closes the asymmetry: the failure path crystallizes skills
         # from misses (record_miss → EvolutionDaemon → SkillEngine);
@@ -1496,6 +1505,29 @@ class EntrolyEngine:
             "key_terms": analysis_dict.get("key_terms", []),
         } if query and analysis_dict else {}
 
+        # ── Query-conditioned weight modulation ──────────────────────
+        _modulated_w = None
+        if query:
+            try:
+                from .selection_pressure import (
+                    compute_query_modulation,
+                    modulate_weights,
+                )
+                _sigma = compute_query_modulation(query)
+                if any(v != 0.0 for v in _sigma.values()):
+                    _base_w = {
+                        "w_recency": self.config.weight_recency,
+                        "w_frequency": self.config.weight_frequency,
+                        "w_semantic": self.config.weight_semantic_sim,
+                        "w_entropy": self.config.weight_entropy,
+                        "w_resonance": getattr(
+                            self.config, "weight_resonance", 0.10
+                        ),
+                    }
+                    _modulated_w = modulate_weights(_base_w, _sigma)
+            except Exception:
+                pass
+
         # Keep optimization inside Entroly's own allocation discipline;
         # never mutate the embedding process's GC policy.
         if self._use_rust and refined_query.strip():
@@ -1522,15 +1554,21 @@ class EntrolyEngine:
                 pinned_cap = token_budget // 2
                 pinned_tokens = sum(_fragment_tokens(f) for f in pinned)
                 if pinned_tokens > pinned_cap:
+                    _pw = _modulated_w or {}
+                    _pw_r = _pw.get("w_recency", self.config.weight_recency)
+                    _pw_f = _pw.get("w_frequency", self.config.weight_frequency)
+                    _pw_s = _pw.get("w_semantic", self.config.weight_semantic_sim)
+                    _pw_e = _pw.get("w_entropy", self.config.weight_entropy)
+
                     def _pinned_priority(fragment: dict[str, Any]) -> float:
                         relevance = (
-                            self.config.weight_recency
+                            _pw_r
                             * float(fragment.get("recency_score") or 0.0)
-                            + self.config.weight_frequency
+                            + _pw_f
                             * float(fragment.get("frequency_score") or 0.0)
-                            + self.config.weight_semantic_sim
+                            + _pw_s
                             * float(fragment.get("semantic_score") or 0.0)
-                            + self.config.weight_entropy
+                            + _pw_e
                             * float(fragment.get("entropy_score") or 0.0)
                         )
                         return relevance * float(
@@ -1749,6 +1787,31 @@ class EntrolyEngine:
 
             new_weights = self._online_prism.observe(reward, contributions)
 
+            # ── Selection pressure: collapse detection + resonance ──
+            _sp_source_div = 0.5
+            _sp_collapse_event = None
+            try:
+                _sp_sources = set()
+                for _f in (selected if isinstance(selected, list) else []):
+                    if isinstance(_f, dict):
+                        _src = _f.get("source", _f.get("file", ""))
+                        if _src:
+                            _sp_sources.add(_src)
+                _sp_n = max(
+                    len(selected) if isinstance(selected, list) else 0, 1,
+                )
+                _sp_source_div = min(1.0, len(_sp_sources) / _sp_n)
+                new_res, _sp_collapse_event = self._collapse_detector.check(
+                    new_weights,
+                )
+                if self._use_rust:
+                    try:
+                        self._rust.set_w_resonance(new_res)
+                    except (AttributeError, Exception):
+                        pass
+            except Exception:
+                pass
+
             # ── Reward-driven crystallization ─────────────────────
             # Hoeffding-LCB gated detection of sustained-high-reward
             # query clusters. When a cluster crosses the bound, fire
@@ -1815,6 +1878,33 @@ class EntrolyEngine:
                 "n": self._online_prism._n,
                 "phase": self._online_prism.stats()["phase"],
             }
+
+            # ── Selection pressure observability surface ──────────
+            _sp_stats = {
+                "resonance": round(
+                    self._collapse_detector._homeostasis._last_resonance,
+                    4,
+                ),
+                "content_gini": round(
+                    self._collapse_detector._homeostasis._last_gini, 4,
+                ),
+                "source_diversity": round(_sp_source_div, 4),
+                "n_collapses": self._collapse_detector._n_collapses,
+            }
+            if _modulated_w is not None:
+                _sp_stats["query_modulation"] = {
+                    k: round(v, 4) for k, v in _modulated_w.items()
+                }
+            if _sp_collapse_event is not None:
+                _sp_stats["collapse"] = {
+                    "gini": round(_sp_collapse_event.content_gini, 4),
+                    "dominant": _sp_collapse_event.dominant_dim,
+                    "resonance_shift": (
+                        f"{_sp_collapse_event.resonance_before:.4f}"
+                        f"->{_sp_collapse_event.resonance_after:.4f}"
+                    ),
+                }
+            result["selection_pressure"] = _sp_stats
 
             # Crystallizer surface: observability for the meta-loop.
             # Cheap to compute (locks are held briefly inside the
