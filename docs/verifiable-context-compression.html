@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Verifiable Context Compression: Backward Verification for AI Agent Context</title>
+  <meta name="description" content="Most context compression preserves forward continuity but not backward verification. Entroly records exact UTF-8 byte offsets and recomputable SHA-256 digests so any omitted fragment can be recovered as the original bytes and independently checked.">
+  <meta name="robots" content="index,follow,max-snippet:-1,max-image-preview:large,max-video-preview:-1">
+  <meta name="googlebot" content="index,follow,max-snippet:-1,max-image-preview:large">
+  <meta name="bingbot" content="index,follow,max-snippet:-1,max-image-preview:large">
+  <link rel="canonical" href="https://juyterman1000.github.io/entroly/docs/verifiable-context-compression.html">
+  <meta property="og:site_name" content="Entroly">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Verifiable Context Compression: Backward Verification for AI Agent Context">
+  <meta property="og:description" content="Most context compression preserves forward continuity but not backward verification. Entroly records exact UTF-8 byte offsets and recomputable SHA-256 digests so any omitted fragment can be recovered as the original bytes and independently checked.">
+  <meta property="og:url" content="https://juyterman1000.github.io/entroly/docs/verifiable-context-compression.html">
+  <meta property="og:image" content="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/entroly-ai-code-intelligence-architecture.svg">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Verifiable Context Compression with Entroly">
+  <meta name="twitter:description" content="Most context compression preserves forward continuity but not backward verification. Entroly records exact UTF-8 byte offsets and recomputable SHA-256 digests so any omitted fragment can be recovered as the original bytes and independently checked.">
+  <meta name="twitter:image" content="https://raw.githubusercontent.com/juyterman1000/entroly/main/docs/assets/entroly-ai-code-intelligence-architecture.svg">
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "SoftwareApplication",
+      "name": "Entroly",
+      "applicationCategory": "DeveloperApplication",
+      "applicationSubCategory": "Verifiable Context Compression for AI Agents",
+      "url": "https://juyterman1000.github.io/entroly/docs/verifiable-context-compression.html",
+      "codeRepository": "https://github.com/juyterman1000/entroly",
+      "operatingSystem": "macOS, Linux, Windows",
+      "license": "https://www.apache.org/licenses/LICENSE-2.0",
+      "description": "Most context compression preserves forward continuity but not backward verification. Entroly records exact UTF-8 byte offsets and recomputable SHA-256 digests so any omitted fragment can be recovered as the original bytes and independently checked."
+    },
+    {
+      "@type": "TechArticle",
+      "headline": "Verifiable Context Compression: Backward Verification for AI Agent Context",
+      "mainEntityOfPage": "https://juyterman1000.github.io/entroly/docs/verifiable-context-compression.html",
+      "description": "Most context compression preserves forward continuity but not backward verification. Entroly records exact UTF-8 byte offsets and recomputable SHA-256 digests so any omitted fragment can be recovered as the original bytes and independently checked.",
+      "about": [
+        {
+          "@type": "Thing",
+          "name": "Verifiable context compression"
+        },
+        {
+          "@type": "Thing",
+          "name": "Backward verification"
+        },
+        {
+          "@type": "Thing",
+          "name": "Context receipts"
+        },
+        {
+          "@type": "Thing",
+          "name": "Reversible compression"
+        },
+        {
+          "@type": "Thing",
+          "name": "AI agent context"
+        }
+      ],
+      "isPartOf": {
+        "@type": "WebSite",
+        "name": "Entroly",
+        "url": "https://github.com/juyterman1000/entroly"
+      }
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "What is backward verification in context compression?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Backward verification is the ability to prove, after compression, which source bytes an agent was shown and to recover them exactly. Most compression preserves forward continuity, meaning enough state to keep working, but discards the link between a claim and the evidence supporting it. Entroly records exact UTF-8 byte offsets plus recomputable source and fragment SHA-256 digests for every fragment, so an omitted span can be returned as the original bytes and checked independently."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How is Entroly's context compression reversible?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Entroly stores content-addressed recovery material rather than discarding what it omits. A Context Receipt records each fragment's path, byte range and digests, and a recovery handle returns the exact bytes for that range. Recovery verifies the digest and byte length before returning anything, so a corrupt or substituted store fails loudly instead of returning plausible-looking content."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can a compressed context be tampered with undetected?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. The commitment covers the canonical bytes of the context, so altering a single character changes the digest and verification fails. A shared Rust verifier owns commitment validity, and the Python and Node runtimes delegate to it rather than reimplementing the rule and drifting apart."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does Entroly send code to a third party in order to compress it?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. Indexing, selection, compression, receipts and recovery run locally. In proxy mode the selected prompt is sent to the LLM provider the user configured, and no outbound analytics are enabled by default."
+          }
+        }
+      ]
+    }
+  ]
+}
+  </script>
+<style>
+    :root{color-scheme:dark;--bg:#07070b;--panel:#111119;--text:#f8fafc;--muted:#a1a1aa;--accent:#8b5cf6;--line:#27272a;--green:#4ade80}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:17px/1.7 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}main{max-width:920px;margin:auto;padding:56px 24px 90px}nav{margin-bottom:52px;color:var(--muted);font-size:15px}nav a,a{color:#c4b5fd}h1{font-size:clamp(2.4rem,6vw,4.5rem);line-height:1.05;letter-spacing:-.04em;margin:.2em 0}h2{margin-top:2.3em;font-size:1.85rem}.eyebrow{color:#c4b5fd;text-transform:uppercase;letter-spacing:.12em;font-weight:800;font-size:13px}.lead{color:#d4d4d8;font-size:1.25rem;max-width:790px}.answer{background:linear-gradient(145deg,rgba(139,92,246,.16),rgba(74,222,128,.06));border:1px solid rgba(139,92,246,.4);border-radius:18px;padding:24px 28px;margin:34px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px}.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:22px}.card h3{margin-top:0}code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}pre{background:#000;border:1px solid var(--line);border-radius:14px;padding:20px;overflow:auto}table{width:100%;border-collapse:collapse;background:var(--panel)}th,td{border:1px solid var(--line);padding:14px;vertical-align:top;text-align:left}.note{border-left:4px solid var(--green);padding:10px 18px;background:rgba(74,222,128,.06)}figure{margin:34px 0;background:#0b0b11;border:1px solid var(--line);border-radius:18px;padding:12px}figure img{display:block;width:100%;height:auto;border-radius:12px}figcaption{padding:10px 8px 0;color:var(--muted);font-size:14px}footer{margin-top:70px;padding-top:28px;border-top:1px solid var(--line);color:var(--muted)}
+  </style>
+</head>
+<body>
+<main>
+  <nav><a href="index.html">Entroly</a> / Verifiable context compression</nav>
+  <p class="eyebrow">Backward verification, not just forward continuity</p>
+  <h1>Entroly compresses context without asking you to trust the compressor.</h1>
+  <p class="lead">Most context compression keeps an agent working. It does not let you prove afterwards which source bytes the model actually saw. Entroly records exact UTF-8 byte offsets and recomputable SHA-256 digests for every fragment, so an omitted span can be returned as the original bytes and checked by anyone holding the source.</p>
+
+  <div class="answer"><strong>Direct answer:</strong> Entroly is a local-first context compression layer whose reductions are reversible and independently verifiable. Every selection emits a Context Receipt recording what was selected, what was omitted, and the digests needed to recover and check those omissions.</div>
+
+  <h2>Forward continuity is not backward verification</h2>
+  <p>Compression for agents is usually optimised for <em>forward continuity</em>: retain enough state that the next step succeeds. That is a different property from <em>backward verification</em>: establishing, after the fact, which evidence supported which claim. A summary can read well and still drop the one span that justified a decision, with nothing in the transcript revealing it.</p>
+  <p>The distinction is an active research topic. Work on verifiable context governance, on governance receipts bound to individual agent actions, and on formal frameworks for verifiable LLM context compression each describe this shortfall from a different direction. Entroly is a working implementation of the property that literature specifies.</p>
+
+  <h2>How the link between claim and evidence survives compression</h2>
+  <table>
+    <tr><th>Property</th><th>Mechanism</th></tr>
+    <tr><td>Exact addressing</td><td>Each fragment records its source path and an exact UTF-8 byte range. Slicing the untouched source with that range reproduces the fragment text.</td></tr>
+    <tr><td>Independent checking</td><td>Source and fragment SHA-256 digests are recomputable by anyone holding the source, without running Entroly.</td></tr>
+    <tr><td>Recoverable omission</td><td>Omitted spans are content-addressed rather than discarded. A recovery handle returns the original bytes, verified against the recorded digest before anything is returned.</td></tr>
+    <tr><td>Tamper evidence</td><td>The commitment covers the canonical bytes of the context. Altering one character changes the digest and verification fails.</td></tr>
+    <tr><td>One owner of validity</td><td>A shared Rust verifier decides commitment validity. Python and Node delegate to it rather than reimplementing the rule and drifting apart.</td></tr>
+  </table>
+
+  <h2>Measured, not asserted</h2>
+  <p>These properties are checked by benchmarks whose artifacts are committed to the repository. Each records its corpus rules, pinned baseline, harness digest and stated limitations, so a reader can audit the claim rather than take it.</p>
+  <div class="grid">
+    <div class="card"><h3>5,117 / 5,117</h3><p>Fragments whose recorded byte range slices their own text back out of the untouched source, across 1,104 files.</p></div>
+    <div class="card"><h3>13 / 13</h3><p>Public SDK recovery probes whose recovered bytes matched their source span exactly and whose digests validated.</p></div>
+    <div class="card"><h3>Fails closed</h3><p>A tampered or non-canonical context is rejected outright rather than accepted with a warning.</p></div>
+  </div>
+  <p class="note">These measure fragment fidelity and digest recomputability. They do not measure retrieval recall, generated-answer correctness, latency, or provider cost, and the corpus is one pinned revision of this repository. The artifacts state those limits directly rather than leaving them to be inferred.</p>
+
+  <h2>What this is not</h2>
+  <p>Entroly does not promise a fixed savings percentage: reduction depends on repository size, workload, token budget, provider, pricing, cache behaviour and baseline. It does not establish that a model's answer is true; verification evaluates whether a claim is supported by the evidence supplied. It does not replace your model or your agent runtime.</p>
+
+  <h2>Check it yourself</h2>
+  <pre><code>pip install entroly
+entroly compress path/to/file.json --json    # receipt, including a recovery digest
+entroly recover sha256:...                   # the exact bytes that digest commits to
+entroly verify-claims                        # bounded local installation check</code></pre>
+  <p>Recovery verifies the digest and the byte length before returning anything, so a substituted store fails loudly rather than handing back content that merely looks plausible.</p>
+
+  <footer>
+    <p><a href="index.html">Entroly documentation</a> &middot; <a href="https://github.com/juyterman1000/entroly">Source on GitHub</a> &middot; Apache-2.0</p>
+  </footer>
+</main>
+</body>
+</html>
