@@ -313,27 +313,44 @@ Runs as a **CLI**, **Python/TypeScript SDK**, **MCP server**, **HTTP proxy**, or
 
 Most context tools compress and hope. Entroly is an **auditable context control plane** — every selection is receipted, every compression is reversible, and every claim is verifiable.
 
-| Capability | Entroly | Baseline A | Baseline B | Baseline C |
-|---|:---:|:---:|:---:|:---:|
-| Knapsack-optimal token selection | **yes** | no | no | no |
-| Auditable context receipts | **yes** | no | partial | no |
-| Hallucination detection (WITNESS) | **yes** | no | no | no |
-| Fail-closed model routing (RAVS) | **yes** | no | no | no |
-| Cross-agent shared memory | **yes** | yes | partial | no |
-| Output token reduction | **yes** | yes | no | no |
-| Reversible compression (CCR) | **yes** | yes | yes | no |
-| KV-cache alignment | **yes** | yes | yes | no |
-| Shell hook compression | **yes** | no | yes | no |
-| Image/multimodal compression | **yes** | yes | no | no |
-| Rust-accelerated engine | **yes** | no | yes | no |
-| Self-improving (evolution daemon) | **yes** | partial | no | no |
-| Persistent vault with beliefs | **yes** | no | yes | no |
-| MCP server | **yes** | yes | yes | no |
-| HTTP proxy | **yes** | yes | no | no |
-| TypeScript SDK + framework adapters | **yes** | yes | no | yes |
-| Python SDK | **yes** | yes | no | yes |
+### Compression-quality frontier (September 2026)
 
-**What's different:** Entroly is the only tool that combines optimal selection (knapsack solver with provable guarantees) with auditable receipts (byte-offset fragments, SHA-256 digests, inspectable omissions) and verification (WITNESS grounding checks, EICV hallucination detection). Competitors compress tokens — Entroly compresses tokens *and proves what was kept, what was dropped, and why*.
+Every tool measured on its own published benchmarks. Different datasets — not apple-to-apple — but the compression-retention tradeoff is comparable.
+
+| Tool | Best Compression | Answer / Evidence Retention | Approach |
+|---|---:|---:|---|
+| **Entroly** | **95.1%** | **100%** evidence, **101.7%** avg accuracy | Knapsack DP + BM25 + SimHash + depgraph (Rust) |
+| SuperCompress | 65.4% | 99.4% (180/181) | Query-aware compiler engine |
+| Baseline D | 47–92% bench / 4.8% prod median | 97–100% bench | Content router + ML model |
+| [LLMLingua-2](https://github.com/microsoft/LLMLingua) | ~95% (20x) | 95–98% | Per-token perplexity via small LM |
+| The Token Company | 10–40% | ~full (claimed) | Commercial API |
+| TokenShift | 12–21% | not published | 17 heuristic optimizations (Rust) |
+| [RECOMP](https://arxiv.org/abs/2310.04408) | ~83% (6x) | minimal loss | RAG-specific extractive + abstractive |
+| [500xCompressor](https://aclanthology.org/2025.acl-long.1219) | up to 99.8% (480x) | 62–73% (~30% drop) | Extreme learned compression (ACL 2025) |
+| [Gisting](https://arxiv.org/abs/2304.08467) | ~96% (26x) | not reported | Requires base-model retraining |
+| [ACON](https://arxiv.org/abs/2510.00615) | 25–30% | preserves accuracy | Agent-specific context optimization |
+
+<sub>Sources: [PointFive 2026 guide](https://www.pointfive.co/guides/top-prompt-compression-solutions-2026), [SuperCompress benchmarks](https://www.supercompress.dev/benchmarks), published tool docs. "Baseline D" is anonymized per project policy. Entroly numbers link to frozen JSON artifacts in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).</sub>
+
+### What only Entroly has
+
+| Capability | Entroly | LLMLingua-2 | SuperCompress | Baseline D | Others |
+|---|:---:|:---:|:---:|:---:|:---:|
+| Knapsack-optimal token selection | **yes** | no | no | no | no |
+| Auditable context receipts (byte-offset, SHA-256) | **yes** | no | no | no | no |
+| Hallucination detection (WITNESS, AUROC 0.7976) | **yes** | no | no | no | no |
+| Bayesian online learning (zero LLM cost) | **yes** | no | no | no | no |
+| Deterministic replay (128/128) | **yes** | no | no | no | no |
+| Cross-process byte-exact recovery (66/66) | **yes** | no | no | no | no |
+| Source integrity verification (5,117/5,117) | **yes** | no | no | no | no |
+| Dependency graph resolution | **yes** | no | no | no | no |
+| Fail-closed model routing (RAVS) | **yes** | no | no | no | no |
+| Self-improving evolved skills | **yes** | no | no | no | no |
+| No external model required | **yes (Rust)** | no (needs GPT-2/LLaMA) | **yes** | **yes** | varies |
+| Cross-agent shared memory | **yes** | no | no | no | no |
+| MCP server + HTTP proxy + SDK | **yes** | no | no | partial | varies |
+
+**What's different:** Entroly is the only tool that combines optimal selection (knapsack solver), auditable receipts (byte-offset fragments, SHA-256 digests, inspectable omissions), verification (WITNESS grounding, EICV hallucination detection), and zero-cost Bayesian learning (5D PRISM weights). Each competitor has one piece of this; Entroly has the full stack.
 
 ---
 ## Works with your stack
