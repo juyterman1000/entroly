@@ -27,7 +27,6 @@ Compression you can undo, on your own repository, in one command — without rep
   <a href="https://github.com/juyterman1000/entroly"><img src="https://img.shields.io/github/stars/juyterman1000/entroly?style=social" alt="Entroly GitHub stars"></a>
   <a href="https://github.com/juyterman1000/entroly/actions"><img src="https://img.shields.io/github/actions/workflow/status/juyterman1000/entroly/ci.yml?label=CI" alt="CI status"></a>
   <a href="https://github.com/juyterman1000/entroly/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22"><img src="https://img.shields.io/badge/contributions-welcome-brightgreen" alt="Contributions welcome"></a>
-  <a href="https://lobehub.com/mcp/juyterman1000-entroly"><img src="https://lobehub.com/badge/mcp/juyterman1000-entroly" alt="LobeHub MCP"></a>
 </p>
 
 <p align="center">
@@ -537,12 +536,15 @@ entroly hook status      # shows which shells have the hook
 
 ## Documentation
 
+- **[Full benchmark evidence](docs/BENCHMARKS.md)** — every number, protocol, artifact, and caveat, including [Context Commit conformance](benchmarks/results/context_commit_conformance.json) (128/128 deterministic replay, 576/576 exact recovery, 768/768 tamper detection).
 - **[Architecture & internals](docs/DETAILS.md)** — Rust modules, compression pipeline, provenance, command reference.
-- **[Benchmarks](docs/BENCHMARKS.md)** — every number, protocol, artifact, and caveat.
 - **[Agent compatibility](docs/agent-compatibility.md)** — every supported client and its authentication boundary.
 - **[Limitations](docs/limitations.md)** — where Entroly helps, where it passes through, what it doesn't guarantee.
 - **[Product surface map](docs/product-surface.md)** — CLI, SDK, MCP, proxy, verification, memory, security.
 - **[First-run trust](docs/first-run-trust.md)** — what to run before wiring a paid model key.
+- **[Public evidence policy](docs/public-evidence.md)** — claim tiers, benchmark scope, and package links.
+- **[AI Cost Optimization Guide](docs/ai-cost-optimization.html)** — how context shaping reduces costs without model degradation.
+- **[Model-Triggered Recovery](docs/benchmarks/model-triggered-recovery.md)** — automated omission recovery validation.
 - **[Cookbook](docs/cookbook/README.md)** — copy-paste recipes.
 - **[Discussions](https://github.com/juyterman1000/entroly/discussions)** · **[Issues](https://github.com/juyterman1000/entroly/issues)**
 

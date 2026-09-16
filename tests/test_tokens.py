@@ -86,3 +86,31 @@ def test_trim_messages_custom_counter():
         msgs, max_tokens=5, token_counter=lambda t: len(t.split())
     )
     assert len(result) <= 1
+
+
+def test_trim_messages_creates_merkle_stubs():
+    msgs = [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Old message 1 " * 100},
+        {"role": "assistant", "content": "Old response 1 " * 100},
+        {"role": "user", "content": "Recent message"},
+    ]
+    # Without stubs
+    result_no_stubs = trim_messages(msgs, max_tokens=50, strategy="last", create_stubs=False)
+    assert len(result_no_stubs) < len(msgs)
+    assert not any("ENTROLY CONTEXT COMPACTION" in m["content"] for m in result_no_stubs)
+
+    # With stubs
+    result_with_stubs = trim_messages(msgs, max_tokens=50, strategy="last", create_stubs=True)
+    assert len(result_with_stubs) >= 2
+    # System message is preserved
+    assert result_with_stubs[0]["role"] == "system"
+    assert result_with_stubs[0]["content"] == "You are a helpful assistant."
+    # Stub is present
+    stub_msg = result_with_stubs[1]
+    assert "ENTROLY CONTEXT COMPACTION" in stub_msg["content"]
+    assert "sha256:" in stub_msg["content"]
+    assert "Recoverable via:" in stub_msg["content"]
+    # Recent message is preserved
+    assert result_with_stubs[-1]["content"] == "Recent message"
+

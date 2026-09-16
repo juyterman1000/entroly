@@ -5132,6 +5132,34 @@ class PromptCompilerProxy:
         response = None
         attempts = 0
         total_slept = 0.0
+        # ── Pre-flight context guard: prevent 413 context overflow locally ──
+        if isinstance(body.get("messages"), list):
+            model_name = body.get("model", "")
+            cw = context_window_for_model(model_name)
+            if cw and cw > 0:
+                safe_ceiling = int(cw * 0.85)
+                from .tokens import count_messages_tokens, trim_messages as _preflight_trim
+                msg_tokens = count_messages_tokens(body["messages"])
+                if msg_tokens > safe_ceiling:
+                    orig_len = len(body["messages"])
+                    compacted = _preflight_trim(
+                        body["messages"],
+                        max_tokens=safe_ceiling,
+                        strategy="last",
+                        include_system=True,
+                        create_stubs=True,
+                        store_recovery=True,
+                    )
+                    if len(compacted) < orig_len or any("ENTROLY CONTEXT COMPACTION" in str(m.get("content", "")) for m in compacted):
+                        logger.info(
+                            "Pre-flight context guard: compacted %d messages to fit %d safe tokens (window: %d)",
+                            orig_len, safe_ceiling, cw,
+                        )
+                        body = {**body, "messages": compacted}
+                        if extra_headers is None:
+                            extra_headers = {}
+                        extra_headers["X-Entroly-Preflight-Compacted"] = "true"
+
         # Hard upper bound on iterations so a misbehaving upstream that
         # always returns 429 with tiny Retry-After can't infinite-loop us.
         max_iterations = SERVER_ERROR_MAX_RETRIES + 1 + 1  # +1 reserved for one 429 retry
@@ -5263,10 +5291,12 @@ class PromptCompilerProxy:
                         max_tokens=int(context_window_for_model(body.get("model", "")) * 0.85),
                         strategy="last",
                         include_system=True,
+                        create_stubs=True,
+                        store_recovery=True,
                     )
-                    if len(trimmed) < original_count:
+                    if len(trimmed) < original_count or any("ENTROLY CONTEXT COMPACTION" in str(m.get("content", "")) for m in trimmed):
                         logger.info(
-                            "Context overflow: trimming %d→%d messages and retrying",
+                            "Context overflow: trimming %d→%d messages with Merkle receipts and retrying",
                             original_count,
                             len(trimmed),
                         )

@@ -54,9 +54,6 @@ PROMINENT_PUBLIC_FILES = (
     "docs/mcp-server-guide.html",
     "docs/first-run-trust.md",
     "docs/public-evidence.md",
-    "docs/marketing/registry_submissions.md",
-    "docs/marketing/tutorial_devto.md",
-    "docs/marketing/tutorial_reddit.md",
 )
 
 # `docs/dashboard.html` stays retired because it is an application view, not a
@@ -131,8 +128,6 @@ CLAIM_SENSITIVE_PUBLIC_FILES = (
     "docs/context-engineering.html",
     "docs/DETAILS.md",
     "docs/for-teams.md",
-    "docs/marketing/launch_playbook.md",
-    "docs/marketing/entroly_vs_external_adapter_seo.md",
     "docs/generate_demo.py",
     "docs/assets/demo.svg",
     "docs/assets/demo_animated.svg",

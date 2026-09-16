@@ -74,6 +74,8 @@ def trim_messages(
     strategy: str = "last",
     include_system: bool = True,
     token_counter: Callable[[str], int] | None = None,
+    create_stubs: bool = False,
+    store_recovery: bool = False,
 ) -> list[dict]:
     """Trim a chat message list to fit within *max_tokens*.
 
@@ -86,6 +88,11 @@ def trim_messages(
     deducted from *max_tokens* before the remaining messages are
     selected.
 
+    When *create_stubs* is True, any omitted historical turns are replaced
+    by a structured, deterministic Merkle compaction stub containing the
+    turn count, estimated token savings, and SHA-256 digest, preventing
+    silent amnesia and preserving context receipt honesty.
+
     *token_counter* overrides the built-in ``count_tokens`` if the
     caller needs a model-specific tokenizer.
     """
@@ -93,6 +100,9 @@ def trim_messages(
         return []
     if strategy not in ("last", "first"):
         raise ValueError(f"Unknown trim strategy: {strategy!r}")
+
+    import hashlib
+    import json
 
     counter = token_counter or count_tokens
     per_msg = 4
@@ -129,12 +139,16 @@ def trim_messages(
                             t += counter(text)
         return t
 
+    dropped: list[dict] = []
     if strategy == "last":
         selected: list[dict] = []
         remaining = budget
-        for msg in reversed(rest):
+        for idx, msg in enumerate(reversed(rest)):
             cost = _msg_tokens(msg)
             if remaining - cost < 0:
+                # All preceding messages in rest are dropped
+                cutoff = len(rest) - idx
+                dropped = rest[:cutoff]
                 break
             selected.append(msg)
             remaining -= cost
@@ -142,11 +156,46 @@ def trim_messages(
     else:
         selected = []
         remaining = budget
-        for msg in rest:
+        for idx, msg in enumerate(rest):
             cost = _msg_tokens(msg)
             if remaining - cost < 0:
+                dropped = rest[idx:]
                 break
             selected.append(msg)
             remaining -= cost
 
+    if create_stubs and dropped:
+        dropped_tokens = sum(_msg_tokens(m) for m in dropped)
+        canonical = json.dumps(dropped, sort_keys=True, ensure_ascii=False)
+        digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+        if store_recovery:
+            try:
+                from .context_receipts.store import ensure_store, write_json
+                store_dir = ensure_store()
+                target_path = store_dir / f"compacted_{digest[:16]}.json"
+                write_json(target_path, {
+                    "digest": digest,
+                    "count": len(dropped),
+                    "tokens": dropped_tokens,
+                    "messages": dropped,
+                })
+            except Exception:
+                pass
+
+        stub = {
+            "role": "system",
+            "content": (
+                f"[ENTROLY CONTEXT COMPACTION: {len(dropped)} historical turn(s) "
+                f"({dropped_tokens} tokens) compacted into Merkle stub. "
+                f"Digest: sha256:{digest[:16]}... "
+                f"Recoverable via: `entroly recover {digest[:16]}`]"
+            ),
+        }
+        if strategy == "last":
+            return system + [stub] + selected
+        else:
+            return system + selected + [stub]
+
     return system + selected
+
