@@ -564,3 +564,21 @@ from .work_graph_repo import (  # noqa: F401
     RepositoryDiscoveryError,
     discover_repository_observation,
 )
+
+# Evidence-adaptive context resolution. Candidates are promoted only after
+# matched baseline trials satisfy quality, verifier-regression, evaluator-
+# diversity, provenance, and cost gates. This controller does not compress
+# content itself and safely retains full context before evidence accrues.
+try:
+    from .granularity_frontier import (  # noqa: F401
+        ConflictingGranularityEvidence,
+        EvaluatorVerdict,
+        GranularityFrontierError,
+        GranularityPromotionPolicy,
+        GranularityScope,
+        PairedGranularityObservation,
+        VerifiedGranularityFrontier,
+        verify_granularity_receipt,
+    )
+except ImportError:
+    pass
