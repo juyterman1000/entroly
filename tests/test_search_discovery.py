@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SITE = "https://juyterman1000.github.io/entroly"
 PAGES = {
     "docs/ai-cost-optimization.html": {
-        "canonical": f"{SITE}/docs/ai-cost-optimization.html",
+        "canonical": f"{SITE}/ai-cost-optimization.html",
         "lastmod": "2026-08-09",
         "title_terms": ("AI Cost Optimization", "Entroly"),
         "body_terms": (
@@ -21,25 +21,25 @@ PAGES = {
         ),
     },
     "docs/agent-integrations.html": {
-        "canonical": f"{SITE}/docs/agent-integrations.html",
+        "canonical": f"{SITE}/agent-integrations.html",
         "lastmod": "2026-07-25",
         "title_terms": ("Entroly", "OpenClaw", "Hermes", "OpenCode"),
         "body_terms": ("context assurance", "exact-recovery contract"),
     },
     "docs/openclaw-context-engine.html": {
-        "canonical": f"{SITE}/docs/openclaw-context-engine.html",
+        "canonical": f"{SITE}/openclaw-context-engine.html",
         "lastmod": "2026-07-25",
         "title_terms": ("Entroly", "OpenClaw", "Context Engine"),
         "body_terms": ("OpenClaw", "context assurance engine", "Context Receipts"),
     },
     "docs/hermes-context-engine.html": {
-        "canonical": f"{SITE}/docs/hermes-context-engine.html",
+        "canonical": f"{SITE}/hermes-context-engine.html",
         "lastmod": "2026-07-25",
         "title_terms": ("Entroly", "Hermes Agent", "Context Engine"),
         "body_terms": ("Hermes Agent", "context engine", "hash-only"),
     },
     "docs/opencode-context-assurance.html": {
-        "canonical": f"{SITE}/docs/opencode-context-assurance.html",
+        "canonical": f"{SITE}/opencode-context-assurance.html",
         "lastmod": "2026-07-25",
         "title_terms": ("Entroly", "OpenCode", "Context Assurance"),
         "body_terms": ("OpenCode", "MCP", "verification status"),
@@ -60,6 +60,20 @@ def _match(pattern: str, text: str) -> str:
 def test_docs_crawler_files_exist() -> None:
     assert (ROOT / "docs" / "robots.txt").is_file()
     assert (ROOT / "docs" / "sitemap.xml").is_file()
+
+
+def test_legacy_docs_urls_redirect_to_pages_root() -> None:
+    """GitHub Pages serves docs/ as the site root; keep old /docs/ URLs alive."""
+    redirects = {
+        "docs/docs/index.html": "../",
+        "docs/docs/ai-cost-optimization.html": "../ai-cost-optimization.html",
+        "docs/docs/agent-integrations.html": "../agent-integrations.html",
+    }
+    for path, target in redirects.items():
+        page = _text(path)
+        assert 'content="noindex,follow"' in page
+        assert f'url={target}"' in page
+        assert f'href="{target}"' in page
 
 
 def test_search_and_answer_crawlers_are_explicitly_allowed() -> None:
@@ -89,7 +103,7 @@ def test_discovery_sitemap_is_current_and_complete() -> None:
     }
     for spec in PAGES.values():
         assert entries[spec["canonical"]] == spec["lastmod"]
-    assert entries[f"{SITE}/docs/index.html"] == "2026-08-31"
+    assert entries[f"{SITE}/"] == "2026-08-31"
 
 
 @pytest.mark.skipif(
@@ -167,7 +181,7 @@ def test_llms_index_names_cost_and_integrations_with_bounded_answers() -> None:
         "hermes-context-engine.html",
         "opencode-context-assurance.html",
     ):
-        assert f"{SITE}/docs/{path}" in canonical
+        assert f"{SITE}/{path}" in canonical
     assert "hash-only lookup" in canonical
     assert "does not accept a query" in canonical
     assert "How can Entroly reduce AI costs?" in canonical

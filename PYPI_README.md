@@ -159,10 +159,10 @@ A future desktop experience, [Entroly Simple Mode](https://github.com/juyterman1
 
 ## Links
 
-- AI cost optimization: https://juyterman1000.github.io/entroly/docs/ai-cost-optimization.html
+- AI cost optimization: https://juyterman1000.github.io/entroly/ai-cost-optimization.html
 - Repository: https://github.com/juyterman1000/entroly
-- Documentation: https://juyterman1000.github.io/entroly/docs/index.html
-- Agent integrations: https://juyterman1000.github.io/entroly/docs/agent-integrations.html
+- Documentation: https://juyterman1000.github.io/entroly/
+- Agent integrations: https://juyterman1000.github.io/entroly/agent-integrations.html
 - PyPI: https://pypi.org/project/entroly/
 - npm runtime: https://www.npmjs.com/package/entroly
 - npm MCP bridge: https://www.npmjs.com/package/entroly-mcp

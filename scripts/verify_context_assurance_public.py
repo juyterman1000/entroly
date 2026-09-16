@@ -36,8 +36,8 @@ ONLINE_DESTINATIONS = {
     "PyPI": "https://pypi.org/project/entroly/",
     "npm registry metadata": "https://registry.npmjs.org/entroly/latest",
     "GitHub": "https://github.com/juyterman1000/entroly",
-    "documentation": "https://juyterman1000.github.io/entroly/docs/index.html",
-    "AI cost guide": "https://juyterman1000.github.io/entroly/docs/ai-cost-optimization.html",
+    "documentation": "https://juyterman1000.github.io/entroly/",
+    "AI cost guide": "https://juyterman1000.github.io/entroly/ai-cost-optimization.html",
     "LobeHub listing": "https://lobehub.com/mcp/juyterman1000-entroly?activeTab=score",
 }
 
@@ -438,7 +438,7 @@ def collect_offline_failures() -> list[str]:
         if Path(path).name in sitemap:
             failures.append(f"retired marketing page remains in sitemap: {path}")
 
-    setup_redirect = "https://juyterman1000.github.io/entroly/docs/mcp-server-guide.html"
+    setup_redirect = "https://juyterman1000.github.io/entroly/mcp-server-guide.html"
     for path in RETIRED_SETUP_PAGES:
         retired = _read_text(path)
         if 'name="robots" content="noindex,nofollow"' not in retired:
