@@ -5098,7 +5098,7 @@ class PromptCompilerProxy:
         if not any(isinstance(body.get(key), list) for key in ("messages", "contents", "input")):
             return body, extra_headers
         model_name = str(body.get("model") or "")
-        if provider == "gemini" and not model_name:
+        if isinstance(body.get("contents"), list) and not model_name:
             match = re.search(r"/models/([^/:?]+)", url)
             model_name = match.group(1) if match else ""
         window = context_window_for_model(model_name)
@@ -5309,7 +5309,7 @@ class PromptCompilerProxy:
                     from .context_boundary import compact_request_context
 
                     model_name = str(body.get("model") or "")
-                    if provider == "gemini" and not model_name:
+                    if isinstance(body.get("contents"), list) and not model_name:
                         match = re.search(r"/models/([^/:?]+)", url)
                         model_name = match.group(1) if match else ""
                     boundary = compact_request_context(

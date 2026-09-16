@@ -1,7 +1,7 @@
 """Recoverable, request-anchored context boundaries for provider payloads.
 
-Only complete earlier user turns may be omitted. The current turn, provider
-schema, and any non-text content are preserved. A boundary is sent only after
+Only complete earlier user turns may be omitted. The current turn and provider
+schema are preserved; requests with media pass through. A boundary is sent only after
 the final payload fits the local estimate and CLI recovery of omitted items
 has been verified. The estimate is not a provider tokenizer guarantee.
 """
@@ -56,30 +56,63 @@ def _plain_text_content(content: Any) -> bool:
     )
 
 
+def _contains_media(value: Any) -> bool:
+    """Avoid budgeting provider media from its small URL or opaque metadata."""
+    if isinstance(value, list):
+        return any(_contains_media(item) for item in value)
+    if not isinstance(value, dict):
+        return False
+    if any(key in value for key in (
+        "image_url", "image", "inlineData", "inline_data", "fileData",
+        "file_data", "audio", "video", "input_audio", "input_image",
+    )):
+        return True
+    if value.get("type") in {
+        "image", "input_image", "audio", "input_audio", "video",
+        "document", "file", "input_file",
+    }:
+        return True
+    if isinstance(value.get("source"), dict) and value["source"].get("type") in {
+        "base64", "url", "file",
+    }:
+        return True
+    return any(_contains_media(item) for item in value.values())
+
+
 def _sequence(
     body: dict[str, Any], provider: str,
 ) -> tuple[str, str, list[dict[str, Any]], list[dict[str, Any]]] | None:
-    """Return variant, sequence key, immutable prefix, and conversation."""
-    if provider == "gemini" and isinstance(body.get("contents"), list):
+    """Select a wire contract from the payload, using provider as a hint."""
+    sequence_keys = [
+        key for key in ("messages", "contents", "input")
+        if isinstance(body.get(key), list)
+    ]
+    if len(sequence_keys) != 1:
+        return None
+    if sequence_keys[0] == "contents":
         variant, key, items = "gemini", "contents", body["contents"]
         roles = {"user", "model"}
         def valid(item: dict[str, Any]) -> bool:
             return (
-                set(item) == {"role", "parts"}
+                item.get("role") in roles
                 and isinstance(item.get("parts"), list)
-                and all(
-                    isinstance(part, dict) and set(part) == {"text"}
-                    and isinstance(part["text"], str)
-                    for part in item["parts"]
-                )
+                and all(isinstance(part, dict) for part in item["parts"])
+                and not _contains_media(item)
             )
-    elif isinstance(body.get("messages"), list):
-        variant = "anthropic" if provider == "anthropic" else "chat"
+    elif sequence_keys[0] == "messages":
+        native_system = "system" in body and not any(
+            isinstance(item, dict) and item.get("role") in {"system", "developer"}
+            for item in body["messages"]
+        )
+        variant = "anthropic" if provider == "anthropic" or native_system else "chat"
         key, items = "messages", body["messages"]
         roles = {"user", "assistant"}
         def valid(item: dict[str, Any]) -> bool:
-            return set(item) == {"role", "content"} and _plain_text_content(item.get("content"))
-    elif isinstance(body.get("input"), list):
+            return (
+                item.get("role") in {*roles, "system", "developer", "tool", "function"}
+                and not _contains_media(item)
+            )
+    elif sequence_keys[0] == "input":
         variant, key, items = "responses", "input", body["input"]
         roles = {"user", "assistant"}
         def valid(item: dict[str, Any]) -> bool:
@@ -98,9 +131,28 @@ def _sequence(
     conversation = items[index:]
     if not conversation or conversation[0]["role"] != "user":
         return None
-    if any(item["role"] not in roles for item in conversation):
+    permitted_roles = roles | ({"tool", "function"} if variant == "chat" else set())
+    if any(item["role"] not in permitted_roles for item in conversation):
         return None
     return variant, key, prefix, conversation
+
+
+def _starts_user_turn(item: dict[str, Any], variant: str) -> bool:
+    if item["role"] != "user":
+        return False
+    if variant == "anthropic" and isinstance(item.get("content"), list):
+        if any(
+            isinstance(block, dict) and block.get("type") == "tool_result"
+            for block in item["content"]
+        ):
+            return False
+    if variant == "gemini" and isinstance(item.get("parts"), list):
+        if any(
+            isinstance(part, dict) and "functionResponse" in part
+            for part in item["parts"]
+        ):
+            return False
+    return True
 
 
 def _with_stub(
@@ -158,7 +210,7 @@ def compact_request_context(
     body: dict[str, Any], *, provider: str, max_tokens: int,
     store_path: str | Path | None = None,
 ) -> ContextBoundary | None:
-    """Select the largest complete historical suffix that fits and recovers."""
+    """Select a recent complete historical suffix that fits and recovers."""
     if max_tokens <= 0:
         return None
     parsed = _sequence(body, provider)
@@ -167,16 +219,19 @@ def compact_request_context(
     variant, key, prefix, conversation = parsed
     turns: list[list[dict[str, Any]]] = []
     for item in conversation:
-        if item["role"] == "user":
+        if _starts_user_turn(item, variant):
             turns.append([])
+        if not turns:
+            return None
         turns[-1].append(item)
     if len(turns) < 2:
         return None
 
     history, active = turns[:-1], turns[-1]
-    for kept_turns in range(len(history) - 1, -1, -1):
-        omitted = [item for turn in history[: len(history) - kept_turns] for item in turn]
-        remaining = [item for turn in history[len(history) - kept_turns :] for item in turn] + active
+
+    def proposal(omitted_turns: int):
+        omitted = [item for turn in history[:omitted_turns] for item in turn]
+        remaining = [item for turn in history[omitted_turns:] for item in turn] + active
         payload = _json(omitted)
         from .codec import content_digest
 
@@ -192,28 +247,60 @@ def compact_request_context(
             estimated = estimate_request_tokens(candidate)
         except (TypeError, ValueError, OverflowError):
             return None
-        if estimated > max_tokens:
-            continue
+        return candidate, estimated, digest, payload, len(omitted)
 
-        from .cli_recover import default_recovery_store_path
-        from .codec import RecoveryStore
-
-        path = store_path if store_path is not None else default_recovery_store_path()
-        try:
-            store = RecoveryStore(path)
-            reference = store.put(
-                payload, item_count=len(omitted), item_label="message(s)",
-                note="request-anchored context boundary",
-            )
-            reopened = RecoveryStore(path)
-            recovered_ref = reopened.reference_for(reference.digest)
-            if recovered_ref is None or reopened.recover(recovered_ref) != payload:
-                return None
-        except Exception as exc:
-            logger.warning("Context boundary recovery unavailable: %s", type(exc).__name__)
+    # Exponential bracketing avoids serializing a long request once for every
+    # historical turn. Binary refinement then finds a recent fitting suffix.
+    # Stub digests make exact token counts slightly non-monotonic; every
+    # returned candidate is still checked against the complete final payload.
+    failed = 0
+    omitted_turns = 1
+    selected = None
+    while True:
+        candidate = proposal(omitted_turns)
+        if candidate is None:
             return None
-        return ContextBoundary(candidate, len(omitted), estimated, digest)
-    return None
+        if candidate[1] <= max_tokens:
+            selected = candidate
+            break
+        failed = omitted_turns
+        if omitted_turns == len(history):
+            return None
+        omitted_turns = min(len(history), omitted_turns * 2)
+    fitting = omitted_turns
+    while fitting - failed > 1:
+        middle = (fitting + failed) // 2
+        candidate = proposal(middle)
+        if candidate is None:
+            return None
+        if candidate[1] <= max_tokens:
+            fitting = middle
+            selected = candidate
+        else:
+            failed = middle
+
+    if selected is None:
+        return None
+    candidate_body, estimated, digest, payload, omitted_count = selected
+
+    from .cli_recover import default_recovery_store_path
+    from .codec import RecoveryStore
+
+    path = store_path if store_path is not None else default_recovery_store_path()
+    try:
+        store = RecoveryStore(path)
+        reference = store.put(
+            payload, item_count=omitted_count, item_label="message(s)",
+            note="request-anchored context boundary",
+        )
+        reopened = RecoveryStore(path)
+        recovered_ref = reopened.reference_for(reference.digest)
+        if recovered_ref is None or reopened.recover(recovered_ref) != payload:
+            return None
+    except Exception as exc:
+        logger.warning("Context boundary recovery unavailable: %s", type(exc).__name__)
+        return None
+    return ContextBoundary(candidate_body, omitted_count, estimated, digest)
 
 
 def compact_chat_history(

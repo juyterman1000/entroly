@@ -9,6 +9,7 @@ import subprocess
 import sys
 
 import httpx
+import pytest
 
 from entroly.codec import RecoveryStore
 from entroly.context_boundary import (
@@ -66,17 +67,12 @@ def test_public_recover_command_reads_boundary_receipt(tmp_path, monkeypatch):
     assert json.loads(output_path.read_text(encoding="utf-8")) == original[1:3]
 
 
-def test_boundary_preserves_oversized_active_turn_and_unsupported_shapes(tmp_path):
+def test_boundary_preserves_oversized_active_turn(tmp_path):
     original = _messages()
     original[-1] = {"role": "user", "content": "latest " * 600}
     assert compact_chat_history(original, max_tokens=100, store_path=tmp_path / "recovery.json") is None
     assert original[-1]["content"] == "latest " * 600
     assert not (tmp_path / "recovery.json").exists()
-
-    with_tool_call = _messages()
-    with_tool_call[2] = {"role": "tool", "content": "result"}
-    assert compact_chat_history(with_tool_call, max_tokens=100, store_path=tmp_path / "recovery.json") is None
-
 
 def test_boundary_refuses_unrecoverable_omission(tmp_path, monkeypatch):
     def fail_put(self, content, **kwargs):
@@ -84,6 +80,143 @@ def test_boundary_refuses_unrecoverable_omission(tmp_path, monkeypatch):
 
     monkeypatch.setattr(RecoveryStore, "put", fail_put)
     assert compact_chat_history(_messages(), max_tokens=140, store_path=tmp_path / "recovery.json") is None
+
+
+@pytest.mark.parametrize(
+    "provider,model",
+    [
+        ("openai", "gpt-test"),
+        ("deepseek", "deepseek-chat"),
+        ("mistral", "mistral-large"),
+        ("glm", "glm-test"),
+        ("kimi", "kimi-test"),
+        ("ollama", "llama-test"),
+        ("openrouter", "router-test"),
+        ("custom", "custom-model"),
+    ],
+)
+def test_openai_compatible_wire_contract_is_model_brand_independent(
+    tmp_path, provider, model,
+):
+    body = {"model": model, "messages": _messages()}
+    decision = compact_request_context(
+        body, provider=provider, max_tokens=150,
+        store_path=tmp_path / "recovery.json",
+    )
+    assert decision is not None
+    assert decision.body["messages"][-1] == body["messages"][-1]
+    assert decision.body["messages"][1]["role"] == "system"
+    assert decision.estimated_tokens <= 150
+
+
+def test_native_wire_formats_are_detected_without_vendor_name(tmp_path):
+    anthropic_like = {
+        "system": "Original system",
+        "messages": _messages()[1:],
+    }
+    anthropic = compact_request_context(
+        anthropic_like, provider="custom", max_tokens=150,
+        store_path=tmp_path / "anthropic.json",
+    )
+    assert anthropic is not None
+    assert anthropic.body["messages"] == anthropic_like["messages"][-1:]
+    assert anthropic.body["system"].startswith("Original system")
+
+    gemini_like = {
+        "contents": [
+            {"role": "user", "parts": [{"text": "old " * 400}]},
+            {"role": "model", "parts": [{"text": "old answer"}]},
+            {"role": "user", "parts": [{"text": "current"}]},
+        ],
+    }
+    gemini = compact_request_context(
+        gemini_like, provider="custom", max_tokens=140,
+        store_path=tmp_path / "gemini.json",
+    )
+    assert gemini is not None
+    assert gemini.body["contents"] == gemini_like["contents"][-1:]
+
+
+def test_ambiguous_wire_format_passes_through(tmp_path):
+    body = {"messages": _messages(), "contents": [{"role": "user", "parts": [{"text": "x"}]}]}
+    assert compact_request_context(
+        body, provider="custom", max_tokens=150,
+        store_path=tmp_path / "recovery.json",
+    ) is None
+
+
+def test_openai_tool_exchange_is_kept_with_active_user_turn(tmp_path):
+    active = [
+        {"role": "user", "content": "Use the calculator"},
+        {"role": "assistant", "content": None, "tool_calls": [
+            {"id": "call-1", "type": "function", "function": {"name": "calc", "arguments": "{}"}},
+        ]},
+        {"role": "tool", "tool_call_id": "call-1", "content": "42"},
+    ]
+    body = {"messages": [
+        {"role": "user", "content": "Old context " * 400},
+        {"role": "assistant", "content": "old answer"},
+        *active,
+    ]}
+    decision = compact_request_context(
+        body, provider="custom", max_tokens=170,
+        store_path=tmp_path / "recovery.json",
+    )
+    assert decision is not None
+    assert decision.body["messages"][-3:] == active
+
+
+def test_anthropic_tool_result_does_not_orphan_tool_use(tmp_path):
+    tool_use = {"role": "assistant", "content": [
+        {"type": "tool_use", "id": "tool-1", "name": "read", "input": {}},
+    ]}
+    tool_result = {"role": "user", "content": [
+        {"type": "tool_result", "tool_use_id": "tool-1", "content": "file contents"},
+    ]}
+    body = {"system": "Policy", "messages": [
+        {"role": "user", "content": "Old context " * 400},
+        {"role": "assistant", "content": "old answer"},
+        {"role": "user", "content": "Read this file"},
+        tool_use,
+        tool_result,
+    ]}
+    decision = compact_request_context(
+        body, provider="anthropic", max_tokens=170,
+        store_path=tmp_path / "recovery.json",
+    )
+    assert decision is not None
+    assert decision.body["messages"][-3:] == body["messages"][-3:]
+
+
+def test_gemini_function_response_does_not_orphan_call(tmp_path):
+    body = {"contents": [
+        {"role": "user", "parts": [{"text": "Old context " * 400}]},
+        {"role": "model", "parts": [{"text": "old answer"}]},
+        {"role": "user", "parts": [{"text": "Use a function"}]},
+        {"role": "model", "parts": [{"functionCall": {"name": "calc", "args": {}}}]},
+        {"role": "user", "parts": [{"functionResponse": {"name": "calc", "response": {"value": 42}}}]},
+    ]}
+    decision = compact_request_context(
+        body, provider="gemini", max_tokens=160,
+        store_path=tmp_path / "recovery.json",
+    )
+    assert decision is not None
+    assert decision.body["contents"][-3:] == body["contents"][-3:]
+
+
+def test_media_payload_is_not_budgeted_as_plain_text(tmp_path):
+    body = {"messages": [
+        {"role": "user", "content": "Old context " * 400},
+        {"role": "assistant", "content": "old answer"},
+        {"role": "user", "content": [
+            {"type": "text", "text": "Describe this"},
+            {"type": "image_url", "image_url": {"url": "https://example.test/image.png"}},
+        ]},
+    ]}
+    assert compact_request_context(
+        body, provider="custom", max_tokens=150,
+        store_path=tmp_path / "recovery.json",
+    ) is None
 
 
 def _proxy() -> PromptCompilerProxy:
@@ -94,7 +227,8 @@ def _proxy() -> PromptCompilerProxy:
     return proxy
 
 
-def test_proxy_preflight_sends_bounded_recoverable_history(tmp_path, monkeypatch):
+@pytest.mark.parametrize("provider", ["openai", "deepseek", "mistral", "glm", "kimi", "ollama", "custom"])
+def test_proxy_preflight_sends_bounded_recoverable_history(tmp_path, monkeypatch, provider):
     monkeypatch.setenv("ENTROLY_DIR", str(tmp_path))
     monkeypatch.setattr("entroly.proxy.context_window_for_model", lambda model: 165)
     captured = []
@@ -111,7 +245,7 @@ def test_proxy_preflight_sends_bounded_recoverable_history(tmp_path, monkeypatch
                 "https://provider.example/v1/chat/completions",
                 {},
                 {"model": "test-model", "messages": _messages()},
-                provider="openai",
+                provider=provider,
             )
         finally:
             await proxy._client.aclose()
@@ -195,6 +329,68 @@ def test_proxy_context_error_retries_once_with_complete_older_turn_removed(tmp_p
     assert original[1] not in captured[1]["messages"]
     assert original[2] not in captured[1]["messages"]
     assert response.headers["X-Entroly-Preflight-Compacted"] == "true"
+
+
+@pytest.mark.parametrize("provider", ["anthropic", "gemini"])
+def test_native_provider_context_error_retries_with_its_own_schema(
+    tmp_path, monkeypatch, provider,
+):
+    monkeypatch.setenv("ENTROLY_DIR", str(tmp_path))
+    monkeypatch.setattr("entroly.proxy.context_window_for_model", lambda model: 500)
+    if provider == "anthropic":
+        body = {
+            "model": "claude-test",
+            "system": "Original policy",
+            "messages": [
+                {"role": "user", "content": "old " * 45},
+                {"role": "assistant", "content": "old answer"},
+                {"role": "user", "content": "middle " * 45},
+                {"role": "assistant", "content": "middle answer"},
+                {"role": "user", "content": "current task"},
+            ],
+        }
+        url = "https://provider.example/v1/messages"
+        error = "prompt is too long: 500 tokens exceeds maximum"
+    else:
+        body = {
+            "contents": [
+                {"role": "user", "parts": [{"text": "old " * 45}]},
+                {"role": "model", "parts": [{"text": "old answer"}]},
+                {"role": "user", "parts": [{"text": "middle " * 45}]},
+                {"role": "model", "parts": [{"text": "middle answer"}]},
+                {"role": "user", "parts": [{"text": "current task"}]},
+            ],
+        }
+        url = "https://provider.example/v1beta/models/gemini-test:generateContent"
+        error = "input token count exceeds the context window"
+    captured = []
+
+    def upstream(request):
+        captured.append(json.loads(request.content))
+        if len(captured) == 1:
+            return httpx.Response(400, json={"error": {"message": error}})
+        return httpx.Response(200, json={"content": [{"type": "text", "text": "ok"}]})
+
+    async def run():
+        proxy = _proxy()
+        proxy._client = httpx.AsyncClient(transport=httpx.MockTransport(upstream))
+        try:
+            return await proxy._forward_response(url, {}, body, provider=provider)
+        finally:
+            await proxy._client.aclose()
+
+    response = asyncio.run(run())
+    assert response.status_code == 200
+    assert len(captured) == 2
+    key = "messages" if provider == "anthropic" else "contents"
+    assert captured[0][key] == body[key]
+    assert captured[1][key][-1] == body[key][-1]
+    assert captured[1][key][0] != body[key][0]
+    if provider == "anthropic":
+        assert captured[1]["system"].startswith("Original policy")
+        assert "entroly recover sha256:" in captured[1]["system"]
+    else:
+        assert "entroly recover sha256:" in captured[1]["systemInstruction"]["parts"][-1]["text"]
 
 
 def test_proxy_compacts_anthropic_in_native_system_field(tmp_path, monkeypatch):

@@ -1,10 +1,10 @@
 """Canonical token counting for the entire Entroly package.
 
 Every internal caller that needs token counts should import from here.
-Tiktoken ``o200k_base`` is the primary encoder (GPT-4o / Claude family).
-When tiktoken is not installed the fallback is deliberately conservative
-(``ceil(len(text) / 4)``), so budget math over-reserves rather than
-overflows.
+Tiktoken ``o200k_base`` is the primary local encoder. Other providers may use
+different tokenizers; the fallback ``ceil(len(text) / 4)`` is a heuristic, not
+an upper bound. Provider requests need an independent margin and an upstream
+overflow fallback.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ def _encoding():
 
 
 def count_tokens(text: str) -> int:
-    """Return the exact o200k token count, or a conservative estimate."""
+    """Return the o200k count, or a character-count heuristic if unavailable."""
     if not text:
         return 0
     enc = _encoding()

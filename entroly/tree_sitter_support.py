@@ -1050,9 +1050,10 @@ def extract_skeletal_ast(
 
     Preserves module imports, class/struct/enum declarations, and
     function/method signatures with type annotations, replacing bodies
-    with a minimal placeholder (e.g. '...'). This slashes token usage
-    by 80-87% while preserving the exact semantic interface for LLM
-    context injection.
+    with a minimal placeholder (e.g. '...'). Token reduction depends on the
+    source; this is a lossy representation, and signatures from the heuristic
+    fallback may be incomplete. It must be evaluated against full source for
+    the task before being promoted as a default context representation.
 
     Falls back to regex-based line scanning when a concrete Tree-Sitter
     grammar is unavailable or fails.
