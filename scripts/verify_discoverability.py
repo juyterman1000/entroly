@@ -19,17 +19,17 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 SITE = "https://juyterman1000.github.io/entroly"
-HOME = f"{SITE}/docs/index.html"
+HOME = f"{SITE}/"
 ENTITY_IDS = {
     f"{SITE}/#organization",
     f"{SITE}/#website",
     f"{SITE}/#software",
 }
 AUTHORITY_PAGES = {
-    "docs/token-economics.html": f"{SITE}/docs/token-economics.html",
-    "docs/token-compression-tools.html": f"{SITE}/docs/token-compression-tools.html",
+    "docs/token-economics.html": f"{SITE}/token-economics.html",
+    "docs/token-compression-tools.html": f"{SITE}/token-compression-tools.html",
     "docs/best-context-compression-tools.html": (
-        f"{SITE}/docs/best-context-compression-tools.html"
+        f"{SITE}/best-context-compression-tools.html"
     ),
 }
 REQUIRED_DIMENSIONS = {
@@ -95,8 +95,6 @@ def collect_failures() -> list[str]:
     except (ET.ParseError, OSError) as exc:
         failures.append(f"invalid sitemap: {exc}")
         sitemap = {}
-    if f"{SITE}/" in sitemap:
-        failures.append("sitemap must not publish the root redirect as a second homepage")
     if sitemap.get(HOME) != "2026-08-31":
         failures.append("canonical homepage is missing its current sitemap date")
     for relative, canonical in AUTHORITY_PAGES.items():
@@ -189,7 +187,7 @@ def collect_failures() -> list[str]:
     llms = _read("llms.txt")
     if llms != _read("docs/llms.txt"):
         failures.append("root and docs llms.txt mirrors differ")
-    if f"{SITE}/docs/discoverability-registry.json" not in llms:
+    if f"{SITE}/discoverability-registry.json" not in llms:
         failures.append("llms.txt does not expose the discoverability registry")
     if 'href="discoverability-registry.json"' not in homepage:
         failures.append("homepage does not expose the discoverability registry")

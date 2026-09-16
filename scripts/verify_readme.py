@@ -209,8 +209,8 @@ check(
         "discord.gg/Xp7VwWnJNY" not in README_TEXT + DOCS_DISCORD_TEXT + INSTALL_TEXT
         and "discord.gg/entroly" not in README_TEXT + DOCS_DISCORD_TEXT + INSTALL_TEXT
         and "https://discord.gg/G833X5c7R6" in DOCS_DISCORD_TEXT
-        and "https://juyterman1000.github.io/entroly/docs/discord.html" in README_TEXT
-        and "https://juyterman1000.github.io/entroly/docs/discord.html" in INSTALL_TEXT,
+        and "https://juyterman1000.github.io/entroly/discord.html" in README_TEXT
+        and "https://juyterman1000.github.io/entroly/discord.html" in INSTALL_TEXT,
         "Public community links must not route to expired invites",
     ),
 )

@@ -10,7 +10,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 PAGE = "docs/gpt-5-6-sol-terra-luna.html"
-CANONICAL = "https://juyterman1000.github.io/entroly/docs/gpt-5-6-sol-terra-luna.html"
+CANONICAL = "https://juyterman1000.github.io/entroly/gpt-5-6-sol-terra-luna.html"
 
 _page_exists = (ROOT / PAGE).is_file()
 
