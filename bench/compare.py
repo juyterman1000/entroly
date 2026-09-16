@@ -6,7 +6,7 @@ Competitive Benchmark: Entroly vs Raw vs Top-K
 Compares three context selection strategies on a realistic codebase corpus:
 
   1. RAW (Naive)     — Stuff tokens until budget exhausted (FIFO insertion order)
-  2. TOP-K (Cody)    — Rank by cosine similarity to query, take top-K that fit
+  2. TOP-K (local)   — Rank by query similarity, take top-K that fit
   3. ENTROLY         — Knapsack-optimal with entropy scoring, dedup, dep graph
 
 Metrics:
@@ -162,7 +162,7 @@ def strategy_raw(corpus: list[dict], query: str, budget: int) -> list[dict]:
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# Strategy 2: TOP-K (Cosine-style, simulating Cody/Copilot)
+# Strategy 2: TOP-K (local fixture; not a commercial-product evaluation)
 # ═══════════════════════════════════════════════════════════════════════
 
 def strategy_topk(corpus: list[dict], query: str, budget: int) -> list[dict]:
@@ -384,7 +384,7 @@ def main():
 
     strategies = [
         ("RAW (Naive FIFO)", strategy_raw),
-        ("TOP-K (Cody-style)", strategy_topk),
+        ("TOP-K (local baseline)", strategy_topk),
         ("ENTROLY (Knapsack)", strategy_entroly),
     ]
 

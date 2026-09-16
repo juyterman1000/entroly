@@ -1,4 +1,4 @@
-"""Automatic repair of a degraded Entroly install.
+"""Explicitly authorized repair of a degraded Entroly install.
 
 Entroly's value depends on query-conditioned selection (QCCR), which is gated on
 the native engine: `EntrolyEngine.optimize_context` only takes the QCCR path
@@ -19,11 +19,10 @@ Before this module, eight separate places told the user to install the engine
 Everywhere told; nowhere fixed. This module fixes it instead, and is the single
 remediation path those sites should call.
 
-**This performs an outbound network install.** That is a deliberate product
-decision and a departure from Entroly's otherwise strictly opt-in outbound
-behaviour (`cli._check_for_update` requires `ENTROLY_ENABLE_UPDATE_CHECK=1`).
-Set `ENTROLY_NO_SELF_HEAL=1` to disable it -- appropriate for locked or audited
-environments, reproducible CI, and air-gapped builds. When repair is disabled or
+**Repair performs an outbound network install and is off by default.** Call
+``entroly.repair()`` explicitly, install the dependency with pip, or opt in to
+startup repair using ``ENTROLY_ENABLE_SELF_HEAL=1``. ``ENTROLY_NO_SELF_HEAL=1``
+and ``ENTROLY_AIR_GAP=1`` override both automatic and explicit repair. When repair is disabled or
 impossible, callers must fall back to reporting the figure *labelled* as
 unearned rather than silently presenting it as a measured saving.
 
@@ -45,8 +44,10 @@ from pathlib import Path
 
 from .native_status import MIN_ENTROLY_CORE_VERSION, QCCR_SYMBOLS, native_status
 
-# Set to "1" to disable automatic repair entirely.
+# Set to "1" to disable all repair, including the explicit SDK entry point.
 ENV_DISABLE = "ENTROLY_NO_SELF_HEAL"
+ENV_ENABLE = "ENTROLY_ENABLE_SELF_HEAL"
+ENV_AIR_GAP = "ENTROLY_AIR_GAP"
 # Set by the re-exec below so a repaired process never tries to repair again.
 ENV_GUARD = "ENTROLY_SELF_HEAL_DONE"
 
@@ -82,7 +83,25 @@ def native_engine_ready() -> bool:
 
 
 def disabled() -> bool:
-    return os.environ.get(ENV_DISABLE, "0") == "1"
+    return any(os.environ.get(name, "0") == "1" for name in (ENV_DISABLE, ENV_AIR_GAP))
+
+
+def automatic_allowed() -> bool:
+    """Only an exact operator opt-in enables startup package installation."""
+    return not disabled() and os.environ.get(ENV_ENABLE, "0") == "1"
+
+
+def _permission_blocked(authorized: bool) -> str | None:
+    for name in (ENV_DISABLE, ENV_AIR_GAP):
+        if os.environ.get(name, "0") == "1":
+            return f"repair disabled by {name}=1"
+    if authorized is not True and not automatic_allowed():
+        return (
+            "native package installation requires explicit consent; run "
+            "python -m pip install -U entroly-core, call entroly.repair(), "
+            f"or opt in with {ENV_ENABLE}=1"
+        )
+    return None
 
 
 def already_healed() -> bool:
@@ -100,7 +119,7 @@ def _externally_managed() -> bool:
     if sys.prefix != sys.base_prefix:  # inside a venv
         return False
     stdlib = sysconfig.get_path("stdlib")
-    return bool(stdlib) and Path(stdlib).with_name("EXTERNALLY-MANAGED").exists()
+    return bool(stdlib) and (Path(stdlib) / "EXTERNALLY-MANAGED").exists()
 
 
 def _installer_command() -> list[str] | None:
@@ -126,13 +145,16 @@ def _installer_command() -> list[str] | None:
     return [sys.executable, "-m", "pip", "install", "--no-input", "-U", _REQUIREMENT]
 
 
-def install_native_engine() -> tuple[bool, str]:
+def install_native_engine(*, authorized: bool = False) -> tuple[bool, str]:
     """Install the native engine. Returns (ok, human-readable detail).
 
     Never raises: every failure mode here (offline, proxy, PEP 668, read-only
     filesystem, resolver conflict) is expected in real deployments and must
     degrade to a labelled report rather than an exception.
     """
+    blocked = _permission_blocked(authorized)
+    if blocked:
+        return False, blocked
     command = _installer_command()
     if command is None:
         if _externally_managed():
@@ -162,11 +184,12 @@ def install_native_engine() -> tuple[bool, str]:
     return True, f"installed {_REQUIREMENT}"
 
 
-def repair_native(*, force: bool = False) -> RepairOutcome:
+def repair_native(*, force: bool = False, authorized: bool = False) -> RepairOutcome:
     """Install the native engine when it is missing.
 
     `force` bypasses the once-per-process guard for an explicit `entroly doctor`
-    style invocation; automatic callers should leave it False.
+    style invocation; automatic callers should leave it False. It never grants
+    network consent. ``authorized=True`` is reserved for an explicit repair call.
     """
     global _attempted_in_this_process
 
@@ -175,8 +198,9 @@ def repair_native(*, force: bool = False) -> RepairOutcome:
         outcome.healed = True
         return outcome
 
-    if disabled():
-        outcome.blocked_reason = f"repair disabled by {ENV_DISABLE}=1"
+    blocked = _permission_blocked(authorized)
+    if blocked:
+        outcome.blocked_reason = blocked
         return outcome
     if already_healed() and not force:
         outcome.blocked_reason = "already repaired once in this process tree"
@@ -188,7 +212,7 @@ def repair_native(*, force: bool = False) -> RepairOutcome:
     _attempted_in_this_process = True
     outcome.attempted = True
 
-    ok, detail = install_native_engine()
+    ok, detail = install_native_engine(authorized=authorized)
     outcome.steps.append(("install native engine", ok, detail))
     if not ok:
         outcome.blocked_reason = detail
@@ -229,4 +253,4 @@ def repair() -> RepairOutcome:
         import entroly
         entroly.repair()
     """
-    return repair_native(force=True)
+    return repair_native(force=True, authorized=True)

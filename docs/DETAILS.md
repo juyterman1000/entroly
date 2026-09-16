@@ -194,9 +194,10 @@ abi3 wheels are published for macOS universal2, Linux glibc and musl
 (x86_64/aarch64), and Windows x64. On a platform with no published wheel the
 install fails rather than silently degrading; build the core from source
 (`cd entroly-core && maturin develop --release`) for those. If the engine is
-missing at runtime, Entroly installs it from PyPI before measuring anything —
-see the note under [Install](../README.md#install); `ENTROLY_NO_SELF_HEAL=1`
-disables that, and the reported figure is then labelled unearned.
+missing at runtime, Entroly reports degraded selection without installing packages.
+Install `entroly-core` explicitly, call `entroly.repair()`, or opt in to startup
+repair with `ENTROLY_ENABLE_SELF_HEAL=1`. `ENTROLY_NO_SELF_HEAL=1` and
+`ENTROLY_AIR_GAP=1` override consent. See [Install](../README.md#install).
 
 **Single binary, no Python** — a standalone Rust proxy that auto-detects Anthropic/OpenAI/Gemini and stays cache-aligned:
 

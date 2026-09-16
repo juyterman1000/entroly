@@ -4798,7 +4798,7 @@ def indexing_in_progress() -> bool:
 
 
 def _repair_native_engine_at_startup() -> None:
-    """Install the native engine before serving, then restart into it.
+    """Install the native engine before serving only with explicit opt-in.
 
     Without it, ``optimize_context`` never takes the QCCR path and selection
     ignores the query -- every request returns the same fragments. That is worse
@@ -4816,12 +4816,13 @@ def _repair_native_engine_at_startup() -> None:
     # Repair being switched off must never mean the degradation is silent. A
     # long-lived server has no other place to say this: the client just keeps
     # receiving context selected without reference to the query, indefinitely.
-    if self_heal.disabled() or self_heal.already_healed():
+    if not self_heal.automatic_allowed() or self_heal.already_healed():
         print(
             f"[entroly] WARNING: serving without the native engine. Context "
             f"selection will not read the query -- every request returns the "
-            f"same fragments. Install entroly-core, or unset "
-            f"{self_heal.ENV_DISABLE} to let Entroly install it.",
+            f"same fragments for a fixed corpus and budget. "
+            f"Install entroly-core explicitly or opt in with {self_heal.ENV_ENABLE}=1. "
+            f"{self_heal.ENV_DISABLE}=1 and {self_heal.ENV_AIR_GAP}=1 override consent.",
             file=sys.stderr,
         )
         return

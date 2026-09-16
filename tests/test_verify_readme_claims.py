@@ -21,6 +21,38 @@ gate = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(gate)
 
 
+@pytest.mark.parametrize("claim", [
+    "zero accuracy loss",
+    "All 6 CIs overlap baseline — accuracy is statistically indistinguishable.",
+    "Does Entroly compression degrade LLM answer quality? **No.**",
+])
+def test_removed_statistical_assurances_fail_even_without_artifact_citations(tmp_path, claim):
+    readme = tmp_path / "README.md"
+    readme.write_text(claim, encoding="utf-8")
+    result = subprocess.run([sys.executable, str(SCRIPT), "--readme", str(readme)],
+                            capture_output=True, text=True, encoding="utf-8", timeout=60)
+    assert result.returncode == 1
+    assert "unsupported accuracy assurance" in result.stdout
+
+
+def test_honest_uncertainty_and_loss_are_allowed():
+    lines = ["Overlapping confidence intervals do not establish equivalence.",
+             "SQuAD fell from 84% to 83%; this run does not rule out degradation."]
+    assert not gate.statistical_claim_failures(lines)
+
+
+@pytest.mark.parametrize("filename", ["README.md", "BENCHMARKS.md"])
+def test_public_benchmark_docs_do_not_reintroduce_removed_assurances(filename):
+    lines = (SCRIPT.parent.parent / filename).read_text(encoding="utf-8").splitlines()
+    assert not gate.statistical_claim_failures(lines)
+
+
+def test_readme_does_not_reintroduce_unnamed_competitor_or_exclusivity_claims():
+    text = (SCRIPT.parent.parent / "README.md").read_text(encoding="utf-8").lower()
+    assert "entroly is the only tool" not in text
+    assert "| baseline a | baseline b | baseline c |" not in text
+
+
 # ── citation scanning ────────────────────────────────────────────────────────
 
 

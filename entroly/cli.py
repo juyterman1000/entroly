@@ -3381,7 +3381,7 @@ def _auto_repair_before_measuring(args) -> int | None:
     Returns an exit code when the caller must stop because the command was
     re-executed in a repaired interpreter, or None to continue in-process.
 
-    This performs a network install. `ENTROLY_NO_SELF_HEAL=1` disables it; every
+    Network installation requires `ENTROLY_ENABLE_SELF_HEAL=1`; every
     failure path falls through to the labelled report in
     `_print_local_simulation` rather than raising.
     """
@@ -3389,7 +3389,7 @@ def _auto_repair_before_measuring(args) -> int | None:
 
     if self_heal.native_engine_ready():
         return None
-    if self_heal.disabled() or self_heal.already_healed():
+    if not self_heal.automatic_allowed() or self_heal.already_healed():
         return None
 
     # --json must stay machine-parseable, so progress goes to stderr there.
@@ -3424,7 +3424,7 @@ def _auto_repair_before_measuring(args) -> int | None:
 def _auto_repair_for_service(label: str) -> int | None:
     """Repair a degraded engine once, at service startup.
 
-    Long-lived surfaces (MCP server, HTTP proxy) must repair at boot and never
+    Opted-in long-lived surfaces (MCP server, HTTP proxy) repair at boot and never
     per request: a per-request install would fire concurrently under load.
 
     All output goes to **stderr**. The MCP server speaks JSON-RPC over stdout,
@@ -3440,12 +3440,13 @@ def _auto_repair_for_service(label: str) -> int | None:
 
     # Repair being switched off must never make the degradation silent -- a
     # long-lived service has no other place to report it.
-    if self_heal.disabled() or self_heal.already_healed():
+    if not self_heal.automatic_allowed() or self_heal.already_healed():
         print(
             f"[entroly] WARNING: starting {label} without the native engine. "
             f"Context selection will not read the query -- every request "
-            f"returns the same fragments. Install entroly-core, or unset "
-            f"{self_heal.ENV_DISABLE} to let Entroly install it.",
+            f"returns the same fragments for a fixed corpus and budget. "
+            f"Install entroly-core explicitly or opt in with {self_heal.ENV_ENABLE}=1. "
+            f"{self_heal.ENV_DISABLE}=1 and {self_heal.ENV_AIR_GAP}=1 override consent.",
             file=sys.stderr,
         )
         return None
@@ -4333,6 +4334,13 @@ def cmd_doctor(args):
     if getattr(args, "privacy", False):
         print(f"\n{C.CYAN}{C.BOLD}  Privacy Audit{C.RESET}\n")
         print(f"  {C.GRAY}Scanning Entroly source for external network calls...{C.RESET}\n")
+        print("  Limited source/configuration checks, not a network audit or privacy certification.")
+        from . import product_telemetry, self_heal
+
+        telemetry_status = product_telemetry.status()
+        print(f"  Product telemetry uploads configured: {telemetry_status['upload_configured']}")
+        print(f"  Automatic native package repair enabled: {self_heal.automatic_allowed()}")
+        print("  Optional providers and integrations can transmit data; see PRIVACY.md.")
 
         import re as _re
 
@@ -4351,7 +4359,7 @@ def cmd_doctor(args):
             except OSError:
                 pass
         if not entroly_domains:
-            print(f"  {C.GREEN}+{C.RESET} No Entroly-owned external servers contacted")
+            print(f"  {C.GREEN}+{C.RESET} No matching Entroly domain literals found in scanned Python files")
             privacy_passed += 1
         else:
             print(f"  {C.RED}x{C.RESET} Found Entroly domain references: {entroly_domains}")
@@ -4372,7 +4380,7 @@ def cmd_doctor(args):
             except OSError:
                 pass
         if not found_sdks:
-            print(f"  {C.GREEN}+{C.RESET} No analytics/telemetry SDKs imported")
+            print(f"  {C.GREEN}+{C.RESET} No recognized third-party analytics SDK imports found (built-in telemetry checked separately)")
             privacy_passed += 1
         else:
             print(f"  {C.RED}x{C.RESET} Found analytics SDKs: {found_sdks}")
@@ -4437,7 +4445,7 @@ def cmd_doctor(args):
         privacy_total += 1
         try:
             from entroly.proxy import _SECRET_PATTERNS
-            print(f"  {C.GREEN}+{C.RESET} Secret detection active (API keys, passwords, tokens redacted from logs)")
+            print(f"  {C.GREEN}+{C.RESET} Proxy secret-detection patterns available; this does not verify complete redaction")
             privacy_passed += 1
         except ImportError:
             print(f"  {C.YELLOW}!{C.RESET} Secret detection not available")
@@ -4450,9 +4458,9 @@ def cmd_doctor(args):
             data_files = list(entroly_data.rglob("*"))
             data_size = sum(f.stat().st_size for f in data_files if f.is_file())
             print(f"  {C.GREEN}+{C.RESET} Local data: {len(data_files)} files "
-                  f"({data_size // 1024}KB) in .entroly/ (delete to clear)")
+                  f"({data_size // 1024}KB) in this project's .entroly/; other configured stores may exist")
         else:
-            print(f"  {C.GREEN}+{C.RESET} No local data stored yet (.entroly/ not created)")
+            print(f"  {C.GREEN}+{C.RESET} No .entroly/ in this directory; home, parent, or configured stores may still contain data")
         privacy_passed += 1
 
         # 8. Verify PRIVACY.md exists. This is a SOURCE-repo document that is
@@ -4471,8 +4479,8 @@ def cmd_doctor(args):
 
         # Summary
         if privacy_passed == privacy_total:
-            print(f"\n  {C.GREEN}{C.BOLD}PRIVACY VERIFIED: {privacy_passed}/{privacy_total} checks passed{C.RESET}")
-            print(f"  {C.GREEN}No Entroly-owned phone-home path detected.{C.RESET}")
+            print(f"\n  {C.GREEN}{C.BOLD}PRIVACY CHECKS: {privacy_passed}/{privacy_total} checks passed{C.RESET}")
+            print(f"  {C.GRAY}Passing these checks does not prove absence of network traffic or sensitive stored data.{C.RESET}")
             print(f"  {C.GRAY}Configured cloud LLM providers still receive optimized prompt content sent through the proxy.{C.RESET}")
             print()
             # A clean privacy audit must not mask a failed diagnostic check.
@@ -7546,7 +7554,7 @@ def main():
     )
     doctor_parser.add_argument(
         "--privacy", action="store_true", default=False,
-        help="Run privacy audit: verify no data leaves your machine",
+        help="Inspect privacy configuration and source heuristics (not a network audit)",
     )
     doctor_parser.add_argument(
         "--json", dest="json_output", action="store_true",

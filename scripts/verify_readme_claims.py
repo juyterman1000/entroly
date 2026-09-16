@@ -18,8 +18,8 @@ Two gates, both mechanical:
    from any shipped entry point does not describe the installed product. Citing
    it in the first screen advertises code the user cannot run.
 
-Neither gate reads prose or judges wording; both resolve to a JSON field or a
-graph traversal, so they cannot drift with edits to marketing copy.
+A third, deliberately narrow regression check rejects previously removed
+absolute-accuracy and CI-overlap claims. It is not a general scientific reviewer.
 
 Usage::
 
@@ -178,6 +178,20 @@ def evidence_metadata_failures(
     return failures
 
 
+def statistical_claim_failures(lines: list[str]) -> list[str]:
+    """Reject known unsupported formulations; do not infer statistical validity."""
+    banned = (
+        "zero accuracy loss",
+        "accuracy is statistically indistinguishable",
+        "does entroly compression degrade llm answer quality? **no.**",
+    )
+    return [
+        f"line {number}: unsupported accuracy assurance ({phrase}); report the measured scope and uncertainty"
+        for number, line in enumerate(lines, 1)
+        for phrase in banned if phrase in line.lower()
+    ]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--readme", type=Path, default=REPO_ROOT / "README.md")
@@ -186,12 +200,8 @@ def main() -> int:
 
     readme_lines = args.readme.read_text(encoding="utf-8").splitlines()
     cited = citations(readme_lines, args.first_screen)
-    if not cited:
-        print(f"no benchmark artifacts cited in the first {args.first_screen} README lines")
-        return 0
-
-    failures: list[str] = []
-    unreachable = unreachable_modules()
+    failures = statistical_claim_failures(readme_lines)
+    unreachable = unreachable_modules() if cited else set()
 
     for line_number, relative in cited:
         artifact = REPO_ROOT / relative

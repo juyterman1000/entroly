@@ -10,6 +10,22 @@ from entroly import cli
 from entroly.native_status import NativeStatus
 
 
+@pytest.mark.parametrize("uploads", [False, True])
+def test_privacy_checks_disclose_telemetry_and_do_not_certify_no_egress(
+    uploads, tuning_config, capsys, monkeypatch,
+):
+    from entroly import product_telemetry
+
+    monkeypatch.setattr(product_telemetry, "status", lambda: {"upload_configured": uploads})
+    cli.cmd_doctor(Namespace(port=9377, privacy=True))
+    output = capsys.readouterr().out
+    assert f"Product telemetry uploads configured: {uploads}" in output
+    assert "not a network audit or privacy certification" in output
+    assert "PRIVACY VERIFIED" not in output
+    assert "No Entroly-owned phone-home path detected" not in output
+    assert "other configured stores" in output or "configured stores may still contain data" in output
+
+
 @pytest.fixture
 def tuning_config(monkeypatch, tmp_path: Path):
     """Point doctor's weights file at a temp path and write arbitrary content."""
