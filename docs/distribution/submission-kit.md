@@ -8,7 +8,7 @@ submission links the exact current artifact.
 
 - **Name:** Entroly
 - **Repository:** https://github.com/juyterman1000/entroly
-- **Documentation:** https://juyterman1000.github.io/entroly/docs/index.html
+- **Documentation:** https://juyterman1000.github.io/entroly/
 - **License:** Apache-2.0
 - **Primary install:** `pip install -U entroly`
 - **Primary npm install:** `npm install -g entroly`

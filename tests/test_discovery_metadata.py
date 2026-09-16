@@ -7,7 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY = "https://github.com/juyterman1000/entroly"
-HOMEPAGE = "https://juyterman1000.github.io/entroly/docs/index.html"
+HOMEPAGE = "https://juyterman1000.github.io/entroly/"
 CATEGORY = "context engineering"
 PRODUCT_IDENTITY = "context assurance"
 PACKAGE_KEYWORDS = {

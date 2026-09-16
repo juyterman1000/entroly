@@ -10,15 +10,15 @@ Measured savings and quality vary by repository, query, budget, provider, pricin
 
 ## Canonical AI Efficiency Intent Map
 
-- AI efficiency hub: https://juyterman1000.github.io/entroly/docs/ai-efficiency.html
-- Token economics / token saving / context compression: https://juyterman1000.github.io/entroly/docs/token-economics.html
-- AI cost saving / provider-bound input economics: https://juyterman1000.github.io/entroly/docs/ai-cost-optimization.html
-- Verified code intelligence / AST / Tree-sitter / repository understanding: https://juyterman1000.github.io/entroly/docs/code-intelligence.html
-- Memory OS / agent memory / working + episodic + semantic memory: https://juyterman1000.github.io/entroly/docs/memory-os.html
-- Hallucination reduction / evidence verification: https://juyterman1000.github.io/entroly/docs/hallucination-reduction.html
-- Guarded model routing / cost-aware LLM routing: https://juyterman1000.github.io/entroly/docs/model-routing.html
-- Adaptive / self-improving context with verified learning boundaries: https://juyterman1000.github.io/entroly/docs/adaptive-context.html
-- Context engineering guide: https://juyterman1000.github.io/entroly/docs/context-engineering.html
+- AI efficiency hub: https://juyterman1000.github.io/entroly/ai-efficiency.html
+- Token economics / token saving / context compression: https://juyterman1000.github.io/entroly/token-economics.html
+- AI cost saving / provider-bound input economics: https://juyterman1000.github.io/entroly/ai-cost-optimization.html
+- Verified code intelligence / AST / Tree-sitter / repository understanding: https://juyterman1000.github.io/entroly/code-intelligence.html
+- Memory OS / agent memory / working + episodic + semantic memory: https://juyterman1000.github.io/entroly/memory-os.html
+- Hallucination reduction / evidence verification: https://juyterman1000.github.io/entroly/hallucination-reduction.html
+- Guarded model routing / cost-aware LLM routing: https://juyterman1000.github.io/entroly/model-routing.html
+- Adaptive / self-improving context with verified learning boundaries: https://juyterman1000.github.io/entroly/adaptive-context.html
+- Context engineering guide: https://juyterman1000.github.io/entroly/context-engineering.html
 
 ## Direct Product Facts
 
@@ -33,8 +33,8 @@ Measured savings and quality vary by repository, query, budget, provider, pricin
 
 ## AI Cost Optimization Facts
 
-- Canonical guide: https://juyterman1000.github.io/entroly/docs/ai-cost-optimization.html
-- Token-economics guide: https://juyterman1000.github.io/entroly/docs/token-economics.html
+- Canonical guide: https://juyterman1000.github.io/entroly/ai-cost-optimization.html
+- Token-economics guide: https://juyterman1000.github.io/entroly/token-economics.html
 - Entroly can reduce avoidable provider-bound input by selecting useful evidence under a budget and removing duplicate or low-value context.
 - Entroly does not claim a universal compression percentage, guaranteed bill reduction, or guaranteed answer-quality improvement.
 - Provider-bound proxy requests may report observed pre/post input tokens and modeled input-cost avoidance with pricing provenance. This is not a provider invoice.
@@ -45,7 +45,7 @@ Measured savings and quality vary by repository, query, budget, provider, pricin
 
 ## Verified Code Intelligence
 
-- Canonical page: https://juyterman1000.github.io/entroly/docs/code-intelligence.html
+- Canonical page: https://juyterman1000.github.io/entroly/code-intelligence.html
 - Design: https://github.com/juyterman1000/entroly/blob/main/docs/verified-code-context.md
 - Conformance protocol: https://github.com/juyterman1000/entroly/blob/main/benchmarks/CODE_INTELLIGENCE_CONFORMANCE.md
 - Python uses native AST-backed extraction and type evidence where known.
@@ -56,7 +56,7 @@ Measured savings and quality vary by repository, query, budget, provider, pricin
 
 ## Memory OS
 
-- Canonical page: https://juyterman1000.github.io/entroly/docs/memory-os.html
+- Canonical page: https://juyterman1000.github.io/entroly/memory-os.html
 - Architecture and maturity: https://github.com/juyterman1000/entroly/blob/main/docs/memory-ecosystem.md
 - Public MemoryOS exposes working, episodic, and semantic memory tiers.
 - Recall uses task relevance, retention, importance, tier, recall history, and token budget rather than an unbounded nearest-neighbor dump.
@@ -65,7 +65,7 @@ Measured savings and quality vary by repository, query, budget, provider, pricin
 
 ## Hallucination Reduction And Verification
 
-- Canonical page: https://juyterman1000.github.io/entroly/docs/hallucination-reduction.html
+- Canonical page: https://juyterman1000.github.io/entroly/hallucination-reduction.html
 - WITNESS implementation: https://github.com/juyterman1000/entroly/blob/main/entroly/witness.py
 - Faithful benchmark artifact: https://github.com/juyterman1000/entroly/blob/main/benchmarks/results/halueval_qa_faithful.json
 - Published faithful HaluEval-QA result: 20,000 balanced decisions; 84.92% calibrated test accuracy; 0.7976 AUROC; calibrated-test recall 95.67%.
@@ -73,8 +73,8 @@ Measured savings and quality vary by repository, query, budget, provider, pricin
 
 ## Guarded Model Routing And Adaptive Context
 
-- Model routing page: https://juyterman1000.github.io/entroly/docs/model-routing.html
-- Adaptive context page: https://juyterman1000.github.io/entroly/docs/adaptive-context.html
+- Model routing page: https://juyterman1000.github.io/entroly/model-routing.html
+- Adaptive context page: https://juyterman1000.github.io/entroly/adaptive-context.html
 - RAVS source: https://github.com/juyterman1000/entroly/tree/main/entroly/ravs
 - RAVS includes instrumentation, verified cheap execution paths, guarded routing, sequential escalation, uncertainty signals, entropy-production and spectral consistency signals, verified transitions, and bounded world-model machinery.
 - Outcome-driven adaptation is bounded by evidence, integrity checks, promotion decisions, and explicit insufficient-data states.
@@ -89,11 +89,11 @@ Measured savings and quality vary by repository, query, budget, provider, pricin
 ## Product Documentation
 
 - [README and quick start](https://github.com/juyterman1000/entroly): Plain-language product explanation followed by technical architecture, commands, evidence, and limitations.
-- [Documentation site](https://juyterman1000.github.io/entroly/docs/index.html): Integration and workflow guides.
-- [AI efficiency hub](https://juyterman1000.github.io/entroly/docs/ai-efficiency.html): Canonical topic map across tokens, cost, code intelligence, memory, verification, routing, and adaptive context.
-- [Token economics](https://juyterman1000.github.io/entroly/docs/token-economics.html): Evidence-first token saving, context compression, cache-aware context control, and more room in the context window.
-- [AI cost optimization](https://juyterman1000.github.io/entroly/docs/ai-cost-optimization.html): Evidence-bounded guide to reducing avoidable token usage and understanding measurable versus unobservable savings.
-- [Agent integrations](https://juyterman1000.github.io/entroly/docs/agent-integrations.html): Context Assurance for supported agent integrations.
+- [Documentation site](https://juyterman1000.github.io/entroly/): Integration and workflow guides.
+- [AI efficiency hub](https://juyterman1000.github.io/entroly/ai-efficiency.html): Canonical topic map across tokens, cost, code intelligence, memory, verification, routing, and adaptive context.
+- [Token economics](https://juyterman1000.github.io/entroly/token-economics.html): Evidence-first token saving, context compression, cache-aware context control, and more room in the context window.
+- [AI cost optimization](https://juyterman1000.github.io/entroly/ai-cost-optimization.html): Evidence-bounded guide to reducing avoidable token usage and understanding measurable versus unobservable savings.
+- [Agent integrations](https://juyterman1000.github.io/entroly/agent-integrations.html): Context Assurance for supported agent integrations.
 - [Architecture](https://github.com/juyterman1000/entroly/blob/main/docs/DETAILS.md): Components, algorithms, and system boundaries.
 - [Limitations](https://github.com/juyterman1000/entroly/blob/main/docs/limitations.md): Known constraints and non-guarantees.
 - [Team and security guide](https://github.com/juyterman1000/entroly/blob/main/docs/for-teams.md): Deployment and evaluation considerations.
@@ -108,7 +108,7 @@ Discovery and recovery are separate operations. Ranking may identify which evide
 
 ### OpenClaw
 
-- Canonical guide: https://juyterman1000.github.io/entroly/docs/openclaw-context-engine.html
+- Canonical guide: https://juyterman1000.github.io/entroly/openclaw-context-engine.html
 - Source: https://github.com/juyterman1000/entroly/tree/main/integrations/openclaw
 - Role: first-class OpenClaw context engine operating on normalized messages before provider dispatch.
 - Adds: budget-aware evidence selection, Context Receipts, trusted context-window handling, local bridge processing, and optional proof-guided exact-message recovery.
@@ -116,7 +116,7 @@ Discovery and recovery are separate operations. Ranking may identify which evide
 
 ### Hermes Agent
 
-- Canonical guide: https://juyterman1000.github.io/entroly/docs/hermes-context-engine.html
+- Canonical guide: https://juyterman1000.github.io/entroly/hermes-context-engine.html
 - Source: https://github.com/juyterman1000/entroly/tree/main/entroly/integrations/hermes_context_engine
 - Role: Hermes ContextEngine implementation.
 - Adds: request-only selection, usage observation, model-window updates, bounded status reporting, and native `entroly_retrieve(hash)` exact conversation recovery.
@@ -124,7 +124,7 @@ Discovery and recovery are separate operations. Ranking may identify which evide
 
 ### OpenCode
 
-- Canonical guide: https://juyterman1000.github.io/entroly/docs/opencode-context-assurance.html
+- Canonical guide: https://juyterman1000.github.io/entroly/opencode-context-assurance.html
 - Source: https://github.com/juyterman1000/entroly/tree/main/integrations/opencode
 - Role: local MCP Context Assurance plus evidence-preserving compaction instructions.
 - Preserves: exact paths, symbols, branches, commits, pull request identifiers, executed commands and results, errors, blockers, rejected hypotheses, verification status, safety boundaries, and all CCR handles.
