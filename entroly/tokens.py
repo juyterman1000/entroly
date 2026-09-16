@@ -88,10 +88,10 @@ def trim_messages(
     deducted from *max_tokens* before the remaining messages are
     selected.
 
-    When *create_stubs* is True, any omitted historical turns are replaced
-    by a structured, deterministic Merkle compaction stub containing the
-    turn count, estimated token savings, and SHA-256 digest, preventing
-    silent amnesia and preserving context receipt honesty.
+    When *create_stubs* is True, omitted messages are represented by a
+    content digest.  A recovery command is advertised only after exact local
+    storage has been verified.  If the final stub cannot fit, the original
+    messages are returned unchanged rather than silently losing the task.
 
     *token_counter* overrides the built-in ``count_tokens`` if the
     caller needs a model-specific tokenizer.
@@ -101,7 +101,6 @@ def trim_messages(
     if strategy not in ("last", "first"):
         raise ValueError(f"Unknown trim strategy: {strategy!r}")
 
-    import hashlib
     import json
 
     counter = token_counter or count_tokens
@@ -124,7 +123,7 @@ def trim_messages(
             rest.append(msg)
 
     if budget <= 0:
-        return system
+        return messages if create_stubs else system
 
     def _msg_tokens(msg: dict) -> int:
         t = per_msg
@@ -165,37 +164,55 @@ def trim_messages(
             remaining -= cost
 
     if create_stubs and dropped:
-        dropped_tokens = sum(_msg_tokens(m) for m in dropped)
-        canonical = json.dumps(dropped, sort_keys=True, ensure_ascii=False)
-        digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        from .codec import content_digest
+
+        # Recompute the complete representation after each omission.  A digest
+        # and decimal count change stub tokenization, so a fixed reserve can
+        # still overflow a tight budget.
+        while True:
+            if strategy == "last" and (not selected or selected[-1] is not rest[-1]):
+                return messages
+            canonical = json.dumps(dropped, sort_keys=True, ensure_ascii=True, separators=(",", ":"))
+            digest = content_digest(canonical)
+            detail = (
+                f"Recoverable via: `entroly recover {digest}`"
+                if store_recovery else f"Digest: {digest}"
+            )
+            stub = {
+                "role": "system",
+                "content": (
+                    f"[ENTROLY CONTEXT COMPACTION: {len(dropped)} omitted message(s). "
+                    f"{detail}]"
+                ),
+            }
+            compacted = (
+                system + [stub] + selected if strategy == "last"
+                else system + selected + [stub]
+            )
+            if reply_priming + sum(_msg_tokens(msg) for msg in compacted) <= max_tokens:
+                break
+            if not selected:
+                return messages
+            if strategy == "last":
+                dropped.append(selected.pop(0))
+            else:
+                dropped.insert(0, selected.pop())
 
         if store_recovery:
-            try:
-                from .context_receipts.store import ensure_store, write_json
-                store_dir = ensure_store()
-                target_path = store_dir / f"compacted_{digest[:16]}.json"
-                write_json(target_path, {
-                    "digest": digest,
-                    "count": len(dropped),
-                    "tokens": dropped_tokens,
-                    "messages": dropped,
-                })
-            except Exception:
-                pass
+            from .cli_recover import default_recovery_store_path
+            from .codec import RecoveryStore
 
-        stub = {
-            "role": "system",
-            "content": (
-                f"[ENTROLY CONTEXT COMPACTION: {len(dropped)} historical turn(s) "
-                f"({dropped_tokens} tokens) compacted into Merkle stub. "
-                f"Digest: sha256:{digest[:16]}... "
-                f"Recoverable via: `entroly recover {digest[:16]}`]"
-            ),
-        }
-        if strategy == "last":
-            return system + [stub] + selected
-        else:
-            return system + selected + [stub]
+            try:
+                path = default_recovery_store_path()
+                store = RecoveryStore(path)
+                reference = store.put(canonical, item_count=len(dropped), item_label="message(s)")
+                reopened = RecoveryStore(path)
+                recovered_ref = reopened.reference_for(reference.digest)
+                if recovered_ref is None or reopened.recover(recovered_ref) != canonical:
+                    return messages
+            except Exception:
+                return messages
+        return compacted
 
     return system + selected
 

@@ -88,7 +88,7 @@ def test_trim_messages_custom_counter():
     assert len(result) <= 1
 
 
-def test_trim_messages_creates_merkle_stubs():
+def test_trim_messages_creates_digest_stubs():
     msgs = [
         {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "Old message 1 " * 100},
@@ -96,12 +96,12 @@ def test_trim_messages_creates_merkle_stubs():
         {"role": "user", "content": "Recent message"},
     ]
     # Without stubs
-    result_no_stubs = trim_messages(msgs, max_tokens=50, strategy="last", create_stubs=False)
+    result_no_stubs = trim_messages(msgs, max_tokens=100, strategy="last", create_stubs=False)
     assert len(result_no_stubs) < len(msgs)
     assert not any("ENTROLY CONTEXT COMPACTION" in m["content"] for m in result_no_stubs)
 
     # With stubs
-    result_with_stubs = trim_messages(msgs, max_tokens=50, strategy="last", create_stubs=True)
+    result_with_stubs = trim_messages(msgs, max_tokens=100, strategy="last", create_stubs=True)
     assert len(result_with_stubs) >= 2
     # System message is preserved
     assert result_with_stubs[0]["role"] == "system"
@@ -110,7 +110,18 @@ def test_trim_messages_creates_merkle_stubs():
     stub_msg = result_with_stubs[1]
     assert "ENTROLY CONTEXT COMPACTION" in stub_msg["content"]
     assert "sha256:" in stub_msg["content"]
-    assert "Recoverable via:" in stub_msg["content"]
+    assert "Recoverable via:" not in stub_msg["content"]
     # Recent message is preserved
     assert result_with_stubs[-1]["content"] == "Recent message"
+    from entroly.tokens import count_messages_tokens
+
+    assert count_messages_tokens(result_with_stubs) <= 100
+
+
+def test_trim_messages_does_not_drop_oversized_latest_request():
+    msgs = [
+        {"role": "system", "content": "System"},
+        {"role": "user", "content": "latest task " * 400},
+    ]
+    assert trim_messages(msgs, max_tokens=30, create_stubs=True) == msgs
 
