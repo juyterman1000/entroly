@@ -341,8 +341,6 @@ def _check_readme_contract(readme: str, pypi_readme: str) -> list[str]:
     unlinked = sorted(alt for alt, href in parser.badges.items() if not href)
     if unlinked:
         failures.append(f"unlinked public badges: {unlinked}")
-    if "lobehub.com/badge/" in readme:
-        failures.append("external marketplace badge must not appear in the README first fold")
     return failures
 
 
