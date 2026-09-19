@@ -1,10 +1,10 @@
 """Canonical token counting for the entire Entroly package.
 
 Every internal caller that needs token counts should import from here.
-Tiktoken ``o200k_base`` is the primary encoder (GPT-4o / Claude family).
-When tiktoken is not installed the fallback is deliberately conservative
-(``ceil(len(text) / 4)``), so budget math over-reserves rather than
-overflows.
+Tiktoken ``o200k_base`` is the primary local encoder. Other providers may use
+different tokenizers; the fallback ``ceil(len(text) / 4)`` is a heuristic, not
+an upper bound. Provider requests need an independent margin and an upstream
+overflow fallback.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ def _encoding():
 
 
 def count_tokens(text: str) -> int:
-    """Return the exact o200k token count, or a conservative estimate."""
+    """Return the o200k count, or a character-count heuristic if unavailable."""
     if not text:
         return 0
     enc = _encoding()
@@ -74,6 +74,8 @@ def trim_messages(
     strategy: str = "last",
     include_system: bool = True,
     token_counter: Callable[[str], int] | None = None,
+    create_stubs: bool = False,
+    store_recovery: bool = False,
 ) -> list[dict]:
     """Trim a chat message list to fit within *max_tokens*.
 
@@ -86,6 +88,11 @@ def trim_messages(
     deducted from *max_tokens* before the remaining messages are
     selected.
 
+    When *create_stubs* is True, omitted messages are represented by a
+    content digest.  A recovery command is advertised only after exact local
+    storage has been verified.  If the final stub cannot fit, the original
+    messages are returned unchanged rather than silently losing the task.
+
     *token_counter* overrides the built-in ``count_tokens`` if the
     caller needs a model-specific tokenizer.
     """
@@ -93,6 +100,8 @@ def trim_messages(
         return []
     if strategy not in ("last", "first"):
         raise ValueError(f"Unknown trim strategy: {strategy!r}")
+
+    import json
 
     counter = token_counter or count_tokens
     per_msg = 4
@@ -114,7 +123,7 @@ def trim_messages(
             rest.append(msg)
 
     if budget <= 0:
-        return system
+        return messages if create_stubs else system
 
     def _msg_tokens(msg: dict) -> int:
         t = per_msg
@@ -129,12 +138,16 @@ def trim_messages(
                             t += counter(text)
         return t
 
+    dropped: list[dict] = []
     if strategy == "last":
         selected: list[dict] = []
         remaining = budget
-        for msg in reversed(rest):
+        for idx, msg in enumerate(reversed(rest)):
             cost = _msg_tokens(msg)
             if remaining - cost < 0:
+                # All preceding messages in rest are dropped
+                cutoff = len(rest) - idx
+                dropped = rest[:cutoff]
                 break
             selected.append(msg)
             remaining -= cost
@@ -142,11 +155,64 @@ def trim_messages(
     else:
         selected = []
         remaining = budget
-        for msg in rest:
+        for idx, msg in enumerate(rest):
             cost = _msg_tokens(msg)
             if remaining - cost < 0:
+                dropped = rest[idx:]
                 break
             selected.append(msg)
             remaining -= cost
 
+    if create_stubs and dropped:
+        from .codec import content_digest
+
+        # Recompute the complete representation after each omission.  A digest
+        # and decimal count change stub tokenization, so a fixed reserve can
+        # still overflow a tight budget.
+        while True:
+            if strategy == "last" and (not selected or selected[-1] is not rest[-1]):
+                return messages
+            canonical = json.dumps(dropped, sort_keys=True, ensure_ascii=True, separators=(",", ":"))
+            digest = content_digest(canonical)
+            detail = (
+                f"Recoverable via: `entroly recover {digest}`"
+                if store_recovery else f"Digest: {digest}"
+            )
+            stub = {
+                "role": "system",
+                "content": (
+                    f"[ENTROLY CONTEXT COMPACTION: {len(dropped)} omitted message(s). "
+                    f"{detail}]"
+                ),
+            }
+            compacted = (
+                system + [stub] + selected if strategy == "last"
+                else system + selected + [stub]
+            )
+            if reply_priming + sum(_msg_tokens(msg) for msg in compacted) <= max_tokens:
+                break
+            if not selected:
+                return messages
+            if strategy == "last":
+                dropped.append(selected.pop(0))
+            else:
+                dropped.insert(0, selected.pop())
+
+        if store_recovery:
+            from .cli_recover import default_recovery_store_path
+            from .codec import RecoveryStore
+
+            try:
+                path = default_recovery_store_path()
+                store = RecoveryStore(path)
+                reference = store.put(canonical, item_count=len(dropped), item_label="message(s)")
+                reopened = RecoveryStore(path)
+                recovered_ref = reopened.reference_for(reference.digest)
+                if recovered_ref is None or reopened.recover(recovered_ref) != canonical:
+                    return messages
+            except Exception:
+                return messages
+        return compacted
+
     return system + selected
+

@@ -4232,6 +4232,9 @@ class PromptCompilerProxy:
         (capped at 50KB) and fires implicit feedback analysis after the
         stream completes. Zero latency impact — analysis runs in background.
         """
+        body, extra_headers = self._preflight_context_boundary(
+            url, body, provider=provider, extra_headers=extra_headers,
+        )
         if self._witness_enabled and self._witness_mode in {"annotate", "strict"}:
             return await self._buffered_witness_stream_response(
                 url,
@@ -5086,6 +5089,47 @@ class PromptCompilerProxy:
             except Exception:
                 pass
 
+    @staticmethod
+    def _preflight_context_boundary(
+        url: str, body: dict[str, Any], *, provider: str,
+        extra_headers: dict[str, str] | None,
+    ) -> tuple[dict[str, Any], dict[str, str] | None]:
+        """Apply one provider-native boundary, or preserve the request exactly."""
+        if not any(isinstance(body.get(key), list) for key in ("messages", "contents", "input")):
+            return body, extra_headers
+        model_name = str(body.get("model") or "")
+        if isinstance(body.get("contents"), list) and not model_name:
+            match = re.search(r"/models/([^/:?]+)", url)
+            model_name = match.group(1) if match else ""
+        window = context_window_for_model(model_name)
+        if not window or window <= 0:
+            return body, extra_headers
+        ceiling = int(window * 0.85)
+        from .context_boundary import compact_request_context, estimate_request_tokens
+
+        try:
+            original_estimate = estimate_request_tokens(body)
+        except (TypeError, ValueError, OverflowError):
+            return body, extra_headers
+        if original_estimate <= ceiling:
+            return body, extra_headers
+        boundary = compact_request_context(body, provider=provider, max_tokens=ceiling)
+        if boundary is None:
+            logger.info(
+                "Pre-flight context guard: no recoverable boundary for %s "
+                "at local estimate %d/%d; forwarding unchanged",
+                provider, original_estimate, ceiling,
+            )
+            return body, extra_headers
+        logger.info(
+            "Pre-flight context guard: %s omitted %d earlier messages; "
+            "local estimate %d/%d",
+            provider, boundary.omitted_messages, boundary.estimated_tokens, ceiling,
+        )
+        response_headers = dict(extra_headers or {})
+        response_headers["X-Entroly-Preflight-Compacted"] = "true"
+        return boundary.body, response_headers
+
     async def _forward_response(
         self, url: str, headers: dict[str, str], body: dict[str, Any],
         selected_frag_ids: list | None = None,
@@ -5132,9 +5176,14 @@ class PromptCompilerProxy:
         response = None
         attempts = 0
         total_slept = 0.0
+        body, extra_headers = self._preflight_context_boundary(
+            url, body, provider=provider, extra_headers=extra_headers,
+        )
+
         # Hard upper bound on iterations so a misbehaving upstream that
         # always returns 429 with tiny Retry-After can't infinite-loop us.
         max_iterations = SERVER_ERROR_MAX_RETRIES + 1 + 1  # +1 reserved for one 429 retry
+        context_retry_attempted = False
         while attempts < max_iterations:
             try:
                 client = await self._ensure_client()
@@ -5236,7 +5285,8 @@ class PromptCompilerProxy:
             if (
                 response.status_code == 400
                 and recovery_depth == 0
-                and isinstance(body.get("messages"), list)
+                and not context_retry_attempted
+                and any(isinstance(body.get(key), list) for key in ("messages", "contents", "input"))
             ):
                 try:
                     err_body = response.json()
@@ -5244,7 +5294,6 @@ class PromptCompilerProxy:
                     err_body = {}
                 err_obj = err_body.get("error", {})
                 err_code = err_obj.get("code", "") if isinstance(err_obj, dict) else ""
-                err_type = err_obj.get("type", "") if isinstance(err_obj, dict) else ""
                 err_msg = (
                     err_obj.get("message", "") if isinstance(err_obj, dict) else str(err_obj)
                 ).lower()
@@ -5252,25 +5301,31 @@ class PromptCompilerProxy:
                     err_code == "context_length_exceeded"
                     or "maximum context length" in err_msg
                     or "exceeds the maximum number of tokens" in err_msg
-                    or (err_type == "invalid_request_error" and "token" in err_msg)
+                    or "prompt is too long" in err_msg
+                    or "context window" in err_msg
+                    or ("input token count" in err_msg and "exceed" in err_msg)
                 )
                 if is_overflow:
-                    from .tokens import trim_messages as _trim
+                    from .context_boundary import compact_request_context
 
-                    original_count = len(body["messages"])
-                    trimmed = _trim(
-                        body["messages"],
-                        max_tokens=int(context_window_for_model(body.get("model", "")) * 0.85),
-                        strategy="last",
-                        include_system=True,
+                    model_name = str(body.get("model") or "")
+                    if isinstance(body.get("contents"), list) and not model_name:
+                        match = re.search(r"/models/([^/:?]+)", url)
+                        model_name = match.group(1) if match else ""
+                    boundary = compact_request_context(
+                        body, provider=provider,
+                        max_tokens=int(context_window_for_model(model_name) * 0.85),
                     )
-                    if len(trimmed) < original_count:
+                    if boundary is not None:
                         logger.info(
-                            "Context overflow: trimming %d→%d messages and retrying",
-                            original_count,
-                            len(trimmed),
+                            "Context overflow: omitted %d recoverable historical messages "
+                            "and retrying once",
+                            boundary.omitted_messages,
                         )
-                        body = {**body, "messages": trimmed}
+                        body = boundary.body
+                        extra_headers = dict(extra_headers or {})
+                        extra_headers["X-Entroly-Preflight-Compacted"] = "true"
+                        context_retry_attempted = True
                         attempts += 1
                         continue
 

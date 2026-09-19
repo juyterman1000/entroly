@@ -1039,6 +1039,75 @@ def chunk_spans(
     return chunks
 
 
+def extract_skeletal_ast(
+    source: str,
+    file_path: str,
+    *,
+    placeholder: str = "...",
+    max_bytes: int = 2 * 1024 * 1024,
+) -> str:
+    """Extract a lightweight skeletal AST representation of a source file.
+
+    Preserves module imports, class/struct/enum declarations, and
+    function/method signatures with type annotations, replacing bodies
+    with a minimal placeholder (e.g. '...'). Token reduction depends on the
+    source; this is a lossy representation, and signatures from the heuristic
+    fallback may be incomplete. It must be evaluated against full source for
+    the task before being promoted as a default context representation.
+
+    Falls back to regex-based line scanning when a concrete Tree-Sitter
+    grammar is unavailable or fails.
+    """
+    if not source:
+        return ""
+    lines = source.splitlines()
+    import_lines = [
+        line for line in lines
+        if line.strip().startswith((
+            "import ", "from ", "use ", "require(", "#include",
+            "package ", "using ",
+        ))
+    ]
+    spans = extract_structural_spans(source, file_path, max_bytes=max_bytes)
+    out: list[str] = list(import_lines)
+    if out:
+        out.append("")
+
+    if not spans:
+        # Graceful line-based fallback for unmapped languages
+        for line in lines:
+            stripped = line.strip()
+            if any(
+                stripped.startswith(p)
+                for p in (
+                    "def ", "async def ", "class ", "fn ", "pub fn ", "struct ",
+                    "enum ", "interface ", "trait ", "type ", "func ", "function ",
+                )
+            ):
+                if ":" in line and not line.rstrip().endswith(":"):
+                    out.append(line)
+                elif ":" in line:
+                    out.append(f"{line} {placeholder}")
+                else:
+                    out.append(f"{line} {{ {placeholder} }}")
+        return "\n".join(out)
+
+    for s in spans:
+        sig = s.signature.strip()
+        orig_line = lines[s.start_line - 1] if 0 <= s.start_line - 1 < len(lines) else ""
+        indent_len = len(orig_line) - len(orig_line.lstrip())
+        indent = " " * indent_len
+        if s.kind in ("class", "struct", "interface", "trait", "enum", "module", "namespace"):
+            out.append(f"{indent}{sig}")
+        else:
+            if sig.endswith(":"):
+                out.append(f"{indent}{sig} {placeholder}")
+            else:
+                out.append(f"{indent}{sig} {{ {placeholder} }}")
+
+    return "\n".join(out)
+
+
 __all__ = [
     "CodeChunk",
     "LANGUAGE_BY_SUFFIX",
@@ -1048,6 +1117,7 @@ __all__ = [
     "StructuralSpan",
     "available_parser_languages",
     "chunk_spans",
+    "extract_skeletal_ast",
     "extract_structural_calls",
     "extract_structural_calls_report",
     "extract_structural_profiles",
@@ -1058,3 +1128,4 @@ __all__ = [
     "language_for_source",
     "validate_structural_syntax",
 ]
+
