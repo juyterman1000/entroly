@@ -1,5 +1,6 @@
-from entroly.relate import compile_query_contract, EvidenceCandidate, RelationVector, detect_semantic_collision, extract_differential_spans, normalize_action, verify_omission_safety
+from entroly.relate import compile_query_contract, EvidenceCandidate, RelationVector, detect_semantic_collision, extract_differential_spans, normalize_action, verify_omission_safety, compute_residual
 from entroly.relate.counterfactual import make_counterfactual
+from entroly.relate.info_residual import detect_state_conflict, task_asks_for_value, task_is_action
 from entroly.relate.policy import decide_precalibration, Decision
 from entroly.relate.relation import score_relation
 from entroly.relate.selector import plan_evidence_set
@@ -85,3 +86,108 @@ def test_omission_safety_requires_recoverability_and_retained_support():
     w2 = verify_omission_safety(missing, (), contract)
     assert not w2.safe_to_omit
     assert "omitted_fragment_not_recoverable" in w2.reasons
+
+
+def test_info_residual_detects_unique_constraints():
+    r = compute_residual(
+        "Deployment requires security scan approval.",
+        "the test suite covers 94% of the codebase.",
+    )
+    assert r.has_constraint_residual
+    assert "requires" in r.unique_constraints
+    r2 = compute_residual(
+        "This requires Python 3.11.",
+        "Installation requires pip and virtualenv.",
+    )
+    assert not r2.has_constraint_residual
+
+
+def test_info_residual_detects_unique_values():
+    r = compute_residual("Port 8443 with TLS.", "Deployed on Kubernetes.")
+    assert "8443" in r.unique_numbers
+    r2 = compute_residual("Port 8443.", "Service runs on port 8443.")
+    assert not r2.unique_numbers
+
+
+def test_state_conflict_detects_enabled_disabled():
+    conflicts = detect_state_conflict(
+        "Redis caching is disabled in production.",
+        ["Redis caching is enabled in staging."],
+    )
+    assert any("disabled_vs_enabled" in c for c in conflicts)
+
+
+def test_state_conflict_ignores_unrelated_fragments():
+    conflicts = detect_state_conflict(
+        "Monitoring is disabled.",
+        ["Logging is enabled for all services."],
+    )
+    assert not any("disabled_vs_enabled" in c for c in conflicts)
+
+
+def test_task_classification():
+    assert task_asks_for_value("What is the rate limit?")
+    assert task_asks_for_value("What port does it listen on?")
+    assert not task_asks_for_value("Summarize the architecture")
+    assert task_is_action("Restart the web server")
+    assert task_is_action("Deploy to production")
+    assert not task_is_action("What is the deployment status?")
+
+
+def test_omission_blocks_constraint_carrier():
+    contract = compile_query_contract("Can we deploy now?")
+    omitted = EvidenceCandidate(
+        "x", "Deployment requires security scan approval from AppSec.",
+        10, recoverable_ref="sha256:abc",
+    )
+    retained = (EvidenceCandidate(
+        "y", "All tests are passing with full coverage.",
+        10, recoverable_ref="sha256:def",
+    ),)
+    w = verify_omission_safety(omitted, retained, contract)
+    assert not w.safe_to_omit
+    assert any("unique_constraint" in r for r in w.reasons)
+
+
+def test_omission_blocks_hidden_contradiction():
+    contract = compile_query_contract("Is feature X enabled?")
+    omitted = EvidenceCandidate(
+        "x", "Feature X is disabled in the production environment.",
+        10, recoverable_ref="sha256:abc",
+    )
+    retained = (EvidenceCandidate(
+        "y", "Feature X is enabled in the staging environment.",
+        10, recoverable_ref="sha256:def",
+    ),)
+    w = verify_omission_safety(omitted, retained, contract)
+    assert not w.safe_to_omit
+    assert any("state_conflict" in r for r in w.reasons)
+
+
+def test_omission_blocks_exclusion_target_loss():
+    contract = compile_query_contract("List tools except Terraform")
+    omitted = EvidenceCandidate(
+        "x", "Infrastructure tools: Ansible, Terraform, Pulumi.",
+        10, recoverable_ref="sha256:abc",
+    )
+    retained = (EvidenceCandidate(
+        "y", "Ansible is our primary configuration management tool.",
+        10, recoverable_ref="sha256:def",
+    ),)
+    w = verify_omission_safety(omitted, retained, contract)
+    assert not w.safe_to_omit
+    assert any("exclusion_target" in r for r in w.reasons)
+
+
+def test_omission_allows_genuinely_redundant():
+    contract = compile_query_contract("What language is the backend in?")
+    omitted = EvidenceCandidate(
+        "x", "Server code uses Python 3.11.",
+        8, recoverable_ref="sha256:abc",
+    )
+    retained = (EvidenceCandidate(
+        "y", "The backend is built with Python 3.11 and FastAPI.",
+        12, recoverable_ref="sha256:def",
+    ),)
+    w = verify_omission_safety(omitted, retained, contract)
+    assert w.safe_to_omit

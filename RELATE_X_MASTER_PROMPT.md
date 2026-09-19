@@ -46,6 +46,16 @@ RELATE-X remains `CONTINUE RESEARCH` until frozen tests show measurable value on
 - ordinary retrieval non-regression;
 - reproducibility, latency, resource and provenance checks.
 
+## Omission Safety Benchmark v1
+
+Dataset SHA-256: `7cadb7d1cbe08d899f5f4a1d247c36baf3d613fc40263bb7ebc3d4d6196f7c3a`
+
+Lexical-only baseline: 85.7% false negative rate (12/14 unsafe omissions approved).
+Information residual witness: 0.0% false negative rate (0/14 unsafe omissions approved).
+
+Remaining gap: 40% false positive rate from lexical obligation matching on "summarize" tasks.
+Remaining architectural gap: no joint omission safety check.
+
 ## Current status
 
-This branch contains a reconstructed research subset and unit/invariant tests. It does not contain a benchmark win or breakthrough claim.
+This branch contains a research subset with a measured benchmark result. The information residual witness eliminates all false negatives on the frozen omission safety benchmark. It does not contain a breakthrough claim — the false positive rate and joint omission problem are open.
