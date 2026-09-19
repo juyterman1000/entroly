@@ -58,6 +58,31 @@ def _extract(pattern: re.Pattern[str], text: str) -> frozenset[str]:
     return frozenset(m.group(0).strip().lower() for m in pattern.finditer(text))
 
 
+def _extract_constraint_clauses(text: str) -> frozenset[str]:
+    """Extract constraint keyword + following context as a clause.
+
+    "must expire after 1 hour" and "must complete within 60 seconds"
+    produce different clauses, even though both start with "must".
+    """
+    clauses: set[str] = set()
+    for m in _CONSTRAINT.finditer(text):
+        keyword = m.group(0).strip().lower()
+        rest = text[m.end():].split(".")[0].split(";")[0][:60]
+        words = [w.lower() for w in re.findall(r"[A-Za-z]{3,}", rest)][:4]
+        clauses.add(keyword + ":" + "_".join(words) if words else keyword)
+    return frozenset(clauses)
+
+
+def _digit_values(nums: frozenset[str]) -> frozenset[str]:
+    """Strip units to get raw numeric values for subset comparison."""
+    vals: set[str] = set()
+    for n in nums:
+        m = re.match(r"\$?(\d+(?:[.,]\d+)?)", n)
+        if m:
+            vals.add(m.group(1))
+    return frozenset(vals)
+
+
 def _content_words(text: str) -> frozenset[str]:
     return frozenset(
         w.lower() for w in re.findall(r"\b[A-Za-z]{4,}\b", text)
@@ -86,7 +111,9 @@ class InfoResidual:
 
 def compute_residual(omitted_text: str, retained_text: str) -> InfoResidual:
     return InfoResidual(
-        unique_constraints=tuple(sorted(_extract(_CONSTRAINT, omitted_text) - _extract(_CONSTRAINT, retained_text))),
+        unique_constraints=tuple(sorted(
+            _extract_constraint_clauses(omitted_text) - _extract_constraint_clauses(retained_text)
+        )),
         unique_numbers=tuple(sorted(_extract(_NUM, omitted_text) - _extract(_NUM, retained_text))),
         unique_temporals=tuple(sorted(_extract(_TEMPORAL, omitted_text) - _extract(_TEMPORAL, retained_text))),
         unique_paths=tuple(sorted(_extract(_PATH, omitted_text) - _extract(_PATH, retained_text))),
@@ -112,7 +139,10 @@ def detect_state_conflict(omitted_text: str, retained_texts: list[str]) -> list[
         omit_nums = _extract(_NUM, omitted_text)
         ret_nums = _extract(_NUM, ret_text)
         if omit_nums and ret_nums and omit_nums != ret_nums:
-            reasons.append(f"numeric_conflict:{','.join(sorted(omit_nums))}_vs_{','.join(sorted(ret_nums))}")
+            omit_vals = _digit_values(omit_nums)
+            ret_vals = _digit_values(ret_nums)
+            if omit_vals and not omit_vals <= ret_vals:
+                reasons.append(f"numeric_conflict:{','.join(sorted(omit_nums))}_vs_{','.join(sorted(ret_nums))}")
     return reasons
 
 

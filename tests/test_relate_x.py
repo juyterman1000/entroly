@@ -94,12 +94,15 @@ def test_info_residual_detects_unique_constraints():
         "the test suite covers 94% of the codebase.",
     )
     assert r.has_constraint_residual
-    assert "requires" in r.unique_constraints
+    assert any("requires" in c for c in r.unique_constraints)
     r2 = compute_residual(
         "This requires Python 3.11.",
         "Installation requires pip and virtualenv.",
     )
-    assert not r2.has_constraint_residual
+    assert r2.has_constraint_residual, (
+        "clause-level extraction: 'requires Python' and 'requires pip' "
+        "are different constraints even though both use 'requires'"
+    )
 
 
 def test_info_residual_detects_unique_values():

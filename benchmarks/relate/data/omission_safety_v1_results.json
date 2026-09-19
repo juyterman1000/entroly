@@ -2,7 +2,7 @@
   "provenance": {
     "dataset_sha256": "7cadb7d1cbe08d899f5f4a1d247c36baf3d613fc40263bb7ebc3d4d6196f7c3a",
     "dataset_version": "1.0.0",
-    "git_head": "2f16720acaaf7a9b0b34e810f4ef7053c446d443",
+    "git_head": "0180882110eb9ec6bee627cf9fcbc2423d9f3c1c",
     "backend": "info_residual_with_dimensions"
   },
   "summary": {
@@ -36,7 +36,7 @@
       "false_negative": false,
       "trap": "lexical_gap",
       "witness_reasons": [
-        "omission_loses_unique_constraint:must"
+        "omission_loses_unique_constraint:must:present_bearer_token_signed"
       ]
     },
     {
@@ -60,7 +60,7 @@
       "false_negative": false,
       "trap": "hidden_conjunction",
       "witness_reasons": [
-        "omission_loses_unique_constraint:requires"
+        "omission_loses_unique_constraint:requires:both_passing_test_suite"
       ]
     },
     {
@@ -119,7 +119,7 @@
       "false_negative": false,
       "trap": "authority_expansion",
       "witness_reasons": [
-        "omission_loses_unique_constraint:must never",
+        "omission_loses_unique_constraint:must never:readable_non_admin_users",
         "omission_loses_action_arguments:/var/log/auth.log"
       ]
     },
@@ -132,7 +132,7 @@
       "false_negative": false,
       "trap": "procedural_constraint_loss",
       "witness_reasons": [
-        "omission_loses_unique_constraint:require"
+        "omission_loses_unique_constraint:require:two_person_approval_and"
       ]
     },
     {
@@ -220,7 +220,7 @@
       "false_negative": false,
       "trap": "authority_cascade",
       "witness_reasons": [
-        "omission_loses_unique_constraint:require"
+        "omission_loses_unique_constraint:require:manager_approval_before_processing"
       ]
     },
     {
@@ -232,7 +232,7 @@
       "false_negative": false,
       "trap": "authority_cascade",
       "witness_reasons": [
-        "omission_loses_unique_constraint:require",
+        "omission_loses_unique_constraint:require:manager_approval_before_processing",
         "joint_coverage_insufficient:dimensions:1/3,below_minimum:2"
       ]
     }

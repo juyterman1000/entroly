@@ -1,0 +1,241 @@
+{
+  "version": "1.0.0",
+  "description": "Adversarial expansion targeting dimension clustering. Each case is designed to probe a specific failure mode of the coverage-based omission witness.",
+  "cases": [
+    {
+      "id": "same_dimension_independent_constraints",
+      "category": "adversarial_dimension",
+      "task": "Summarize the authentication requirements",
+      "joint_omission": true,
+      "fragments": [
+        {
+          "id": "frag_auth_expiry",
+          "text": "OAuth tokens must expire after 1 hour; refresh tokens expire after 30 days.",
+          "token_cost": 14,
+          "deterministic_score": 0.80,
+          "recoverable_ref": "sha256:adv01"
+        },
+        {
+          "id": "frag_auth_signing",
+          "text": "All tokens require RS256 signature verification before acceptance.",
+          "token_cost": 11,
+          "deterministic_score": 0.78,
+          "recoverable_ref": "sha256:adv02"
+        },
+        {
+          "id": "frag_auth_revocation",
+          "text": "Token revocation must complete within 60 seconds of a security event.",
+          "token_cost": 12,
+          "deterministic_score": 0.75,
+          "recoverable_ref": "sha256:adv03"
+        }
+      ],
+      "evaluations": [
+        {
+          "omit_id": "frag_auth_expiry",
+          "retain_ids": ["frag_auth_signing", "frag_auth_revocation"],
+          "ground_truth_safe": false,
+          "reason": "Expiry constraint is unique and independently necessary. Even though all three fragments cluster in the same authentication dimension, the expiry information cannot be recovered from signing or revocation requirements."
+        },
+        {
+          "omit_id": "frag_auth_signing",
+          "retain_ids": ["frag_auth_expiry", "frag_auth_revocation"],
+          "ground_truth_safe": false,
+          "reason": "RS256 signing requirement is a unique constraint. Retained text mentions token requirements but not the specific signing algorithm."
+        },
+        {
+          "omit_ids": ["frag_auth_expiry", "frag_auth_signing"],
+          "retain_ids": ["frag_auth_revocation"],
+          "ground_truth_safe": false,
+          "reason": "Only revocation timing remains. Two independent constraint-carrying fragments omitted."
+        }
+      ],
+      "trap": "same_dimension_independent_constraints",
+      "reason": "All three fragments cluster in one authentication dimension (high Jaccard via shared 'token' terminology). Dimension coverage says 1/1 dimensions retained after any omission. But each fragment carries a unique constraint (must/require) that the hard constraint check must catch. Tests whether hard checks protect against dimension clustering in the same topic."
+    },
+    {
+      "id": "high_dimension_sparse_coverage",
+      "category": "adversarial_dimension",
+      "task": "Describe the system architecture",
+      "joint_omission": true,
+      "fragments": [
+        {
+          "id": "frag_frontend",
+          "text": "Frontend uses React 18 with TypeScript and server-side rendering.",
+          "token_cost": 11,
+          "deterministic_score": 0.85,
+          "recoverable_ref": "sha256:adv10"
+        },
+        {
+          "id": "frag_api",
+          "text": "API layer built on FastAPI with automatic OpenAPI documentation.",
+          "token_cost": 10,
+          "deterministic_score": 0.82,
+          "recoverable_ref": "sha256:adv11"
+        },
+        {
+          "id": "frag_database",
+          "text": "PostgreSQL 15 with read replicas for query distribution.",
+          "token_cost": 9,
+          "deterministic_score": 0.80,
+          "recoverable_ref": "sha256:adv12"
+        },
+        {
+          "id": "frag_cache",
+          "text": "Redis cluster provides session storage and response caching.",
+          "token_cost": 10,
+          "deterministic_score": 0.70,
+          "recoverable_ref": "sha256:adv13"
+        },
+        {
+          "id": "frag_queue",
+          "text": "RabbitMQ handles asynchronous job processing with dead-letter routing.",
+          "token_cost": 10,
+          "deterministic_score": 0.65,
+          "recoverable_ref": "sha256:adv14"
+        }
+      ],
+      "evaluations": [
+        {
+          "omit_id": "frag_cache",
+          "retain_ids": ["frag_frontend", "frag_api", "frag_database", "frag_queue"],
+          "ground_truth_safe": true,
+          "reason": "4/5 architecture dimensions retained. Cache is supplementary to the core frontend-API-database-queue description."
+        },
+        {
+          "omit_ids": ["frag_cache", "frag_queue"],
+          "retain_ids": ["frag_frontend", "frag_api", "frag_database"],
+          "ground_truth_safe": true,
+          "reason": "3/5 dimensions retained. Core architecture (frontend-API-database) is still comprehensively described."
+        },
+        {
+          "omit_ids": ["frag_cache", "frag_queue", "frag_database"],
+          "retain_ids": ["frag_frontend", "frag_api"],
+          "ground_truth_safe": false,
+          "reason": "2/5 dimensions retained. Only frontend and API remain. No data layer described. Architecture is materially incomplete."
+        },
+        {
+          "omit_ids": ["frag_api", "frag_database", "frag_cache", "frag_queue"],
+          "retain_ids": ["frag_frontend"],
+          "ground_truth_safe": false,
+          "reason": "1/5 dimensions retained. Only frontend. Not a system architecture description."
+        }
+      ],
+      "trap": "scaling_dimension_threshold",
+      "reason": "Tests whether the dimension coverage minimum scales correctly with D=5. With 5 dimensions, min(max(2, ceil(5/2))=3, 5)=3. So omitting 2 (leaving 3) should pass, but omitting 3 (leaving 2) should fail."
+    },
+    {
+      "id": "false_separation_conservative",
+      "category": "adversarial_dimension",
+      "task": "Summarize the monitoring setup",
+      "omit": {
+        "id": "frag_monitoring_brief",
+        "text": "Prometheus scrapes metrics every 15 seconds with 30-day retention.",
+        "token_cost": 10,
+        "deterministic_score": 0.60,
+        "recoverable_ref": "sha256:adv20"
+      },
+      "retain": [
+        {
+          "id": "frag_monitoring_detail",
+          "text": "Application metrics are collected by Prometheus at 15-second intervals and stored for 30 days with downsampling at 5-minute resolution after 7 days.",
+          "token_cost": 22,
+          "deterministic_score": 0.90,
+          "recoverable_ref": "sha256:adv21"
+        }
+      ],
+      "ground_truth_safe": true,
+      "trap": "content_subsumption",
+      "reason": "The retained fragment contains all information from the omitted fragment plus additional detail (downsampling). Both discuss Prometheus with 15-second intervals and 30-day retention. Should cluster in the same dimension and be recognized as safe."
+    },
+    {
+      "id": "constraint_in_summary_context",
+      "category": "adversarial_dimension",
+      "task": "Summarize the deployment pipeline",
+      "joint_omission": true,
+      "fragments": [
+        {
+          "id": "frag_ci",
+          "text": "GitHub Actions runs the CI pipeline on every push with lint, test, and build stages.",
+          "token_cost": 15,
+          "deterministic_score": 0.85,
+          "recoverable_ref": "sha256:adv30"
+        },
+        {
+          "id": "frag_staging",
+          "text": "Staging deployments require passing all CI checks and a manual approval gate.",
+          "token_cost": 12,
+          "deterministic_score": 0.80,
+          "recoverable_ref": "sha256:adv31"
+        },
+        {
+          "id": "frag_prod",
+          "text": "Production releases are tagged and deployed through an immutable artifact pipeline.",
+          "token_cost": 11,
+          "deterministic_score": 0.78,
+          "recoverable_ref": "sha256:adv32"
+        }
+      ],
+      "evaluations": [
+        {
+          "omit_id": "frag_ci",
+          "retain_ids": ["frag_staging", "frag_prod"],
+          "ground_truth_safe": true,
+          "reason": "CI details are supplementary when staging and production deployment are described."
+        },
+        {
+          "omit_id": "frag_staging",
+          "retain_ids": ["frag_ci", "frag_prod"],
+          "ground_truth_safe": false,
+          "reason": "The staging fragment carries a unique constraint: 'require passing all CI checks and manual approval'. Omitting it removes the approval gate from the pipeline description."
+        },
+        {
+          "omit_id": "frag_prod",
+          "retain_ids": ["frag_ci", "frag_staging"],
+          "ground_truth_safe": true,
+          "reason": "Production deployment detail is supplementary when the pipeline flow (CI → staging with approval) is described."
+        }
+      ],
+      "trap": "constraint_within_summary_dimension",
+      "reason": "All three fragments are about deployment (likely similar dimension). The dimension override for summary queries might approve omitting frag_staging. But frag_staging carries a unique constraint ('require') that the hard constraint check must catch. Tests whether the hard/soft boundary holds within summary contexts."
+    },
+    {
+      "id": "single_dimension_summary",
+      "category": "adversarial_dimension",
+      "task": "Summarize the caching strategy",
+      "joint_omission": true,
+      "fragments": [
+        {
+          "id": "frag_cache_l1",
+          "text": "L1 cache uses in-process memory with 5-minute TTL and LRU eviction.",
+          "token_cost": 12,
+          "deterministic_score": 0.85,
+          "recoverable_ref": "sha256:adv40"
+        },
+        {
+          "id": "frag_cache_l2",
+          "text": "L2 cache is a Redis cluster with 1-hour TTL and write-through invalidation.",
+          "token_cost": 12,
+          "deterministic_score": 0.82,
+          "recoverable_ref": "sha256:adv41"
+        }
+      ],
+      "evaluations": [
+        {
+          "omit_id": "frag_cache_l1",
+          "retain_ids": ["frag_cache_l2"],
+          "ground_truth_safe": false,
+          "reason": "Both fragments describe distinct cache layers with different values (5-minute vs 1-hour TTL, LRU vs write-through). Omitting either materially changes the summary. The L1 layer carries unique information (in-process memory, 5-minute TTL, LRU) not recoverable from L2."
+        },
+        {
+          "omit_id": "frag_cache_l2",
+          "retain_ids": ["frag_cache_l1"],
+          "ground_truth_safe": false,
+          "reason": "L2 cache details (Redis cluster, 1-hour TTL, write-through) are unique and not recoverable from L1 description."
+        }
+      ],
+      "trap": "single_dimension_both_necessary",
+      "reason": "Both fragments cluster in the same 'cache' dimension (shared terms: cache, TTL). With D=1, dimension coverage says 1/1 retained after either omission → sufficient. But the information residual should catch the unique values (5-minute vs 1-hour, different eviction strategies). Tests whether the value/temporal checks protect against single-dimension false negatives."
+    }
+  ]
+}
