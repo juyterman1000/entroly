@@ -1,4 +1,4 @@
-from entroly.relate import compile_query_contract, EvidenceCandidate, RelationVector, detect_semantic_collision, extract_differential_spans, normalize_action, verify_omission_safety, compute_residual, extract_dimensions, check_dimension_coverage, verify_omission_with_dimensions, verify_joint_omission_safety
+from entroly.relate import compile_query_contract, EvidenceCandidate, RelationVector, detect_semantic_collision, extract_differential_spans, normalize_action, verify_omission_safety, compute_residual, extract_dimensions, check_dimension_coverage, verify_omission_with_dimensions, verify_joint_omission_safety, asymmetry, certify_recoverable, conditional_residual, is_subsumed
 from entroly.relate.counterfactual import make_counterfactual
 from entroly.relate.info_residual import detect_state_conflict, task_asks_for_value, task_is_action
 from entroly.relate.policy import decide_precalibration, Decision
@@ -300,6 +300,138 @@ def test_joint_omission_allows_single_from_three_dimensions():
     assert jw.safe_to_omit, "omitting one of three dimensions should be safe"
     assert jw.dimension_coverage is not None
     assert jw.dimension_coverage.sufficient
+
+
+# --- Conditional compression residual ---
+
+def test_conditional_residual_is_asymmetric():
+    short = "Prometheus scrapes metrics every 15 seconds with 30-day retention."
+    long = (
+        "Application metrics are collected by Prometheus at 15-second intervals "
+        "and stored for 30 days with downsampling at 5-minute resolution after 7 days."
+    )
+    fwd, rev = asymmetry(short, long)
+    assert fwd < rev, (
+        "the short fragment must be cheaper given the long one than the "
+        "reverse; this asymmetry is what symmetric similarity cannot express"
+    )
+
+
+def test_conditional_residual_bounds():
+    assert conditional_residual("anything", "") == 1.0
+    assert conditional_residual("", "anything") == 0.0
+    r = conditional_residual("abc def", "abc def")
+    assert 0.0 <= r <= 1.0
+
+
+def test_conditional_residual_is_deterministic():
+    a = "Token revocation must complete within 60 seconds of a security event."
+    b = "All tokens require RS256 signature verification before acceptance."
+    first = [conditional_residual(a, b) for _ in range(5)]
+    assert len(set(first)) == 1, "residual must be byte-stable for receipt replay"
+
+
+def test_certificate_is_fail_closed_across_compressors():
+    cert = certify_recoverable("some novel fragment text", "unrelated retained text")
+    per = dict(cert.per_compressor)
+    assert cert.residual == max(per.values()), (
+        "ensemble must take the maximum residual so the most conservative "
+        "compressor decides"
+    )
+    assert cert.deciding_compressor in per
+
+
+def test_certificate_is_replayable():
+    cert = certify_recoverable("fragment", "retained text here")
+    d = cert.to_dict()
+    for key in (
+        "residual", "per_compressor", "deciding_compressor",
+        "threshold", "recoverable", "retained_bytes", "fragment_bytes",
+    ):
+        assert key in d, f"certificate must record {key} for audit replay"
+
+
+# --- Why compression alone is not a safety witness ---
+
+def test_compression_alone_would_approve_a_contradiction():
+    """Locks in the rationale for the hybrid architecture.
+
+    Two contradictory rate limits share almost all surface form, so they
+    compress well against each other.  A compression-only witness would
+    therefore certify a contradiction as safe to omit.  The structural
+    numeric-conflict check is what actually catches it.  Do not remove the
+    structural tier in favour of compression.
+    """
+    omitted = "Gateway enforces a hard rate limit of 100 requests per minute per client."
+    retained = "Application-level rate limiting allows 1000 requests per minute per API key."
+
+    residual = conditional_residual(omitted, retained)
+    assert residual < 0.75, (
+        "contradictory-but-similar text compresses cheaply -- this is the "
+        "trap a compression-only witness falls into"
+    )
+
+    contract = compile_query_contract("What is the API rate limit?")
+    omit_c = EvidenceCandidate("x", omitted, 13, recoverable_ref="sha256:e1")
+    ret_c = (EvidenceCandidate("y", retained, 12, recoverable_ref="sha256:e2"),)
+    w = verify_omission_with_dimensions(
+        omit_c, ret_c, contract, all_evidence=(omit_c,) + ret_c,
+    )
+    assert not w.safe_to_omit, "structural checks must catch what compression misses"
+
+
+# --- Directional containment ---
+
+def test_subsumption_detects_genuine_containment():
+    short = EvidenceCandidate("s", "Prometheus scrapes metrics every 15 seconds with 30-day retention.", 10, recoverable_ref="sha256:f1")
+    long = EvidenceCandidate("l", "Application metrics are collected by Prometheus at 15-second intervals and stored for 30 days with downsampling at 5-minute resolution after 7 days.", 22, recoverable_ref="sha256:f2")
+    assert is_subsumed(short, (long,))
+
+
+def test_subsumption_rejects_mutual_independence():
+    l1 = EvidenceCandidate("l1", "L1 cache uses in-process memory with 5-minute TTL and LRU eviction.", 12, recoverable_ref="sha256:g1")
+    l2 = EvidenceCandidate("l2", "L2 cache is a Redis cluster with 1-hour TTL and write-through invalidation.", 12, recoverable_ref="sha256:g2")
+    assert not is_subsumed(l1, (l2,)), "neither layer contains the other"
+    assert not is_subsumed(l2, (l1,))
+
+
+def test_subsumption_rejects_reverse_containment():
+    """The fragment is richer than the retained set -- never drop it."""
+    rich = EvidenceCandidate("rich", "External audit (PenTest Corp, 2024-03-15): Critical finding - SQL injection in /api/users endpoint via unparameterized query.", 19, recoverable_ref="sha256:h1")
+    generic = EvidenceCandidate("gen", "SQL injection vulnerabilities should be remediated by using parameterized queries.", 11, recoverable_ref="sha256:h2")
+    assert not is_subsumed(rich, (generic,))
+
+
+def test_subsumption_requires_retained_set():
+    c = EvidenceCandidate("c", "anything", 5, recoverable_ref="sha256:i1")
+    assert not is_subsumed(c, ())
+
+
+def test_subsumption_never_overrides_hard_block():
+    """A hard structural reason survives even when containment passes.
+
+    The fragment is textually near-contained in the retained set, so the
+    compression path alone would clear it.  The unique numeric value the
+    task asks for is a hard reason, so the omission must stay blocked.
+    """
+    contract = compile_query_contract("What is the rate limit?")
+    omit = EvidenceCandidate(
+        "x", "The gateway rate limit is 100 requests per minute.",
+        10, recoverable_ref="sha256:j1",
+    )
+    retained = (EvidenceCandidate(
+        "y", "The gateway rate limit is documented for every client tier "
+             "and reviewed by the platform team each quarter.",
+        20, recoverable_ref="sha256:j2",
+    ),)
+
+    w = verify_omission_with_dimensions(
+        omit, retained, contract, all_evidence=(omit,) + retained,
+    )
+    assert not w.safe_to_omit
+    assert any("task_relevant_value" in r for r in w.reasons), (
+        "the unique value must be reported as a hard reason"
+    )
 
 
 def test_joint_omission_blocks_authority_loss():

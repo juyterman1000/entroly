@@ -1,0 +1,19 @@
+=== SOFT-ONLY POPULATION (where an override would be consulted) ===
+     gap     fwd     rev  safe?  case
+------------------------------------------------------------------------------
+  0.2898  0.5926  0.8824   True  high_dimension_sparse_coverage:frag_cache
+  0.2026  0.5079  0.7105   True  false_separation_conservative
+  0.1358  0.6716  0.8074   True  interaction_pairwise_safe_jointly_unsafe:frag_
+  0.0975  0.7105  0.8080   True  interaction_pairwise_safe_jointly_unsafe:frag_
+  0.0165  0.6212  0.6377  False  single_dimension_summary:frag_cache_l1
+ -0.0165  0.6377  0.6212  False  single_dimension_summary:frag_cache_l2
+ -0.2088  0.7227  0.5139  False  provenance_anchor
+
+safe gaps  : [0.2898, 0.2026, 0.1358, 0.0975]
+unsafe gaps: [0.0165, -0.0165, -0.2088]
+separable by containment gap: True
+  min safe gap   = 0.0975
+  max unsafe gap = 0.0165
+  margin         = 0.0810
+
+population size: 7 (4 safe, 3 unsafe)

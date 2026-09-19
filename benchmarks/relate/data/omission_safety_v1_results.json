@@ -2,7 +2,7 @@
   "provenance": {
     "dataset_sha256": "7cadb7d1cbe08d899f5f4a1d247c36baf3d613fc40263bb7ebc3d4d6196f7c3a",
     "dataset_version": "1.0.0",
-    "git_head": "0180882110eb9ec6bee627cf9fcbc2423d9f3c1c",
+    "git_head": "6f101ad7b144e0f851c679102dbfd1bb438257a7",
     "backend": "info_residual_with_dimensions"
   },
   "summary": {

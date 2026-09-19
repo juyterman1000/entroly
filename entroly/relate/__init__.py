@@ -19,8 +19,15 @@ from .actions import normalize_action
 from .info_residual import InfoResidual, compute_residual
 from .omission import verify_omission_safety
 from .dimensions import DimensionCoverage, extract_dimensions, check_dimension_coverage
+from .compression_residual import (
+    CompressionCertificate,
+    asymmetry,
+    certify_recoverable,
+    conditional_residual,
+)
 from .joint_omission import (
     JointOmissionWitness,
+    is_subsumed,
     verify_omission_with_dimensions,
     verify_joint_omission_safety,
 )
@@ -44,7 +51,12 @@ __all__ = [
     "DimensionCoverage",
     "extract_dimensions",
     "check_dimension_coverage",
+    "CompressionCertificate",
+    "asymmetry",
+    "certify_recoverable",
+    "conditional_residual",
     "JointOmissionWitness",
+    "is_subsumed",
     "verify_omission_with_dimensions",
     "verify_joint_omission_safety",
 ]

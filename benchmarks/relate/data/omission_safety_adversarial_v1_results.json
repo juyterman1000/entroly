@@ -2,17 +2,17 @@
   "provenance": {
     "dataset_sha256": "d64b4f1e1a0c870355fd71466a5d3ff1834bc010f916b0e18fe8df84a0006b72",
     "dataset_version": "1.0.0",
-    "git_head": "0180882110eb9ec6bee627cf9fcbc2423d9f3c1c",
+    "git_head": "6f101ad7b144e0f851c679102dbfd1bb438257a7",
     "backend": "info_residual_with_dimensions"
   },
   "summary": {
     "total_evaluations": 13,
-    "correct": 12,
-    "accuracy": 0.9231,
+    "correct": 13,
+    "accuracy": 1.0,
     "false_negatives": 0,
     "false_negative_rate": 0.0,
-    "false_positives": 1,
-    "false_positive_rate": 0.2
+    "false_positives": 0,
+    "false_positive_rate": 0.0
   },
   "verdicts": [
     {
@@ -111,15 +111,13 @@
     {
       "case_id": "false_separation_conservative",
       "category": "adversarial_dimension",
-      "correct": false,
+      "correct": true,
       "ground_truth_safe": true,
-      "witness_said_safe": false,
+      "witness_said_safe": true,
       "false_negative": false,
-      "false_positive": true,
+      "false_positive": false,
       "trap": "content_subsumption",
-      "witness_reasons": [
-        "obligation_support_may_depend_on_omitted:Summarize the monitoring setup"
-      ]
+      "witness_reasons": []
     },
     {
       "case_id": "constraint_in_summary_context:frag_ci",
