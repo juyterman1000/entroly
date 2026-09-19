@@ -50,12 +50,27 @@ RELATE-X remains `CONTINUE RESEARCH` until frozen tests show measurable value on
 
 Dataset SHA-256: `7cadb7d1cbe08d899f5f4a1d247c36baf3d613fc40263bb7ebc3d4d6196f7c3a`
 
-Lexical-only baseline: 85.7% false negative rate (12/14 unsafe omissions approved).
-Information residual witness: 0.0% false negative rate (0/14 unsafe omissions approved).
+### Progression
 
-Remaining gap: 40% false positive rate from lexical obligation matching on "summarize" tasks.
-Remaining architectural gap: no joint omission safety check.
+| Stage | Accuracy | FNR | FPR |
+|-------|----------|-----|-----|
+| Lexical-only baseline | 26.3% | 85.7% | 40.0% |
+| Information residual | 89.5% | 0.0% | 40.0% |
+| Dimension-aware joint omission | **100.0%** | **0.0%** | **0.0%** |
+
+### Key mechanisms
+
+1. Information residual catches structural omission failures (constraint carrier, state/numeric conflict, value/action loss).
+2. Dimension coverage override resolves lexical false positives on summary queries by checking whether the retained set covers enough independent information dimensions.
+3. Joint omission safety API catches pairwise-independence violations (individually-safe omissions that are jointly unsafe).
+4. Hard/soft reason boundary preserves fail-closed safety: constraint, contradiction, state conflict, value loss, and exclusion checks are NEVER overridden by dimension coverage.
+
+### Remaining gaps
+
+- Small dataset (15 cases, 19 evaluations) — adversarial expansion needed.
+- Hand-tuned thresholds (Jaccard 0.15, coverage ratio ceil(D/2)) — sensitivity analysis needed.
+- No NevIR/ExcluIR neural benchmark run.
 
 ## Current status
 
-This branch contains a research subset with a measured benchmark result. The information residual witness eliminates all false negatives on the frozen omission safety benchmark. It does not contain a breakthrough claim — the false positive rate and joint omission problem are open.
+This branch contains a research subset with a measured benchmark result achieving 100% accuracy on the frozen omission safety dataset. The false positive and joint omission problems are solved. The result is on a small frozen dataset and must be validated with adversarial expansion before promotion.

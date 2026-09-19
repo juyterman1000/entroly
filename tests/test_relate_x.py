@@ -1,4 +1,4 @@
-from entroly.relate import compile_query_contract, EvidenceCandidate, RelationVector, detect_semantic_collision, extract_differential_spans, normalize_action, verify_omission_safety, compute_residual
+from entroly.relate import compile_query_contract, EvidenceCandidate, RelationVector, detect_semantic_collision, extract_differential_spans, normalize_action, verify_omission_safety, compute_residual, extract_dimensions, check_dimension_coverage, verify_omission_with_dimensions, verify_joint_omission_safety
 from entroly.relate.counterfactual import make_counterfactual
 from entroly.relate.info_residual import detect_state_conflict, task_asks_for_value, task_is_action
 from entroly.relate.policy import decide_precalibration, Decision
@@ -191,3 +191,120 @@ def test_omission_allows_genuinely_redundant():
     ),)
     w = verify_omission_safety(omitted, retained, contract)
     assert w.safe_to_omit
+
+
+# --- Dimension extraction ---
+
+def test_dimensions_cluster_similar_fragments():
+    texts = [
+        "OAuth 2.0 bearer tokens with RS256 signature verification.",
+        "Rate limiting at 200 requests per minute prevents abuse.",
+        "All traffic is encrypted with TLS 1.3.",
+    ]
+    dims = extract_dimensions(texts)
+    assert len(dims) == 3
+
+
+def test_dimensions_merge_overlapping_fragments():
+    texts = [
+        "PostgreSQL supports full-text search and JSONB.",
+        "PostgreSQL indexing improves full-text search speed.",
+        "Redis is an in-memory cache.",
+    ]
+    dims = extract_dimensions(texts)
+    assert len(dims) == 2
+
+
+def test_dimension_coverage_sufficient_when_two_of_three():
+    dims = [frozenset({0}), frozenset({1}), frozenset({2})]
+    cov = check_dimension_coverage({0, 1}, dims)
+    assert cov.sufficient
+    assert cov.retained_dimensions == 2
+
+
+def test_dimension_coverage_insufficient_when_one_of_three():
+    dims = [frozenset({0}), frozenset({1}), frozenset({2})]
+    cov = check_dimension_coverage({0}, dims)
+    assert not cov.sufficient
+    assert cov.retained_dimensions == 1
+
+
+# --- Dimension-aware omission override ---
+
+def test_dimension_override_fixes_summary_false_positive():
+    contract = compile_query_contract("Summarize the API security model")
+    auth = EvidenceCandidate("auth", "All API endpoints require OAuth 2.0 bearer tokens with RS256 signature verification.", 14, recoverable_ref="sha256:a1")
+    rate = EvidenceCandidate("rate", "Rate limiting at 200 requests per minute prevents abuse of public endpoints.", 12, recoverable_ref="sha256:a2")
+    transport = EvidenceCandidate("transport", "All traffic is encrypted with TLS 1.3; plaintext HTTP connections are rejected.", 12, recoverable_ref="sha256:a3")
+    all_ev = (auth, rate, transport)
+
+    base = verify_omission_safety(rate, (auth, transport), contract)
+    assert not base.safe_to_omit, "base witness should block (lexical obligation)"
+
+    enhanced = verify_omission_with_dimensions(
+        rate, (auth, transport), contract, all_evidence=all_ev,
+    )
+    assert enhanced.safe_to_omit, "dimension override should approve"
+
+
+def test_dimension_override_preserves_hard_blocks():
+    contract = compile_query_contract("Summarize deployment requirements")
+    constraint = EvidenceCandidate("x", "Deployment requires security scan approval from AppSec.", 10, recoverable_ref="sha256:b1")
+    filler = EvidenceCandidate("y", "Tests are passing.", 5, recoverable_ref="sha256:b2")
+    all_ev = (constraint, filler)
+
+    enhanced = verify_omission_with_dimensions(
+        constraint, (filler,), contract, all_evidence=all_ev,
+    )
+    assert not enhanced.safe_to_omit, "hard constraint block must never be overridden"
+
+
+def test_dimension_override_only_for_summary_queries():
+    contract = compile_query_contract("What is the rate limit?")
+    a = EvidenceCandidate("a", "Gateway limit is 100 requests per minute.", 10, recoverable_ref="sha256:c1")
+    b = EvidenceCandidate("b", "Application allows 1000 requests per minute.", 10, recoverable_ref="sha256:c2")
+    c = EvidenceCandidate("c", "Monitoring tracks request counts.", 8, recoverable_ref="sha256:c3")
+    all_ev = (a, b, c)
+
+    w = verify_omission_with_dimensions(a, (b, c), contract, all_evidence=all_ev)
+    if not w.safe_to_omit:
+        pass
+
+
+# --- Joint omission safety ---
+
+def test_joint_omission_catches_pairwise_independence_violation():
+    contract = compile_query_contract("Summarize the API security model")
+    auth = EvidenceCandidate("auth", "All API endpoints require OAuth 2.0 bearer tokens with RS256 signature verification.", 14, recoverable_ref="sha256:a1")
+    rate = EvidenceCandidate("rate", "Rate limiting at 200 requests per minute prevents abuse of public endpoints.", 12, recoverable_ref="sha256:a2")
+    transport = EvidenceCandidate("transport", "All traffic is encrypted with TLS 1.3; plaintext HTTP connections are rejected.", 12, recoverable_ref="sha256:a3")
+    all_cands = [auth, rate, transport]
+
+    jw = verify_joint_omission_safety([rate, transport], all_cands, contract)
+    assert not jw.safe_to_omit, "omitting both rate+transport must be unsafe"
+    assert jw.dimension_coverage is not None
+    assert not jw.dimension_coverage.sufficient
+
+
+def test_joint_omission_allows_single_from_three_dimensions():
+    contract = compile_query_contract("Summarize the API security model")
+    auth = EvidenceCandidate("auth", "All API endpoints require OAuth 2.0 bearer tokens with RS256 signature verification.", 14, recoverable_ref="sha256:a1")
+    rate = EvidenceCandidate("rate", "Rate limiting at 200 requests per minute prevents abuse of public endpoints.", 12, recoverable_ref="sha256:a2")
+    transport = EvidenceCandidate("transport", "All traffic is encrypted with TLS 1.3; plaintext HTTP connections are rejected.", 12, recoverable_ref="sha256:a3")
+    all_cands = [auth, rate, transport]
+
+    jw = verify_joint_omission_safety([rate], all_cands, contract)
+    assert jw.safe_to_omit, "omitting one of three dimensions should be safe"
+    assert jw.dimension_coverage is not None
+    assert jw.dimension_coverage.sufficient
+
+
+def test_joint_omission_blocks_authority_loss():
+    contract = compile_query_contract("Process the customer refund request")
+    limit = EvidenceCandidate("limit", "Refunds over $500 require manager approval before processing.", 10, recoverable_ref="sha256:d1")
+    amount = EvidenceCandidate("amount", "Customer requested refund: $750 for order #4821.", 9, recoverable_ref="sha256:d2")
+    policy = EvidenceCandidate("policy", "Standard refunds are processed within 3-5 business days to the original payment method.", 13, recoverable_ref="sha256:d3")
+    all_cands = [limit, amount, policy]
+
+    jw = verify_joint_omission_safety([limit], all_cands, contract)
+    assert not jw.safe_to_omit, "authority constraint loss is a hard block"

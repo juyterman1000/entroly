@@ -2,17 +2,17 @@
   "provenance": {
     "dataset_sha256": "7cadb7d1cbe08d899f5f4a1d247c36baf3d613fc40263bb7ebc3d4d6196f7c3a",
     "dataset_version": "1.0.0",
-    "git_head": "733cbcd4bbd9207d33cf517c53a18ba3db921fa3",
-    "backend": "lexical_only"
+    "git_head": "2f16720acaaf7a9b0b34e810f4ef7053c446d443",
+    "backend": "info_residual_with_dimensions"
   },
   "summary": {
     "total_evaluations": 19,
-    "correct": 17,
-    "accuracy": 0.8947,
+    "correct": 19,
+    "accuracy": 1.0,
     "false_negatives": 0,
     "false_negative_rate": 0.0,
-    "false_positives": 2,
-    "false_positive_rate": 0.4
+    "false_positives": 0,
+    "false_positive_rate": 0.0
   },
   "verdicts": [
     {
@@ -172,26 +172,22 @@
     {
       "case_id": "interaction_pairwise_safe_jointly_unsafe:frag_rate",
       "category": "interaction",
-      "correct": false,
+      "correct": true,
       "ground_truth_safe": true,
-      "witness_said_safe": false,
+      "witness_said_safe": true,
       "false_negative": false,
       "trap": "pairwise_independence_violation",
-      "witness_reasons": [
-        "obligation_support_may_depend_on_omitted:Summarize the API security model"
-      ]
+      "witness_reasons": []
     },
     {
       "case_id": "interaction_pairwise_safe_jointly_unsafe:frag_transport",
       "category": "interaction",
-      "correct": false,
+      "correct": true,
       "ground_truth_safe": true,
-      "witness_said_safe": false,
+      "witness_said_safe": true,
       "false_negative": false,
       "trap": "pairwise_independence_violation",
-      "witness_reasons": [
-        "obligation_support_may_depend_on_omitted:Summarize the API security model"
-      ]
+      "witness_reasons": []
     },
     {
       "case_id": "interaction_pairwise_safe_jointly_unsafe:frag_rate|frag_transport",
@@ -202,8 +198,7 @@
       "false_negative": false,
       "trap": "pairwise_independence_violation",
       "witness_reasons": [
-        "obligation_support_may_depend_on_omitted:Summarize the API security model",
-        "obligation_support_may_depend_on_omitted:Summarize the API security model"
+        "joint_coverage_insufficient:dimensions:1/3,below_minimum:2"
       ]
     },
     {
@@ -237,7 +232,8 @@
       "false_negative": false,
       "trap": "authority_cascade",
       "witness_reasons": [
-        "omission_loses_unique_constraint:require"
+        "omission_loses_unique_constraint:require",
+        "joint_coverage_insufficient:dimensions:1/3,below_minimum:2"
       ]
     }
   ]

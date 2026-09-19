@@ -28,6 +28,10 @@ from entroly.relate.types import (
 )
 from entroly.relate.constraints import compile_query_contract
 from entroly.relate.omission import verify_omission_safety
+from entroly.relate.joint_omission import (
+    verify_omission_with_dimensions,
+    verify_joint_omission_safety,
+)
 
 
 DATA_PATH = pathlib.Path(__file__).with_name("data") / "omission_safety_v1.json"
@@ -73,6 +77,8 @@ def run_single_case(case: dict) -> list[Verdict]:
 
     if case.get("joint_omission"):
         fragments = {f["id"]: _make_candidate(f) for f in case["fragments"]}
+        all_candidates = list(fragments.values())
+        all_evidence = tuple(all_candidates)
         for ev in case["evaluations"]:
             omit_ids = ev.get("omit_ids", [ev["omit_id"]] if "omit_id" in ev else [])
             retain_ids = ev["retain_ids"]
@@ -80,19 +86,20 @@ def run_single_case(case: dict) -> list[Verdict]:
             gt_safe = ev["ground_truth_safe"]
 
             if len(omit_ids) == 1:
-                witness = verify_omission_safety(fragments[omit_ids[0]], retained, contract)
+                witness = verify_omission_with_dimensions(
+                    fragments[omit_ids[0]], retained, contract,
+                    all_evidence=all_evidence,
+                )
                 said_safe = witness.safe_to_omit
                 reasons = witness.reasons
             else:
-                all_safe = True
-                reasons_accum: list[str] = []
-                for oid in omit_ids:
-                    w = verify_omission_safety(fragments[oid], retained, contract)
-                    if not w.safe_to_omit:
-                        all_safe = False
-                        reasons_accum.extend(w.reasons)
-                said_safe = all_safe
-                reasons = tuple(reasons_accum)
+                jw = verify_joint_omission_safety(
+                    [fragments[oid] for oid in omit_ids],
+                    all_candidates,
+                    contract,
+                )
+                said_safe = jw.safe_to_omit
+                reasons = jw.reasons
 
             correct = said_safe == gt_safe
             verdicts.append(Verdict(
@@ -151,7 +158,7 @@ def main() -> None:
             "dataset_sha256": sha256,
             "dataset_version": dataset["version"],
             "git_head": _git_head(),
-            "backend": "lexical_only",
+            "backend": "info_residual_with_dimensions",
         },
         "summary": {
             "total_evaluations": total,

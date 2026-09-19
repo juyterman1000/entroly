@@ -18,6 +18,12 @@ from .differential import extract_differential_spans
 from .actions import normalize_action
 from .info_residual import InfoResidual, compute_residual
 from .omission import verify_omission_safety
+from .dimensions import DimensionCoverage, extract_dimensions, check_dimension_coverage
+from .joint_omission import (
+    JointOmissionWitness,
+    verify_omission_with_dimensions,
+    verify_joint_omission_safety,
+)
 
 __all__ = [
     "AuthorityEnvelope",
@@ -35,4 +41,10 @@ __all__ = [
     "InfoResidual",
     "compute_residual",
     "verify_omission_safety",
+    "DimensionCoverage",
+    "extract_dimensions",
+    "check_dimension_coverage",
+    "JointOmissionWitness",
+    "verify_omission_with_dimensions",
+    "verify_joint_omission_safety",
 ]
