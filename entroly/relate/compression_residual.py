@@ -160,13 +160,13 @@ def certify_recoverable(
 
 @dataclass(frozen=True)
 class ContainmentCertificate:
-    """Formal containment bound: gap > 4δ proves directional containment.
+    """Formal containment bound: gap > σ·δ proves directional containment.
 
     δ is the compressor's irreducible noise floor, estimated from the
     fragment's self-residual CCR(F|F).  When the containment gap (1 - CCR)
-    exceeds 4δ for every compressor, the retained set provably contains
-    the fragment's information at a strength that exceeds compression
-    artifacts by a 4x margin.
+    exceeds σ·δ (default σ=2.0) for every compressor, the retained set
+    provably contains the fragment's information at a strength that exceeds
+    compression artifacts by σ multiples of the noise floor.
     """
 
     contained: bool

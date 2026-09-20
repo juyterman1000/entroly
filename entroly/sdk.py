@@ -1686,6 +1686,11 @@ def certify_receipt_containment(
 
     Returns per-chunk containment certificates and an aggregate summary.
     Each omitted chunk is checked against the concatenated selected text.
+
+    Omitted items in standard receipts carry ``text_preview`` (truncated),
+    so containment certificates based on previews are approximate.  For
+    exact certification, recover full text via ``recover_receipt_omission``
+    and pass it to ``certify_omission_containment`` directly.
     """
     from .relate.compression_residual import certify_containment
 
@@ -1706,12 +1711,17 @@ def certify_receipt_containment(
         if not isinstance(item, dict):
             continue
         chunk_id = item.get("chunk_id", item.get("id", "unknown"))
-        text = item.get("text", item.get("content", ""))
+        text = (
+            item.get("text")
+            or item.get("text_preview")
+            or item.get("content", "")
+        )
         if not text:
             continue
         cert = certify_containment(text, retained_text, sigma=sigma)
         entry = cert.to_dict()
         entry["chunk_id"] = chunk_id
+        entry["text_is_preview"] = "text" not in item
         certs.append(entry)
         if cert.contained:
             contained_count += 1

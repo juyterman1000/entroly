@@ -97,7 +97,7 @@ use guardrails::{
 };
 use knapsack::{compute_lambda_star, knapsack_optimize, ScoringWeights};
 
-use knapsack_sds::{ios_select, InfoFactors, Resolution, SelectionCurvature};
+use knapsack_sds::{ios_select, InfoFactors, Resolution};
 use prism::PrismOptimizer;
 
 /// Reclassify pins from indexes written before pin/protection were split.
@@ -3706,11 +3706,12 @@ impl EntrolyEngine {
             result.set_item("dual_certificate", cert)?;
 
             // ── Selection Curvature (Pillar IV) ──
+            // Fields are already rounded to 4 decimal places in knapsack_sds.rs.
             if let Some(ref curv) = self.last_ios_curvature {
                 let curv_dict = PyDict::new(py);
-                curv_dict.set_item("alpha", (curv.alpha * 10000.0).round() / 10000.0)?;
-                curv_dict.set_item("max_penalty", (curv.max_penalty * 10000.0).round() / 10000.0)?;
-                curv_dict.set_item("mean_diversity", (curv.mean_diversity * 10000.0).round() / 10000.0)?;
+                curv_dict.set_item("alpha", curv.alpha)?;
+                curv_dict.set_item("max_penalty", curv.max_penalty)?;
+                curv_dict.set_item("mean_diversity", curv.mean_diversity)?;
                 curv_dict.set_item("high_overlap_count", curv.high_overlap_count)?;
                 curv_dict.set_item("steps", curv.steps)?;
                 let guarantee = ((1.0 - 1.0_f64.exp().recip()) * (1.0 - curv.alpha) * 10000.0).round() / 10000.0;
