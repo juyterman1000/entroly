@@ -608,16 +608,24 @@ pub fn ios_select(
             selections: pinned,
             total_tokens: pinned_tokens,
             _total_value: (_total_value * 10000.0).round() / 10000.0,
-            diversity_score: 1.0,
+            // Measured, not asserted. This previously returned a hard-coded
+            // 1.0, so a pinned-only selection of near-duplicate files reported
+            // perfect diversity — the same class of defect this file already
+            // documents fixing in `compute_pairwise_diversity`, where a
+            // user-facing number was not on the scale its own documentation
+            // claimed. The sibling fast path below already measures; this was
+            // the inconsistent one.
+            //
+            // Fragments without a fingerprint leave `pinned_hashes` empty, and
+            // the empty case still returns 1.0 — absence of evidence reports as
+            // "not known to be redundant", never as "identical".
+            diversity_score: compute_pairwise_diversity(&pinned_hashes),
             curvature: SelectionCurvature {
                 max_penalty: 0.0,
                 mean_diversity: 1.0,
                 high_overlap_count: 0,
                 steps: 0,
                 alpha: 0.0,
-                // Measured, not assumed 1.0 like `diversity_score` above: a
-                // pinned-only selection can still be highly redundant, and
-                // that is worth reporting rather than asserting away.
                 stable_rank: compute_stable_rank(&pinned_hashes),
                 fingerprinted_count: pinned_hashes.len() as u32,
             },
@@ -1672,6 +1680,95 @@ mod tests {
         assert!(
             sr_spread > 2.5 * sr_clustered,
             "stable rank must separate these: clustered {sr_clustered}, spread {sr_spread}"
+        );
+    }
+
+    /// The pinned-only early return hard-coded `diversity_score: 1.0`, so a
+    /// selection made entirely of duplicate pinned files reported perfect
+    /// diversity. That value reaches Python as `ios_diversity_score` and is
+    /// mirrored in the WASM binding, so the number was wrong on three surfaces.
+    ///
+    /// Every fragment is pinned here, which empties the candidate list (pinned
+    /// indices are skipped during candidate construction) and forces the
+    /// `candidates.is_empty()` return rather than the fast path, which already
+    /// measured correctly.
+    #[test]
+    fn pinned_only_path_measures_diversity_rather_than_asserting_it() {
+        let duplicate = "def identical(value):\n    return value + 1\n";
+        let mut frags = vec![
+            make_frag("p1", duplicate, 10, "a.py"),
+            make_frag("p2", duplicate, 10, "b.py"),
+            make_frag("p3", duplicate, 10, "c.py"),
+        ];
+        for f in &mut frags {
+            f.is_pinned = true;
+        }
+
+        let result = ios_select(
+            &frags,
+            10_000,
+            0.3, 0.25, 0.25, 0.2,
+            &empty_feedback(),
+            true,
+            false,
+            &default_factors(),
+            DEFAULT_DIV_FLOOR,
+            DEFAULT_MIN_CANDIDATE_VALUE,
+        );
+
+        assert_eq!(
+            result.selections.len(),
+            3,
+            "all three pinned fragments should be selected"
+        );
+        assert_eq!(
+            result.curvature.steps, 0,
+            "greedy loop must not have run, or this is not the pinned-only path"
+        );
+        assert!(
+            result.diversity_score < 0.1,
+            "three copies of one file are not diverse, got {}",
+            result.diversity_score
+        );
+        assert!(
+            (result.curvature.stable_rank - 1.0).abs() < 1e-6,
+            "three identical fragments are worth one, got {}",
+            result.curvature.stable_rank
+        );
+    }
+
+    /// Absence of a fingerprint is not evidence of redundancy. The pinned-only
+    /// path must keep reporting 1.0 when nothing was fingerprinted, which is
+    /// what `compute_pairwise_diversity` returns for an empty set.
+    #[test]
+    fn pinned_only_path_reports_full_diversity_without_fingerprints() {
+        let mut frags = vec![
+            make_stub("s1", "def one(): return 1", 10, "a.py"),
+            make_stub("s2", "def two(): return 2", 10, "b.py"),
+        ];
+        for f in &mut frags {
+            f.is_pinned = true;
+        }
+
+        let result = ios_select(
+            &frags,
+            10_000,
+            0.3, 0.25, 0.25, 0.2,
+            &empty_feedback(),
+            true,
+            false,
+            &default_factors(),
+            DEFAULT_DIV_FLOOR,
+            DEFAULT_MIN_CANDIDATE_VALUE,
+        );
+
+        assert_eq!(
+            result.diversity_score, 1.0,
+            "engine claimed redundancy among fragments it never fingerprinted"
+        );
+        assert_eq!(
+            result.curvature.fingerprinted_count, 0,
+            "fixture must be fingerprint-less or the assertion above is vacuous"
         );
     }
 
