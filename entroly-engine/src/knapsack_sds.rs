@@ -220,6 +220,16 @@ pub struct SelectionCurvature {
     /// Effective curvature α ∈ [0,1]: the mean penalty weighted by
     /// how much value it displaced.
     pub alpha: f64,
+    /// Stable rank of the selected set: how many independent fragments the
+    /// selection is actually worth. Lies in [1, m] for a selection of size m;
+    /// 0.0 when nothing was selected. See `compute_stable_rank`.
+    pub stable_rank: f64,
+    /// Number of selected fragments that carried a fingerprint, i.e. the `m`
+    /// that `stable_rank` is out of. Fragments without a fingerprint are
+    /// excluded from both, so this is not the selection length. Reported
+    /// because `stable_rank` alone is not interpretable: 31 is a good result
+    /// out of 34 and a bad one out of 200.
+    pub fingerprinted_count: u32,
 }
 
 /// Compute the diversity factor for a candidate given the current selected set.
@@ -298,6 +308,65 @@ fn compute_pairwise_diversity(hashes: &[u64]) -> f64 {
     }
 }
 
+/// Stable rank of the selected set's similarity matrix.
+///
+/// For the m×m matrix `G` with `G_ii = 1` and `G_ij = simhash_cosine(i, j)`,
+///
+/// ```text
+///   stable_rank = (tr G)^2 / tr(G^2) = m^2 / (m + E),
+///   E = 2 * sum_{i<j} G_ij^2
+/// ```
+///
+/// The identity `tr(G^2) = ||G||_F^2 = m + E` holds because `G` is symmetric
+/// with unit diagonal, so the whole quantity comes out of the same pair loop
+/// `compute_pairwise_diversity` already walks — no new similarity model.
+///
+/// ## Why this and not `diversity_score`
+///
+/// `diversity_score` is a mean over pairs, and a mean cannot see clustering.
+/// Forty fragments forming four tight clusters of ten and forty fragments
+/// spread evenly can report the *same* mean diversity; the first selection is
+/// worth about four independent things and the second about forty. Stable rank
+/// separates them because squaring the similarities makes concentrated mass
+/// dominate, which is exactly the structure a mean averages away.
+///
+/// Range is `[1, m]`, and both ends are tight: `m` identical fragments give
+/// `m^2 / (m + m(m-1)) = 1`, and `m` mutually orthogonal fragments give
+/// `m^2 / m = m`.
+///
+/// ## Bias direction
+///
+/// `simhash_cosine` clamps negative estimates to zero, which injects positive
+/// bias on near-orthogonal pairs (measured +0.079; see the note in
+/// `dedup::simhash_cosine_lcb`). Positive bias in `G_ij` inflates `E`, which
+/// *deflates* `m^2 / (m + E)`. The reported figure therefore understates the
+/// true stable rank rather than overstating it — the safe direction for a
+/// diversity claim.
+///
+/// This is a descriptive statistic of the estimated matrix, not a certified
+/// bound on the underlying one. A certificate would need `G` to be PSD, which
+/// a clamped per-pair estimator does not guarantee.
+fn compute_stable_rank(hashes: &[u64]) -> f64 {
+    let m = hashes.len();
+    if m == 0 {
+        return 0.0;
+    }
+    if m == 1 {
+        return 1.0;
+    }
+    let mut energy = 0.0_f64;
+    for i in 0..m {
+        for j in (i + 1)..m {
+            let s = simhash_cosine(hashes[i], hashes[j]);
+            energy += s * s;
+        }
+    }
+    let m_f = m as f64;
+    // tr(G^2) >= m, so the quotient is always defined and at most m.
+    let frobenius_sq = m_f + 2.0 * energy;
+    ((m_f * m_f / frobenius_sq) * 10000.0).round() / 10000.0
+}
+
 /// IOS: Information-Optimal Selection
 ///
 /// Combines Submodular Diversity Selection with Multi-Resolution Knapsack
@@ -341,6 +410,8 @@ pub fn ios_select(
                 high_overlap_count: 0,
                 steps: 0,
                 alpha: 0.0,
+                stable_rank: 0.0,
+                fingerprinted_count: 0,
             },
         };
     }
@@ -544,6 +615,11 @@ pub fn ios_select(
                 high_overlap_count: 0,
                 steps: 0,
                 alpha: 0.0,
+                // Measured, not assumed 1.0 like `diversity_score` above: a
+                // pinned-only selection can still be highly redundant, and
+                // that is worth reporting rather than asserting away.
+                stable_rank: compute_stable_rank(&pinned_hashes),
+                fingerprinted_count: pinned_hashes.len() as u32,
             },
         };
     }
@@ -617,6 +693,8 @@ pub fn ios_select(
                     high_overlap_count: 0,
                     steps: 0,
                     alpha: 0.0,
+                    stable_rank: compute_stable_rank(&fast_hashes),
+                    fingerprinted_count: fast_hashes.len() as u32,
                 },
             };
         }
@@ -800,6 +878,8 @@ pub fn ios_select(
             high_overlap_count: curv_high_overlap,
             steps: curv_steps,
             alpha: (alpha * 10000.0).round() / 10000.0,
+            stable_rank: compute_stable_rank(&selected_hashes),
+            fingerprinted_count: selected_hashes.len() as u32,
         },
     }
 }
@@ -1507,6 +1587,122 @@ mod tests {
         );
         assert_eq!(result.curvature.alpha, 0.0, "no curvature when everything fits");
         assert_eq!(result.curvature.max_penalty, 0.0);
+    }
+
+    /// Deterministic 64-bit stream. Independent draws differ in ~32 of 64 bits,
+    /// which is the near-orthogonal regime `simhash_cosine` maps to ~0.
+    fn srank_lcg(state: &mut u64) -> u64 {
+        *state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        *state
+    }
+
+    #[test]
+    fn stable_rank_is_one_for_identical_fragments() {
+        let hashes = vec![0xDEAD_BEEF_CAFE_F00D_u64; 8];
+        let sr = compute_stable_rank(&hashes);
+        assert!(
+            (sr - 1.0).abs() < 1e-9,
+            "eight copies of one fragment are worth one independent thing, got {sr}"
+        );
+    }
+
+    #[test]
+    fn stable_rank_is_set_size_for_orthogonal_fragments() {
+        // Hamming distance 32 of 64 => cos(pi/2) = 0 => no shared mass.
+        let hashes = vec![0x0000_0000_0000_0000_u64, 0x0000_0000_FFFF_FFFF_u64];
+        assert_eq!(
+            crate::dedup::hamming_distance(hashes[0], hashes[1]),
+            32,
+            "test fixture must actually be orthogonal or it proves nothing"
+        );
+        let sr = compute_stable_rank(&hashes);
+        assert!(
+            (sr - 2.0).abs() < 1e-3,
+            "two orthogonal fragments are worth two, got {sr}"
+        );
+    }
+
+    #[test]
+    fn stable_rank_stays_within_one_and_set_size() {
+        let mut state = 0x5EED_1234_5678_9ABC_u64;
+        for m in 1..=24usize {
+            let hashes: Vec<u64> = (0..m).map(|_| srank_lcg(&mut state)).collect();
+            let sr = compute_stable_rank(&hashes);
+            assert!(
+                sr >= 1.0 - 1e-9 && sr <= m as f64 + 1e-9,
+                "stable rank {sr} escaped [1, {m}]"
+            );
+        }
+    }
+
+    /// The property that justifies reporting this at all: a mean over pairs
+    /// cannot distinguish "four tight clusters" from "evenly spread", because
+    /// averaging is exactly the operation that discards the concentration.
+    /// Squaring the similarities keeps it.
+    #[test]
+    fn stable_rank_separates_clustered_from_spread_selections() {
+        let mut state = 0xC0FF_EE00_1234_5678_u64;
+
+        // Four distinct bases, each selected four times: sixteen fragments
+        // carrying four fragments' worth of information.
+        let bases: Vec<u64> = (0..4).map(|_| srank_lcg(&mut state)).collect();
+        let clustered: Vec<u64> = bases.iter().flat_map(|&b| [b; 4]).collect();
+
+        // Sixteen independent draws.
+        let spread: Vec<u64> = (0..16).map(|_| srank_lcg(&mut state)).collect();
+
+        assert_eq!(clustered.len(), spread.len(), "same selection size, or the comparison is meaningless");
+
+        let sr_clustered = compute_stable_rank(&clustered);
+        let sr_spread = compute_stable_rank(&spread);
+
+        // Exact arithmetic for the ideal clustered case: within-cluster pairs
+        // contribute 1 each, so E = 2 * 4 * C(4,2) = 48 and the quotient is
+        // 16^2 / (16 + 48) = 4. Cross-cluster estimator noise moves it a little.
+        assert!(
+            (3.0..=4.6).contains(&sr_clustered),
+            "four clusters of four should be worth about four, got {sr_clustered}"
+        );
+        assert!(
+            sr_spread > 11.0,
+            "sixteen independent fragments should be worth most of sixteen, got {sr_spread}"
+        );
+        assert!(
+            sr_spread > 2.5 * sr_clustered,
+            "stable rank must separate these: clustered {sr_clustered}, spread {sr_spread}"
+        );
+    }
+
+    #[test]
+    fn stable_rank_is_reported_for_a_real_selection() {
+        let frags = vec![
+            make_frag("a", "def alpha(): return 1", 20, "a.py"),
+            make_frag("b", "def beta(): return 2", 20, "b.py"),
+        ];
+        let result = ios_select(
+            &frags,
+            10_000,
+            0.3, 0.25, 0.25, 0.2,
+            &empty_feedback(),
+            true,
+            false,
+            &default_factors(),
+            DEFAULT_DIV_FLOOR,
+            DEFAULT_MIN_CANDIDATE_VALUE,
+        );
+        let c = &result.curvature;
+        assert!(
+            c.fingerprinted_count > 0,
+            "fixture must produce fingerprinted fragments or the field proves nothing"
+        );
+        assert!(
+            c.stable_rank >= 1.0 && c.stable_rank <= c.fingerprinted_count as f64 + 1e-9,
+            "stable_rank {} out of {} is outside [1, m]",
+            c.stable_rank,
+            c.fingerprinted_count
+        );
     }
 }
 

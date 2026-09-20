@@ -3716,6 +3716,18 @@ impl EntrolyEngine {
                 curv_dict.set_item("steps", curv.steps)?;
                 let guarantee = ((1.0 - 1.0_f64.exp().recip()) * (1.0 - curv.alpha) * 10000.0).round() / 10000.0;
                 curv_dict.set_item("approximation_guarantee", guarantee)?;
+                // Stable rank: how many independent fragments the selection is
+                // worth, out of `fingerprinted_count`. Unlike `mean_diversity`,
+                // this separates "spread evenly" from "a few tight clusters",
+                // which a mean over pairs cannot distinguish.
+                curv_dict.set_item("stable_rank", curv.stable_rank)?;
+                curv_dict.set_item("fingerprinted_count", curv.fingerprinted_count)?;
+                let rank_ratio = if curv.fingerprinted_count > 0 {
+                    ((curv.stable_rank / curv.fingerprinted_count as f64) * 10000.0).round() / 10000.0
+                } else {
+                    0.0
+                };
+                curv_dict.set_item("rank_ratio", rank_ratio)?;
                 result.set_item("selection_curvature", curv_dict)?;
             }
 
