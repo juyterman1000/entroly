@@ -1,0 +1,420 @@
+{
+  "dataset_version": "1.0.0",
+  "description": "Frozen Omission Safety Benchmark: fragments that look dispensable by relevance but are causally necessary. Each case has a trap that defeats source-side heuristics.",
+  "cases": [
+    {
+      "id": "obligation_semantic_gap",
+      "category": "obligation",
+      "task": "What is the return window for electronics?",
+      "omit": {
+        "id": "frag_deadline",
+        "text": "Consumer electronics purchased online may be returned within 14 business days of delivery.",
+        "token_cost": 14,
+        "deterministic_score": 0.35,
+        "recoverable_ref": "sha256:a1b2c3"
+      },
+      "retain": [
+        {
+          "id": "frag_policy_generic",
+          "text": "Our return policy is comprehensive and applies to all product categories.",
+          "token_cost": 12,
+          "deterministic_score": 0.72,
+          "recoverable_ref": "sha256:d4e5f6"
+        }
+      ],
+      "ground_truth_safe": false,
+      "trap": "lexical_gap",
+      "reason": "Only source of '14 business days' value. Retained text mentions 'return' and 'product' but contains no deadline. Lexical obligation matcher sees 'return' in retained and approves."
+    },
+    {
+      "id": "obligation_paraphrase_trap",
+      "category": "obligation",
+      "task": "What authentication method does the API use?",
+      "omit": {
+        "id": "frag_auth_spec",
+        "text": "Callers must present a bearer token signed with RS256 in the Authorization header.",
+        "token_cost": 15,
+        "deterministic_score": 0.41,
+        "recoverable_ref": "sha256:g7h8i9"
+      },
+      "retain": [
+        {
+          "id": "frag_auth_mention",
+          "text": "The API authentication layer was redesigned last quarter for improved security.",
+          "token_cost": 13,
+          "deterministic_score": 0.68,
+          "recoverable_ref": "sha256:j1k2l3"
+        }
+      ],
+      "ground_truth_safe": false,
+      "trap": "lexical_gap",
+      "reason": "Retained text uses 'authentication' which matches the obligation, but contains no specification of the actual method (bearer/RS256). Only the omitted fragment specifies the mechanism."
+    },
+    {
+      "id": "exclusion_carrier",
+      "category": "obligation",
+      "task": "List supported databases except MongoDB",
+      "omit": {
+        "id": "frag_db_list",
+        "text": "Supported databases: PostgreSQL 15, MySQL 8.0, MongoDB 7.0, and SQLite 3.",
+        "token_cost": 14,
+        "deterministic_score": 0.88,
+        "recoverable_ref": "sha256:m4n5o6"
+      },
+      "retain": [
+        {
+          "id": "frag_db_perf",
+          "text": "PostgreSQL offers the best query performance for our workload patterns.",
+          "token_cost": 11,
+          "deterministic_score": 0.55,
+          "recoverable_ref": "sha256:p7q8r9"
+        }
+      ],
+      "ground_truth_safe": false,
+      "trap": "exclusion_evidence_loss",
+      "reason": "The omitted fragment is the ONLY evidence that MongoDB is in the supported set. Without it, the exclusion clause 'except MongoDB' has no target to exclude. Retained text mentions PostgreSQL but not the full list."
+    },
+    {
+      "id": "condition_carrier",
+      "category": "obligation",
+      "task": "Can we deploy if the test suite passes?",
+      "omit": {
+        "id": "frag_deploy_reqs",
+        "text": "Deployment requires both a passing test suite and security scan approval from the AppSec team.",
+        "token_cost": 16,
+        "deterministic_score": 0.62,
+        "recoverable_ref": "sha256:s1t2u3"
+      },
+      "retain": [
+        {
+          "id": "frag_test_coverage",
+          "text": "The test suite covers 94% of the codebase with all tests passing.",
+          "token_cost": 12,
+          "deterministic_score": 0.78,
+          "recoverable_ref": "sha256:v4w5x6"
+        }
+      ],
+      "ground_truth_safe": false,
+      "trap": "hidden_conjunction",
+      "reason": "The task asks about a single condition (test suite) but the omitted fragment reveals an additional required condition (security scan approval). Retained text confirms tests pass but omitting the conjunction hides a blocker."
+    },
+    {
+      "id": "sole_evidence",
+      "category": "sufficiency",
+      "task": "What port does the service listen on?",
+      "omit": {
+        "id": "frag_port",
+        "text": "The service binds to port 8443 with mutual TLS enabled.",
+        "token_cost": 10,
+        "deterministic_score": 0.30,
+        "recoverable_ref": "sha256:y7z8a1"
+      },
+      "retain": [
+        {
+          "id": "frag_infra",
+          "text": "Services are deployed on Kubernetes with horizontal pod autoscaling.",
+          "token_cost": 10,
+          "deterministic_score": 0.45,
+          "recoverable_ref": "sha256:b2c3d4"
+        }
+      ],
+      "ground_truth_safe": false,
+      "trap": "low_relevance_but_sole_answer",
+      "reason": "The omitted fragment has the lowest deterministic score but is the only fragment containing the actual port number. BM25 favors the infrastructure fragment."
+    },
+    {
+      "id": "genuinely_redundant",
+      "category": "sufficiency",
+      "task": "What language is the backend written in?",
+      "omit": {
+        "id": "frag_lang_dup",
+        "text": "Server-side code is written in Python 3.11.",
+        "token_cost": 8,
+        "deterministic_score": 0.85,
+        "recoverable_ref": "sha256:e5f6g7"
+      },
+      "retain": [
+        {
+          "id": "frag_lang_full",
+          "text": "The backend is implemented in Python 3.11 with FastAPI and SQLAlchemy ORM.",
+          "token_cost": 14,
+          "deterministic_score": 0.91,
+          "recoverable_ref": "sha256:h8i9j1"
+        }
+      ],
+      "ground_truth_safe": true,
+      "trap": "none",
+      "reason": "Information in the omitted fragment is fully contained in the retained fragment. This IS safe to omit."
+    },
+    {
+      "id": "contradiction_hidden_by_omission",
+      "category": "contradiction",
+      "task": "Is Redis caching enabled?",
+      "omit": {
+        "id": "frag_cache_prod",
+        "text": "Redis caching is disabled in production due to memory pressure on the primary cluster.",
+        "token_cost": 14,
+        "deterministic_score": 0.82,
+        "recoverable_ref": "sha256:k2l3m4"
+      },
+      "retain": [
+        {
+          "id": "frag_cache_staging",
+          "text": "Redis caching is enabled in staging for performance benchmarking.",
+          "token_cost": 10,
+          "deterministic_score": 0.80,
+          "recoverable_ref": "sha256:n5o6p7"
+        }
+      ],
+      "ground_truth_safe": false,
+      "trap": "contradiction_invisible_without_nli",
+      "reason": "Omitting the production fragment hides a material contradiction: staging says enabled, production says disabled. With no NLI backend, relation.contradiction is 0.0 and the witness approves the omission."
+    },
+    {
+      "id": "numeric_contradiction",
+      "category": "contradiction",
+      "task": "What is the API rate limit?",
+      "omit": {
+        "id": "frag_rate_gateway",
+        "text": "Gateway enforces a hard rate limit of 100 requests per minute per client.",
+        "token_cost": 13,
+        "deterministic_score": 0.75,
+        "recoverable_ref": "sha256:q8r9s1"
+      },
+      "retain": [
+        {
+          "id": "frag_rate_app",
+          "text": "Application-level rate limiting allows 1000 requests per minute per API key.",
+          "token_cost": 12,
+          "deterministic_score": 0.77,
+          "recoverable_ref": "sha256:t2u3v4"
+        }
+      ],
+      "ground_truth_safe": false,
+      "trap": "numeric_disagreement_invisible",
+      "reason": "Two different rate limits (100 vs 1000) at different layers. Omitting the gateway limit causes the LLM to report 1000 rpm when the effective limit is 100. No NLI backend means no contradiction signal."
+    },
+    {
+      "id": "deny_rule_carrier",
+      "category": "authority",
+      "task": "Grant read access to the logs directory",
+      "omit": {
+        "id": "frag_security_deny",
+        "text": "SECURITY POLICY: /var/log/auth.log must never be readable by non-admin users regardless of directory permissions.",
+        "token_cost": 17,
+        "deterministic_score": 0.28,
+        "recoverable_ref": "sha256:w5x6y7"
+      },
+      "retain": [
+        {
+          "id": "frag_log_location",
+          "text": "Application logs are written to /var/log/ with daily rotation.",
+          "token_cost": 10,
+          "deterministic_score": 0.65,
+          "recoverable_ref": "sha256:z8a1b2"
+        }
+      ],
+      "ground_truth_safe": false,
+      "trap": "authority_expansion",
+      "reason": "Omitting the security policy fragment removes a deny rule. The action 'grant read access to logs' would now proceed without the constraint that auth.log must be excluded. Authority expands silently."
+    },
+    {
+      "id": "authority_scope_constraint",
+      "category": "authority",
+      "task": "Update the user role to admin",
+      "omit": {
+        "id": "frag_approval_req",
+        "text": "Role changes to admin require two-person approval and are logged to the audit trail.",
+        "token_cost": 14,
+        "deterministic_score": 0.40,
+        "recoverable_ref": "sha256:c3d4e5"
+      },
+      "retain": [
+        {
+          "id": "frag_role_mgmt",
+          "text": "User roles are managed through the admin panel under Settings > Access Control.",
+          "token_cost": 12,
+          "deterministic_score": 0.70,
+          "recoverable_ref": "sha256:f6g7h8"
+        }
+      ],
+      "ground_truth_safe": false,
+      "trap": "procedural_constraint_loss",
+      "reason": "Omitting the approval requirement fragment removes a procedural authority constraint. The retained text implies the change can be made directly through the admin panel."
+    },
+    {
+      "id": "action_argument_loss",
+      "category": "action",
+      "task": "Restart the web server",
+      "omit": {
+        "id": "frag_server_spec",
+        "text": "Web server: nginx 1.25, PID file at /var/run/nginx.pid, config at /etc/nginx/nginx.conf.",
+        "token_cost": 16,
+        "deterministic_score": 0.33,
+        "recoverable_ref": "sha256:i9j1k2"
+      },
+      "retain": [
+        {
+          "id": "frag_stack_overview",
+          "text": "The application stack includes a reverse proxy, application server, and PostgreSQL database.",
+          "token_cost": 13,
+          "deterministic_score": 0.52,
+          "recoverable_ref": "sha256:l3m4n5"
+        }
+      ],
+      "ground_truth_safe": false,
+      "trap": "action_target_missing",
+      "reason": "The omitted fragment contains the specific action arguments (PID file, config path) needed to restart nginx. Without it, the action class 'restart web server' is underspecified."
+    },
+    {
+      "id": "provenance_anchor",
+      "category": "provenance",
+      "task": "Summarize the security audit findings",
+      "omit": {
+        "id": "frag_audit_report",
+        "text": "External audit (PenTest Corp, 2024-03-15): Critical finding — SQL injection in /api/users endpoint via unparameterized query.",
+        "token_cost": 19,
+        "deterministic_score": 0.60,
+        "recoverable_ref": "sha256:o6p7q8"
+      },
+      "retain": [
+        {
+          "id": "frag_vuln_generic",
+          "text": "SQL injection vulnerabilities should be remediated by using parameterized queries.",
+          "token_cost": 11,
+          "deterministic_score": 0.58,
+          "recoverable_ref": "sha256:r9s1t2"
+        }
+      ],
+      "ground_truth_safe": false,
+      "trap": "provenance_loss",
+      "reason": "The omitted fragment establishes provenance: who found it, when, and the specific endpoint. Retained text is generic advice. Omitting the audit finding destroys the evidentiary chain."
+    },
+    {
+      "id": "safe_control_low_info",
+      "category": "control",
+      "task": "How do I configure the database connection?",
+      "omit": {
+        "id": "frag_marketing",
+        "text": "Our platform has been trusted by over 500 enterprises worldwide.",
+        "token_cost": 10,
+        "deterministic_score": 0.05,
+        "recoverable_ref": "sha256:u3v4w5"
+      },
+      "retain": [
+        {
+          "id": "frag_db_config",
+          "text": "Set DATABASE_URL in .env to a PostgreSQL connection string: postgresql://user:pass@host:5432/dbname.",
+          "token_cost": 16,
+          "deterministic_score": 0.95,
+          "recoverable_ref": "sha256:x6y7z8"
+        }
+      ],
+      "ground_truth_safe": true,
+      "trap": "none",
+      "reason": "Marketing text carries no obligation, constraint, contradiction, authority, or action support. Clearly safe to omit."
+    },
+    {
+      "id": "interaction_pairwise_safe_jointly_unsafe",
+      "category": "interaction",
+      "task": "Summarize the API security model",
+      "joint_omission": true,
+      "fragments": [
+        {
+          "id": "frag_auth",
+          "text": "All API endpoints require OAuth 2.0 bearer tokens with RS256 signature verification.",
+          "token_cost": 14,
+          "deterministic_score": 0.85,
+          "recoverable_ref": "sha256:aa1bb2"
+        },
+        {
+          "id": "frag_rate",
+          "text": "Rate limiting at 200 requests per minute prevents abuse of public endpoints.",
+          "token_cost": 12,
+          "deterministic_score": 0.55,
+          "recoverable_ref": "sha256:cc3dd4"
+        },
+        {
+          "id": "frag_transport",
+          "text": "All traffic is encrypted with TLS 1.3; plaintext HTTP connections are rejected.",
+          "token_cost": 12,
+          "deterministic_score": 0.50,
+          "recoverable_ref": "sha256:ee5ff6"
+        }
+      ],
+      "evaluations": [
+        {
+          "omit_id": "frag_rate",
+          "retain_ids": ["frag_auth", "frag_transport"],
+          "ground_truth_safe": true,
+          "reason": "Auth + transport still covers the security model adequately."
+        },
+        {
+          "omit_id": "frag_transport",
+          "retain_ids": ["frag_auth", "frag_rate"],
+          "ground_truth_safe": true,
+          "reason": "Auth + rate limiting still covers the security model adequately."
+        },
+        {
+          "omit_ids": ["frag_rate", "frag_transport"],
+          "retain_ids": ["frag_auth"],
+          "ground_truth_safe": false,
+          "reason": "Only authentication remains. No abuse prevention, no transport security. The security model is materially incomplete — an LLM would describe a model with only one control layer."
+        }
+      ],
+      "trap": "pairwise_independence_violation",
+      "reason": "Each individual omission is safe, but omitting both together leaves only authentication — an incomplete security model. No existing tool checks joint omission safety."
+    },
+    {
+      "id": "interaction_cascading_authority",
+      "category": "interaction",
+      "task": "Process the customer refund request",
+      "joint_omission": true,
+      "fragments": [
+        {
+          "id": "frag_refund_limit",
+          "text": "Refunds over $500 require manager approval before processing.",
+          "token_cost": 10,
+          "deterministic_score": 0.72,
+          "recoverable_ref": "sha256:gg7hh8"
+        },
+        {
+          "id": "frag_refund_amount",
+          "text": "Customer requested refund: $750 for order #4821.",
+          "token_cost": 9,
+          "deterministic_score": 0.80,
+          "recoverable_ref": "sha256:ii9jj1"
+        },
+        {
+          "id": "frag_refund_policy",
+          "text": "Standard refunds are processed within 3-5 business days to the original payment method.",
+          "token_cost": 13,
+          "deterministic_score": 0.65,
+          "recoverable_ref": "sha256:kk2ll3"
+        }
+      ],
+      "evaluations": [
+        {
+          "omit_id": "frag_refund_policy",
+          "retain_ids": ["frag_refund_limit", "frag_refund_amount"],
+          "ground_truth_safe": true,
+          "reason": "Timeline is supplementary; the critical constraint (amount > $500 needs approval) and the action target ($750) are both retained."
+        },
+        {
+          "omit_id": "frag_refund_limit",
+          "retain_ids": ["frag_refund_amount", "frag_refund_policy"],
+          "ground_truth_safe": false,
+          "reason": "Removing the $500 threshold removes the authority constraint. The LLM would process a $750 refund directly without requiring manager approval."
+        },
+        {
+          "omit_ids": ["frag_refund_limit", "frag_refund_policy"],
+          "retain_ids": ["frag_refund_amount"],
+          "ground_truth_safe": false,
+          "reason": "Only the request amount remains. No authority constraint and no processing procedure. Action would proceed unconstrained."
+        }
+      ],
+      "trap": "authority_cascade",
+      "reason": "The limit fragment is always unsafe to omit because it constrains the action. But the current witness checks obligations lexically and sees 'refund' in all retained text."
+    }
+  ]
+}

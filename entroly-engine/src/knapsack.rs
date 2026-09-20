@@ -89,9 +89,158 @@ pub struct KnapsackResult {
     ///
     /// Used by ADGT (Adaptive Dual Gap Temperature) to replace the ad-hoc 0.995 schedule.
     pub dual_gap: f64,
+    /// Dual Certificate: provable decomposition of the suboptimality gap.
+    ///
+    /// The dual gap D(λ*) − primal decomposes into three terms:
+    ///
+    ///   gap = rounding_loss + constraint_slack + relaxation_entropy
+    ///
+    /// where:
+    ///   rounding_loss      = Σ pᵢ*·sᵢ − Σ_{i∈S} sᵢ   (cost of rounding probabilities to 0/1)
+    ///   constraint_slack   = λ*·(B − Σ pᵢ*·cᵢ)        (price of budget under-use in the relaxation)
+    ///   relaxation_entropy = τ·Σ H(pᵢ*)                (temperature tax from smooth relaxation)
+    ///
+    /// Identity: rounding_loss + constraint_slack + relaxation_entropy = dual_gap (exact).
+    ///
+    /// Each term is independently actionable:
+    ///   high rounding_loss      → borderline fragments are nearly tied, selection is fragile
+    ///   high constraint_slack   → soft solution under-uses budget, λ* may be too conservative
+    ///   high relaxation_entropy → temperature too high, probabilities too uncertain
+    pub dual_certificate: DualCertificate,
+}
+
+/// Provable decomposition of the knapsack suboptimality bound.
+///
+/// For the temperature-regularized Lagrangian relaxation, the free energy
+/// decomposes as F* = E* − τ·S* (Jaynes 1957, MaxEnt principle). The three
+/// terms in this certificate are the components of the gap between the dual
+/// upper bound and the realized hard selection. Their sum equals `dual_gap`
+/// exactly — this is an algebraic identity, not an approximation.
+#[derive(Clone, Copy, Debug)]
+pub struct DualCertificate {
+    /// Σ pᵢ*·sᵢ − Σ_{i∈S} sᵢ: score lost by rounding probabilities to 0/1.
+    pub rounding_loss: f64,
+    /// λ*·(B − Σ pᵢ*·cᵢ): the Lagrange multiplier times the constraint slack.
+    pub constraint_slack: f64,
+    /// τ·Σᵢ H(pᵢ*): the entropy cost of the smooth relaxation.
+    pub relaxation_entropy: f64,
+    /// Σᵢ H(pᵢ*) where H(p) = −p·ln(p) − (1−p)·ln(1−p): total selection uncertainty.
+    pub selection_entropy: f64,
+
+    // ── Derived actionable signals ────────────────────────────────────────────────────────────
+
+    /// Optimality grade: how close the hard selection is to the dual upper bound.
+    ///   "A" (gap/primal < 1%)  → near-optimal, no room for improvement
+    ///   "B" (< 5%)             → good, marginal gains possible
+    ///   "C" (< 15%)            → acceptable, reranking or budget change may help
+    ///   "D" (< 30%)            → suboptimal, investigate temperature or scoring
+    ///   "F" (≥ 30%)            → poor, the optimizer is struggling
+    pub quality_grade: &'static str,
+
+    /// Budget pressure signal for the ADGT scheduler:
+    ///   "expand"  → λ* is high and constraint is tight — more budget would help
+    ///   "optimal" → budget is well-matched to available content
+    ///   "slack"   → budget is underused, could shrink or add more fragments
+    pub budget_pressure: &'static str,
+
+    /// Temperature calibration signal:
+    ///   "lower"      → entropy dominates the gap (>60%); τ is too high, probabilities too uncertain
+    ///   "calibrated" → entropy is a moderate share of the gap; τ is well-tuned
+    ///   "raise"      → entropy is negligible (<10%); selection is too sharp, may miss value
+    pub temperature_signal: &'static str,
+}
+
+impl DualCertificate {
+    pub fn zero() -> Self {
+        DualCertificate {
+            rounding_loss: 0.0,
+            constraint_slack: 0.0,
+            relaxation_entropy: 0.0,
+            selection_entropy: 0.0,
+            quality_grade: "A",
+            budget_pressure: "optimal",
+            temperature_signal: "calibrated",
+        }
+    }
+
+    /// Construct a certificate from computed components, deriving the actionable signals.
+    ///
+    /// `primal_value`: realized hard selection score (Σ_{i∈S} sᵢ).
+    /// `dual_gap`: D(λ*) − primal, the total suboptimality bound.
+    /// `lambda_star`: the Lagrange multiplier for the budget constraint.
+    pub fn from_components(
+        rounding_loss: f64,
+        constraint_slack: f64,
+        relaxation_entropy: f64,
+        selection_entropy: f64,
+        primal_value: f64,
+        dual_gap: f64,
+        lambda_star: f64,
+    ) -> Self {
+        // ── Quality grade: gap relative to primal value ──
+        let gap_ratio = if primal_value > 1e-12 {
+            dual_gap / primal_value
+        } else {
+            0.0 // no selection → trivially optimal
+        };
+        let quality_grade = if gap_ratio < 0.01 {
+            "A"
+        } else if gap_ratio < 0.05 {
+            "B"
+        } else if gap_ratio < 0.15 {
+            "C"
+        } else if gap_ratio < 0.30 {
+            "D"
+        } else {
+            "F"
+        };
+
+        // ── Budget pressure: is the constraint binding? ──
+        let budget_pressure = if lambda_star > 0.1 && constraint_slack < dual_gap * 0.1 {
+            "expand"
+        } else if constraint_slack > dual_gap * 0.5 && dual_gap > 1e-9 {
+            "slack"
+        } else {
+            "optimal"
+        };
+
+        // ── Temperature signal: what fraction of the gap is entropy? ──
+        let entropy_share = if dual_gap > 1e-9 {
+            relaxation_entropy / dual_gap
+        } else {
+            0.0
+        };
+        let temperature_signal = if entropy_share > 0.6 {
+            "lower"
+        } else if entropy_share < 0.1 {
+            "raise"
+        } else {
+            "calibrated"
+        };
+
+        DualCertificate {
+            rounding_loss,
+            constraint_slack,
+            relaxation_entropy,
+            selection_entropy,
+            quality_grade,
+            budget_pressure,
+            temperature_signal,
+        }
+    }
 }
 
 // ── Private helpers ───────────────────────────────────────────────────────────
+
+/// Binary entropy H(p) = −p·ln(p) − (1−p)·ln(1−p), in nats.
+/// Returns 0 at the boundaries p ∈ {0, 1} (by the convention 0·ln(0) = 0).
+#[inline]
+fn binary_entropy(p: f64) -> f64 {
+    if p <= 0.0 || p >= 1.0 {
+        return 0.0;
+    }
+    -(p * p.ln() + (1.0 - p) * (1.0 - p).ln())
+}
 
 /// Numerically stable sigmoid σ(x).
 /// Clamped to [-500, 500] — no NaN, no Inf, no overflow.
@@ -144,6 +293,7 @@ pub fn knapsack_optimize(
             _method: "empty",
             lambda_star: 0.0,
             dual_gap: 0.0,
+            dual_certificate: DualCertificate::zero(),
         };
     }
 
@@ -171,6 +321,7 @@ pub fn knapsack_optimize(
             _method: "pinned_only",
             lambda_star: 0.0,
             dual_gap: 0.0,
+            dual_certificate: DualCertificate::zero(),
         };
     }
 
@@ -207,16 +358,17 @@ pub fn knapsack_optimize(
         .collect();
 
     // ── Selection ────────────────────────────────────────────────────────────
-    let (_method, mut selected, lambda_star, dual_gap) = if use_soft {
-        let (sel, lam, gap) =
+    let (_method, mut selected, lambda_star, dual_gap, dual_certificate) = if use_soft {
+        let (sel, lam, gap, cert) =
             soft_bisection_select(&scored, fragments, remaining_budget, temperature);
-        ("soft_bisection", sel, lam, gap)
+        ("soft_bisection", sel, lam, gap, cert)
     } else if scored.len() <= 2000 {
         (
             "exact_dp",
             knapsack_dp(&scored, fragments, remaining_budget),
             0.0,
             0.0,
+            DualCertificate::zero(),
         )
     } else {
         (
@@ -224,6 +376,7 @@ pub fn knapsack_optimize(
             knapsack_greedy(&scored, fragments, remaining_budget),
             0.0,
             0.0,
+            DualCertificate::zero(),
         )
     };
 
@@ -255,6 +408,7 @@ pub fn knapsack_optimize(
         _method,
         lambda_star,
         dual_gap,
+        dual_certificate,
     }
 }
 
@@ -379,7 +533,7 @@ pub fn compute_lambda_star(
 /// g(λ) = Σ σ((sᵢ − λ·tokensᵢ)/τ)·tokensᵢ − B
 /// dg/dλ = −1/τ · Σ p_i(1−p_i)·tokensᵢ² < 0  (strictly monotone → bisection converges)
 ///
-/// Returns: (selected_indices, λ*)  
+/// Returns: (selected_indices, λ*, dual_gap, DualCertificate)
 /// Caller stores λ* in EntrolyEngine.last_lambda_star for the REINFORCE backward pass,
 /// which recomputes p_i = σ((s_i − λ*·tokens_i)/τ) for exact advantage estimation.
 fn soft_bisection_select(
@@ -387,7 +541,7 @@ fn soft_bisection_select(
     fragments: &[ContextFragment],
     budget: u32,
     temperature: f64,
-) -> (Vec<usize>, f64, f64) {
+) -> (Vec<usize>, f64, f64, DualCertificate) {
     let tau = temperature.max(1e-4);
     let budget_f = budget as f64;
 
@@ -420,7 +574,7 @@ fn soft_bisection_select(
         .map(|&(idx, _)| fragments[idx].token_count as u64)
         .sum();
     if actual_tokens <= budget as u64 {
-        return (scored.iter().map(|&(idx, _)| idx).collect(), 0.0, 0.0);
+        return (scored.iter().map(|&(idx, _)| idx).collect(), 0.0, 0.0, DualCertificate::zero());
     }
 
     // Find λ_hi s.t. g(λ_hi) < 0 (expected tokens < budget).
@@ -440,7 +594,7 @@ fn soft_bisection_select(
         iters += 1;
     }
     if expected_tokens(hi) >= budget_f {
-        return (knapsack_greedy(scored, fragments, budget), 0.0, 0.0);
+        return (knapsack_greedy(scored, fragments, budget), 0.0, 0.0, DualCertificate::zero());
     }
 
     // 30-step bisection on λ ∈ [0, hi]. Each iteration: O(N). Total: O(30·N).
@@ -506,30 +660,53 @@ fn soft_bisection_select(
         }
     }
 
-    // ── Adaptive Dual Gap Temperature (ADGT) signal ──────────────────────────
-    // Compute D(λ*) = τ · Σ log(1 + exp((s_i − λ*·c_i)/τ)) + λ*·B  [log-sum-exp dual]
-    // This is the exact smooth upper bound on the primal objective.
-    // dual_gap = D(λ*) − primal ∈ [0, τ·N·log(2)]
-    //   → gap ≈ 0: weights converged, can lower temperature
-    //   → gap ≈ τ·N·log(2): all p_i ≈ 0.5, fully uncertain, keep temperature high
-    let dual_value: f64 = scored
-        .iter()
-        .map(|&(idx, score)| {
-            let tc = fragments[idx].token_count as f64;
-            let z = (score - lambda_star * tc) / tau;
-            // Numerically stable log(1 + exp(z)) = log1p(exp(z))
-            tau * if z > 20.0 {
-                z
-            } else {
-                (1.0_f64 + z.exp()).ln()
-            }
-        })
-        .sum::<f64>()
-        + lambda_star * budget_f;
+    // ── Dual Certificate decomposition ────────────────────────────────────────
+    //
+    // The dual value D(λ*) = τ·Σ log(1 + exp(zᵢ)) + λ*·B decomposes exactly:
+    //
+    //   D(λ*) = Σ pᵢ·sᵢ + λ*·(B − Σ pᵢ·cᵢ) + τ·Σ H(pᵢ)
+    //
+    // Proof: τ·log(1+exp(z)) = p·τ·z + τ·H(p) for p = σ(z), where
+    // H(p) = −p·ln(p) − (1−p)·ln(1−p). Substitute z = (s−λ*·c)/τ, sum, add λ*·B.
+    //
+    // The gap D(λ*) − primal decomposes into three independently actionable terms:
+    //   rounding_loss      = Σ pᵢ·sᵢ − primal   (soft vs hard score difference)
+    //   constraint_slack   = λ*·(B − Σ pᵢ·cᵢ)   (budget under-use in relaxation)
+    //   relaxation_entropy = τ·Σ H(pᵢ)           (temperature cost)
+    let mut relaxed_primal = 0.0_f64;
+    let mut expected_cost = 0.0_f64;
+    let mut total_entropy = 0.0_f64;
+    let mut dual_value = lambda_star * budget_f;
+
+    for &(idx, score) in scored {
+        let tc = fragments[idx].token_count as f64;
+        let z = (score - lambda_star * tc) / tau;
+        let p = sigmoid(z);
+
+        relaxed_primal += p * score;
+        expected_cost += p * tc;
+        total_entropy += binary_entropy(p);
+
+        // D(λ*) per-fragment: τ·log(1 + exp(z)), numerically stable
+        dual_value += tau * if z > 20.0 { z } else { (1.0_f64 + z.exp()).ln() };
+    }
 
     let dual_gap = (dual_value - primal_value).max(0.0);
+    let rounding_loss = relaxed_primal - primal_value;
+    let constraint_slack = lambda_star * (budget_f - expected_cost);
+    let relaxation_entropy = tau * total_entropy;
 
-    (selected, lambda_star, dual_gap)
+    let cert = DualCertificate::from_components(
+        rounding_loss,
+        constraint_slack,
+        relaxation_entropy,
+        total_entropy,
+        primal_value,
+        dual_gap,
+        lambda_star,
+    );
+
+    (selected, lambda_star, dual_gap, cert)
 }
 
 // ── Hard DP fallback (τ < 0.05) ──────────────────────────────────────────────
@@ -1250,6 +1427,139 @@ mod tests {
         assert!(
             ids.contains(&"best"),
             "Low-τ soft bisection should pick the best fragment"
+        );
+    }
+
+    /// The dual certificate decomposition is an algebraic identity, not an
+    /// approximation. For any soft-bisection result:
+    ///
+    ///   rounding_loss + constraint_slack + relaxation_entropy = dual_gap
+    ///
+    /// This test verifies the identity on randomised instances with mixed
+    /// fragment sizes and temperatures, catching any numerical drift.
+    #[test]
+    fn dual_certificate_decomposition_is_exact() {
+        let weights = ScoringWeights::default();
+        let mut seed = 0xDCE7_C0DE_u64;
+
+        for case in 0..40 {
+            let n = 5 + (case % 8);
+            let fragments: Vec<ContextFragment> = (0..n)
+                .map(|k| {
+                    let tokens = if lcg(&mut seed) < 0.3 {
+                        1 + (lcg(&mut seed) * 8.0) as u32
+                    } else {
+                        30 + (lcg(&mut seed) * 500.0) as u32
+                    };
+                    let mut f = ContextFragment::new(
+                        format!("f{k:03}"),
+                        "x".repeat(8),
+                        tokens,
+                        "".into(),
+                    );
+                    f.recency_score = lcg(&mut seed);
+                    f.frequency_score = lcg(&mut seed);
+                    f.semantic_score = lcg(&mut seed);
+                    f.entropy_score = lcg(&mut seed);
+                    f
+                })
+                .collect();
+
+            let total: u32 = fragments.iter().map(|f| f.token_count).sum();
+            let budget = (total as f64 * (0.2 + 0.5 * lcg(&mut seed))) as u32;
+            if budget == 0 {
+                continue;
+            }
+
+            let tau = 0.1 + lcg(&mut seed) * 1.5;
+            let result = knapsack_optimize(&fragments, budget, &weights, &no_feedback(), tau);
+
+            let cert = &result.dual_certificate;
+            let reconstructed = cert.rounding_loss + cert.constraint_slack + cert.relaxation_entropy;
+
+            assert!(
+                (reconstructed - result.dual_gap).abs() < 1e-9,
+                "case {case}: decomposition {reconstructed:.12} ≠ dual_gap {:.12}\n  \
+                 rounding={:.6} slack={:.6} entropy={:.6}",
+                result.dual_gap,
+                cert.rounding_loss,
+                cert.constraint_slack,
+                cert.relaxation_entropy,
+            );
+
+            assert!(
+                cert.selection_entropy >= 0.0,
+                "case {case}: selection entropy must be non-negative, got {}",
+                cert.selection_entropy
+            );
+            // rounding_loss can be negative: the hard greedy fill can beat the
+            // soft relaxation when it grabs a high-score item the relaxation
+            // assigned moderate probability.  The identity still holds.
+            assert!(
+                cert.relaxation_entropy >= -1e-9,
+                "case {case}: relaxation entropy must be non-negative, got {}",
+                cert.relaxation_entropy
+            );
+        }
+    }
+
+    /// The certificate is zero when every fragment fits (λ* = 0, no constraint
+    /// is binding, and the dual gap vanishes).
+    #[test]
+    fn dual_certificate_is_zero_when_everything_fits() {
+        let mk = |id: &str, tokens: u32| {
+            let mut f = ContextFragment::new(id.into(), "c".into(), tokens, "".into());
+            f.recency_score = 0.8;
+            f.frequency_score = 0.5;
+            f.semantic_score = 0.6;
+            f.entropy_score = 0.7;
+            f
+        };
+        let items = vec![mk("a", 100), mk("b", 100), mk("c", 100)];
+        let result = knapsack_optimize(&items, 500, &ScoringWeights::default(), &no_feedback(), 0.5);
+
+        assert_eq!(result.dual_gap, 0.0);
+        assert_eq!(result.dual_certificate.rounding_loss, 0.0);
+        assert_eq!(result.dual_certificate.constraint_slack, 0.0);
+        assert_eq!(result.dual_certificate.relaxation_entropy, 0.0);
+        assert_eq!(result.dual_certificate.selection_entropy, 0.0);
+        assert_eq!(result.dual_certificate.quality_grade, "A");
+        assert_eq!(result.dual_certificate.budget_pressure, "optimal");
+        assert_eq!(result.dual_certificate.temperature_signal, "calibrated");
+    }
+
+    /// Derived signals respond correctly to known regimes: tight budget →
+    /// "expand" pressure, high temperature → "lower" signal, large gap → grade < A.
+    #[test]
+    fn derived_signals_match_expected_regimes() {
+        let mk = |id: &str, tokens: u32, sem: f64| {
+            let mut f = ContextFragment::new(id.into(), "x".repeat(8), tokens, "".into());
+            f.recency_score = 0.5;
+            f.frequency_score = 0.5;
+            f.semantic_score = sem;
+            f.entropy_score = 0.5;
+            f
+        };
+
+        // Tight budget: 10 high-value fragments competing for 20% of capacity.
+        let tight: Vec<ContextFragment> = (0..10)
+            .map(|k| mk(&format!("t{k}"), 100, 0.3 + (k as f64) * 0.07))
+            .collect();
+        let r_tight = knapsack_optimize(
+            &tight, 200, &ScoringWeights::default(), &no_feedback(), 0.5,
+        );
+        assert!(
+            r_tight.dual_certificate.quality_grade != "A",
+            "tight budget should not grade A (gap_ratio should be > 1%)",
+        );
+
+        // High temperature: same fragments but τ = 2.0 maximises entropy.
+        let r_hot = knapsack_optimize(
+            &tight, 200, &ScoringWeights::default(), &no_feedback(), 2.0,
+        );
+        assert_eq!(
+            r_hot.dual_certificate.temperature_signal, "lower",
+            "very high τ should signal 'lower'",
         );
     }
 }

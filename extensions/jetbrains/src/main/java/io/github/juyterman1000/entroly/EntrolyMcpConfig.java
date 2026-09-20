@@ -1,21 +1,12 @@
 package io.github.juyterman1000.entroly;
 
-import com.intellij.ide.plugins.IdeaPluginDescriptor;
-import com.intellij.ide.plugins.PluginManagerCore;
-import com.intellij.openapi.extensions.PluginId;
-
 final class EntrolyMcpConfig {
-    static final String PLUGIN_ID = "io.github.juyterman1000.entroly";
 
     private EntrolyMcpConfig() {
     }
 
     static String current() {
-        IdeaPluginDescriptor descriptor = PluginManagerCore.getPlugin(PluginId.getId(PLUGIN_ID));
-        if (descriptor == null) {
-            throw new IllegalStateException("Entroly plugin descriptor is unavailable");
-        }
-        return render(descriptor.getVersion());
+        return render(EntrolyVersion.VALUE);
     }
 
     static String render(String version) {
