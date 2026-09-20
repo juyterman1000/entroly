@@ -1243,6 +1243,41 @@ def create_mcp_server(
         # ── No-match contract ────────────────────────────────────────
         apply_no_match_contract(result, query)
 
+        # ── Selection quality certificate ─────────────────────────────
+        try:
+            _stats = engine.stats()
+            _cert = _stats.get("dual_certificate")
+            if _cert:
+                result["selection_quality"] = {
+                    "grade": _cert.get("quality_grade", "?"),
+                    "budget_pressure": _cert.get("budget_pressure", "unknown"),
+                    "temperature_signal": _cert.get("temperature_signal", "unknown"),
+                    "dual_gap": _cert.get("dual_gap", 0.0),
+                    "lambda_star": _cert.get("lambda_star", 0.0),
+                }
+            _prism = _stats.get("prism", {})
+            _conv = _prism.get("convergence") if isinstance(_prism, dict) else None
+            if _conv:
+                result["weight_convergence"] = {
+                    "phase": _conv.get("phase", "unknown"),
+                    "condition_number": _conv.get("condition_number", 0.0),
+                    "effective_rank": _conv.get("effective_rank", 0),
+                    "steps": _conv.get("steps", 0),
+                    "regret_bound": _conv.get("regret_bound", 0.0),
+                }
+            _curv = _stats.get("selection_curvature")
+            if _curv:
+                result["selection_curvature"] = {
+                    "alpha": _curv.get("alpha", 0.0),
+                    "approximation_guarantee": _curv.get("approximation_guarantee", 0.0),
+                    "max_penalty": _curv.get("max_penalty", 0.0),
+                    "mean_diversity": _curv.get("mean_diversity", 1.0),
+                    "high_overlap_count": _curv.get("high_overlap_count", 0),
+                    "steps": _curv.get("steps", 0),
+                }
+        except Exception:
+            pass
+
         # CCR: compressed IOS variants must remain exactly recoverable.
         # Attach content-addressed handles before serializing the MCP result.
         try:
