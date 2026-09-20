@@ -118,13 +118,24 @@ jobs:
               )
 
           def dependency_path(path: str) -> bool:
+              # This set is coupled to the ecosystems declared in
+              # .github/dependabot.yml. Enabling an ecosystem without listing the
+              # files it rewrites does not fail loudly -- every pull request that
+              # ecosystem opens is simply rejected here as an untrusted author,
+              # forever. That is how the Gradle entry landed: the ecosystem was
+              # added, #466 was opened, and only the identity guard went red.
               dependency_files = {
                   "Cargo.lock",
                   "Cargo.toml",
                   "Pipfile",
                   "Pipfile.lock",
+                  "build.gradle",
+                  "build.gradle.kts",
                   "go.mod",
                   "go.sum",
+                  "gradle.lockfile",
+                  "gradlew",
+                  "gradlew.bat",
                   "package-lock.json",
                   "package.json",
                   "pnpm-lock.yaml",
@@ -132,10 +143,13 @@ jobs:
                   "pyproject.toml",
                   "requirements-dev.txt",
                   "requirements.txt",
+                  "settings.gradle",
+                  "settings.gradle.kts",
                   "uv.lock",
                   "yarn.lock",
               }
               name = Path(path).name
+              parent = Path(path).parent.as_posix()
               return (
                   name in dependency_files
                   or name.startswith("requirements")
@@ -143,6 +157,16 @@ jobs:
                   or path.startswith(".github/workflows/")
                   and Path(path).suffix in {".yml", ".yaml"}
                   or path == ".github/dependabot.yml"
+                  # The Gradle wrapper jar is a binary. It is accepted only in the
+                  # canonical wrapper directory, and never on trust alone: the
+                  # JetBrains workflow runs gradle/actions/setup-gradle with
+                  # validate-wrappers, which checksums the jar against published
+                  # Gradle releases before any of it executes.
+                  or parent.endswith("gradle/wrapper")
+                  and name in {"gradle-wrapper.jar", "gradle-wrapper.properties"}
+                  # Version catalog, only where Gradle actually reads it.
+                  or (parent == "gradle" or parent.endswith("/gradle"))
+                  and name == "libs.versions.toml"
               )
 
           def trusted_dependabot_author(

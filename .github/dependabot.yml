@@ -1,4 +1,11 @@
 version: 2
+
+# Adding an ecosystem here is only half the change. The Dependabot exemption in
+# .github/workflows/commit-identity-guard.yml is path-scoped, so every file the
+# new ecosystem rewrites must also be listed in its dependency_path(). Miss that
+# and nothing reports a misconfiguration -- the ecosystem opens pull requests
+# that are rejected as an untrusted author, forever. The Gradle entry below was
+# added without it, and #466 went red on the identity guard alone.
 updates:
   - package-ecosystem: "pip"
     directory: "/"

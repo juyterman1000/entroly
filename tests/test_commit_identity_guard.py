@@ -7,9 +7,12 @@ import sys
 import textwrap
 from pathlib import Path
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "commit-identity-guard.yml"
+DEPENDABOT = ROOT / ".github" / "dependabot.yml"
 OWNER_EMAIL = "208309368+juyterman1000@users.noreply.github.com"
 BOT_EMAIL = "41898282+github-actions[bot]@users.noreply.github.com"
 
@@ -302,6 +305,130 @@ def test_dependabot_commit_cannot_carry_hand_written_source(tmp_path: Path) -> N
         repo,
         subject="chore(deps): bump ureq from 2.12.1 to 3.4.0 in /entroly-core (#326)",
         include_source_path=True,
+    )
+
+    result = _run_guard(repo, tmp_path, event_name="push", event=_push_event(before, after))
+
+    assert result.returncode == 1
+    assert "author is dependabot[bot]" in result.stdout
+
+
+# One representative manifest set per ecosystem Dependabot may be configured
+# with. Keyed by the `package-ecosystem` value used in .github/dependabot.yml.
+ECOSYSTEM_MANIFESTS = {
+    "pip": ("pyproject.toml", "requirements.txt"),
+    "cargo": ("Cargo.toml", "Cargo.lock"),
+    "npm": ("package.json", "package-lock.json"),
+    "github-actions": (".github/workflows/ci.yml",),
+    "gradle": (
+        "build.gradle.kts",
+        "settings.gradle.kts",
+        "gradlew",
+        "gradlew.bat",
+        "gradle/wrapper/gradle-wrapper.jar",
+        "gradle/wrapper/gradle-wrapper.properties",
+    ),
+}
+
+
+def _ecosystem_paths(ecosystem: str, directory: str) -> list[str]:
+    """Repository-relative paths Dependabot rewrites for one configured update."""
+
+    base = directory.strip("/")
+    paths = []
+    for name in ECOSYSTEM_MANIFESTS[ecosystem]:
+        # Workflow bumps are written where the workflows live, not under the
+        # configured directory.
+        paths.append(name if name.startswith(".github/") else f"{base}/{name}" if base else name)
+    return paths
+
+
+def _dependabot_commit_touching(repo: Path, paths: list[str], *, subject: str) -> str:
+    for path in paths:
+        target = repo / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("bumped\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    bot = _identity_env(
+        author_name="dependabot[bot]",
+        author_email=DEPENDABOT_EMAIL,
+        committer_name="GitHub",
+        committer_email="noreply@github.com",
+    )
+    _git(repo, "commit", "-m", subject, env=bot)
+    return _git(repo, "rev-parse", "HEAD")
+
+
+def test_every_configured_dependabot_ecosystem_has_trusted_paths(tmp_path: Path) -> None:
+    """dependabot.yml and the guard's path scope are one change, not two.
+
+    Enabling an ecosystem without listing the files it rewrites in
+    dependency_path() fails silently: nothing reports a misconfiguration, and
+    every pull request that ecosystem opens is rejected as an untrusted author
+    instead. The Gradle entry shipped that way and #466 went red on this guard
+    alone, with its build green.
+    """
+
+    updates = yaml.safe_load(DEPENDABOT.read_text(encoding="utf-8"))["updates"]
+
+    configured = {update["package-ecosystem"] for update in updates}
+    unrecorded = sorted(configured - set(ECOSYSTEM_MANIFESTS))
+    assert not unrecorded, (
+        f"No representative manifests recorded for {unrecorded}. Add them to "
+        "ECOSYSTEM_MANIFESTS and make sure dependency_path() in "
+        "commit-identity-guard.yml accepts them."
+    )
+
+    paths: list[str] = []
+    for update in updates:
+        paths.extend(_ecosystem_paths(update["package-ecosystem"], update["directory"]))
+
+    repo, before = _init_repo(tmp_path)
+    after = _dependabot_commit_touching(
+        repo, paths, subject="chore(deps): bump every configured ecosystem (#1)"
+    )
+
+    result = _run_guard(repo, tmp_path, event_name="push", event=_push_event(before, after))
+
+    assert result.returncode == 0, (
+        "A path Dependabot is configured to rewrite is outside the guard's trust "
+        f"scope.\n{result.stdout}{result.stderr}"
+    )
+
+
+def test_dependabot_gradle_wrapper_bump_is_accepted(tmp_path: Path) -> None:
+    """The exact file set of #466, including the wrapper jar and launch scripts."""
+
+    repo, before = _init_repo(tmp_path)
+    after = _dependabot_commit_touching(
+        repo,
+        [
+            "extensions/jetbrains/gradle/wrapper/gradle-wrapper.jar",
+            "extensions/jetbrains/gradle/wrapper/gradle-wrapper.properties",
+            "extensions/jetbrains/gradlew",
+            "extensions/jetbrains/gradlew.bat",
+        ],
+        subject="chore(deps): bump gradle-wrapper from 9.5.0 to 9.7.1 (#466)",
+    )
+
+    result = _run_guard(repo, tmp_path, event_name="push", event=_push_event(before, after))
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_wrapper_jar_is_only_trusted_inside_the_wrapper_directory(tmp_path: Path) -> None:
+    """The jar is a binary, so its name alone must not buy trust anywhere.
+
+    CI validates the checksum of a jar in the canonical wrapper location, and
+    that validation is the reason the binary is accepted at all. A jar dropped
+    somewhere else is never checked, so the guard must not accept it.
+    """
+
+    repo, before = _init_repo(tmp_path)
+    after = _dependabot_commit_touching(
+        repo,
+        ["tools/gradle-wrapper.jar"],
+        subject="chore(deps): bump gradle-wrapper from 9.5.0 to 9.7.1 (#466)",
     )
 
     result = _run_guard(repo, tmp_path, event_name="push", event=_push_event(before, after))
