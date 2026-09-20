@@ -1485,7 +1485,16 @@ def optimize(
         "context_text": "\n\n".join(context_parts),
     }
 
-    stats = engine.stats()
+    # `stats()` is an EntrolyEngine method, but `optimize` accepts any object
+    # satisfying the selection protocol -- including the lightweight fakes the
+    # test suite builds and any caller-supplied engine. Calling it
+    # unconditionally turned every such caller into an AttributeError, which is
+    # how `test_optimize_preserves_query_for_full_engine` broke.
+    #
+    # The blocks below are all guarded on a truthy lookup, so an empty mapping
+    # degrades to "no certificate reported" rather than a wrong one. Same shape
+    # as the guard in `cli.py`.
+    stats = engine.stats() if hasattr(engine, "stats") else {}
     cert = stats.get("dual_certificate")
     if cert:
         out["selection_quality"] = {
