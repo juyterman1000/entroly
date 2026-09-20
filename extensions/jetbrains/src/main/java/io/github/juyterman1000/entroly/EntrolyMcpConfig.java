@@ -1,17 +1,20 @@
 package io.github.juyterman1000.entroly;
 
-import com.intellij.ide.plugins.IdeaPluginDescriptor;
-import com.intellij.ide.plugins.PluginManagerCore;
-import com.intellij.openapi.extensions.PluginId;
+import com.intellij.ide.plugins.PluginManager;
+import com.intellij.openapi.extensions.PluginDescriptor;
 
 final class EntrolyMcpConfig {
-    static final String PLUGIN_ID = "io.github.juyterman1000.entroly";
 
     private EntrolyMcpConfig() {
     }
 
     static String current() {
-        IdeaPluginDescriptor descriptor = PluginManagerCore.getPlugin(PluginId.getId(PLUGIN_ID));
+        // Resolve our own descriptor through the classloader that owns this class.
+        // The id-based lookups are both unusable: PluginManagerCore.getPlugin is
+        // @ApiStatus.Internal, and PluginManager.getPlugin(PluginId) is a deprecated
+        // delegate to it. Going through the class also keeps the id in plugin.xml as
+        // the single source of truth instead of restating it here.
+        PluginDescriptor descriptor = PluginManager.getPluginByClass(EntrolyMcpConfig.class);
         if (descriptor == null) {
             throw new IllegalStateException("Entroly plugin descriptor is unavailable");
         }
