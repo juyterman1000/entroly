@@ -141,7 +141,7 @@ def main() -> None:
     result = {
         "provenance": {
             "dataset_sha256": sha256,
-            "dataset_version": dataset["version"],
+            "dataset_version": dataset["dataset_version"],
             "git_head": _git_head(),
             "backend": "info_residual_with_dimensions",
         },

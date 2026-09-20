@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "dataset_version": "1.0.0",
   "description": "Frozen Omission Safety Benchmark: fragments that look dispensable by relevance but are causally necessary. Each case has a trap that defeats source-side heuristics.",
   "cases": [
     {

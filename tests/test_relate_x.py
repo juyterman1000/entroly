@@ -265,15 +265,84 @@ def test_dimension_override_preserves_hard_blocks():
 
 
 def test_dimension_override_only_for_summary_queries():
-    contract = compile_query_contract("What is the rate limit?")
-    a = EvidenceCandidate("a", "Gateway limit is 100 requests per minute.", 10, recoverable_ref="sha256:c1")
-    b = EvidenceCandidate("b", "Application allows 1000 requests per minute.", 10, recoverable_ref="sha256:c2")
-    c = EvidenceCandidate("c", "Monitoring tracks request counts.", 8, recoverable_ref="sha256:c3")
-    all_ev = (a, b, c)
+    """Path B (dimension coverage) must clear a soft block on a summary query
+    and refuse to on a plain one.
 
-    w = verify_omission_with_dimensions(a, (b, c), contract, all_evidence=all_ev)
-    if not w.safe_to_omit:
-        pass
+    Reaching that branch takes three preconditions, each asserted below because
+    violating any one makes the final comparison vacuous:
+
+    1. the base witness must BLOCK -- a safe base returns before either path;
+    2. it must block for soft reasons only -- the override returns early on any
+       hard reason, so a fixture carrying a numeric conflict or a lost task
+       value never reaches the code this test is named after;
+    3. `is_subsumed` must be False -- Path A (directional containment) applies
+       to every query type, so if it fires the verdict says nothing about
+       summary-ness.
+
+    The original fixture here satisfied none of them: three sentences about
+    request limits blocked on `omission_hides_numeric_conflict:100_vs_1000`,
+    a hard reason, so both queries returned identical verdicts and the body
+    ended in `if not w.safe_to_omit: pass`.
+
+    The evidence deliberately shares no vocabulary with the query. Tier 5
+    raises its soft reason only when *every* term longer than three characters
+    is absent from the retained text, so one leaked word ("gateway") makes the
+    base safe and silently guts the test.
+
+    The two queries differ only by the summary marker. That is the variable
+    under test; everything else is held constant.
+    """
+    plain = compile_query_contract("Which edge locality serves warm responses?")
+    summary = compile_query_contract("Summarize which edge locality serves warm responses")
+
+    omitted = EvidenceCandidate(
+        "cache", "Responses are cached in a nearby edge locality for warm reuse.", 12,
+        recoverable_ref="sha256:x1",
+    )
+    retained = (
+        EvidenceCandidate(
+            "retry", "Failed operations use exponential backoff until they succeed.", 12,
+            recoverable_ref="sha256:x2",
+        ),
+        EvidenceCandidate(
+            "auth", "Callers present a bearer credential that is validated upstream.", 12,
+            recoverable_ref="sha256:x3",
+        ),
+        EvidenceCandidate(
+            "log", "Each routed operation is written to the audit trail for review.", 12,
+            recoverable_ref="sha256:x4",
+        ),
+    )
+    all_ev = (omitted,) + retained
+
+    for label, contract in (("plain", plain), ("summary", summary)):
+        base = verify_omission_safety(omitted, retained, contract)
+        assert not base.safe_to_omit, (
+            f"{label}: base must block, or neither override path is reached"
+        )
+        assert all(
+            r.startswith("obligation_support_may_depend_on_omitted")
+            for r in base.reasons
+        ), f"{label}: a hard reason short-circuits before the override: {base.reasons}"
+
+    assert not is_subsumed(omitted, retained), (
+        "Path A (containment) fires for any query type; if it clears this "
+        "omission the comparison below proves nothing about Path B"
+    )
+
+    plain_witness = verify_omission_with_dimensions(
+        omitted, retained, plain, all_evidence=all_ev
+    )
+    summary_witness = verify_omission_with_dimensions(
+        omitted, retained, summary, all_evidence=all_ev
+    )
+
+    assert not plain_witness.safe_to_omit, (
+        "dimension coverage must not clear a soft block on a non-summary query"
+    )
+    assert summary_witness.safe_to_omit, (
+        "dimension coverage must clear the same soft block on a summary query"
+    )
 
 
 # --- Joint omission safety ---

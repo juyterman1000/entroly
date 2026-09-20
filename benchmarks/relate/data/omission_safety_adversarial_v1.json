@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "dataset_version": "1.0.0",
   "description": "Adversarial expansion targeting dimension clustering. Each case is designed to probe a specific failure mode of the coverage-based omission witness.",
   "cases": [
     {
