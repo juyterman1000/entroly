@@ -180,8 +180,13 @@ jobs:
                   author_name != "dependabot[bot]"
                   or author_email
                   != "49699333+dependabot[bot]@users.noreply.github.com"
-                  or not github_service_committer(committer_name, committer_email)
               ):
+                  return False
+              # Squash/merge commits use GitHub web-flow as committer;
+              # rebase-merges use the owner who triggered the merge.
+              if not github_service_committer(
+                  committer_name, committer_email
+              ) and not owner_identity(committer_name, committer_email):
                   return False
 
               paths = changed_paths(commit)
@@ -208,7 +213,7 @@ jobs:
               return bool(
                   re.fullmatch(
                       r"(?:(?:build|chore)\(deps(?:-[^)]+)?\): (?:bump|update)|Bump|Update) "
-                      r".+ \(#\d+\)",
+                      r".+?(?: \(#\d+\))?",
                       subject,
                       re.IGNORECASE,
                   )
