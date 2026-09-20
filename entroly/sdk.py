@@ -1477,13 +1477,56 @@ def optimize(
             context_parts.append(item.get("content", ""))
             total_tokens += item.get("token_count", 0)
 
-    return {
+    out: dict[str, Any] = {
         "selected": selected,
         "total_tokens": total_tokens,
         "fragments_selected": len(selected),
         "fragments_total": len(fragments),
         "context_text": "\n\n".join(context_parts),
     }
+
+    # `stats()` is an EntrolyEngine method, but `optimize` accepts any object
+    # satisfying the selection protocol -- including the lightweight fakes the
+    # test suite builds and any caller-supplied engine. Calling it
+    # unconditionally turned every such caller into an AttributeError, which is
+    # how `test_optimize_preserves_query_for_full_engine` broke.
+    #
+    # The blocks below are all guarded on a truthy lookup, so an empty mapping
+    # degrades to "no certificate reported" rather than a wrong one. Same shape
+    # as the guard in `cli.py`.
+    stats = engine.stats() if hasattr(engine, "stats") else {}
+    cert = stats.get("dual_certificate")
+    if cert:
+        out["selection_quality"] = {
+            "grade": cert.get("quality_grade", "?"),
+            "budget_pressure": cert.get("budget_pressure", "unknown"),
+            "temperature_signal": cert.get("temperature_signal", "unknown"),
+            "dual_gap": cert.get("dual_gap", 0.0),
+            "lambda_star": cert.get("lambda_star", 0.0),
+        }
+
+    prism = stats.get("prism", {})
+    conv = prism.get("convergence") if isinstance(prism, dict) else None
+    if conv:
+        out["weight_convergence"] = {
+            "phase": conv.get("phase", "unknown"),
+            "condition_number": conv.get("condition_number", 0.0),
+            "effective_rank": conv.get("effective_rank", 0),
+            "steps": conv.get("steps", 0),
+        }
+
+    curv = stats.get("selection_curvature")
+    if curv:
+        out["selection_curvature"] = {
+            "alpha": curv.get("alpha", 0.0),
+            "approximation_guarantee": curv.get("approximation_guarantee", 0.0),
+            "max_penalty": curv.get("max_penalty", 0.0),
+            "mean_diversity": curv.get("mean_diversity", 1.0),
+            "high_overlap_count": curv.get("high_overlap_count", 0),
+            "steps": curv.get("steps", 0),
+        }
+
+    return out
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1607,6 +1650,100 @@ def recover_receipt_omission(
     from .context_receipts import recover_omitted
 
     return recover_omitted(receipt, chunk_id, store_dir=store_dir)
+
+
+def verify_receipt_closure(
+    receipt: dict[str, Any],
+) -> dict[str, Any]:
+    """Verify that a Context Receipt is self-contained (RCFP).
+
+    Returns a certificate with ``closed=True`` when all four closure
+    checks pass: fingerprint, dependency, source, and reproducibility.
+    Each violation names the failing check and the offending chunk.
+    """
+    from .context_receipts.firewall import verify_receipt_closure as _verify
+
+    cert = _verify(receipt)
+    return cert.to_dict()
+
+
+def certify_omission_containment(
+    omitted: str,
+    retained: str,
+    *,
+    sigma: float = 2.0,
+) -> dict[str, Any]:
+    """Formal containment bound for a single omission.
+
+    Returns a certificate proving whether the retained set contains the
+    omitted fragment's information at sigma multiples of the compression
+    noise floor.  When ``contained`` is True, the omission is provably
+    safe — the retained set carries the same information.
+    """
+    from .relate.compression_residual import certify_containment
+
+    cert = certify_containment(omitted, retained, sigma=sigma)
+    return cert.to_dict()
+
+
+def certify_receipt_containment(
+    receipt: dict[str, Any],
+    *,
+    sigma: float = 2.0,
+) -> dict[str, Any]:
+    """Certify containment for every omission in a Context Receipt.
+
+    Returns per-chunk containment certificates and an aggregate summary.
+    Each omitted chunk is checked against the concatenated selected text.
+
+    Omitted items in standard receipts carry ``text_preview`` (truncated),
+    so containment certificates based on previews are approximate.  For
+    exact certification, recover full text via ``recover_receipt_omission``
+    and pass it to ``certify_omission_containment`` directly.
+    """
+    from .relate.compression_residual import certify_containment
+
+    selected = receipt.get("selected_context", [])
+    if isinstance(selected, list):
+        retained_text = "\n".join(
+            item.get("text", item.get("content", ""))
+            for item in selected
+            if isinstance(item, dict)
+        )
+    else:
+        retained_text = ""
+
+    omitted = receipt.get("omitted_context", [])
+    certs = []
+    contained_count = 0
+    for item in omitted:
+        if not isinstance(item, dict):
+            continue
+        chunk_id = item.get("chunk_id", item.get("id", "unknown"))
+        text = (
+            item.get("text")
+            or item.get("text_preview")
+            or item.get("content", "")
+        )
+        if not text:
+            continue
+        cert = certify_containment(text, retained_text, sigma=sigma)
+        entry = cert.to_dict()
+        entry["chunk_id"] = chunk_id
+        entry["text_is_preview"] = "text" not in item
+        certs.append(entry)
+        if cert.contained:
+            contained_count += 1
+
+    total = len(certs)
+    return {
+        "certificates": certs,
+        "total_omissions": total,
+        "contained_count": contained_count,
+        "uncontained_count": total - contained_count,
+        "all_contained": total > 0 and contained_count == total,
+        "sigma": sigma,
+    }
 
 
 # EICV — Evidence-Invariant Causal Verification (deterministic, no provider call)

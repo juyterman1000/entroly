@@ -186,6 +186,50 @@ pub struct SdsResult {
     pub total_tokens: u32,
     pub(crate) _total_value: f64,
     pub diversity_score: f64, // Average pairwise diversity of selected set
+    pub curvature: SelectionCurvature,
+}
+
+/// Curvature certificate for IOS selection (Pillar IV).
+///
+/// The SDS diversity penalty f(S∪{x}) = base_value(x) · diversity(x,S)
+/// is not monotone: adding a near-duplicate can decrease the marginal
+/// density below what was available before it was selected. The curvature
+/// parameter α captures how far from monotone the objective was during
+/// this particular selection.
+///
+/// For a monotone submodular objective, the greedy algorithm achieves
+/// (1-1/e) ≈ 0.632 of optimal. With curvature α ∈ [0,1], the guarantee
+/// weakens to (1-1/e)(1 - α). α = 0 is fully monotone; α = 1 is the
+/// worst case where adding any item could zero out the objective.
+///
+/// Production value: when curvature is high, the diversity penalty is
+/// costing more than it's saving. The system should consider relaxing
+/// DIVERSITY_ALPHA or reducing the diversity floor.
+#[derive(Clone, Debug)]
+pub struct SelectionCurvature {
+    /// Maximum diversity penalty observed: max_over_steps(1 - diversity_factor).
+    /// 0.0 = all additions were to fully novel items.
+    /// 1.0 = a near-exact duplicate was considered.
+    pub max_penalty: f64,
+    /// Mean diversity factor across all greedy steps.
+    pub mean_diversity: f64,
+    /// Number of candidates whose diversity factor fell below 0.5 (high overlap).
+    pub high_overlap_count: u32,
+    /// Total greedy steps taken.
+    pub steps: u32,
+    /// Effective curvature α ∈ [0,1]: the mean penalty weighted by
+    /// how much value it displaced.
+    pub alpha: f64,
+    /// Stable rank of the selected set: how many independent fragments the
+    /// selection is actually worth. Lies in [1, m] for a selection of size m;
+    /// 0.0 when nothing was selected. See `compute_stable_rank`.
+    pub stable_rank: f64,
+    /// Number of selected fragments that carried a fingerprint, i.e. the `m`
+    /// that `stable_rank` is out of. Fragments without a fingerprint are
+    /// excluded from both, so this is not the selection length. Reported
+    /// because `stable_rank` alone is not interpretable: 31 is a good result
+    /// out of 34 and a bad one out of 200.
+    pub fingerprinted_count: u32,
 }
 
 /// Compute the diversity factor for a candidate given the current selected set.
@@ -264,6 +308,65 @@ fn compute_pairwise_diversity(hashes: &[u64]) -> f64 {
     }
 }
 
+/// Stable rank of the selected set's similarity matrix.
+///
+/// For the m×m matrix `G` with `G_ii = 1` and `G_ij = simhash_cosine(i, j)`,
+///
+/// ```text
+///   stable_rank = (tr G)^2 / tr(G^2) = m^2 / (m + E),
+///   E = 2 * sum_{i<j} G_ij^2
+/// ```
+///
+/// The identity `tr(G^2) = ||G||_F^2 = m + E` holds because `G` is symmetric
+/// with unit diagonal, so the whole quantity comes out of the same pair loop
+/// `compute_pairwise_diversity` already walks — no new similarity model.
+///
+/// ## Why this and not `diversity_score`
+///
+/// `diversity_score` is a mean over pairs, and a mean cannot see clustering.
+/// Forty fragments forming four tight clusters of ten and forty fragments
+/// spread evenly can report the *same* mean diversity; the first selection is
+/// worth about four independent things and the second about forty. Stable rank
+/// separates them because squaring the similarities makes concentrated mass
+/// dominate, which is exactly the structure a mean averages away.
+///
+/// Range is `[1, m]`, and both ends are tight: `m` identical fragments give
+/// `m^2 / (m + m(m-1)) = 1`, and `m` mutually orthogonal fragments give
+/// `m^2 / m = m`.
+///
+/// ## Bias direction
+///
+/// `simhash_cosine` clamps negative estimates to zero, which injects positive
+/// bias on near-orthogonal pairs (measured +0.079; see the note in
+/// `dedup::simhash_cosine_lcb`). Positive bias in `G_ij` inflates `E`, which
+/// *deflates* `m^2 / (m + E)`. The reported figure therefore understates the
+/// true stable rank rather than overstating it — the safe direction for a
+/// diversity claim.
+///
+/// This is a descriptive statistic of the estimated matrix, not a certified
+/// bound on the underlying one. A certificate would need `G` to be PSD, which
+/// a clamped per-pair estimator does not guarantee.
+fn compute_stable_rank(hashes: &[u64]) -> f64 {
+    let m = hashes.len();
+    if m == 0 {
+        return 0.0;
+    }
+    if m == 1 {
+        return 1.0;
+    }
+    let mut energy = 0.0_f64;
+    for i in 0..m {
+        for j in (i + 1)..m {
+            let s = simhash_cosine(hashes[i], hashes[j]);
+            energy += s * s;
+        }
+    }
+    let m_f = m as f64;
+    // tr(G^2) >= m, so the quotient is always defined and at most m.
+    let frobenius_sq = m_f + 2.0 * energy;
+    ((m_f * m_f / frobenius_sq) * 10000.0).round() / 10000.0
+}
+
 /// IOS: Information-Optimal Selection
 ///
 /// Combines Submodular Diversity Selection with Multi-Resolution Knapsack
@@ -301,6 +404,15 @@ pub fn ios_select(
             total_tokens: 0,
             _total_value: 0.0,
             diversity_score: 1.0,
+            curvature: SelectionCurvature {
+                max_penalty: 0.0,
+                mean_diversity: 1.0,
+                high_overlap_count: 0,
+                steps: 0,
+                alpha: 0.0,
+                stable_rank: 0.0,
+                fingerprinted_count: 0,
+            },
         };
     }
 
@@ -496,7 +608,27 @@ pub fn ios_select(
             selections: pinned,
             total_tokens: pinned_tokens,
             _total_value: (_total_value * 10000.0).round() / 10000.0,
-            diversity_score: 1.0,
+            // Measured, not asserted. This previously returned a hard-coded
+            // 1.0, so a pinned-only selection of near-duplicate files reported
+            // perfect diversity — the same class of defect this file already
+            // documents fixing in `compute_pairwise_diversity`, where a
+            // user-facing number was not on the scale its own documentation
+            // claimed. The sibling fast path below already measures; this was
+            // the inconsistent one.
+            //
+            // Fragments without a fingerprint leave `pinned_hashes` empty, and
+            // the empty case still returns 1.0 — absence of evidence reports as
+            // "not known to be redundant", never as "identical".
+            diversity_score: compute_pairwise_diversity(&pinned_hashes),
+            curvature: SelectionCurvature {
+                max_penalty: 0.0,
+                mean_diversity: 1.0,
+                high_overlap_count: 0,
+                steps: 0,
+                alpha: 0.0,
+                stable_rank: compute_stable_rank(&pinned_hashes),
+                fingerprinted_count: pinned_hashes.len() as u32,
+            },
         };
     }
 
@@ -563,6 +695,15 @@ pub fn ios_select(
                 total_tokens: fast_tokens,
                 _total_value: (fast_value * 10000.0).round() / 10000.0,
                 diversity_score: compute_pairwise_diversity(&fast_hashes),
+                curvature: SelectionCurvature {
+                    max_penalty: 0.0,
+                    mean_diversity: 1.0,
+                    high_overlap_count: 0,
+                    steps: 0,
+                    alpha: 0.0,
+                    stable_rank: compute_stable_rank(&fast_hashes),
+                    fingerprinted_count: fast_hashes.len() as u32,
+                },
             };
         }
     }
@@ -597,6 +738,14 @@ pub fn ios_select(
     for &(idx, _) in &selected {
         selected_frags[idx] = true;
     }
+
+    // ── Curvature tracking (Pillar IV) ──
+    let mut curv_max_penalty = 0.0_f64;
+    let mut curv_div_sum = 0.0_f64;
+    let mut curv_weighted_penalty_sum = 0.0_f64;
+    let mut curv_weighted_value_sum = 0.0_f64;
+    let mut curv_high_overlap = 0_u32;
+    let mut curv_steps = 0_u32;
 
     // Pre-sort candidates by base_value/cost density for faster convergence
     // (The diversity penalty will reorder, but this is a good initial ordering)
@@ -676,16 +825,28 @@ pub fn ios_select(
         match best_idx {
             Some(ci) => {
                 let cand = &candidates[ci];
+                let div = if enable_diversity {
+                    diversity_factor(cand.simhash, &selected_hashes).max(diversity_floor)
+                } else {
+                    1.0
+                };
+                let penalty = 1.0 - div;
+                curv_max_penalty = curv_max_penalty.max(penalty);
+                curv_div_sum += div;
+                curv_weighted_penalty_sum += penalty * cand.base_value;
+                curv_weighted_value_sum += cand.base_value;
+                if div < 0.5 {
+                    curv_high_overlap += 1;
+                }
+                curv_steps += 1;
+
                 selected.push((cand.frag_idx, cand.resolution));
-                // Only fingerprinted fragments join the similarity set. A
-                // fingerprint-less fragment would otherwise seed a `0` hash
-                // that every later fingerprint-less candidate matches exactly.
                 if let Some(fp) = cand.simhash {
                     selected_hashes.push(fp);
                 }
                 selected_frags[cand.frag_idx] = true;
                 budget_used += cand.token_cost;
-                _total_value += cand.base_value; // Track pre-diversity value for reporting
+                _total_value += cand.base_value;
             }
             None => break, // No more candidates fit
         }
@@ -707,11 +868,27 @@ pub fn ios_select(
     // ── Phase 5: Compute diversity score of final selection ──
     let diversity_score = compute_pairwise_diversity(&selected_hashes);
 
+    let mean_div = if curv_steps > 0 { curv_div_sum / curv_steps as f64 } else { 1.0 };
+    let alpha = if curv_weighted_value_sum > 1e-12 {
+        (curv_weighted_penalty_sum / curv_weighted_value_sum).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+
     SdsResult {
         selections: selected,
         total_tokens: budget_used,
         _total_value: (_total_value * 10000.0).round() / 10000.0,
         diversity_score,
+        curvature: SelectionCurvature {
+            max_penalty: (curv_max_penalty * 10000.0).round() / 10000.0,
+            mean_diversity: (mean_div * 10000.0).round() / 10000.0,
+            high_overlap_count: curv_high_overlap,
+            steps: curv_steps,
+            alpha: (alpha * 10000.0).round() / 10000.0,
+            stable_rank: compute_stable_rank(&selected_hashes),
+            fingerprinted_count: selected_hashes.len() as u32,
+        },
     }
 }
 
@@ -1354,6 +1531,275 @@ mod tests {
             "Fast path should use full resolution for all"
         );
         assert_eq!(result.total_tokens, 150);
+    }
+
+    #[test]
+    fn curvature_tracks_diversity_penalty_across_greedy_steps() {
+        let frags: Vec<ContextFragment> = (0..8)
+            .map(|i| {
+                let content = if i < 4 {
+                    "shared function body with identical implementation".to_string()
+                } else {
+                    format!("completely unique fragment number {i} with distinct words")
+                };
+                make_frag(&format!("f{i}"), &content, 30, &format!("mod{i}.rs"))
+            })
+            .collect();
+
+        let result = ios_select(
+            &frags,
+            120,
+            0.3, 0.25, 0.25, 0.2,
+            &empty_feedback(),
+            true,
+            false,
+            &default_factors(),
+            DEFAULT_DIV_FLOOR,
+            DEFAULT_MIN_CANDIDATE_VALUE,
+        );
+
+        assert!(result.curvature.steps > 0, "greedy loop must have run");
+        assert!(
+            result.curvature.alpha >= 0.0 && result.curvature.alpha <= 1.0,
+            "alpha must be in [0,1]: {}",
+            result.curvature.alpha
+        );
+        assert!(
+            result.curvature.mean_diversity >= 0.0 && result.curvature.mean_diversity <= 1.0,
+            "mean_diversity must be in [0,1]: {}",
+            result.curvature.mean_diversity
+        );
+        let guarantee = (1.0 - 1.0_f64.exp().recip()) * (1.0 - result.curvature.alpha);
+        assert!(
+            guarantee > 0.0,
+            "approximation guarantee must be positive: {guarantee}"
+        );
+    }
+
+    #[test]
+    fn curvature_is_zero_when_all_fragments_fit() {
+        let frags = vec![
+            make_frag("a", "def alpha(): return 1", 20, "a.py"),
+            make_frag("b", "def beta(): return 2", 20, "b.py"),
+        ];
+        let result = ios_select(
+            &frags,
+            10_000,
+            0.3, 0.25, 0.25, 0.2,
+            &empty_feedback(),
+            true,
+            false,
+            &default_factors(),
+            DEFAULT_DIV_FLOOR,
+            DEFAULT_MIN_CANDIDATE_VALUE,
+        );
+        assert_eq!(result.curvature.alpha, 0.0, "no curvature when everything fits");
+        assert_eq!(result.curvature.max_penalty, 0.0);
+    }
+
+    /// Deterministic 64-bit stream. Independent draws differ in ~32 of 64 bits,
+    /// which is the near-orthogonal regime `simhash_cosine` maps to ~0.
+    fn srank_lcg(state: &mut u64) -> u64 {
+        *state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        *state
+    }
+
+    #[test]
+    fn stable_rank_is_one_for_identical_fragments() {
+        let hashes = vec![0xDEAD_BEEF_CAFE_F00D_u64; 8];
+        let sr = compute_stable_rank(&hashes);
+        assert!(
+            (sr - 1.0).abs() < 1e-9,
+            "eight copies of one fragment are worth one independent thing, got {sr}"
+        );
+    }
+
+    #[test]
+    fn stable_rank_is_set_size_for_orthogonal_fragments() {
+        // Hamming distance 32 of 64 => cos(pi/2) = 0 => no shared mass.
+        let hashes = vec![0x0000_0000_0000_0000_u64, 0x0000_0000_FFFF_FFFF_u64];
+        assert_eq!(
+            crate::dedup::hamming_distance(hashes[0], hashes[1]),
+            32,
+            "test fixture must actually be orthogonal or it proves nothing"
+        );
+        let sr = compute_stable_rank(&hashes);
+        assert!(
+            (sr - 2.0).abs() < 1e-3,
+            "two orthogonal fragments are worth two, got {sr}"
+        );
+    }
+
+    #[test]
+    fn stable_rank_stays_within_one_and_set_size() {
+        let mut state = 0x5EED_1234_5678_9ABC_u64;
+        for m in 1..=24usize {
+            let hashes: Vec<u64> = (0..m).map(|_| srank_lcg(&mut state)).collect();
+            let sr = compute_stable_rank(&hashes);
+            assert!(
+                sr >= 1.0 - 1e-9 && sr <= m as f64 + 1e-9,
+                "stable rank {sr} escaped [1, {m}]"
+            );
+        }
+    }
+
+    /// The property that justifies reporting this at all: a mean over pairs
+    /// cannot distinguish "four tight clusters" from "evenly spread", because
+    /// averaging is exactly the operation that discards the concentration.
+    /// Squaring the similarities keeps it.
+    #[test]
+    fn stable_rank_separates_clustered_from_spread_selections() {
+        let mut state = 0xC0FF_EE00_1234_5678_u64;
+
+        // Four distinct bases, each selected four times: sixteen fragments
+        // carrying four fragments' worth of information.
+        let bases: Vec<u64> = (0..4).map(|_| srank_lcg(&mut state)).collect();
+        let clustered: Vec<u64> = bases.iter().flat_map(|&b| [b; 4]).collect();
+
+        // Sixteen independent draws.
+        let spread: Vec<u64> = (0..16).map(|_| srank_lcg(&mut state)).collect();
+
+        assert_eq!(clustered.len(), spread.len(), "same selection size, or the comparison is meaningless");
+
+        let sr_clustered = compute_stable_rank(&clustered);
+        let sr_spread = compute_stable_rank(&spread);
+
+        // Exact arithmetic for the ideal clustered case: within-cluster pairs
+        // contribute 1 each, so E = 2 * 4 * C(4,2) = 48 and the quotient is
+        // 16^2 / (16 + 48) = 4. Cross-cluster estimator noise moves it a little.
+        assert!(
+            (3.0..=4.6).contains(&sr_clustered),
+            "four clusters of four should be worth about four, got {sr_clustered}"
+        );
+        assert!(
+            sr_spread > 11.0,
+            "sixteen independent fragments should be worth most of sixteen, got {sr_spread}"
+        );
+        assert!(
+            sr_spread > 2.5 * sr_clustered,
+            "stable rank must separate these: clustered {sr_clustered}, spread {sr_spread}"
+        );
+    }
+
+    /// The pinned-only early return hard-coded `diversity_score: 1.0`, so a
+    /// selection made entirely of duplicate pinned files reported perfect
+    /// diversity. That value reaches Python as `ios_diversity_score` and is
+    /// mirrored in the WASM binding, so the number was wrong on three surfaces.
+    ///
+    /// Every fragment is pinned here, which empties the candidate list (pinned
+    /// indices are skipped during candidate construction) and forces the
+    /// `candidates.is_empty()` return rather than the fast path, which already
+    /// measured correctly.
+    #[test]
+    fn pinned_only_path_measures_diversity_rather_than_asserting_it() {
+        let duplicate = "def identical(value):\n    return value + 1\n";
+        let mut frags = vec![
+            make_frag("p1", duplicate, 10, "a.py"),
+            make_frag("p2", duplicate, 10, "b.py"),
+            make_frag("p3", duplicate, 10, "c.py"),
+        ];
+        for f in &mut frags {
+            f.is_pinned = true;
+        }
+
+        let result = ios_select(
+            &frags,
+            10_000,
+            0.3, 0.25, 0.25, 0.2,
+            &empty_feedback(),
+            true,
+            false,
+            &default_factors(),
+            DEFAULT_DIV_FLOOR,
+            DEFAULT_MIN_CANDIDATE_VALUE,
+        );
+
+        assert_eq!(
+            result.selections.len(),
+            3,
+            "all three pinned fragments should be selected"
+        );
+        assert_eq!(
+            result.curvature.steps, 0,
+            "greedy loop must not have run, or this is not the pinned-only path"
+        );
+        assert!(
+            result.diversity_score < 0.1,
+            "three copies of one file are not diverse, got {}",
+            result.diversity_score
+        );
+        assert!(
+            (result.curvature.stable_rank - 1.0).abs() < 1e-6,
+            "three identical fragments are worth one, got {}",
+            result.curvature.stable_rank
+        );
+    }
+
+    /// Absence of a fingerprint is not evidence of redundancy. The pinned-only
+    /// path must keep reporting 1.0 when nothing was fingerprinted, which is
+    /// what `compute_pairwise_diversity` returns for an empty set.
+    #[test]
+    fn pinned_only_path_reports_full_diversity_without_fingerprints() {
+        let mut frags = vec![
+            make_stub("s1", "def one(): return 1", 10, "a.py"),
+            make_stub("s2", "def two(): return 2", 10, "b.py"),
+        ];
+        for f in &mut frags {
+            f.is_pinned = true;
+        }
+
+        let result = ios_select(
+            &frags,
+            10_000,
+            0.3, 0.25, 0.25, 0.2,
+            &empty_feedback(),
+            true,
+            false,
+            &default_factors(),
+            DEFAULT_DIV_FLOOR,
+            DEFAULT_MIN_CANDIDATE_VALUE,
+        );
+
+        assert_eq!(
+            result.diversity_score, 1.0,
+            "engine claimed redundancy among fragments it never fingerprinted"
+        );
+        assert_eq!(
+            result.curvature.fingerprinted_count, 0,
+            "fixture must be fingerprint-less or the assertion above is vacuous"
+        );
+    }
+
+    #[test]
+    fn stable_rank_is_reported_for_a_real_selection() {
+        let frags = vec![
+            make_frag("a", "def alpha(): return 1", 20, "a.py"),
+            make_frag("b", "def beta(): return 2", 20, "b.py"),
+        ];
+        let result = ios_select(
+            &frags,
+            10_000,
+            0.3, 0.25, 0.25, 0.2,
+            &empty_feedback(),
+            true,
+            false,
+            &default_factors(),
+            DEFAULT_DIV_FLOOR,
+            DEFAULT_MIN_CANDIDATE_VALUE,
+        );
+        let c = &result.curvature;
+        assert!(
+            c.fingerprinted_count > 0,
+            "fixture must produce fingerprinted fragments or the field proves nothing"
+        );
+        assert!(
+            c.stable_rank >= 1.0 && c.stable_rank <= c.fingerprinted_count as f64 + 1e-9,
+            "stable_rank {} out of {} is outside [1, m]",
+            c.stable_rank,
+            c.fingerprinted_count
+        );
     }
 }
 
