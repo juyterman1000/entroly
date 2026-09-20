@@ -26,6 +26,17 @@ public final class EntrolyMcpConfigTest {
     }
 
     @Test
+    public void pinsTheVersionBakedInAtBuildTime() {
+        // current() no longer needs a running IDE, so the generated constant is
+        // checked here: it must be wired into the source set and must survive
+        // render()'s semver validation. A malformed version in pyproject.toml now
+        // fails the build instead of throwing in the user's IDE.
+        String config = EntrolyMcpConfig.current();
+
+        assertTrue(config.contains("\"entroly-mcp@" + EntrolyVersion.VALUE + "\""));
+    }
+
+    @Test
     public void boundsRuntimeOutputBeforeDisplayingIt() {
         String untrustedOutput = "1.2.3\u0000" + "x".repeat(200) + "\nignored";
         String normalized = EntrolyRuntimeCheck.normalizeOutput(untrustedOutput);
