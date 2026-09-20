@@ -673,6 +673,46 @@ class TestEdgeCases:
         result = engine.optimize(1000, "config")
         assert len(result["selected"]) >= 3
 
+    def test_all_pinned_reports_measured_diversity(self):
+        """Pinned-only selection must measure diversity, not assume it.
+
+        When every fragment is pinned the candidate list is empty, which takes
+        an early return inside ios_select. That return used to hard-code
+        diversity 1.0, so a pinned-only set of near-duplicates reported perfect
+        diversity all the way out to `ios_diversity_score`. `test_all_pinned`
+        above does not look at the value, so nothing caught it here.
+
+        Byte-identical content cannot be used: ingest-time simhash dedup
+        collapses it to a single fragment, and one fragment genuinely is
+        maximally diverse. Hence near-duplicates plus an explicit check that
+        more than one survived — otherwise the assertion passes vacuously.
+        """
+        engine = make_engine()
+        for i in range(4):
+            ingest_fragment(
+                engine,
+                f"def process_{i}(): return compute_result(data_{i})",
+                f"copy{i}.py", 10, is_pinned=True,
+            )
+        engine.advance_turn()
+        result = engine.optimize(10_000, "process")
+
+        curv = engine.stats().get("selection_curvature", {})
+        assert curv.get("steps") == 0, (
+            f"greedy loop ran (steps={curv.get('steps')}); this is not the "
+            "pinned-only path and the assertion below would not cover it"
+        )
+        survived = curv.get("fingerprinted_count", 0)
+        assert survived >= 2, (
+            f"dedup collapsed the fixture to {survived} fragment(s); "
+            "the diversity assertion would be vacuous"
+        )
+
+        div = result["ios_diversity_score"]
+        assert div < 1.0, (
+            f"{survived} near-duplicate pinned fragments reported diversity {div}"
+        )
+
     def test_budget_smaller_than_smallest(self):
         """Budget smaller than any fragment shouldn't crash."""
         engine = make_engine()

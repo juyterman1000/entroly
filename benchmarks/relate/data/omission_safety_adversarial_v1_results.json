@@ -1,0 +1,184 @@
+{
+  "provenance": {
+    "dataset_sha256": "d64b4f1e1a0c870355fd71466a5d3ff1834bc010f916b0e18fe8df84a0006b72",
+    "dataset_version": "1.0.0",
+    "git_head": "6f101ad7b144e0f851c679102dbfd1bb438257a7",
+    "backend": "info_residual_with_dimensions"
+  },
+  "summary": {
+    "total_evaluations": 13,
+    "correct": 13,
+    "accuracy": 1.0,
+    "false_negatives": 0,
+    "false_negative_rate": 0.0,
+    "false_positives": 0,
+    "false_positive_rate": 0.0
+  },
+  "verdicts": [
+    {
+      "case_id": "same_dimension_independent_constraints:frag_auth_expiry",
+      "category": "adversarial_dimension",
+      "correct": true,
+      "ground_truth_safe": false,
+      "witness_said_safe": false,
+      "false_negative": false,
+      "false_positive": false,
+      "trap": "same_dimension_independent_constraints",
+      "witness_reasons": [
+        "omission_loses_unique_constraint:must:expire_after_hour",
+        "obligation_support_may_depend_on_omitted:Summarize the authentication requirement"
+      ]
+    },
+    {
+      "case_id": "same_dimension_independent_constraints:frag_auth_signing",
+      "category": "adversarial_dimension",
+      "correct": true,
+      "ground_truth_safe": false,
+      "witness_said_safe": false,
+      "false_negative": false,
+      "false_positive": false,
+      "trap": "same_dimension_independent_constraints",
+      "witness_reasons": [
+        "omission_loses_unique_constraint:require:signature_verification_before_acceptance",
+        "obligation_support_may_depend_on_omitted:Summarize the authentication requirement"
+      ]
+    },
+    {
+      "case_id": "same_dimension_independent_constraints:frag_auth_expiry|frag_auth_signing",
+      "category": "adversarial_dimension",
+      "correct": true,
+      "ground_truth_safe": false,
+      "witness_said_safe": false,
+      "false_negative": false,
+      "false_positive": false,
+      "trap": "same_dimension_independent_constraints",
+      "witness_reasons": [
+        "omission_loses_unique_constraint:must:expire_after_hour",
+        "obligation_support_may_depend_on_omitted:Summarize the authentication requirement",
+        "omission_loses_unique_constraint:require:signature_verification_before_acceptance",
+        "obligation_support_may_depend_on_omitted:Summarize the authentication requirement",
+        "joint_coverage_insufficient:dimensions:1/3,below_minimum:2"
+      ]
+    },
+    {
+      "case_id": "high_dimension_sparse_coverage:frag_cache",
+      "category": "adversarial_dimension",
+      "correct": true,
+      "ground_truth_safe": true,
+      "witness_said_safe": true,
+      "false_negative": false,
+      "false_positive": false,
+      "trap": "scaling_dimension_threshold",
+      "witness_reasons": []
+    },
+    {
+      "case_id": "high_dimension_sparse_coverage:frag_cache|frag_queue",
+      "category": "adversarial_dimension",
+      "correct": true,
+      "ground_truth_safe": true,
+      "witness_said_safe": true,
+      "false_negative": false,
+      "false_positive": false,
+      "trap": "scaling_dimension_threshold",
+      "witness_reasons": []
+    },
+    {
+      "case_id": "high_dimension_sparse_coverage:frag_cache|frag_queue|frag_database",
+      "category": "adversarial_dimension",
+      "correct": true,
+      "ground_truth_safe": false,
+      "witness_said_safe": false,
+      "false_negative": false,
+      "false_positive": false,
+      "trap": "scaling_dimension_threshold",
+      "witness_reasons": [
+        "joint_coverage_insufficient:dimensions:2/5,below_minimum:3"
+      ]
+    },
+    {
+      "case_id": "high_dimension_sparse_coverage:frag_api|frag_database|frag_cache|frag_queue",
+      "category": "adversarial_dimension",
+      "correct": true,
+      "ground_truth_safe": false,
+      "witness_said_safe": false,
+      "false_negative": false,
+      "false_positive": false,
+      "trap": "scaling_dimension_threshold",
+      "witness_reasons": [
+        "joint_coverage_insufficient:dimensions:1/5,below_minimum:3"
+      ]
+    },
+    {
+      "case_id": "false_separation_conservative",
+      "category": "adversarial_dimension",
+      "correct": true,
+      "ground_truth_safe": true,
+      "witness_said_safe": true,
+      "false_negative": false,
+      "false_positive": false,
+      "trap": "content_subsumption",
+      "witness_reasons": []
+    },
+    {
+      "case_id": "constraint_in_summary_context:frag_ci",
+      "category": "adversarial_dimension",
+      "correct": true,
+      "ground_truth_safe": true,
+      "witness_said_safe": true,
+      "false_negative": false,
+      "false_positive": false,
+      "trap": "constraint_within_summary_dimension",
+      "witness_reasons": []
+    },
+    {
+      "case_id": "constraint_in_summary_context:frag_staging",
+      "category": "adversarial_dimension",
+      "correct": true,
+      "ground_truth_safe": false,
+      "witness_said_safe": false,
+      "false_negative": false,
+      "false_positive": false,
+      "trap": "constraint_within_summary_dimension",
+      "witness_reasons": [
+        "omission_loses_unique_constraint:require:passing_all_checks_and"
+      ]
+    },
+    {
+      "case_id": "constraint_in_summary_context:frag_prod",
+      "category": "adversarial_dimension",
+      "correct": true,
+      "ground_truth_safe": true,
+      "witness_said_safe": true,
+      "false_negative": false,
+      "false_positive": false,
+      "trap": "constraint_within_summary_dimension",
+      "witness_reasons": []
+    },
+    {
+      "case_id": "single_dimension_summary:frag_cache_l1",
+      "category": "adversarial_dimension",
+      "correct": true,
+      "ground_truth_safe": false,
+      "witness_said_safe": false,
+      "false_negative": false,
+      "false_positive": false,
+      "trap": "single_dimension_both_necessary",
+      "witness_reasons": [
+        "obligation_support_may_depend_on_omitted:Summarize the caching strategy"
+      ]
+    },
+    {
+      "case_id": "single_dimension_summary:frag_cache_l2",
+      "category": "adversarial_dimension",
+      "correct": true,
+      "ground_truth_safe": false,
+      "witness_said_safe": false,
+      "false_negative": false,
+      "false_positive": false,
+      "trap": "single_dimension_both_necessary",
+      "witness_reasons": [
+        "obligation_support_may_depend_on_omitted:Summarize the caching strategy"
+      ]
+    }
+  ]
+}
