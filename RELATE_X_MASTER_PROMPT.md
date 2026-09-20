@@ -7,7 +7,7 @@ This remote branch is a research checkpoint, not production integration.
 - Do not fabricate results.
 - Do not claim a benchmark was run unless it was executed.
 - Do not claim a breakthrough from architecture alone.
-- Do not claim Jev superiority without apples-to-apples reproducible evidence.
+- Do not claim superiority over any external tool without apples-to-apples reproducible evidence.
 - Preserve negative results.
 - Keep production defaults unchanged until frozen promotion gates pass.
 
