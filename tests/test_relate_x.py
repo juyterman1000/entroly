@@ -1,4 +1,6 @@
 from entroly.relate import compile_query_contract, EvidenceCandidate, RelationVector, detect_semantic_collision, extract_differential_spans, normalize_action, verify_omission_safety, compute_residual, extract_dimensions, check_dimension_coverage, verify_omission_with_dimensions, verify_joint_omission_safety, asymmetry, certify_recoverable, conditional_residual, is_subsumed
+from entroly.relate.compression_residual import certify_containment
+from entroly.context_receipts.firewall import verify_receipt_closure
 from entroly.relate.counterfactual import make_counterfactual
 from entroly.relate.info_residual import detect_state_conflict, task_asks_for_value, task_is_action
 from entroly.relate.policy import decide_precalibration, Decision
@@ -443,3 +445,174 @@ def test_joint_omission_blocks_authority_loss():
 
     jw = verify_joint_omission_safety([limit], all_cands, contract)
     assert not jw.safe_to_omit, "authority constraint loss is a hard block"
+
+
+# --- Containment bound (Pillar III) ---
+
+def test_containment_certifies_genuine_subsumption():
+    short = "Prometheus scrapes metrics every 15 seconds with 30-day retention."
+    long = (
+        "Application metrics are collected by Prometheus at 15-second intervals "
+        "and stored for 30 days with downsampling at 5-minute resolution after 7 days."
+    )
+    cert = certify_containment(short, long)
+    assert cert.contained, "short fragment is subsumed by long — must be certified contained"
+    assert cert.margin > 0, f"margin must be positive: {cert.margin}"
+    assert cert.gap > cert.noise_floor, "gap must exceed noise floor"
+
+
+def test_containment_rejects_independent_fragments():
+    a = "L1 cache uses in-process memory with 5-minute TTL and LRU eviction."
+    b = "L2 cache is a Redis cluster with 1-hour TTL and write-through invalidation."
+    cert = certify_containment(a, b)
+    assert not cert.contained, "independent fragments must not be certified contained"
+
+
+def test_containment_self_is_trivially_contained():
+    text = "Token revocation must complete within 60 seconds of a security event."
+    cert = certify_containment(text, text)
+    assert cert.contained, "identical text is trivially contained"
+    assert cert.noise_floor < 0.30, f"self-residual noise floor too high: {cert.noise_floor}"
+    assert cert.margin > 0, f"identical text must have positive margin: {cert.margin}"
+
+
+def test_containment_certificate_is_replayable():
+    cert = certify_containment("fragment text", "retained text body")
+    d = cert.to_dict()
+    for key in ("contained", "gap", "noise_floor", "margin", "per_compressor",
+                "deciding_compressor", "residual"):
+        assert key in d, f"containment certificate must record {key}"
+
+
+def test_containment_is_fail_closed_across_compressors():
+    cert = certify_containment(
+        "some novel content not in retained set at all",
+        "completely different retained text about other topics",
+    )
+    per = cert.per_compressor
+    deciding_margin = min(g - 2.0 * d for _, g, d in per)
+    assert abs(cert.margin - deciding_margin) < 1e-9, (
+        "deciding compressor must be the one with the smallest margin"
+    )
+
+
+# --- Receipt-Closed Selection Firewall (Pillar V) ---
+
+import hashlib
+from entroly.context_receipts.models import stable_hash
+
+
+def _make_minimal_receipt():
+    """Build a minimal valid receipt for RCFP testing."""
+    text_a = "OAuth 2.0 bearer tokens with RS256 signature."
+    text_b = "Rate limiting at 200 requests per minute."
+    text_c = "All traffic encrypted with TLS 1.3."
+    fp_a = hashlib.sha256(text_a.encode("utf-8")).hexdigest()
+    fp_b = hashlib.sha256(text_b.encode("utf-8")).hexdigest()
+
+    selected = [
+        {
+            "chunk_id": "c1",
+            "source_path": "security.md",
+            "text": text_a,
+            "fragment_sha256": fp_a,
+            "token_count": 8,
+            "score": 0.9,
+        },
+        {
+            "chunk_id": "c2",
+            "source_path": "security.md",
+            "text": text_b,
+            "fragment_sha256": fp_b,
+            "token_count": 7,
+            "score": 0.85,
+        },
+    ]
+    omitted = [
+        {
+            "chunk_id": "c3",
+            "source_path": "security.md",
+            "text_preview": text_c[:40],
+            "token_count": 6,
+            "score": 0.5,
+        },
+    ]
+    deps = [
+        {
+            "source_chunk_id": "c1",
+            "target_chunk_id": "c2",
+            "relation_type": "supports",
+            "evidence": "both security controls",
+        },
+    ]
+    source_fps = {"security.md": "sha256:abcdef"}
+
+    payload = {
+        "selected_context": selected,
+        "omitted_context": omitted,
+        "dependency_links": deps,
+        "source_fingerprints": source_fps,
+        "query": "security model",
+        "token_budget": 1000,
+    }
+    payload["reproducibility_hash"] = stable_hash(
+        {k: v for k, v in sorted(payload.items())
+         if k not in {"receipt_id", "reproducibility_hash"}}
+    )
+    payload["receipt_id"] = "cr_" + payload["reproducibility_hash"][:12]
+    return payload
+
+
+def test_rcfp_passes_for_valid_receipt():
+    receipt = _make_minimal_receipt()
+    cert = verify_receipt_closure(receipt)
+    assert cert.closed, f"valid receipt must be closed: {cert.violations}"
+    assert len(cert.checks_passed) == 4
+    assert len(cert.checks_failed) == 0
+
+
+def test_rcfp_detects_fingerprint_tampering():
+    receipt = _make_minimal_receipt()
+    receipt["selected_context"][0]["text"] = "tampered text"
+    cert = verify_receipt_closure(receipt)
+    assert not cert.closed
+    assert "fingerprint_closure" in cert.checks_failed
+    assert any(v.check == "fingerprint_closure" for v in cert.violations)
+
+
+def test_rcfp_detects_dangling_dependency():
+    receipt = _make_minimal_receipt()
+    receipt["dependency_links"].append({
+        "source_chunk_id": "c1",
+        "target_chunk_id": "phantom_chunk",
+        "relation_type": "imports",
+        "evidence": "nonexistent",
+    })
+    cert = verify_receipt_closure(receipt)
+    assert not cert.closed
+    assert "dependency_closure" in cert.checks_failed
+    assert any(v.chunk_id == "phantom_chunk" for v in cert.violations)
+
+
+def test_rcfp_detects_missing_source():
+    receipt = _make_minimal_receipt()
+    receipt["selected_context"][0]["source_path"] = "nonexistent.md"
+    cert = verify_receipt_closure(receipt)
+    assert not cert.closed
+    assert "source_closure" in cert.checks_failed
+
+
+def test_rcfp_detects_hash_tampering():
+    receipt = _make_minimal_receipt()
+    receipt["reproducibility_hash"] = "0" * 64
+    cert = verify_receipt_closure(receipt)
+    assert not cert.closed
+    assert "reproducibility_closure" in cert.checks_failed
+
+
+def test_rcfp_certificate_is_serializable():
+    receipt = _make_minimal_receipt()
+    cert = verify_receipt_closure(receipt)
+    d = cert.to_dict()
+    for key in ("closed", "violations", "checks_passed", "checks_failed"):
+        assert key in d

@@ -186,6 +186,40 @@ pub struct SdsResult {
     pub total_tokens: u32,
     pub(crate) _total_value: f64,
     pub diversity_score: f64, // Average pairwise diversity of selected set
+    pub curvature: SelectionCurvature,
+}
+
+/// Curvature certificate for IOS selection (Pillar IV).
+///
+/// The SDS diversity penalty f(S∪{x}) = base_value(x) · diversity(x,S)
+/// is not monotone: adding a near-duplicate can decrease the marginal
+/// density below what was available before it was selected. The curvature
+/// parameter α captures how far from monotone the objective was during
+/// this particular selection.
+///
+/// For a monotone submodular objective, the greedy algorithm achieves
+/// (1-1/e) ≈ 0.632 of optimal. With curvature α ∈ [0,1], the guarantee
+/// weakens to (1-1/e)(1 - α). α = 0 is fully monotone; α = 1 is the
+/// worst case where adding any item could zero out the objective.
+///
+/// Production value: when curvature is high, the diversity penalty is
+/// costing more than it's saving. The system should consider relaxing
+/// DIVERSITY_ALPHA or reducing the diversity floor.
+#[derive(Clone, Debug)]
+pub struct SelectionCurvature {
+    /// Maximum diversity penalty observed: max_over_steps(1 - diversity_factor).
+    /// 0.0 = all additions were to fully novel items.
+    /// 1.0 = a near-exact duplicate was considered.
+    pub max_penalty: f64,
+    /// Mean diversity factor across all greedy steps.
+    pub mean_diversity: f64,
+    /// Number of candidates whose diversity factor fell below 0.5 (high overlap).
+    pub high_overlap_count: u32,
+    /// Total greedy steps taken.
+    pub steps: u32,
+    /// Effective curvature α ∈ [0,1]: the mean penalty weighted by
+    /// how much value it displaced.
+    pub alpha: f64,
 }
 
 /// Compute the diversity factor for a candidate given the current selected set.
@@ -301,6 +335,13 @@ pub fn ios_select(
             total_tokens: 0,
             _total_value: 0.0,
             diversity_score: 1.0,
+            curvature: SelectionCurvature {
+                max_penalty: 0.0,
+                mean_diversity: 1.0,
+                high_overlap_count: 0,
+                steps: 0,
+                alpha: 0.0,
+            },
         };
     }
 
@@ -497,6 +538,13 @@ pub fn ios_select(
             total_tokens: pinned_tokens,
             _total_value: (_total_value * 10000.0).round() / 10000.0,
             diversity_score: 1.0,
+            curvature: SelectionCurvature {
+                max_penalty: 0.0,
+                mean_diversity: 1.0,
+                high_overlap_count: 0,
+                steps: 0,
+                alpha: 0.0,
+            },
         };
     }
 
@@ -563,6 +611,13 @@ pub fn ios_select(
                 total_tokens: fast_tokens,
                 _total_value: (fast_value * 10000.0).round() / 10000.0,
                 diversity_score: compute_pairwise_diversity(&fast_hashes),
+                curvature: SelectionCurvature {
+                    max_penalty: 0.0,
+                    mean_diversity: 1.0,
+                    high_overlap_count: 0,
+                    steps: 0,
+                    alpha: 0.0,
+                },
             };
         }
     }
@@ -597,6 +652,14 @@ pub fn ios_select(
     for &(idx, _) in &selected {
         selected_frags[idx] = true;
     }
+
+    // ── Curvature tracking (Pillar IV) ──
+    let mut curv_max_penalty = 0.0_f64;
+    let mut curv_div_sum = 0.0_f64;
+    let mut curv_weighted_penalty_sum = 0.0_f64;
+    let mut curv_weighted_value_sum = 0.0_f64;
+    let mut curv_high_overlap = 0_u32;
+    let mut curv_steps = 0_u32;
 
     // Pre-sort candidates by base_value/cost density for faster convergence
     // (The diversity penalty will reorder, but this is a good initial ordering)
@@ -676,16 +739,28 @@ pub fn ios_select(
         match best_idx {
             Some(ci) => {
                 let cand = &candidates[ci];
+                let div = if enable_diversity {
+                    diversity_factor(cand.simhash, &selected_hashes).max(diversity_floor)
+                } else {
+                    1.0
+                };
+                let penalty = 1.0 - div;
+                curv_max_penalty = curv_max_penalty.max(penalty);
+                curv_div_sum += div;
+                curv_weighted_penalty_sum += penalty * cand.base_value;
+                curv_weighted_value_sum += cand.base_value;
+                if div < 0.5 {
+                    curv_high_overlap += 1;
+                }
+                curv_steps += 1;
+
                 selected.push((cand.frag_idx, cand.resolution));
-                // Only fingerprinted fragments join the similarity set. A
-                // fingerprint-less fragment would otherwise seed a `0` hash
-                // that every later fingerprint-less candidate matches exactly.
                 if let Some(fp) = cand.simhash {
                     selected_hashes.push(fp);
                 }
                 selected_frags[cand.frag_idx] = true;
                 budget_used += cand.token_cost;
-                _total_value += cand.base_value; // Track pre-diversity value for reporting
+                _total_value += cand.base_value;
             }
             None => break, // No more candidates fit
         }
@@ -707,11 +782,25 @@ pub fn ios_select(
     // ── Phase 5: Compute diversity score of final selection ──
     let diversity_score = compute_pairwise_diversity(&selected_hashes);
 
+    let mean_div = if curv_steps > 0 { curv_div_sum / curv_steps as f64 } else { 1.0 };
+    let alpha = if curv_weighted_value_sum > 1e-12 {
+        (curv_weighted_penalty_sum / curv_weighted_value_sum).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+
     SdsResult {
         selections: selected,
         total_tokens: budget_used,
         _total_value: (_total_value * 10000.0).round() / 10000.0,
         diversity_score,
+        curvature: SelectionCurvature {
+            max_penalty: (curv_max_penalty * 10000.0).round() / 10000.0,
+            mean_diversity: (mean_div * 10000.0).round() / 10000.0,
+            high_overlap_count: curv_high_overlap,
+            steps: curv_steps,
+            alpha: (alpha * 10000.0).round() / 10000.0,
+        },
     }
 }
 
@@ -1354,6 +1443,70 @@ mod tests {
             "Fast path should use full resolution for all"
         );
         assert_eq!(result.total_tokens, 150);
+    }
+
+    #[test]
+    fn curvature_tracks_diversity_penalty_across_greedy_steps() {
+        let frags: Vec<ContextFragment> = (0..8)
+            .map(|i| {
+                let content = if i < 4 {
+                    "shared function body with identical implementation".to_string()
+                } else {
+                    format!("completely unique fragment number {i} with distinct words")
+                };
+                make_frag(&format!("f{i}"), &content, 30, &format!("mod{i}.rs"))
+            })
+            .collect();
+
+        let result = ios_select(
+            &frags,
+            120,
+            0.3, 0.25, 0.25, 0.2,
+            &empty_feedback(),
+            true,
+            false,
+            &default_factors(),
+            DEFAULT_DIV_FLOOR,
+            DEFAULT_MIN_CANDIDATE_VALUE,
+        );
+
+        assert!(result.curvature.steps > 0, "greedy loop must have run");
+        assert!(
+            result.curvature.alpha >= 0.0 && result.curvature.alpha <= 1.0,
+            "alpha must be in [0,1]: {}",
+            result.curvature.alpha
+        );
+        assert!(
+            result.curvature.mean_diversity >= 0.0 && result.curvature.mean_diversity <= 1.0,
+            "mean_diversity must be in [0,1]: {}",
+            result.curvature.mean_diversity
+        );
+        let guarantee = (1.0 - 1.0_f64.exp().recip()) * (1.0 - result.curvature.alpha);
+        assert!(
+            guarantee > 0.0,
+            "approximation guarantee must be positive: {guarantee}"
+        );
+    }
+
+    #[test]
+    fn curvature_is_zero_when_all_fragments_fit() {
+        let frags = vec![
+            make_frag("a", "def alpha(): return 1", 20, "a.py"),
+            make_frag("b", "def beta(): return 2", 20, "b.py"),
+        ];
+        let result = ios_select(
+            &frags,
+            10_000,
+            0.3, 0.25, 0.25, 0.2,
+            &empty_feedback(),
+            true,
+            false,
+            &default_factors(),
+            DEFAULT_DIV_FLOOR,
+            DEFAULT_MIN_CANDIDATE_VALUE,
+        );
+        assert_eq!(result.curvature.alpha, 0.0, "no curvature when everything fits");
+        assert_eq!(result.curvature.max_penalty, 0.0);
     }
 }
 

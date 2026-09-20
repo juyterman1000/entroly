@@ -97,7 +97,7 @@ use guardrails::{
 };
 use knapsack::{compute_lambda_star, knapsack_optimize, ScoringWeights};
 
-use knapsack_sds::{ios_select, InfoFactors, Resolution};
+use knapsack_sds::{ios_select, InfoFactors, Resolution, SelectionCurvature};
 use prism::PrismOptimizer;
 
 /// Reclassify pins from indexes written before pin/protection were split.
@@ -239,6 +239,10 @@ pub struct EntrolyEngine {
     /// Used to adapt temperature principally: large gap → keep τ high (exploring),
     /// small gap → lower τ (converged). Replaces the ad-hoc 0.995 annealing schedule.
     last_dual_gap: f64,
+    /// Last dual certificate from soft-bisection: the provable decomposition of the
+    /// suboptimality bound into rounding loss, constraint slack, and relaxation entropy.
+    last_dual_certificate: knapsack::DualCertificate,
+    last_ios_curvature: Option<knapsack_sds::SelectionCurvature>,
     gradient_norm_ema: f64,
 
     // Query Persona Manifold — discovers query archetypes and learns per-archetype weights
@@ -435,6 +439,8 @@ impl EntrolyEngine {
             gradient_temperature: 2.0,
             last_lambda_star: 0.0,
             last_dual_gap: 0.0,
+            last_dual_certificate: knapsack::DualCertificate::zero(),
+            last_ios_curvature: None,
             gradient_norm_ema: 0.0,
             query_manifold: QueryPersonaManifold::new(
                 [w_recency, w_frequency, w_semantic, w_entropy],
@@ -2266,6 +2272,7 @@ impl EntrolyEngine {
             self.last_lambda_star = result1.lambda_star;
             // Store ADGT signal — dual gap D(λ*)−primal from this forward pass.
             self.last_dual_gap = result1.dual_gap;
+            self.last_dual_certificate = result1.dual_certificate;
             let initial_selected_ids: HashSet<String> = result1
                 .selected_indices
                 .iter()
@@ -2419,6 +2426,7 @@ impl EntrolyEngine {
                         .sum::<u32>(),
                 );
                 ios_diversity_score = Some(ios_result.diversity_score);
+                self.last_ios_curvature = Some(ios_result.curvature);
 
                 // ── Wiki-Link Graph Boost (Change 3) ──────────────────────
                 // After IOS selects beliefs, traverse [[wiki-links]] to boost
@@ -3671,7 +3679,44 @@ impl EntrolyEngine {
                 "condition_number",
                 (self.prism_optimizer.condition_number() * 100.0).round() / 100.0,
             )?;
+            // ── Spectral Convergence Certificate (Pillar II) ──
+            let conv = self.prism_optimizer.convergence_certificate();
+            let conv_dict = PyDict::new(py);
+            conv_dict.set_item("condition_number", (conv.condition_number * 100.0).round() / 100.0)?;
+            conv_dict.set_item("effective_rank", conv.effective_rank)?;
+            conv_dict.set_item("regret_bound", (conv.regret_bound * 10000.0).round() / 10000.0)?;
+            conv_dict.set_item("phase", conv.phase)?;
+            conv_dict.set_item("steps", conv.steps)?;
+            prism.set_item("convergence", conv_dict)?;
             result.set_item("prism", prism)?;
+
+            // ── Dual Certificate (Pillar I) ──
+            let cert = PyDict::new(py);
+            let c = &self.last_dual_certificate;
+            cert.set_item("dual_gap", (self.last_dual_gap * 10000.0).round() / 10000.0)?;
+            cert.set_item("lambda_star", (self.last_lambda_star * 10000.0).round() / 10000.0)?;
+            cert.set_item("rounding_loss", (c.rounding_loss * 10000.0).round() / 10000.0)?;
+            cert.set_item("constraint_slack", (c.constraint_slack * 10000.0).round() / 10000.0)?;
+            cert.set_item("relaxation_entropy", (c.relaxation_entropy * 10000.0).round() / 10000.0)?;
+            cert.set_item("selection_entropy", (c.selection_entropy * 10000.0).round() / 10000.0)?;
+            // Derived actionable signals (Pillar I production metrics)
+            cert.set_item("quality_grade", c.quality_grade)?;
+            cert.set_item("budget_pressure", c.budget_pressure)?;
+            cert.set_item("temperature_signal", c.temperature_signal)?;
+            result.set_item("dual_certificate", cert)?;
+
+            // ── Selection Curvature (Pillar IV) ──
+            if let Some(ref curv) = self.last_ios_curvature {
+                let curv_dict = PyDict::new(py);
+                curv_dict.set_item("alpha", (curv.alpha * 10000.0).round() / 10000.0)?;
+                curv_dict.set_item("max_penalty", (curv.max_penalty * 10000.0).round() / 10000.0)?;
+                curv_dict.set_item("mean_diversity", (curv.mean_diversity * 10000.0).round() / 10000.0)?;
+                curv_dict.set_item("high_overlap_count", curv.high_overlap_count)?;
+                curv_dict.set_item("steps", curv.steps)?;
+                let guarantee = ((1.0 - 1.0_f64.exp().recip()) * (1.0 - curv.alpha) * 10000.0).round() / 10000.0;
+                curv_dict.set_item("approximation_guarantee", guarantee)?;
+                result.set_item("selection_curvature", curv_dict)?;
+            }
 
             // EGSC Cache stats — exposed to Python for monitoring and debugging
             let cs = self.egsc_cache.stats();
