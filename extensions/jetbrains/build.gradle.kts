@@ -11,6 +11,12 @@ val productVersion = Regex("""(?m)^version\s*=\s*"([^"]+)"""")
     ?.get(1)
     ?: error("Unable to read Entroly version from ../../pyproject.toml")
 
+val wrapperVersion = Regex("""gradle-(.+)-(?:bin|all)\.zip""")
+    .find(file("gradle/wrapper/gradle-wrapper.properties").readText())
+    ?.groupValues
+    ?.get(1)
+    ?: error("Unable to read the Gradle version from gradle/wrapper/gradle-wrapper.properties")
+
 group = "io.github.juyterman1000"
 version = productVersion
 
@@ -100,7 +106,11 @@ tasks {
     }
 
     wrapper {
-        gradleVersion = "9.5.0"
+        // gradle/wrapper/gradle-wrapper.properties is the single source of truth
+        // and is what dependabot bumps. Restating the version here would make
+        // `./gradlew wrapper` regenerate the wrapper at the stale value and
+        // silently revert that bump, with both files still parsing fine.
+        gradleVersion = wrapperVersion
         distributionType = Wrapper.DistributionType.BIN
     }
 }
