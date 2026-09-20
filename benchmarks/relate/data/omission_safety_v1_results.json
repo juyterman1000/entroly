@@ -1,0 +1,240 @@
+{
+  "provenance": {
+    "dataset_sha256": "7cadb7d1cbe08d899f5f4a1d247c36baf3d613fc40263bb7ebc3d4d6196f7c3a",
+    "dataset_version": "1.0.0",
+    "git_head": "6f101ad7b144e0f851c679102dbfd1bb438257a7",
+    "backend": "info_residual_with_dimensions"
+  },
+  "summary": {
+    "total_evaluations": 19,
+    "correct": 19,
+    "accuracy": 1.0,
+    "false_negatives": 0,
+    "false_negative_rate": 0.0,
+    "false_positives": 0,
+    "false_positive_rate": 0.0
+  },
+  "verdicts": [
+    {
+      "case_id": "obligation_semantic_gap",
+      "category": "obligation",
+      "correct": true,
+      "ground_truth_safe": false,
+      "witness_said_safe": false,
+      "false_negative": false,
+      "trap": "lexical_gap",
+      "witness_reasons": [
+        "omission_loses_task_relevant_value:14,14 business days"
+      ]
+    },
+    {
+      "case_id": "obligation_paraphrase_trap",
+      "category": "obligation",
+      "correct": true,
+      "ground_truth_safe": false,
+      "witness_said_safe": false,
+      "false_negative": false,
+      "trap": "lexical_gap",
+      "witness_reasons": [
+        "omission_loses_unique_constraint:must:present_bearer_token_signed"
+      ]
+    },
+    {
+      "case_id": "exclusion_carrier",
+      "category": "obligation",
+      "correct": true,
+      "ground_truth_safe": false,
+      "witness_said_safe": false,
+      "false_negative": false,
+      "trap": "exclusion_evidence_loss",
+      "witness_reasons": [
+        "omission_loses_exclusion_target:MongoDB"
+      ]
+    },
+    {
+      "case_id": "condition_carrier",
+      "category": "obligation",
+      "correct": true,
+      "ground_truth_safe": false,
+      "witness_said_safe": false,
+      "false_negative": false,
+      "trap": "hidden_conjunction",
+      "witness_reasons": [
+        "omission_loses_unique_constraint:requires:both_passing_test_suite"
+      ]
+    },
+    {
+      "case_id": "sole_evidence",
+      "category": "sufficiency",
+      "correct": true,
+      "ground_truth_safe": false,
+      "witness_said_safe": false,
+      "false_negative": false,
+      "trap": "low_relevance_but_sole_answer",
+      "witness_reasons": [
+        "omission_loses_task_relevant_value:8443"
+      ]
+    },
+    {
+      "case_id": "genuinely_redundant",
+      "category": "sufficiency",
+      "correct": true,
+      "ground_truth_safe": true,
+      "witness_said_safe": true,
+      "false_negative": false,
+      "trap": "none",
+      "witness_reasons": []
+    },
+    {
+      "case_id": "contradiction_hidden_by_omission",
+      "category": "contradiction",
+      "correct": true,
+      "ground_truth_safe": false,
+      "witness_said_safe": false,
+      "false_negative": false,
+      "trap": "contradiction_invisible_without_nli",
+      "witness_reasons": [
+        "omission_hides_state_conflict:disabled_vs_enabled"
+      ]
+    },
+    {
+      "case_id": "numeric_contradiction",
+      "category": "contradiction",
+      "correct": true,
+      "ground_truth_safe": false,
+      "witness_said_safe": false,
+      "false_negative": false,
+      "trap": "numeric_disagreement_invisible",
+      "witness_reasons": [
+        "omission_loses_task_relevant_value:100",
+        "omission_hides_numeric_conflict:100_vs_1000"
+      ]
+    },
+    {
+      "case_id": "deny_rule_carrier",
+      "category": "authority",
+      "correct": true,
+      "ground_truth_safe": false,
+      "witness_said_safe": false,
+      "false_negative": false,
+      "trap": "authority_expansion",
+      "witness_reasons": [
+        "omission_loses_unique_constraint:must never:readable_non_admin_users",
+        "omission_loses_action_arguments:/var/log/auth.log"
+      ]
+    },
+    {
+      "case_id": "authority_scope_constraint",
+      "category": "authority",
+      "correct": true,
+      "ground_truth_safe": false,
+      "witness_said_safe": false,
+      "false_negative": false,
+      "trap": "procedural_constraint_loss",
+      "witness_reasons": [
+        "omission_loses_unique_constraint:require:two_person_approval_and"
+      ]
+    },
+    {
+      "case_id": "action_argument_loss",
+      "category": "action",
+      "correct": true,
+      "ground_truth_safe": false,
+      "witness_said_safe": false,
+      "false_negative": false,
+      "trap": "action_target_missing",
+      "witness_reasons": [
+        "omission_loses_action_arguments:/etc/nginx/nginx.conf.,/var/run/nginx.pid"
+      ]
+    },
+    {
+      "case_id": "provenance_anchor",
+      "category": "provenance",
+      "correct": true,
+      "ground_truth_safe": false,
+      "witness_said_safe": false,
+      "false_negative": false,
+      "trap": "provenance_loss",
+      "witness_reasons": [
+        "obligation_support_may_depend_on_omitted:Summarize the security audit findings"
+      ]
+    },
+    {
+      "case_id": "safe_control_low_info",
+      "category": "control",
+      "correct": true,
+      "ground_truth_safe": true,
+      "witness_said_safe": true,
+      "false_negative": false,
+      "trap": "none",
+      "witness_reasons": []
+    },
+    {
+      "case_id": "interaction_pairwise_safe_jointly_unsafe:frag_rate",
+      "category": "interaction",
+      "correct": true,
+      "ground_truth_safe": true,
+      "witness_said_safe": true,
+      "false_negative": false,
+      "trap": "pairwise_independence_violation",
+      "witness_reasons": []
+    },
+    {
+      "case_id": "interaction_pairwise_safe_jointly_unsafe:frag_transport",
+      "category": "interaction",
+      "correct": true,
+      "ground_truth_safe": true,
+      "witness_said_safe": true,
+      "false_negative": false,
+      "trap": "pairwise_independence_violation",
+      "witness_reasons": []
+    },
+    {
+      "case_id": "interaction_pairwise_safe_jointly_unsafe:frag_rate|frag_transport",
+      "category": "interaction",
+      "correct": true,
+      "ground_truth_safe": false,
+      "witness_said_safe": false,
+      "false_negative": false,
+      "trap": "pairwise_independence_violation",
+      "witness_reasons": [
+        "joint_coverage_insufficient:dimensions:1/3,below_minimum:2"
+      ]
+    },
+    {
+      "case_id": "interaction_cascading_authority:frag_refund_policy",
+      "category": "interaction",
+      "correct": true,
+      "ground_truth_safe": true,
+      "witness_said_safe": true,
+      "false_negative": false,
+      "trap": "authority_cascade",
+      "witness_reasons": []
+    },
+    {
+      "case_id": "interaction_cascading_authority:frag_refund_limit",
+      "category": "interaction",
+      "correct": true,
+      "ground_truth_safe": false,
+      "witness_said_safe": false,
+      "false_negative": false,
+      "trap": "authority_cascade",
+      "witness_reasons": [
+        "omission_loses_unique_constraint:require:manager_approval_before_processing"
+      ]
+    },
+    {
+      "case_id": "interaction_cascading_authority:frag_refund_limit|frag_refund_policy",
+      "category": "interaction",
+      "correct": true,
+      "ground_truth_safe": false,
+      "witness_said_safe": false,
+      "false_negative": false,
+      "trap": "authority_cascade",
+      "witness_reasons": [
+        "omission_loses_unique_constraint:require:manager_approval_before_processing",
+        "joint_coverage_insufficient:dimensions:1/3,below_minimum:2"
+      ]
+    }
+  ]
+}
