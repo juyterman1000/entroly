@@ -22,3 +22,12 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+
+  # The JetBrains plugin pins the IntelliJ Platform Gradle Plugin in
+  # settings.gradle.kts. Without this entry that pin drifts unwatched: 2.18.1
+  # carried a concurrency bug in InstrumentCodeTask (upstream #2193) that was
+  # fixed in 2.19.0, and nothing surfaced the available upgrade.
+  - package-ecosystem: "gradle"
+    directory: "/extensions/jetbrains"
+    schedule:
+      interval: "weekly"

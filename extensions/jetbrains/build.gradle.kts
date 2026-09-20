@@ -29,6 +29,42 @@ java {
     }
 }
 
+// The plugin version is a build-time fact, already flowing from pyproject.toml
+// into plugin.xml. Reading it back at runtime means depending on the platform's
+// descriptor APIs, and those keep being reclassified: PluginManagerCore.getPlugin
+// is @ApiStatus.Internal, PluginManager.getPlugin(PluginId) is a deprecated
+// delegate to it, and PluginManager.getPluginByClass became internal between
+// builds 261 and 262. Baking the value in depends on no platform API at all.
+val generateVersionConstant by tasks.registering {
+    val outputDir = layout.buildDirectory.dir("generated/sources/entrolyVersion/java")
+    val value = productVersion
+    inputs.property("entrolyVersion", value)
+    outputs.dir(outputDir)
+    doLast {
+        val packageDir = outputDir.get().asFile.resolve("io/github/juyterman1000/entroly")
+        packageDir.mkdirs()
+        packageDir.resolve("EntrolyVersion.java").writeText(
+            """
+            package io.github.juyterman1000.entroly;
+
+            /** Generated from pyproject.toml at build time. Do not edit. */
+            final class EntrolyVersion {
+                static final String VALUE = "$value";
+
+                private EntrolyVersion() {
+                }
+            }
+            """.trimIndent() + "\n"
+        )
+    }
+}
+
+sourceSets {
+    main {
+        java.srcDir(generateVersionConstant)
+    }
+}
+
 intellijPlatform {
     pluginConfiguration {
         id = "io.github.juyterman1000.entroly"
