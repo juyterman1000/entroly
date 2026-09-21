@@ -9,7 +9,7 @@ on:
 permissions:
   contents: read
 
-# Superseded runs cancel themselves.
+# Superseded runs cancel themselves
 #
 # Four pushes to one draft branch inside three minutes queued 26 duplicate runs
 # and starved every other pull request of ubuntu runners for over an hour, while
