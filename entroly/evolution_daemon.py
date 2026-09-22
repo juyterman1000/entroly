@@ -525,11 +525,20 @@ class EvolutionDaemon:
     def _benchmark_and_promote(self, skill_id: str) -> dict[str, Any]:
         """Benchmark a skill, then promote or prune based on fitness."""
         bench = self._skill_engine.benchmark_skill(skill_id)
+        if bench.get("status") != "benchmarked":
+            return {
+                "status": "benchmark_failed",
+                "skill_id": skill_id,
+                "benchmark_status": bench.get("status", "unknown"),
+                "reason": bench.get("reason", "benchmark produced no decision evidence"),
+            }
         promote = self._skill_engine.promote_or_prune(skill_id)
         return {
             "status": promote.get("status", "unknown"),
             "skill_id": skill_id,
             "fitness": bench.get("fitness", 0.0),
+            "fitness_lower_bound": promote.get("fitness_lower_bound", 0.0),
+            "decision_reason": promote.get("decision_reason", ""),
         }
 
     def stats(self) -> dict[str, Any]:

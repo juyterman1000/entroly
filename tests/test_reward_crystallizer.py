@@ -417,8 +417,25 @@ def test_c12c_promotion_requires_benchmark_contract(tmp_path):
 
     benchmark = engine.benchmark_skill(created["skill_id"])
     assert benchmark["fitness"] == 1.0
+    development_only = engine.promote_or_prune(created["skill_id"])
+    assert development_only["status"] == "kept"
+    assert "development-only" in development_only["evidence_status"]
+
+    holdout = engine.benchmark_skill(
+        created["skill_id"],
+        validation_cases=[
+            {
+                "input": f"investigate unseen auth regression {index}",
+                "expected": {"status": "success"},
+            }
+            for index in range(10)
+        ],
+    )
+    assert holdout["status"] == "benchmarked"
+    assert holdout["evaluation_scope"] == "caller_holdout"
     after = engine.promote_or_prune(created["skill_id"])
     assert after["status"] == "promoted"
+    assert after["fitness_lower_bound"] >= engine.PROMOTION_THRESHOLD
 
 
 # ══════════════════════════════════════════════════════════════════
