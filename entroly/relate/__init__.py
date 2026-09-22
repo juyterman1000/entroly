@@ -31,6 +31,11 @@ from .joint_omission import (
     verify_omission_with_dimensions,
     verify_joint_omission_safety,
 )
+from .coverage_verification import (
+    EvidenceBoundaryReceipt,
+    UncoveredReference,
+    audit_evidence_boundary,
+)
 
 __all__ = [
     "AuthorityEnvelope",
@@ -59,4 +64,7 @@ __all__ = [
     "is_subsumed",
     "verify_omission_with_dimensions",
     "verify_joint_omission_safety",
+    "EvidenceBoundaryReceipt",
+    "UncoveredReference",
+    "audit_evidence_boundary",
 ]

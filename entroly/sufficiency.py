@@ -509,3 +509,136 @@ class CalibrationPolicy:
             raise ValueError("minimum_query_coverage must be between 0 and 1")
         if not 0.0 <= self.maximum_boundary_exposure <= 1.0:
             raise ValueError("maximum_boundary_exposure must be between 0 and 1")
+
+
+# Budget feasibility for an explicit or lexical obligation graph.
+
+@dataclass(frozen=True)
+class ObligationCoverage:
+    obligation_text: str
+    candidate_ids: tuple[str, ...]
+    cheapest_cost: int
+    covered: bool
+
+
+@dataclass(frozen=True)
+class ObligationBudgetWitness:
+    """Budget feasibility conditional on the supplied coverage graph.
+
+    This is not proof of semantic sufficiency. A lexical edge only records
+    term overlap. ``minimum_cover_cost`` is populated only after exact search;
+    a bounded search instead reports valid lower/upper bounds and can abstain.
+    """
+
+    sufficient: bool
+    budget: int
+    minimum_cover_cost: int | None
+    deficit: int
+    obligations_total: int
+    obligations_covered: int
+    uncovered_obligations: tuple[str, ...]
+    coverage_detail: tuple[ObligationCoverage, ...]
+    lower_bound: int
+    upper_bound: int | None
+    selected_ids: tuple[str, ...]
+    verdict: str
+    coverage_basis: str
+
+    @property
+    def deficit_ratio(self) -> float:
+        return self.deficit / max(self.budget, 1)
+
+    def to_dict(self) -> dict[str, Any]:
+        from dataclasses import asdict
+        result = asdict(self)
+        result['deficit_ratio'] = round(self.deficit_ratio, 4)
+        result['scope'] = 'budget feasibility under the supplied coverage graph'
+        return result
+
+
+def _obligation_matches(obligation_text: str, candidate_content: str) -> bool:
+    terms = {
+        t for t in re.findall(r"[A-Za-z0-9]{3,}", obligation_text.lower())
+        if t not in _QUESTION_WORDS
+    }
+    # Empty/stopword-only obligations provide no matching evidence.
+    return bool(terms) and terms.issubset(_lexical_terms(candidate_content))
+
+
+def build_obligation_budget_witness(
+    candidates: Sequence[Candidate], obligations: Sequence[str], budget: int,
+    *, coverage: dict[str, Sequence[str]] | None = None, max_states: int = 65536,
+) -> ObligationBudgetWitness:
+    """Bounded weighted set cover, with a concrete feasible witness.
+
+    ``coverage`` maps obligation text to candidate IDs. Without it, edges
+    are lexical matches against candidate IDs (a diagnostic only). Dynamic
+    programming is exact when it completes. On exhaustion, the largest
+    per-obligation minimum is a valid lower bound; the union of cheapest
+    candidates is an upper bound. An upper bound cannot prove insufficiency.
+    """
+    if type(budget) is not int or budget < 0:
+        raise ValueError('budget must be a nonnegative integer')
+    if type(max_states) is not int or max_states < 1:
+        raise ValueError('max_states must be a positive integer')
+    by_id = {c.unit_id: c for c in candidates}
+    if len(by_id) != len(candidates):
+        raise ValueError('candidate IDs must be unique')
+    if any(type(c.cost) is not int or c.cost < 0 for c in candidates):
+        raise ValueError('candidate costs must be nonnegative integers')
+    obligations = tuple(dict.fromkeys(obligations))
+    details = []
+    masks = {uid: 0 for uid in by_id}
+    greedy_ids: set[str] = set()
+    for i, obligation in enumerate(obligations):
+        ids = (set(coverage.get(obligation, ())) if coverage is not None else
+               {uid for uid in by_id if _obligation_matches(obligation, uid)})
+        if not ids.issubset(by_id):
+            raise ValueError('coverage references an unknown candidate')
+        ordered = tuple(sorted(ids, key=lambda uid: (by_id[uid].cost, uid)))
+        cost = by_id[ordered[0]].cost if ordered else 0
+        details.append(ObligationCoverage(obligation, ordered, cost, bool(ordered)))
+        if ordered:
+            greedy_ids.add(ordered[0])
+        for uid in ordered:
+            masks[uid] |= 1 << i
+    missing = tuple(d.obligation_text for d in details if not d.covered)
+    lower = max((d.cheapest_cost for d in details), default=0)
+    upper = sum(by_id[uid].cost for uid in greedy_ids) if not missing else None
+    witness = tuple(sorted(greedy_ids)) if not missing else ()
+    exact = not missing
+    full = (1 << len(obligations)) - 1
+    states: dict[int, tuple[int, tuple[str, ...]]] = {0: (0, ())}
+    if not missing:
+        for uid in sorted(by_id):
+            if not masks[uid]:
+                continue
+            for mask, (cost, chosen) in tuple(states.items()):
+                new_mask = mask | masks[uid]
+                value = (cost + by_id[uid].cost, chosen + (uid,))
+                if new_mask not in states:
+                    if len(states) >= max_states:
+                        exact = False
+                        break
+                    states[new_mask] = value
+                elif value < states[new_mask]:
+                    states[new_mask] = value
+            if not exact:
+                break
+        if full in states and (upper is None or states[full][0] <= upper):
+            upper, witness = states[full]
+        if exact:
+            lower = upper  # type: ignore[assignment]
+    minimum = lower if exact else None
+    verdict = ('missing_evidence' if missing else
+               'cover_found' if upper is not None and upper <= budget else
+               'insufficient_budget' if lower > budget else 'unknown')
+    return ObligationBudgetWitness(
+        sufficient=verdict == 'cover_found', budget=budget,
+        minimum_cover_cost=minimum, deficit=max(0, lower - budget),
+        obligations_total=len(obligations),
+        obligations_covered=len(obligations) - len(missing),
+        uncovered_obligations=missing, coverage_detail=tuple(details),
+        lower_bound=lower, upper_bound=upper, selected_ids=witness,
+        verdict=verdict, coverage_basis='explicit' if coverage is not None else 'lexical_ids',
+    )

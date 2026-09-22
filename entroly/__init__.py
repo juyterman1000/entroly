@@ -69,6 +69,18 @@ except ImportError:
 
 from .tokens import count_tokens, trim_messages  # noqa: F401
 
+# Entroly Assurance Envelope: provider-neutral evidence gate for one exact
+# autonomous operation. It composes obligation, context, source, answer, and
+# skill evidence without granting global trust to a model or agent.
+try:
+    from .assurance_envelope import (  # noqa: F401
+        AssuranceEnvelope,
+        build_assurance_envelope,
+        score_assurance_envelope,
+    )
+except ImportError:
+    pass
+
 # Context Commit: portable, content-addressed proof of what an agent received.
 try:
     from .context_commit import (  # noqa: F401

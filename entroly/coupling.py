@@ -180,7 +180,7 @@ def project_beliefs(
 
         # Lazy-load body only if it passes the cheap filters
         belief = _read_belief(vault, str(entry.get("entity", "")))
-        if not belief:
+        if not belief or belief.get("selection_eligible") is False:
             continue
         body = str(belief.get("body", "")).strip()
         if not body:

@@ -1,5 +1,6 @@
 """Promotion must follow frozen, independently supplied benchmark evidence."""
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -248,3 +249,25 @@ def test_daemon_never_promotes_after_failed_benchmark():
     result = daemon._benchmark_and_promote("candidate")
     assert result["status"] == "benchmark_failed"
     assert result["benchmark_status"] == "stale_inputs"
+
+
+def test_mcp_skill_lifecycle_uses_heldout_gate(monkeypatch, tmp_path):
+    engine, skill_id, _ = _candidate(tmp_path)
+    monkeypatch.setenv("ENTROLY_VAULT", str(engine._vault.config.path))
+    monkeypatch.setenv("ENTROLY_DIR", str(tmp_path / "state"))
+    from entroly.server import create_mcp_server
+
+    mcp, _ = create_mcp_server()
+
+    def manage(action, **kwargs):
+        result = asyncio.run(mcp.call_tool(
+            "manage_skills", {"action": action, "skill_id": skill_id, **kwargs}
+        ))
+        content = result[0] if isinstance(result, tuple) else result
+        return json.loads(content[0].text)
+
+    assert manage("benchmark")["evaluation_scope"] == "development"
+    assert manage("promote")["status"] == "kept"
+    assert manage("validate", validation_cases_json="not json")["status"] == "invalid_contract"
+    assert manage("validate", validation_cases_json=json.dumps(_holdout()))["status"] == "benchmarked"
+    assert manage("promote")["status"] == "promoted"

@@ -1494,6 +1494,10 @@ class SkillEngine:
             return None
         return spec
 
+    def validated_promoted_skill(self, skill_id: str) -> SkillSpec | None:
+        """Compatibility name for the evidence-checked promoted snapshot."""
+        return self.load_promoted_skill(skill_id)
+
     def list_skills(self) -> list[dict[str, Any]]:
         """List all skills in the registry."""
         self._vault.ensure_structure()
