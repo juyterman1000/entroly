@@ -13,6 +13,9 @@ Handles the full skill lifecycle:
 from __future__ import annotations
 
 import json
+import hashlib
+import inspect
+import math
 import logging
 import os
 import re as _re
@@ -1043,10 +1046,11 @@ class SkillEngine:
         if not spec:
             return {"status": "not_found", "skill_id": skill_id}
 
+        binding = self._benchmark_inputs(spec)
         result = self._benchmark.benchmark(spec)
 
-        # Update metrics
-        self._update_metrics(skill_id, result)
+        # Bind metrics to the exact code and cases supplied to this run.
+        self._update_metrics(skill_id, result, binding=binding)
 
         return {
             "status": "benchmarked",
@@ -1059,20 +1063,34 @@ class SkillEngine:
         }
 
     def promote_or_prune(self, skill_id: str) -> dict[str, Any]:
-        """Evaluate a skill for promotion or pruning."""
+        """Evaluate a skill for promotion or pruning.
+
+        Require a benchmark record bound to current code, cases and evaluator.
+        A changed or tainted candidate returns to testing when this gate is
+        called. This is a local lifecycle check, not continuous revocation or
+        an independent security attestation.
+        """
         if not self._valid_skill_id(skill_id):
             return {"status": "invalid_skill_id", "skill_id": skill_id}
         spec = self._load_skill(skill_id)
         if not spec:
             return {"status": "not_found"}
 
-        fitness = spec.metrics.get("fitness_score", 0.0)
-        benchmark_runs = int(spec.metrics.get("benchmark_runs", 0) or 0)
-        contract_version = int(spec.metrics.get("benchmark_contract_version", 0) or 0)
+        metrics = spec.metrics if isinstance(spec.metrics, dict) else {}
+        fitness = metrics.get("fitness_score", 0.0)
+        if type(fitness) not in (int, float) or not math.isfinite(fitness):
+            fitness = 0.0
 
-        if benchmark_runs < 1 or contract_version < 1:
+        binding_reason = self._binding_failure(spec)
+        binding_blocked = bool(binding_reason)
+
+        if binding_blocked:
             action = "kept"
             spec.status = "testing"
+            logger.warning(
+                "SkillEngine: promotion blocked for %s: %s",
+                skill_id, binding_reason,
+            )
         elif fitness >= self.PROMOTION_THRESHOLD:
             action = "promoted"
             spec.status = "promoted"
@@ -1097,12 +1115,25 @@ class SkillEngine:
         self._update_registry(spec, action)
 
         logger.info(f"SkillEngine: {action} skill {skill_id} (fitness={fitness:.2f})")
-        return {
+        result: dict[str, Any] = {
             "status": action,
             "skill_id": skill_id,
             "fitness": fitness,
             "new_status": spec.status,
         }
+        if binding_blocked:
+            result["binding_blocked"] = True
+            result["binding_reason"] = binding_reason
+        return result
+
+    def validated_promoted_skill(self, skill_id: str) -> SkillSpec | None:
+        """Load the same code snapshot whose benchmark record was checked."""
+        spec = self._load_skill(skill_id)
+        if spec is None or spec.status != "promoted":
+            return None
+        if self._binding_failure(spec):
+            return None
+        return spec
 
     def list_skills(self) -> list[dict[str, Any]]:
         """List all skills in the registry."""
@@ -1179,7 +1210,61 @@ class SkillEngine:
 
         return spec
 
-    def _update_metrics(self, skill_id: str, result: BenchmarkResult) -> None:
+    @staticmethod
+    def _benchmark_inputs(spec: SkillSpec) -> dict[str, Any]:
+        def digest(value: str) -> str:
+            return hashlib.sha256(value.encode("utf-8")).hexdigest()
+        return {
+            "schema": "entroly.skill-benchmark.v1",
+            "skill_id": spec.skill_id,
+            "tool_sha256": digest(spec.tool_code),
+            "cases_sha256": digest(json.dumps(spec.test_cases, sort_keys=True,
+                                             separators=(",", ":"), allow_nan=False)),
+            "evaluator_sha256": digest(inspect.getsource(SkillBenchmark)),
+        }
+
+    def _binding_failure(self, spec: SkillSpec) -> str:
+        """Detect stale/missing local benchmark evidence, not hostile tampering.
+
+        Writable local metrics are not signatures or independent evaluation.
+        Source trust labels alone can never establish benchmark provenance.
+        """
+        if not isinstance(spec.metrics, dict):
+            return "benchmark metrics must be an object"
+        for key in ("benchmark_runs", "benchmark_contract_version"):
+            value = spec.metrics.get(key)
+            if type(value) is not int or value < 1:
+                return f"missing or invalid {key}"
+        trust = spec.metrics.get("benchmark_evidence_class")
+        if trust not in ("locally_executed", "trusted"):
+            return f"benchmark trust is {trust or 'unknown'}"
+        receipt = spec.metrics.get("benchmark_binding")
+        if not isinstance(receipt, dict):
+            return "benchmark provenance missing; rerun benchmark"
+        try:
+            expected = self._benchmark_inputs(spec)
+        except (TypeError, ValueError, OSError):
+            return "benchmark inputs cannot be fingerprinted"
+        if any(receipt.get(k) != v for k, v in expected.items()):
+            return "benchmark code, test cases, or evaluator changed; rerun benchmark"
+        result = receipt.get("result", {})
+        if not isinstance(result, dict):
+            return "benchmark result missing"
+        passed, failed = result.get("passed"), result.get("failed")
+        if (type(passed) is not int or type(failed) is not int or
+                passed < 0 or failed < 0 or passed + failed != len(spec.test_cases) or
+                passed + failed == 0):
+            return "benchmark result counts do not match test cases"
+        fitness = spec.metrics.get("fitness_score")
+        if (type(fitness) not in (int, float) or not math.isfinite(fitness) or
+                fitness != result.get("fitness_score") or
+                fitness != passed / (passed + failed)):
+            return "benchmark fitness does not match recorded outcomes"
+        return ""
+
+    def _update_metrics(
+        self, skill_id: str, result: BenchmarkResult, *, binding: dict[str, Any],
+    ) -> None:
         skill_dir = self._skill_dir(skill_id)
         if skill_dir is None:
             return
@@ -1200,6 +1285,16 @@ class SkillEngine:
         data["failures"] = data.get("failures", 0) + result.failed
         data["last_benchmark"] = datetime.now(timezone.utc).isoformat()
         data["last_duration_ms"] = result.duration_ms
+
+        # Local execution is provenance, not a trust endorsement of the data.
+        data["benchmark_origin"] = "local:SkillBenchmark"
+        if data.get("benchmark_evidence_class") not in {"untrusted", "mixed", "unknown"}:
+            data["benchmark_evidence_class"] = "locally_executed"
+        data["benchmark_binding"] = {
+            **binding,
+            "result": {"passed": result.passed, "failed": result.failed,
+                       "fitness_score": result.fitness_score},
+        }
 
         metrics_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
 

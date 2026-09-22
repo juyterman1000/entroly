@@ -179,3 +179,8 @@ docs/discoverability-registry.json
 
 # Developer-local MCP config
 .mcp.json
+
+# Vendored external checkout used for local comparison only. It is a nested
+# git repository, so staging it would create a broken gitlink, and whole-tree
+# scans (name policy, symbol walks) traverse it and stall.
+openclaw_repo/

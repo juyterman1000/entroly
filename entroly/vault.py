@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import random
 import time
 import uuid
@@ -52,6 +53,8 @@ class VaultConfig:
     """Configuration for the Obsidian vault."""
     base_path: str = ""
     auto_create: bool = True
+    # Optional host policy. Containment is not proof that file content is safe.
+    trusted_source_root: str | None = None
 
     @property
     def path(self) -> Path:
@@ -297,6 +300,10 @@ class BeliefArtifact:
     # against none. Empty on beliefs written before this field existed, and
     # omitted from the frontmatter in that case so their bytes do not change.
     source_root: str = ""
+    # Source-policy classification, not factual confidence or content safety.
+    # Values: trusted, untrusted, mixed, unknown. A configured host root is
+    # checked again on read; absent policy, legacy records remain compatible.
+    trust_class: str = "unknown"
 
     def to_markdown(self) -> str:
         """Render as markdown with YAML frontmatter."""
@@ -309,8 +316,8 @@ class BeliefArtifact:
         # named "unknown". A reader -- human or machine -- cannot tell that
         # apart from a real citation, so a belief carrying `status: verified`
         # and `confidence: 0.99` was stored looking sourced when nothing backed
-        # it. CLAUDE.md requires every write to carry sources; inventing one is
-        # the fail-open direction.
+        # it. Entroly's vault contract requires evidence-bearing writes to carry
+        # sources; inventing one is the fail-open direction.
         #
         # An explicit empty list says the same thing truthfully. Frontmatter
         # parsing is unaffected: `_parse_frontmatter` skips list-item lines, so
@@ -327,6 +334,11 @@ class BeliefArtifact:
         )
         source_root = _yaml_scalar(self.source_root)
         source_root_yaml = f"source_root: {source_root}\n" if source_root else ""
+        trust_yaml = (
+            f"trust_class: {_yaml_scalar(self.trust_class)}\n"
+            if self.trust_class != "unknown"
+            else ""
+        )
 
         return (
             f"---\n"
@@ -336,6 +348,7 @@ class BeliefArtifact:
             f"confidence: {self.confidence}\n"
             f"sources:\n{sources_yaml}\n"
             f"{source_root_yaml}"
+            f"{trust_yaml}"
             f"last_checked: {_yaml_scalar(self.last_checked)}\n"
             f"derived_from:\n{derived_yaml}\n"
             f"---\n\n"
@@ -353,7 +366,13 @@ class BeliefArtifact:
             "last_checked": self.last_checked,
             "derived_from": self.derived_from,
             "title": self.title,
+            "trust_class": self.trust_class,
         }
+
+    @property
+    def selection_eligible(self) -> bool:
+        """Eligibility under the explicit source policy, before legacy handling."""
+        return self.trust_class == "trusted"
 
 
 @dataclass
@@ -384,6 +403,47 @@ class VerificationArtifact:
             f"# {self.title}\n\n"
             f"{self.body}\n"
         )
+
+
+
+
+# Trust classification for vault taint propagation
+
+def classify_source_boundary(
+    source_path: str, project_root: str | Path | None = None,
+) -> str:
+    """Classify file provenance under an explicit host-selected root.
+
+    No repository names confer trust. Resolve symlinks and path components;
+    missing files cannot establish provenance. ``trusted`` means membership
+    in this source policy, not safe instructions or verified content.
+    """
+    if not source_path or project_root is None:
+        return "unknown"
+    if "://" in source_path:
+        return "untrusted"
+    source_path = re.sub(r":\d+(?::\d+)?$", "", source_path)
+    try:
+        root = Path(project_root).resolve(strict=True)
+        raw = Path(source_path)
+        resolved = (raw if raw.is_absolute() else root / raw).resolve()
+        if not resolved.is_relative_to(root):
+            return "untrusted"
+        return "trusted" if resolved.is_file() else "unknown"
+    except (OSError, ValueError, RuntimeError):
+        return "unknown"
+
+
+def derive_belief_source_class(
+    sources: list[str], project_root: str | Path | None = None,
+) -> str:
+    """Propagate unknown and external provenance instead of discarding it."""
+    classes = {classify_source_boundary(source, project_root) for source in sources}
+    if not classes or classes == {"unknown"}:
+        return "unknown"
+    if len(classes) == 1:
+        return next(iter(classes))
+    return "mixed"
 
 
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -522,6 +582,32 @@ class VaultManager:
             "claim_id": current.get("claim_id"),
         }
 
+    def _effective_trust(self, fields: dict[str, Any]) -> str:
+        recorded = str(fields.get("trust_class", "unknown"))
+        if recorded not in {"trusted", "untrusted", "mixed", "unknown"}:
+            return "unknown"
+        if self.config.trusted_source_root is None:
+            return recorded
+        sources = fields.get("sources") or []
+        if not isinstance(sources, list) or any(not isinstance(s, str) for s in sources):
+            return "unknown"
+        source_root = fields.get("source_root")
+        if source_root:
+            if not isinstance(source_root, str):
+                return "unknown"
+            # Preserve the recorded origin; a same-named file in the policy
+            # root must not make an external source appear local.
+            sources = [str(Path(source_root) / source) for source in sources]
+        derived = derive_belief_source_class(sources, self.config.trusted_source_root)
+        # Never upgrade recorded taint. Parent claims are not resolved into
+        # verified provenance here, so dependent beliefs remain ineligible.
+        if recorded in {"untrusted", "mixed"}:
+            return recorded
+        # The serializer uses `system` for an empty historical parent list.
+        if any(parent != "system" for parent in (fields.get("derived_from") or [])):
+            return "unknown"
+        return derived
+
     def write_belief(self, artifact: BeliefArtifact) -> dict[str, Any]:
         """Write a belief artifact to the vault.
 
@@ -543,6 +629,12 @@ class VaultManager:
         """
         self.ensure_structure()
 
+        if self.config.trusted_source_root is not None:
+            artifact = replace(artifact, trust_class=self._effective_trust({
+                "sources": artifact.sources, "trust_class": artifact.trust_class,
+                "derived_from": artifact.derived_from, "source_root": artifact.source_root,
+            }))
+
         if not artifact.sources and artifact.status == "verified":
             artifact = replace(artifact, status="unsupported")
 
@@ -554,13 +646,9 @@ class VaultManager:
         # but nothing reads the ledger by default, so the operative knowledge
         # was simply wrong.
         #
-        # This is the dominant state-update failure reported for long-horizon
-        # agents (SKILL.state, arXiv 2608.26263, whose error taxonomy puts
-        # premature state overwrite/deletion at 68% of state errors), and the
-        # same answer applies here -- a weaker patch must not corrupt current
-        # state. The claim is still kept and still recorded in the ledger, in
-        # keeping with the rule above that losing a claim is worse than holding
-        # it at a lower status; it simply does not become what agents read.
+        # A weaker update must not corrupt the current operative belief. The
+        # incoming claim is still preserved in the ledger for later comparison;
+        # it simply does not replace the stronger belief that agents read.
         superseded = self._weaker_than_current(artifact)
         if superseded is not None:
             try:
@@ -681,11 +769,19 @@ class VaultManager:
         content = safe_path.read_text(encoding="utf-8", errors="replace")
         frontmatter = _parse_frontmatter(content)
         body = _extract_body(content)
+        frontmatter = frontmatter or {}
+        policy_active = self.config.trusted_source_root is not None
+        eligible = True  # Legacy unlabelled records keep historical behavior.
+        if policy_active or "trust_class" in frontmatter:
+            trust = self._effective_trust(frontmatter)
+            frontmatter["trust_class"] = trust
+            eligible = trust == "trusted"
 
         return {
             "path": str(safe_path),
-            "frontmatter": frontmatter or {},
+            "frontmatter": frontmatter,
             "body": body,
+            "selection_eligible": eligible,
         }
 
     def list_beliefs(self) -> list[dict[str, Any]]:
@@ -987,7 +1083,7 @@ class VaultManager:
         """
 
         # Function-local, matching mark_beliefs_stale_for_files: `vault` sits in
-        # the import cycle CLAUDE.md flags as load-bearing.
+        # a load-bearing import cycle and must not add a module-level dependency.
         import re
 
         self.ensure_structure()
@@ -1181,8 +1277,8 @@ def _parse_frontmatter(content: str) -> dict[str, Any] | None:
     `status: verified, confidence: 0.95` with no citations attached and no way
     to check what the claim had been verified against.
 
-    CLAUDE.md requires vault beliefs to be machine-auditable and omitted
-    evidence to be inspectable. Evidence that survives the write and not the
+    Entroly's vault contract requires beliefs to be machine-auditable and
+    omitted evidence to be inspectable. Evidence that survives the write but not the
     read is neither. Every caller that actually needed provenance had worked
     around this by re-scanning the raw text with `_extract_sources` next to its
     parse; fixing the shared parser is what lets those two agree, rather than

@@ -1154,10 +1154,10 @@ def create_mcp_server(
 
                             _skill_execution["matched"] += 1
 
-                            spec = _py_skill_engine._load_skill(sk["skill_id"])
+                            spec = _py_skill_engine.validated_promoted_skill(sk["skill_id"])
                             if not spec or not spec.tool_code:
                                 _skill_execution["errors"].append(
-                                    f"{sk['skill_id']}: missing executable tool"
+                                    f"{sk['skill_id']}: missing tool or current benchmark evidence"
                                 )
                                 continue
 

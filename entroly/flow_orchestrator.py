@@ -491,7 +491,7 @@ class FlowOrchestrator:
                 if term in entity:
                     # Load full belief
                     full = self._vault.read_belief(b.get("entity", ""))
-                    if full:
+                    if full and full.get("selection_eligible") is not False:
                         results.append({
                             **b,
                             "body": full.get("body", ""),
