@@ -162,6 +162,20 @@ try:
 except ImportError:
     pass
 
+# Exact-source evidence location. Rankers select only caller-supplied passage
+# and sentence identifiers; Entroly owns text, offsets, freshness, and recovery.
+try:
+    from .evidence_locator import (  # noqa: F401
+        EncoderEvidenceRanker,
+        EvidenceLocationResult,
+        EvidenceMatch,
+        LexicalEvidenceRanker,
+        locate_evidence,
+        verify_evidence_location,
+    )
+except ImportError:
+    pass
+
 # Verification SDK: hallucination detection + suppression
 try:
     from .verifiers import trace_provenance, forge_loop  # noqa: F401
