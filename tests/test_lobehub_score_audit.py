@@ -68,7 +68,8 @@ def test_public_mcp_profile_keeps_marketplace_tool_surface_small(tmp_path, monke
     tools = set(server._tool_manager._tools)
 
     assert tools == set(_PUBLIC_MCP_TOOLS)
-    assert len(tools) == 12
+    assert len(tools) == 13
+    assert "locate_evidence" in tools
     assert "retrieve_context" in tools
     assert "read_source_file" in tools
     assert "get_session_stats" in tools

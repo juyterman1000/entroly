@@ -440,6 +440,7 @@ entroly trial --experiment checkout-fix --arm baseline -- codex exec "fix the ch
 entroly trial --experiment checkout-fix --arm optimized -- codex exec "fix the checkout test"
 entroly trial --report checkout-fix
 entroly browser https://example.com --query "billing settings"
+entroly find docs/product-surface.md --query "exact source evidence" --json
 entroly response set evidence --scope project
 ```
 

@@ -617,12 +617,27 @@ def cmd_browser(args: Any) -> int:
         source_id = "rendered-page"
     store_path = getattr(args, "store_path", None) or _default_recovery_store_path()
     query = getattr(args, "query", "") or ""
+    ranker = None
+    semantic_model = getattr(args, "semantic_model", None)
+    if semantic_model:
+        try:
+            from .evidence_locator import EncoderEvidenceRanker
+            from .neural_evidence_selector import LocalTransformerEncoder
+
+            ranker = EncoderEvidenceRanker(LocalTransformerEncoder(semantic_model))
+        except (OSError, RuntimeError, ValueError) as exc:
+            print(f"  Local semantic model unavailable: {exc}", file=sys.stderr)
+            return 2
     result = compress_accessibility_snapshot(
         snapshot,
         query=query,
         budget=max(64, int(getattr(args, "budget", 2000))),
         store=RecoveryStore(store_path),
         source_id=source_id,
+        ranker=ranker,
+        min_score=getattr(args, "threshold", None),
+        calibration_id=getattr(args, "calibration_id", None),
+        max_matches=max(1, int(getattr(args, "max_matches", 8))),
     )
     receipt = result.receipt()
     receipt["query_fingerprint"] = query_fingerprint(query)
@@ -637,6 +652,81 @@ def cmd_browser(args: Any) -> int:
             sys.stdout.write("\n")
         print(json.dumps(receipt, sort_keys=True), file=sys.stderr)
     return 0
+
+
+def cmd_find(args: Any) -> int:
+    """Locate exact evidence spans in a source without generating an answer."""
+    from .codec import RecoveryStore
+    from .evidence_locator import (
+        EncoderEvidenceRanker,
+        LexicalEvidenceRanker,
+        locate_evidence,
+    )
+
+    max_bytes = max(1, int(getattr(args, "max_bytes", 16 * 1024 * 1024)))
+    source_path = getattr(args, "source", None)
+    if source_path:
+        path = Path(source_path)
+        try:
+            if path.stat().st_size > max_bytes:
+                print(f"  Source exceeds --max-bytes ({max_bytes}).", file=sys.stderr)
+                return 2
+            source_text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            print(f"  Could not read source: {exc}", file=sys.stderr)
+            return 2
+        source_id = getattr(args, "source_id", None) or str(path)
+    else:
+        if sys.stdin.isatty():
+            print("  Provide SOURCE or pipe UTF-8 text on stdin.", file=sys.stderr)
+            return 2
+        raw = sys.stdin.buffer.read(max_bytes + 1)
+        if len(raw) > max_bytes:
+            print(f"  Standard input exceeds --max-bytes ({max_bytes}).", file=sys.stderr)
+            return 2
+        source_text = raw.decode("utf-8", errors="replace")
+        source_id = getattr(args, "source_id", None) or "stdin"
+
+    semantic_model = getattr(args, "semantic_model", None)
+    try:
+        if semantic_model:
+            from .neural_evidence_selector import LocalTransformerEncoder
+
+            ranker = EncoderEvidenceRanker(LocalTransformerEncoder(semantic_model))
+        else:
+            ranker = LexicalEvidenceRanker()
+        store_path = getattr(args, "store_path", None) or _default_recovery_store_path()
+        result = locate_evidence(
+            source_text,
+            args.query,
+            source_id=source_id,
+            ranker=ranker,
+            min_score=getattr(args, "threshold", None),
+            calibration_id=getattr(args, "calibration_id", None),
+            max_matches=max(1, int(getattr(args, "max_matches", 5))),
+            budget_tokens=max(1, int(getattr(args, "budget", 2000))),
+            passage_mode=getattr(args, "passage_mode", "auto"),
+            recovery_store=RecoveryStore(store_path),
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        print(f"  Evidence location failed: {exc}", file=sys.stderr)
+        return 2
+
+    payload = result.to_dict(include_text=True)
+    payload["recovery_store"] = store_path
+    if getattr(args, "receipt", None):
+        _atomic_json(Path(args.receipt), payload)
+    if getattr(args, "json_output", False):
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+    else:
+        for match in result.matches:
+            print(
+                f"[{match.source_id}:{match.focus_start_char}-{match.focus_end_char} "
+                f"score={match.relevance:.4f}]"
+            )
+            print(match.focus_text)
+        print(json.dumps(result.receipt(), sort_keys=True), file=sys.stderr)
+    return 0 if result.status == "selected" else 1
 
 
 def cmd_response(args: Any) -> int:
@@ -678,4 +768,11 @@ def cmd_response(args: Any) -> int:
     return 0
 
 
-__all__ = ["cmd_browser", "cmd_history", "cmd_response", "cmd_shrink", "cmd_trial"]
+__all__ = [
+    "cmd_browser",
+    "cmd_find",
+    "cmd_history",
+    "cmd_response",
+    "cmd_shrink",
+    "cmd_trial",
+]

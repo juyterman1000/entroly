@@ -92,6 +92,47 @@ def test_browser_snapshot_json_needs_no_browser_dependency(tmp_path: Path) -> No
     assert payload["receipt"]["exact_recovery"] is True
 
 
+def test_find_returns_exact_source_offsets_and_machine_receipt(tmp_path: Path) -> None:
+    source = tmp_path / "terms.txt"
+    source.write_text(
+        "The advertised price excludes tax.\n\nRate limits apply per workspace.",
+        encoding="utf-8",
+    )
+    result = _run(
+        tmp_path,
+        "find",
+        str(source),
+        "--query",
+        "workspace rate limits",
+        "--json",
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "selected"
+    match = payload["matches"][0]
+    assert match["focus_text"] == "Rate limits apply per workspace."
+    original = source.read_text(encoding="utf-8")
+    assert original[match["focus_start_char"] : match["focus_end_char"]] == match["focus_text"]
+    assert "not proof" in payload["claim_boundary"]
+
+
+def test_find_returns_nonzero_for_no_match(tmp_path: Path) -> None:
+    source = tmp_path / "terms.txt"
+    source.write_text("Only billing terms are present.", encoding="utf-8")
+    result = _run(
+        tmp_path,
+        "find",
+        str(source),
+        "--query",
+        "rate limits",
+        "--threshold",
+        "0.5",
+        "--json",
+    )
+    assert result.returncode == 1
+    assert json.loads(result.stdout)["status"] == "no_match"
+
+
 def test_response_contract_round_trip_is_explicit_and_machine_readable(tmp_path: Path) -> None:
     result = _run(tmp_path, "response", "set", "concise", "--json")
     assert result.returncode == 0, result.stderr

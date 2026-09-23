@@ -7397,8 +7397,41 @@ def main():
     browser_parser.add_argument("--store", dest="store_path", default=None, help="Recovery store path")
     browser_parser.add_argument("--receipt", default=None, help="Receipt output path")
     browser_parser.add_argument(
+        "--semantic-model", default=None,
+        help="Existing local sentence-transformer directory; remote downloads are refused",
+    )
+    browser_parser.add_argument(
+        "--threshold", type=float, default=None,
+        help="Optional ranker score floor (a ranking signal, not proof)",
+    )
+    browser_parser.add_argument("--calibration-id", default=None)
+    browser_parser.add_argument("--max-matches", type=int, default=8)
+    browser_parser.add_argument(
         "--json", dest="json_output", action="store_true", help="Emit context and receipt as JSON"
     )
+
+    find_parser = subparsers.add_parser(
+        "find",
+        help="Locate exact source evidence for a natural-language query",
+    )
+    find_parser.add_argument("source", nargs="?", help="UTF-8 source file; omit to read stdin")
+    find_parser.add_argument("--query", "-q", required=True, help="Evidence to locate")
+    find_parser.add_argument("--source-id", default=None, help="Provenance label in the receipt")
+    find_parser.add_argument("--budget", type=int, default=2000, help="Selected token budget")
+    find_parser.add_argument("--max-matches", type=int, default=5)
+    find_parser.add_argument("--threshold", type=float, default=None)
+    find_parser.add_argument("--calibration-id", default=None)
+    find_parser.add_argument(
+        "--semantic-model", default=None,
+        help="Existing local sentence-transformer directory; remote downloads are refused",
+    )
+    find_parser.add_argument(
+        "--passage-mode", choices=["auto", "paragraph", "line"], default="auto"
+    )
+    find_parser.add_argument("--max-bytes", type=int, default=16 * 1024 * 1024)
+    find_parser.add_argument("--store", dest="store_path", default=None)
+    find_parser.add_argument("--receipt", default=None)
+    find_parser.add_argument("--json", dest="json_output", action="store_true")
 
     # ── Governance control plane ──────────────────────────────────────
     # The `entroly/governance/` package shipped with tests but no entry point,
@@ -7874,7 +7907,7 @@ def main():
         or (args.command == "learn" and getattr(args, "history", False)
             and getattr(args, "json_output", False))
         or args.command == "activation"
-        or (args.command in {"trial", "browser", "response"}
+        or (args.command in {"trial", "browser", "find", "response"}
             and getattr(args, "json_output", False))
         or (args.command == "trial" and getattr(args, "report", None))
         or args.command == "shrink"
@@ -7889,6 +7922,7 @@ def main():
     from .cli_governance import cmd_govern
     from .cli_context_workflows import (
         cmd_browser,
+        cmd_find,
         cmd_response,
         cmd_shrink,
         cmd_trial,
@@ -7959,6 +7993,7 @@ def main():
         "trial": cmd_trial,
         "shrink": cmd_shrink,
         "browser": cmd_browser,
+        "find": cmd_find,
         "response": cmd_response,
         "govern": cmd_govern,
         "learn": cmd_learn,
