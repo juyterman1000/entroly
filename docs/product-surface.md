@@ -70,6 +70,7 @@ entroly daemon
 Context and receipt workflow:
 
 ```bash
+entroly find README.md --query "how does exact recovery work?" --json
 entroly optimize
 entroly ingest
 entroly select
@@ -112,6 +113,7 @@ Common imports:
 from entroly import compress, compress_messages, optimize, verify
 from entroly import create_context_receipt, render_context_receipt
 from entroly import explain_receipt_omission, context_receipt_from_path
+from entroly import locate_evidence, verify_evidence_location
 ```
 
 `compress_messages(..., target_ratio=0.90)` exposes a gentle relative operating
@@ -229,7 +231,7 @@ The MCP server exposes tools across these groups:
 | Family | Examples |
 |---|---|
 | Work continuity | `work_state`, `work_claim`, `work_resume`, `work_handoff`, `work_compile_context`, `work_context_fault`, `work_record_context`, `work_record_memory`, `work_record_execution` |
-| Context memory | `remember_fragment`, `optimize_context`, `recall_relevant`, `entroly_retrieve` |
+| Context memory | `remember_fragment`, `optimize_context`, `recall_relevant`, `entroly_retrieve`, `locate_evidence` |
 | Context Receipts | `create_context_receipt`, `render_context_receipt`, `explain_receipt_omission`, `recover_receipt_omission` |
 | Outcome learning | `record_outcome`, `record_test_result`, `record_command_exit`, `record_ci_result`, `record_edit_outcome` |
 | Explainability | `explain_context`, `entroly_dashboard`, `get_stats` |

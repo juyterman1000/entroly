@@ -40,6 +40,7 @@ class BrowserContextResult:
     retained_query_term_count: int
     source_sha256: str
     recovery: RecoveryReference | None
+    evidence_location: dict[str, Any] | None = None
 
     def receipt(self) -> dict[str, Any]:
         return {
@@ -53,11 +54,17 @@ class BrowserContextResult:
             "query_coverage": {
                 "required_terms": self.query_term_count,
                 "retained_terms": self.retained_query_term_count,
-                "complete": self.query_term_count == self.retained_query_term_count,
+                "complete": (
+                    None
+                    if self.evidence_location is not None
+                    else self.query_term_count == self.retained_query_term_count
+                ),
+                "method": "ranker" if self.evidence_location is not None else "literal",
             },
             "source_sha256": self.source_sha256,
             "exact_recovery": bool(self.recovery),
             "recovery_digest": self.recovery.digest if self.recovery else None,
+            "evidence_location": self.evidence_location,
             "claim_boundary": (
                 "Accessibility evidence was selected extractively. This receipt does not "
                 "prove task success or visual equivalence to the rendered page."
@@ -97,12 +104,79 @@ def compress_accessibility_snapshot(
     budget: int = 2_000,
     store: RecoveryStore | None = None,
     source_id: str = "browser",
+    ranker: Any | None = None,
+    min_score: float | None = None,
+    calibration_id: str | None = None,
+    max_matches: int = 8,
 ) -> BrowserContextResult:
     """Select an extractive evidence envelope or return the complete snapshot."""
     original_tokens = estimate_tokens(snapshot)
     terms = _query_terms(query)
     if not snapshot or budget <= 0 or original_tokens <= budget:
         return _passthrough(snapshot, "passthrough", terms)
+
+    if ranker is not None and query.strip():
+        from .evidence_locator import locate_evidence
+
+        recovery_store = store if store is not None else RecoveryStore()
+        location = locate_evidence(
+            snapshot,
+            query,
+            source_id=source_id,
+            ranker=ranker,
+            min_score=min_score,
+            calibration_id=calibration_id,
+            max_matches=max_matches,
+            budget_tokens=budget,
+            passage_mode="line",
+            recovery_store=recovery_store,
+        )
+        receipt = location.receipt()
+        if location.status != "selected":
+            passthrough = _passthrough(
+                snapshot, f"passthrough-semantic-{location.status}", terms
+            )
+            return BrowserContextResult(
+                passthrough.text,
+                passthrough.original_tokens,
+                passthrough.active_tokens,
+                passthrough.recoverable_tokens,
+                passthrough.mode,
+                passthrough.query_term_count,
+                passthrough.retained_query_term_count,
+                passthrough.source_sha256,
+                passthrough.recovery,
+                receipt,
+            )
+        compact = location.render_context()
+        active = estimate_tokens(compact)
+        if active >= original_tokens:
+            passthrough = _passthrough(snapshot, "passthrough-semantic-no-gain", terms)
+            return BrowserContextResult(
+                passthrough.text,
+                passthrough.original_tokens,
+                passthrough.active_tokens,
+                passthrough.recoverable_tokens,
+                passthrough.mode,
+                passthrough.query_term_count,
+                passthrough.retained_query_term_count,
+                passthrough.source_sha256,
+                passthrough.recovery,
+                receipt,
+            )
+        retained = sum(term in compact.lower() for term in terms)
+        return BrowserContextResult(
+            compact,
+            original_tokens,
+            active,
+            max(0, original_tokens - active),
+            "semantic-extractive",
+            len(terms),
+            retained,
+            content_digest(snapshot),
+            location.recovery,
+            receipt,
+        )
 
     lines = snapshot.splitlines()
     source_lower = snapshot.lower()

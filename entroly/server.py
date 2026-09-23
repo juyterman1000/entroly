@@ -161,6 +161,7 @@ _PUBLIC_MCP_TOOLS = frozenset(
         "checkpoint_state",
         "create_context_receipt",
         "get_session_stats",
+        "locate_evidence",
         "optimize_context",
         "recall_relevant",
         "record_test_result",
@@ -195,7 +196,8 @@ _FULL_MCP_INSTRUCTIONS = (
 
 _PUBLIC_MCP_INSTRUCTIONS = (
     "Local context control for coding agents. Start a task with recall_relevant. "
-    "Use read_source_file for a known workspace path, remember_fragment for "
+    "Use read_source_file for a known workspace path, locate_evidence for exact "
+    "source spans answering a natural-language query, remember_fragment for "
     "caller-supplied text, and optimize_context for a token-bounded bundle. "
     "Use create_context_receipt when selection needs an audit trail, then "
     "recover_receipt_omission for omitted receipt chunks or retrieve_context for "
@@ -400,6 +402,28 @@ def _prepare_public_mcp_surface(mcp: Any) -> None:
                 "line_end": "Last line of an exact inclusive range; pair with line_start.",
                 "fresh": "Return content again instead of a same-session repeat-delivery handle.",
                 "read_scope": "Optional cache-isolation key for agents sharing one MCP connection.",
+            },
+        },
+        "locate_evidence": {
+            "description": (
+                "Locate exact passages and sentence offsets in caller-supplied text. "
+                "Use this when wording may differ from the query but the returned "
+                "evidence must remain extractive and auditable. The default lexical "
+                "ranker is deterministic. ENTROLY_SEMANTIC_MODEL_PATH may name an "
+                "existing local sentence-transformer directory; remote downloads are "
+                "refused. Scores rank supplied spans and do not prove relevance, "
+                "completeness, factual correctness, or task success. This may write "
+                "an exact local recovery entry and makes no network call."
+            ),
+            "annotations": (False, False, False, False),
+            "parameters": {
+                "text": "Caller-supplied source text whose exact spans may be returned.",
+                "query": "Natural-language description of the evidence to locate.",
+                "source_id": "Provenance label copied into the receipt.",
+                "max_matches": "Maximum number of exact source passages to return.",
+                "min_score": "Optional score floor from 0 to 1; -1 disables it.",
+                "calibration_id": "External calibration artifact identity for the score floor, if one exists.",
+                "passage_mode": "Source segmentation: auto, paragraph, or line.",
             },
         },
     }
@@ -4223,6 +4247,66 @@ def create_mcp_server(
     # prevents Python object-id reuse from ever mapping a new MCP session onto
     # an older session's delivery cache.
     _smart_read_session_tokens: dict[int, tuple[Any, str]] = {}
+
+    @mcp.tool()
+    def locate_evidence(
+        text: str,
+        query: str,
+        source_id: str = "mcp",
+        max_matches: int = 5,
+        min_score: float = -1.0,
+        calibration_id: str = "",
+        passage_mode: str = "auto",
+    ) -> str:
+        """Locate exact source spans without generating an answer.
+
+        The ranker can select only passage and sentence identifiers created
+        from ``text``. Entroly derives returned text, offsets, and hashes from
+        the original source. Invalid ranker output abstains.
+        """
+        try:
+            if len(text.encode("utf-8", "surrogatepass")) > 16 * 1024 * 1024:
+                raise ValueError("source text exceeds the 16 MiB MCP limit")
+            from .codec import RecoveryStore
+            from .evidence_locator import (
+                EncoderEvidenceRanker,
+                LexicalEvidenceRanker,
+                locate_evidence as locate_source_evidence,
+            )
+
+            model_path = os.environ.get("ENTROLY_SEMANTIC_MODEL_PATH", "").strip()
+            if model_path:
+                from .neural_evidence_selector import LocalTransformerEncoder
+
+                ranker = EncoderEvidenceRanker(LocalTransformerEncoder(model_path))
+            else:
+                ranker = LexicalEvidenceRanker()
+            floor = None if min_score < 0 else min_score
+            result = locate_source_evidence(
+                text,
+                query,
+                source_id=source_id,
+                ranker=ranker,
+                min_score=floor,
+                calibration_id=calibration_id or None,
+                max_matches=max(1, min(int(max_matches), 20)),
+                passage_mode=passage_mode,
+                recovery_store=RecoveryStore(
+                    Path(_checkpoint_dir) / "evidence-locator-recovery.json",
+                    scope_id=f"mcp-evidence:{_project_root}",
+                ),
+            )
+            return json.dumps(result.to_dict(include_text=True), indent=2, ensure_ascii=False)
+        except Exception as error:
+            return json.dumps(
+                {
+                    "schema_version": "entroly.evidence-location.v1",
+                    "status": "abstained",
+                    "reason": f"locator_failed:{type(error).__name__}",
+                    "matches": [],
+                },
+                indent=2,
+            )
 
     @mcp.tool()
     def smart_read(
