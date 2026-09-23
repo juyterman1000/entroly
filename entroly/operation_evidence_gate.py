@@ -1,10 +1,10 @@
-"""Entroly Assurance Envelope: a bounded preflight diagnostic.
+"""Entroly Operation Evidence Gate: a bounded preflight diagnostic.
 
 The individual signals in this module are deliberately modest. The product
 value is their composition: one missing surface prevents a positive preflight
 result. Inputs are hashed for comparison; they are not independently verified.
 
-The envelope is independent of model and provider names. Adapters supply the
+The gate is independent of model and provider names. Adapters supply the
 same evidence records regardless of which runtime produced the answer.
 """
 
@@ -22,7 +22,7 @@ from .relate.coverage_verification import audit_evidence_boundary
 from .sufficiency import Candidate, build_obligation_budget_witness
 from .vault import classify_source_boundary
 
-EnvelopeDecision = Literal["pass", "hold", "block"]
+GateDecision = Literal["pass", "hold", "block"]
 
 
 def _canonical_sha256(value: Any) -> str:
@@ -37,11 +37,11 @@ def _canonical_sha256(value: Any) -> str:
 
 
 @dataclass(frozen=True)
-class AssuranceEnvelope:
+class OperationEvidenceGate:
     """Replayable decision over the evidence required for one operation."""
 
     schema: str
-    decision: EnvelopeDecision
+    decision: GateDecision
     reasons: tuple[str, ...]
     task_sha256: str
     evidence_sha256: str
@@ -70,7 +70,7 @@ class AssuranceEnvelope:
         return result
 
 
-def build_assurance_envelope(
+def build_operation_evidence_gate(
     *,
     task: str,
     candidates: Sequence[Candidate],
@@ -87,7 +87,7 @@ def build_assurance_envelope(
     skill_id: str | None = None,
     skill_evidence_validated: bool | None = None,
     max_cover_states: int = 65_536,
-) -> AssuranceEnvelope:
+) -> OperationEvidenceGate:
     """Build a pass/hold/block diagnostic from caller-supplied evidence.
 
     ``block`` means a concrete contradiction exists: required obligations are
@@ -163,7 +163,7 @@ def build_assurance_envelope(
             holds.append("skill:validation_missing")
 
     reasons = tuple(sorted(set(blockers or holds)))
-    decision: EnvelopeDecision = "block" if blockers else "hold" if holds else "pass"
+    decision: GateDecision = "block" if blockers else "hold" if holds else "pass"
 
     candidate_records = [
         {
@@ -196,8 +196,8 @@ def build_assurance_envelope(
         "skill_id": skill_id,
         "skill_evidence_validated": skill_evidence_validated,
     }
-    return AssuranceEnvelope(
-        schema="entroly.assurance-envelope.v1",
+    return OperationEvidenceGate(
+        schema="entroly.operation-evidence-gate.v1",
         decision=decision,
         reasons=reasons,
         task_sha256=hashlib.sha256(task.encode("utf-8")).hexdigest(),
@@ -212,14 +212,14 @@ def build_assurance_envelope(
     )
 
 
-def score_assurance_envelope(envelope: AssuranceEnvelope) -> float:
+def score_operation_evidence_gate(gate: OperationEvidenceGate) -> float:
     """Stable ordering signal for dashboards; never overrides the decision.
 
     The score deliberately has no promotion threshold. It exposes gradation
     within a decision class while the categorical gate remains authoritative.
     """
-    if not math.isfinite(envelope.reference_coverage):
+    if not math.isfinite(gate.reference_coverage):
         return 0.0
-    base = {"block": 0.0, "hold": 0.5, "pass": 1.0}[envelope.decision]
-    penalty = min(0.49, 0.05 * len(envelope.reasons))
-    return round(max(0.0, base - penalty) * envelope.reference_coverage, 6)
+    base = {"block": 0.0, "hold": 0.5, "pass": 1.0}[gate.decision]
+    penalty = min(0.49, 0.05 * len(gate.reasons))
+    return round(max(0.0, base - penalty) * gate.reference_coverage, 6)

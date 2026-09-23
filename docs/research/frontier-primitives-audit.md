@@ -16,17 +16,17 @@ novelty claim or measured downstream product advantage.
 | Vault provenance policy | An explicit `VaultConfig.trusted_source_root` checks existing files and resolved containment on writes and reads. Unknown, mixed, and external provenance cannot enter the coupling, flow, or task-dream selection paths under this policy. | Root membership is not content safety. Dependency provenance that cannot be established remains unknown. Legacy unlabelled records retain historical behavior when no root policy is configured. Direct vault queries remain inspectable. |
 | Skill promotion evidence | Separate caller-held-out cases, a 95% Wilson lower bound, and keyed records bound to code, development cases, evaluator, and per-case outcomes gate promotion and opted-in execution. | The caller must supply meaningful independent cases. The local key is available to code running as the same user; this is not a hostile-code sandbox or an external task-quality guarantee. |
 
-## Entroly Assurance Envelope
+## Entroly Operation Evidence Gate
 
-`build_assurance_envelope` composes caller-supplied surfaces into one
+`build_operation_evidence_gate` composes caller-supplied surfaces into one
 operation-bound diagnostic. A concrete contradiction produces `block`;
 incomplete evidence produces `hold`; `pass` means only that the supplied inputs
-cleared these checks. The envelope is not wired into the signed context-commit
+cleared these checks. The gate is not wired into the signed context-commit
 path, and `autonomous_execution_allowed` remains false. It hashes
 its canonical inputs and does not contain provider or model names.
 
-The numeric dashboard score cannot override the categorical decision. An
-envelope authorizes only the exact task and evidence hash it records; it never
+The numeric dashboard score cannot override the categorical decision. A gate
+applies only to the exact task and evidence hash it records; it never
 creates global trust in an agent, model, skill, or repository.
 
 ## Reproduced defects in the supplied implementation
