@@ -146,11 +146,13 @@ class FastPathRouter:
         skill_lister: Callable[[], list[dict[str, Any]]],
         fragment_lookup: Callable[[str], dict[str, Any] | None],
         *,
+        promotion_check: Callable[[str], bool] | None = None,
         cache_ttl_s: float = DEFAULT_CACHE_TTL_S,
         max_missing_fraction: float = DEFAULT_MAX_MISSING_FRACTION,
     ):
         self._lister = skill_lister
         self._lookup = fragment_lookup
+        self._promotion_check = promotion_check
         self._cache_ttl = cache_ttl_s
         self._max_missing = max_missing_fraction
         self._cache = _Cache()
@@ -202,6 +204,14 @@ class FastPathRouter:
             if best is None:
                 with self._lock:
                     self._stats["no_match"] += 1
+                return None
+
+            # Cached recipes can outlive a code edit or a failed benchmark.
+            # The production caller re-checks promotion evidence on each hit.
+            if self._promotion_check is not None and not self._promotion_check(best.skill_id):
+                self.invalidate_cache()
+                with self._lock:
+                    self._stats["stale_misses"] += 1
                 return None
 
             present, missing, fragments = self._materialize_recipe(

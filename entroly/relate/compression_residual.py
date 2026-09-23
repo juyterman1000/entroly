@@ -1,10 +1,8 @@
-"""Conditional compression residual: a model-free recoverability certificate.
+"""Conditional compression residual: a model-free redundancy diagnostic.
 
-An omission is recoverable when the retained set already contains the
-omitted fragment's information.  Formally, fragment F is recoverable from
-retained set R when the conditional Kolmogorov complexity K(F | R) is near
-zero.  K is uncomputable, but Cilibrasi & Vitanyi (2005) showed that real
-compressors approximate it:
+Entroly measures how many additional compressed bytes a fragment contributes
+after a retained prefix. The measurement is deterministic for a fixed runtime
+and codec configuration, and is treated only as a replayable heuristic:
 
     K(F | R)  ~=  C(R + F) - C(R)
 
@@ -13,8 +11,8 @@ residual**:
 
     CCR(F | R) = [C(R + F) - C(R)] / C(F)
 
-    CCR -> 0   F costs almost nothing given R; R already carries it.
-    CCR -> 1   F is fully novel given R.
+    CCR -> 0   Appending F changes compressed size little.
+    CCR -> 1   Appending F costs roughly its standalone compressed size.
 
 Why this and not embedding cosine similarity:
 
@@ -24,19 +22,18 @@ Why this and not embedding cosine similarity:
    this is a representational limit, not a tuning limit.
 2. **No model download.**  ``zlib``, ``bz2`` and ``lzma`` are standard
    library, preserving local-first operation.
-3. **Determinism.**  Byte-identical output forever, at a fixed level.
+3. **Determinism.**  Repeatable with fixed codec implementations and settings.
    Embedding scores drift across model versions, which breaks receipt
    replay.
 4. **Explainability.**  "Appending F to R cost 12 of 87 bytes" is an
    inspectable receipt line; a cosine of 0.83 is not.
 
 Ensemble rule: compressors have different inductive biases (LZ77 literal
-repeats, BWT reordering, LZMA long-range structure).  A safety certificate
-must take the **maximum** residual across compressors, never the mean --
-the most conservative compressor decides, so a single permissive codec can
-never certify an unsafe omission.
+repeats, BWT reordering, LZMA long-range structure).  This implementation takes the maximum
+residual across compressors. This prevents a permissive codec from deciding
+alone but does not turn agreement into proof of omission safety.
 
-This module answers *recoverability* only.  It cannot answer *constraint
+This module measures byte redundancy only; it does not prove recoverability.  It cannot answer *constraint
 preservation*: "deployment requires security approval" and "deployment
 requires performance review" compress well against each other yet impose
 different obligations.  Structural checks remain mandatory; see
@@ -82,10 +79,10 @@ def _adjusted(name: str, data: bytes) -> int:
 
 @dataclass(frozen=True)
 class CompressionCertificate:
-    """Replayable recoverability certificate.
+    """Replayable compression diagnostic.
 
     Every field needed to recompute the verdict is recorded, so an auditor
-    can reproduce it from the fragment bytes alone.
+    can reproduce it given the fragment, retained bytes and codec environment.
     """
 
     residual: float
@@ -160,13 +157,10 @@ def certify_recoverable(
 
 @dataclass(frozen=True)
 class ContainmentCertificate:
-    """Formal containment bound: gap > σ·δ proves directional containment.
+    """Heuristic comparison against each codec's self-residual.
 
-    δ is the compressor's irreducible noise floor, estimated from the
-    fragment's self-residual CCR(F|F).  When the containment gap (1 - CCR)
-    exceeds σ·δ (default σ=2.0) for every compressor, the retained set
-    provably contains the fragment's information at a strength that exceeds
-    compression artifacts by σ multiples of the noise floor.
+    ``contained`` records a threshold decision, not logical containment or
+    semantic entailment. ``sigma`` is a multiplier, not a statistical interval.
     """
 
     contained: bool
@@ -210,11 +204,10 @@ def certify_containment(
     sigma: float = 2.0,
     compressors: tuple[str, ...] = ("zlib", "bz2", "lzma"),
 ) -> ContainmentCertificate:
-    """Formal directional containment: gap > σ·δ across the ensemble.
+    """Compare redundancy gap to scaled self-residual across codecs.
 
-    σ=2.0 balances sensitivity against bz2's inherently noisy
-    block-sorting (self-residual ~0.24).  Fail-closed: the deciding
-    compressor is the one with the smallest margin (gap - σ·δ).
+    The smallest margin decides. No calibrated probability or mathematical
+    containment guarantee follows from this heuristic.
     """
     per = []
     for name in compressors:
@@ -239,11 +232,83 @@ def certify_containment(
 def asymmetry(text_a: str, text_b: str, *, compressor: str = "zlib") -> tuple[float, float]:
     """Return (CCR(A|B), CCR(B|A)).
 
-    A large gap between the two is the signature of subsumption: one text
-    contains the other's information but not the reverse.  Symmetric
+    A large gap records directional byte redundancy, which can suggest
+    subsumption but cannot establish it.  Symmetric
     similarity measures collapse this to a single number and lose it.
     """
     return (
         conditional_residual(text_a, text_b, compressor=compressor),
         conditional_residual(text_b, text_a, compressor=compressor),
+    )
+
+
+# Temporal compression diagnostics; codec shifts do not prove semantic safety.
+
+@dataclass(frozen=True)
+class ContextDriftReceipt:
+    """Measurements for a proposed append, requiring semantic re-verification.
+
+    ``stable`` is only True for an empty omission or unchanged byte-contained
+    evidence. Otherwise it is None (unknown). ``collapse_detected`` is a legacy
+    name for codec similarity, not proof of information loss or future failure.
+    """
+
+    stable: bool | None
+    pre_update_residual: float
+    post_update_residual: float
+    residual_shift: float
+    shift_threshold: float
+    collapse_detected: bool
+    per_compressor: tuple[tuple[str, float, float], ...]
+    requires_reverification: bool
+    reason: str
+    input_sha256: tuple[str, str, str]
+
+    def to_dict(self) -> dict:
+        from dataclasses import asdict
+        result = asdict(self)
+        result['per_compressor'] = {
+            name: {'pre': pre, 'post': post, 'shift': post - pre}
+            for name, pre, post in self.per_compressor
+        }
+        result['scope'] = 'compression diagnostic, not semantic omission safety'
+        return result
+
+
+def measure_context_drift(
+    fragment: str, retained: str, update: str, *, shift_threshold: float = 0.15,
+    compressors: tuple[str, ...] = ('zlib', 'bz2', 'lzma'),
+) -> ContextDriftReceipt:
+    """Measure CCR before and after appending update; abstain on safety.
+
+    Codec windowing and framing can change marginal compressed size. Neither
+    the sign nor magnitude proves that an update requires omitted evidence.
+    Every nonempty update invalidates this diagnostic's unchanged-input case.
+    """
+    import hashlib
+    import math
+    if not math.isfinite(shift_threshold) or shift_threshold < 0:
+        raise ValueError('shift_threshold must be finite and nonnegative')
+    if not compressors or any(name not in COMPRESSORS for name in compressors):
+        raise ValueError('at least one supported compressor is required')
+    updated = retained + _SEP.decode() + update if update else retained
+    per = tuple((name, conditional_residual(fragment, retained, compressor=name),
+                 conditional_residual(fragment, updated, compressor=name))
+                for name in compressors)
+    _, pre, post = max(per, key=lambda row: row[2] - row[1])
+    similarity = bool(update) and all(
+        conditional_residual(retained, updated, compressor=name) < 0.1 and
+        conditional_residual(updated, retained, compressor=name) < 0.1
+        for name in compressors
+    )
+    trivial = not fragment or (not update and fragment in retained)
+    reason = ('empty_omission' if not fragment else
+              'unchanged_byte_containment' if trivial else 'requires_reverification')
+    return ContextDriftReceipt(
+        stable=True if trivial else None, pre_update_residual=pre,
+        post_update_residual=post, residual_shift=post - pre,
+        shift_threshold=shift_threshold, collapse_detected=similarity,
+        per_compressor=per, requires_reverification=not trivial, reason=reason,
+        input_sha256=tuple(hashlib.sha256(text.encode()).hexdigest()
+                           for text in (fragment, retained, update)),
     )

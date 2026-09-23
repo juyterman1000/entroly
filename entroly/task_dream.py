@@ -625,7 +625,7 @@ class TaskDreamer:
             accepted: list[dict[str, Any]] = []
             for score, belief in candidates[:5]:
                 loaded = self.vault.read_belief(str(belief.get("entity", "")))
-                if not loaded:
+                if not loaded or loaded.get("selection_eligible") is False:
                     continue
                 body = str(loaded.get("body", ""))
                 frontmatter = loaded.get("frontmatter", {})

@@ -28,6 +28,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from entroly.path_safety import resolve_dir_within, resolve_file_within
+from entroly.skill_engine import SkillEngine
+from entroly.vault import VaultConfig, VaultManager
+
 
 SPEC_VERSION = "0.1"
 
@@ -48,39 +52,22 @@ def _parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
     return meta, body
 
 
-def _load_skill(skill_dir: Path) -> dict[str, Any] | None:
-    skill_md = skill_dir / "SKILL.md"
-    tool_py = skill_dir / "tool.py"
-    metrics_json = skill_dir / "metrics.json"
-    if not (skill_md.exists() and tool_py.exists()):
+def _load_skill(skill_dir: Path, engine: SkillEngine) -> dict[str, Any] | None:
+    spec = engine.load_promoted_skill(skill_dir.name)
+    skill_md = resolve_file_within(skill_dir, "SKILL.md")
+    if spec is None or skill_md is None:
         return None
 
     meta, procedure = _parse_frontmatter(skill_md.read_text(encoding="utf-8"))
     if meta.get("status") != "promoted":
         return None
 
-    metrics: dict[str, Any] = {}
-    if metrics_json.exists():
-        try:
-            metrics = json.loads(metrics_json.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            metrics = {}
-
-    tests_dir = skill_dir / "tests"
-    tests: list[dict[str, Any]] = []
-    if tests_dir.is_dir():
-        for t in sorted(tests_dir.glob("*.json")):
-            try:
-                tests.append(json.loads(t.read_text(encoding="utf-8")))
-            except json.JSONDecodeError:
-                continue
-
     return {
         "meta": meta,
         "procedure": procedure,
-        "tool_code": tool_py.read_text(encoding="utf-8"),
-        "metrics": metrics,
-        "tests": tests,
+        "tool_code": spec.tool_code,
+        "metrics": spec.metrics,
+        "tests": spec.test_cases,
     }
 
 
@@ -90,23 +77,44 @@ def export_promoted(
 ) -> dict[str, Any]:
     """Export all promoted vault skills to an agentskills.io-compatible bundle."""
     vault = Path(vault_path)
-    skills_dir = vault / "evolution" / "skills"
+    engine = SkillEngine(VaultManager(VaultConfig(base_path=str(vault))))
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
     exported: list[str] = []
     skipped: list[str] = []
 
-    for sdir in sorted(p for p in skills_dir.iterdir() if p.is_dir()):
-        loaded = _load_skill(sdir)
+    for info in engine.list_skills():
+        sdir = Path(info["path"])
+        loaded = _load_skill(sdir, engine) if info.get("status") == "promoted" else None
         if loaded is None:
             skipped.append(sdir.name)
+            # A previous export must not remain executable after revocation.
+            old_target = resolve_dir_within(out, sdir.name)
+            old_manifest = (
+                resolve_file_within(old_target, "skill.json")
+                if old_target is not None else None
+            )
+            if old_manifest is not None:
+                try:
+                    old_data = json.loads(old_manifest.read_text(encoding="utf-8"))
+                    if (
+                        old_data.get("id") == sdir.name
+                        and old_data.get("origin", {}).get("runtime") == "entroly"
+                    ):
+                        shutil.rmtree(old_target)
+                except (OSError, ValueError, TypeError):
+                    pass
             continue
 
         meta = loaded["meta"]
         target = out / sdir.name
-        if target.exists():
-            shutil.rmtree(target)
+        old_target = resolve_dir_within(out, sdir.name)
+        if old_target is not None:
+            shutil.rmtree(old_target)
+        elif target.exists():
+            skipped.append(sdir.name)
+            continue
         target.mkdir(parents=True)
 
         skill_json = {

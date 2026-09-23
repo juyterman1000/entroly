@@ -69,6 +69,18 @@ except ImportError:
 
 from .tokens import count_tokens, trim_messages  # noqa: F401
 
+# Entroly Operation Evidence Gate: provider-neutral evidence gate for one exact
+# autonomous operation. It composes obligation, context, source, answer, and
+# skill evidence without granting global trust to a model or agent.
+try:
+    from .operation_evidence_gate import (  # noqa: F401
+        OperationEvidenceGate,
+        build_operation_evidence_gate,
+        score_operation_evidence_gate,
+    )
+except ImportError:
+    pass
+
 # Context Commit: portable, content-addressed proof of what an agent received.
 try:
     from .context_commit import (  # noqa: F401

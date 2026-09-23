@@ -1178,10 +1178,10 @@ def create_mcp_server(
 
                             _skill_execution["matched"] += 1
 
-                            spec = _py_skill_engine._load_skill(sk["skill_id"])
+                            spec = _py_skill_engine.load_promoted_skill(sk["skill_id"])
                             if not spec or not spec.tool_code:
                                 _skill_execution["errors"].append(
-                                    f"{sk['skill_id']}: missing executable tool"
+                                    f"{sk['skill_id']}: promotion evidence is missing or stale"
                                 )
                                 continue
 
@@ -3200,6 +3200,9 @@ def create_mcp_server(
         _fast_path = FastPathRouter(
             skill_lister=_py_skill_engine.list_skills,
             fragment_lookup=engine._get_fragment,
+            promotion_check=lambda skill_id: (
+                _py_skill_engine.load_promoted_skill(skill_id) is not None
+            ),
         )
         engine.set_fast_path_router(_fast_path)
         # Chain crystallization callback to also invalidate fast-path cache.
@@ -3439,8 +3442,8 @@ def create_mcp_server(
             intent: The intent class for this skill
         """
         queries = [q.strip() for q in failing_queries.split("|") if q.strip()]
-        if _COGOPS_RUST:
-            return json.dumps(_cogops.create_skill(entity_key, queries), indent=2)
+        # Keep creation and promotion on one contract even when native CogOps
+        # is installed. Its legacy skill benchmark only checks process exit.
         result = _py_skill_engine.create_skill(entity_key, queries, intent)
         result["engine"] = "python"
         return json.dumps(result, indent=2)
@@ -3449,22 +3452,22 @@ def create_mcp_server(
     def manage_skills(
         action: str = "list",
         skill_id: str = "",
+        validation_cases_json: str = "",
     ) -> str:
         """Manage the CogOps skill lifecycle (Evolution layer).
 
         Actions:
-        - list: Show all skills with status, fitness, and run counts
-        - benchmark: Run test cases and compute fitness score (0.0-1.0)
-        - promote: Promote (fitness >= 0.7) or prune (fitness <= 0.3)
+        - list: Show effective status after promotion-evidence validation
+        - benchmark: Run development cases (not sufficient for promotion)
+        - validate: Run caller-held-out cases supplied in validation_cases_json
+        - promote: Apply the latest caller-held-out evidence decision
 
         Args:
-            action: list | benchmark | promote
-            skill_id: Required for benchmark/promote actions
+            action: list | benchmark | validate | promote
+            skill_id: Required for benchmark/validate/promote actions
+            validation_cases_json: JSON array of independent cases for validate
         """
         if action == "list":
-            if _COGOPS_RUST:
-                skills = _cogops.list_skills()
-                return json.dumps({"skills": list(skills), "total": len(skills)}, indent=2)
             skills = _py_skill_engine.list_skills()
             return json.dumps({"skills": skills, "total": len(skills), "engine": "python"}, indent=2)
 
@@ -3472,15 +3475,22 @@ def create_mcp_server(
             return json.dumps({"error": f"skill_id required for '{action}'"}, indent=2)
 
         if action == "benchmark":
-            if _COGOPS_RUST:
-                return json.dumps(_cogops.benchmark_skill(skill_id), indent=2)
             return json.dumps(_py_skill_engine.benchmark_skill(skill_id), indent=2)
+        elif action == "validate":
+            if not validation_cases_json or len(validation_cases_json) > 262_144:
+                return json.dumps({"status": "invalid_contract", "reason": "validation_cases_json must be a nonempty JSON array within 256 KiB"}, indent=2)
+            try:
+                cases = json.loads(validation_cases_json)
+            except json.JSONDecodeError:
+                return json.dumps({"status": "invalid_contract", "reason": "validation_cases_json is not valid JSON"}, indent=2)
+            return json.dumps(
+                _py_skill_engine.benchmark_skill(skill_id, validation_cases=cases),
+                indent=2,
+            )
         elif action == "promote":
-            if _COGOPS_RUST:
-                return json.dumps(_cogops.promote_skill(skill_id), indent=2)
             return json.dumps(_py_skill_engine.promote_or_prune(skill_id), indent=2)
 
-        return json.dumps({"error": f"Unknown action '{action}'. Use: list, benchmark, promote"}, indent=2)
+        return json.dumps({"error": f"Unknown action '{action}'. Use: list, benchmark, validate, promote"}, indent=2)
 
     @mcp.tool()
     def coverage_gaps(

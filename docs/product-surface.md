@@ -288,7 +288,7 @@ Entroly's self-improvement surfaces are deliberately guarded. They adapt from ev
 | `ProofGuidedRuntime` | Persists hash-sealed prepare/advance sessions, survives restart, replays idempotency keys, and shares one provider-neutral protocol across CLI, MCP, and localhost proxy surfaces |
 | `EbbiforgeWorldModelAdapter` | Optionally uses Ebbiforge's Rust autoregressive dynamics while retaining Entroly's verified reward and promotion gates |
 | `RewardCrystallizer` | Turns statistically repeated wins into candidate reusable skills |
-| `SkillEngine` | Synthesizes, benchmarks, promotes, merges, or prunes skills |
+| `SkillEngine` | Synthesizes skills; retains code/test/evaluator-bound benchmark evidence; requires caller-held-out validation before promotion |
 | `EvolutionDaemon` | Orchestrates structural synthesis, idle dreaming, archetype-aware evolution, and optional federation |
 | `PromotionGate` | Promotes shadow policies only when non-inferior and supports rollback |
 | `ValueTracker` | Classifies provider-bound, local-only, and legacy evidence so optional evolution is funded only by provider-classified cost avoidance |
@@ -309,6 +309,10 @@ Safety boundaries:
 - Synthetic world-model transitions may rank experiments but never fit as real
   evidence or satisfy a promotion gate.
 - Promotions require non-inferiority checks.
+- Skill development tests are diagnostic; a separate caller-held-out validation
+  run is required before `SkillEngine` can promote executable code. See
+  [skill promotion evidence](skill-promotion-evidence.md) for the local trust
+  boundary and revalidation behavior.
 - Rollback is available when post-promotion repair/retry/success metrics regress.
 - Federation is opt-in.
 

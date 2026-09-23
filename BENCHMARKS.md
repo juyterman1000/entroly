@@ -89,6 +89,28 @@ All strategies operate on the **same corpus** with the **same token budget**. Th
 
 > **Note**: These benchmarks run on a synthetic but realistic corpus. Real-world numbers depend on your codebase structure, query patterns, and token budget. Run `entroly benchmark` to see your own numbers.
 
+### What this benchmark cannot establish
+
+This fixture compares selection strategies on 19 fragments and three queries. Its
+maximum claim is that Entroly selected the listed fragments and scored as shown
+under these fixture definitions. Module coverage, lexical relevance, entropy,
+and SAST detections do **not** measure whether a model completed a task
+correctly or whether an omitted fact was unnecessary.
+
+No selector can recover evidence that was never indexed. If the smallest set
+of evidence needed for a task exceeds the token budget, selection alone cannot
+make that task fully grounded. If a later step introduces a new requirement
+(for example, a symbol rename whose affected references appear later), the
+earlier selection needs re-evaluation; a one-time compression score cannot
+certify future sufficiency.
+
+The fixture also does not measure prompt-cache loss from scattered fragments,
+task-type differences, repeated-run variance, or a verified cost per completed
+task. A stronger claim requires paired raw-versus-selected executions on held-out
+repository tasks, exact context and model provenance, task outcome checks, and
+reported failures by task type and budget. Results from that protocol should
+be reported separately from this selector fixture and the historical LLM table.
+
 ---
 
 ## LLM Accuracy Retention (2026-04-22)
