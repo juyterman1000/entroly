@@ -1,6 +1,6 @@
 {
   "name": "entroly",
-  "version": "1.0.84",
+  "version": "1.0.85",
   "description": "Evidence operations and exactly recoverable context for Codex tasks.",
   "author": {
     "name": "Entroly"

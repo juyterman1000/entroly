@@ -1,6 +1,6 @@
 {
   "name": "entroly",
-  "version": "1.0.84",
+  "version": "1.0.85",
   "description": "Auditable context-control plane for Antigravity: knapsack evidence selection, reversible context compression, 100% Merkle byte-recovery, and auditable receipts.",
   "author": {
     "name": "Entroly Authors",

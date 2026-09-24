@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "entroly-desktop"
-version = "1.0.84"
+version = "1.0.85"
 dependencies = [
  "winres",
 ]

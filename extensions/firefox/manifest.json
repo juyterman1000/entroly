@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Entroly — Context Compression & Receipts for GitHub",
-  "version": "1.0.84",
+  "version": "1.0.85",
   "description": "Select and compress GitHub repository context for AI tools with auditable receipts.",
   "browser_specific_settings": {
     "gecko": {
