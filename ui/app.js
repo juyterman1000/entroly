@@ -655,7 +655,7 @@ BANKED VALUE:   $${state.stats.bankedUsd.toFixed(2)} USD
 POISONING:      0 FAILURES
 TIMESTAMP:      ${new Date().toISOString()}
 ============================================================
-Validated by Entroly Core Engine v1.0.84 for SOC2/ISO27001 audit.`;
+Validated by Entroly Core Engine v1.0.85 for SOC2/ISO27001 audit.`;
         navigator.clipboard.writeText(cert).then(() => {
           showToast("✓ Context OS Architecture Audit Certificate copied to clipboard");
           toggleCertModal(false);

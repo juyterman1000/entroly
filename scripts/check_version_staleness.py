@@ -128,8 +128,19 @@ DECLARATION_PATTERNS = (
     (re.compile(r'ghcr\.io/[^\s:]+:(\d+\.\d+\.\d+)'), "container tag"),
     # A placeholder shown to someone filling in a form.
     (re.compile(r'(?:for example|Example:)\s+v?(\d+\.\d+\.\d+)', re.I), "user-facing example"),
-    # A hardcoded product banner.
-    (re.compile(r'Entroly\s+v(\d+\.\d+\.\d+)'), "product banner"),
+    # Hardcoded product/UI banners, including embedded desktop help and health
+    # response strings that are not represented by a conventional manifest.
+    (re.compile(r'Entroly(?:\s+Core\s+Engine)?\s+v(\d+\.\d+\.\d+)'), "product banner"),
+    (re.compile(r'Entroly[^\n]{0,100}\[Version\s+(\d+\.\d+\.\d+)\]'), "product banner"),
+    (re.compile(r'\bentroly version\s+(\d+\.\d+\.\d+)'), "product banner"),
+    (re.compile(r'class=["\']version-tag["\']>v(\d+\.\d+\.\d+)'), "UI version tag"),
+    (re.compile(r'(?:Rust Core Engine:|INSTALLED \()\s*entroly-core\s+(\d+\.\d+\.\d+)'),
+     "native engine banner"),
+    (re.compile(r'Context Control Plane:\s*v(\d+\.\d+\.\d+)'), "product banner"),
+    (re.compile(r'\\"engine\\":\\"entroly-desktop\\",\\"version\\":\\"(\d+\.\d+\.\d+)'),
+     "desktop health version"),
+    (re.compile(r'name = ["\']entroly["\']\\nversion = ["\'](\d+\.\d+\.\d+)'),
+     "embedded package manifest"),
     # A bare "name version" statement with no operator and no JSON field --
     # the shape of `Engine version: \`entroly-core v0.9.0\``, which was written
     # in the v1.0 founding commit and never moved. Restricted to a labelled
@@ -216,6 +227,11 @@ def scan() -> tuple[list[str], list[str]]:
 
 
 def main() -> int:
+    # Windows defaults redirected stdout to a legacy code page. Active release
+    # strings can contain symbols such as the desktop status checkmark; a stale
+    # declaration must be reported rather than crashing while printing it.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--list", action="store_true",
                         help="also print everything classified as legitimately historical")

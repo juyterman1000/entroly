@@ -121,7 +121,7 @@ fn main() {
 
 fn print_help() {
     println!(
-        r#"Entroly Context Control Plane & Intelligence [Version 1.0.84]
+        r#"Entroly Context Control Plane & Intelligence [Version 1.0.85]
 Auditable Context Control Plane & Reversible 0-1 Knapsack Compression
 
 Usage: entroly [OPTIONS] [COMMAND]
@@ -150,9 +150,9 @@ Examples:
 }
 
 fn print_version() {
-    println!("entroly version 1.0.84 (x86_64-pc-windows-msvc)");
-    println!("Rust Core Engine:      entroly-core 1.0.84 [ACTIVE]");
-    println!("Context Control Plane: v1.0.84 (Native Standalone)");
+    println!("entroly version 1.0.85 (x86_64-pc-windows-msvc)");
+    println!("Rust Core Engine:      entroly-core 1.0.85 [ACTIVE]");
+    println!("Context Control Plane: v1.0.85 (Native Standalone)");
     println!("Protocol Spec:         MCP 2024-11-05 / REST :9377");
 }
 
@@ -181,7 +181,7 @@ fn run_doctor() {
     println!("Running Entroly Doctor diagnostics...");
     thread::sleep(Duration::from_millis(100));
     println!("  [✓] Operating System: Windows (x86_64)");
-    println!("  [✓] Rust Native Core: INSTALLED (entroly-core 1.0.84)");
+    println!("  [✓] Rust Native Core: INSTALLED (entroly-core 1.0.85)");
     println!("  [✓] MSVC Compiler Target: x86_64-pc-windows-msvc");
     println!("  [✓] Embedded UI Assets: EMBEDDED (Dashboard + Web Playground)");
     println!("  [✓] Standalone Runtime: Zero external dependencies");
@@ -429,7 +429,7 @@ fn handle_connection(stream: &mut TcpStream) {
         "/api/health" => (
             "200 OK",
             "application/json; charset=utf-8",
-            b"{\"status\":\"ok\",\"engine\":\"entroly-desktop\",\"version\":\"1.0.84\"}",
+            b"{\"status\":\"ok\",\"engine\":\"entroly-desktop\",\"version\":\"1.0.85\"}",
         ),
         _ => ("404 Not Found", "text/plain; charset=utf-8", b"Not Found"),
     };

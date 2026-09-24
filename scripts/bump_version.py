@@ -135,6 +135,24 @@ TARGETS = [
     ("ui/desktop/Cargo.toml", r'^version\s*=\s*"[^"]+"', 'version = "{v}"'),
     ("ui/desktop/Cargo.lock",
         r'(name\s*=\s*"entroly-desktop"\s*\nversion\s*=\s*)"[^"]+"', r'\g<1>"{v}"'),
+    # Runtime/UI strings are release surfaces too: users see these in the
+    # dashboard, desktop CLI, installer, health endpoint, and architecture
+    # explorer even though they are not conventional package manifests.
+    ("ui/app.js",
+        r'Entroly Core Engine v[0-9]+\.[0-9]+\.[0-9]+',
+        'Entroly Core Engine v{v}'),
+    ("ui/index.html",
+        r'(class="version-tag">v)[0-9]+\.[0-9]+\.[0-9]+', r'\g<1>{v}'),
+    ("ui/index.html",
+        r'Entroly Core Engine v[0-9]+\.[0-9]+\.[0-9]+',
+        'Entroly Core Engine v{v}'),
+    ("ui/movie.html",
+        r'(name = "entroly"\\nversion = ")[0-9]+\.[0-9]+\.[0-9]+', r'\g<1>{v}'),
+    ("ui/desktop/src/main.rs",
+        r'((?:Version |entroly version |entroly-core |v|\\"version\\":\\"))'
+        r'[0-9]+\.[0-9]+\.[0-9]+', r'\g<1>{v}'),
+    ("ui/desktop/src/installer.rs",
+        r'(Version )[0-9]+\.[0-9]+\.[0-9]+', r'\g<1>{v}'),
     ("server.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     ("CITATION.cff", r'^version:\s*[^\s]+\s*$', 'version: {v}'),
     ("codemeta.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
