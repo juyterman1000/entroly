@@ -1,7 +1,7 @@
 {
   "identifier": "juyterman1000-entroly",
   "name": "Entroly",
-  "version": "1.0.84",
+  "version": "1.0.85",
   "description": "Cut AI context cost and prove nothing was lost. Knapsack evidence selection, reversible context compression, 100% Merkle byte-recovery, and auditable receipts.",
   "author": "juyterman1000",
   "authorUrl": "https://github.com/juyterman1000",

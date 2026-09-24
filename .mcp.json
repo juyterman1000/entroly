@@ -4,7 +4,7 @@
       "command": "npx",
       "args": [
         "-y",
-        "entroly-mcp@1.0.84",
+        "entroly-mcp@1.0.85",
         "serve"
       ],
       "env": {

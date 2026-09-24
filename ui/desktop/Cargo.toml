@@ -1,6 +1,6 @@
 [package]
 name = "entroly-desktop"
-version = "1.0.84"
+version = "1.0.85"
 edition = "2021"
 authors = ["Entroly Contributors <engineering@entroly.io>"]
 description = "Native standalone desktop application for Entroly Control Plane"

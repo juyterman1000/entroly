@@ -63,11 +63,9 @@ TARGETS = [
         r'^version:\s*[0-9]+\.[0-9]+\.[0-9]+', 'version: {v}'),
     ("entroly/integrations/hermes_context_engine/plugin.yaml",
         r'entroly>=[0-9]+\.[0-9]+\.[0-9]+', 'entroly>={v}'),
-    # docs/BENCHMARKS.md contains immutable historical experiment versions.
-    # Rewriting those during a release would falsify benchmark provenance.
-    ("BENCHMARKS.md",
-        r'Engine version: `entroly-core [0-9]+\.[0-9]+\.[0-9]+`',
-        'Engine version: `entroly-core {v}`'),
+    # Benchmark results carry their own historical provenance. The root
+    # benchmark now explicitly says that its engine version is unestablished,
+    # so a release version must not be written into that evidence record.
     ("deploy/cloudflare-community-savings/package.json",
         r'"version"\s*:\s*"[0-9]+\.[0-9]+\.[0-9]+"', '"version": "{v}"'),
     # Version examples shown to a human filling in a manual-dispatch field or an
@@ -106,7 +104,13 @@ TARGETS = [
     (".mcpb-build/manifest.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     ("plugin.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     ("gemini-extension.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
+    (".agents/plugins/entroly/plugin.json",
+        r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
+    ("lhm.plugin.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     (".mcp.json", r'entroly-mcp@[0-9]+\.[0-9]+\.[0-9]+', 'entroly-mcp@{v}'),
+    ("README.md", r'entroly-mcp@[0-9]+\.[0-9]+\.[0-9]+', 'entroly-mcp@{v}'),
+    ("integrations/README.md",
+        r'entroly-mcp@[0-9]+\.[0-9]+\.[0-9]+', 'entroly-mcp@{v}'),
     # Agent bundles and per-host extension manifests. Each declares the product
     # version to its host, and none of them was in this list -- a bump left
     # seven surfaces behind, which `tests/test_version_surfaces_are_complete.py`
@@ -128,6 +132,27 @@ TARGETS = [
     ("extensions/chrome/manifest.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     ("extensions/firefox/manifest.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     ("extensions/vscode/package.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
+    ("ui/desktop/Cargo.toml", r'^version\s*=\s*"[^"]+"', 'version = "{v}"'),
+    ("ui/desktop/Cargo.lock",
+        r'(name\s*=\s*"entroly-desktop"\s*\nversion\s*=\s*)"[^"]+"', r'\g<1>"{v}"'),
+    # Runtime/UI strings are release surfaces too: users see these in the
+    # dashboard, desktop CLI, installer, health endpoint, and architecture
+    # explorer even though they are not conventional package manifests.
+    ("ui/app.js",
+        r'Entroly Core Engine v[0-9]+\.[0-9]+\.[0-9]+',
+        'Entroly Core Engine v{v}'),
+    ("ui/index.html",
+        r'(class="version-tag">v)[0-9]+\.[0-9]+\.[0-9]+', r'\g<1>{v}'),
+    ("ui/index.html",
+        r'Entroly Core Engine v[0-9]+\.[0-9]+\.[0-9]+',
+        'Entroly Core Engine v{v}'),
+    ("ui/movie.html",
+        r'(name = "entroly"\\nversion = ")[0-9]+\.[0-9]+\.[0-9]+', r'\g<1>{v}'),
+    ("ui/desktop/src/main.rs",
+        r'((?:Version |entroly version |entroly-core |v|\\"version\\":\\"))'
+        r'[0-9]+\.[0-9]+\.[0-9]+', r'\g<1>{v}'),
+    ("ui/desktop/src/installer.rs",
+        r'(Version )[0-9]+\.[0-9]+\.[0-9]+', r'\g<1>{v}'),
     ("server.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     ("CITATION.cff", r'^version:\s*[^\s]+\s*$', 'version: {v}'),
     ("codemeta.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),

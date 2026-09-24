@@ -18,6 +18,7 @@ about history, phrase it in past tense -- the checker recognises that too.
 """
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -90,3 +91,46 @@ def test_a_stale_declaration_is_detected(tmp_path, monkeypatch):
     finally:
         target.write_text(original, encoding="utf-8")
         assert target.read_text(encoding="utf-8") == original
+
+
+def test_stale_runtime_and_ui_banners_are_detected():
+    """Non-manifest release strings must not escape the repository sweep.
+
+    These surfaces were all left at 1.0.84 by the first 1.0.85 bump because
+    they are embedded in Rust, JavaScript, or HTML rather than a package
+    manifest. Replace every current product version with 0.0.1 at once and
+    require the checker to name every affected file.
+    """
+    targets = (
+        "ui/app.js",
+        "ui/index.html",
+        "ui/movie.html",
+        "ui/desktop/src/main.rs",
+        "ui/desktop/src/installer.rs",
+    )
+    match = re.search(
+        r'__version__\s*=\s*"([^"]+)"',
+        (REPO_ROOT / "entroly" / "__init__.py").read_text(encoding="utf-8"),
+    )
+    assert match
+    master = match.group(1)
+    originals = {
+        rel: (REPO_ROOT / rel).read_text(encoding="utf-8") for rel in targets
+    }
+
+    try:
+        for rel, original in originals.items():
+            assert master in original, f"fixture {rel} no longer carries {master}"
+            (REPO_ROOT / rel).write_text(
+                original.replace(master, "0.0.1"), encoding="utf-8"
+            )
+
+        result = _run()
+        assert result.returncode != 0, "the checker accepted stale runtime/UI banners"
+        for rel in targets:
+            assert rel in result.stdout, (
+                f"the stale-version failure did not name {rel}:\n{result.stdout}"
+            )
+    finally:
+        for rel, original in originals.items():
+            (REPO_ROOT / rel).write_text(original, encoding="utf-8")

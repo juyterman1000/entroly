@@ -2,7 +2,7 @@
   "name": "entroly-vscode",
   "displayName": "Entroly — Context Compression & Receipts",
   "description": "Select and compress repository context for AI tools with auditable receipts.",
-  "version": "1.0.84",
+  "version": "1.0.85",
   "publisher": "entroly",
   "repository": {
     "type": "git",
