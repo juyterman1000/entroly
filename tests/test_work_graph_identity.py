@@ -60,13 +60,13 @@ def test_checkpoint_lookup_is_side_effect_free(tmp_path: Path, monkeypatch: pyte
     fake_home.mkdir()
     monkeypatch.setenv("HOME", str(fake_home))
     monkeypatch.delenv("ENTROLY_DIR", raising=False)
+    project_hash = hashlib.sha256(str(repo.resolve()).encode()).hexdigest()[:12]
+    checkpoint_dir = fake_home / ".entroly" / "checkpoints" / project_hash
 
     observation = discover_repository_observation(repo, include_checkpoint=True, observed_at_ms=1)
     assert observation["task_hint"] is None
-    assert not (fake_home / ".entroly").exists()
+    assert not checkpoint_dir.exists()
 
-    project_hash = hashlib.sha256(str(repo.resolve()).encode()).hexdigest()[:12]
-    existing = fake_home / ".entroly" / "checkpoints" / project_hash
-    existing.mkdir(parents=True)
+    checkpoint_dir.mkdir(parents=True)
     observation = discover_repository_observation(repo, include_checkpoint=True, observed_at_ms=2)
     assert observation["task_hint"] is None
