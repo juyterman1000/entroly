@@ -14,12 +14,12 @@ from pyproject_compat import read_project_metadata
 
 ROOT = Path(__file__).resolve().parents[1]
 RELEASE_VERSION = "1.0.85"
-HOMEBREW_FORMULA_VERSION = "1.0.84"
+HOMEBREW_FORMULA_VERSION = "1.0.85"
 HOMEBREW_FORMULA_URL = (
-    "https://files.pythonhosted.org/packages/17/b6/7901325dc87c9c2088fbc622a7"
-    "b2d8330f6d8866d27c5e7efe7c10639f03/entroly-1.0.84.tar.gz"
+    "https://files.pythonhosted.org/packages/38/89/ad182f4b8b18a3f52a4e458f6b"
+    "7ca6637f0a37de8e258a0d9610a1e5b1b0/entroly-1.0.85.tar.gz"
 )
-HOMEBREW_FORMULA_SHA256 = "0033c5c52e1a733f148e9d7b5abf953a064ea1fb86b31f2e028205ca3fdd9817"
+HOMEBREW_FORMULA_SHA256 = "5791dbd0371f69dc92f81709c7de26166152916005c97021850db95b7f54ee27"
 CANONICAL_MCP_NAME = "io.github.juyterman1000/entroly"
 CANONICAL_REPOSITORY = "https://github.com/juyterman1000/entroly"
 
