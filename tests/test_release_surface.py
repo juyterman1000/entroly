@@ -247,6 +247,22 @@ def test_homebrew_formula_targets_release_sdist() -> None:
     assert f'sha256 "{HOMEBREW_FORMULA_SHA256}"' in text
 
 
+def test_scoop_manifest_targets_verified_release_binary() -> None:
+    manifest = json.loads(
+        (ROOT / "packaging/scoop/entroly.json").read_text(encoding="utf-8")
+    )
+    release = manifest["architecture"]["64bit"]
+
+    assert manifest["version"] == RELEASE_VERSION
+    assert release["url"].endswith(
+        f"/entroly-v{RELEASE_VERSION}/entroly-rs-x86_64-pc-windows-msvc.zip"
+    )
+    assert release["hash"] == (
+        "1f5301c6c043915566e90856fa79b51296c9004dc4958c02e86a670024d5781d"
+    )
+    assert manifest["autoupdate"]["hash"]["url"] == "$url.sha256"
+
+
 def _assert_probe_retries_and_is_bounded(probe: str, name: str) -> None:
     """A publish probe must tolerate propagation without hanging forever.
 

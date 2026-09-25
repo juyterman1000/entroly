@@ -5,7 +5,7 @@ Scoop manifest for installing entroly on Windows.
 ## Status
 
 **Manifest written, not yet submitted.** [`entroly.json`](entroly.json) pins
-release `entroly-v1.0.81` and carries a SHA-256 verified against the published
+release `entroly-v1.0.85` and carries a SHA-256 verified against the published
 sidecar — see
 [windows-artifact-verification.md](../../docs/distribution/windows-artifact-verification.md).
 
@@ -22,12 +22,8 @@ PowerShell) or `npm i -g entroly` for the WASM build.
 - [x] Write `entroly.json` manifest — points at the GitHub release binary, not
       the PyPI wheel, because Scoop installs an executable rather than a Python
       package
-- [ ] Cut a release carrying the corrected `.sha256` sidecar. Sidecars up to and
-      including `entroly-v1.0.81` name the file as `dist/<archive>`, which
-      breaks both `sha256sum -c` for anyone verifying a download and Scoop's
-      autoupdate hash extraction. Fixed at source in
-      [`release-binary.yml`](../../.github/workflows/release-binary.yml); the
-      already-published assets are only corrected by the next release.
+- [x] Cut a release carrying the corrected `.sha256` sidecar. The 1.0.85
+      sidecar uses the archive basename and its digest matches a fresh download.
 - [ ] Test under `scoop install entroly` from a local manifest on a real
       Windows host
 - [ ] Submit to a Scoop bucket (`extras` or maintain `scoop-entroly`)

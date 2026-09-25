@@ -1,12 +1,12 @@
 {
-    "version": "1.0.81",
+    "version": "1.0.85",
     "description": "Single-binary context compressor for AI coding agents. Knapsack-optimal token budgeting with auditable receipts; no Python runtime required.",
     "homepage": "https://github.com/juyterman1000/entroly",
     "license": "Apache-2.0",
     "architecture": {
         "64bit": {
-            "url": "https://github.com/juyterman1000/entroly/releases/download/entroly-v1.0.81/entroly-rs-x86_64-pc-windows-msvc.zip",
-            "hash": "d7d0a92eb90318f2316071c2bf8356d2cadd2c28feffc793591079475aa97894"
+            "url": "https://github.com/juyterman1000/entroly/releases/download/entroly-v1.0.85/entroly-rs-x86_64-pc-windows-msvc.zip",
+            "hash": "1f5301c6c043915566e90856fa79b51296c9004dc4958c02e86a670024d5781d"
         }
     },
     "bin": "entroly-rs.exe",
