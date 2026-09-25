@@ -315,6 +315,23 @@ def test_release_workflow_sanitizes_version_once_and_probes_live_artifacts() -> 
     assert "pipx==1.16.7 uv==0.12.7" in text
     assert "needs: [release-metadata, probe-npm-openclaw]" in text
     assert '"openclaw@2026.6.11" "entroly-openclaw@${RELEASE_VERSION}"' in text
+    wasm_publisher = text.split("  publish-npm:\n", 1)[1].split(
+        "  publish-npm-mcp:\n", 1
+    )[0]
+    assert "npm pack --pack-destination" in wasm_publisher
+    assert "actions/upload-artifact@v7" in wasm_publisher
+    alias_publisher = text.split("  publish-npm-alias:\n", 1)[1].split(
+        "  publish-npm-openclaw:\n", 1
+    )[0]
+    assert "actions/download-artifact@v8" in alias_publisher
+    assert '"$RUNNER_TEMP"/entroly-wasm-package/*.tgz' in alias_publisher
+    assert '"entroly-wasm@${RELEASE_VERSION}"' not in alias_publisher
+    npm_openclaw_probe = text.split("  probe-npm-openclaw:\n", 1)[1].split(
+        "  publish-clawhub-openclaw:\n", 1
+    )[0]
+    _assert_probe_retries_and_is_bounded(npm_openclaw_probe, "probe-npm-openclaw")
+    assert "timeout-minutes: 45" in npm_openclaw_probe
+    assert 'if [[ "$attempt" -le 8 ]]' in npm_openclaw_probe
     openclaw_publisher = text.split("  publish-npm-openclaw:", 1)[1].split(
         "  probe-npm-openclaw:", 1
     )[0]
