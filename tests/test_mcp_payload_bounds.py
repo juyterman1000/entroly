@@ -136,6 +136,22 @@ def test_dogfood_shape_shrinks_metadata_dominated_response(monkeypatch) -> None:
         assert returned == 395
 
 
+def test_wire_counts_describe_returned_selection_after_truncation(monkeypatch) -> None:
+    """Transport compaction must not report fragments it did not transmit."""
+    monkeypatch.delenv("ENTROLY_MCP_FULL_DIAGNOSTICS", raising=False)
+    result = _result(count=40, content_size=2_000)
+    result["selected_count"] = 40
+    result["optimization_stats"] = {"selected_count": 40}
+
+    payload = _wire(result)
+
+    returned = len(payload["selected_fragments"])
+    assert returned < 40, "fixture must exercise the wire truncation path"
+    assert payload["selected_count"] == returned
+    assert payload["optimization_stats"]["selected_count"] == returned
+    assert returned + payload["selection_truncated"]["omitted"] == 40
+
+
 def test_provenance_prefers_canonical_selected_fragments(monkeypatch) -> None:
     monkeypatch.delenv("ENTROLY_MCP_FULL_DIAGNOSTICS", raising=False)
     result = _result(count=2)

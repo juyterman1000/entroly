@@ -195,6 +195,18 @@ def compact_optimize_result_for_wire(optimize_result: dict[str, Any]) -> None:
                 "omitted_sources": omitted_sources[:40],
             }
 
+    # Counts on the public MCP response describe what actually crossed the
+    # wire.  The engine can select more fragments than fit the transport
+    # budget, but leaving its pre-compaction count in either location makes a
+    # consumer observe (for example) selected_count=12 beside an empty list.
+    # ``selection_truncated`` retains the original total as
+    # returned + omitted, so this normalization is honest and reversible.
+    returned_count = len(optimize_result["selected_fragments"])
+    optimize_result["selected_count"] = returned_count
+    optimization_stats = optimize_result.get("optimization_stats")
+    if isinstance(optimization_stats, dict):
+        optimization_stats["selected_count"] = returned_count
+
     response = optimize_result.get("response")
     if not isinstance(response, dict):
         response = {}
