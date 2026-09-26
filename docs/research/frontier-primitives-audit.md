@@ -61,7 +61,3 @@ enforced SDK policies. There is no measured downstream answer-quality, token
 savings, novelty, or public production-readiness claim. Root policy is opt-in;
 automatic promoted-skill execution retains its separate existing opt-in. Revert
 the scoped patch to roll back behavior; no stored data migration is required.
-
-Use the [research-to-production master prompt](production-research-master-prompt.md)
-for future hardening work and for the evidence required before changing these
-experimental status boundaries.
