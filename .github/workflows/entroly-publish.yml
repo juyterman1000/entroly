@@ -337,6 +337,21 @@ jobs:
         run: |
           node -e "const p=require('./package.json'); p.version=process.env.RELEASE_VERSION; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2)+'\n')"
 
+      - name: Pack exact runtime for dependent release jobs
+        working-directory: entroly-wasm
+        run: |
+          mkdir -p "$RUNNER_TEMP/entroly-wasm-package"
+          npm pack --pack-destination "$RUNNER_TEMP/entroly-wasm-package"
+
+      - name: Upload exact runtime package
+        uses: actions/upload-artifact@v7
+        with:
+          name: entroly-wasm-package-${{ needs.release-metadata.outputs.version }}
+          path: ${{ runner.temp }}/entroly-wasm-package/*.tgz
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 1
+
       - name: Publish to npm
         working-directory: entroly-wasm
         run: |
@@ -403,9 +418,23 @@ jobs:
         run: |
           node -e "const fs=require('fs'); const p=require('./package.json'); p.version=process.env.RELEASE_VERSION; p.dependencies['entroly-wasm']=process.env.RELEASE_VERSION; fs.writeFileSync('package.json', JSON.stringify(p, null, 2)+'\n'); for (const f of ['plugin.json', '.codex-plugin/plugin.json']) { const m=JSON.parse(fs.readFileSync(f)); m.version=process.env.RELEASE_VERSION; fs.writeFileSync(f, JSON.stringify(m, null, 2)+'\n'); }"
 
+      - name: Download exact runtime package
+        uses: actions/download-artifact@v8
+        with:
+          name: entroly-wasm-package-${{ needs.release-metadata.outputs.version }}
+          path: ${{ runner.temp }}/entroly-wasm-package
+
       - name: Install exact runtime and smoke portable plugin
         working-directory: entroly/npm-alias
-        run: npm install --no-save --no-package-lock --ignore-scripts "entroly-wasm@${RELEASE_VERSION}"
+        shell: bash
+        run: |
+          shopt -s nullglob
+          packages=("$RUNNER_TEMP"/entroly-wasm-package/*.tgz)
+          if [[ ${#packages[@]} -ne 1 ]]; then
+            echo "Expected one exact entroly-wasm package, found ${#packages[@]}." >&2
+            exit 1
+          fi
+          npm install --no-save --no-package-lock --ignore-scripts "${packages[0]}"
 
       - name: Verify hook, MCP handshake, and package contents
         run: |
@@ -649,7 +678,9 @@ jobs:
     needs: [release-metadata, publish-npm-openclaw]
     if: needs.release-metadata.outputs.should_publish == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # npm can accept a release but take longer than five minutes to expose its
+    # tarball. Keep the installer probe bounded while allowing real propagation.
+    timeout-minutes: 45
     env:
       RELEASE_VERSION: ${{ needs.release-metadata.outputs.version }}
     steps:
@@ -662,7 +693,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for attempt in $(seq 1 20); do
+          for attempt in $(seq 1 40); do
             probe_dir="$(mktemp -d)"
             if npm install --prefix "$probe_dir" --no-save --ignore-scripts --package-lock=false \
                  "openclaw@2026.6.11" "entroly-openclaw@${RELEASE_VERSION}"; then
@@ -678,8 +709,12 @@ jobs:
               exit 0
             fi
             rm -rf "$probe_dir"
-            echo "npm OpenClaw plugin not visible yet (attempt $attempt/20)."
-            sleep 15
+            echo "npm OpenClaw plugin not visible yet (attempt $attempt/40)."
+            if [[ "$attempt" -le 8 ]]; then
+              sleep 15
+            else
+              sleep 60
+            fi
           done
           echo "Published npm plugin did not expose the required OpenClaw bridge." >&2
           exit 1

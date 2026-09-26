@@ -14,12 +14,12 @@ from pyproject_compat import read_project_metadata
 
 ROOT = Path(__file__).resolve().parents[1]
 RELEASE_VERSION = "1.0.85"
-HOMEBREW_FORMULA_VERSION = "1.0.84"
+HOMEBREW_FORMULA_VERSION = "1.0.85"
 HOMEBREW_FORMULA_URL = (
-    "https://files.pythonhosted.org/packages/17/b6/7901325dc87c9c2088fbc622a7"
-    "b2d8330f6d8866d27c5e7efe7c10639f03/entroly-1.0.84.tar.gz"
+    "https://files.pythonhosted.org/packages/38/89/ad182f4b8b18a3f52a4e458f6b"
+    "7ca6637f0a37de8e258a0d9610a1e5b1b0/entroly-1.0.85.tar.gz"
 )
-HOMEBREW_FORMULA_SHA256 = "0033c5c52e1a733f148e9d7b5abf953a064ea1fb86b31f2e028205ca3fdd9817"
+HOMEBREW_FORMULA_SHA256 = "5791dbd0371f69dc92f81709c7de26166152916005c97021850db95b7f54ee27"
 CANONICAL_MCP_NAME = "io.github.juyterman1000/entroly"
 CANONICAL_REPOSITORY = "https://github.com/juyterman1000/entroly"
 
@@ -247,6 +247,22 @@ def test_homebrew_formula_targets_release_sdist() -> None:
     assert f'sha256 "{HOMEBREW_FORMULA_SHA256}"' in text
 
 
+def test_scoop_manifest_targets_verified_release_binary() -> None:
+    manifest = json.loads(
+        (ROOT / "packaging/scoop/entroly.json").read_text(encoding="utf-8")
+    )
+    release = manifest["architecture"]["64bit"]
+
+    assert manifest["version"] == RELEASE_VERSION
+    assert release["url"].endswith(
+        f"/entroly-v{RELEASE_VERSION}/entroly-rs-x86_64-pc-windows-msvc.zip"
+    )
+    assert release["hash"] == (
+        "1f5301c6c043915566e90856fa79b51296c9004dc4958c02e86a670024d5781d"
+    )
+    assert manifest["autoupdate"]["hash"]["url"] == "$url.sha256"
+
+
 def _assert_probe_retries_and_is_bounded(probe: str, name: str) -> None:
     """A publish probe must tolerate propagation without hanging forever.
 
@@ -315,6 +331,23 @@ def test_release_workflow_sanitizes_version_once_and_probes_live_artifacts() -> 
     assert "pipx==1.16.7 uv==0.12.7" in text
     assert "needs: [release-metadata, probe-npm-openclaw]" in text
     assert '"openclaw@2026.6.11" "entroly-openclaw@${RELEASE_VERSION}"' in text
+    wasm_publisher = text.split("  publish-npm:\n", 1)[1].split(
+        "  publish-npm-mcp:\n", 1
+    )[0]
+    assert "npm pack --pack-destination" in wasm_publisher
+    assert "actions/upload-artifact@v7" in wasm_publisher
+    alias_publisher = text.split("  publish-npm-alias:\n", 1)[1].split(
+        "  publish-npm-openclaw:\n", 1
+    )[0]
+    assert "actions/download-artifact@v8" in alias_publisher
+    assert '"$RUNNER_TEMP"/entroly-wasm-package/*.tgz' in alias_publisher
+    assert '"entroly-wasm@${RELEASE_VERSION}"' not in alias_publisher
+    npm_openclaw_probe = text.split("  probe-npm-openclaw:\n", 1)[1].split(
+        "  publish-clawhub-openclaw:\n", 1
+    )[0]
+    _assert_probe_retries_and_is_bounded(npm_openclaw_probe, "probe-npm-openclaw")
+    assert "timeout-minutes: 45" in npm_openclaw_probe
+    assert 'if [[ "$attempt" -le 8 ]]' in npm_openclaw_probe
     openclaw_publisher = text.split("  publish-npm-openclaw:", 1)[1].split(
         "  probe-npm-openclaw:", 1
     )[0]

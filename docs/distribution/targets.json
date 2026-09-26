@@ -177,7 +177,7 @@
       "fit": ["windows", "cli", "binary-distribution"],
       "required_assets": ["packaging/scoop/entroly.json", "docs/distribution/windows-artifact-verification.md", "unaltered upstream release asset entroly-rs-x86_64-pc-windows-msvc.zip", "silent install contract"],
       "proof_url": null,
-      "next_action": "Windows artifact verified against release entroly-v1.0.81: sha256 matches the published sidecar, the binary runs, and compress succeeds (docs/distribution/windows-artifact-verification.md). The manifest is at packaging/scoop/entroly.json. The sidecar path-prefix defect is fixed at source in .github/workflows/release-binary.yml, so the next release publishes a bare-basename sidecar; every release up to and including entroly-v1.0.81 still carries the dist/ prefix and Scoop autoupdate would fail against those. Remaining before submitting: cut a release with the corrected sidecar, then run scoop install end to end on a Windows host."
+      "next_action": "Windows artifact verified against release entroly-v1.0.85: SHA-256 matches the published bare-basename sidecar, the binary reports 1.0.85, and its compression path succeeds (docs/distribution/windows-artifact-verification.md). The pinned manifest is at packaging/scoop/entroly.json. Remaining before submitting: run scoop install and autoupdate end to end on a Windows host, then submit to a maintained Scoop bucket."
     },
     {
       "id": "freebsd-ports",
