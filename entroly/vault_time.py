@@ -27,6 +27,18 @@ Trust properties:
   appends a chained tombstone, so sensitive *content* is provably gone while
   the hash chain still verifies. Structural metadata (hashes, timestamps,
   entity labels) necessarily remains — a chain cannot un-say its metadata.
+- **attributed writes**: every record carries ``writer`` (a digest of the
+  holder's ``hostname:pid``) and ``serialized``, stamped at append time rather
+  than at lock acquisition, because the lock can change hands in between. An
+  append that timed out, or one whose lock was broken as stale and re-taken
+  mid-write, records ``serialized: false`` instead of looking identical to a
+  protected one. ``verify_chain`` uses this to say *which* kind of break it
+  found — a lost race or an altered record.
+
+  This is diagnosis, not defence. The chain is unkeyed, so write access is
+  enough to forge any of these fields, and the classification never moves a
+  broken chain to ``intact``. Records written before this existed carry neither
+  field and still verify.
 """
 
 from __future__ import annotations
@@ -40,7 +52,7 @@ import socket
 import time
 import uuid
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
@@ -61,6 +73,103 @@ def _lock_token() -> str:
     """Identifies one lock holder, uniquely across machines."""
 
     return f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex}"
+
+
+def _writer_digest(token: str) -> str:
+    """A stable short name for the *writer*, not for one acquisition.
+
+    `_lock_token` is `hostname:pid:uuid`, and only the first two fields identify
+    who is writing; the uuid distinguishes one acquisition from the next. So the
+    digest covers `hostname:pid` alone. Digesting the whole token instead gave
+    every record a different writer, including consecutive appends from one
+    process, which reads exactly like two machines racing and makes the field
+    useless for the one question a fork diagnosis asks -- were these written by
+    the same process or by two.
+
+    Digested rather than stored, because the ledger is append-only and `redact`
+    is documented as unable to un-say metadata: the raw value would publish the
+    writing machine's name and pid into a record nothing can retract.
+
+    A pid is reused by the operating system, so this identifies a writer only
+    among processes alive at the same time. That is the whole scope it is used
+    in -- a race is between concurrent writers -- but it is not a durable
+    machine identity and must not be read as one.
+    """
+
+    identity = ":".join(token.split(":")[:2])
+    return hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]
+
+
+@dataclass(frozen=True)
+class _WriteAuthority:
+    """Who holds the ledger lock, and whether they still hold it.
+
+    Acquisition and append are two instants, and the lock can change hands
+    between them: `_lock_is_stale` lets a second writer break an abandoned lock
+    and `_try_acquire` hands it over, while the original holder is still inside
+    its critical section. `_release` detects that, but only on the way out --
+    by then the record is on disk, indistinguishable from a fenced one.
+
+    So the stamp is evaluated at append time rather than captured at
+    acquisition, and it is the record, not a log line, that carries the answer.
+    """
+
+    lock_path: Path
+    token: str
+    acquired: bool
+    handle: Any = field(default=None, compare=False, repr=False)
+
+    def _still_ours(self) -> bool:
+        """Whether the lock file still names us, read two ways because it must be.
+
+        By path first: on POSIX the advisory lock is advisory, so a writer that
+        broke ours as stale unlinked the file and created a new one. Our open
+        handle still refers to the unlinked inode and would happily read back
+        our own token, so only the path sees the takeover.
+
+        Through our handle second: on Windows `msvcrt.locking` is mandatory and
+        locks a byte region, which blocks the path read *from this process*.
+        Measured while writing this -- `PermissionError` on every uncontended
+        append, which the first version of this method reported as a lost lock,
+        marking every healthy write unserialized. Conflating "cannot read" with
+        "no longer ours" is the fail-open direction dressed as caution: it
+        floods the ledger with false unserialized flags until the real ones stop
+        meaning anything.
+
+        A path read that fails with the file simply gone, and a handle that
+        still names us, means nobody took the lock -- there is no second writer
+        to race.
+        """
+
+        try:
+            held = self.lock_path.read_text(encoding="utf-8").split("\n", 1)[0]
+            return held == self.token
+        except OSError:
+            pass
+        if self.handle is None:
+            return False
+        try:
+            self.handle.seek(0)
+            return self.handle.read(4096).split("\n", 1)[0] == self.token
+        except (OSError, ValueError):
+            return False
+
+    def stamp(self) -> dict[str, Any]:
+        """Attribution fields for a record about to be appended.
+
+        An unserialized write reports no writer at all rather than its own
+        token. It is tempting to name it anyway -- an operator might like to
+        know which host raced -- but a field that is sometimes a verified
+        authority and sometimes a guess is exactly the shape of defect this
+        module keeps having to undo. `serialized: false` is the actionable part,
+        the warning already names the host for whoever is watching, and knowing
+        which machine raced does not tell you how to stop it. An empty writer
+        cannot be misread as custody.
+        """
+
+        if not self.acquired or not self._still_ours():
+            return {"writer": "", "serialized": False}
+        return {"writer": _writer_digest(self.token), "serialized": True}
 
 
 def _try_acquire(lock_path: Path, token: str) -> bool:
@@ -314,7 +423,7 @@ class BeliefLedger:
         return self._dir / "head.json"
 
     @contextmanager
-    def _exclusive(self) -> Iterator[None]:
+    def _exclusive(self) -> Iterator[_WriteAuthority]:
         """Serialize the read-tail -> append -> write-head sequence.
 
         Appending is a read-modify-write: a record's `seq` and `prev_sha256`
@@ -331,6 +440,12 @@ class BeliefLedger:
         at all the append still proceeds -- a ledger that refuses to record is
         worse than one that can be raced -- and the chain check remains the
         backstop that makes such a race visible.
+
+        Yields the authority the caller writes under, so that "the chain check
+        makes a race visible" becomes "the record says which writes were
+        unprotected". Visible was previously the whole claim, and it was thin:
+        the break says `prev_sha256 mismatch`, the same words an edited record
+        produces, and a lock failure and an intrusion need opposite responses.
         """
 
         self._dir.mkdir(parents=True, exist_ok=True)
@@ -374,7 +489,8 @@ class BeliefLedger:
                 handle = None
 
         try:
-            yield
+            yield _WriteAuthority(lock_path=lock_path, token=token,
+                                  acquired=acquired, handle=handle)
         finally:
             if handle is not None:
                 _advisory_unlock(handle)
@@ -456,11 +572,13 @@ class BeliefLedger:
         # prev_sha256 come from whatever is currently last, so reading outside
         # the lock lets two processes chain onto the same tail and lose one of
         # the two records.
-        with self._exclusive():
-            return self._record_locked(artifact, backfilled, tx_time, body_sha)
+        with self._exclusive() as authority:
+            return self._record_locked(artifact, backfilled, tx_time, body_sha,
+                                       authority)
 
     def _record_locked(
-        self, artifact: Any, backfilled: bool, tx_time: str | None, body_sha: str
+        self, artifact: Any, backfilled: bool, tx_time: str | None, body_sha: str,
+        authority: _WriteAuthority,
     ) -> dict[str, Any]:
         last = self._last_record()
         record = {
@@ -477,6 +595,10 @@ class BeliefLedger:
             "body_sha256": body_sha,
             "backfilled": bool(backfilled),
             "prev_sha256": last[_RECORD_HASH_FIELD] if last else "",
+            # Stamped here rather than at acquisition: the lock can change hands
+            # between the two instants, and this is the last point before the
+            # append where the question can still be asked.
+            **authority.stamp(),
         }
         record[_RECORD_HASH_FIELD] = _record_hash(record)
         self._append(record)
@@ -608,13 +730,15 @@ class BeliefLedger:
                 obj.unlink()
                 deleted_objects.append(sha)
 
-        with self._exclusive():
+        with self._exclusive() as authority:
             return self._tombstone_locked(matched, claim_id, entity, reason,
-                                          deleted_objects, retained_shared)
+                                          deleted_objects, retained_shared,
+                                          authority)
 
     def _tombstone_locked(
         self, matched: list[dict[str, Any]], claim_id: str, entity: str,
         reason: str, deleted_objects: list[str], retained_shared: list[str],
+        authority: _WriteAuthority,
     ) -> dict[str, Any]:
         last = self._last_record()
         tombstone = {
@@ -629,6 +753,9 @@ class BeliefLedger:
             "deleted_objects": sorted(deleted_objects),
             "retained_shared_objects": sorted(set(retained_shared)),
             "prev_sha256": last[_RECORD_HASH_FIELD] if last else "",
+            # A redaction is a write like any other, and an unserialized one is
+            # the worst kind to leave unattributed.
+            **authority.stamp(),
         }
         tombstone[_RECORD_HASH_FIELD] = _record_hash(tombstone)
         # Through the same append path as a belief version: a redaction adds
@@ -740,9 +867,51 @@ class BeliefLedger:
         with self._exclusive():
             return self._verify_locked()
 
+    @staticmethod
+    def _classify_break(rec: dict[str, Any], seen: set[str]) -> dict[str, Any]:
+        """Distinguish a lost race from an altered record. Never excuses either.
+
+        Both arrive as a `prev_sha256` mismatch, and the two demand opposite
+        responses -- one is a lock to fix, the other is an intrusion -- so
+        reporting the same four words for both made the check almost unusable at
+        the moment it mattered.
+
+        A writer that lost a race leaves a specific shape: its own hash still
+        recomputes, and it chains onto a record that *is* in the file, because
+        it read that tail legitimately before the winner appended. A record
+        dropped from the middle leaves its successor pointing at a hash no
+        longer present, and an edited record fails its own hash. Only the first
+        shape is named a concurrent write.
+
+        This is a diagnosis, not a defence. The chain is unkeyed, so write
+        access is enough to fabricate this shape deliberately; the status stays
+        `broken` either way and nothing here can be used to reach `intact`.
+        """
+
+        forked_from = str(rec.get("prev_sha256", ""))
+        self_consistent = _record_hash(rec) == rec.get(_RECORD_HASH_FIELD)
+        if not (self_consistent and forked_from in seen):
+            return {"reason": "prev_sha256 mismatch"}
+        return {
+            "reason": (
+                f"prev_sha256 mismatch: a concurrent write forked the chain at "
+                f"seq {rec.get('seq')}"
+            ),
+            "concurrent_write": True,
+            "forked_from": forked_from,
+            # Prefixed because this result is not a record: a bare `writer` here
+            # would read as "the writer of this chain" rather than "the writer of
+            # the record that collided".
+            "conflicting_writer": str(rec.get("writer", "")),
+            "conflicting_serialized": bool(rec.get("serialized", False)),
+        }
+
     def _verify_locked(self) -> dict[str, Any]:
         prev_hash = ""
         count = 0
+        # Seeded with the genesis position: a record carrying prev_sha256 "" is
+        # forking from the start of an empty chain, which is a real ancestor.
+        seen: set[str] = {""}
         for line_no, line in enumerate(
             self._log.read_text(encoding="utf-8").splitlines(), 1
         ):
@@ -755,11 +924,12 @@ class BeliefLedger:
                         "reason": "unparseable record"}
             if rec.get("prev_sha256", "") != prev_hash:
                 return {"status": "broken", "line": line_no,
-                        "reason": "prev_sha256 mismatch"}
+                        **self._classify_break(rec, seen)}
             if _record_hash(rec) != rec.get(_RECORD_HASH_FIELD):
                 return {"status": "broken", "line": line_no,
                         "reason": "record_sha256 mismatch"}
             prev_hash = rec[_RECORD_HASH_FIELD]
+            seen.add(prev_hash)
             count += 1
 
         # A chain proves the records present are consistent; it cannot notice
