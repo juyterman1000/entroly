@@ -199,6 +199,62 @@ def test_a_redaction_tombstone_carries_attribution_too(tmp_path):
     assert len(tombstone["writer"]) == 16
 
 
+# ── The acknowledgement the caller gets back ─────────────────────────
+
+
+def test_write_belief_reports_an_unserialized_append_to_its_caller(
+    tmp_path, monkeypatch
+):
+    """The record on disk is not the surface agents read.
+
+    `VaultManager.write_belief` returns the ledger result under `ledger`, and it
+    said only `status: recorded` -- so a caller was told the append succeeded
+    with no way to learn it was never protected, while the record on disk said
+    `serialized: false`. Stamping the record without stamping the receipt leaves
+    the failure visible only to whoever later opens the JSONL by hand.
+    """
+
+    monkeypatch.setattr(vault_time, "_LOCK_TIMEOUT_SECONDS", 0.2)
+    base = tmp_path / "vault"
+    vault = VaultManager(VaultConfig(base_path=str(base)))
+    vault.ensure_structure()
+    _hold_lock(base)
+
+    result = vault.write_belief(
+        BeliefArtifact(entity="e", title="t", body="b", sources=["a.py:1"])
+    )
+
+    assert result["ledger"]["status"] == "recorded"
+    assert result["ledger"]["serialized"] is False
+
+
+def test_write_belief_reports_a_protected_append_as_serialized(tmp_path):
+    """The same field must read true when the lock did hold, or it means nothing."""
+
+    base = tmp_path / "vault"
+    vault = VaultManager(VaultConfig(base_path=str(base)))
+
+    result = vault.write_belief(
+        BeliefArtifact(entity="e", title="t", body="b", sources=["a.py:1"])
+    )
+
+    assert result["ledger"]["serialized"] is True
+
+
+def test_redact_reports_whether_its_tombstone_was_serialized(tmp_path, monkeypatch):
+    """An unprotected redaction is the worst one to acknowledge silently."""
+
+    base = tmp_path / "vault"
+    _write_one(base, entity="secret")
+    monkeypatch.setattr(vault_time, "_LOCK_TIMEOUT_SECONDS", 0.2)
+    _hold_lock(base)
+
+    result = BeliefLedger(base).redact(entity="secret")
+
+    assert result["status"] == "redacted"
+    assert result["serialized"] is False
+
+
 # ── What verification can now say ────────────────────────────────────
 
 
