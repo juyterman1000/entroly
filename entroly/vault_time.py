@@ -606,6 +606,14 @@ class BeliefLedger:
             "status": "recorded",
             "seq": record["seq"],
             "record_sha256": record[_RECORD_HASH_FIELD],
+            # Carried into the acknowledgement, not just the record. This result
+            # is what `VaultManager.write_belief` returns under `ledger`, so it
+            # is the surface a caller actually reads; without this the caller was
+            # told `recorded` while the record on disk said the append was never
+            # protected, and the failure was visible only to whoever later opened
+            # the JSONL by hand. `writer` stays out: it is for forensics on the
+            # file afterwards and tells an immediate caller nothing it can act on.
+            "serialized": record["serialized"],
         }
 
     def seed_from_current(self, beliefs_dir: str | Path) -> dict[str, Any]:
@@ -768,6 +776,10 @@ class BeliefLedger:
             "objects_deleted": len(deleted_objects),
             "objects_retained_shared": len(set(retained_shared)),
             "tombstone_seq": tombstone["seq"],
+            # As for a belief append: an erasure acknowledged as done while its
+            # tombstone went in unprotected is the worst one to report silently,
+            # because the bodies are already deleted.
+            "serialized": tombstone["serialized"],
         }
 
     def body_of(self, version: BeliefVersion) -> str:
