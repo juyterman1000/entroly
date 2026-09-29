@@ -6,9 +6,9 @@ For summarization (and any other long-form output), the verifier must
 operate at the *atomic claim* level — independently-verifiable
 propositions — and aggregate atomic verdicts up.
 
-This is the FactScore approach (Min et al., EMNLP 2023): decompose a
-summary into atomic facts, score each against the source, then
-aggregate. Without decomposition, whole-summary lexical alignment
+The approach: decompose a summary into atomic facts, score each against
+the source, then aggregate. Without decomposition, whole-summary
+lexical alignment
 trivially passes because summaries share lots of words with their
 sources even when individual facts are wrong. With decomposition, a
 single fact swap (1985 → 1962, Einstein → Bohr) produces a single
@@ -46,12 +46,9 @@ Salience is computed from atom features:
 all normalized so Σ sᵢ = n (preserves the scale of independent
 contributions).
 
-References
-----------
-- Min, S. et al. (2023). FactScore: Fine-grained atomic evaluation of
-  factual precision in long-form text generation. EMNLP 2023.
-- Wei, J. et al. (2024). Long-form factuality in large language models.
-  (SAFE: Search-Augmented Factuality Evaluator.) NeurIPS 2024.
+Established techniques this draws on: fine-grained atomic evaluation of factual
+precision in long-form text, and search-augmented per-fact checking as the
+aggregation model.
 """
 
 from __future__ import annotations

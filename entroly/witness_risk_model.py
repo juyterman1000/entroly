@@ -30,8 +30,8 @@ Two regimes:
 
 Mathematical guarantee
 ----------------------
-Bates et al. 2021 (RCPS / Risk-Controlling Prediction Sets) gives a
-distribution-free guarantee: given a calibration set of size n and a
+Risk-controlling prediction sets (RCPS) give a distribution-free
+guarantee: given a calibration set of size n and a
 chosen miscoverage α, the policy thresholds derived from ρ produce
 exposure rate ≤ α on i.i.d. test data with probability ≥ 1 − δ. We
 inherit that guarantee directly because ρ is monotonic in φ and the
@@ -45,13 +45,9 @@ moving to continuous risk, we add `label_from_features(features)`
 that derives the discrete label from the same features the risk model
 sees — keeping the discrete and continuous views consistent.
 
-References
-----------
-- Bates, S., Angelopoulos, A., Lei, L., Malik, J., Jordan, M. (2021).
-  Distribution-Free, Risk-Controlling Prediction Sets. JACM.
-- Platt, J. (1999). Probabilistic outputs for support vector machines
-  and comparisons to regularized likelihood methods. (Logistic
-  calibration baseline.)
+Established techniques this builds on: distribution-free risk-controlling
+prediction sets for the guarantee, and logistic calibration of a raw score
+into a probability as the baseline this is measured against.
 """
 
 from __future__ import annotations

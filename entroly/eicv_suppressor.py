@@ -296,7 +296,7 @@ class EICVSuppressor:
 
         Calibrators are optional — the φ score alone provides a good
         decision signal — but fitting them enables formal e-value
-        statistical guarantees (Vovk-Wang 2021).
+        statistical guarantees.
 
         Args:
             grounded_pairs: list of (evidence, claim) pairs known to be

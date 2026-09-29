@@ -13,8 +13,8 @@ rate?" -- once, rather than per request.
 
 Method
 ------
-Conformal risk control (Angelopoulos, Bates, Fisch, Lei & Schuster, ICLR 2024)
-generalises split conformal prediction from coverage to any monotone loss. For
+Conformal risk control generalises split conformal prediction from coverage to
+any monotone loss. For
 losses ``L_i(λ)`` non-increasing in ``λ`` and bounded above by ``B``:
 
     λ̂ = inf{ λ : (n·R̂_n(λ) + B) / (n + 1) ≤ α }        (1)
@@ -157,7 +157,7 @@ class Certificate:
             "samples_needed": self.samples_needed,
             "reason": self.reason,
             "method": (
-                "conformal risk control (Angelopoulos et al., ICLR 2024): "
+                "conformal risk control: "
                 "lambda_hat = inf{lambda : (n*R_n(lambda) + B)/(n+1) <= alpha}, "
                 "B = 1; guarantees E[L] <= alpha under exchangeability"
             ),
