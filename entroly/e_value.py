@@ -2,8 +2,8 @@
 E-Value Composition + Conformal Risk Control — EICV Layer 5
 =============================================================
 
-E-values (Shafer 2019; Vovk & Wang 2021) are an alternative to p-values
-with two key properties that p-values lack:
+E-values are an alternative to p-values with two key properties that
+p-values lack:
 
   1. Closed under arithmetic mean: e_avg = mean(e_i) is itself a valid
      e-value testing the conjunction H_1 ∧ H_2 ∧ ...
@@ -17,7 +17,7 @@ Calibration map e(score)
 -------------------------
 We use the calibration map e(s) = β · 2^(k(s)) where k(s) is the score's
 position above the empirical CDF of the H_0 (supported claims) calibration
-set. This is the Vovk-Wang (2021) "betting score" with prior probability β.
+set. This is a betting score with prior probability β.
 
 Concretely, for ESG T(G):
   - Calibrate using a held-out set of GROUNDED items (label = 0): collect
@@ -41,7 +41,7 @@ For a single score, the conformal p-value gives a finite-sample guarantee:
   P(p ≤ α) ≤ α  under exchangeability between calibration and test.
 
 When the test distribution shifts (e.g. C4 vs C1), exchangeability fails.
-We use weighted CP (Barber-Candès-Ramdas-Tibshirani 2023):
+We use weighted conformal prediction:
   weights w_i = density_ratio(test, calibration) at point z_i
 which restores coverage under known shift direction.
 
@@ -53,16 +53,6 @@ For the worst manifold M*:
   e_M* >= max_m e_m                                    (e-value worst-case)
   e_joint = ∏ e_m → composite over all manifolds
 
-References
-----------
-- Shafer, 2019. The language of betting as a strategy for statistical
-  and scientific communication. JASA.
-- Vovk & Wang, 2021. E-values: Calibration, combination, and applications.
-  Annals of Statistics 49(3): 1736-1754.
-- Barber, Candès, Ramdas, Tibshirani, 2023. Conformal prediction beyond
-  exchangeability. Annals of Statistics 51(2): 816-845.
-- Angelopoulos & Bates, 2023. Conformal Prediction: A Gentle Introduction.
-  Foundations and Trends in Machine Learning.
 """
 
 from __future__ import annotations
@@ -161,7 +151,6 @@ def e_product(e_values: Sequence[float]) -> float:
 
     Under independence (or marginal calibration), the product of valid
     e-values is itself a valid e-value for the conjunction of nulls.
-    Vovk & Wang (2021) Theorem 2.
     """
     out = 1.0
     for e in e_values:
@@ -170,8 +159,8 @@ def e_product(e_values: Sequence[float]) -> float:
 
 
 def e_mean(e_values: Sequence[float]) -> float:
-    """Arithmetic mean of e-values — always a valid e-value (Vovk-Wang 2021)
-    without requiring independence."""
+    """Arithmetic mean of e-values — always a valid e-value, without
+    requiring independence."""
     if not e_values:
         return 1.0
     return sum(e_values) / len(e_values)

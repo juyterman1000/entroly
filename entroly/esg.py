@@ -31,8 +31,8 @@ Why this is strictly stronger than Fusion-4 / pairwise NLI
 3. Auditable: per-atom support and contradiction scores are returned in
    ESGResult for downstream Certificate generation.
 
-PSL Substrate (Bach et al., JMLR 2017)
----------------------------------------
+PSL Substrate
+-------------
 A PSL rule
   w: SUPPORT(u,v) ∧ CONSISTENT(u,v) → SUPPORTED(v)
 maps to the hinge-loss
@@ -48,13 +48,6 @@ Design constraints
 - O(|V_e| × |V_c|) in sentence count (both are 1–20 in practice).
 - Returns ESGResult with per-atom detail for auditability.
 
-References
-----------
-- Bach et al., 2017. Hinge-Loss Markov Random Fields and Probabilistic
-  Soft Logic. JMLR 18(109):1–67.
-- Min et al., 2023. FActScore. EMNLP 2023.
-- Honovich et al., 2022. TRUE: Re-evaluating Factual Consistency
-  Evaluation. NAACL 2022.
 """
 
 from __future__ import annotations

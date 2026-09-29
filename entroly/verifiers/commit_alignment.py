@@ -54,7 +54,6 @@ Final score:
 References
 ----------
 - Conventional Commits spec (conventionalcommits.org)
-- Tian et al. (2022): "What Makes a Good Commit Message?"
 """
 
 from __future__ import annotations
