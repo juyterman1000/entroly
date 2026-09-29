@@ -70,11 +70,6 @@ Or set the environment variable:
 Either path resolves the model through the Hugging Face cache and fetches it if
 absent, so the first scored pair may reach the network. `HF_HUB_OFFLINE=1` keeps
 it local, at the cost of every pair reporting "unavailable".
-
-References
-----------
-He, P., Liu, X., Gao, J., & Chen, W. (2021). DeBERTa: Decoding-enhanced
-BERT with disentangled attention. ICLR 2021.
 """
 from __future__ import annotations
 
