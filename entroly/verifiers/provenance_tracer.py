@@ -101,13 +101,18 @@ Example:
           → high grounding. This is a PLAUSIBLE recombination.
           IPD can distinguish confident recombination from fabrication.
 
-References
-----------
-- Kolmogorov (1965): "Three approaches to the quantitative definition
-  of information"
-- Lempel & Ziv (1976): "On the complexity of finite sequences"
-- Blumer et al. (1985): "The smallest automaton recognizing the
-  subwords of a text" (Suffix Automaton construction)
+What this builds on
+-------------------
+Three classical results: Kolmogorov complexity as the quantitative
+definition of information, Lempel-Ziv complexity as its computable
+surrogate, and the suffix automaton — the smallest automaton recognizing
+every subword of a text, linear in size and constructible online.
+
+What is Entroly's: using that automaton as a *provenance* index rather than
+a compression or matching structure. Because it recognizes every substring
+of the evidence in O(1) amortized per character, IPD can separate confident
+recombination of the source from fabrication, which a similarity score
+cannot — and it does so exactly, with no threshold to tune.
 """
 
 from __future__ import annotations
@@ -126,8 +131,7 @@ from typing import Any
 # exactly the set of all substrings of S. It has at most 2|S|-1 states
 # and at most 3|S|-4 transitions.
 #
-# Construction follows Blumer et al. (1985), using the online algorithm
-# that processes one character at a time in O(1) amortized.
+# Standard online construction: one character at a time, O(1) amortized.
 
 
 @dataclass

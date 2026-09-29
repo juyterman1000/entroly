@@ -2,9 +2,12 @@
 Codebase-Conditioned Character N-Gram Language Model
 ====================================================
 
-A per-repository character n-gram model with Stupid Backoff smoothing
-(Brants et al. EMNLP 2007). Used as the surprisal signal in the Bayesian
-hallucination detector.
+A per-repository character n-gram model with Stupid Backoff smoothing.
+Used as the surprisal signal in the Bayesian hallucination detector.
+
+The smoothing scheme is standard; conditioning it on a *single repository*
+is not. A general-corpus model calls every project-specific identifier
+surprising, which is the opposite of what a grounding signal needs.
 
 Mathematical framing
 --------------------
@@ -29,8 +32,8 @@ Why character n-grams instead of subword tokens:
 Why stupid backoff and not Kneser-Ney:
   - We need a *score*, not a calibrated probability distribution
   - SB is order-of-magnitude faster (no recursive discount computation)
-  - Brants et al. showed SB matches modified KN on perplexity at >1B tokens
-    and is *better* at <100M tokens (our regime)
+  - SB is known to match modified KN on perplexity above ~1B tokens and to
+    beat it below ~100M, which is the regime a single repository sits in
 
 Complexity
 ----------

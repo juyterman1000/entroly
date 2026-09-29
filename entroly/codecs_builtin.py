@@ -484,7 +484,7 @@ def _positional_templates(
     is found, and no two lines are identical so the duplicate collapser cannot
     help either.
 
-    Fixed-depth log parsing (He et al., ICWS 2017) resolves this by bucketing on
+    Fixed-depth log parsing resolves this by bucketing on
     cheap invariants -- token count, then leading token -- and marking a
     position variable when the tokens there disagree across the bucket.
     Variability is then a property of the data rather than an assertion about

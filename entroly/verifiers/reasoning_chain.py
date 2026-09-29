@@ -22,8 +22,12 @@ The problem CAVE solves:
 
 Mathematical Foundation
 -----------------------
-Process Reward Model (PRM) approach from Lightman et al. 2023
-("Let's Verify Step by Step"), adapted for static analysis:
+A process reward model scores reasoning step-by-step rather than judging
+only the final answer. That framing is established; scoring the steps with
+a trained reward model is not what happens here. Each premise is scored by
+*counterfactual necessity* — remove it and ask whether the conclusion still
+follows — which is computable statically, costs no LLM call, and returns
+the same value every run:
 
 1. Parse the reasoning text into numbered steps (premises + conclusion).
 
@@ -50,17 +54,16 @@ Process Reward Model (PRM) approach from Lightman et al. 2023
 
    CI ∈ [0, 1]. Low CI = many decorative premises = flawed chain.
 
-Irrelevant Context Detection (Shi et al. ICML 2023)
-----------------------------------------------------
+Irrelevant Context Detection
+----------------------------
 Additionally detects when the reasoning chain includes factual
 statements that contradict each other or the conclusion, using a
 simplified entailment test based on predicate consistency.
 
-References
-----------
-- Lightman et al. (2023): "Let's Verify Step by Step" — PRM
-- Shi et al. (ICML 2023): "LLMs Can Be Easily Distracted by
-  Irrelevant Context"
+Builds on two established ideas: scoring a reasoning process step-by-step
+instead of only its answer, and treating distraction by irrelevant context
+as a failure mode separate from being ungrounded. Both are reconstructed
+here as static analysis, so a chain can be scored without calling a model.
 """
 
 from __future__ import annotations

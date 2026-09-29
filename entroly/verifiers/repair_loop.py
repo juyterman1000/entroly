@@ -58,12 +58,14 @@ infinite loops and wasted tokens. Expected iterations:
 For typical values (IPD_0=0.7, IPD_target=0.1, GCR_avg=0.5):
     E[T] = log(7) / log(2) ~ 2.8 iterations
 
-References
-----------
-- Madaan et al. (2023): Self-Refine
-- Shinn et al. (2023): Reflexion
-- Asai et al. (2024): Self-RAG
-- Kolmogorov (1965): K(O|C) as grounding metric (BIPT foundation)
+Builds on three established loop shapes — refine-from-own-critique, reflect
+on a failed attempt before retrying, and retrieve-then-self-assess — plus
+conditional Kolmogorov complexity K(O|C) as the grounding quantity.
+
+What is Entroly's here is the stopping rule. Those loops iterate until a
+model says it is satisfied, which is unbounded and unauditable. This one
+iterates against a measured IPD and terminates at a proven expected
+iteration count (E[T] above), so the loop has a cost bound before it starts.
 """
 
 from __future__ import annotations

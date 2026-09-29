@@ -25,10 +25,15 @@ Heuristics:
   4. **Co-access patterns**: Track which files are accessed together
      across sessions (associative learning)
 
-References:
-  - CPU prefetch: Smith, J. "Sequential Program Prefetching" (1978)
-  - Agentic Plan Caching (arXiv 2025) — reusing structured plans
-  - Proximity (arXiv 2026) — LSH-bucketed pre-warming for caches
+What this builds on:
+  Sequential program prefetching, as CPUs have done it for decades; reusing a
+  structured plan instead of re-deriving it; and LSH-bucketed pre-warming so a
+  cache fills with neighbours rather than exact repeats.
+
+  Entroly applies them to a unit none of them targets — a *source file under a
+  token budget* — where a wrong prefetch costs context rather than a cache
+  line, so the co-access signal has to earn its space against the fragments it
+  displaces.
 """
 
 from __future__ import annotations

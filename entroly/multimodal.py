@@ -1,14 +1,16 @@
 """
 Multi-Modal Ingestion — Convert non-text content to structured text fragments.
 
-Research grounding:
-  - MMCode (ICLR 2025/2026): current SOTA models struggle with visually-aided
-    code generation. The key finding: visual elements only add value when converted
-    to *structured semantic descriptions*, not raw OCR text.
-  - SWE-bench Multimodal (ICLR 2025): framed as GUI element extraction +
-    structured text. Architecture diagrams are interaction graphs, not images.
-  - UGround (ICLR 2025, Boyu Gou et al.): 10M GUI element grounding dataset.
-    Key: spatial layout matters as much as textual content.
+What this builds on:
+  Three established findings. Visual elements add value only once converted to
+  *structured semantic descriptions* rather than raw OCR text; an architecture
+  diagram is better treated as an interaction graph than as an image; and
+  spatial layout carries as much signal as the text inside it.
+
+  Entroly's construction on top: every converter emits a single `ModalContent`
+  fragment that enters the same token-budgeted selection as source code, so an
+  image competes for space on measured information density instead of being
+  attached unconditionally.
 
 Design principles:
   1. Every converter outputs a `ModalContent` — a richly structured text blob
@@ -719,8 +721,8 @@ def _format_voice_content(
 #
 # Unified-diff parser: converts code changes into a structured description
 # of what changed, why it matters, and which symbols were affected.
-# Inspired by DebtGuardian (arXiv 2025): batch-level technical debt detection
-# from source code changes. Key insight: diffs encode *intent*, not just content.
+# Builds on batch-level technical-debt detection over source changes, whose
+# useful property is that a diff encodes *intent*, not just content.
 # ─────────────────────────────────────────────────────────────────────────────
 
 

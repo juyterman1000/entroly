@@ -2059,8 +2059,8 @@ def _ecp_is_redundant(text: str, context_trigrams: set[str]) -> bool:
 # ═══════════════════════════════════════════════════════════════════════
 #
 # Inspired by:
-#   - Selective Context (Li et al., EMNLP 2023): self-information scoring
-#   - TRIM (arXiv 2025): omit inferable words, reconstruct later
+#   - self-information scoring: low-information spans can be dropped
+#   - omit-and-reconstruct: inferable words need not be transmitted
 #
 # Key insight: LLM outputs contain ~40-60% "social tokens" — pleasantries,
 # hedging, meta-commentary — that carry near-zero Shannon entropy for

@@ -263,7 +263,8 @@ def compute_zone_budgets(
 def u_curve_reorder(items: Sequence[Any]) -> list[Any]:
     """Reorder ranked evidence so highest-scoring items occupy the primacy and recency peaks.
 
-    Based on Liu et al. (TACL 2024) 'Lost in the Middle' empirical findings.
+    Rests on the 'lost in the middle' effect: attention to mid-context
+    content degrades relative to the head and tail.
     Given items sorted by relevance descending [r0, r1, r2, r3, r4, ...]:
     Places r0 at the start, r1 at the end, r2 at the start, r3 at the end...
     Leaving lower-relevance items in the central attention trough.

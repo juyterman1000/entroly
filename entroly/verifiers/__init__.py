@@ -29,9 +29,9 @@ Six verification layers, each targeting a distinct hallucination class:
 
   Layer 6 — PROVE / CAVE / TRIAD (new):
     - semantic_entropy (PROVE): prose hallucination via causal-weighted
-      predicate alignment (Kuhn/Gal/Farquhar ICLR 2023, adapted)
-    - reasoning_chain (CAVE): counterfactual decorative-premise ablation
-      (Lightman 2023 PRM + Shi ICML 2023, adapted)
+      predicate alignment — semantic entropy without sampling or an LLM
+    - reasoning_chain (CAVE): counterfactual decorative-premise ablation —
+      step-level scoring computed statically, not by a reward model
     - commit_alignment (TRIAD): diff-message-PR triangulation via
       three-signal Bayesian combination
 """

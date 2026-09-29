@@ -52,17 +52,18 @@ Alignment   : O(|A_triplets| × |K_triplets|)
 Memory      : O(|text|)
 Latency     : ~0.3 ms/sample (Python), ~0.05 ms/sample (Rust port)
 
-References
-----------
-- Fader, A., Soderland, S., Etzioni, O. (2011). Identifying Relations for
-  Open Information Extraction. EMNLP. (ReVerb — open IE via linguistic
-  constraints, the conceptual ancestor of slot-based IE.)
-- Angeli, G., Premkumar, M.J.J., Manning, C.D. (2015). Leveraging
-  Linguistic Structure For Open Domain Information Extraction. ACL.
-  (OpenIE 4 — triplet extraction pipeline that STAVE's NP chunker
-  approximates without requiring CoreNLP.)
-- Weischedel, R. et al. (2013). OntoNotes Release 5.0. (The NER type
-  system STAVE's slot-type checker is aligned to.)
+What STAVE builds on
+--------------------
+Three established pieces: open information extraction driven by linguistic
+constraints rather than a trained extractor, triplet extraction over parsed
+linguistic structure, and a standard NER type system that the slot-type
+checker aligns to.
+
+What is STAVE's: the triplet pipeline is approximated by an NP chunker that
+needs no parser and no model download, so slot extraction runs in-process on
+any machine. The constraint is deliberate — a verifier that needs a 500 MB
+parse server is one that silently turns off in the environments verification
+matters most.
 """
 from __future__ import annotations
 

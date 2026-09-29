@@ -7,7 +7,7 @@ vocabulary mismatch — measured ≈0.10–0.20 hit@10 on real SWE-bench.
 v2 fusion = a deterministic **evidence-precedence tier** (files with
 UNAMBIGUOUS structural certainty — explicit S1 extraction, or a symbol
 defined in exactly one file — ranked first) THEN **RRF(k=60)**
-(Reciprocal Rank Fusion, Cormack et al. SIGIR 2009) over the fuzzy
+(Reciprocal Rank Fusion) over the fuzzy
 signals. RRF is parameter-light (k=60 standard), and empirically
 outperforms ISR on this signal regime. Content-BM25 is always a signal,
 so the recall floor is >= plain BM25; the evidence tier + S1/S2/S4 are
