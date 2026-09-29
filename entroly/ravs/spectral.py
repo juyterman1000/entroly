@@ -1,10 +1,10 @@
 """Spectral Hallucination Detector — EigenScore for Black-Box APIs.
 
-Research grounding:
-  - INSIDE/EigenScore (Chen et al., ICLR 2024): eigenvalues of embedding
-    covariance as semantic consistency measure
-  - LapEigvals (EMNLP 2025): Laplacian eigenvalues of attention graphs
-  - GLSim (NeurIPS 2025): embedding similarity as hallucination signal
+Established signals this draws on:
+  - eigenvalues of the embedding covariance as a semantic consistency
+    measure
+  - Laplacian eigenvalues of attention graphs
+  - embedding similarity as a hallucination signal
 
 The key insight:
   We CAN'T access internal model weights/attention maps through a black-box

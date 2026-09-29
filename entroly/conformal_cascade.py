@@ -6,15 +6,15 @@ This is the piece that makes the proven escalation bound in
 `escalation.py` operational on a *measured* two-verifier system instead
 of a hypothetical model ladder.
 
-Prior art, credited honestly — this is a **synthesis**, not a claimed
-new theorem:
+Every technique below is established and none is claimed here — this is a
+**synthesis**, not a new theorem:
 
-  * split-conformal prediction & finite-sample coverage — Vovk,
-    Gammerman, Shafer; the ⌈(n+1)(1−α)⌉ quantile (we reuse
+  * split-conformal prediction & finite-sample coverage; the
+    ⌈(n+1)(1−α)⌉ quantile (we reuse
     `witness_calibration.conformal_quantile`);
-  * selective prediction / risk–coverage — Geifman & El-Yaniv (2017);
-  * conformal risk control — Angelopoulos, Bates et al. (2023);
-  * LLM cascades — Chen et al., FrugalGPT (2023).
+  * selective prediction / risk–coverage tradeoff;
+  * conformal risk control;
+  * cost-tiered LLM cascades.
 
 The contribution here is specific and modest: a cascade whose *cheap*
 stage is a deterministic, zero-LLM-cost verifier (WITNESS) emitting a

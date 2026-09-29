@@ -10,8 +10,7 @@ This module turns ρ into a 4-action policy decision
 
 with thresholds τ₁ < τ₂ < τ₃ chosen so that, on the test distribution,
 the exposure rate of unsupported claims is bounded above by a
-user-chosen α with high probability — using split-conformal calibration
-(Vovk-Gammerman-Shafer 2005, Angelopoulos-Bates 2023).
+user-chosen α with high probability — using split-conformal calibration.
 
 The benefit over the current binary {pass, suppress} policy is that the
 operator can dial α (acceptable false-pass rate) and get the *highest*
@@ -46,16 +45,11 @@ Design notes for production
 - Production callers should treat the absence of calibration as a
   hard signal to use conservative defaults — fail-closed, not "no policy".
 
-References
-----------
-- Vovk, V., Gammerman, A., Shafer, G. (2005). Algorithmic Learning in a
-  Random World. Springer. [Foundations of conformal prediction.]
-- Angelopoulos, A., Bates, S. (2023). Conformal Prediction: A Gentle
-  Introduction. Foundations and Trends in Machine Learning.
-- Bates, S. et al. (2021). Distribution-Free, Risk-Controlling Prediction
-  Sets. JACM. [Risk control framework, parent of CRC.]
-- El-Yaniv, R., Wiener, Y. (2010). On the foundations of noise-free
-  selective classification. JMLR. [Selective prediction theory.]
+Established techniques this rests on: split-conformal prediction for the
+finite-sample coverage guarantee; distribution-free risk-controlling prediction
+sets, the framework conformal risk control (CRC) generalises from coverage to an
+arbitrary monotone loss; and noise-free selective classification, which supplies
+the selective-prediction theory behind abstaining instead of answering.
 """
 
 from __future__ import annotations

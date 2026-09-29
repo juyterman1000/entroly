@@ -27,12 +27,10 @@ Design invariants (inherited from RAVS):
   3. EVIDENCE-GATED. ECE only activates after RAVS gate passes.
   4. REVERSIBLE. Every decision is logged with full uncertainty trace.
 
-References:
-  - Kuhn et al., "Semantic Uncertainty," ICLR 2024.
-  - Kadavath et al., "Language Models (Mostly) Know What They Know," ICML 2023.
-  - Wald, "Sequential Tests of Statistical Hypotheses," 1945.
-  - Neely, "Drift-Plus-Penalty Lyapunov Optimization," 2010.
-  - Amari, "Information Geometry and Its Applications," 2016.
+Techniques this composes: semantic uncertainty over sampled generations,
+self-reported model confidence, a sequential probability-ratio test for the
+stopping rule, drift-plus-penalty Lyapunov optimization for the budget
+controller, and an information-geometric distance on the score manifold.
 """
 
 from __future__ import annotations

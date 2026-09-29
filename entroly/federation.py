@@ -79,7 +79,7 @@ MIN_SAMPLE_COUNT = 5        # Need at least 5 dream improvements
 TRIM_FRACTION = 0.10        # Remove top/bottom 10% before averaging
 MIN_CONTRIBUTORS = 3        # Minimum contributions per archetype before serving
 
-# Staleness parameters (Upgrade 2 — Chen et al. 2020)
+# Staleness parameters
 CONTRIBUTION_TTL_SECONDS = 30 * 86400   # 30-day TTL
 STALENESS_HALF_LIFE_DAYS = 50.0         # Confidence halves every 50 days
 STALENESS_DECAY_RATE = 0.693 / STALENESS_HALF_LIFE_DAYS  # ln(2)/τ
@@ -575,7 +575,7 @@ class FederationClient:
     ) -> dict[str, list[ContributionPacket]]:
         """Load contributions with per-client dedup, TTL, and staleness decay.
 
-        Upgrades (grounded in Chen et al. 2020, Lin et al. 2019):
+        Upgrades, each a standard federated-aggregation control:
           1. TTL — expire contributions older than 30 days
           2. Per-client dedup — keep only latest per (archetype, client)
           3. Staleness decay — reduce confidence by e^{-λ·age}

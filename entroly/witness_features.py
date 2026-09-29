@@ -36,14 +36,9 @@ clamped at the risk model).
 φ₇ negation_polarity     — 1 if polarity matches, -1 if c affirms what C negates
 φ₈ adequacy              — existing weighted adequacy
 
-References
-----------
-- Min et al., 2023. FactScore: Fine-grained Atomic Evaluation of
-  Factual Precision in Long-Form Text Generation. EMNLP 2023.
-- Lin & Hovy, 2003. Automatic Evaluation of Summaries Using N-gram
-  Co-Occurrence Statistics. NAACL 2003. (IDF weighting baseline.)
-- Honovich et al., 2022. TRUE: Re-evaluating Factual Consistency
-  Evaluation. NAACL 2022. (Bidirectional entailment intuition.)
+Established techniques these features draw on: atomic-precision scoring of
+long-form text, IDF-weighted n-gram overlap as the lexical baseline, and
+bidirectional rather than one-directional entailment.
 """
 
 from __future__ import annotations
@@ -62,11 +57,11 @@ from difflib import SequenceMatcher
 # no cue at all, and it is the harder case precisely because every other token
 # is shared: overlap-driven features peak exactly when the label should flip.
 #
-# McCoy et al. 2019 (HANS, ACL) name this the lexical-overlap heuristic — when
-# the hypothesis words all appear in the premise, systems predict entailment,
-# scoring near 0% on non-entailment. Naik et al. 2018 (COLING) isolate
-# "antonym" as its own stress category, separate from word overlap and
-# negation. Measured on this codebase before this gate: 10 of 10 minimal-edit
+# This failure has a name: the lexical-overlap heuristic — when the hypothesis
+# words all appear in the premise, systems predict entailment, scoring near 0%
+# on non-entailment. Antonym substitution is its own stress category, distinct
+# from word overlap and from negation, and needs its own gate.
+# Measured on this codebase before this gate: 10 of 10 minimal-edit
 # antonym contradictions were certified `grounded`, mean risk 0.0213 against
 # 0.0023 for the matched entailments — indistinguishable.
 #
@@ -375,8 +370,8 @@ def feat_reverse_entail(claim: str, context: str) -> float:
     The opposite direction from forward_entail. A hallucinated claim
     often shares topic with context (high forward), but introduces
     facts that aren't there (low reverse). This is the cheap proxy
-    for bidirectional NLI that Honovich et al. 2022 found materially
-    improves consistency detection.
+    for bidirectional NLI, which materially improves consistency
+    detection over checking one direction only.
 
     Score: fraction of c's content words that appear anywhere in C.
     Distinct from forward because the denominator is the claim's
