@@ -569,7 +569,7 @@ class ImplicitFeedbackTracker:
         self._rephrase_detections = 0
         self._topic_changes = 0
         self._total_assessed = 0
-        # CUSUM-EMA quality drift detector (arXiv 2025, NeurIPS 2025)
+        # CUSUM-EMA quality drift detector
         self._drift_detector = _CusumEmaDriftDetector()
 
     def assess_response(self, response_text: str) -> float:
@@ -721,8 +721,10 @@ class _CusumEmaDriftDetector:
     """Dual online quality drift detector: CUSUM + EMA.
 
     Combines two complementary algorithms from the change-point detection
-    literature (Online Kernel CUSUM, arXiv 2025; RL drift detection,
-    NeurIPS 2025):
+    literature -- online kernel CUSUM and EMA trend tracking. Neither is ours;
+    running both against the same stream and requiring agreement before
+    declaring drift is, because a single detector on a noisy quality signal
+    fires often enough that operators stop trusting it:
 
     1. **EMA** (Exponential Moving Average): Smooth trend tracker.
        α = 0.15 → emphasizes recent observations. Fast to respond but
@@ -858,9 +860,11 @@ def _extract_logprobs_from_sse(
 ) -> tuple[list[float], list[str]]:
     """Extract per-token logprobs + token text from SSE stream bytes.
 
-    Grounded in HALT (arXiv:2602.02888) and EPR research (2025-2026):
-    logprobs from a single generation pass contain direct uncertainty
-    information at zero extra API cost.
+    Builds on the established result that logprobs from a single generation
+    pass carry direct uncertainty information at zero extra API cost.
+
+    Read here from the SSE stream as it arrives, so the signal costs no
+    second pass and no buffering of the full response.
 
     Handles OpenAI format: choices[0].logprobs.content[i].{logprob, token}
 
@@ -1079,7 +1083,8 @@ class PromptCompilerProxy:
 
         # ── Response Distillation ──
         # Strips filler from LLM responses (pleasantries, hedging, meta-commentary)
-        # Grounded in Selective Context (Li et al., EMNLP 2023) self-information theory
+        # Builds on self-information scoring of context: low-information spans
+        # can be dropped without changing what the text asserts.
         self._enable_distill = os.environ.get("ENTROLY_DISTILL", "1") != "0"
         self._distill_mode = os.environ.get("ENTROLY_DISTILL_MODE", "full")  # lite/full/ultra
         self._total_output_original_tokens: int = 0
@@ -3738,10 +3743,10 @@ class PromptCompilerProxy:
 
         # ── Context Scaffolding Engine (CSE) ──
         # Generate a structural dependency preamble that shows the LLM
-        # how selected files relate to each other. Based on:
-        #   - GRACG (NeurIPS 2025): heterogeneous code graph rendering
-        #   - Scaffold Reasoning (arxiv 2025): structured reasoning streams
-        #   - S2LPP (arxiv 2025): prompt strategy transfer across model sizes
+        # how selected files relate to each other. Builds on heterogeneous
+        # code-graph rendering, structured reasoning streams, and prompt
+        # strategy that transfers across model sizes -- composed into one
+        # preamble rather than three passes.
         # Cost: ~200 tokens. Benefit: enables Haiku to match Opus quality
         # by pre-connecting cross-file relationships.
         scaffold = ""
@@ -4360,8 +4365,9 @@ class PromptCompilerProxy:
             # Old: binary record_success/record_failure gated at ±0.5/+0.3
             #      → ~52% of signals discarded (everything in -0.5 < r < 0.3)
             # New: record_reward(continuous) for ALL non-zero rewards.
-            #      Inspired by HER (NeurIPS 2025) — ambiguous outcomes carry
-            #      gradient information when aggregated over hundreds of requests.
+            #      Rests on the established point that ambiguous outcomes still
+            #      carry gradient information once aggregated over hundreds of
+            #      requests, so discarding them throws away over half the signal.
             if buffer and _frag_ids:
                 try:
                     full_bytes = b"".join(buffer)

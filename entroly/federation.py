@@ -84,10 +84,10 @@ CONTRIBUTION_TTL_SECONDS = 30 * 86400   # 30-day TTL
 STALENESS_HALF_LIFE_DAYS = 50.0         # Confidence halves every 50 days
 STALENESS_DECAY_RATE = 0.693 / STALENESS_HALF_LIFE_DAYS  # ln(2)/τ
 
-# FedProx regularization (Upgrade 4 — Li et al. MLSys 2020)
+# FedProx regularization
 FEDPROX_MU = 0.1            # Proximal term strength
 
-# Privacy budget (Upgrade 3 — Gopi et al. NeurIPS 2021)
+# Privacy budget
 TOTAL_PRIVACY_BUDGET = 10.0  # Max cumulative ε before auto-stop
 
 # Weight keys that participate in federation
@@ -157,7 +157,7 @@ class GlobalArchetypeWeights:
 class PrivacyAccountant:
     """Tracks cumulative privacy budget across contributions.
 
-    Uses advanced composition (Kairouz et al. 2015, Gopi et al. 2021):
+    Uses advanced composition:
       ε_total ≈ ε_single · √(2k · ln(1/δ))
     where k = number of contributions.
 
@@ -765,7 +765,7 @@ class FederationClient:
                 l_val = local_weights.get(key, 0.0)
                 blended[key] = alpha * g_val + (1 - alpha) * l_val
 
-            # ── FedProx regularization (Li et al. MLSys 2020) ──
+            # ── FedProx regularization ──
             # Pulls merged weights back toward local optimum:
             #   w* = (w_blended + μ·w_local) / (1 + μ)
             # Prevents global noise from dragging converged installs backward.

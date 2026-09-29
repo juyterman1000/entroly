@@ -410,7 +410,7 @@ class ProxyConfig:
 
     # CSE: Context Scaffolding Engine — structural dependency preamble.
     # Generates a ~200-token dependency map showing how selected files relate.
-    # Based on GRACG (NeurIPS 2025) and Scaffold Reasoning (arxiv 2025).
+    # Builds on code-graph rendering and structured reasoning streams.
     # Enables small models (Haiku) to match large model (Opus) performance
     # by pre-connecting cross-file relationships. Always net token-negative:
     # +200 tokens for scaffold, −2000+ tokens from dropping "just in case" files.

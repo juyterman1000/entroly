@@ -6,13 +6,16 @@ dependency relationships between selected code fragments. This preamble
 is injected BEFORE the code fragments in the LLM context, giving the model
 a "cognitive scaffold" that pre-connects the dots between files.
 
-Research foundation:
-  - GRACG (NeurIPS 2025): heterogeneous code graph → retrieval
-  - Scaffold Reasoning (arxiv 2025): structured reasoning streams
-  - OCD (arxiv 2026): minimal sufficient context via delta debugging
-  - S2LPP (arxiv 2025): prompt preference transfers across model sizes
-  - Structure-Grounded Knowledge Retrieval (arxiv 2025): dependency-aware context
-  - SAC (arxiv 2025): anchor-token selection for semantic compression
+What this builds on:
+  Six established techniques, none of them ours: retrieval over a
+  heterogeneous code graph, structured reasoning streams, reducing context to
+  a minimal sufficient set by delta debugging, transferring prompt structure
+  across model sizes, dependency-aware retrieval, and anchor-token selection
+  for semantic compression.
+
+  What Entroly adds is the composition and its budget: all six are collapsed
+  into a single ~200-token preamble emitted *before* the fragments, so the
+  relationships arrive as context rather than as a second retrieval pass.
 
 Key insight: small models (Haiku) fail not because they lack intelligence,
 but because they can't infer cross-file relationships from raw code alone.

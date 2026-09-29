@@ -33,9 +33,13 @@ Storage Format:
   JSON for human readability and debuggability. Gzipped for
   space efficiency. Typical checkpoint: 50-200 KB compressed.
 
-References:
-  - Agentic Plan Caching (arXiv 2025) -- reusing structured plans
-  - SagaLLM (arXiv 2025) -- transactional guarantees for multi-agent planning
+What this builds on:
+  Two established ideas, combined here into one artifact. Reusing a
+  structured plan rather than re-deriving it, and giving a multi-step agent
+  transactional guarantees so a partial run leaves no half-applied state.
+  Entroly's contribution is that both hold over a *gzipped, human-readable
+  checkpoint* that a user can open and audit, rather than over opaque
+  in-process state.
 """
 
 from __future__ import annotations

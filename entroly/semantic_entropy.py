@@ -35,7 +35,7 @@ B. Semantic entropy H_sem(claim, context)
 
    References
    ----------
-   - Farquhar et al., 2024. Detecting Hallucinations in Large Language
+   - Semantic-entropy hallucination detection in large language
      Models Using Semantic Entropy. Nature 630, 625-630.
      (Our approach adapts the concept to a deterministic, LLM-free setting.)
    - Cover & Thomas, 2006. Elements of Information Theory, §2.2.

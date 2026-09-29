@@ -8,8 +8,8 @@ Production-ready subsystem with five tiers:
   V3: Guarded Router — Four learned policies (heuristic, Thompson, KNN, logistic).
   V4: Sequential Controller — Budget-bounded, escalation-aware step execution.
   V5: Epistemic Cascade Engine — Mathematical uncertainty routing (Fisher, Rényi, Lyapunov).
-  V6: Entropy Production Rate — Logprob-based hallucination detection (HALT/EPR, 2025-2026).
-  V7: Spectral Consistency — EigenScore-inspired entity cross-similarity SVD (EMNLP 2025, ICLR 2024).
+  V6: Entropy Production Rate — Logprob-based hallucination detection.
+  V7: Spectral Consistency — entity cross-similarity SVD over embedding covariance.
 """
 
 from .events import (

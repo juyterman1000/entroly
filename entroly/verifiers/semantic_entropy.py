@@ -17,11 +17,18 @@ The problem PROVE solves:
     real, the code compiles, pyright is happy — but the explanation is
     a semantic hallucination.
 
-Mathematical Foundation (Kuhn, Gal & Farquhar ICLR 2023 — adapted)
-------------------------------------------------------------------
-Original Semantic Entropy samples N completions, clusters by
-bidirectional entailment, and computes H(clusters). This requires
+Mathematical Foundation
+-----------------------
+Semantic entropy, as normally formulated, samples N completions, clusters
+them by bidirectional entailment, and computes H(clusters). That requires
 an LLM. We don't have one at verification time.
+
+So this is not that method with a cheaper backend — it is a different
+construction reaching the same quantity: the clustering is over predicates
+extracted from prose and code, so entropy is computed from one pass of
+static analysis, at zero LLM cost and with a deterministic, replayable
+result. That determinism is the point; a sampled estimate cannot be put in
+a receipt.
 
 PROVE adapts the insight using a ZERO-LLM approach:
 
@@ -56,10 +63,10 @@ Training: None (fully static).
 Inference: O(|prose_tokens| × |ast_nodes|) per verification.
 Memory: O(|prose| + |code|).
 
-References
-----------
-- Kuhn, Gal & Farquhar (ICLR 2023): Semantic Entropy
-- Shi et al. (ICML 2023): Irrelevant Context Distraction
+Builds on two established ideas: semantic entropy over meaning-clusters
+rather than surface tokens, and distraction by irrelevant context as a
+distinct failure mode from ungroundedness. Both are reconstructed here
+without sampling and without an LLM.
 """
 
 from __future__ import annotations
