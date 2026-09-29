@@ -1,13 +1,14 @@
 """Logprob Entropy-Production-Rate (EPR) hallucination detector.
 
-What this builds on:
-  Three established signals — a logprob time-series read as a trajectory
-  rather than a scalar, single-pass entropy probing that avoids resampling,
-  and entropy production rate as an aggregate over tokens.
+Why this one is cheap enough to always run:
+  It needs only the logprobs a provider already returns. No second sampling
+  pass, no model internals, no extra network call beyond the completion being
+  judged — so hallucination detection costs nothing per request and can stay
+  on by default rather than being reserved for suspicious outputs.
 
-  Entroly combines them into one detector that needs only the logprobs a
-  provider already returns: no second sampling pass, no model internals, and
-  no network call beyond the completion being judged.
+  Three proven signals make that possible: a logprob time-series read as a
+  trajectory rather than a scalar, single-pass entropy probing that avoids
+  resampling, and entropy production rate aggregated over tokens.
 
 The load-bearing observation:
   Hallucinated tokens have HIGHER entropy (model is less confident).

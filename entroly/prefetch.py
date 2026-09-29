@@ -25,15 +25,16 @@ Heuristics:
   4. **Co-access patterns**: Track which files are accessed together
      across sessions (associative learning)
 
-What this builds on:
-  Sequential program prefetching, as CPUs have done it for decades; reusing a
-  structured plan instead of re-deriving it; and LSH-bucketed pre-warming so a
-  cache fills with neighbours rather than exact repeats.
+What is new here:
+  Prefetching applied to a unit none of the classical work targets — a
+  *source file under a token budget*. A wrong prefetch costs context, not a
+  cache line, so every prefetched fragment must earn its space against what it
+  displaces. That constraint makes the co-access signal accountable in a way a
+  CPU prefetcher never has to be.
 
-  Entroly applies them to a unit none of them targets — a *source file under a
-  token budget* — where a wrong prefetch costs context rather than a cache
-  line, so the co-access signal has to earn its space against the fragments it
-  displaces.
+  The mechanics are proven: sequential prefetching as CPUs have done it for
+  decades, plan reuse instead of re-derivation, and LSH-bucketed pre-warming
+  so the cache fills with neighbours rather than exact repeats.
 """
 
 from __future__ import annotations

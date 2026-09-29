@@ -6,16 +6,18 @@ dependency relationships between selected code fragments. This preamble
 is injected BEFORE the code fragments in the LLM context, giving the model
 a "cognitive scaffold" that pre-connects the dots between files.
 
-What this builds on:
-  Six established techniques, none of them ours: retrieval over a
-  heterogeneous code graph, structured reasoning streams, reducing context to
-  a minimal sufficient set by delta debugging, transferring prompt structure
-  across model sizes, dependency-aware retrieval, and anchor-token selection
-  for semantic compression.
+The result: six retrieval and reasoning techniques collapsed into a single
+  ~200-token preamble, emitted *before* the fragments. Cross-file
+  relationships arrive as context instead of as a second retrieval pass —
+  which is why a small model can act on them at all. Two hundred tokens is
+  less than one support file, and it buys the relationships that file was
+  being included to imply.
 
-  What Entroly adds is the composition and its budget: all six are collapsed
-  into a single ~200-token preamble emitted *before* the fragments, so the
-  relationships arrive as context rather than as a second retrieval pass.
+  The ingredients are established and reused on purpose: code-graph
+  retrieval, structured reasoning streams, minimal-sufficient-context
+  reduction by delta debugging, prompt structure that transfers across model
+  sizes, dependency-aware retrieval, and anchor-token selection. Composing
+  all six under one token budget is the part that did not exist.
 
 Key insight: small models (Haiku) fail not because they lack intelligence,
 but because they can't infer cross-file relationships from raw code alone.

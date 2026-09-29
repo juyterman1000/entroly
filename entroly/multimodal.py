@@ -1,16 +1,17 @@
 """
 Multi-Modal Ingestion — Convert non-text content to structured text fragments.
 
-What this builds on:
-  Three established findings. Visual elements add value only once converted to
-  *structured semantic descriptions* rather than raw OCR text; an architecture
-  diagram is better treated as an interaction graph than as an image; and
-  spatial layout carries as much signal as the text inside it.
+The design that makes this work:
+  Every converter emits a single `ModalContent` fragment that enters the *same
+  token-budgeted selection as source code*. An image therefore competes for
+  space on measured information density rather than being attached
+  unconditionally — which is how a screenshot stops evicting the three files
+  that would have answered the question.
 
-  Entroly's construction on top: every converter emits a single `ModalContent`
-  fragment that enters the same token-budgeted selection as source code, so an
-  image competes for space on measured information density instead of being
-  attached unconditionally.
+  Three well-supported findings shape the converters: visual elements pay off
+  only as structured semantic descriptions rather than raw OCR; an
+  architecture diagram is an interaction graph, not a picture; and spatial
+  layout carries as much signal as the text inside it.
 
 Design principles:
   1. Every converter outputs a `ModalContent` — a richly structured text blob
