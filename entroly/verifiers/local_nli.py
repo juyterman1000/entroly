@@ -24,20 +24,52 @@ measured N of 0.5 that no model produced. Downstream that matters: the vacuous
 state is the identity under evidence combination, while a fabricated 0.5
 dilutes whatever real evidence it is fused with.
 
-Cascade role
-------------
-The model is expensive (~30–80 ms/pair on CPU). WITNESS runs it only when
-the deterministic local_pav verdict is "neutral" AND the claim risk from
-the continuous path is in the uncertain band (0.25–0.75).  This limits
-NLI calls to the ~30% of claims where it actually changes the verdict.
+When this runs: every claim, not a cascade
+-------------------------------------------
+This section previously described a cascade -- that WITNESS ran the model "only
+when the deterministic local_pav verdict is neutral AND the claim risk from the
+continuous path is in the uncertain band (0.25-0.75)", limiting it to "~30% of
+claims". **No such gate exists.** `witness.py`'s `elif self.use_local_nli:`
+branch is unconditional, and `local_pav`'s verdict is never consulted in the
+condition. Measured 2026-09-29: 125 NLI calls for 125 claims, 100.0%.
 
-Enabling for all MCP / pip / npm users
----------------------------------------
+It was never implemented rather than removed later: `git log -S` for the
+condition returns nothing across the file's history, and the paragraph describing
+it arrived in 2ee2b6aa -- the commit that added this module. The design was
+written down and the gate was not built.
+
+The cost is therefore roughly three times what that paragraph implied. Measured
+on HaluEval, n=200 per slice, `force_python=True`, model already loaded, against
+the same run with the flag off: 178 ms/sample vs 3.3 (QA), 331 vs 6.2
+(Dialogue), 1302 vs 94.9 (Summarization) -- 14x to 54x.
+
+Do not "fix" this by adding the gate. Enabling this model measurably *lowers*
+WITNESS discrimination, and firing it less often would not change why:
+
+    slice            AUROC off   AUROC on    delta
+    HaluEval-QA         0.7686     0.7253   -0.0434
+    HaluEval-Dialogue   0.5704     0.5340   -0.0364
+    HaluEval-Summ.      0.6465     0.6399   -0.0067
+
+(tie-corrected AUROC, 97 hallucinated of 200 per slice, paired on identical
+samples.) A confident NLI verdict makes `use_continuous` false in
+`_certify_claim`, so the claim leaves the continuous risk model for the
+discrete-bucket path, where risk collapses to coarse constants -- distinct risk
+values fell 75->39, 70->52, 68->54. The model does not merely fail to help; it
+discards a better-calibrated signal. A cascade would reduce how often that
+happens, not whether it happens.
+
+Enabling it (off by default, and the measurement above is why)
+---------------------------------------------------------------
     from entroly import WitnessAnalyzer
     analyzer = WitnessAnalyzer(use_local_nli=True)   # downloads model once
 
 Or set the environment variable:
     ENTROLY_LOCAL_NLI=1
+
+Either path resolves the model through the Hugging Face cache and fetches it if
+absent, so the first scored pair may reach the network. `HF_HUB_OFFLINE=1` keeps
+it local, at the cost of every pair reporting "unavailable".
 
 References
 ----------
