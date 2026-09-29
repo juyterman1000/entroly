@@ -45,11 +45,16 @@ Design notes for production
 - Production callers should treat the absence of calibration as a
   hard signal to use conservative defaults — fail-closed, not "no policy".
 
-Established techniques this rests on: split-conformal prediction for the
-finite-sample coverage guarantee; distribution-free risk-controlling prediction
-sets, the framework conformal risk control (CRC) generalises from coverage to an
-arbitrary monotone loss; and noise-free selective classification, which supplies
-the selective-prediction theory behind abstaining instead of answering.
+What the operator gets: a single dial. Choose an acceptable false-pass rate
+alpha, and the thresholds derived here deliver the *highest retention
+compatible with that bound* -- with a finite-sample guarantee, not a tuned
+heuristic. Hand-set per-profile thresholds cannot make that promise.
+
+That guarantee rests on settled theory, reused deliberately: split-conformal
+prediction for finite-sample coverage, distribution-free risk-controlling
+prediction sets (which conformal risk control generalises from coverage to any
+monotone loss), and noise-free selective classification for the theory of
+abstaining rather than answering.
 """
 
 from __future__ import annotations

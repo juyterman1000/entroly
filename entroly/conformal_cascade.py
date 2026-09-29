@@ -6,15 +6,18 @@ This is the piece that makes the proven escalation bound in
 `escalation.py` operational on a *measured* two-verifier system instead
 of a hypothetical model ladder.
 
-Every technique below is established and none is claimed here — this is a
-**synthesis**, not a new theorem:
+What makes this cascade different: its cheap stage is a **deterministic,
+zero-LLM-cost verifier** emitting a class-conditional conformal p-value. Every
+comparable cascade spends a model call to decide whether it needs a bigger
+model call. This one decides for free, and the decision is replayable — which
+is what lets the escalation band carry a finite-sample guarantee instead of a
+heuristic threshold.
 
-  * split-conformal prediction & finite-sample coverage; the
-    ⌈(n+1)(1−α)⌉ quantile (we reuse
-    `witness_calibration.conformal_quantile`);
-  * selective prediction / risk–coverage tradeoff;
-  * conformal risk control;
-  * cost-tiered LLM cascades.
+The foundations are well-understood and deliberately reused rather than
+reinvented: split-conformal prediction and its ⌈(n+1)(1−α)⌉ quantile (shared
+with `witness_calibration.conformal_quantile`), the selective-prediction
+risk–coverage tradeoff, conformal risk control, and cost-tiered cascades.
+Standing on settled theory is what makes the guarantee above provable.
 
 The contribution here is specific and modest: a cascade whose *cheap*
 stage is a deterministic, zero-LLM-cost verifier (WITNESS) emitting a

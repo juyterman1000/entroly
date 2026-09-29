@@ -60,10 +60,11 @@ Additionally detects when the reasoning chain includes factual
 statements that contradict each other or the conclusion, using a
 simplified entailment test based on predicate consistency.
 
-Builds on two established ideas: scoring a reasoning process step-by-step
-instead of only its answer, and treating distraction by irrelevant context
-as a failure mode separate from being ungrounded. Both are reconstructed
-here as static analysis, so a chain can be scored without calling a model.
+The advantage: a chain is scored without calling a model, so this can run on
+every response rather than on a sampled few. Step-by-step process scoring and
+irrelevant-context distraction are established framings; expressing both as
+static analysis -- counterfactual necessity instead of a trained reward model
+-- is what makes them free and replayable.
 """
 
 from __future__ import annotations

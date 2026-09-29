@@ -33,13 +33,13 @@ Storage Format:
   JSON for human readability and debuggability. Gzipped for
   space efficiency. Typical checkpoint: 50-200 KB compressed.
 
-What this builds on:
-  Two established ideas, combined here into one artifact. Reusing a
-  structured plan rather than re-deriving it, and giving a multi-step agent
-  transactional guarantees so a partial run leaves no half-applied state.
-  Entroly's contribution is that both hold over a *gzipped, human-readable
-  checkpoint* that a user can open and audit, rather than over opaque
-  in-process state.
+What this gives you:
+  Plan reuse and transactional guarantees — a partial run leaves no
+  half-applied state — over an artifact you can *open and read*. Both
+  properties normally live in opaque in-process state, which means you trust
+  them or you don't. Here they hold over gzipped JSON, so a user can inspect
+  exactly what was checkpointed and verify the guarantee rather than take it
+  on faith. Auditability is the feature, not a side effect of the format.
 """
 
 from __future__ import annotations

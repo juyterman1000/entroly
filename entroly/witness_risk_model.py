@@ -45,9 +45,13 @@ moving to continuous risk, we add `label_from_features(features)`
 that derives the discrete label from the same features the risk model
 sees — keeping the discrete and continuous views consistent.
 
-Established techniques this builds on: distribution-free risk-controlling
-prediction sets for the guarantee, and logistic calibration of a raw score
-into a probability as the baseline this is measured against.
+The payoff of a continuous rho: the discrete and continuous views stay
+consistent, because `label_from_features` derives the label from the same
+features the risk model sees. Four hard-coded buckets cannot be calibrated;
+a continuous score can, and it inherits a distribution-free guarantee directly.
+
+Built on distribution-free risk-controlling prediction sets for that guarantee,
+with logistic calibration as the baseline this is measured against.
 """
 
 from __future__ import annotations

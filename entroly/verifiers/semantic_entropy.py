@@ -63,10 +63,11 @@ Training: None (fully static).
 Inference: O(|prose_tokens| × |ast_nodes|) per verification.
 Memory: O(|prose| + |code|).
 
-Builds on two established ideas: semantic entropy over meaning-clusters
-rather than surface tokens, and distraction by irrelevant context as a
-distinct failure mode from ungroundedness. Both are reconstructed here
-without sampling and without an LLM.
+The headline property: this runs at verification time, where there is no
+model to call. Clustering by meaning rather than surface tokens, and treating
+distraction by irrelevant context as its own failure mode, are both
+well-established ideas -- reconstructed here without sampling and without an
+LLM, which is the only reason they can sit in the default path at all.
 """
 
 from __future__ import annotations

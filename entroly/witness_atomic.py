@@ -46,9 +46,13 @@ Salience is computed from atom features:
 all normalized so Σ sᵢ = n (preserves the scale of independent
 contributions).
 
-Established techniques this draws on: fine-grained atomic evaluation of factual
-precision in long-form text, and search-augmented per-fact checking as the
-aggregation model.
+Atomic decomposition is what makes long-form verification possible at all:
+whole-summary lexical alignment passes trivially, because summaries share most
+of their words with their sources even when individual facts are wrong. Scoring
+per-fact turns a single swap (1985 -> 1962) into a signal instead of noise.
+
+The decomposition and per-fact aggregation model are well-established; running
+them with no model call is what lets this sit in the default path.
 """
 
 from __future__ import annotations
