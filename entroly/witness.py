@@ -909,8 +909,13 @@ class WitnessAnalyzer:
             nli = _openai_nli_check(context, claim.text, windows, adequacy, self.model)
         elif self.use_local_nli:
             # Local DeBERTa-v3-small NLI — zero API cost, ~30-80ms/claim on CPU.
-            # Only run when local_pav verdict is uncertain (neutral) to keep
-            # the average latency overhead acceptable.
+            # This branch is unconditional: it runs for every claim. The comment
+            # here used to claim it ran "only when local_pav verdict is uncertain
+            # (neutral)", but `local` above is never consulted in the condition
+            # and no such gate was ever written. Measured: 125 calls for 125
+            # claims. Do not add the gate — see the measurement in
+            # verifiers/local_nli.py; enabling this model lowers AUROC on all
+            # three HaluEval slices, and firing it less often would not fix why.
             try:
                 from .verifiers.local_nli import nli_score as _local_nli_score
                 _evidence = "\n".join(w.text for w in windows) if windows else context[:1000]
