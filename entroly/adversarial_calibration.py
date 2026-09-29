@@ -2,8 +2,8 @@
 Adversarial Calibration via Group-DRO — EICV Phase 2
 ======================================================
 
-Group Distributionally Robust Optimization (Sagawa et al. ICLR 2020) over
-the 5 perturbation manifolds:
+Group distributionally robust optimization over the 5 perturbation
+manifolds:
 
     θ* = argmin_θ max_{m ∈ M} L_m(θ)
 
@@ -38,12 +38,6 @@ Result is written to benchmarks/results/adversarial_calibration.json
 and the chosen θ* is applied to ESGAnalyzer's defaults (in a follow-up commit
 or via the env-var ESG_CONFIG_PATH).
 
-References
-----------
-- Sagawa et al., 2020. Distributionally Robust Neural Networks for Group
-  Shifts. ICLR 2020.
-- Duchi & Namkoong, 2021. Learning models with uniform performance via
-  distributionally robust optimization. Annals of Statistics.
 """
 
 from __future__ import annotations

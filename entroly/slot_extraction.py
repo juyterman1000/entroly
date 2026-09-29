@@ -60,12 +60,13 @@ Crucially, this distinguishes:
 
 No transformer, no parser. Pure context fingerprinting.
 
-References
-----------
-- Bach et al., 2017. Hinge-Loss MRFs and Probabilistic Soft Logic. JMLR.
-  (Our typed-relation formulation is a discrete PSL specialization.)
-- Hearst, 1992. Automatic acquisition of hyponyms from large text corpora.
-  (Pattern-based relation extraction without a parser.)
+Design note
+-----------
+The typed-relation formulation is a discrete specialization of probabilistic
+soft logic: each slot binding is a typed relation carrying a weight, and
+verification is a hinge over those weights rather than a satisfiability check.
+Stated here because nothing above says it, and it is the reason a parser is
+unnecessary.
 """
 
 from __future__ import annotations

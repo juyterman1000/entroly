@@ -17,7 +17,7 @@ Higher Γ → the score is brittle → surface-level, artifact-prone.
 Relation to Fisher information
 --------------------------------
 For a continuous score S(x) with random perturbation δ ~ N(0, σ²I):
-  E_δ[|S(x+δ) - S(x)|] / σ = √Fisher_x(S)   [Amari, 1998]
+  E_δ[|S(x+δ) - S(x)|] / σ = √Fisher_x(S)
 
 Our discrete perturbations approximate this in the five directions that
 matter for hallucination detection. Low Γ on all 5 manifolds is a
@@ -41,7 +41,6 @@ Result: GammaResult with per-manifold |ΔT| and aggregate Γ.
 
 References
 ----------
-- Amari & Nagaoka, 2000. Methods of Information Geometry. AMS.
 - EICV_PREREGISTRATION.md §3.4.
 """
 

@@ -41,8 +41,6 @@ so each bin contains at least 10–20 samples at N=400 per condition.
 References
 ----------
 - Cover & Thomas, 2006. Elements of Information Theory, §2.2.
-- Ross, 2014. Mutual Information between Discrete and Continuous Data
-  Sets. PLOS ONE.
 - EICV_PREREGISTRATION.md §3.3.
 """
 

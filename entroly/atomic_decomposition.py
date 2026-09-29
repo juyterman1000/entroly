@@ -34,12 +34,6 @@ per-atom probabilities under (conditional) independence — a multiplicative
 penalty for any single unsupported atom. This is the e-value composition
 from Layer 5 applied at the sub-claim level.
 
-References
-----------
-- Min et al., 2023. FActScore. EMNLP 2023. (atomic precision concept)
-- Honovich et al., 2022. TRUE. (compositional NLI evaluation)
-- Barwise & Cooper, 1981. Generalized Quantifiers and Natural Language.
-  Linguistics and Philosophy 4(2). (quantifier semantics foundation)
 """
 
 from __future__ import annotations
