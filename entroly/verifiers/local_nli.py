@@ -16,6 +16,14 @@ We map these to the WITNESS NLIVerdict schema:
     C > θ_con   →  "contradiction", confidence = C
     otherwise   →  "neutral",       confidence = N
 
+When no posterior exists at all -- the model could not be loaded, or scoring
+raised -- the result is "unavailable" with confidence 0, never "neutral". The
+three classes above partition the claim/evidence relation; "did not check" is
+not a member of that partition, and returning a neutral for it asserts a
+measured N of 0.5 that no model produced. Downstream that matters: the vacuous
+state is the identity under evidence combination, while a fabricated 0.5
+dilutes whatever real evidence it is fused with.
+
 Cascade role
 ------------
 The model is expensive (~30–80 ms/pair on CPU). WITNESS runs it only when
@@ -96,13 +104,18 @@ def nli_score(
     """
     Return (label, confidence) for (premise, hypothesis).
 
-    label ∈ {"entailment", "contradiction", "neutral"}
+    label ∈ {"entailment", "contradiction", "neutral", "unavailable"}
     confidence ∈ [0, 1]
 
-    Returns ("neutral", 0.5) if model unavailable.
+    ``"unavailable"`` means the check did not run -- the model could not be
+    loaded, or scoring raised. It is deliberately not ``"neutral"``: neutral is
+    a verdict about the pair, and returning one for a check that never happened
+    makes an unverified claim indistinguishable from a verified one. Callers
+    that treat every non-entailment, non-contradiction label as neutral still
+    degrade the same way as before; callers that care can now tell.
     """
     if not _load_model():
-        return "neutral", 0.5
+        return "unavailable", 0.0
 
     try:
         import numpy as np
@@ -122,8 +135,10 @@ def nli_score(
         return "neutral", n
 
     except Exception as exc:
+        # Scoring raised, so no verdict was produced. Same reasoning as an
+        # unloadable model: this is a fact about the check, not about the pair.
         logger.debug("[local_nli] Scoring failed: %s", exc)
-        return "neutral", 0.5
+        return "unavailable", 0.0
 
 
 def batch_nli_scores(
@@ -137,7 +152,7 @@ def batch_nli_scores(
     if not hypotheses:
         return []
     if not _load_model():
-        return [("neutral", 0.5)] * len(hypotheses)
+        return [("unavailable", 0.0)] * len(hypotheses)
 
     try:
         import numpy as np
@@ -162,7 +177,7 @@ def batch_nli_scores(
 
     except Exception as exc:
         logger.debug("[local_nli] Batch scoring failed: %s", exc)
-        return [("neutral", 0.5)] * len(hypotheses)
+        return [("unavailable", 0.0)] * len(hypotheses)
 
 
 def is_available() -> bool:

@@ -915,7 +915,16 @@ class WitnessAnalyzer:
                 from .verifiers.local_nli import nli_score as _local_nli_score
                 _evidence = "\n".join(w.text for w in windows) if windows else context[:1000]
                 _label, _conf = _local_nli_score(_evidence, claim.text)
-                nli = NLIVerdict(_label, _conf, _evidence[:180], adequacy)
+                # "unavailable" means the check never ran. Building a verdict
+                # for it would put a neutral NLI result in the proof path that
+                # no model produced, and -- because the discrete-bucket path
+                # below is reserved for *definitive* verdicts -- would route an
+                # unchecked claim away from the continuous risk model. `None`
+                # is what "no NLI verdict" already means here.
+                nli = (
+                    None if _label == "unavailable"
+                    else NLIVerdict(_label, _conf, _evidence[:180], adequacy)
+                )
             except Exception as _nli_e:
                 logger.debug("Local NLI failed: %s", _nli_e)
                 nli = None
