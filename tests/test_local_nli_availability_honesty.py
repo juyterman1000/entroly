@@ -53,6 +53,21 @@ class _StubPipeline:
 
 
 def _make_available(monkeypatch, logits):
+    """Stub a *working* model, which needs the scoring stack to be importable.
+
+    `nli_score` imports numpy and scipy.special inside its try block. Both
+    arrive with the `neural` extra rather than the base install, so on a base
+    wheel the import raises and every pair reports "unavailable" -- correctly,
+    but it leaves nothing for these tests to stub. Skipping is right here:
+    the base-install path is covered by
+    `test_a_base_install_without_the_scoring_stack_reports_unavailable`.
+    """
+    # exc_type is explicit: pytest 9.1 turns the implicit ImportError handling
+    # into an error, and this repo allows pytest<10.
+    pytest.importorskip("numpy", reason="scoring stack ships with the neural extra",
+                        exc_type=ImportError)
+    pytest.importorskip("scipy", reason="scoring stack ships with the neural extra",
+                        exc_type=ImportError)
     monkeypatch.setattr(local_nli, "_load_model", lambda: True)
     monkeypatch.setattr(local_nli, "_pipeline", _StubPipeline(logits), raising=False)
 
@@ -94,6 +109,25 @@ def test_a_real_verdict_is_unaffected(monkeypatch):
 
     assert label == "contradiction"
     assert confidence >= 0.65
+
+
+def test_a_base_install_without_the_scoring_stack_reports_unavailable(monkeypatch):
+    """The common case for `pip install entroly` with no extras.
+
+    numpy and scipy arrive with the `neural` extra. Without them the import
+    inside `nli_score` raises, and the honest answer is that no check ran --
+    not a neutral verdict. This is the path CI's base-wheel job exercises, and
+    it is why the stubbed tests above skip rather than fail there.
+    """
+    monkeypatch.setattr(local_nli, "_load_model", lambda: True)
+    monkeypatch.setattr(local_nli, "_pipeline", _StubPipeline([0.0, 0.0, 5.0]),
+                        raising=False)
+    monkeypatch.setitem(__import__("sys").modules, "scipy", None)
+
+    label, confidence = local_nli.nli_score("a", "b")
+
+    assert label == "unavailable"
+    assert confidence == 0.0
 
 
 def test_batch_scoring_reports_unavailable_too(monkeypatch):
