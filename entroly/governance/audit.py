@@ -41,7 +41,7 @@ import re
 import sqlite3
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Iterator, Mapping
 
@@ -147,6 +147,12 @@ class AuditRecord:
     payload: Mapping[str, Any] = field(default_factory=dict)
     chain_hash: str = ""
     created_at: float = field(default_factory=_now)
+    #: What the `append` call that produced this did: ``recorded`` for a new
+    #: event, ``replayed`` for an identical re-presentation, ``conflict`` when
+    #: the same ``event_id`` arrived carrying a different claim. Deliberately
+    #: absent from ``to_dict``: it describes the call, not the event, so it is
+    #: not part of the record and never reaches either store.
+    outcome: str = "recorded"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -179,7 +185,10 @@ class GovernanceAuditLog:
 
     def __init__(self, audit_dir: Path | None = None) -> None:
         self._dir = _resolve_audit_dir(audit_dir)
-        self._lock = threading.Lock()
+        # Reentrant: recording a conflict appends a record of its own, through
+        # this same method so it gets the same chain and dedup handling. A plain
+        # Lock would deadlock on that nested call.
+        self._lock = threading.RLock()
         self._prev_hash = ""
         self._initialized = False
 
@@ -337,7 +346,7 @@ class GovernanceAuditLog:
             self._prev_hash = record.chain_hash
 
             # Write to SQLite
-            stored_chain_hash: str | None = None
+            stored_row: tuple[Any, ...] | None = None
             is_duplicate = False
             try:
                 conn = sqlite3.connect(str(self.db_path), timeout=10)
@@ -363,11 +372,19 @@ class GovernanceAuditLog:
                 # it, which is the only way IGNORE suppresses a row here.
                 is_duplicate = cursor.rowcount == 0
                 if is_duplicate:
+                    # The whole stored row, not just its hash: without the
+                    # stored claim there is no way to tell a replay from a
+                    # contradiction, and `IGNORE` discards both identically.
                     existing = conn.execute(
-                        "SELECT chain_hash FROM governance_audit WHERE event_id = ?",
+                        """
+                        SELECT event_type, agent_id, session_id, org_id,
+                               trace_id, allowed, payload, chain_hash, created_at
+                        FROM governance_audit WHERE event_id = ?
+                        """,
                         (record.event_id,),
                     ).fetchone()
-                    stored_chain_hash = existing[0] if existing else None
+                    if existing is not None:
+                        stored_row = existing
                 conn.close()
             except Exception as exc:
                 # A failed database write is not a duplicate. The JSONL is the
@@ -378,22 +395,38 @@ class GovernanceAuditLog:
 
             if is_duplicate:
                 self._prev_hash = prev_hash_before
-                logger.debug(
-                    "Audit event %s already recorded; skipping duplicate append.",
-                    record.event_id,
-                )
-                # Report the hash that is actually stored, not the one this call
-                # computed and discarded.
-                return (
-                    record if stored_chain_hash is None
-                    else AuditRecord(
-                        event_id=record.event_id, event_type=record.event_type,
-                        agent_id=record.agent_id, session_id=record.session_id,
-                        org_id=record.org_id, trace_id=record.trace_id,
-                        allowed=record.allowed, payload=record.payload,
-                        chain_hash=stored_chain_hash, created_at=record.created_at,
+                if stored_row is None:
+                    # Rejected as a duplicate but unreadable, so it cannot be
+                    # classified. Not reported as a replay: that would assert
+                    # the stored claim matches without having looked.
+                    logger.warning(
+                        "Audit event %s was rejected as a duplicate but could "
+                        "not be read back; cannot tell a replay from a conflict.",
+                        record.event_id,
                     )
+                    return replace(record, outcome="unverified_duplicate")
+
+                stored = self._stored_record(record.event_id, stored_row)
+                incoming = self._claim_of(record)
+                if self._claim_of(stored) == incoming:
+                    logger.debug(
+                        "Audit event %s already recorded; identical replay.",
+                        record.event_id,
+                    )
+                    # The stored record, not a blend of the two. Returning this
+                    # call's payload with the stored hash produced a record that
+                    # did not hash to its own payload.
+                    return replace(stored, outcome="replayed")
+
+                # Same id, different claim. `IGNORE` cannot see the difference,
+                # so without this the contradicting record is gone -- and for a
+                # governance log that is the one it exists to keep.
+                logger.error(
+                    "Audit conflict on event %s: a different claim was already "
+                    "recorded. Recording the disagreement.", record.event_id,
                 )
+                self._record_conflict(stored=stored, rejected=record)
+                return replace(stored, outcome="conflict")
 
             # Append to JSONL chain
             try:
@@ -403,6 +436,86 @@ class GovernanceAuditLog:
                 logger.warning("Audit JSONL write failed: %s", exc)
 
             return record
+
+    @staticmethod
+    def _claim_of(record: AuditRecord) -> str:
+        """What the record asserts, as a comparable string.
+
+        Everything the row stores except `created_at` and `chain_hash`: the
+        first differs on every call and the second is derived, so neither says
+        anything about whether two presentations of one `event_id` agree.
+        """
+        return _safe_json({
+            "event_type": record.event_type,
+            "agent_id": record.agent_id,
+            "session_id": record.session_id,
+            "org_id": record.org_id,
+            "trace_id": record.trace_id,
+            "allowed": record.allowed,
+            "payload": dict(record.payload),
+        })
+
+    @staticmethod
+    def _stored_record(event_id: str, row: tuple[Any, ...]) -> AuditRecord:
+        """Rebuild the stored record from its row, faithfully."""
+        (event_type, agent_id, session_id, org_id,
+         trace_id, allowed, payload, chain_hash, created_at) = row
+        try:
+            stored_payload = json.loads(payload) if payload else {}
+        except (TypeError, ValueError):
+            stored_payload = {}
+        return AuditRecord(
+            event_id=event_id,
+            event_type=event_type or "",
+            agent_id=agent_id or "",
+            session_id=session_id or "",
+            org_id=org_id or "",
+            trace_id=trace_id or "",
+            # SQLite has no bool; the column round-trips as 0/1/NULL.
+            allowed=None if allowed is None else bool(allowed),
+            payload=stored_payload,
+            chain_hash=chain_hash or "",
+            created_at=float(created_at or 0.0),
+        )
+
+    def _record_conflict(self, *, stored: AuditRecord, rejected: AuditRecord) -> None:
+        """Make a rejected contradicting claim durable, as its own event.
+
+        It cannot be stored under the contested `event_id`: the UNIQUE
+        constraint is what rejected it, and `verify_chain` treats a repeated
+        `event_id` in the chain as an inflated log. So the disagreement is
+        recorded as a distinct event that carries both claims.
+
+        The derived id is a digest of the rejected claim, which makes a retry
+        loop presenting the same disagreement idempotent -- it is recorded once
+        -- while two genuinely different conflicting claims stay distinct.
+        """
+        digest = hashlib.sha256(self._claim_of(rejected).encode()).hexdigest()[:16]
+        self.append(
+            event_id=f"{rejected.event_id}:conflict:{digest}",
+            event_type="audit.conflict",
+            agent_id=rejected.agent_id,
+            session_id=rejected.session_id,
+            org_id=rejected.org_id,
+            trace_id=rejected.trace_id,
+            # Not a permission decision, so neither True nor False would mean
+            # anything here.
+            allowed=None,
+            payload={
+                "conflicting_event_id": rejected.event_id,
+                "stored": {
+                    "event_type": stored.event_type,
+                    "allowed": stored.allowed,
+                    "payload": dict(stored.payload),
+                    "chain_hash": stored.chain_hash,
+                },
+                "rejected": {
+                    "event_type": rejected.event_type,
+                    "allowed": rejected.allowed,
+                    "payload": dict(rejected.payload),
+                },
+            },
+        )
 
     def query(
         self,
