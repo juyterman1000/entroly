@@ -71,12 +71,23 @@ fn stopwords() -> &'static HashSet<&'static str> {
     })
 }
 
-fn question_starters() -> &'static HashSet<&'static str> {
+/// Subject-auxiliary inversion: interrogative by word order, so these mark a
+/// question even with no '?'. That is how an unpunctuated question is caught.
+///
+/// Deliberately excludes the wh-words. English opens declarative clauses with
+/// them too -- "When the lock times out, the append is unserialized", "What the
+/// receipt omits is listed below" -- so a leading wh-word is not by itself a
+/// question marker. Treating it as one dropped those sentences before claim
+/// extraction, and a verifier that drops a claim reports groundedness over a
+/// subset of the response while presenting it as the whole. Kept identical to
+/// `_INVERSION_STARTERS` in `entroly/witness.py`: the two extractors must agree
+/// on what a claim is, or the same output verifies differently depending on
+/// whether the native engine loaded.
+fn inversion_starters() -> &'static HashSet<&'static str> {
     static STARTERS: OnceLock<HashSet<&'static str>> = OnceLock::new();
     STARTERS.get_or_init(|| {
         [
-            "who", "what", "when", "where", "why", "how", "which", "whose", "is", "are", "was",
-            "were", "do", "does", "did", "can", "could", "should", "would",
+            "is", "are", "was", "were", "do", "does", "did", "can", "could", "should", "would",
         ]
         .into_iter()
         .collect()
@@ -970,7 +981,7 @@ fn is_question_like(sentence: &str) -> bool {
         .find(|part| !part.is_empty())
         .unwrap_or("")
         .to_lowercase();
-    question_starters().contains(first.as_str())
+    inversion_starters().contains(first.as_str())
 }
 
 fn normalize_text(text: &str) -> String {
@@ -1644,6 +1655,45 @@ mod tests {
             qa_alignment: 1.0,
         };
         assert!(continuous_risk(&features) < 0.05);
+    }
+
+    #[test]
+    fn wh_declaratives_are_not_questions() {
+        // English opens declarative clauses with wh-words. Classifying these as
+        // questions dropped them before claim extraction, so the claim was
+        // never certified and nothing reported that it went unchecked.
+        for sentence in [
+            "When the lock times out, the append is unserialized.",
+            "Where the path is absolute, resolution is skipped.",
+            "How this differs is in the token budget.",
+            "What the receipt omits is listed under omitted_context.",
+            "Which engine serves is decided by native_status.",
+            "Why this matters is that the record is unverifiable.",
+        ] {
+            assert!(
+                !is_question_like(sentence),
+                "declarative classified as a question: {sentence}"
+            );
+        }
+    }
+
+    #[test]
+    fn real_questions_are_still_questions() {
+        // The guard against over-correcting: a trailing '?' and
+        // subject-auxiliary inversion must both still mark an interrogative.
+        for sentence in [
+            "When is the cache cold?",
+            "What is the entailment threshold?",
+            "Is the cache enabled by default",
+            "Does the proxy inject context",
+            "Can the engine run without Rust",
+            "Were the thresholds calibrated",
+        ] {
+            assert!(
+                is_question_like(sentence),
+                "question not recognised: {sentence}"
+            );
+        }
     }
 
     #[test]
