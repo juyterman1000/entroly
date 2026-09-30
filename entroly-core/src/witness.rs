@@ -713,7 +713,23 @@ fn candidate_claim_segments(text: &str) -> Vec<(usize, String)> {
             let leading = line.find(trimmed).unwrap_or(0);
             let cleaned = clean_claim_segment(trimmed);
             let start = line_start + leading;
-            if is_list_or_table_row(trimmed) || looks_like_code_claim(&cleaned) {
+            // A list or table row is a structural unit and stays whole even when
+            // it holds several sentences.
+            //
+            // The code-claim branch is gated on the line being a single sentence.
+            // `looks_like_code_claim` matches any text containing '_', so prose
+            // that merely mentions an identifier qualifies -- and adding the whole
+            // line then produced a claim asserting several things at once, on top
+            // of the per-sentence claims the sentence pass had already emitted.
+            // `seen` does not catch it: the whole line is a longer, different
+            // string than any of its sentences. It inflated the claim count and
+            // skewed `summary_score`, which averages certificate risk. Every
+            // genuine code line is one sentence, so the guard keeps the case this
+            // branch exists for and drops the prose case. Kept identical to
+            // `_candidate_claim_segments` in `entroly/witness.py`.
+            if is_list_or_table_row(trimmed)
+                || (looks_like_code_claim(&cleaned) && split_sentences(trimmed).len() <= 1)
+            {
                 push_claim_candidate(start, &cleaned, &mut out, &mut seen);
             }
             for (part_start, part) in split_compound_claims(start, &cleaned) {
@@ -1644,6 +1660,46 @@ mod tests {
             qa_alignment: 1.0,
         };
         assert!(continuous_risk(&features) < 0.05);
+    }
+
+    #[test]
+    fn a_multi_sentence_line_is_not_also_added_whole() {
+        // `looks_like_code_claim` matches any text containing '_', so prose
+        // mentioning an identifier used to get the entire line added as one
+        // claim on top of its per-sentence claims -- a claim asserting several
+        // things at once, which atomic extraction exists to avoid.
+        let text = "If the model cannot be loaded, nli_score returns neutral. \
+                    The threshold is 0.60.";
+        let segments = candidate_claim_segments(text);
+        let whole: Vec<&String> = segments
+            .iter()
+            .map(|(_, s)| s)
+            .filter(|s| s.contains("nli_score") && s.contains("threshold"))
+            .collect();
+        assert!(
+            whole.is_empty(),
+            "whole multi-sentence line added as one claim: {whole:?}"
+        );
+        // and the real claims survive
+        assert!(segments.iter().any(|(_, s)| s.contains("nli_score")));
+        assert!(segments.iter().any(|(_, s)| s.contains("threshold")));
+    }
+
+    #[test]
+    fn single_statement_code_lines_are_still_claims() {
+        // The guard against deleting the code-claim path outright: these are not
+        // sentences, so the line pass is the only thing that admits them.
+        for line in [
+            "result = compute_score(x)",
+            "self._audit.append(record)",
+            "entroly/witness.py:938",
+            "from entroly.witness import extract_claims",
+        ] {
+            assert!(
+                !candidate_claim_segments(line).is_empty(),
+                "code line produced no claim segment: {line}"
+            );
+        }
     }
 
     #[test]

@@ -1250,7 +1250,23 @@ def _candidate_claim_segments(text: str) -> list[tuple[int, str]]:
             leading = line.find(trimmed)
             start = offset + max(leading, 0)
             cleaned = _clean_claim_segment(trimmed)
-            if _is_list_or_table_row(trimmed) or _looks_like_code_claim(cleaned):
+            # A list or table row is a structural unit and stays whole even when
+            # it holds several sentences.
+            #
+            # The code-claim branch is gated on the line being a single sentence.
+            # `_looks_like_code_claim` matches any text containing "_", so prose
+            # that merely mentions an identifier qualifies -- and adding the whole
+            # line then produced a claim asserting several things at once, on top
+            # of the per-sentence claims the sentence pass had already emitted.
+            # That is not caught by `seen`, because the whole line is a longer,
+            # different string than any of its sentences. It inflated
+            # `total_claims` and skewed `summary_score`, which averages
+            # certificate risk. Every genuine code line -- `result = f(x)`,
+            # `pkg/mod.py:12`, an import -- is one sentence, so the guard keeps
+            # the case this branch exists for and drops the prose case.
+            if _is_list_or_table_row(trimmed) or (
+                _looks_like_code_claim(cleaned) and len(_split_sentences(trimmed)) <= 1
+            ):
                 add(start, cleaned)
             for part_start, part in _split_compound_claims(start, cleaned):
                 add(part_start, part)
