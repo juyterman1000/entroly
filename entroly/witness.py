@@ -41,9 +41,26 @@ _STOPWORDS = frozenset(
     """.split()
 )
 
-_QUESTION_STARTERS = frozenset(
-    "who what when where why how which whose is are was were do does did can could should would".split()
+#: Words that open a question *only* when the sentence also ends in '?'.
+#: English uses every one of these to open a declarative clause as well --
+#: "When the lock times out, the append is unserialized", "What the receipt
+#: omits is listed below" -- so a leading wh-word is not by itself a question
+#: marker. Treating it as one silently dropped those sentences before they
+#: reached claim extraction, and a verifier that drops a claim reports
+#: groundedness over a subset of the response while presenting it as the whole.
+_WH_STARTERS = frozenset("who what when where why how which whose".split())
+
+#: Subject-auxiliary inversion. "Is the cache enabled", "Does the proxy inject
+#: context" -- interrogative by word order, so these still count as questions
+#: without a '?', which is how an unpunctuated question is caught.
+_INVERSION_STARTERS = frozenset(
+    "is are was were do does did can could should would".split()
 )
+
+#: Retained as the union for callers that want the full vocabulary. It is
+#: deliberately no longer the test for "is this a question": see
+#: `_is_question_like`.
+_QUESTION_STARTERS = _WH_STARTERS | _INVERSION_STARTERS
 
 _NUMBER_WORDS = {
     "zero": 0,
@@ -1396,11 +1413,18 @@ def _split_sentences(text: str) -> list[tuple[int, str]]:
 
 
 def _is_question_like(sentence: str) -> bool:
+    """True for interrogatives, which must not be certified as claims.
+
+    A wh-word alone does not decide this. It used to: any sentence whose first
+    word was a question starter was rejected, so "When the lock times out, the
+    append is unserialized" never became a claim. Only subject-auxiliary
+    inversion marks a question without a '?', so that is what is checked here.
+    """
     s = sentence.strip()
     if s.endswith("?"):
         return True
     first = re.match(r"[A-Za-z]+", s)
-    return bool(first and first.group(0).lower() in _QUESTION_STARTERS)
+    return bool(first and first.group(0).lower() in _INVERSION_STARTERS)
 
 
 def _normalize_text(text: str) -> str:
