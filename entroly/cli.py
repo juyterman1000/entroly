@@ -707,11 +707,18 @@ def cmd_init(args):
             path = _write_config(tool)
             print(f"  {C.GREEN}Generated{C.RESET} {path}")
 
-    # Count indexable files
-    from entroly.auto_index import _git_ls_files, _should_index
-    files = _git_ls_files(os.getcwd())
+    # Count indexable files the way the indexer will actually discover them.
+    # Counting with `_git_ls_files` alone reported 0 for any project without a
+    # `.git`, while `auto_index` would walk and index them -- the first number a
+    # new user sees, and it said the tool does not work on their project.
+    from entroly.auto_index import _should_index, discover_project_files
+    files, discovery = discover_project_files(os.getcwd())
     indexable = [f for f in files if _should_index(f)]
-    print(f"  {C.GREEN}Entroly will auto-index {len(indexable)} files on first run{C.RESET}")
+    scope = "tracked by git" if discovery == "git" else "found on disk"
+    print(
+        f"  {C.GREEN}Entroly will auto-index {len(indexable)} files on first run"
+        f"{C.RESET} {C.GRAY}({scope}){C.RESET}"
+    )
 
     print(f"""
   {C.BOLD}Next:{C.RESET} Restart your AI tool. Entroly is now active.
