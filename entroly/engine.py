@@ -1026,7 +1026,16 @@ class EntrolyEngine:
             self._total_duplicates_caught: int = 0
             # Wilson-score feedback tracker — numerically identical to Rust FeedbackTracker
             self._wilson = _WilsonFeedbackTracker()
-            logger.info("Using Python fallback engine (entroly_core not installed)")
+            # The reason, not a guess. This branch is reached for a core that is
+            # absent, stale, incomplete, or failed to import; "not installed"
+            # was true for only the first and sent everyone else to reinstall a
+            # package they already had.
+            from .native_status import CORE_SYMBOLS, fallback_reason, native_status
+
+            logger.info(
+                "Using Python fallback engine (%s)",
+                fallback_reason(native_status(CORE_SYMBOLS)),
+            )
 
         # Python-only subsystems
         self._prefetch = PrefetchEngine(co_access_window=5)
