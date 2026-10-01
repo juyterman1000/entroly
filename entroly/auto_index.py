@@ -343,6 +343,30 @@ def _walk_fallback(project_dir: str) -> list[str]:
     return files
 
 
+def discover_project_files(project_dir: str) -> tuple[list[str], str]:
+    """Files to index, and which discovery found them: ``"git"`` or ``"walk"``.
+
+    Git first because it respects ``.gitignore`` and stays fast on large trees;
+    the walk only runs when git returns nothing, which covers a directory that
+    is not a repository.
+
+    This existed three times -- twice here and, missing its second half, once in
+    `cli.py`. That copy counted with `_git_ls_files` alone, so `entroly init`
+    told a user in a non-git project "Entroly will auto-index 0 files on first
+    run" while `auto_index` would have walked and indexed them. Measured on a
+    five-file project with no `.git`: 0 against 5. It is the first command a new
+    user runs, and the number decides whether they believe the tool works on
+    their project.
+
+    Callers that need the count and callers that need the files now derive both
+    from one place, so a fourth copy cannot drift the same way.
+    """
+    files = _git_ls_files(project_dir)
+    if files:
+        return files, "git"
+    return _walk_fallback(project_dir), "walk"
+
+
 def _load_entrolyignore(project_dir: str) -> list[str]:
     """Load .entrolyignore patterns (one glob per line, like .gitignore)."""
     ignore_path = _resolve_project_file(project_dir, ".entrolyignore")
@@ -973,11 +997,7 @@ def _reconcile_index(
     ignore_patterns = _load_entrolyignore(project_dir)
     state_dir_prefix = _resolve_state_dir_prefix(engine, project_dir)
 
-    discovered = _git_ls_files(project_dir)
-    discovery = "git"
-    if not discovered:
-        discovered = _walk_fallback(project_dir)
-        discovery = "walk"
+    discovered, discovery = discover_project_files(project_dir)
     indexable = [
         _canonical_rel_path(path)
         for path in discovered
@@ -1521,13 +1541,9 @@ def _auto_index(
 
     t0 = time.perf_counter()
 
-    # Discover files via git (respects .gitignore — <100ms even for 100K files)
-    files = _git_ls_files(project_dir)
-    if not files:
-        files = _walk_fallback(project_dir)
-        discovery = "walk"
-    else:
-        discovery = "git"
+    # Discover files via git (respects .gitignore — <100ms even for 100K files),
+    # falling back to a walk when there is no repository.
+    files, discovery = discover_project_files(project_dir)
 
     # Filter to indexable files, sort by priority so hot source is first
     all_indexable = [
