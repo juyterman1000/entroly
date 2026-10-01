@@ -6196,8 +6196,17 @@ def cmd_docs(args):
         engine = CogOpsEngine(vault_base)
         result = engine.compile_docs(target, max_files)
     except ImportError:
-        print(f"  {C.RED}entroly_core not installed — docs compilation requires the Rust engine.{C.RESET}")
-        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.85\"{C.RESET}\n")
+        # `native_status_message` states the real reason and carries the required
+        # version from `MIN_ENTROLY_CORE_VERSION`, so this stops claiming "not
+        # installed" for a stale core and stops duplicating the pin in a string
+        # that can drift out of date.
+        from .native_status import CORE_SYMBOLS, native_status, native_status_message
+
+        status = native_status(CORE_SYMBOLS)
+        print(
+            f"  {C.RED}{native_status_message(status, feature='Docs compilation')}"
+            f"{C.RESET}\n"
+        )
         return
 
     print(f"  {C.GREEN}Docs found:{C.RESET}      {result.get('docs_found', 0)}")
@@ -6239,8 +6248,13 @@ def cmd_finetune(args):
         engine = CogOpsEngine(vault_base)
         result = engine.export_training_data(output, "jsonl")
     except ImportError:
-        print(f"  {C.RED}entroly_core not installed — training export requires the Rust engine.{C.RESET}")
-        print(f"  {C.GRAY}Install with: python -m pip install -U \"entroly-core>=1.0.85\"{C.RESET}\n")
+        from .native_status import CORE_SYMBOLS, native_status, native_status_message
+
+        status = native_status(CORE_SYMBOLS)
+        print(
+            f"  {C.RED}{native_status_message(status, feature='Training export')}"
+            f"{C.RESET}\n"
+        )
         return
 
     print(f"  {C.GREEN}Beliefs used:{C.RESET}     {result.get('beliefs_used', 0)}")
