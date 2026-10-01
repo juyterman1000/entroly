@@ -184,6 +184,40 @@ def native_status_message(
     )
 
 
+def fallback_reason(status: NativeStatus) -> str:
+    """Why the pure-Python path is in use, as a phrase fit for a log line.
+
+    Call sites used to hardcode "entroly_core not installed" into a branch that
+    is reached for four different reasons. Only one of them makes that sentence
+    true, and it is not the common one: a core that is installed but a release
+    behind reports the same line, so the operator reinstalls a package they
+    already have and nothing changes. The fix for a stale core is an upgrade or
+    a rebuild.
+
+    `native_status_message` stays the user-facing form for a feature that cannot
+    run -- it names the feature and gives install advice. This is the terse
+    complement for a log line that explains a successful degradation.
+
+    See `mcp_sdk` for the same defect in the MCP guard: failing closed is
+    correct, failing closed with a false reason is not.
+    """
+    if not status.available:
+        if status.error:
+            return f"entroly_core is not installed ({status.error})"
+        return "entroly_core is not installed"
+    if status.version_ok is False:
+        return (
+            f"entroly_core {status.version} is below the required "
+            f"{MIN_ENTROLY_CORE_VERSION}"
+        )
+    if status.missing_symbols:
+        return (
+            f"entroly_core {status.version} is missing required symbols: "
+            f"{', '.join(status.missing_symbols)}"
+        )
+    return f"entroly_core {status.version} is present but not usable"
+
+
 @functools.lru_cache(maxsize=1)
 def usable_core() -> ModuleType | None:
     """The native engine module, but only when it is safe to use.

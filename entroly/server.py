@@ -3125,7 +3125,15 @@ def create_mcp_server(
     except ImportError:
         _cogops = None
         _COGOPS_RUST = False
-        logger.info("CogOps: using Python fallback (entroly_core not installed)")
+        # `ImportError` here covers a missing core *and* a core that imports but
+        # lacks `CogOpsEngine`, which a stale build does. Reporting the real
+        # reason keeps this from telling an operator to install what they have.
+        from .native_status import CORE_SYMBOLS, fallback_reason, native_status
+
+        logger.info(
+            "CogOps: using Python fallback (%s)",
+            fallback_reason(native_status(CORE_SYMBOLS)),
+        )
 
     # Python fallback engines — always initialized so tools work without Rust
     _py_compiler = BeliefCompiler(_vault_mgr)
