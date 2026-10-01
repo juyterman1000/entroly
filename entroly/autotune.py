@@ -191,8 +191,17 @@ def evaluate(
     try:
         from entroly_core import EntrolyEngine
     except ImportError:
-        _log("ERROR: entroly_core not available. Run `maturin develop` first.")
-        raise RuntimeError("entroly_core not available for autotune evaluation")
+        # "not available" is true but useless: it does not say whether the core
+        # is absent, a release behind, or missing a symbol, and those have
+        # different fixes. `native_status_message` reads the actual state and
+        # carries the required version from MIN_ENTROLY_CORE_VERSION.
+        from .native_status import CORE_SYMBOLS, native_status, native_status_message
+
+        reason = native_status_message(
+            native_status(CORE_SYMBOLS), feature="Autotune evaluation"
+        )
+        _log(f"ERROR: {reason}")
+        raise RuntimeError(reason) from None
 
     total_information = 0.0
     total_tokens_used = 0
