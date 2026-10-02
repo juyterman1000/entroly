@@ -11,25 +11,45 @@ from typing import Protocol
 from .models import ContextIndex, DocumentChunk, RankedChunk
 
 TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_\-']*", re.UNICODE)
-STOPWORDS = {
-    "the",
-    "and",
-    "for",
-    "with",
-    "that",
-    "this",
-    "does",
-    "have",
-    "has",
-    "from",
-    "into",
-    "which",
-    "what",
-    "where",
-    "when",
-    "shall",
-    "will",
-}
+
+#: Python builtins the engine filters but this scorer must not. The engine
+#: refines natural-language queries; this ranks source chunks, where ``all`` and
+#: ``any`` are real identifiers -- "where do we use any() vs all()" needs them.
+#: Measured: excluding the two costs nothing, precision is identical at every
+#: budget to importing the engine's list whole.
+_CODE_IDENTIFIERS = frozenset({"all", "any"})
+
+#: Grammatical function words, kept in step with
+#: ``entroly-engine/src/query.rs``. The two lists drifted to 17 against 77
+#: because nothing compared them, and the short one sat on the surface that
+#: produces the auditable receipt -- so ``not``, ``is``, ``are`` and 56 others
+#: scored as content. An invoice reconciler matched a query about an NLI scorer
+#: on ``is not None`` and took 56% of the selected budget.
+#:
+#: Ranking does not expose this. The same gold queries score marginally *worse*
+#: by MRR after the change, because a spurious match scores too low to displace
+#: rank 1. Budget-constrained selection is where it bites: those matches consume
+#: space once the real answers run out. Measured over seven gold query/file
+#: pairs from ``benchmarks/evidence_retention.py``, precision rose 0.545->0.574
+#: at budget 600, 0.500->0.537 at 1500 and 0.454->0.488 at 4000, selecting more
+#: gold chunks out of the same or fewer total.
+#:
+#: ``tests/test_receipt_stopword_parity.py`` reads the Rust source directly, so
+#: a word added there cannot silently leave this behind again.
+STOPWORDS = frozenset(
+    {
+        "the", "and", "for", "with", "that", "this", "does", "have", "has",
+        "from", "into", "which", "what", "where", "when", "shall", "will",
+        # Imported from the engine's STOP_WORDS.
+        "a", "about", "after", "also", "an", "are", "as", "at", "be", "before",
+        "but", "by", "can", "could", "did", "do", "had", "he", "her", "him",
+        "how", "i", "if", "in", "is", "it", "its", "just", "may", "me",
+        "might", "more", "my", "no", "not", "of", "on", "or", "our", "out",
+        "she", "should", "so", "some", "them", "then", "there", "they", "to",
+        "up", "us", "was", "we", "were", "who", "why", "would", "you", "your",
+    }
+    - _CODE_IDENTIFIERS
+)
 
 
 class SemanticScorer(Protocol):
