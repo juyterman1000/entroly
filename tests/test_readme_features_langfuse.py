@@ -34,7 +34,18 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-LANGFUSE_ROOT = Path(os.environ.get("LANGFUSE_ROOT", ""))
+# `Path("")` is `Path(".")`, which exists and is full of .ts/.py files -- so an
+# unset LANGFUSE_ROOT silently retargeted this verifier at Entroly's own
+# repository. Three things followed: the synthetic-fixture fallback below became
+# unreachable in the one case it was written for (`files` was never empty), the
+# banner printed `Target: Langfuse (.)` over Entroly's own sources, and the
+# summary claimed "verified against Langfuse" for a corpus that was not
+# Langfuse. None of that failed loudly; it just measured the wrong thing.
+#
+# `None` means "no external checkout", which is a state the fallback already
+# knows how to handle.
+_LANGFUSE_ENV = os.environ.get("LANGFUSE_ROOT", "").strip()
+LANGFUSE_ROOT = Path(_LANGFUSE_ENV).resolve() if _LANGFUSE_ENV else None
 
 # ── ANSI ──────────────────────────────────────────────────────────────
 GREEN = "\033[32m"
@@ -65,18 +76,39 @@ def skip_check(name: str, reason: str):
     print(f"  {YELLOW}⊘{RESET} {name} — {DIM}{reason}{RESET}")
 
 
+_PRUNED_DIRS = {"node_modules", ".next", "dist", ".git", ".venv", "__pycache__"}
+
+
 def load_langfuse_files(max_files: int = 50, extensions: tuple = (".ts", ".tsx", ".py")):
-    """Load a sample of Langfuse source files for compression testing."""
-    files = []
-    for ext in extensions:
-        for p in LANGFUSE_ROOT.rglob(f"*{ext}"):
-            if "node_modules" in str(p) or ".next" in str(p) or "dist" in str(p):
+    """Load a sample of Langfuse source files for compression testing.
+
+    Returns ``[]`` when no external checkout is configured, which is what makes
+    the synthetic fixture downstream reachable.
+    """
+    if LANGFUSE_ROOT is None or not LANGFUSE_ROOT.is_dir():
+        return []
+
+    files: list[tuple[str, str]] = []
+    wanted = tuple(extensions)
+    # Walk with pruning instead of `rglob` per extension. `rglob` yields paths
+    # and cannot be told to skip a subtree, so the old `node_modules` check ran
+    # only *after* the walker had already descended -- it was a filter on the
+    # results, never on the traversal. That made the walk O(whole tree) and let
+    # it die inside a dependency tree it had no interest in: a vendored
+    # `.../node_modules/.pnpm/<long-name>/...` path exceeded the Windows path
+    # limit and raised FileNotFoundError from scandir, which aborted pytest
+    # collection for the entire suite, not merely this file.
+    for dirpath, dirnames, filenames in os.walk(LANGFUSE_ROOT, onerror=lambda _e: None):
+        dirnames[:] = [d for d in dirnames if d not in _PRUNED_DIRS]
+        for name in filenames:
+            if not name.endswith(wanted):
                 continue
+            p = Path(dirpath) / name
             try:
                 content = p.read_text(encoding="utf-8", errors="replace")
                 if len(content) > 100:
                     files.append((str(p.relative_to(LANGFUSE_ROOT)), content))
-            except Exception:
+            except (OSError, ValueError):
                 continue
             if len(files) >= max_files:
                 return files
@@ -98,12 +130,19 @@ def build_big_context(files: list, max_tokens: int = 50000) -> str:
 
 # ══════════════════════════════════════════════════════════════════════
 print(f"\n{BOLD}  Entroly README Feature Verification{RESET}")
-print(f"  Target: Langfuse ({LANGFUSE_ROOT})")
+# Name the corpus that was actually read. The previous line printed
+# "Target: Langfuse (.)" regardless, so a run over Entroly's own tree was
+# reported as a Langfuse integration result.
+print(
+    "  Target: "
+    + (f"Langfuse checkout at {LANGFUSE_ROOT}" if LANGFUSE_ROOT else "synthetic fixture (LANGFUSE_ROOT unset)")
+)
 print(f"  {DIM}{'─' * 60}{RESET}\n")
 
 # Load sample files
 files = load_langfuse_files(max_files=100)
-print(f"  {DIM}Loaded {len(files)} Langfuse source files for testing{RESET}\n")
+if files:
+    print(f"  {DIM}Loaded {len(files)} Langfuse source files for testing{RESET}\n")
 using_synthetic_fixture = False
 
 if not files:
@@ -195,18 +234,41 @@ try:
         {"role": "user", "content": "What's the database schema look like?"},
     ]
 
+    # The budget must sit well below the input, or this measures nothing. The
+    # check previously paired a ~20,000-char slice (measured: 4,454 tokens) with
+    # budget=5000 and then asserted savings >= 30%. The input already fit the
+    # budget, so the correct behaviour -- return it nearly unchanged -- scored
+    # 1.8% and was reported as a feature failure. Derive the budget from the
+    # measured input instead of hardcoding one, so the assertion stays reachable
+    # whichever corpus (Langfuse or synthetic) supplied the context.
+    from entroly.tokens import count_tokens
+
     original_chars = sum(len(m["content"]) for m in messages)
+    original_tokens = sum(count_tokens(m["content"]) for m in messages)
+    budget = max(256, original_tokens // 4)
+
     t0 = time.perf_counter()
-    compressed = compress_messages(messages, budget=5000)
+    compressed = compress_messages(messages, budget=budget)
     elapsed_ms = (time.perf_counter() - t0) * 1000
 
     compressed_chars = sum(len(m["content"]) for m in compressed)
+    compressed_tokens = sum(count_tokens(m["content"]) for m in compressed)
     savings = (1 - compressed_chars / original_chars) * 100
 
     check("compress_messages() returns list of dicts", isinstance(compressed, list) and len(compressed) > 0)
     check("Messages preserve role keys", all("role" in m and "content" in m for m in compressed))
-    check(f"Conversation savings: {savings:.1f}%", savings >= 30,
-         f"{original_chars:,} → {compressed_chars:,} chars")
+    # The contract is the budget, not a round-number savings figure: a ratio
+    # only means something relative to what was asked for.
+    check(
+        f"Respects token budget: {compressed_tokens:,} <= {budget:,}",
+        compressed_tokens <= budget,
+        f"{original_tokens:,} tokens in",
+    )
+    check(
+        f"Conversation savings: {savings:.1f}%",
+        savings >= 30,
+        f"{original_chars:,} → {compressed_chars:,} chars (budget {budget:,} of {original_tokens:,} tokens)",
+    )
     check(f"Latency: {elapsed_ms:.1f}ms", elapsed_ms < 5000)
 except Exception as e:
     check("compress_messages() import/execution", False, str(e)[:100])
@@ -451,3 +513,12 @@ if failed == 0:
 else:
     print(f"  {YELLOW}{failed} feature(s) need attention.{RESET}")
 print()
+
+# Exit non-zero on failure. This file defines no `def test_*`, so pytest imports
+# it (running every check as an import side effect) and collects zero tests --
+# which means a failing README feature could not fail the suite. It could not
+# fail a direct `python tests/test_readme_features_langfuse.py` either, because
+# the script fell off the end and returned 0. A verifier that cannot fail is not
+# a gate; it is a log.
+if failed:
+    sys.exit(1)
