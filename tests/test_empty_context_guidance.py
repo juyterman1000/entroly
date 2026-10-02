@@ -70,6 +70,32 @@ def test_guidance_is_json_safe():
     assert json.loads(json.dumps(g))["status"] == "no_codebase_indexed"
 
 
+def test_guidance_does_not_blame_the_working_directory():
+    """The message must not assert a cause that was measured not to be one.
+
+    It used to say an empty index "usually means the MCP server's working
+    directory is not your project root", and offered ENTROLY_SOURCE as the first
+    remedy. Measured against a freshly spawned `python -m entroly.server` on this
+    repository, with cwd at the repository root and ENTROLY_SOURCE set to it,
+    recall_relevant still returned count 0 -- so the stated cause was wrong and
+    the first remedy sent the reader to restart a server that came back equally
+    empty. Ingesting is what actually populated the index.
+    """
+    g = _empty_context_guidance(0, "/repo", tool="recall_relevant")
+
+    assert "working directory is not your project root" not in g["message"], (
+        "the message asserts a cause that a correct root does not fix"
+    )
+    # The first remedy must be the one that demonstrably works.
+    first = g["resolve"][0].lower()
+    assert any(t in first for t in ("ingest", "remember_fragment", "read_source_file")), (
+        f"first remedy should be ingestion, got: {g['resolve'][0]!r}"
+    )
+    # And it must still say an empty index is not proof the code is absent,
+    # which is the misreading that made this worth fixing at all.
+    assert "not evidence" in g["message"] or "nothing has been read" in g["message"]
+
+
 def test_message_names_the_tool_that_returned_nothing():
     """The message is read by an agent choosing its next action.
 

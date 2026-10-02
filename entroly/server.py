@@ -651,18 +651,36 @@ def _empty_context_guidance(
         # at the MCP host's app bundle -- which walks up plenty of files --
         # passed silently and answered from the wrong corpus.
         return _source_root_guidance(source_root)
+    # Do not assert a cause. This message previously said the empty index
+    # "usually means the MCP server's working directory is not your project
+    # root", and offered setting ENTROLY_SOURCE as the first remedy. Measured
+    # against a freshly spawned `python -m entroly.server` on a 368-module
+    # repository: with the working directory at the repository root *and*
+    # ENTROLY_SOURCE set to it, recall_relevant still returned count 0. The
+    # named cause was not the cause, and the first remedy did not work -- it
+    # sent the reader to restart a server that would come back equally empty.
+    #
+    # Ingesting is what demonstrably populates the index (remember_fragment
+    # followed by recall_relevant returned a correct hit in the same session),
+    # so it is listed first. The root check stays, because a wrong root is a
+    # real and separate failure, but it is offered as a thing to confirm rather
+    # than as the diagnosis.
     return {
         "status": "no_codebase_indexed",
         "message": (
-            f"{tool} returned nothing because this server has indexed "
-            "no source files. This usually means the MCP server's working "
-            "directory is not your project root."
+            f"{tool} returned nothing because this server has indexed no "
+            "source files. An empty index is not evidence that the repository "
+            "lacks the code; nothing has been read yet."
         ),
         "resolve": [
-            "Set the ENTROLY_SOURCE environment variable (or the server's "
-            "working directory) to your repository root, then restart the "
-            "server.",
-            "Or ingest files first via remember_fragment / smart_read / ingest.",
+            "Ingest first: remember_fragment / smart_read / ingest, or "
+            "read_source_file for a known path. This is what populates the "
+            "index that recall_relevant searches.",
+            "Then confirm the corpus is yours with get_stats: if fragment "
+            "sources are not your files, set the ENTROLY_SOURCE environment "
+            "variable (or the server's working directory) to your repository "
+            "root and restart the server, since the root is read once at "
+            "startup.",
         ],
         "resolved_source_root": source_root,
     }
