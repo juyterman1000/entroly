@@ -18,7 +18,13 @@
 //! 100M+ parameter neural networks.
 
 use serde::{Deserialize, Serialize};
-use std::f64;
+// `use std::f64` is deliberately absent. With that module in scope a bare
+// `f64::INFINITY` resolves to the deprecated module constant
+// `std::f64::INFINITY` instead of the associated constant on the primitive,
+// and `-D warnings` promotes the deprecation to a build error. The import was
+// used for nothing else in this file, so dropping it leaves the six
+// `f64::INFINITY` / `f64::NEG_INFINITY` uses below pointing at the primitive's
+// constants, which are not deprecated.
 
 // ════════════════════════════════════════════════════════════════════
 //  SYMMETRIC MATRIX — NxN with const generic dimension
