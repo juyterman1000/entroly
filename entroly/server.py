@@ -629,9 +629,9 @@ def _source_root_guidance(source_root: str) -> dict[str, Any] | None:
 
 
 def _empty_context_guidance(
-    ingested_count: int, source_root: str
+    ingested_count: int, source_root: str, *, tool: str = "optimize_context"
 ) -> dict[str, Any] | None:
-    """Actionable diagnostic when optimize_context has nothing to select.
+    """Actionable diagnostic when a selection tool has nothing to select.
 
     A server that indexed no source files (commonly because its working
     directory is the MCP host's app dir, not the user's repo) previously
@@ -640,6 +640,10 @@ def _empty_context_guidance(
     context exists". Returns a guidance dict for the empty-session case, or
     ``None`` when fragments are present (a genuinely empty query match is not
     an error and gets no guidance).
+
+    ``tool`` names the caller in the message. It is not cosmetic: the text is
+    read by an agent deciding what to do next, so a hardcoded tool name sends
+    the reader to inspect a tool it never called.
     """
     if ingested_count > 0:
         # A populated index is not proof of a *correct* index. The original
@@ -650,7 +654,7 @@ def _empty_context_guidance(
     return {
         "status": "no_codebase_indexed",
         "message": (
-            "optimize_context selected nothing because this server has indexed "
+            f"{tool} returned nothing because this server has indexed "
             "no source files. This usually means the MCP server's working "
             "directory is not your project root."
         ),
@@ -662,6 +666,82 @@ def _empty_context_guidance(
         ],
         "resolved_source_root": source_root,
     }
+
+
+def _ingested_fragment_count(engine: Any) -> int:
+    """Fragments this server has indexed, preferring the native counter.
+
+    Shared by every tool that must distinguish "nothing matched your query"
+    from "nothing is indexed at all". Those answers look identical on the wire
+    and lead the caller to opposite actions, so the check cannot be left to
+    each call site to reimplement.
+    """
+    try:
+        if getattr(engine, "_use_rust", False) and hasattr(
+            engine._rust, "fragment_count"
+        ):
+            return int(engine._rust.fragment_count())
+    except Exception:
+        pass
+    try:
+        return int(getattr(engine, "_total_fragments_ingested", 0))
+    except Exception:
+        return 0
+
+
+def _recall_relevant_payload(
+    engine: Any, query: str, top_k: int, full: bool
+) -> str:
+    """Build the ``recall_relevant`` wire payload.
+
+    Module-level rather than inline in the tool closure so the empty-index and
+    hint behaviour can be asserted without standing up an MCP server; the
+    closure form had no test covering either.
+    """
+    results = engine.recall_relevant(query, top_k)
+    if not isinstance(results, list):
+        results = []
+    payload: dict[str, Any] = {
+        "query": query,
+        "count": len(results),
+        "results": results if full else _slim_recall_results(results),
+    }
+    # Only describe the slim view when there is something slimmed. On an empty
+    # result the hint named the one parameter that cannot change the outcome --
+    # full=True expands bodies that do not exist -- so an agent following it
+    # retried instead of fixing the root cause.
+    if not full and results:
+        payload["hint"] = (
+            "slim view (source + score + snippet). Call "
+            "recall_relevant(query, full=True) for complete fragment bodies."
+        )
+    # Ranked results always look plausible: BM25 returns a best match for any
+    # corpus, so a mis-rooted server answers a question about the user's
+    # repository with confident scores over someone else's files. Say so here
+    # rather than leaving the caller to notice the sources are wrong.
+    #
+    # The empty-index half matters just as much here as in optimize_context,
+    # and this tool is the one the server instructions tell agents to call
+    # first -- so it is where an unindexed server is met. It previously got
+    # only the populated-but-wrong-corpus check, which returns None when
+    # nothing is indexed, making a misconfigured server indistinguishable from
+    # a repository that genuinely lacks the code.
+    guidance = _empty_context_guidance(
+        _ingested_fragment_count(engine),
+        os.environ.get("ENTROLY_SOURCE", os.getcwd()),
+        tool="recall_relevant",
+    )
+    if guidance is not None:
+        payload["guidance"] = guidance
+    # Same hardening as optimize_context: strip invisible chars, flag injection
+    # patterns. injection_scan attaches to the payload dict.
+    try:
+        from .hardening import sanitize_mcp_result
+
+        sanitize_mcp_result(payload)
+    except Exception:
+        pass
+    return json.dumps(payload, indent=2)
 
 
 def _apply_mcp_access_policy(
@@ -1550,16 +1630,10 @@ def create_mcp_server(
         # ── Fail loud, not empty ───────────────────────────────────────
         # When the server has indexed no codebase, tell the agent why and how
         # to fix it instead of returning a silent empty selection.
-        try:
-            _ingested = (
-                int(engine._rust.fragment_count())
-                if engine._use_rust and hasattr(engine._rust, "fragment_count")
-                else int(getattr(engine, "_total_fragments_ingested", 0))
-            )
-        except Exception:
-            _ingested = int(getattr(engine, "_total_fragments_ingested", 0))
         _guidance = _empty_context_guidance(
-            _ingested, os.environ.get("ENTROLY_SOURCE", os.getcwd())
+            _ingested_fragment_count(engine),
+            os.environ.get("ENTROLY_SOURCE", os.getcwd()),
+            tool="optimize_context",
         )
         if _guidance is not None:
             result["guidance"] = _guidance
@@ -1640,36 +1714,7 @@ def create_mcp_server(
             top_k: Number of results to return
             full: Return complete fragment bodies instead of the slim view
         """
-        results = engine.recall_relevant(query, top_k)
-        if not isinstance(results, list):
-            results = []
-        payload: dict[str, Any] = {
-            "query": query,
-            "count": len(results),
-            "results": results if full else _slim_recall_results(results),
-        }
-        if not full:
-            payload["hint"] = (
-                "slim view (source + score + snippet). Call "
-                "recall_relevant(query, full=True) for complete fragment bodies."
-            )
-        # Ranked results always look plausible: BM25 returns a best match for
-        # any corpus, so a mis-rooted server answers a question about the user's
-        # repository with confident scores over someone else's files. Say so
-        # here rather than leaving the caller to notice the sources are wrong.
-        _root_guidance = _source_root_guidance(
-            os.environ.get("ENTROLY_SOURCE", os.getcwd())
-        )
-        if _root_guidance is not None:
-            payload["guidance"] = _root_guidance
-        # Same hardening as optimize_context: strip invisible chars, flag
-        # injection patterns. injection_scan attaches to the payload dict.
-        try:
-            from .hardening import sanitize_mcp_result
-            sanitize_mcp_result(payload)
-        except Exception:
-            pass
-        return json.dumps(payload, indent=2)
+        return _recall_relevant_payload(engine, query, top_k, full)
 
     @mcp.tool()
     def record_outcome(
