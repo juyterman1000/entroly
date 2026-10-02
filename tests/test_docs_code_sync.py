@@ -22,6 +22,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 
 DOC_FILES = [
@@ -217,8 +219,21 @@ def test_documented_cli_subcommands_exist() -> None:
     )
 
 
+@pytest.mark.timeout(360)
 def test_current_tree_respects_external_name_policy() -> None:
-    """The permanent repository-wide policy must pass without exclusions."""
+    """The permanent repository-wide policy must pass without exclusions.
+
+    The marker is load-bearing, not decorative. This test allows its subprocess
+    300s (see the comment below for why), but the documented suite command is
+    ``pytest tests/ --timeout=60``, so pytest cancelled the test at 60s and
+    raised its own timeout traceback before the subprocess budget could ever
+    apply. The scan measures ~90s on this checkout, so the deliberately widened
+    300s allowance was unreachable and the gate reported an opaque pytest
+    timeout on every run -- precisely the "cannot distinguish policy broken from
+    machine slow" failure the allowance was raised to prevent. A per-test marker
+    outranks the global flag, so the budget this test reasons about is the one
+    actually enforced.
+    """
     try:
         completed = subprocess.run(
             [sys.executable, str(ROOT / "scripts" / "check_external_name_policy.py")],
