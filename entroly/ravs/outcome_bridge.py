@@ -249,12 +249,24 @@ class OutcomeBridge:
             )
             return None
 
-        # 3. Compute differential advantage
-        # honest_advantage = honest_reward - baseline (we use the same
-        # EMA baseline that was current at observation time, accessed
-        # via the PRISM instance).
-        baseline = self._prism._reward_ema  # noqa: SLF001
-        honest_advantage = honest_r - baseline
+        # 3. Compute differential advantage against THIS request's baseline.
+        #
+        # Reading self._prism._reward_ema here would read the baseline as it is
+        # *now*, not as it was when the request was observed. Outcomes are
+        # delayed by design, so unrelated traffic moves the EMA in between, and
+        # the correction for a fixed outcome then depends on that traffic. The
+        # same verified success measured at EMA 0.20 / 0.40 / 0.75 produced
+        # delta_advantage +0.50 / +0.30 / -0.05: a passing test suite was
+        # applied as a *penalty* purely because other requests scored well
+        # first. OnlinePrism.observe() itself measures advantage against the
+        # pre-observation EMA, so the per-request baseline is also the only
+        # value consistent with the update being corrected.
+        #
+        # No extra field is needed: the baseline is already determined by the
+        # cached pair, since implicit_advantage was computed as
+        # implicit_reward - baseline at observation time.
+        baseline_at_observation = obs.implicit_reward - obs.implicit_advantage
+        honest_advantage = honest_r - baseline_at_observation
         delta_advantage = honest_advantage - obs.implicit_advantage
 
         if abs(delta_advantage) < 1e-6:
@@ -285,6 +297,9 @@ class OutcomeBridge:
             "strength": strength,
             "honest_reward": round(honest_r, 4),
             "implicit_reward": round(obs.implicit_reward, 4),
+            # Reported so a surprising correction can be traced to the request
+            # it belongs to rather than to whatever the EMA happens to be.
+            "baseline_at_observation": round(baseline_at_observation, 4),
             "delta_advantage": round(delta_advantage, 4),
             "correction_eta": round(eta, 6),
             "confidence": confidence,
