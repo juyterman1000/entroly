@@ -1,71 +1,615 @@
-[
-  {
-    "task": "p01-half-up",
-    "B1S": {
-      "completed work": true,
-      "outstanding work": true,
-      "failing verification": true,
-      "failure detail": true,
-      "rejected approach": true,
-      "changed paths": true,
-      "decisions": true
+{
+  "fields": [
+    "completed_work",
+    "outstanding_work",
+    "failing_verification",
+    "failure_detail",
+    "rejected_approach",
+    "changed_paths",
+    "decisions"
+  ],
+  "rows": [
+    {
+      "task_id": "p01-half-up",
+      "stratum": "simple_local",
+      "B1S": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B3": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B1N": null,
+      "b1s_chars": 682,
+      "b3_chars": 4336
     },
-    "B3": {
-      "completed work": true,
-      "outstanding work": true,
-      "failing verification": true,
-      "failure detail": true,
-      "rejected approach": true,
-      "changed paths": true,
-      "decisions": true
+    {
+      "task_id": "p02-slug-collisions",
+      "stratum": "simple_local",
+      "B1S": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B3": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B1N": null,
+      "b1s_chars": 741,
+      "b3_chars": 4404
     },
-    "b1s_chars": 682,
-    "b3_chars": 4336
-  },
-  {
-    "task": "p02-slug-collisions",
-    "B1S": {
-      "completed work": true,
-      "outstanding work": true,
-      "failing verification": true,
-      "failure detail": true,
-      "rejected approach": true,
-      "changed paths": true,
-      "decisions": true
+    {
+      "task_id": "p03-truncate-words",
+      "stratum": "simple_local",
+      "B1S": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B3": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B1N": null,
+      "b1s_chars": 749,
+      "b3_chars": 4456
     },
-    "B3": {
-      "completed work": true,
-      "outstanding work": true,
-      "failing verification": true,
-      "failure detail": true,
-      "rejected approach": true,
-      "changed paths": true,
-      "decisions": true
+    {
+      "task_id": "p04-percent-change",
+      "stratum": "simple_local",
+      "B1S": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B3": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B1N": null,
+      "b1s_chars": 761,
+      "b3_chars": 4472
     },
-    "b1s_chars": 741,
-    "b3_chars": 4404
-  },
-  {
-    "task": "p03-truncate-words",
-    "B1S": {
-      "completed work": true,
-      "outstanding work": true,
-      "failing verification": true,
-      "failure detail": true,
-      "rejected approach": true,
-      "changed paths": true,
-      "decisions": true
+    {
+      "task_id": "p05-retry-transient",
+      "stratum": "multi_file",
+      "B1S": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B3": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B1N": null,
+      "b1s_chars": 751,
+      "b3_chars": 4496
     },
-    "B3": {
-      "completed work": true,
-      "outstanding work": true,
-      "failing verification": true,
-      "failure detail": true,
-      "rejected approach": true,
-      "changed paths": true,
-      "decisions": true
+    {
+      "task_id": "p06-config-layering",
+      "stratum": "multi_file",
+      "B1S": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B3": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B1N": null,
+      "b1s_chars": 791,
+      "b3_chars": 4523
     },
-    "b1s_chars": 749,
-    "b3_chars": 4456
-  }
-]
+    {
+      "task_id": "p07-event-dispatch",
+      "stratum": "multi_file",
+      "B1S": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B3": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B1N": null,
+      "b1s_chars": 825,
+      "b3_chars": 4664
+    },
+    {
+      "task_id": "p08-path-normalise",
+      "stratum": "multi_file",
+      "B1S": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B3": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B1N": null,
+      "b1s_chars": 789,
+      "b3_chars": 4503
+    },
+    {
+      "task_id": "p09-quantity-rename",
+      "stratum": "repository_wide",
+      "B1S": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B3": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B1N": null,
+      "b1s_chars": 721,
+      "b3_chars": 4490
+    },
+    {
+      "task_id": "p10-error-codes",
+      "stratum": "repository_wide",
+      "B1S": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B3": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B1N": null,
+      "b1s_chars": 787,
+      "b3_chars": 4519
+    },
+    {
+      "task_id": "p11-import-cycle",
+      "stratum": "repository_wide",
+      "B1S": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B3": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B1N": null,
+      "b1s_chars": 831,
+      "b3_chars": 5082
+    },
+    {
+      "task_id": "p12-settings-single-source",
+      "stratum": "repository_wide",
+      "B1S": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B3": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B1N": null,
+      "b1s_chars": 802,
+      "b3_chars": 4471
+    },
+    {
+      "task_id": "p13-quoted-delimiter",
+      "stratum": "state_heavy",
+      "B1S": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B3": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B1N": null,
+      "b1s_chars": 771,
+      "b3_chars": 4511
+    },
+    {
+      "task_id": "p14-version-cache",
+      "stratum": "state_heavy",
+      "B1S": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B3": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B1N": null,
+      "b1s_chars": 756,
+      "b3_chars": 4608
+    },
+    {
+      "task_id": "p15-session-expiry",
+      "stratum": "state_heavy",
+      "B1S": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B3": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B1N": null,
+      "b1s_chars": 823,
+      "b3_chars": 4665
+    },
+    {
+      "task_id": "p16-dedupe-stream",
+      "stratum": "state_heavy",
+      "B1S": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B3": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B1N": null,
+      "b1s_chars": 764,
+      "b3_chars": 4423
+    },
+    {
+      "task_id": "p17-rate-limit-window",
+      "stratum": "failed_hypothesis",
+      "B1S": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B3": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B1N": null,
+      "b1s_chars": 968,
+      "b3_chars": 5188
+    },
+    {
+      "task_id": "p18-merge-conflict-markers",
+      "stratum": "failed_hypothesis",
+      "B1S": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B3": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B1N": null,
+      "b1s_chars": 976,
+      "b3_chars": 5161
+    },
+    {
+      "task_id": "p19-partial-sum-overflow",
+      "stratum": "failed_hypothesis",
+      "B1S": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B3": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B1N": null,
+      "b1s_chars": 848,
+      "b3_chars": 4609
+    },
+    {
+      "task_id": "p20-idempotent-migration",
+      "stratum": "failed_hypothesis",
+      "B1S": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B3": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B1N": null,
+      "b1s_chars": 968,
+      "b3_chars": 5186
+    },
+    {
+      "task_id": "p21-topological-order",
+      "stratum": "long_running",
+      "B1S": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B3": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B1N": null,
+      "b1s_chars": 787,
+      "b3_chars": 4568
+    },
+    {
+      "task_id": "p22-chunked-upload",
+      "stratum": "long_running",
+      "B1S": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B3": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B1N": null,
+      "b1s_chars": 798,
+      "b3_chars": 4522
+    },
+    {
+      "task_id": "p23-backfill-batches",
+      "stratum": "long_running",
+      "B1S": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B3": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B1N": null,
+      "b1s_chars": 885,
+      "b3_chars": 4677
+    },
+    {
+      "task_id": "p24-schema-migration-chain",
+      "stratum": "long_running",
+      "B1S": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B3": {
+        "completed_work": true,
+        "outstanding_work": true,
+        "failing_verification": true,
+        "failure_detail": true,
+        "rejected_approach": true,
+        "changed_paths": true,
+        "decisions": true
+      },
+      "B1N": null,
+      "b1s_chars": 945,
+      "b3_chars": 5105
+    }
+  ],
+  "missing_cells": [],
+  "B1N": "NOT FEASIBLE: claude -p OAuth session expired; no ANTHROPIC_API_KEY"
+}

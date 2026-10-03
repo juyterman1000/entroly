@@ -1258,6 +1258,323 @@
         "B3",
         "B0"
       ]
+    },
+    {
+      "task_id": "t05-cache-invalidation",
+      "stratum": "failed_hypothesis",
+      "arm": "B3",
+      "checkpoint_head": "75c4a96a8d802635bea1b7d527bc260b2239b6ce",
+      "worktree_digest": "e5c51082b59989242ced4627c9c3b53ddc0743c9b06360a2e5c2a9dae472c8b0",
+      "prompt_sha256": "4ae27441d7e02a4dc6f697ee092990547332c1ec3c2e3198e9d583aba089ae3e",
+      "prompt_chars": 5507,
+      "codex_exit": 0,
+      "verified_success": true,
+      "verifier_tail": "....                                                                     [100%]\n4 passed in 0.44s\n",
+      "wall_seconds": 160.97,
+      "agent_ran_tests_successfully": true,
+      "input_tokens": 306393,
+      "cached_input_tokens": 282752,
+      "uncached_input_tokens": 23641,
+      "output_tokens": 2602,
+      "reasoning_output_tokens": 352,
+      "command_count": 17,
+      "duplicate_commands": 4,
+      "failed_commands": 4,
+      "edits": 1,
+      "duplicate_edits": 0,
+      "file_reads": 2,
+      "duplicate_file_reads": 0,
+      "agent_messages": 10,
+      "first_action": "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short'",
+      "commands": [
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content -Path tests/test_cache.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content -Path cache.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git diff -- cache.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'pytest tests/test_cache.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"pythonpath|testpaths|addopts|importmode|VersionedCache|from cache\" -S .'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -c \"import sys, os; print(os.getcwd()); print(sys.path[:5]); import cache; print(cache.VersionedCache)\"'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-ChildItem -Force'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -m pytest tests/test_cache.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$targets = @((Resolve-Path -LiteralPath '\"'__pycache__').Path, (Resolve-Path -LiteralPath 'tests\\\\__pycache__').Path); \"'$root = (Resolve-Path -LiteralPath '\"'.').Path; foreach (\"'$target in $targets) { if (-not $target.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) { throw \"Refusing to remove outside workspace: $target\" } }; foreach ($target in $targets) { Remove-Item -LiteralPath $target -Recurse -Force }'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$root = (Resolve-Path -LiteralPath .).Path\n$target = (Resolve-Path -LiteralPath __pycache__).Path\nif (-not $target.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) { throw \"outside workspace\" }\nRemove-Item -LiteralPath $target -Recurse -Force\n$target = (Resolve-Path -LiteralPath tests'\"\\\\__pycache__).Path\nif (-not \"'$target.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) { throw \"outside workspace\" }\nRemove-Item -LiteralPath $target -Recurse -Force'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git diff -- cache.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-ChildItem -Recurse -File __pycache__, tests\\\\__pycache__ | Select-Object -ExpandProperty FullName\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Remove-Item -LiteralPath __pycache__\\\\cache.cpython-310.pyc -Force\nRemove-Item -LiteralPath tests\\\\__pycache__\\\\test_cache.cpython-310-pytest-8.4.1.pyc -Force\nRemove-Item -LiteralPath __pycache__ -Force\nRemove-Item -LiteralPath tests\\\\__pycache__ -Force\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -m pytest tests/test_cache.py'"
+      ],
+      "errors": [],
+      "b3_resume": {
+        "agents": [
+          "agent:claude"
+        ],
+        "changed_paths": [
+          "cache.py"
+        ],
+        "claims": [],
+        "commits": [],
+        "decisions": [
+          "a TTL-based expiry was tried and rejected: no test involves time, and it does not key on version at all",
+          "a monotonic 'version >= stored' check was tried and rejected: it passes test_miss_on_newer_version but fails test_miss_on_older_version",
+          "version equality is required in both directions; an older request must also miss"
+        ],
+        "evidence": [
+          {
+            "attributes": {},
+            "digest": "c99f584d2eed2dd9",
+            "evidence_id": "evidence:08db53a7a296ffea05f38ae0",
+            "kind": "test_result",
+            "locator": "cache tests",
+            "observed_at_ms": 1791044405297,
+            "source_ref": "pytest tests/test_cache.py",
+            "trust": "verified"
+          },
+          {
+            "attributes": {},
+            "digest": "de23c6770a10c5609dd013782f355c0826a97b500568f1e4f7d7e3996a1083c3",
+            "evidence_id": "evidence:01b59d1505e2a75893315c8a",
+            "kind": "user_statement",
+            "locator": "",
+            "observed_at_ms": 1791044405297,
+            "source_ref": "user:task",
+            "trust": "observed"
+          },
+          {
+            "attributes": {},
+            "digest": "6499f25ee8ab77bd3833c96fffc9639bc13c0843758cdc7388e6c6292da563d9",
+            "evidence_id": "evidence:18f9fc4c0e99a175c12ed03e",
+            "kind": "checkpoint",
+            "locator": "",
+            "observed_at_ms": 1791044405297,
+            "source_ref": "checkpoint:1",
+            "trust": "observed"
+          },
+          {
+            "attributes": {
+              "change_kind": "modified",
+              "path": "cache.py"
+            },
+            "digest": "",
+            "evidence_id": "evidence:2675e8c9631c5ac3785110b2",
+            "kind": "git_status",
+            "locator": "cache.py",
+            "observed_at_ms": 1791044405297,
+            "source_ref": "git-status:75c4a96a8d802635bea1b7d527bc260b2239b6ce",
+            "trust": "observed"
+          },
+          {
+            "attributes": {},
+            "digest": "638dd9a7f58d60c44a28b2e50dc3d10433b5c67c78bb0262f860e8fef21101f7",
+            "evidence_id": "evidence:d590cc377e1e2e1ad00bc39a",
+            "kind": "checkpoint",
+            "locator": "",
+            "observed_at_ms": 1791044405297,
+            "source_ref": "checkpoint:1",
+            "trust": "observed"
+          },
+          {
+            "attributes": {},
+            "digest": "22f54df759d4c3708577b8b6b4dad931001c486229cf63abbdb13e0ab49468ad",
+            "evidence_id": "evidence:de3a901f4e0b43ee784a3845",
+            "kind": "checkpoint",
+            "locator": "",
+            "observed_at_ms": 1791044405297,
+            "source_ref": "checkpoint:1",
+            "trust": "observed"
+          },
+          {
+            "attributes": {},
+            "digest": "75c4a96a8d802635bea1b7d527bc260b2239b6ce",
+            "evidence_id": "evidence:f001a8d391368e3bf8a39141",
+            "kind": "repository_fact",
+            "locator": "",
+            "observed_at_ms": 1791044405297,
+            "source_ref": "repo:git-root:84e0062aa2b2a5472e9853df6d0b87b3",
+            "trust": "observed"
+          }
+        ],
+        "failures": [
+          "verification failed: cache tests"
+        ],
+        "graph_commitment": "65e3f2e87dc0f3aa9b61c89a8cccd2ee2300eb2154b13db332a4cda3ce12eb8e",
+        "graph_revision": 3,
+        "outstanding_work": [
+          "return None from get() unless the stored version equals the requested version",
+          "store the version alongside the value in put()"
+        ],
+        "repo_id": "git-root:84e0062aa2b2a5472e9853df6d0b87b3",
+        "selected_workstream": {
+          "agent_ids": [
+            "agent:b23b771520c64be860597e17"
+          ],
+          "changed_paths": [
+            "cache.py"
+          ],
+          "commit_ids": [],
+          "decision_ids": [
+            "decision:b2113604a0f3c40de3d711cc",
+            "decision:e7f2be30a23307fdcd1b2159",
+            "decision:f4aa8be54fba996906f37b4d"
+          ],
+          "evidence_ids": [
+            "evidence:01b59d1505e2a75893315c8a",
+            "evidence:08db53a7a296ffea05f38ae0",
+            "evidence:18f9fc4c0e99a175c12ed03e",
+            "evidence:2675e8c9631c5ac3785110b2",
+            "evidence:d590cc377e1e2e1ad00bc39a",
+            "evidence:de3a901f4e0b43ee784a3845",
+            "evidence:f001a8d391368e3bf8a39141"
+          ],
+          "failure_ids": [
+            "failure:a4cb12929cfc4d1c309e22cd"
+          ],
+          "kind": "workstream",
+          "label": "invalidate cache entries on source version change",
+          "node_id": "workstream:ab53fb17bf417f560157b72b",
+          "remaining_work": [
+            "return None from get() unless the stored version equals the requested version",
+            "store the version alongside the value in put()"
+          ],
+          "status": "blocked",
+          "symbol_ids": [
+            "symbol:1e4135b54c200d043e22bc8a",
+            "symbol:4d92f9493e2a76f6364cb863",
+            "symbol:70ac0eb75f59b09ca8df623c",
+            "symbol:d8c20427d239d17dcdbeebaf"
+          ],
+          "task_ids": [
+            "task:ac2277cc53491cef9723df40"
+          ],
+          "trust": "verified",
+          "updated_at_ms": 1791044405297,
+          "verification_ids": [
+            "test:9d6312516df13b2fd2176b72"
+          ]
+        },
+        "task_labels": [
+          "invalidate cache entries on source version change"
+        ],
+        "verification": [
+          {
+            "freshness": null,
+            "label": "cache tests",
+            "node_id": "test:9d6312516df13b2fd2176b72",
+            "status": "blocked",
+            "trust": "verified",
+            "updated_at_ms": 1791044405297,
+            "verdict": "failed",
+            "verified_repository_commitment": null
+          }
+        ]
+      },
+      "arm_order": [
+        "B3",
+        "B1",
+        "B0"
+      ]
+    },
+    {
+      "task_id": "t05-cache-invalidation",
+      "stratum": "failed_hypothesis",
+      "arm": "B1",
+      "checkpoint_head": "37da411b19ce393da8dd62cee89580f9495ee316",
+      "worktree_digest": "e5c51082b59989242ced4627c9c3b53ddc0743c9b06360a2e5c2a9dae472c8b0",
+      "prompt_sha256": "a1fefc6368b1c2ad64377e40063ea5bd9ebc6a5d5e22239f2fd454abc2628d1e",
+      "prompt_chars": 1206,
+      "codex_exit": 0,
+      "verified_success": true,
+      "verifier_tail": "....                                                                     [100%]\n4 passed in 0.49s\n",
+      "wall_seconds": 156.97,
+      "agent_ran_tests_successfully": true,
+      "input_tokens": 288313,
+      "cached_input_tokens": 267392,
+      "uncached_input_tokens": 20921,
+      "output_tokens": 2493,
+      "reasoning_output_tokens": 329,
+      "command_count": 19,
+      "duplicate_commands": 5,
+      "failed_commands": 4,
+      "edits": 1,
+      "duplicate_edits": 0,
+      "file_reads": 2,
+      "duplicate_file_reads": 0,
+      "agent_messages": 10,
+      "first_action": "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short'",
+      "commands": [
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content -Path cache.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content -Path tests/test_cache.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git diff -- cache.py tests/test_cache.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'pytest tests/test_cache.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg --files'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-ChildItem -Force'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -c \"import sys, os; print(os.getcwd()); print(sys.path[:3]); import cache; print(cache.VersionedCache)\"'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -m pytest tests/test_cache.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Remove-Item -LiteralPath .\\\\tests\\\\__pycache__ -Recurse -Force\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git diff -- cache.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-ChildItem -Path .\\\\__pycache__, .\\\\tests\\\\__pycache__ -Force\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Remove-Item -LiteralPath .\\\\__pycache__\\\\cache.cpython-310.pyc -Force; Remove-Item -LiteralPath .\\\\tests\\\\__pycache__\\\\test_cache.cpython-310-pytest-8.4.1.pyc -Force; Remove-Item -LiteralPath .\\\\__pycache__ -Force; Remove-Item -LiteralPath .\\\\tests\\\\__pycache__ -Force\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Remove-Item -LiteralPath .\\\\__pycache__\\\\cache.cpython-310.pyc -Force\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -m pytest tests/test_cache.py'"
+      ],
+      "errors": [],
+      "arm_order": [
+        "B3",
+        "B1",
+        "B0"
+      ]
+    },
+    {
+      "task_id": "t05-cache-invalidation",
+      "stratum": "failed_hypothesis",
+      "arm": "B0",
+      "checkpoint_head": "e076fb800eefeb54fe59ef860ca0b9db4284e33b",
+      "worktree_digest": "e5c51082b59989242ced4627c9c3b53ddc0743c9b06360a2e5c2a9dae472c8b0",
+      "prompt_sha256": "a0fdb763f5cabaabe1cc1ba221cda72e934b039e2a91159bdb932b75f9cafe33",
+      "prompt_chars": 240,
+      "codex_exit": 0,
+      "verified_success": true,
+      "verifier_tail": "....                                                                     [100%]\n4 passed in 0.46s\n",
+      "wall_seconds": 97.84,
+      "agent_ran_tests_successfully": true,
+      "input_tokens": 179155,
+      "cached_input_tokens": 160384,
+      "uncached_input_tokens": 18771,
+      "output_tokens": 1426,
+      "reasoning_output_tokens": 109,
+      "command_count": 10,
+      "duplicate_commands": 0,
+      "failed_commands": 1,
+      "edits": 1,
+      "duplicate_edits": 0,
+      "file_reads": 2,
+      "duplicate_file_reads": 0,
+      "agent_messages": 6,
+      "first_action": "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"cache\\\" C:\\\\Users\\\\abhis\\\\.codex\\\\memories\\\\MEMORY.md\"",
+      "commands": [
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"cache\\\" C:\\\\Users\\\\abhis\\\\.codex\\\\memories\\\\MEMORY.md\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short --branch'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"cache|source version|version\" tests/test_cache.py cache.py entroly -S'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg --files'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content -Path cache.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content -Path tests/test_cache.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git diff -- cache.py tests/test_cache.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -m pytest tests/test_cache.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -m pytest'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$lines = Get-Content C:'\"\\\\Users\\\\abhis\\\\.codex\\\\memories\\\\MEMORY.md; for (\"'$i=913; $i -le 918; $i++) { \"{0}:{1}\" -f ($i+1), $lines[$i] }'"
+      ],
+      "errors": [],
+      "arm_order": [
+        "B3",
+        "B1",
+        "B0"
+      ]
     }
   ]
 }
