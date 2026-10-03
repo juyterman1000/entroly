@@ -192,3 +192,6 @@ openclaw_repo/
 # prose -- is personal-path-free and IS versioned.
 research/ledger/*/traces/
 research/ledger/pilot_wave2_INVALID/
+
+# Research prose ledgers stay local; only the code and result data are versioned.
+research/ledger/*.md
