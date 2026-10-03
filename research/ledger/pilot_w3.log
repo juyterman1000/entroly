@@ -1,0 +1,46 @@
+{
+  "suite_sha256": "e1aa55aea15277d390f3a20c0509833a195ccaede3ac045141872f3d77fc183f",
+  "harness_sha256": "635b9c2e34b2179ef8ef4cea44df8bbe459697de4eebc075603ec58a8f5cc4a8",
+  "entroly_source_commit": "58771b7c8929f6bffc7656dd58e625d43add6ca2",
+  "codex_model": "gpt-5.5",
+  "tasks_run": [
+    "t01-rounding",
+    "t02-retry-backoff",
+    "t03-rename-propagation",
+    "t04-parser-state",
+    "t05-cache-invalidation",
+    "t06-pipeline-ordering"
+  ]
+}
+
+== t01-rounding [simple_local] order=['B0', 'B3', 'B1']
+   B0: verified=True ran_tests=True unc_in=24888 out=2935 cmds=20 151.11s
+   B3: verified=True ran_tests=True unc_in=40534 out=2797 cmds=17 144.15s
+   B1: verified=True ran_tests=True unc_in=36270 out=2883 cmds=22 184.89s
+
+== t02-retry-backoff [multi_file] order=['B1', 'B3', 'B0']
+   B1: verified=True ran_tests=True unc_in=23237 out=2536 cmds=18 163.98s
+   B3: verified=True ran_tests=True unc_in=21025 out=1827 cmds=12 93.06s
+   B0: verified=True ran_tests=True unc_in=24344 out=3648 cmds=17 156.87s
+
+== t03-rename-propagation [repository_wide] order=['B1', 'B3', 'B0']
+   B1: verified=True ran_tests=True unc_in=20252 out=2220 cmds=15 104.5s
+   B3: verified=True ran_tests=True unc_in=26991 out=3196 cmds=20 157.32s
+   B0: verified=True ran_tests=True unc_in=27606 out=1155 cmds=9 88.71s
+
+== t04-parser-state [state_heavy] order=['B1', 'B3', 'B0']
+   B1: verified=True ran_tests=True unc_in=22801 out=2662 cmds=18 167.96s
+   B3: verified=True ran_tests=True unc_in=17845 out=1076 cmds=6 63.03s
+   B0: verified=True ran_tests=True unc_in=17429 out=1951 cmds=11 91.6s
+
+== t05-cache-invalidation [failed_hypothesis] order=['B3', 'B1', 'B0']
+   B3: verified=True ran_tests=True unc_in=23641 out=2602 cmds=17 160.97s
+   B1: verified=True ran_tests=True unc_in=20921 out=2493 cmds=19 156.97s
+   B0: verified=True ran_tests=True unc_in=18771 out=1426 cmds=10 97.84s
+
+== t06-pipeline-ordering [long_running] order=['B0', 'B1', 'B3']
+   B0: verified=True ran_tests=True unc_in=22322 out=2388 cmds=18 155.13s
+   B1: verified=True ran_tests=True unc_in=22372 out=2211 cmds=17 149.17s
+   B3: verified=True ran_tests=True unc_in=21155 out=1993 cmds=12 142.87s
+
+wrote research\ledger\pilot\results.json

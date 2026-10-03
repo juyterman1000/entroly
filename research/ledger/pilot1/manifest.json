@@ -1,0 +1,96 @@
+{
+  "frozen_at": "2026-10-03T09:34:45",
+  "suite_type": "ContinuityStress-24",
+  "suite_note": "Every task carries a planted trap. This suite estimates the BENEFIT when continuity matters; it says nothing about how often that is. Do not describe it as representative coding work.",
+  "suite_sha256": "8bdffb59a0741708f8974fa644a0aed5500d28a33a48f1c84a75fdd620d81982",
+  "suite_task_count": 24,
+  "tasks_file_sha256": "d38c3cb52f269aaad341c72eb17ad1e069eab52b9c0932cd4f5b36d3749c1441",
+  "harness_sha256": "734f12d3b081598c5e0d4257bb3856f9e3ea8a789be0eff1644fbf861b47c433",
+  "base_harness_sha256": "635b9c2e34b2179ef8ef4cea44df8bbe459697de4eebc075603ec58a8f5cc4a8",
+  "rediscovery_sha256": "237ddf562cd9da400eaea180f79124f7d7df683e1d1865f634792ba5daaa0bdf",
+  "entroly_source_commit": "b112d24ddf03a61998cc0cde1c29bf2c4ba35ff8",
+  "entroly_local_commits": [
+    "b112d24d",
+    "8227c162",
+    "b12d87c9",
+    "88ea7b10",
+    "58771b7c",
+    "e2eb4e93",
+    "f0719965",
+    "5cb3fe16",
+    "9ba8d410",
+    "2491bca8"
+  ],
+  "native": {
+    "module_file": "C:\\Users\\abhis\\AppData\\Local\\Programs\\Python\\Python310\\lib\\site-packages\\entroly_core\\__init__.py",
+    "loaded_binary": "C:\\Users\\abhis\\AppData\\Local\\Programs\\Python\\Python310\\lib\\site-packages\\entroly_core\\entroly_core.pyd",
+    "loaded_size": 8599552,
+    "loaded_mtime": 1791038165.135519,
+    "loaded_sha256": "cf4d6e8352d87152339c1343e90a11ce8c65e979cf780a9195d096bfeb53a28a",
+    "built_sha256": "cf4d6e8352d87152339c1343e90a11ce8c65e979cf780a9195d096bfeb53a28a",
+    "match": true
+  },
+  "python": "3.10.0",
+  "agent_b": "codex-cli 0.137.0",
+  "codex_model": "gpt-5.5",
+  "codex_sandbox": "workspace-write + disk-full-read-access",
+  "codex_auth": "ChatGPT account (no token invoice; usage proxies only)",
+  "arms": {
+    "B0": "repository checkpoint + task",
+    "B1S": "\u2026 + deterministic text rendering of RecordedState (0 provider tokens to generate, by construction)",
+    "B3": "\u2026 + production work_resume payload only",
+    "B1N": "NOT FEASIBLE: claude -p returns 'OAuth session expired and could not be refreshed'; no ANTHROPIC_API_KEY"
+  },
+  "hypotheses": {
+    "H1_representation": "B3 vs B1S \u2014 same captured facts, different form",
+    "H2_capture": "B3 vs B1N \u2014 UNTESTABLE in this environment"
+  },
+  "primary_representation_comparison": "B3 vs B1S",
+  "primary_commercial_comparison": "B3 vs B1N \u2014 not available",
+  "metrics": {
+    "primary_success": "verified_success from the task verifier only",
+    "primary_reconstruction": "avoidable_rediscovery_operations = duplicate reads with no intervening edit + duplicate diagnostics with no intervening file change. Failures excluded.",
+    "secondary": [
+      "first_progress_action index",
+      "failed_commands_total",
+      "cached/uncached/output tokens",
+      "handoff_tokens_estimate",
+      "wall_seconds",
+      "command_count",
+      "b3_local_latency_s"
+    ]
+  },
+  "thresholds": {
+    "success": ">=10pp vs B1S; discrete at n=24 (1 task = 4.17pp, 3 tasks = 12.5pp)",
+    "reconstruction": ">=20% median reduction in avoidable_rediscovery_operations",
+    "usage_guard": "noncached_usage_proxy (successor uncached input + output) must not rise >10%",
+    "caveat": "avoidable_rediscovery_operations was 0 on every Pilot-0 row. If it is zero-variance here too, that half of the criterion is undecidable and only success can decide."
+  },
+  "contamination_rule": "All agent file access in this CLI flows through shell commands or file_change events, so the command stream IS the strongest available trace source. A row reading the Entroly source tree, prior benchmark artifacts, another arm's directory, user documents, home config or agent session history is INVALID.",
+  "tasks_run": [
+    "p01-half-up",
+    "p02-slug-collisions",
+    "p03-truncate-words",
+    "p04-percent-change",
+    "p05-retry-transient",
+    "p06-config-layering",
+    "p07-event-dispatch",
+    "p08-path-normalise",
+    "p09-quantity-rename",
+    "p10-error-codes",
+    "p11-import-cycle",
+    "p12-settings-single-source",
+    "p13-quoted-delimiter",
+    "p14-version-cache",
+    "p15-session-expiry",
+    "p16-dedupe-stream",
+    "p17-rate-limit-window",
+    "p18-merge-conflict-markers",
+    "p19-partial-sum-overflow",
+    "p20-idempotent-migration",
+    "p21-topological-order",
+    "p22-chunked-upload",
+    "p23-backfill-batches",
+    "p24-schema-migration-chain"
+  ]
+}

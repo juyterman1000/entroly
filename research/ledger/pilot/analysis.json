@@ -1,6 +1,6 @@
 {
   "phase": "Pilot-0 (harness validation). NOT the commercial test.",
-  "n_tasks": 5,
+  "n_tasks": 6,
   "statistical_note": "At n=6 one failure moves a success rate by 16.7 points. No paid-wedge verdict is emitted from this phase.",
   "provenance": {
     "suite_sha256": "e1aa55aea15277d390f3a20c0509833a195ccaede3ac045141872f3d77fc183f",
@@ -13,107 +13,107 @@
     "sandbox": "workspace-write"
   },
   "validity": {
-    "valid_rows": 15,
-    "total_rows": 15,
+    "valid_rows": 18,
+    "total_rows": 18,
     "invalid": [],
     "contamination_flagged_rows": 0,
     "contamination_detail": []
   },
   "per_arm": {
     "B0": {
-      "valid_n": 5,
-      "total_n": 5,
-      "verified_completions": 5,
+      "valid_n": 6,
+      "total_n": 6,
+      "verified_completions": 6,
       "verified_completion_rate": 1.0,
       "verified_completion_wilson95": [
-        0.566,
+        0.61,
         1.0
       ],
-      "median_cached_input": 182272.0,
-      "median_uncached_input": 24344.0,
-      "median_total_input": 199701.0,
-      "median_output": 1951.0,
-      "median_noncached_token_volume": 27823.0,
-      "median_rediscovery_operations": 4.0,
+      "median_cached_input": 233728.0,
+      "median_uncached_input": 23333.0,
+      "median_total_input": 253603.5,
+      "median_output": 2169.5,
+      "median_noncached_token_volume": 26266.5,
+      "median_rediscovery_operations": 4.5,
       "rediscovery_iqr": [
         1.0,
-        6.5
+        6.0
       ],
       "total_duplicate_file_reads": 0,
-      "total_duplicate_commands": 4,
+      "total_duplicate_commands": 6,
       "total_duplicate_edits": 3,
-      "total_failed_commands": 12,
-      "median_command_count": 11.0,
-      "median_wall_seconds": 97.8
+      "total_failed_commands": 16,
+      "median_command_count": 14.0,
+      "median_wall_seconds": 124.5
     },
     "B1": {
-      "valid_n": 5,
-      "total_n": 5,
-      "verified_completions": 5,
+      "valid_n": 6,
+      "total_n": 6,
+      "verified_completions": 6,
       "verified_completion_rate": 1.0,
       "verified_completion_wilson95": [
-        0.566,
+        0.61,
         1.0
       ],
-      "median_cached_input": 294400.0,
-      "median_uncached_input": 22801.0,
-      "median_total_input": 317201.0,
-      "median_output": 2536.0,
-      "median_noncached_token_volume": 25463.0,
+      "median_cached_input": 280896.0,
+      "median_uncached_input": 22586.5,
+      "median_total_input": 302757.0,
+      "median_output": 2514.5,
+      "median_noncached_token_volume": 25023.0,
       "median_rediscovery_operations": 7.0,
       "rediscovery_iqr": [
         7.0,
-        9.5
+        9.0
       ],
       "total_duplicate_file_reads": 0,
-      "total_duplicate_commands": 14,
+      "total_duplicate_commands": 15,
       "total_duplicate_edits": 1,
-      "total_failed_commands": 25,
+      "total_failed_commands": 29,
       "median_command_count": 18.0,
-      "median_wall_seconds": 164.0
+      "median_wall_seconds": 160.5
     },
     "B3": {
-      "valid_n": 5,
-      "total_n": 5,
-      "verified_completions": 5,
+      "valid_n": 6,
+      "total_n": 6,
+      "verified_completions": 6,
       "verified_completion_rate": 1.0,
       "verified_completion_wilson95": [
-        0.566,
+        0.61,
         1.0
       ],
-      "median_cached_input": 282752.0,
-      "median_uncached_input": 23641.0,
-      "median_total_input": 306393.0,
-      "median_output": 2602.0,
-      "median_noncached_token_volume": 26243.0,
-      "median_rediscovery_operations": 6.0,
+      "median_cached_input": 251136.0,
+      "median_uncached_input": 22398.0,
+      "median_total_input": 273534.0,
+      "median_output": 2297.5,
+      "median_noncached_token_volume": 24695.5,
+      "median_rediscovery_operations": 4.5,
       "rediscovery_iqr": [
-        0.5,
-        7.5
+        1.0,
+        7.0
       ],
       "total_duplicate_file_reads": 0,
-      "total_duplicate_commands": 8,
+      "total_duplicate_commands": 9,
       "total_duplicate_edits": 0,
-      "total_failed_commands": 14,
-      "median_command_count": 17.0,
-      "median_wall_seconds": 144.2
+      "total_failed_commands": 16,
+      "median_command_count": 14.5,
+      "median_wall_seconds": 143.5
     }
   },
   "payload_sizes": {
     "B0": {
-      "median_prompt_chars": 243.0,
+      "median_prompt_chars": 242.5,
       "median_handoff_payload_chars": 0.0,
       "median_handoff_payload_tokens_estimate": 0
     },
     "B1": {
-      "median_prompt_chars": 1076.0,
-      "median_handoff_payload_chars": 833.0,
+      "median_prompt_chars": 1078.5,
+      "median_handoff_payload_chars": 833.5,
       "median_handoff_payload_tokens_estimate": 208
     },
     "B3": {
-      "median_prompt_chars": 4821.0,
-      "median_handoff_payload_chars": 4573.0,
-      "median_handoff_payload_tokens_estimate": 1143
+      "median_prompt_chars": 4851.5,
+      "median_handoff_payload_chars": 4604.0,
+      "median_handoff_payload_tokens_estimate": 1151
     }
   },
   "handoff_generation_cost": {
@@ -340,11 +340,55 @@
         "wall_s": 4.0,
         "success_same": true
       }
+    },
+    {
+      "task_id": "t06-pipeline-ordering",
+      "B0": {
+        "valid": true,
+        "verified": true,
+        "uncached_in": 22322,
+        "cached_in": 285184,
+        "out": 2388,
+        "cmds": 18,
+        "rediscovery_ops": 6,
+        "wall_s": 155.13,
+        "first_action": "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short'"
+      },
+      "B1": {
+        "valid": true,
+        "verified": true,
+        "uncached_in": 22372,
+        "cached_in": 255104,
+        "out": 2211,
+        "cmds": 17,
+        "rediscovery_ops": 5,
+        "wall_s": 149.17,
+        "first_action": "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short --bran"
+      },
+      "B3": {
+        "valid": true,
+        "verified": true,
+        "uncached_in": 21155,
+        "cached_in": 219520,
+        "out": 1993,
+        "cmds": 12,
+        "rediscovery_ops": 3,
+        "wall_s": 142.87,
+        "first_action": "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short'"
+      },
+      "delta_B3_minus_B1": {
+        "uncached_in": -1217,
+        "out": -218,
+        "rediscovery_ops": -2,
+        "cmds": -5,
+        "wall_s": -6.3,
+        "success_same": true
+      }
     }
   ],
   "direction_of_effect": [
     "verified completion equal",
     "B3 fewer rediscovery operations",
-    "B3 noncached volume 3% vs B1"
+    "B3 noncached volume -1% vs B1"
   ]
 }
