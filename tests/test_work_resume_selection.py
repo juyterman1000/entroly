@@ -60,6 +60,16 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     # rather than bypassing it.
     monkeypatch.setenv("ENTROLY_SOURCE", str(path))
     monkeypatch.setenv("ENTROLY_NO_SELF_HEAL", "1")
+    # Give each test its own Work Graph store. `_store_root()` defaults to
+    # ~/.entroly/work-graphs, which is the developer's real store and is shared
+    # by every test in the session. Without this the file passed in isolation
+    # and failed inside the full suite: `test_passed_verdict_is_not_reported_as_failed`
+    # saw outstanding work from a sibling test's workstream, because the
+    # content-based selector legitimately picks any content-bearing workstream
+    # in the store it is given. Isolating the store is the right fix -- the
+    # assertion is about this test's recorded state, not about whatever else a
+    # developer's machine happens to hold.
+    monkeypatch.setenv("ENTROLY_DIR", str(tmp_path / "entroly-home"))
     return path
 
 
