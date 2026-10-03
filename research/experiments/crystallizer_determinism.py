@@ -124,6 +124,10 @@ clusters = sorted(
         sorted(cl.centroid_fragments),
         list(cl.queries),
         cl.n_total,
+        sorted(getattr(cl, "token_doc_counts", {}).items()),
+        # The representative: what a downstream skill would actually trigger on.
+        RewardCrystallizer._common_terms(cl.queries[-16:], top_k=8),
+        RewardCrystallizer._top_fragments(cl.window, top_k=8),
     )
     for cl in c._clusters.values()
 )
@@ -204,9 +208,29 @@ def main() -> int:
         validity["centroid_cap_exercised"] and validity["any_event_emitted"]
     )
 
+    representatives = {
+        k: [c[5] for c in results[k]["clusters"]] for k in keys
+    }
+    recipes = {k: [c[6] for c in results[k]["clusters"]] for k in keys}
+    payloads = {
+        k: [t["event"] for t in results[k]["trace"] if t["event"] is not None]
+        for k in keys
+    }
+
+    def identical(d: dict) -> bool:
+        return len({json.dumps(v, sort_keys=True) for v in d.values()}) == 1
+
     report = {
         "baseline_commit": "55e75c88",
         "validity": validity,
+        "semantic_identity": {
+            "cluster_partition": identical(partitions),
+            "centroids": identical(centroids),
+            "representatives": identical(representatives),
+            "fragment_recipes": identical(recipes),
+            "candidate_emission_index": identical(emissions),
+            "candidate_payloads": identical(payloads),
+        },
         "seeds": keys,
         "n_clusters": {k: len(results[k]["clusters"]) for k in keys},
         "emission_points": emissions,
