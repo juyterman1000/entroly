@@ -140,9 +140,13 @@ def main() -> int:
     produced = work_graph_mcp.work_resume(project=str(repo), to_agent="agent:codex")
     payload_text = json.dumps(produced, default=str)
 
-    resume = produced.get("work_resume", produced)
-    if isinstance(resume, dict) and "resume" in resume:
-        resume = resume["resume"]
+    # work_resume wraps its payload in an untrusted-render envelope whose
+    # `context` is a prose-delimited JSON string. Unwrap it the way a consumer
+    # would rather than reaching past it.
+    if isinstance(produced.get("context"), str):
+        text = produced["context"]
+        produced = json.loads(text[text.index("{"):text.rindex("}") + 1])
+    resume = produced.get("resume", produced)
 
     def verdicts() -> list[str]:
         out = []
@@ -172,8 +176,22 @@ def main() -> int:
         for item in (resume or {}).get("verification", []) or []
     ) and bool((resume or {}).get("verification"))
 
+    # Section 11 also requires the correct workstream and no shadowing.
+    recorded_ws = {w["node_id"] for w in store.load().unfinished()
+                   if w.get("remaining_work")}
+    selected_ws = str((resume or {}).get("selected_workstream", {}).get("node_id", ""))
+    requirements["correct_workstream_selected"] = selected_ws in recorded_ws
+
+    pollution = {
+        "workstreams_total": len(store.load().unfinished()),
+        "workstreams_with_recorded_content": len(recorded_ws),
+        "selected_workstream": selected_ws,
+        "selected_has_recorded_content": selected_ws in recorded_ws,
+    }
+
     report = {
-        "baseline_commit": "5cb3fe16 + projection fix",
+        "baseline_commit": "5cb3fe16 + projection fix + selection fix",
+        "graph_pollution": pollution,
         "repo": str(repo),
         "consumer": "entroly.work_graph_mcp.work_resume (MCP tool work_resume)",
         "note": (
