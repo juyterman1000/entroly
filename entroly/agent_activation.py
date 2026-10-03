@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sys
 import tempfile
 import time
 import uuid
@@ -694,6 +695,42 @@ def hook_context(output: Mapping[str, Any]) -> str:
     return context if isinstance(context, str) else ""
 
 
+def read_protocol_stdin(stream: Any = None) -> str:
+    """Read a machine JSON protocol payload from stdin as strict UTF-8.
+
+    Hosts write hook events as UTF-8 bytes. Python's ``sys.stdin`` on Windows is
+    a TextIOWrapper over the ANSI code page -- measured here as
+    ``encoding='cp1252', errors='surrogateescape'`` -- so letting it decode the
+    payload corrupts it in two different ways:
+
+    1. Bytes cp1252 leaves undefined (0x81, 0x8D, 0x8F, 0x90, 0x9D) become lone
+       surrogates. ``U+1F9E0`` encodes as ``F0 9F A7 A0``; ``0x90`` is undefined,
+       so the prompt gained ``U+DC90`` and ``run_hook`` then raised
+       ``UnicodeEncodeError: surrogates not allowed`` at its prompt_sha256 line.
+       That is the visible crash.
+    2. **Worse:** when every byte happens to be cp1252-defined, nothing raises.
+       ``json.loads`` accepts the mojibake and selection runs against a query
+       that is silently not the user's. The crash was the lucky case.
+
+    Reading the binary stream and decoding UTF-8 here fixes both at this one
+    protocol boundary -- no process-wide stdio reconfiguration, so POSIX
+    behaviour and hosts whose streams lack ``reconfigure()`` are unaffected.
+
+    ``errors`` is deliberately strict: a malformed payload must fail loudly
+    rather than let ``replace``/``ignore`` substitute characters into the
+    user's query.
+    """
+    stream = sys.stdin if stream is None else stream
+    buffer = getattr(stream, "buffer", None)
+    if buffer is not None:
+        # strict is the default here, and is the entire point of this function.
+        return buffer.read().decode("utf-8")
+    # Embedding hosts and tests may install a text-only stdin (io.StringIO has
+    # no .buffer). That text is already decoded; re-encoding it would add a
+    # second round trip without fixing anything, so take it as given.
+    return stream.read()
+
+
 def parse_hook_input(raw: str) -> dict[str, Any]:
     encoded = raw.encode("utf-8", errors="replace")
     if len(encoded) > MAX_HOOK_INPUT_BYTES:
@@ -792,5 +829,6 @@ __all__ = [
     "configure_kiro_hook",
     "hook_context",
     "parse_hook_input",
+    "read_protocol_stdin",
     "run_hook",
 ]
