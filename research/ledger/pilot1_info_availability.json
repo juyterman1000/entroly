@@ -1,0 +1,71 @@
+[
+  {
+    "task": "p01-half-up",
+    "B1S": {
+      "completed work": true,
+      "outstanding work": true,
+      "failing verification": true,
+      "failure detail": true,
+      "rejected approach": true,
+      "changed paths": true,
+      "decisions": true
+    },
+    "B3": {
+      "completed work": true,
+      "outstanding work": true,
+      "failing verification": true,
+      "failure detail": true,
+      "rejected approach": true,
+      "changed paths": true,
+      "decisions": true
+    },
+    "b1s_chars": 682,
+    "b3_chars": 4336
+  },
+  {
+    "task": "p02-slug-collisions",
+    "B1S": {
+      "completed work": true,
+      "outstanding work": true,
+      "failing verification": true,
+      "failure detail": true,
+      "rejected approach": true,
+      "changed paths": true,
+      "decisions": true
+    },
+    "B3": {
+      "completed work": true,
+      "outstanding work": true,
+      "failing verification": true,
+      "failure detail": true,
+      "rejected approach": true,
+      "changed paths": true,
+      "decisions": true
+    },
+    "b1s_chars": 741,
+    "b3_chars": 4404
+  },
+  {
+    "task": "p03-truncate-words",
+    "B1S": {
+      "completed work": true,
+      "outstanding work": true,
+      "failing verification": true,
+      "failure detail": true,
+      "rejected approach": true,
+      "changed paths": true,
+      "decisions": true
+    },
+    "B3": {
+      "completed work": true,
+      "outstanding work": true,
+      "failing verification": true,
+      "failure detail": true,
+      "rejected approach": true,
+      "changed paths": true,
+      "decisions": true
+    },
+    "b1s_chars": 749,
+    "b3_chars": 4456
+  }
+]

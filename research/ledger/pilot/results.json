@@ -1,0 +1,1263 @@
+{
+  "manifest": {
+    "frozen_at": "2026-10-03T08:53:34",
+    "suite_sha256": "e1aa55aea15277d390f3a20c0509833a195ccaede3ac045141872f3d77fc183f",
+    "suite_task_count": 6,
+    "tasks_file_sha256": "a85ee9944988d1785c1c6595d93af8a700fdfc507e66abf17b0472658b7ba2f9",
+    "harness_sha256": "635b9c2e34b2179ef8ef4cea44df8bbe459697de4eebc075603ec58a8f5cc4a8",
+    "entroly_source_commit": "58771b7c8929f6bffc7656dd58e625d43add6ca2",
+    "entroly_local_commits": [
+      "58771b7c",
+      "e2eb4e93",
+      "f0719965",
+      "5cb3fe16",
+      "9ba8d410",
+      "2491bca8",
+      "55e75c88",
+      "a5a91edf"
+    ],
+    "native": {
+      "module_file": "C:\\Users\\abhis\\AppData\\Local\\Programs\\Python\\Python310\\lib\\site-packages\\entroly_core\\__init__.py",
+      "loaded_binary": "C:\\Users\\abhis\\AppData\\Local\\Programs\\Python\\Python310\\lib\\site-packages\\entroly_core\\entroly_core.pyd",
+      "loaded_size": 8599552,
+      "loaded_mtime": 1791038165.135519,
+      "loaded_sha256": "cf4d6e8352d87152339c1343e90a11ce8c65e979cf780a9195d096bfeb53a28a",
+      "built_sha256": "cf4d6e8352d87152339c1343e90a11ce8c65e979cf780a9195d096bfeb53a28a",
+      "match": true
+    },
+    "agent_a": "claude (scripted phase 1; see tasks.py rationale)",
+    "agent_b": "codex-cli codex-cli 0.137.0",
+    "codex_model": "gpt-5.5",
+    "codex_sandbox": "workspace-write",
+    "codex_auth": "ChatGPT account (not metered API key)",
+    "arms": {
+      "B0": "repository + task only",
+      "B1": "repository + task + prose handoff from RecordedState",
+      "B2": "NOT APPLICABLE - no native Claude<->Codex resume mechanism",
+      "B3": "repository + task + work_resume payload only"
+    },
+    "kill_criteria": {
+      "vs_baseline": "stronger of B1/B2",
+      "need_one_of": [
+        ">=20% reduction in median reconstruction tokens",
+        ">=10pp improvement in verified continuation completion"
+      ],
+      "without": ">10% increase in post-handoff provider cost"
+    },
+    "tasks_run": [
+      "t01-rounding",
+      "t02-retry-backoff",
+      "t03-rename-propagation",
+      "t04-parser-state",
+      "t05-cache-invalidation",
+      "t06-pipeline-ordering"
+    ]
+  },
+  "results": [
+    {
+      "task_id": "t01-rounding",
+      "stratum": "simple_local",
+      "arm": "B0",
+      "checkpoint_head": "bee5948ebcb3288941cd973283f16738c9cc42b0",
+      "worktree_digest": "d3bc5e4deae48698bf6329307af2c84eb0dbbec4a52949d442af37b07a386748",
+      "prompt_sha256": "88998e97c63f3b7b58a5073fc63c0e25a7c0720f6ea7e80ae9fdac6c163f3dda",
+      "prompt_chars": 242,
+      "codex_exit": 0,
+      "verified_success": true,
+      "verifier_tail": "..                                                                       [100%]\n2 passed in 0.35s\n",
+      "wall_seconds": 151.11,
+      "agent_ran_tests_successfully": true,
+      "input_tokens": 392120,
+      "cached_input_tokens": 367232,
+      "uncached_input_tokens": 24888,
+      "output_tokens": 2935,
+      "reasoning_output_tokens": 445,
+      "command_count": 20,
+      "duplicate_commands": 0,
+      "failed_commands": 5,
+      "edits": 1,
+      "duplicate_edits": 0,
+      "file_reads": 2,
+      "duplicate_file_reads": 0,
+      "agent_messages": 12,
+      "first_action": "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"money|round|Decimal|currency\" .'",
+      "commands": [
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"money|round|Decimal|currency\" .'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short; git rev-parse --show-toplevel; git branch --show-current'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg --files'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content -Raw money.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content -Raw tests\\\\test_money.py\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"pytest tests\\\\test_money.py\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"pytest|pythonpath|testpaths|addopts|PYTHONPATH|conftest\" -S .'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-ChildItem -Force'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -c \"import sys, os; print(os.getcwd()); print(sys.path[:5]); import money; print(money.to_cents(2.675))\"'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"python -m pytest tests\\\\test_money.py\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -m pytest'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"git diff -- money.py tests\\\\test_money.py\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$paths = @((Resolve-Path -LiteralPath '\"'__pycache__' -ErrorAction SilentlyContinue),(Resolve-Path -LiteralPath 'tests\\\\__pycache__' -ErrorAction SilentlyContinue)); \"'$root = (Resolve-Path -LiteralPath '\"'.').Path; foreach (\"'$p in $paths) { if ($p -and $p.Path.StartsWith($root)) { Remove-Item -LiteralPath $p.Path -Recurse -Force } }; git status --short'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$root = (Resolve-Path -LiteralPath .).Path\n$cache1 = (Resolve-Path -LiteralPath .'\"\\\\__pycache__ -ErrorAction SilentlyContinue).Path\n\"'$cache2 = (Resolve-Path -LiteralPath .'\"\\\\tests\\\\__pycache__ -ErrorAction SilentlyContinue).Path\nWrite-Output \"'$root\nWrite-Output $cache1\nWrite-Output $cache2'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Remove-Item -LiteralPath .\\\\__pycache__ -Recurse -Force\nRemove-Item -LiteralPath .\\\\tests\\\\__pycache__ -Recurse -Force\n git status --short\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-ChildItem -LiteralPath .\\\\__pycache__ -Force\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-ChildItem -LiteralPath .\\\\tests\\\\__pycache__ -Force\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Remove-Item -LiteralPath .\\\\__pycache__\\\\money.cpython-310.pyc -Force\nRemove-Item -LiteralPath .\\\\tests\\\\__pycache__\\\\test_money.cpython-310-pytest-8.4.1.pyc -Force\nRemove-Item -LiteralPath .\\\\__pycache__ -Force\nRemove-Item -LiteralPath .\\\\tests\\\\__pycache__ -Force\ngit status --short\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"python -c \\\"from pathlib import Path; files=[Path('__pycache__/money.cpython-310.pyc'), Path('tests/__pycache__/test_money.cpython-310-pytest-8.4.1.pyc')]; [p.unlink() for p in files if p.exists()]; dirs=[Path('__pycache__'), Path('tests/__pycache__')]; [p.rmdir() for p in dirs if p.exists()]\\\"\ngit status --short\""
+      ],
+      "errors": [],
+      "arm_order": [
+        "B0",
+        "B3",
+        "B1"
+      ]
+    },
+    {
+      "task_id": "t01-rounding",
+      "stratum": "simple_local",
+      "arm": "B3",
+      "checkpoint_head": "6c4bd28c74b4dcc8e85360f6a1be36bdab3a61cc",
+      "worktree_digest": "d3bc5e4deae48698bf6329307af2c84eb0dbbec4a52949d442af37b07a386748",
+      "prompt_sha256": "2388ffdd9291658e8c845173aa0dc2e8e7448df389cc18cb4966eaf97506cce2",
+      "prompt_chars": 4678,
+      "codex_exit": 0,
+      "verified_success": true,
+      "verifier_tail": "..                                                                       [100%]\n2 passed in 0.31s\n",
+      "wall_seconds": 144.15,
+      "agent_ran_tests_successfully": true,
+      "input_tokens": 356822,
+      "cached_input_tokens": 316288,
+      "uncached_input_tokens": 40534,
+      "output_tokens": 2797,
+      "reasoning_output_tokens": 341,
+      "command_count": 17,
+      "duplicate_commands": 2,
+      "failed_commands": 4,
+      "edits": 1,
+      "duplicate_edits": 0,
+      "file_reads": 2,
+      "duplicate_file_reads": 0,
+      "agent_messages": 12,
+      "first_action": "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short'",
+      "commands": [
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content -Raw money.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content -Raw tests/test_money.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'pytest tests/test_money.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg --files'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-ChildItem -Force'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-ChildItem -Force tests'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"python -c \\\"import os, sys; print(os.getcwd()); print(sys.path[:5]); import money; print(money.to_cents('2.675'))\\\"\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -m pytest tests/test_money.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -m pytest'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git diff -- money.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$targets = @('\"'__pycache__', 'tests/__pycache__') | ForEach-Object { Resolve-Path -LiteralPath \"'$_ -ErrorAction SilentlyContinue }\n$root = (Resolve-Path -LiteralPath '\"'.').Path\nforeach (\"'$target in $targets) {\n  if ($target.Path.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) {\n    Remove-Item -LiteralPath $target.Path -Recurse -Force\n  } else {\n    throw \"Refusing to remove outside workspace: $($target.Path)\"\n  }\n}'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$root = Resolve-Path -LiteralPath '\"'C:\\\\Users\\\\abhis\\\\AppData\\\\Local\\\\Temp\\\\entroly_pilot_t01-rounding_1791042814\\\\B3\\\\repo'\n\"'$paths = @(\n  '\"'C:\\\\Users\\\\abhis\\\\AppData\\\\Local\\\\Temp\\\\entroly_pilot_t01-rounding_1791042814\\\\B3\\\\repo\\\\__pycache__',\n  'C:\\\\Users\\\\abhis\\\\AppData\\\\Local\\\\Temp\\\\entroly_pilot_t01-rounding_1791042814\\\\B3\\\\repo\\\\tests\\\\__pycache__'\n)\nforeach (\"'$p in $paths) {\n  if (Test-Path -LiteralPath $p) {\n    $resolved = Resolve-Path -LiteralPath $p\n    if (-not $resolved.Path.StartsWith($root.Path, [System.StringComparison]::OrdinalIgnoreCase)) { throw '\"'outside workspace' }\n    Remove-Item -LiteralPath \"'$resolved.Path -Recurse -Force\n  }\n}'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-ChildItem -Recurse -Force -File __pycache__, tests\\\\__pycache__ | Select-Object -ExpandProperty FullName\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Remove-Item -LiteralPath 'C:\\\\Users\\\\abhis\\\\AppData\\\\Local\\\\Temp\\\\entroly_pilot_t01-rounding_1791042814\\\\B3\\\\repo\\\\__pycache__\\\\money.cpython-310.pyc' -Force\nRemove-Item -LiteralPath 'C:\\\\Users\\\\abhis\\\\AppData\\\\Local\\\\Temp\\\\entroly_pilot_t01-rounding_1791042814\\\\B3\\\\repo\\\\tests\\\\__pycache__\\\\test_money.cpython-310-pytest-8.4.1.pyc' -Force\nRemove-Item -LiteralPath 'C:\\\\Users\\\\abhis\\\\AppData\\\\Local\\\\Temp\\\\entroly_pilot_t01-rounding_1791042814\\\\B3\\\\repo\\\\__pycache__' -Force\nRemove-Item -LiteralPath 'C:\\\\Users\\\\abhis\\\\AppData\\\\Local\\\\Temp\\\\entroly_pilot_t01-rounding_1791042814\\\\B3\\\\repo\\\\tests\\\\__pycache__' -Force\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short'"
+      ],
+      "errors": [],
+      "b3_resume": {
+        "agents": [
+          "agent:claude"
+        ],
+        "changed_paths": [
+          "money.py"
+        ],
+        "claims": [],
+        "commits": [],
+        "decisions": [
+          "amounts must be Decimal end to end; float rounding was the original bug",
+          "python round() was tried and rejected: it is banker's rounding, so 2.675 goes to 2.67 and the first assertion still fails"
+        ],
+        "evidence": [
+          {
+            "attributes": {},
+            "digest": "bbb1974bceb6e8a6",
+            "evidence_id": "evidence:833435353cde25d259a689ef",
+            "kind": "test_result",
+            "locator": "money rounding tests",
+            "observed_at_ms": 1791042968436,
+            "source_ref": "pytest tests/test_money.py",
+            "trust": "verified"
+          },
+          {
+            "attributes": {},
+            "digest": "d482c375209f601eda47f8af9e4314f299400efaa2b2d85df492f296547a8743",
+            "evidence_id": "evidence:113bba9b7a7aff7e29df9625",
+            "kind": "checkpoint",
+            "locator": "",
+            "observed_at_ms": 1791042968436,
+            "source_ref": "checkpoint:1",
+            "trust": "observed"
+          },
+          {
+            "attributes": {},
+            "digest": "6c4bd28c74b4dcc8e85360f6a1be36bdab3a61cc",
+            "evidence_id": "evidence:478da555fe21a3517efc3e03",
+            "kind": "repository_fact",
+            "locator": "",
+            "observed_at_ms": 1791042968436,
+            "source_ref": "repo:git-root:beeb56ce99837c94d81ab8ebf0fbae5c",
+            "trust": "observed"
+          },
+          {
+            "attributes": {},
+            "digest": "f4d821a236d73ded9a8bdc4d9a9aecf10ec46313bb221a68b1c68c998967afff",
+            "evidence_id": "evidence:65951edde264837b39302dee",
+            "kind": "user_statement",
+            "locator": "",
+            "observed_at_ms": 1791042968436,
+            "source_ref": "user:task",
+            "trust": "observed"
+          },
+          {
+            "attributes": {},
+            "digest": "f916c7e1613cb3a2389997812bd99523b72e5162a1702a3b3e1240114e581f09",
+            "evidence_id": "evidence:be46186a1eeda66dc920239f",
+            "kind": "checkpoint",
+            "locator": "",
+            "observed_at_ms": 1791042968436,
+            "source_ref": "checkpoint:1",
+            "trust": "observed"
+          },
+          {
+            "attributes": {
+              "change_kind": "modified",
+              "path": "money.py"
+            },
+            "digest": "",
+            "evidence_id": "evidence:cd4ef1c3e561342ceeaa633f",
+            "kind": "git_status",
+            "locator": "money.py",
+            "observed_at_ms": 1791042968436,
+            "source_ref": "git-status:6c4bd28c74b4dcc8e85360f6a1be36bdab3a61cc",
+            "trust": "observed"
+          }
+        ],
+        "failures": [
+          "verification failed: money rounding tests"
+        ],
+        "graph_commitment": "cca5b14c22ed75821fcac275feafa321dcead27d1cc775ebb1f6d94c2306077f",
+        "graph_revision": 3,
+        "outstanding_work": [
+          "apply ROUND_HALF_UP quantisation in to_cents"
+        ],
+        "repo_id": "git-root:beeb56ce99837c94d81ab8ebf0fbae5c",
+        "selected_workstream": {
+          "agent_ids": [
+            "agent:2ee1d231864158a51c9375de"
+          ],
+          "changed_paths": [
+            "money.py"
+          ],
+          "commit_ids": [],
+          "decision_ids": [
+            "decision:32f178e5d3b3aa274f73fd38",
+            "decision:7c77638a92084ae40a9d7250"
+          ],
+          "evidence_ids": [
+            "evidence:113bba9b7a7aff7e29df9625",
+            "evidence:478da555fe21a3517efc3e03",
+            "evidence:65951edde264837b39302dee",
+            "evidence:833435353cde25d259a689ef",
+            "evidence:be46186a1eeda66dc920239f",
+            "evidence:cd4ef1c3e561342ceeaa633f"
+          ],
+          "failure_ids": [
+            "failure:94139bbe7dd736b121ca0d4d"
+          ],
+          "kind": "workstream",
+          "label": "round currency amounts half-up to two places",
+          "node_id": "workstream:6f8aa69912797549917d4fcb",
+          "remaining_work": [
+            "apply ROUND_HALF_UP quantisation in to_cents"
+          ],
+          "status": "blocked",
+          "symbol_ids": [
+            "symbol:52562e67828dfc2b1deb0831"
+          ],
+          "task_ids": [
+            "task:ad1e96650fb5046577e74749"
+          ],
+          "trust": "verified",
+          "updated_at_ms": 1791042968436,
+          "verification_ids": [
+            "test:a064ccd93f0c566d9fe4816f"
+          ]
+        },
+        "task_labels": [
+          "round currency amounts half-up to two places"
+        ],
+        "verification": [
+          {
+            "freshness": null,
+            "label": "money rounding tests",
+            "node_id": "test:a064ccd93f0c566d9fe4816f",
+            "status": "blocked",
+            "trust": "verified",
+            "updated_at_ms": 1791042968436,
+            "verdict": "failed",
+            "verified_repository_commitment": null
+          }
+        ]
+      },
+      "arm_order": [
+        "B0",
+        "B3",
+        "B1"
+      ]
+    },
+    {
+      "task_id": "t01-rounding",
+      "stratum": "simple_local",
+      "arm": "B1",
+      "checkpoint_head": "443d43cdaa4ab8bfa9dfd1edb0da3fd9c14dbaae",
+      "worktree_digest": "d3bc5e4deae48698bf6329307af2c84eb0dbbec4a52949d442af37b07a386748",
+      "prompt_sha256": "6ea62cf2f922467dca8ec588a010a8033ab2b7405c0ae200eb1cab7df0e159e8",
+      "prompt_chars": 998,
+      "codex_exit": 0,
+      "verified_success": true,
+      "verifier_tail": "..                                                                       [100%]\n2 passed in 0.38s\n",
+      "wall_seconds": 184.89,
+      "agent_ran_tests_successfully": true,
+      "input_tokens": 339246,
+      "cached_input_tokens": 302976,
+      "uncached_input_tokens": 36270,
+      "output_tokens": 2883,
+      "reasoning_output_tokens": 345,
+      "command_count": 22,
+      "duplicate_commands": 3,
+      "failed_commands": 7,
+      "edits": 1,
+      "duplicate_edits": 0,
+      "file_reads": 2,
+      "duplicate_file_reads": 0,
+      "agent_messages": 12,
+      "first_action": "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short --branch'",
+      "commands": [
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short --branch'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content -Raw money.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content -Raw tests/test_money.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-ChildItem -Name'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'pytest tests/test_money.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -c \"import sys; print(sys.path[:3]); import money; print(money.to_cents(2.675))\"'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-ChildItem -Force -Name'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -m pytest tests/test_money.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git diff -- money.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -m pytest'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Remove-Item -Recurse -Force -LiteralPath .pytest_cache,__pycache__ -ErrorAction SilentlyContinue; git status --short'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Remove-Item -Recurse -Force -LiteralPath __pycache__ -ErrorAction SilentlyContinue'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Remove-Item -Recurse -Force -LiteralPath .pytest_cache -ErrorAction SilentlyContinue'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-ChildItem -Force -Name'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-ChildItem -Recurse -Force .pytest_cache | Select-Object -ExpandProperty FullName'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-ChildItem -Recurse -Force __pycache__,tests\\\\__pycache__ | Select-Object -ExpandProperty FullName\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Remove-Item -Force -LiteralPath __pycache__\\\\money.cpython-310.pyc\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Remove-Item -Force -LiteralPath .pytest_cache\\\\.gitignore,.pytest_cache\\\\CACHEDIR.TAG,.pytest_cache\\\\README.md,.pytest_cache\\\\v\\\\cache\\\\lastfailed,.pytest_cache\\\\v\\\\cache\\\\nodeids\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Remove-Item -Force -LiteralPath tests\\\\__pycache__\\\\test_money.cpython-310-pytest-8.4.1.pyc\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git diff -- money.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short'"
+      ],
+      "errors": [],
+      "arm_order": [
+        "B0",
+        "B3",
+        "B1"
+      ]
+    },
+    {
+      "task_id": "t02-retry-backoff",
+      "stratum": "multi_file",
+      "arm": "B1",
+      "checkpoint_head": "014b29a47159c0290d7e5851f4f5683d1c54fabf",
+      "worktree_digest": "291eeb514eb66fe6667a61ac6cdd21ae6b775a9747e3b86e7f8a73edd6327814",
+      "prompt_sha256": "9167118ea45f82fd4244ec5df9e4b0e3a03ad07bcd47ff77d50a7e20f365dab0",
+      "prompt_chars": 1081,
+      "codex_exit": 0,
+      "verified_success": true,
+      "verifier_tail": "...                                                                      [100%]\n3 passed in 0.34s\n",
+      "wall_seconds": 163.98,
+      "agent_ran_tests_successfully": true,
+      "input_tokens": 317637,
+      "cached_input_tokens": 294400,
+      "uncached_input_tokens": 23237,
+      "output_tokens": 2536,
+      "reasoning_output_tokens": 426,
+      "command_count": 18,
+      "duplicate_commands": 2,
+      "failed_commands": 5,
+      "edits": 1,
+      "duplicate_edits": 0,
+      "file_reads": 3,
+      "duplicate_file_reads": 0,
+      "agent_messages": 12,
+      "first_action": "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-ChildItem -Force'",
+      "commands": [
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-ChildItem -Force'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short --branch'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content -Raw backoff.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content -Raw tests/test_client.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content -Raw client.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git diff -- client.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'pytest tests/test_client.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg --files'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -c \"import os, sys; print(os.getcwd()); print(sys.path[:5]); import client; print(client.call)\"'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-ChildItem Env:PYTHONPATH'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -m pytest tests/test_client.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -m pytest'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git diff -- client.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$paths = @((Resolve-Path -LiteralPath '\"'__pycache__' -ErrorAction SilentlyContinue), (Resolve-Path -LiteralPath 'tests\\\\__pycache__' -ErrorAction SilentlyContinue)); foreach (\"'$p in $paths) { if ($p -and $p.Path.StartsWith((Resolve-Path -LiteralPath '\"'.').Path)) { Remove-Item -LiteralPath \"'$p.Path -Recurse -Force } }'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Remove-Item -LiteralPath .\\\\__pycache__ -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item -LiteralPath .\\\\tests\\\\__pycache__ -Recurse -Force -ErrorAction SilentlyContinue\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Remove-Item -LiteralPath .\\\\__pycache__ -Recurse -Force -ErrorAction SilentlyContinue\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short'"
+      ],
+      "errors": [],
+      "arm_order": [
+        "B1",
+        "B3",
+        "B0"
+      ]
+    },
+    {
+      "task_id": "t02-retry-backoff",
+      "stratum": "multi_file",
+      "arm": "B3",
+      "checkpoint_head": "a732dba6a84be5728c6aef2416f1035985fbc49b",
+      "worktree_digest": "291eeb514eb66fe6667a61ac6cdd21ae6b775a9747e3b86e7f8a73edd6327814",
+      "prompt_sha256": "60be175c7ef686c54008bca29e293f74b6ea743d02e3e615ecdf9adb5d333ebd",
+      "prompt_chars": 4882,
+      "codex_exit": 0,
+      "verified_success": true,
+      "verifier_tail": "...                                                                      [100%]\n3 passed in 0.34s\n",
+      "wall_seconds": 93.06,
+      "agent_ran_tests_successfully": true,
+      "input_tokens": 187553,
+      "cached_input_tokens": 166528,
+      "uncached_input_tokens": 21025,
+      "output_tokens": 1827,
+      "reasoning_output_tokens": 376,
+      "command_count": 12,
+      "duplicate_commands": 0,
+      "failed_commands": 1,
+      "edits": 1,
+      "duplicate_edits": 0,
+      "file_reads": 3,
+      "duplicate_file_reads": 0,
+      "agent_messages": 7,
+      "first_action": "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git rev-parse --show-toplevel; git status --short'",
+      "commands": [
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git rev-parse --show-toplevel; git status --short'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content -Path client.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content -Path tests/test_client.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content -Path backoff.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"call\\\\(|Transient|delays\\\\(\\\" .\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'pytest tests/test_client.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -c \"import sys, os; print(os.getcwd()); print(sys.path[:5]); import client; print(client)\"'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg --files'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-ChildItem -Force'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git diff -- client.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -m pytest tests/test_client.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -m pytest'"
+      ],
+      "errors": [],
+      "b3_resume": {
+        "agents": [
+          "agent:claude"
+        ],
+        "changed_paths": [
+          "client.py"
+        ],
+        "claims": [],
+        "commits": [],
+        "decisions": [
+          "catching bare Exception was tried and rejected: it swallows ValueError and breaks test_non_transient_not_retried",
+          "sleeping is not asserted by the tests; do not add real sleeps that slow the suite"
+        ],
+        "evidence": [
+          {
+            "attributes": {},
+            "digest": "abea562e2223c5b8",
+            "evidence_id": "evidence:e48b4177a6aa2af238ef6b5f",
+            "kind": "test_result",
+            "locator": "client retry tests",
+            "observed_at_ms": 1791043467075,
+            "source_ref": "pytest tests/test_client.py",
+            "trust": "verified"
+          },
+          {
+            "attributes": {},
+            "digest": "a732dba6a84be5728c6aef2416f1035985fbc49b",
+            "evidence_id": "evidence:8b299ea8cc1e620936779ced",
+            "kind": "repository_fact",
+            "locator": "",
+            "observed_at_ms": 1791043467075,
+            "source_ref": "repo:git-root:4ecc21f0b370f14eff2737072f66c3fe",
+            "trust": "observed"
+          },
+          {
+            "attributes": {},
+            "digest": "5e0ede6db29c0244aef3b3f55bf828f08a3fe747bc047fa12c49b32d478efdef",
+            "evidence_id": "evidence:936580335736e90ea487e34d",
+            "kind": "checkpoint",
+            "locator": "",
+            "observed_at_ms": 1791043467075,
+            "source_ref": "checkpoint:1",
+            "trust": "observed"
+          },
+          {
+            "attributes": {},
+            "digest": "f2df6e0d1423c001098a769b2a17bec96d17fa863f4b206c0bfcfa15128cb984",
+            "evidence_id": "evidence:a95b23e37da1edbea808b324",
+            "kind": "checkpoint",
+            "locator": "",
+            "observed_at_ms": 1791043467075,
+            "source_ref": "checkpoint:1",
+            "trust": "observed"
+          },
+          {
+            "attributes": {},
+            "digest": "125e0e27c19fb6540c98e8e7545998f9209b333591ea8663bc989858afd32c7f",
+            "evidence_id": "evidence:b1ff21d7e20149fe76720df5",
+            "kind": "user_statement",
+            "locator": "",
+            "observed_at_ms": 1791043467075,
+            "source_ref": "user:task",
+            "trust": "observed"
+          },
+          {
+            "attributes": {
+              "change_kind": "modified",
+              "path": "client.py"
+            },
+            "digest": "",
+            "evidence_id": "evidence:fd6d11f8114abac28059df95",
+            "kind": "git_status",
+            "locator": "client.py",
+            "observed_at_ms": 1791043467075,
+            "source_ref": "git-status:a732dba6a84be5728c6aef2416f1035985fbc49b",
+            "trust": "observed"
+          }
+        ],
+        "failures": [
+          "verification failed: client retry tests"
+        ],
+        "graph_commitment": "313990ac31406cef5045e498d7cb1eea6b70d08e14f035aa517a4c83de9da948",
+        "graph_revision": 3,
+        "outstanding_work": [
+          "only retry Transient, let other exceptions propagate immediately",
+          "write the retry loop in client.call using delays()"
+        ],
+        "repo_id": "git-root:4ecc21f0b370f14eff2737072f66c3fe",
+        "selected_workstream": {
+          "agent_ids": [
+            "agent:37048f21f14b46953c5827f9"
+          ],
+          "changed_paths": [
+            "client.py"
+          ],
+          "commit_ids": [],
+          "decision_ids": [
+            "decision:b7985cc9321b1b6356079308",
+            "decision:da7dc534991dd5aab5d56e77"
+          ],
+          "evidence_ids": [
+            "evidence:8b299ea8cc1e620936779ced",
+            "evidence:936580335736e90ea487e34d",
+            "evidence:a95b23e37da1edbea808b324",
+            "evidence:b1ff21d7e20149fe76720df5",
+            "evidence:e48b4177a6aa2af238ef6b5f",
+            "evidence:fd6d11f8114abac28059df95"
+          ],
+          "failure_ids": [
+            "failure:46b32e05deefef2d6f8aad41"
+          ],
+          "kind": "workstream",
+          "label": "retry transient client failures with backoff",
+          "node_id": "workstream:c5e285b42e40220a01a160d3",
+          "remaining_work": [
+            "only retry Transient, let other exceptions propagate immediately",
+            "write the retry loop in client.call using delays()"
+          ],
+          "status": "blocked",
+          "symbol_ids": [
+            "symbol:82d0708ca021960e2a2a64ac",
+            "symbol:969a604b5eb1f19003d5cf23"
+          ],
+          "task_ids": [
+            "task:80bad4994d04e01eaef5dc5f"
+          ],
+          "trust": "verified",
+          "updated_at_ms": 1791043467075,
+          "verification_ids": [
+            "test:7e3bdaa1f3e6524174c08d61"
+          ]
+        },
+        "task_labels": [
+          "retry transient client failures with backoff"
+        ],
+        "verification": [
+          {
+            "freshness": null,
+            "label": "client retry tests",
+            "node_id": "test:7e3bdaa1f3e6524174c08d61",
+            "status": "blocked",
+            "trust": "verified",
+            "updated_at_ms": 1791043467075,
+            "verdict": "failed",
+            "verified_repository_commitment": null
+          }
+        ]
+      },
+      "arm_order": [
+        "B1",
+        "B3",
+        "B0"
+      ]
+    },
+    {
+      "task_id": "t02-retry-backoff",
+      "stratum": "multi_file",
+      "arm": "B0",
+      "checkpoint_head": "d01dc0a068f33b4dd8982f519a0216bc0eb15612",
+      "worktree_digest": "291eeb514eb66fe6667a61ac6cdd21ae6b775a9747e3b86e7f8a73edd6327814",
+      "prompt_sha256": "0829a51ed8f878955313166239987e3b93d65bb6fd8ce355e0a25ea63c07b2c9",
+      "prompt_chars": 247,
+      "codex_exit": 0,
+      "verified_success": true,
+      "verifier_tail": "...                                                                      [100%]\n3 passed in 0.78s\n",
+      "wall_seconds": 156.87,
+      "agent_ran_tests_successfully": true,
+      "input_tokens": 368664,
+      "cached_input_tokens": 344320,
+      "uncached_input_tokens": 24344,
+      "output_tokens": 3648,
+      "reasoning_output_tokens": 1152,
+      "command_count": 17,
+      "duplicate_commands": 3,
+      "failed_commands": 3,
+      "edits": 3,
+      "duplicate_edits": 2,
+      "file_reads": 3,
+      "duplicate_file_reads": 0,
+      "agent_messages": 12,
+      "first_action": "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short'",
+      "commands": [
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg --files'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"backoff|retry|Client|client\" .'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content -Raw .\\\\client.py\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content -Raw .\\\\backoff.py\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content -Raw .\\\\tests\\\\test_client.py\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'pytest -q'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"python -c \\\"import os, sys; print(os.getcwd()); print(sys.path[:5]); import client; print(client.call(lambda: 'ok'))\\\"\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-ChildItem -Force .\\\\tests\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-ChildItem -Force'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -m pytest -q'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -m pytest -q'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git diff -- client.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$root = (Resolve-Path .).Path; $targets = @('\"'__pycache__', 'tests\\\\__pycache__') | ForEach-Object { Join-Path \"'$root $_ }; foreach ($target in $targets) { $resolved = Resolve-Path -LiteralPath $target -ErrorAction SilentlyContinue; if ($resolved -and $resolved.Path.StartsWith($root)) { Remove-Item -LiteralPath $resolved.Path -Recurse -Force } }'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Remove-Item -LiteralPath .\\\\__pycache__ -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item -LiteralPath .\\\\tests\\\\__pycache__ -Recurse -Force -ErrorAction SilentlyContinue\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short'"
+      ],
+      "errors": [],
+      "arm_order": [
+        "B1",
+        "B3",
+        "B0"
+      ]
+    },
+    {
+      "task_id": "t03-rename-propagation",
+      "stratum": "repository_wide",
+      "arm": "B1",
+      "checkpoint_head": "bc8fe61d855c984ef26ae81143d290de6b5f8b05",
+      "worktree_digest": "eafa3d87ab9762b2e4a01a1af463f11512918b6e2a1171af58825e793900bf1a",
+      "prompt_sha256": "c09207a5c1acb345005add01e5b3de95908aab77a22afecf73446abe78516b3f",
+      "prompt_chars": 1067,
+      "codex_exit": 0,
+      "verified_success": true,
+      "verifier_tail": "..                                                                       [100%]\n2 passed in 0.31s\n",
+      "wall_seconds": 104.5,
+      "agent_ran_tests_successfully": true,
+      "input_tokens": 230556,
+      "cached_input_tokens": 210304,
+      "uncached_input_tokens": 20252,
+      "output_tokens": 2220,
+      "reasoning_output_tokens": 246,
+      "command_count": 15,
+      "duplicate_commands": 2,
+      "failed_commands": 5,
+      "edits": 2,
+      "duplicate_edits": 0,
+      "file_reads": 0,
+      "duplicate_file_reads": 0,
+      "agent_messages": 9,
+      "first_action": "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"\\\\bqty\\\\b|quantity|line_total|summarise\\\" .\"",
+      "commands": [
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"\\\\bqty\\\\b|quantity|line_total|summarise\\\" .\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short --branch'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg --files'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"\\\\bqty\\\\b\\\" .\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'pytest tests/test_orders.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"python -c \\\"import sys, os; print(os.getcwd()); print(sys.path[:5]); import models; print(models.Item('x',2).quantity)\\\"\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-ChildItem -Force'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-ChildItem Env:PYTHONPATH'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git diff -- pricing.py report.py models.py tests/test_orders.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -m pytest tests/test_orders.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -m pytest'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$root = (Resolve-Path .).Path\n$targets = @('\"'__pycache__', 'tests/__pycache__') | ForEach-Object { Join-Path \"'$root $_ } | Where-Object { Test-Path $_ } | ForEach-Object { (Resolve-Path $_).Path }\nforeach ($target in $targets) {\n  if (-not $target.StartsWith($root)) { throw \"Refusing to remove outside workspace: $target\" }\n  Remove-Item -LiteralPath $target -Recurse -Force\n}\n$targets'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"\\\\bqty\\\\b\\\" .\""
+      ],
+      "errors": [],
+      "arm_order": [
+        "B1",
+        "B3",
+        "B0"
+      ]
+    },
+    {
+      "task_id": "t03-rename-propagation",
+      "stratum": "repository_wide",
+      "arm": "B3",
+      "checkpoint_head": "eca390b06d80f51fc7c96d355a2e5440f9e5dcac",
+      "worktree_digest": "eafa3d87ab9762b2e4a01a1af463f11512918b6e2a1171af58825e793900bf1a",
+      "prompt_sha256": "aba2cffc09d70ace1a652820f1ad43e1ca490387b303253837226def4b672e11",
+      "prompt_chars": 4821,
+      "codex_exit": 0,
+      "verified_success": true,
+      "verifier_tail": "..                                                                       [100%]\n2 passed in 0.40s\n",
+      "wall_seconds": 157.32,
+      "agent_ran_tests_successfully": true,
+      "input_tokens": 387695,
+      "cached_input_tokens": 360704,
+      "uncached_input_tokens": 26991,
+      "output_tokens": 3196,
+      "reasoning_output_tokens": 581,
+      "command_count": 20,
+      "duplicate_commands": 2,
+      "failed_commands": 5,
+      "edits": 3,
+      "duplicate_edits": 0,
+      "file_reads": 4,
+      "duplicate_file_reads": 0,
+      "agent_messages": 14,
+      "first_action": "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"\\\\bqty\\\\b|quantity\\\" .\"",
+      "commands": [
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"\\\\bqty\\\\b|quantity\\\" .\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git rev-parse --show-toplevel; git status --short'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content -Raw .\\\\tests\\\\test_orders.py\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content -Raw .\\\\report.py\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content -Raw .\\\\pricing.py\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg --files'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'pytest tests/test_orders.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -c \"import sys, os; print(os.getcwd()); print(sys.path[:5]); import models; print(models.Item)\"'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content -Raw .\\\\models.py\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-ChildItem -Force'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -m pytest tests/test_orders.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'pytest tests/test_orders.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command pytest",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"\\\\bqty\\\\b\\\" .\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Remove-Item -LiteralPath .\\\\__pycache__, .\\\\tests\\\\__pycache__ -Recurse -Force\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$root = (Resolve-Path .).Path; $targets = @((Resolve-Path .'\"\\\\__pycache__).Path, (Resolve-Path .\\\\tests\\\\__pycache__).Path); foreach (\"'$target in $targets) { if (-not $target.StartsWith($root)) { throw \"Refusing to remove outside workspace: $target\" } }; foreach ($target in $targets) { Remove-Item -LiteralPath $target -Recurse -Force }'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-ChildItem -Recurse -File __pycache__, tests\\\\__pycache__ | Select-Object -ExpandProperty FullName\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$files = @('\"'.\\\\__pycache__\\\\models.cpython-310.pyc', '.\\\\__pycache__\\\\pricing.cpython-310.pyc', '.\\\\__pycache__\\\\report.cpython-310.pyc', '.\\\\tests\\\\__pycache__\\\\test_orders.cpython-310-pytest-8.4.1.pyc'); foreach (\"'$file in $files) { Remove-Item -LiteralPath $file -Force }; Remove-Item -LiteralPath .'\"\\\\__pycache__ -Force; Remove-Item -LiteralPath .\\\\tests\\\\__pycache__ -Force\""
+      ],
+      "errors": [],
+      "b3_resume": {
+        "agents": [
+          "agent:claude"
+        ],
+        "changed_paths": [
+          "models.py"
+        ],
+        "claims": [],
+        "commits": [],
+        "decisions": [
+          "adding a qty property alias on Item was tried and rejected: it hides remaining call sites instead of migrating them",
+          "models.py is already migrated and is the source of truth; do not reintroduce a qty alias"
+        ],
+        "evidence": [
+          {
+            "attributes": {},
+            "digest": "e203981033c7a0ae",
+            "evidence_id": "evidence:fdd319e3343686b869dd8707",
+            "kind": "test_result",
+            "locator": "order tests",
+            "observed_at_ms": 1791043827215,
+            "source_ref": "pytest tests/test_orders.py",
+            "trust": "verified"
+          },
+          {
+            "attributes": {},
+            "digest": "eca390b06d80f51fc7c96d355a2e5440f9e5dcac",
+            "evidence_id": "evidence:10b1b5302d18b07471008e51",
+            "kind": "repository_fact",
+            "locator": "",
+            "observed_at_ms": 1791043827215,
+            "source_ref": "repo:git-root:f184c3c55c99c9a71610ba2ffc613802",
+            "trust": "observed"
+          },
+          {
+            "attributes": {},
+            "digest": "ce2207f6f9d9ff6fcd4399b6c1910126bac5f505679f72928f7ba45d5501bbf7",
+            "evidence_id": "evidence:26312f78b1416d21ada6c8aa",
+            "kind": "checkpoint",
+            "locator": "",
+            "observed_at_ms": 1791043827215,
+            "source_ref": "checkpoint:1",
+            "trust": "observed"
+          },
+          {
+            "attributes": {},
+            "digest": "a18116b47de54329e5b1d43f78d8a6063202a68bdfcf3b0974bdaf1a53e41b2c",
+            "evidence_id": "evidence:685c36d7764f8089fbb78055",
+            "kind": "checkpoint",
+            "locator": "",
+            "observed_at_ms": 1791043827215,
+            "source_ref": "checkpoint:1",
+            "trust": "observed"
+          },
+          {
+            "attributes": {},
+            "digest": "926ad88200f3208bcb53623592ee727a443ababa4092b9c1040b6bb8998bd746",
+            "evidence_id": "evidence:ef81ad803770386d822428e1",
+            "kind": "user_statement",
+            "locator": "",
+            "observed_at_ms": 1791043827215,
+            "source_ref": "user:task",
+            "trust": "observed"
+          },
+          {
+            "attributes": {
+              "change_kind": "modified",
+              "path": "models.py"
+            },
+            "digest": "",
+            "evidence_id": "evidence:fcbc1d57bf7ee375b8302f36",
+            "kind": "git_status",
+            "locator": "models.py",
+            "observed_at_ms": 1791043827215,
+            "source_ref": "git-status:eca390b06d80f51fc7c96d355a2e5440f9e5dcac",
+            "trust": "observed"
+          }
+        ],
+        "failures": [
+          "verification failed: order tests"
+        ],
+        "graph_commitment": "6aae92e26531629a10810114096a00a67b7213aa21081442e2c8069736e097da",
+        "graph_revision": 3,
+        "outstanding_work": [
+          "update pricing.line_total to use item.quantity",
+          "update report.summarise to use i.quantity"
+        ],
+        "repo_id": "git-root:f184c3c55c99c9a71610ba2ffc613802",
+        "selected_workstream": {
+          "agent_ids": [
+            "agent:f40bd4d341cfd7058e4504fe"
+          ],
+          "changed_paths": [
+            "models.py"
+          ],
+          "commit_ids": [],
+          "decision_ids": [
+            "decision:221301e0da180474013a6f77",
+            "decision:57a37d409a608f920e4d0999"
+          ],
+          "evidence_ids": [
+            "evidence:10b1b5302d18b07471008e51",
+            "evidence:26312f78b1416d21ada6c8aa",
+            "evidence:685c36d7764f8089fbb78055",
+            "evidence:ef81ad803770386d822428e1",
+            "evidence:fcbc1d57bf7ee375b8302f36",
+            "evidence:fdd319e3343686b869dd8707"
+          ],
+          "failure_ids": [
+            "failure:99a1c5d4e8d187c351d69bc8"
+          ],
+          "kind": "workstream",
+          "label": "finish renaming Item.qty to Item.quantity",
+          "node_id": "workstream:0a9396e2efcb5779b8a0bbce",
+          "remaining_work": [
+            "update pricing.line_total to use item.quantity",
+            "update report.summarise to use i.quantity"
+          ],
+          "status": "blocked",
+          "symbol_ids": [
+            "symbol:73efde75c415813598b3681b",
+            "symbol:91c32c163f1a7d0b55cad2f5"
+          ],
+          "task_ids": [
+            "task:e9266d854f72cd7e57caa1cb"
+          ],
+          "trust": "verified",
+          "updated_at_ms": 1791043827215,
+          "verification_ids": [
+            "test:7c0417df3b402c0a8553c865"
+          ]
+        },
+        "task_labels": [
+          "finish renaming Item.qty to Item.quantity"
+        ],
+        "verification": [
+          {
+            "freshness": null,
+            "label": "order tests",
+            "node_id": "test:7c0417df3b402c0a8553c865",
+            "status": "blocked",
+            "trust": "verified",
+            "updated_at_ms": 1791043827215,
+            "verdict": "failed",
+            "verified_repository_commitment": null
+          }
+        ]
+      },
+      "arm_order": [
+        "B1",
+        "B3",
+        "B0"
+      ]
+    },
+    {
+      "task_id": "t03-rename-propagation",
+      "stratum": "repository_wide",
+      "arm": "B0",
+      "checkpoint_head": "ff75e73f20f20b98aad844f20289790489e7a67f",
+      "worktree_digest": "eafa3d87ab9762b2e4a01a1af463f11512918b6e2a1171af58825e793900bf1a",
+      "prompt_sha256": "f80ec3633a852179a622cbe1133e93b216538a63d7b565f854a24a3cb1f6cc9e",
+      "prompt_chars": 257,
+      "codex_exit": 0,
+      "verified_success": true,
+      "verifier_tail": "..                                                                       [100%]\n2 passed in 0.33s\n",
+      "wall_seconds": 88.71,
+      "agent_ran_tests_successfully": true,
+      "input_tokens": 140502,
+      "cached_input_tokens": 112896,
+      "uncached_input_tokens": 27606,
+      "output_tokens": 1155,
+      "reasoning_output_tokens": 63,
+      "command_count": 9,
+      "duplicate_commands": 0,
+      "failed_commands": 1,
+      "edits": 2,
+      "duplicate_edits": 0,
+      "file_reads": 4,
+      "duplicate_file_reads": 0,
+      "agent_messages": 6,
+      "first_action": "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"\\\\bqty\\\\b|quantity|Order\\\" tests src . -g '\"'!*.pyc'\"'\"",
+      "commands": [
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"\\\\bqty\\\\b|quantity|Order\\\" tests src . -g '\"'!*.pyc'\"'\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content -Path .\\\\models.py\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content -Path .\\\\pricing.py\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content -Path .\\\\tests\\\\test_orders.py\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content -Path .\\\\report.py\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-ChildItem -Force | Select-Object Name'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -m pytest tests/test_orders.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -m pytest'"
+      ],
+      "errors": [],
+      "arm_order": [
+        "B1",
+        "B3",
+        "B0"
+      ]
+    },
+    {
+      "task_id": "t04-parser-state",
+      "stratum": "state_heavy",
+      "arm": "B1",
+      "checkpoint_head": "d9bf6e4d57cfe9d6de27408eab44c5e9ee22f11e",
+      "worktree_digest": "ea6aa628bb00d8e40301437a72226db79038e61f007598f9adff280b18633ecd",
+      "prompt_sha256": "45acd4c37f9967ae37832475fcf4c23310cfc764a4e7be72c4ee84206b56095a",
+      "prompt_chars": 1076,
+      "codex_exit": 0,
+      "verified_success": true,
+      "verifier_tail": "....                                                                     [100%]\n4 passed in 0.30s\n",
+      "wall_seconds": 167.96,
+      "agent_ran_tests_successfully": true,
+      "input_tokens": 317201,
+      "cached_input_tokens": 294400,
+      "uncached_input_tokens": 22801,
+      "output_tokens": 2662,
+      "reasoning_output_tokens": 348,
+      "command_count": 18,
+      "duplicate_commands": 2,
+      "failed_commands": 4,
+      "edits": 2,
+      "duplicate_edits": 1,
+      "file_reads": 2,
+      "duplicate_file_reads": 0,
+      "agent_messages": 12,
+      "first_action": "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content -Raw tokenizer.py'",
+      "commands": [
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content -Raw tokenizer.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content -Raw tests/test_tokenizer.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-ChildItem -Force; git status --short; git branch --show-current'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-ChildItem tests -Force'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'pytest tests/test_tokenizer.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg --files'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"python -c \\\"import sys, os; print(os.getcwd()); print(sys.path[:5]); import tokenizer; print(tokenizer.split_fields('a,\\\\\\\"b,c\\\\\\\",d'))\\\"\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-ChildItem -Force -Name'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git diff -- tokenizer.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -m pytest tests/test_tokenizer.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git diff -- tokenizer.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -m pytest tests/test_tokenizer.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -m pytest'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Remove-Item -LiteralPath .\\\\__pycache__, .\\\\tests\\\\__pycache__ -Recurse -Force; git status --short\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Resolve-Path .\\\\__pycache__, .\\\\tests\\\\__pycache__\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command Get-Location",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Remove-Item -LiteralPath .\\\\__pycache__ -Recurse -Force\""
+      ],
+      "errors": [],
+      "arm_order": [
+        "B1",
+        "B3",
+        "B0"
+      ]
+    },
+    {
+      "task_id": "t04-parser-state",
+      "stratum": "state_heavy",
+      "arm": "B3",
+      "checkpoint_head": "e0202de554bd8e2e47d2aca273efc9fcf1c1c20f",
+      "worktree_digest": "ea6aa628bb00d8e40301437a72226db79038e61f007598f9adff280b18633ecd",
+      "prompt_sha256": "950ef2271a145c3f3aec54f0759231754670888cc5273ba20fda69c7819afcb7",
+      "prompt_chars": 4816,
+      "codex_exit": 0,
+      "verified_success": true,
+      "verifier_tail": "....                                                                     [100%]\n4 passed in 0.33s\n",
+      "wall_seconds": 63.03,
+      "agent_ran_tests_successfully": true,
+      "input_tokens": 129333,
+      "cached_input_tokens": 111488,
+      "uncached_input_tokens": 17845,
+      "output_tokens": 1076,
+      "reasoning_output_tokens": 178,
+      "command_count": 6,
+      "duplicate_commands": 0,
+      "failed_commands": 0,
+      "edits": 1,
+      "duplicate_edits": 0,
+      "file_reads": 2,
+      "duplicate_file_reads": 0,
+      "agent_messages": 5,
+      "first_action": "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git rev-parse --show-toplevel; git status --short'",
+      "commands": [
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git rev-parse --show-toplevel; git status --short'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content -Path tests/test_tokenizer.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content -Path tokenizer.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git diff -- tokenizer.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -m pytest tests/test_tokenizer.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -m pytest'"
+      ],
+      "errors": [],
+      "b3_resume": {
+        "agents": [
+          "agent:claude"
+        ],
+        "changed_paths": [
+          "tokenizer.py"
+        ],
+        "claims": [],
+        "commits": [],
+        "decisions": [
+          "empty fields must survive, so filtering falsy segments is not allowed",
+          "the csv module was tried and rejected: it also strips a mid-field quote, which breaks test_quotes_stripped_only_when_wrapping"
+        ],
+        "evidence": [
+          {
+            "attributes": {},
+            "digest": "e7de7780a0ece3ad",
+            "evidence_id": "evidence:1a7c34419a1d09a2bee38753",
+            "kind": "test_result",
+            "locator": "tokenizer tests",
+            "observed_at_ms": 1791044246884,
+            "source_ref": "pytest tests/test_tokenizer.py",
+            "trust": "verified"
+          },
+          {
+            "attributes": {},
+            "digest": "1ad9e44850c075582dd5125a7856c964b708b91fa77a92695d4f70ccb103ee7e",
+            "evidence_id": "evidence:1b51f4cd92fbae64740ed171",
+            "kind": "checkpoint",
+            "locator": "",
+            "observed_at_ms": 1791044246884,
+            "source_ref": "checkpoint:1",
+            "trust": "observed"
+          },
+          {
+            "attributes": {},
+            "digest": "e0202de554bd8e2e47d2aca273efc9fcf1c1c20f",
+            "evidence_id": "evidence:d091401f3c163522c9297d8a",
+            "kind": "repository_fact",
+            "locator": "",
+            "observed_at_ms": 1791044246884,
+            "source_ref": "repo:git-root:f0b6173d7612c52753e44201160f5ecf",
+            "trust": "observed"
+          },
+          {
+            "attributes": {},
+            "digest": "1d1810617dfb9929b4c7e0599c7465c19dae0fa39c5e87c9aa5d9f210b871fa3",
+            "evidence_id": "evidence:d9b66be0f9693a84d816c868",
+            "kind": "user_statement",
+            "locator": "",
+            "observed_at_ms": 1791044246884,
+            "source_ref": "user:task",
+            "trust": "observed"
+          },
+          {
+            "attributes": {
+              "change_kind": "modified",
+              "path": "tokenizer.py"
+            },
+            "digest": "",
+            "evidence_id": "evidence:eed4d2235fbe56cbf4bb8dd2",
+            "kind": "git_status",
+            "locator": "tokenizer.py",
+            "observed_at_ms": 1791044246884,
+            "source_ref": "git-status:e0202de554bd8e2e47d2aca273efc9fcf1c1c20f",
+            "trust": "observed"
+          },
+          {
+            "attributes": {},
+            "digest": "3aa255fabe82ef363d17fb4e03a88ae261830a1bc0a519a3b9680bf7bf0a26a5",
+            "evidence_id": "evidence:ef54b2d607c92c08bbb5a8e1",
+            "kind": "checkpoint",
+            "locator": "",
+            "observed_at_ms": 1791044246884,
+            "source_ref": "checkpoint:1",
+            "trust": "observed"
+          }
+        ],
+        "failures": [
+          "verification failed: tokenizer tests"
+        ],
+        "graph_commitment": "69768181f09b08855190ea7b45e7461a533462a834c73c0ab788682e2f49db89",
+        "graph_revision": 3,
+        "outstanding_work": [
+          "strip quotes only when they wrap the whole field",
+          "track in-quote state while scanning instead of splitting"
+        ],
+        "repo_id": "git-root:f0b6173d7612c52753e44201160f5ecf",
+        "selected_workstream": {
+          "agent_ids": [
+            "agent:a573cea884774e2736ed0538"
+          ],
+          "changed_paths": [
+            "tokenizer.py"
+          ],
+          "commit_ids": [],
+          "decision_ids": [
+            "decision:0f8d5380e954123b757e7d13",
+            "decision:47df717de3e01813fa2e9966"
+          ],
+          "evidence_ids": [
+            "evidence:1a7c34419a1d09a2bee38753",
+            "evidence:1b51f4cd92fbae64740ed171",
+            "evidence:d091401f3c163522c9297d8a",
+            "evidence:d9b66be0f9693a84d816c868",
+            "evidence:eed4d2235fbe56cbf4bb8dd2",
+            "evidence:ef54b2d607c92c08bbb5a8e1"
+          ],
+          "failure_ids": [
+            "failure:93b0ed01fa93271d35b37d4f"
+          ],
+          "kind": "workstream",
+          "label": "handle quoted delimiters in split_fields",
+          "node_id": "workstream:8ec94d8869df71e04c203073",
+          "remaining_work": [
+            "strip quotes only when they wrap the whole field",
+            "track in-quote state while scanning instead of splitting"
+          ],
+          "status": "blocked",
+          "symbol_ids": [
+            "symbol:366a6a32c5f904b66c548e18"
+          ],
+          "task_ids": [
+            "task:d55dce4311180fc760597a67"
+          ],
+          "trust": "verified",
+          "updated_at_ms": 1791044246884,
+          "verification_ids": [
+            "test:0bd5493fe7d57a4df885925e"
+          ]
+        },
+        "task_labels": [
+          "handle quoted delimiters in split_fields"
+        ],
+        "verification": [
+          {
+            "freshness": null,
+            "label": "tokenizer tests",
+            "node_id": "test:0bd5493fe7d57a4df885925e",
+            "status": "blocked",
+            "trust": "verified",
+            "updated_at_ms": 1791044246884,
+            "verdict": "failed",
+            "verified_repository_commitment": null
+          }
+        ]
+      },
+      "arm_order": [
+        "B1",
+        "B3",
+        "B0"
+      ]
+    },
+    {
+      "task_id": "t04-parser-state",
+      "stratum": "state_heavy",
+      "arm": "B0",
+      "checkpoint_head": "a53040ad248a3f87e1fbdeda0dc2d8d786e88c5b",
+      "worktree_digest": "ea6aa628bb00d8e40301437a72226db79038e61f007598f9adff280b18633ecd",
+      "prompt_sha256": "47ee6e2227583eff509427344b1a1b0cca43ecac636ddc080725fc962878e7ca",
+      "prompt_chars": 243,
+      "codex_exit": 0,
+      "verified_success": true,
+      "verifier_tail": "....                                                                     [100%]\n4 passed in 0.31s\n",
+      "wall_seconds": 91.6,
+      "agent_ran_tests_successfully": true,
+      "input_tokens": 199701,
+      "cached_input_tokens": 182272,
+      "uncached_input_tokens": 17429,
+      "output_tokens": 1951,
+      "reasoning_output_tokens": 293,
+      "command_count": 11,
+      "duplicate_commands": 1,
+      "failed_commands": 2,
+      "edits": 2,
+      "duplicate_edits": 1,
+      "file_reads": 2,
+      "duplicate_file_reads": 0,
+      "agent_messages": 8,
+      "first_action": "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short'",
+      "commands": [
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"tokenizer|split|delimiter|quote\" -S .'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-ChildItem -Force'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content -Raw tests\\\\test_tokenizer.py\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content -Raw tokenizer.py'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'pytest -q'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"python -c \\\"import sys, os; print(os.getcwd()); print(sys.path[:3]); import tokenizer; print(tokenizer.split_fields('a,\\\\\\\"b,c\\\\\\\",d'))\\\"\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg --files -g \"pytest.ini\" -g \"pyproject.toml\" -g \"setup.cfg\" -g \"tox.ini\"'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -m pytest -q'",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"git diff -- tokenizer.py tests\\\\test_tokenizer.py\"",
+        "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'python -m pytest -q'"
+      ],
+      "errors": [],
+      "arm_order": [
+        "B1",
+        "B3",
+        "B0"
+      ]
+    }
+  ]
+}

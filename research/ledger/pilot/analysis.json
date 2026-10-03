@@ -1,0 +1,165 @@
+{
+  "phase": "Pilot-0 (harness validation). NOT the commercial test.",
+  "n_tasks": 1,
+  "statistical_note": "At n=6 one failure moves a success rate by 16.7 points. No paid-wedge verdict is emitted from this phase.",
+  "provenance": {
+    "suite_sha256": "e1aa55aea15277d390f3a20c0509833a195ccaede3ac045141872f3d77fc183f",
+    "harness_sha256": "635b9c2e34b2179ef8ef4cea44df8bbe459697de4eebc075603ec58a8f5cc4a8",
+    "entroly_source_commit": "58771b7c8929f6bffc7656dd58e625d43add6ca2",
+    "native_loaded_sha256": "cf4d6e8352d87152339c1343e90a11ce8c65e979cf780a9195d096bfeb53a28a",
+    "native_match": true,
+    "codex_model": "gpt-5.5",
+    "codex_auth": "ChatGPT account (not metered API key)",
+    "sandbox": "workspace-write"
+  },
+  "validity": {
+    "valid_rows": 3,
+    "total_rows": 3,
+    "invalid": [],
+    "contamination_flagged_rows": 0,
+    "contamination_detail": []
+  },
+  "per_arm": {
+    "B0": {
+      "valid_n": 1,
+      "total_n": 1,
+      "verified_completions": 1,
+      "verified_completion_rate": 1.0,
+      "verified_completion_wilson95": [
+        0.207,
+        1.0
+      ],
+      "median_cached_input": 367232.0,
+      "median_uncached_input": 24888.0,
+      "median_total_input": 392120.0,
+      "median_output": 2935.0,
+      "median_noncached_token_volume": 27823.0,
+      "median_rediscovery_operations": 5.0,
+      "rediscovery_iqr": null,
+      "total_duplicate_file_reads": 0,
+      "total_duplicate_commands": 0,
+      "total_duplicate_edits": 0,
+      "total_failed_commands": 5,
+      "median_command_count": 20.0,
+      "median_wall_seconds": 151.1
+    },
+    "B1": {
+      "valid_n": 1,
+      "total_n": 1,
+      "verified_completions": 1,
+      "verified_completion_rate": 1.0,
+      "verified_completion_wilson95": [
+        0.207,
+        1.0
+      ],
+      "median_cached_input": 302976.0,
+      "median_uncached_input": 36270.0,
+      "median_total_input": 339246.0,
+      "median_output": 2883.0,
+      "median_noncached_token_volume": 39153.0,
+      "median_rediscovery_operations": 10.0,
+      "rediscovery_iqr": null,
+      "total_duplicate_file_reads": 0,
+      "total_duplicate_commands": 3,
+      "total_duplicate_edits": 0,
+      "total_failed_commands": 7,
+      "median_command_count": 22.0,
+      "median_wall_seconds": 184.9
+    },
+    "B3": {
+      "valid_n": 1,
+      "total_n": 1,
+      "verified_completions": 1,
+      "verified_completion_rate": 1.0,
+      "verified_completion_wilson95": [
+        0.207,
+        1.0
+      ],
+      "median_cached_input": 316288.0,
+      "median_uncached_input": 40534.0,
+      "median_total_input": 356822.0,
+      "median_output": 2797.0,
+      "median_noncached_token_volume": 43331.0,
+      "median_rediscovery_operations": 6.0,
+      "rediscovery_iqr": null,
+      "total_duplicate_file_reads": 0,
+      "total_duplicate_commands": 2,
+      "total_duplicate_edits": 0,
+      "total_failed_commands": 4,
+      "median_command_count": 17.0,
+      "median_wall_seconds": 144.2
+    }
+  },
+  "payload_sizes": {
+    "B0": {
+      "median_prompt_chars": 242.0,
+      "median_handoff_payload_chars": 0.0,
+      "median_handoff_payload_tokens_estimate": 0
+    },
+    "B1": {
+      "median_prompt_chars": 998.0,
+      "median_handoff_payload_chars": 756.0,
+      "median_handoff_payload_tokens_estimate": 189
+    },
+    "B3": {
+      "median_prompt_chars": 4678.0,
+      "median_handoff_payload_chars": 4436.0,
+      "median_handoff_payload_tokens_estimate": 1109
+    }
+  },
+  "handoff_generation_cost": {
+    "B1": "0 provider tokens BY CONSTRUCTION. The B1 summary is rendered deterministically from RecordedState by a template, not by a live Claude call, because no Anthropic key is present in this environment. This biases END-TO-END economics in B1's favour: a real agent-written handoff would cost output tokens. The median payload token estimate under payload_sizes is the closest available lower bound on what that generation would have produced.",
+    "B3": "0 provider tokens. work_resume is local Rust+Python; its cost is latency, not provider usage. Measured separately."
+  },
+  "paired_tasks": [
+    {
+      "task_id": "t01-rounding",
+      "B0": {
+        "valid": true,
+        "verified": true,
+        "uncached_in": 24888,
+        "cached_in": 367232,
+        "out": 2935,
+        "cmds": 20,
+        "rediscovery_ops": 5,
+        "wall_s": 151.11,
+        "first_action": "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"money|round|Decima"
+      },
+      "B1": {
+        "valid": true,
+        "verified": true,
+        "uncached_in": 36270,
+        "cached_in": 302976,
+        "out": 2883,
+        "cmds": 22,
+        "rediscovery_ops": 10,
+        "wall_s": 184.89,
+        "first_action": "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short --bran"
+      },
+      "B3": {
+        "valid": true,
+        "verified": true,
+        "uncached_in": 40534,
+        "cached_in": 316288,
+        "out": 2797,
+        "cmds": 17,
+        "rediscovery_ops": 6,
+        "wall_s": 144.15,
+        "first_action": "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'git status --short'"
+      },
+      "delta_B3_minus_B1": {
+        "uncached_in": 4264,
+        "out": -86,
+        "rediscovery_ops": -4,
+        "cmds": -5,
+        "wall_s": -40.7,
+        "success_same": true
+      }
+    }
+  ],
+  "direction_of_effect": [
+    "verified completion equal",
+    "B3 fewer rediscovery operations",
+    "B3 noncached volume 11% vs B1"
+  ]
+}
