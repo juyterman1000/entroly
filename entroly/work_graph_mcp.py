@@ -76,6 +76,73 @@ def _store_for_path(path: Path) -> WorkGraphStore:
     return WorkGraphStore(identity["repo_id"])
 
 
+_CONTINUATION_CONTENT_FIELDS = (
+    "remaining_work",
+    "decision_ids",
+    "verification_ids",
+    "failure_ids",
+)
+
+
+def _resumable_workstream_id(store: Any) -> str:
+    """Pick the workstream a successor should actually resume.
+
+    ``work_resume`` refreshes the graph with a passive observation before
+    resuming. That observation carries no task hint, and workstream identity is
+    ``branch_name:task_id`` where a hintless observation derives
+    ``inferred:<branch>``. So the refresh mints a *second* workstream for the
+    same branch -- unfinished, newer, and carrying no decisions, no verification
+    and no outstanding work. ``unfinished_work()`` orders by ``updated_at_ms``
+    descending, so that placeholder outranked the real work and ``resume(None)``
+    handed the successor an empty continuation. Measured on the production path
+    with real (not backdated) clocks:
+
+        before passive refresh:  selected = workstream:c863fb54  outstanding=[...]
+        after  passive refresh:  selected = workstream:a40c2965  outstanding=[]
+
+    Two fixes were rejected before this one:
+
+    * Reordering ``unfinished_work()`` globally. Recency-first is correct for
+      callers asking what changed most recently, and only this flow must not be
+      answered that way.
+    * Having ingest attach a hintless observation to an existing branch
+      workstream. ``observation_to_event`` is a pure function of the repo id and
+      the observation, with no access to ``self.nodes``, because the event log
+      must replay deterministically under ``rebuild()``. Letting ingest consult
+      live graph state would make the same event stream produce different
+      workstream ids depending on replay order.
+    * Selecting *before* the refresh. That preserved the right workstream on the
+      first call only: the placeholder persists, so from the second call onward
+      it is itself "pre-existing" and wins again. A fix that works once is worse
+      than none, because it looks correct in a single-shot test.
+
+    So the discriminator is content, which is what "resumable" means for a
+    resume: a workstream that records outstanding work, decisions, verifications
+    or failures is work to continue; one with none of those is a bare
+    branch-state placeholder. Recency ordering is preserved *within* each group,
+    so two genuinely recorded workstreams still resolve exactly as before, and a
+    repository whose only unfinished work is contentless behaves unchanged.
+    """
+    try:
+        unfinished = store.load().unfinished()
+    except Exception:
+        return ""
+    if not unfinished:
+        return ""
+
+    def has_content(item: Any) -> bool:
+        if not isinstance(item, dict):
+            return False
+        return any(item.get(field) for field in _CONTINUATION_CONTENT_FIELDS)
+
+    # `unfinished` is already in the documented order; a stable partition keeps
+    # it rather than imposing a new one.
+    for item in unfinished:
+        if has_content(item):
+            return str(item.get("node_id") or "")
+    return str(unfinished[0].get("node_id") or "")
+
+
 def _recovery_unknowns(view: Any) -> list[str]:
     """What the reconstruction could not establish, for the agent to accept.
 
@@ -483,6 +550,8 @@ def work_resume(
         store.submit_repository_observation(
             _passive_observation(path), repository_path=path
         )
+        if not selected_workstream:
+            selected_workstream = _resumable_workstream_id(store)
         view = store.resume(selected_workstream or None, max_evidence=max_evidence)
         payload: dict[str, Any] = {"resume": view}
 
