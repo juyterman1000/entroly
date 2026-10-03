@@ -1,0 +1,75 @@
+{
+  "log": "C:\\Users\\abhis\\.entroly\\ravs\\events.jsonl",
+  "log_bytes": 6518092,
+  "baseline_commit": "9ba8d410",
+  "parse": {
+    "malformed_lines": 1,
+    "records_without_request_id": 0
+  },
+  "denominator": {
+    "recorded_request_records": 4798,
+    "what_these_actually_are": "tool executions captured by an external hook producer, NOT optimize_context calls. 4788/4788 outcomes land within 10ms of their request, so none is a delayed outcome.",
+    "optimize_context_calls_recorded": "UNMEASURABLE -- optimize_context writes no request record; it can only write a trace event when decomposed_nodes > 0"
+  },
+  "coverage": {
+    "requests_with_any_outcome": 4788,
+    "requests_with_strong_or_medium": 4788,
+    "requests_with_strong": 4788,
+    "requests_with_medium": 0,
+    "requests_weak_only": 0,
+    "requests_unresolved": 10,
+    "orphan_outcomes_no_matching_request": 26,
+    "coverage_by_strength_vs_tool_executions": 0.9979,
+    "actionable_outcomes_absolute": 0,
+    "coverage_actionable_vs_tool_executions": 0.0
+  },
+  "delay_seconds": {
+    "n": 4788,
+    "median": 0.001,
+    "p95": 0.001,
+    "max": 0.001,
+    "mean": 0.001
+  },
+  "strength_distribution": {
+    "strong": 4814
+  },
+  "event_pair_distribution": {
+    "test/pass": 3568,
+    "lint/pass": 838,
+    "build/pass": 230,
+    "typecheck/pass": 139,
+    "format/pass": 27,
+    "test/unknown": 12
+  },
+  "actionable_pairs": {},
+  "strong_or_medium_pairs_the_bridge_cannot_act_on": {
+    "test/pass": 3568,
+    "lint/pass": 838,
+    "build/pass": 230,
+    "typecheck/pass": 139,
+    "format/pass": 27,
+    "test/unknown": 12
+  },
+  "bridge_reward_table_keys": [
+    "ci_result/failed",
+    "ci_result/passed",
+    "command_exit/failure",
+    "command_exit/success",
+    "compiler_exit/failure",
+    "compiler_exit/success",
+    "edit_outcome/accepted",
+    "edit_outcome/retried",
+    "edit_outcome/reverted",
+    "escalation_event/failure",
+    "recovery_event/failure",
+    "recovery_event/success",
+    "retry_event/failure",
+    "test_result/failed",
+    "test_result/passed",
+    "topic_change/success",
+    "user_acceptance/accepted",
+    "user_acceptance/rejected",
+    "verification_result/failed",
+    "verification_result/passed"
+  ]
+}

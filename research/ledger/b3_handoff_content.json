@@ -1,0 +1,353 @@
+{
+  "baseline_commit": "9ba8d410",
+  "rules": "production-reachable calls only; no hand enrichment",
+  "workstream_id": "workstream:4520f420b315683a54333253",
+  "handoff_verifies": true,
+  "payloads": {
+    "handoff": {
+      "schema_version": 1,
+      "repo_id": "repo:continuity-pilot",
+      "graph_revision": 3,
+      "graph_commitment": "90eec7dca22d757629219c22e67bd584e06ad96377fad273655823495ed92498",
+      "workstream_id": "workstream:4520f420b315683a54333253",
+      "from_agent": "agent:claude",
+      "to_agent": "agent:codex",
+      "generated_at_ms": 1400,
+      "node_ids": [
+        "agent:81a888f1c7585de1ad2799d9",
+        "change:4b05d1d009f43d23ae16bc0e",
+        "change:7dd99ed9a6e496acc3aefbad",
+        "decision:ca79ffa61ac6cc4936ac7f0d",
+        "decision:d05ce3bf52bb20af8a533d79",
+        "file:0a04b82158f4996991f0c699",
+        "file:3663086f5a582e85a2975bcb",
+        "model:e42978d7185e42221eb0cdf4",
+        "model_execution:70d92fcd3bf9384e3289d07f",
+        "receipt:5efb6018fc8917d2c7eb3897",
+        "session:c70bf7d68d722f279330aea5",
+        "task:dce4387d079711e30db9ff88",
+        "test:00aa663b62d70fd3274b0e08",
+        "workstream:4520f420b315683a54333253"
+      ],
+      "edge_ids": [
+        "edge:12c7c5867716d13e4f570514",
+        "edge:200cd5515f7b67702d2869e2",
+        "edge:2757cdaa1a323db0e6de05b7",
+        "edge:328957227af63defa2c31491",
+        "edge:33d966a370b1c753eb9cecc5",
+        "edge:385979ad2537be32d8c635d6",
+        "edge:417377f39a1e1a69db80f326",
+        "edge:4d3d16840a504fa5351d9eea",
+        "edge:4e0af5ebba520a9e585edd6a",
+        "edge:4ea67c9b8d4fbc5bb627919c",
+        "edge:732322cb4744e91bd6e9ff54",
+        "edge:8c8f94d2877ecc3d72d78a56",
+        "edge:a34bfda2b8a9d40920770b98",
+        "edge:b2a75d58e267ad9d69d95259",
+        "edge:c6fc5945e47e46ef1494e731",
+        "edge:db77e9dcf425b45a301de4af",
+        "edge:f1afc82e50d1b4eadc3c5afa"
+      ],
+      "evidence_ids": [
+        "evidence:033c75c375f5947093c6792b",
+        "evidence:0c6df0ec559bff81ccce5768",
+        "evidence:502bdd7dcc54cd6526f131a1",
+        "evidence:6ce6c4801b9e6d59f6f8ab68",
+        "evidence:83921ab58e5821764be51c8e",
+        "evidence:93163e6022a316c69e8327db",
+        "evidence:a5ee85d2e6b28ef90a33bb28",
+        "evidence:c3bd41be8aba6045a0d39c2b",
+        "evidence:f3450dd95402a55d6283b6ba"
+      ],
+      "payload_commitment": "cc831549f8046fbf8f7c792f282dbd2618ec0f8f3abe9b48bc616d38d1abb4b7"
+    },
+    "resume": {
+      "repo_id": "repo:continuity-pilot",
+      "graph_revision": 3,
+      "graph_commitment": "90eec7dca22d757629219c22e67bd584e06ad96377fad273655823495ed92498",
+      "selected_workstream": {
+        "node_id": "workstream:4520f420b315683a54333253",
+        "kind": "workstream",
+        "label": "make the per-request token budget configurable",
+        "status": "blocked",
+        "trust": "verified",
+        "updated_at_ms": 1300,
+        "task_ids": [
+          "task:dce4387d079711e30db9ff88"
+        ],
+        "agent_ids": [
+          "agent:81a888f1c7585de1ad2799d9"
+        ],
+        "changed_paths": [
+          "entroly/config.py",
+          "entroly/engine.py"
+        ],
+        "symbol_ids": [],
+        "commit_ids": [],
+        "decision_ids": [
+          "decision:ca79ffa61ac6cc4936ac7f0d",
+          "decision:d05ce3bf52bb20af8a533d79"
+        ],
+        "failure_ids": [],
+        "verification_ids": [
+          "test:00aa663b62d70fd3274b0e08"
+        ],
+        "evidence_ids": [
+          "evidence:033c75c375f5947093c6792b",
+          "evidence:0c6df0ec559bff81ccce5768",
+          "evidence:502bdd7dcc54cd6526f131a1",
+          "evidence:6ce6c4801b9e6d59f6f8ab68",
+          "evidence:83921ab58e5821764be51c8e",
+          "evidence:93163e6022a316c69e8327db",
+          "evidence:a5ee85d2e6b28ef90a33bb28",
+          "evidence:c3bd41be8aba6045a0d39c2b",
+          "evidence:f3450dd95402a55d6283b6ba"
+        ]
+      },
+      "task_labels": [
+        "make the per-request token budget configurable"
+      ],
+      "agents": [
+        "agent:claude"
+      ],
+      "decisions": [
+        "budget must stay per-request; a global default broke cache alignment",
+        "route route_6a107be55b81342f to anthropic:claude-opus"
+      ],
+      "claims": [],
+      "failures": [],
+      "verification": [
+        "execution verification verify_923a3519bae178a6"
+      ],
+      "changed_paths": [
+        "entroly/config.py",
+        "entroly/engine.py"
+      ],
+      "commits": [],
+      "evidence": [
+        {
+          "evidence_id": "evidence:f3450dd95402a55d6283b6ba",
+          "kind": "test_result",
+          "source_ref": "verification:verify_923a3519bae178a6",
+          "digest": "923a3519bae178a6fda2a5710bef59e0afe9bf91dc77ae4bb67bd4a091771341",
+          "locator": "outcome_4aca0449995595f0",
+          "trust": "verified",
+          "observed_at_ms": 1300,
+          "attributes": {
+            "dependency_commitments": [
+              "sha256:source"
+            ],
+            "freshness": "current",
+            "verified_repository_commitment": "abc123"
+          }
+        },
+        {
+          "evidence_id": "evidence:502bdd7dcc54cd6526f131a1",
+          "kind": "receipt",
+          "source_ref": "context-receipt:cr_da508ee17e3e91d7",
+          "digest": "da508ee17e3e91d7ca3a1747bf7274344b13a41fc6c87144c4d79b751250842f",
+          "locator": "sha256:sources",
+          "trust": "verified",
+          "observed_at_ms": 1050,
+          "attributes": {}
+        },
+        {
+          "evidence_id": "evidence:033c75c375f5947093c6792b",
+          "kind": "runtime_observation",
+          "source_ref": "execution:outcome_4aca0449995595f0",
+          "digest": "4aca0449995595f03b970130d52f2288e54b7ab53988b4dc625760cb502f74b9",
+          "locator": "sha256:response",
+          "trust": "observed",
+          "observed_at_ms": 1200,
+          "attributes": {}
+        },
+        {
+          "evidence_id": "evidence:c3bd41be8aba6045a0d39c2b",
+          "kind": "runtime_observation",
+          "source_ref": "routing:route_6a107be55b81342f",
+          "digest": "6a107be55b81342f896565a71d2dfab13fff36d41678113a0bc58b8ddcf0e3e7",
+          "locator": "policy:v1",
+          "trust": "observed",
+          "observed_at_ms": 1100,
+          "attributes": {}
+        },
+        {
+          "evidence_id": "evidence:0c6df0ec559bff81ccce5768",
+          "kind": "repository_fact",
+          "source_ref": "repo:repo:continuity-pilot",
+          "digest": "abc123",
+          "locator": "",
+          "trust": "observed",
+          "observed_at_ms": 1000,
+          "attributes": {}
+        },
+        {
+          "evidence_id": "evidence:6ce6c4801b9e6d59f6f8ab68",
+          "kind": "user_statement",
+          "source_ref": "user:task",
+          "digest": "6b40a5dbb8ad9f1cd602ccce925086bd046c968414dd3519c24dec361f9f08ad",
+          "locator": "",
+          "trust": "observed",
+          "observed_at_ms": 1000,
+          "attributes": {}
+        },
+        {
+          "evidence_id": "evidence:83921ab58e5821764be51c8e",
+          "kind": "checkpoint",
+          "source_ref": "checkpoint:1",
+          "digest": "a1f085dab16a66c1f8e6f4e5ee3abc83251e2c9d58a0e722ff5f4688746b8de6",
+          "locator": "",
+          "trust": "observed",
+          "observed_at_ms": 1000,
+          "attributes": {}
+        },
+        {
+          "evidence_id": "evidence:93163e6022a316c69e8327db",
+          "kind": "git_status",
+          "source_ref": "git-status:abc123",
+          "digest": "",
+          "locator": "entroly/engine.py",
+          "trust": "observed",
+          "observed_at_ms": 1000,
+          "attributes": {
+            "change_kind": "modified",
+            "path": "entroly/engine.py"
+          }
+        },
+        {
+          "evidence_id": "evidence:a5ee85d2e6b28ef90a33bb28",
+          "kind": "git_status",
+          "source_ref": "git-status:abc123",
+          "digest": "",
+          "locator": "entroly/config.py",
+          "trust": "observed",
+          "observed_at_ms": 1000,
+          "attributes": {
+            "change_kind": "modified",
+            "path": "entroly/config.py"
+          }
+        }
+      ]
+    },
+    "context_scope": {
+      "repo_id": "repo:continuity-pilot",
+      "graph_revision": 3,
+      "graph_commitment": "90eec7dca22d757629219c22e67bd584e06ad96377fad273655823495ed92498",
+      "workstream_id": "workstream:4520f420b315683a54333253",
+      "task_ids": [
+        "task:dce4387d079711e30db9ff88"
+      ],
+      "task_ids_total": 1,
+      "task_ids_commitment": "sha256:9c4622bdb170c90657f0b4b0c32b28108c6498f6abdf1db24493b1cccc10bb90",
+      "agent_ids": [
+        "agent:81a888f1c7585de1ad2799d9"
+      ],
+      "agent_ids_total": 1,
+      "agent_ids_commitment": "sha256:a8374fae96fce25905990f16288a9cd13e5805de127d6e4947aafb4416804d67",
+      "changed_paths": [
+        "entroly/config.py",
+        "entroly/engine.py"
+      ],
+      "changed_paths_total": 2,
+      "changed_paths_commitment": "sha256:b0705e1e76ea15851cb4b915c413b9e73301c548a4160c6fde6450d4599a6b98",
+      "symbol_ids": [],
+      "symbol_ids_total": 0,
+      "symbol_ids_commitment": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "commit_ids": [],
+      "commit_ids_total": 0,
+      "commit_ids_commitment": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "evidence_ids": [
+        "evidence:033c75c375f5947093c6792b",
+        "evidence:0c6df0ec559bff81ccce5768",
+        "evidence:502bdd7dcc54cd6526f131a1",
+        "evidence:6ce6c4801b9e6d59f6f8ab68",
+        "evidence:83921ab58e5821764be51c8e",
+        "evidence:93163e6022a316c69e8327db",
+        "evidence:a5ee85d2e6b28ef90a33bb28",
+        "evidence:c3bd41be8aba6045a0d39c2b",
+        "evidence:f3450dd95402a55d6283b6ba"
+      ],
+      "evidence_ids_total": 9,
+      "evidence_ids_commitment": "sha256:6c179408fe182b61c1043a9332529ee30cb453b624bd637a352530459e06a6bf"
+    },
+    "continuation_proof": {
+      "schema_version": 1,
+      "proof_id": "continuation_21d64d612ef8d141",
+      "repository_id": "repo:continuity-pilot",
+      "graph_revision": 3,
+      "graph_commitment": "90eec7dca22d757629219c22e67bd584e06ad96377fad273655823495ed92498",
+      "workstream_id": "workstream:4520f420b315683a54333253",
+      "from_agent": "agent:claude",
+      "to_agent": "agent:codex",
+      "handoff_commitment": "cc831549f8046fbf8f7c792f282dbd2618ec0f8f3abe9b48bc616d38d1abb4b7",
+      "context_receipt_commitments": [
+        "da508ee17e3e91d7ca3a1747bf7274344b13a41fc6c87144c4d79b751250842f"
+      ],
+      "routing_commitments": [
+        "6a107be55b81342f896565a71d2dfab13fff36d41678113a0bc58b8ddcf0e3e7"
+      ],
+      "execution_outcome_commitments": [
+        "4aca0449995595f03b970130d52f2288e54b7ab53988b4dc625760cb502f74b9"
+      ],
+      "verification_commitments": [
+        "923a3519bae178a6fda2a5710bef59e0afe9bf91dc77ae4bb67bd4a091771341"
+      ],
+      "memory_commitments": [],
+      "outstanding_work_refs": [],
+      "recovery_handle_ids": [
+        "rh_budget_01"
+      ],
+      "created_at_ms": 1500,
+      "proof_commitment": "21d64d612ef8d141dab3646e161ad3917200058dd6564d149744f702991eef57"
+    }
+  },
+  "census_summary": {
+    "handoff": {
+      "leaf_fields": 21,
+      "empty_fields": 0,
+      "fill_rate": 1.0,
+      "empty_field_names": []
+    },
+    "resume": {
+      "leaf_fields": 69,
+      "empty_fields": 6,
+      "fill_rate": 0.913,
+      "empty_field_names": [
+        "claims",
+        "commits",
+        "failures",
+        "selected_workstream.commit_ids",
+        "selected_workstream.failure_ids",
+        "selected_workstream.symbol_ids"
+      ]
+    },
+    "context_scope": {
+      "leaf_fields": 29,
+      "empty_fields": 4,
+      "fill_rate": 0.862,
+      "empty_field_names": [
+        "commit_ids",
+        "commit_ids_total",
+        "symbol_ids",
+        "symbol_ids_total"
+      ]
+    },
+    "continuation_proof": {
+      "leaf_fields": 23,
+      "empty_fields": 2,
+      "fill_rate": 0.913,
+      "empty_field_names": [
+        "memory_commitments",
+        "outstanding_work_refs"
+      ]
+    }
+  },
+  "facts_a_prose_summary_cannot_carry": {
+    "omitted_evidence_spans": null,
+    "recovery_handles": null,
+    "verification_verdict": "failed",
+    "verified_against_repo_commitment": "abc123",
+    "handoff_integrity_verifiable": true,
+    "outstanding_work_refs": []
+  }
+}
