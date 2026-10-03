@@ -1,0 +1,23 @@
+{
+  "state": "BLOCKED_PROVIDER",
+  "probed_at": "2026-10-03T11:59:44",
+  "probe": "codex exec --json -m gpt-5.5 -s read-only (non-benchmark, 1 call)",
+  "result": {
+    "request_accepted": false,
+    "quota_exhausted": true,
+    "auth_failure": false,
+    "agent_messages": 0,
+    "usage": null,
+    "provider_message": "You've hit your usage limit. Upgrade to Pro / purchase more credits or try again at 1:07 PM."
+  },
+  "classification": "PROVIDER_QUOTA_EXHAUSTED",
+  "action_taken": "Attempt 2 NOT launched. No benchmark rows written. No quota spent beyond this single probe.",
+  "launch_preconditions": {
+    "manifest_frozen": true,
+    "frozen_treatment_matches_disk": true,
+    "native_hash_matches": true,
+    "runner_tests_green": "26/26",
+    "provider_available": false
+  },
+  "resume_instruction": "Re-run the probe; on a nonzero token count launch research/pilot/attempt2.py under the already-frozen manifest. Resume is same-attempt only."
+}

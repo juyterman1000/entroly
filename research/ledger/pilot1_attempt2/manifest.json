@@ -1,0 +1,330 @@
+{
+  "attempt_id": "pilot1-attempt2",
+  "frozen_at": "2026-10-03T11:58:55",
+  "suite_type": "ContinuityStress-24",
+  "suite_note": "Every task carries a planted trap. Estimates BENEFIT when continuity matters; says nothing about how often it does. Not representative coding work.",
+  "suite_sha256": "8bdffb59a0741708f8974fa644a0aed5500d28a33a48f1c84a75fdd620d81982",
+  "task_file_sha256": "d38c3cb52f269aaad341c72eb17ad1e069eab52b9c0932cd4f5b36d3749c1441",
+  "attempt2_harness_sha256": "70bf2ad713033721b316e885e1b0b11392d9eeaa988c4a34346719867111fdea",
+  "base_harness_sha256": "635b9c2e34b2179ef8ef4cea44df8bbe459697de4eebc075603ec58a8f5cc4a8",
+  "scorer_sha256": "237ddf562cd9da400eaea180f79124f7d7df683e1d1865f634792ba5daaa0bdf",
+  "entroly_head": "5361e27b0fc32f9ffd5f446966264e5c0e291842",
+  "native": {
+    "module_file": "C:\\Users\\abhis\\AppData\\Local\\Programs\\Python\\Python310\\lib\\site-packages\\entroly_core\\__init__.py",
+    "loaded_binary": "C:\\Users\\abhis\\AppData\\Local\\Programs\\Python\\Python310\\lib\\site-packages\\entroly_core\\entroly_core.pyd",
+    "loaded_size": 8599552,
+    "loaded_mtime": 1791038165.135519,
+    "loaded_sha256": "cf4d6e8352d87152339c1343e90a11ce8c65e979cf780a9195d096bfeb53a28a",
+    "built_sha256": "cf4d6e8352d87152339c1343e90a11ce8c65e979cf780a9195d096bfeb53a28a",
+    "match": true
+  },
+  "python_version": "3.10.0",
+  "codex_cli_version": "codex-cli 0.137.0",
+  "codex_model": "gpt-5.5",
+  "codex_auth": "ChatGPT account (no token invoice; usage proxies only)",
+  "sandbox": "workspace-write + disk-full-read-access + inherit env",
+  "arms": {
+    "B0": "repository checkpoint + task statement only",
+    "B1S": "+ deterministic local text rendering of RecordedState (0 provider tokens to generate)",
+    "B3": "+ production work_resume payload only (0 provider tokens to generate)",
+    "B1N": "NOT FEASIBLE: Claude CLI OAuth expired; no ANTHROPIC_API_KEY"
+  },
+  "task_hashes": {
+    "p01-half-up": "ba594e2a95fd56425b9dbb5d1e37d96e6d414c99772f997eb6dd9a9570ebbd67",
+    "p02-slug-collisions": "c2c6b2d4d37d1b971c36203d60dc65541edfe4962439bba4c7d04b94a1213371",
+    "p03-truncate-words": "cf5bcd9582b5b0c92b4ba177e8c89d104df4d52a1e2b83b969c239f5f50cbf5c",
+    "p04-percent-change": "0a25a2934bd433d5109d00c1af167f70cfa71962b0a0705b8dd61f906441c932",
+    "p05-retry-transient": "de26e11118b830c3e77551f2055e490b7f53a45cda68c62a9cb483ee643b1755",
+    "p06-config-layering": "de07473689d97d20baf6aa73c4d61acde5f06a06b613444c6340133de080bbb7",
+    "p07-event-dispatch": "a971b6ebb3159012b4db9944d4f57e14d4a48da935f3c224b904f016b2c04291",
+    "p08-path-normalise": "06077118dc798a70572ce8636c8ae557dd143e05160f0c877ec50f206da049f3",
+    "p09-quantity-rename": "21fb001d5dc6802603da75e5b29e1115fdd19678f17dd4b50b53d12a89cc1860",
+    "p10-error-codes": "1f89ff7cbb9c096b859aaef51347a01fe7eb1f11f220209cf6d6845786ffb68e",
+    "p11-import-cycle": "068c0ba6e0f328c4ef87d0eb4fb237518e7c1887e4bc866ec7767992f994d140",
+    "p12-settings-single-source": "2c47dccfd29a6d6e28f95ca4a75d8b3f01d8ee800404519fd70af9e9141936b5",
+    "p13-quoted-delimiter": "a1e625375b436de5ebe6d7e007631f1392ef3277a2b987543af04e95981a1976",
+    "p14-version-cache": "19af2f97bbc833ee9d913fd2fde069542798ae2ed56cc40255ce99930cb27dac",
+    "p15-session-expiry": "e05d2dc5a1632b34073871c00f6c5e68e4cfb407ba2a0a53c46e01fa526a302f",
+    "p16-dedupe-stream": "29dad1dbf54e18629343f2dfef841e5294cdc3c70fda246578138118041abbfe",
+    "p17-rate-limit-window": "73d4430a8e38a7095f3fecb7effc0eb40c1482fa115377bded6a96750efa6d2a",
+    "p18-merge-conflict-markers": "51d927efa3aab0b6941e45a4f021af02dc55bb81671fb06b7ed111989e087e59",
+    "p19-partial-sum-overflow": "084b160e287a9f2fbdc79c970bbc8178b8e1b818bfbd3a9ccc42a7bd22394533",
+    "p20-idempotent-migration": "8b1c104e2f6f6ad9189ce7da9903f1acf221c40a1f1fc777e893106d35822858",
+    "p21-topological-order": "15b54e197597ff85ec6a7b3a3585ab4884b81f5bcd9c6b8c5e1392d4c6447d08",
+    "p22-chunked-upload": "a5663714695a92f745e7a99192b8829de95362659a328a0cf0fecff7ff5057ba",
+    "p23-backfill-batches": "c8599a587668e8bd76025b730fe10d91dd9266d603e810f168418325a2159b76",
+    "p24-schema-migration-chain": "a42e1fbd74bdb5cf4055e772425d5871aa75dec4f7d6078afdf6fded8d343447"
+  },
+  "arm_definition_hashes": {
+    "p01-half-up": {
+      "B0": "e3a29f12b0be8159f47b55b9b6c30576177eea26198055d128e642197a3bebf9",
+      "B1S": "360ac8a30a78e6cbbe9a7593216a98f02b0a7952874ac8815d94c9a816d29906",
+      "B3": "eac4dd21de58c683489ade760bf5f02f32428b73a7d9dc5ebd8f904323202498"
+    },
+    "p02-slug-collisions": {
+      "B0": "e3a29f12b0be8159f47b55b9b6c30576177eea26198055d128e642197a3bebf9",
+      "B1S": "5052bdd625fb8afec10ceec83a325b390a4e83a143bd3cd640e00c7eb52c1a20",
+      "B3": "eac4dd21de58c683489ade760bf5f02f32428b73a7d9dc5ebd8f904323202498"
+    },
+    "p03-truncate-words": {
+      "B0": "e3a29f12b0be8159f47b55b9b6c30576177eea26198055d128e642197a3bebf9",
+      "B1S": "aeec444082201f44c66ba2fdc9679f03ea7103cce8797a151d528fd7762f03fb",
+      "B3": "eac4dd21de58c683489ade760bf5f02f32428b73a7d9dc5ebd8f904323202498"
+    },
+    "p04-percent-change": {
+      "B0": "e3a29f12b0be8159f47b55b9b6c30576177eea26198055d128e642197a3bebf9",
+      "B1S": "a76458c9b11236ab4c27d55b78edd733449821d25a4ecd612a6d662967dc87f2",
+      "B3": "eac4dd21de58c683489ade760bf5f02f32428b73a7d9dc5ebd8f904323202498"
+    },
+    "p05-retry-transient": {
+      "B0": "e3a29f12b0be8159f47b55b9b6c30576177eea26198055d128e642197a3bebf9",
+      "B1S": "8716fe9ffd7adc211c1eb780c313144dbf593fd06562208be371c04a7623426a",
+      "B3": "eac4dd21de58c683489ade760bf5f02f32428b73a7d9dc5ebd8f904323202498"
+    },
+    "p06-config-layering": {
+      "B0": "e3a29f12b0be8159f47b55b9b6c30576177eea26198055d128e642197a3bebf9",
+      "B1S": "bcf4686add26ac3de61a4a12c9bcc5c165232d85232575f136833e45b7612604",
+      "B3": "eac4dd21de58c683489ade760bf5f02f32428b73a7d9dc5ebd8f904323202498"
+    },
+    "p07-event-dispatch": {
+      "B0": "e3a29f12b0be8159f47b55b9b6c30576177eea26198055d128e642197a3bebf9",
+      "B1S": "0a112b52f4a5b487fb3b8059b9882fc06b49fcd533871c5cb4b5958ebd30189c",
+      "B3": "eac4dd21de58c683489ade760bf5f02f32428b73a7d9dc5ebd8f904323202498"
+    },
+    "p08-path-normalise": {
+      "B0": "e3a29f12b0be8159f47b55b9b6c30576177eea26198055d128e642197a3bebf9",
+      "B1S": "f9aa1ead1ac47c4dead91ef530a55eaa7ac5b36f587c514f2261ec68d5505e01",
+      "B3": "eac4dd21de58c683489ade760bf5f02f32428b73a7d9dc5ebd8f904323202498"
+    },
+    "p09-quantity-rename": {
+      "B0": "e3a29f12b0be8159f47b55b9b6c30576177eea26198055d128e642197a3bebf9",
+      "B1S": "edf3580fa5a218f65b78c79a943c1b7d61cd15ab6114bfb3e872b8ef5c0db4f8",
+      "B3": "eac4dd21de58c683489ade760bf5f02f32428b73a7d9dc5ebd8f904323202498"
+    },
+    "p10-error-codes": {
+      "B0": "e3a29f12b0be8159f47b55b9b6c30576177eea26198055d128e642197a3bebf9",
+      "B1S": "cfe5bc018fc0bb1729f3b5ea43a422f6386824ca7dd04605414066208655c022",
+      "B3": "eac4dd21de58c683489ade760bf5f02f32428b73a7d9dc5ebd8f904323202498"
+    },
+    "p11-import-cycle": {
+      "B0": "e3a29f12b0be8159f47b55b9b6c30576177eea26198055d128e642197a3bebf9",
+      "B1S": "c1531000377bbaaf1740cdce9ac63ee88ffcfa938fdde9f8bf51bc0744a97c81",
+      "B3": "eac4dd21de58c683489ade760bf5f02f32428b73a7d9dc5ebd8f904323202498"
+    },
+    "p12-settings-single-source": {
+      "B0": "e3a29f12b0be8159f47b55b9b6c30576177eea26198055d128e642197a3bebf9",
+      "B1S": "cf3da04cf9020c7230954d8472b5047b5ebde123aca7afaadbb906a72496b12b",
+      "B3": "eac4dd21de58c683489ade760bf5f02f32428b73a7d9dc5ebd8f904323202498"
+    },
+    "p13-quoted-delimiter": {
+      "B0": "e3a29f12b0be8159f47b55b9b6c30576177eea26198055d128e642197a3bebf9",
+      "B1S": "9dff5ee282a0e8b2b9cd4f9f1bc0b91c31f14b6967bf5530e76ee4d2a4bcd122",
+      "B3": "eac4dd21de58c683489ade760bf5f02f32428b73a7d9dc5ebd8f904323202498"
+    },
+    "p14-version-cache": {
+      "B0": "e3a29f12b0be8159f47b55b9b6c30576177eea26198055d128e642197a3bebf9",
+      "B1S": "9364cb880abd5cccdae4e8a1c4bb799370c08fca8b2dca3c1d7ed4cc3558be4c",
+      "B3": "eac4dd21de58c683489ade760bf5f02f32428b73a7d9dc5ebd8f904323202498"
+    },
+    "p15-session-expiry": {
+      "B0": "e3a29f12b0be8159f47b55b9b6c30576177eea26198055d128e642197a3bebf9",
+      "B1S": "4a4ee91adfaaf6f4621955c88ed3f7067a565f59f43db452dd4804b5f8e2b856",
+      "B3": "eac4dd21de58c683489ade760bf5f02f32428b73a7d9dc5ebd8f904323202498"
+    },
+    "p16-dedupe-stream": {
+      "B0": "e3a29f12b0be8159f47b55b9b6c30576177eea26198055d128e642197a3bebf9",
+      "B1S": "a1f08dc73551796fdbe4b84602f6e2fc5ff463ac9db55094da0a64b91dc7e22e",
+      "B3": "eac4dd21de58c683489ade760bf5f02f32428b73a7d9dc5ebd8f904323202498"
+    },
+    "p17-rate-limit-window": {
+      "B0": "e3a29f12b0be8159f47b55b9b6c30576177eea26198055d128e642197a3bebf9",
+      "B1S": "8275c4f9bee94724a2b5c615769f4193fa0e25e374f6314f413cfa459613ced5",
+      "B3": "eac4dd21de58c683489ade760bf5f02f32428b73a7d9dc5ebd8f904323202498"
+    },
+    "p18-merge-conflict-markers": {
+      "B0": "e3a29f12b0be8159f47b55b9b6c30576177eea26198055d128e642197a3bebf9",
+      "B1S": "644cf102e950ec545cf6b1ab242ab1347e51a8f774907542cd58e0ef3d9208c3",
+      "B3": "eac4dd21de58c683489ade760bf5f02f32428b73a7d9dc5ebd8f904323202498"
+    },
+    "p19-partial-sum-overflow": {
+      "B0": "e3a29f12b0be8159f47b55b9b6c30576177eea26198055d128e642197a3bebf9",
+      "B1S": "1b02bd9660a2921562c4ff0495802812959e418fa1012333a087c04dfcc4c2af",
+      "B3": "eac4dd21de58c683489ade760bf5f02f32428b73a7d9dc5ebd8f904323202498"
+    },
+    "p20-idempotent-migration": {
+      "B0": "e3a29f12b0be8159f47b55b9b6c30576177eea26198055d128e642197a3bebf9",
+      "B1S": "96a623e24f4c8344f347555bc3c54a2f3b4db2f7f146c5569f06897d1f36390e",
+      "B3": "eac4dd21de58c683489ade760bf5f02f32428b73a7d9dc5ebd8f904323202498"
+    },
+    "p21-topological-order": {
+      "B0": "e3a29f12b0be8159f47b55b9b6c30576177eea26198055d128e642197a3bebf9",
+      "B1S": "776d803b28e8614a12b45682ea906183b9ef01da5cc952c000bf85247e162be8",
+      "B3": "eac4dd21de58c683489ade760bf5f02f32428b73a7d9dc5ebd8f904323202498"
+    },
+    "p22-chunked-upload": {
+      "B0": "e3a29f12b0be8159f47b55b9b6c30576177eea26198055d128e642197a3bebf9",
+      "B1S": "4adae0faff6d767833ccf8eebb5d8a8143a8295a14eeb94a4616fdb237c793de",
+      "B3": "eac4dd21de58c683489ade760bf5f02f32428b73a7d9dc5ebd8f904323202498"
+    },
+    "p23-backfill-batches": {
+      "B0": "e3a29f12b0be8159f47b55b9b6c30576177eea26198055d128e642197a3bebf9",
+      "B1S": "71d933a61832af2070c9d9847e85d2c9a3f43b1c76498b6612d2ba3faf0cdf26",
+      "B3": "eac4dd21de58c683489ade760bf5f02f32428b73a7d9dc5ebd8f904323202498"
+    },
+    "p24-schema-migration-chain": {
+      "B0": "e3a29f12b0be8159f47b55b9b6c30576177eea26198055d128e642197a3bebf9",
+      "B1S": "912d73978d6bdad6d8704716a70596e6b139901827a1006b2d5a695d0505c3f3",
+      "B3": "eac4dd21de58c683489ade760bf5f02f32428b73a7d9dc5ebd8f904323202498"
+    }
+  },
+  "run_order": {
+    "p01-half-up": [
+      "B3",
+      "B0",
+      "B1S"
+    ],
+    "p02-slug-collisions": [
+      "B1S",
+      "B0",
+      "B3"
+    ],
+    "p03-truncate-words": [
+      "B1S",
+      "B0",
+      "B3"
+    ],
+    "p04-percent-change": [
+      "B1S",
+      "B3",
+      "B0"
+    ],
+    "p05-retry-transient": [
+      "B1S",
+      "B0",
+      "B3"
+    ],
+    "p06-config-layering": [
+      "B3",
+      "B0",
+      "B1S"
+    ],
+    "p07-event-dispatch": [
+      "B0",
+      "B1S",
+      "B3"
+    ],
+    "p08-path-normalise": [
+      "B1S",
+      "B3",
+      "B0"
+    ],
+    "p09-quantity-rename": [
+      "B3",
+      "B1S",
+      "B0"
+    ],
+    "p10-error-codes": [
+      "B3",
+      "B0",
+      "B1S"
+    ],
+    "p11-import-cycle": [
+      "B3",
+      "B1S",
+      "B0"
+    ],
+    "p12-settings-single-source": [
+      "B1S",
+      "B0",
+      "B3"
+    ],
+    "p13-quoted-delimiter": [
+      "B3",
+      "B1S",
+      "B0"
+    ],
+    "p14-version-cache": [
+      "B3",
+      "B0",
+      "B1S"
+    ],
+    "p15-session-expiry": [
+      "B0",
+      "B3",
+      "B1S"
+    ],
+    "p16-dedupe-stream": [
+      "B1S",
+      "B0",
+      "B3"
+    ],
+    "p17-rate-limit-window": [
+      "B0",
+      "B1S",
+      "B3"
+    ],
+    "p18-merge-conflict-markers": [
+      "B3",
+      "B1S",
+      "B0"
+    ],
+    "p19-partial-sum-overflow": [
+      "B1S",
+      "B0",
+      "B3"
+    ],
+    "p20-idempotent-migration": [
+      "B1S",
+      "B3",
+      "B0"
+    ],
+    "p21-topological-order": [
+      "B1S",
+      "B0",
+      "B3"
+    ],
+    "p22-chunked-upload": [
+      "B0",
+      "B3",
+      "B1S"
+    ],
+    "p23-backfill-batches": [
+      "B0",
+      "B1S",
+      "B3"
+    ],
+    "p24-schema-migration-chain": [
+      "B0",
+      "B3",
+      "B1S"
+    ]
+  },
+  "eligibility_taxonomy_version": "2",
+  "contamination_audit_version": "1",
+  "primary_comparison": "B3 vs B1S",
+  "headline_name": "Production continuation payload value (NOT representation value: B3 is materially larger than B1S, so structure cannot be isolated)",
+  "matched_primary_rule": "tasks where BOTH B1S and B3 are scientifically eligible",
+  "matched_three_arm_rule": "tasks where B0, B1S and B3 are all eligible",
+  "success_metric": "verified_success from the independent verifier only",
+  "success_denominator": "N = |MATCHED_PRIMARY_TASKS|; one discordant task = 100/N pp",
+  "success_threshold_pp": 10.0,
+  "paired_diagnostic": "exact McNemar/binomial on discordant pairs; CONFIDENCE DIAGNOSTIC ONLY, does not replace the >=10pp threshold",
+  "usage_metric": "uncached_input + output + handoff_generation_provider_tokens",
+  "usage_aggregation": "RATIO OF SUMS over MATCHED_PRIMARY_TASKS",
+  "usage_guard": "B3_total / B1S_total <= 1.10",
+  "usage_sensitivity": "per-task relative delta, median and IQR, reported as SENSITIVITY only. Attempt 1 showed median -21.2% vs sum -4.3% on the same 5 tasks, so aggregation materially changes apparent magnitude.",
+  "rediscovery_metric": "avoidable_rediscovery_operations (frozen scorer)",
+  "rediscovery_rule": ">=20% median reduction; if both medians are 0 report NOT RESOLVABLE and never manufacture a percentage from zero",
+  "circuit_breaker": {
+    "terminal_classes": [
+      "MODEL_UNAVAILABLE_GLOBAL",
+      "PROVIDER_AUTH_FAILURE",
+      "PROVIDER_QUOTA_EXHAUSTED"
+    ],
+    "semantics": "stop further model calls; preserve all COMPLETE rows",
+    "never_fires_on": "scientific failure (agent error, pytest failure, nonzero exit, verifier rejection, any arm losing)"
+  },
+  "resume_semantics": "skip a row only when status=COMPLETE and attempt_id, manifest, task, arm-definition, row digest and trace digest all validate. No cross-attempt reuse; Attempt-1 rows can never satisfy this.",
+  "quota_boundary_rule": "rows tagged PRE_INTERRUPTION / POST_RESUME; final analysis must compare cached and uncached input across that boundary and must not attribute a difference to Entroly",
+  "manifest_sha256": "94566ff5731e02c1752cd24bb5e418983fa763714d8d7e2175fc698bd5af9dc4"
+}
