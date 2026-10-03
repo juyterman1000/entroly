@@ -390,15 +390,24 @@ def run_arm(task, arm: str, root: pathlib.Path, manifest: dict) -> dict:
     proc = subprocess.run(
         ["codex", "exec", "--json", "-C", str(repo), "-s", "workspace-write",
          "-m", CODEX_MODEL, "--skip-git-repo-check",
-         # Without this, Codex's shell gets a scrubbed environment with no
-         # PATH to the interpreter. Wave 1 was invalidated by it: every arm
-         # failed `pytest`, `python -m pytest` and `py -m pytest`, then spent
-         # most of its turns hunting for an interpreter -- B3 recursed through
-         # C:\Program Files and ended up running the tests under LibreOffice's
-         # bundled Python. The resulting command and token counts measured
-         # interpreter archaeology, not reconstruction work, so B3's apparent
-         # 2.4x command overhead was an artifact of the harness.
+         # Two separate reasons the agent could not run the suite, both of
+         # which invalidated a whole wave before being found.
+         #
+         # Wave 1: Codex's shell gets a scrubbed environment, so `pytest`,
+         # `python -m pytest` and `py -m pytest` all failed in every arm. Each
+         # arm then hunted for an interpreter; B3 recursed through
+         # C:\Program Files and ran the tests under LibreOffice's bundled
+         # Python. The command and token counts measured interpreter
+         # archaeology, so B3's apparent 2.4x overhead was a harness artifact.
          "-c", "shell_environment_policy.inherit=all",
+         #
+         # Wave 2: inheriting PATH was not enough. `workspace-write` also blocks
+         # reads outside the workspace, and CPython lives under %LOCALAPPDATA%,
+         # so `python --version` still reported "not recognized" and git could
+         # not read ~/.config/git/ignore. Read access fixes it;
+         # `--add-dir <python prefix>` also works but grants *write* to the
+         # interpreter installation, which this does not need.
+         "-c", 'sandbox_permissions=["disk-full-read-access"]',
          prompt],
         capture_output=True, text=True, timeout=TIMEOUT_S,
         encoding="utf-8", errors="replace", env=env,
@@ -516,6 +525,15 @@ def main(argv: list[str]) -> int:
         (OUT_DIR / "results.json").write_text(
             json.dumps({"manifest": manifest, "results": results},
                        indent=2, default=str), encoding="utf-8")
+        # Abort rather than spend a whole wave on an invalid environment. Two
+        # waves were already lost to agents that could not execute the suite,
+        # and the verifier -- run separately by the harness -- reported clean
+        # verified_success rows throughout, so nothing in the aggregate showed it.
+        if not any(r.get("agent_ran_tests_successfully") for r in results):
+            print("\nABORT: no arm has run the test suite yet. Environment is "
+                  "not valid for a continuation measurement; fix before "
+                  "spending further runs.")
+            return 1
 
     print(f"\nwrote {(OUT_DIR / 'results.json').relative_to(ROOT)}")
     return 0

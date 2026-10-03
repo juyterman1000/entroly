@@ -1,0 +1,51 @@
+{
+  "frozen_at": "2026-10-03T08:32:16",
+  "suite_sha256": "e1aa55aea15277d390f3a20c0509833a195ccaede3ac045141872f3d77fc183f",
+  "suite_task_count": 6,
+  "tasks_file_sha256": "a85ee9944988d1785c1c6595d93af8a700fdfc507e66abf17b0472658b7ba2f9",
+  "harness_sha256": "5100f4bbf5a9a36b6667daa25229f824d669583d66a8075dd55c8be25517e96a",
+  "entroly_source_commit": "e2eb4e937a0dfddba17754271ca15daf728ac57a",
+  "entroly_local_commits": [
+    "e2eb4e93",
+    "f0719965",
+    "5cb3fe16",
+    "9ba8d410",
+    "2491bca8",
+    "55e75c88",
+    "a5a91edf",
+    "c5c6b85c"
+  ],
+  "native": {
+    "module_file": "C:\\Users\\abhis\\AppData\\Local\\Programs\\Python\\Python310\\lib\\site-packages\\entroly_core\\__init__.py",
+    "loaded_binary": "C:\\Users\\abhis\\AppData\\Local\\Programs\\Python\\Python310\\lib\\site-packages\\entroly_core\\entroly_core.pyd",
+    "loaded_size": 8599552,
+    "loaded_mtime": 1791038165.135519,
+    "loaded_sha256": "cf4d6e8352d87152339c1343e90a11ce8c65e979cf780a9195d096bfeb53a28a",
+    "built_sha256": "cf4d6e8352d87152339c1343e90a11ce8c65e979cf780a9195d096bfeb53a28a",
+    "match": true
+  },
+  "agent_a": "claude (scripted phase 1; see tasks.py rationale)",
+  "agent_b": "codex-cli codex-cli 0.137.0",
+  "codex_model": "gpt-5.5",
+  "codex_sandbox": "workspace-write",
+  "codex_auth": "ChatGPT account (not metered API key)",
+  "arms": {
+    "B0": "repository + task only",
+    "B1": "repository + task + prose handoff from RecordedState",
+    "B2": "NOT APPLICABLE - no native Claude<->Codex resume mechanism",
+    "B3": "repository + task + work_resume payload only"
+  },
+  "kill_criteria": {
+    "vs_baseline": "stronger of B1/B2",
+    "need_one_of": [
+      ">=20% reduction in median reconstruction tokens",
+      ">=10pp improvement in verified continuation completion"
+    ],
+    "without": ">10% increase in post-handoff provider cost"
+  },
+  "tasks_run": [
+    "t01-rounding",
+    "t02-retry-backoff",
+    "t03-rename-propagation"
+  ]
+}
