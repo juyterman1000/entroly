@@ -161,6 +161,7 @@ marketing/launch/*recovery*.md
 # Internal AI session artifacts (prompts, handoffs, work ledgers)
 docs/PR*_*.md
 docs/ENTROLY_WIN_MASTER_PROMPT.md
+/RELATE_X_MASTER_PROMPT.md
 
 # SEO landing pages (serve from a separate site, not the source repo)
 docs/*.html
