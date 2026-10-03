@@ -198,8 +198,24 @@ impl DepGraph {
     /// Parses Python, Rust, JS/TS, Go, Java, C/C++, and Ruby imports.
     fn extract_import_targets(content: &str) -> HashSet<String> {
         let mut targets = HashSet::new();
+        // Go groups imports in `import ( ... )`, and a bare quoted line only
+        // means "package" while inside one. Without tracking that, the block arm
+        // had to guess from the line alone, and any single-word prefix looked
+        // like an import alias -- so `return "net/http"` produced a dependency on
+        // `http`. A fabricated edge is worse than a missing one here: it pulls
+        // unrelated code into selection.
+        let mut in_go_import_block = false;
         for line in content.lines() {
             let trimmed = line.trim();
+
+            if trimmed == "import (" {
+                in_go_import_block = true;
+                continue;
+            }
+            if in_go_import_block && (trimmed == ")" || trimmed == ");") {
+                in_go_import_block = false;
+                continue;
+            }
 
             // Python: from module import foo, bar
             if trimmed.starts_with("from ") && trimmed.contains(" import ") {
@@ -213,12 +229,28 @@ impl DepGraph {
                 }
             }
             // Python: import module (the module name itself)
-            else if trimmed.starts_with("import ") && !trimmed.contains("from") {
+            //
+            // Quoted forms are excluded here. Go's `import "fmt"` also starts
+            // with `import ` and carries no `from`, so without this guard it was
+            // claimed by this branch and stored as the symbol `"fmt"` -- literal
+            // quotes included, which can never match a published definition. Go
+            // dependency edges were therefore silently dropped, and the Go
+            // branch below was unreachable for single-line imports. Measured
+            // before the guard: `import "fmt"` -> {"\"fmt\""}, and
+            // `import http "net/http"` -> {"http \"net/http\""}.
+            else if trimmed.starts_with("import ")
+                && !trimmed.contains("from")
+                && !trimmed.contains('"')
+            {
                 for name in trimmed.trim_start_matches("import ").split(',') {
                     let clean = name.trim().split(" as ").next().unwrap_or("").trim();
                     // Use the last component of dotted imports
                     let last = clean.rsplit('.').next().unwrap_or(clean);
-                    if !last.is_empty() {
+                    // `import (` opens a Go import block and is punctuation, not
+                    // a module name; it used to be stored as the symbol "(".
+                    let is_identifier = !last.is_empty()
+                        && last.chars().all(|c| c.is_alphanumeric() || c == '_');
+                    if is_identifier {
                         targets.insert(last.to_string());
                     }
                 }
@@ -245,6 +277,30 @@ impl DepGraph {
                     let last = path.rsplit("::").next().unwrap_or(path).trim();
                     if !last.is_empty() {
                         targets.insert(last.to_string());
+                    }
+                }
+            }
+            // Go: import "fmt" / import alias "pkg/path"
+            //
+            // Checked before JS/TS because both forms start with `import `. The
+            // discriminator is `from`: Go never has it, while JS/TS named and
+            // default imports always do. A bare JS side-effect import such as
+            // `import "./a.css"` lands here and yields a filename, which matches
+            // no published definition -- the same no-op as before, since a
+            // side-effect import binds no symbol to depend on.
+            else if trimmed.starts_with("import ")
+                && trimmed.contains('"')
+                && !trimmed.contains(" from ")
+            {
+                // Single-line: import "fmt" or import http "net/http"
+                for segment in trimmed.split('"') {
+                    let seg = segment.trim();
+                    if !seg.is_empty() && !seg.starts_with("import") && !seg.starts_with("(") {
+                        // Use the last path component: "net/http" → "http"
+                        let last = seg.rsplit('/').next().unwrap_or(seg);
+                        if !last.is_empty() {
+                            targets.insert(last.to_string());
+                        }
                     }
                 }
             }
@@ -277,24 +333,20 @@ impl DepGraph {
                     targets.insert(var);
                 }
             }
-            // Go: import "fmt" / import alias "pkg/path"
-            // Also handles import block:  import ( "fmt"\n "net/http" )
-            else if trimmed.starts_with("import ") && trimmed.contains('"') {
-                // Single-line: import "fmt" or import http "net/http"
-                for segment in trimmed.split('"') {
-                    let seg = segment.trim();
-                    if !seg.is_empty() && !seg.starts_with("import") && !seg.starts_with("(") {
-                        // Use the last path component: "net/http" → "http"
-                        let last = seg.rsplit('/').next().unwrap_or(seg);
-                        if !last.is_empty() {
-                            targets.insert(last.to_string());
-                        }
-                    }
-                }
-            }
             // Go import block lines: "fmt" or alias "pkg/path"
-            else if trimmed.starts_with('"') && trimmed.ends_with('"') {
-                let pkg = trimmed.trim_matches('"');
+            //
+            // Gated on block membership rather than on line shape. The aliased
+            // form is what the comment always claimed and what the old condition
+            // excluded -- it required the line to *start* with a quote, so
+            // `svc "example.com/app/service"` was dropped, and aliased imports
+            // are routine in Go. Block membership is what makes accepting the
+            // alias safe: outside a block the same shape is an ordinary string
+            // expression.
+            else if in_go_import_block
+                && trimmed.ends_with('"')
+                && trimmed.matches('"').count() == 2
+            {
+                let pkg = trimmed.rsplit('"').nth(1).unwrap_or("");
                 let last = pkg.rsplit('/').next().unwrap_or(pkg);
                 if !last.is_empty() {
                     targets.insert(last.to_string());
@@ -1679,5 +1731,87 @@ impl Engine {
             graph.cross_lang_exports.contains_key("stop"),
             "#[pymethods] should export method 'stop'"
         );
+    }
+}
+
+#[cfg(test)]
+mod import_branch_order_tests {
+    use super::*;
+
+    /// `extract_import_targets` dispatches seven languages from one `if/else`
+    /// chain keyed mostly on `starts_with("import ")`, so branch *order* is the
+    /// contract. Go's single-line form was unreachable: the Python arm matched
+    /// first and stored `import "fmt"` as the symbol `"fmt"` with quotes, which
+    /// no published definition can equal, so every such Go edge was dropped.
+    ///
+    /// Each language is asserted here because the fix reorders the chain, and a
+    /// reorder that fixes one language by shadowing another is not a fix.
+    #[test]
+    fn every_documented_language_extracts_its_import_symbols() {
+        let cases: &[(&str, &str, &[&str])] = &[
+            ("python from", "from pkg.mod import alpha, beta", &["alpha", "beta"]),
+            ("python plain", "import numpy as np", &["numpy"]),
+            ("python dotted", "import os.path", &["path"]),
+            ("rust use", "use crate::engine::Selector;", &["Selector"]),
+            ("rust braces", "use crate::a::{One, Two};", &["One", "Two"]),
+            // Double quotes are the common style in TS and would have been
+            // captured by the Go arm without the `from` discriminator.
+            ("ts named dq", "import { Button } from \"@/components/Button\";", &["Button"]),
+            ("ts named sq", "import { Card } from '@repo/ui';", &["Card"]),
+            ("ts default", "import React from \"react\";", &["React"]),
+            ("go single", "import \"fmt\"", &["fmt"]),
+            ("go aliased", "import http \"net/http\"", &["http"]),
+        ];
+
+        for (label, src, expected) in cases {
+            let got = DepGraph::extract_import_targets(src);
+            for want in *expected {
+                assert!(
+                    got.contains(*want),
+                    "{label}: {src:?} lost symbol {want:?}; got {got:?}"
+                );
+            }
+            assert!(
+                !got.iter().any(|s| s.contains('"')),
+                "{label}: {src:?} produced a quoted symbol {got:?}, which can \
+                 never match a published definition"
+            );
+        }
+    }
+
+    #[test]
+    fn go_import_block_yields_packages_without_the_open_paren() {
+        let src = "package main\n\nimport (\n\t\"fmt\"\n\tsvc \"example.com/app/service\"\n)\n";
+        let got = DepGraph::extract_import_targets(src);
+        assert!(got.contains("fmt"), "got {got:?}");
+        assert!(got.contains("service"), "last path component expected; got {got:?}");
+        assert!(
+            !got.contains("("),
+            "`import (` is punctuation, not a module name; got {got:?}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod go_block_alias_guard_tests {
+    use super::*;
+
+    /// The block-line arm keys on a trailing quote, so it must not swallow
+    /// ordinary string literals. Widening it to accept aliases without this
+    /// guard turned `x = "hello"` into a dependency on `hello`.
+    #[test]
+    fn string_assignments_are_not_treated_as_go_imports() {
+        for src in [
+            "x = \"hello\"",
+            "let msg = \"world\"",
+            "    return \"net/http\"",
+            "name: \"value\"",
+        ] {
+            let got = DepGraph::extract_import_targets(src);
+            assert!(
+                got.is_empty(),
+                "{src:?} is not an import line but produced {got:?}"
+            );
+        }
     }
 }

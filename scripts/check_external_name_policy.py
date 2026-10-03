@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import subprocess
 import sys
 from functools import lru_cache
 from pathlib import Path
@@ -107,30 +108,82 @@ def matches_prohibited(value: str) -> bool:
     return False
 
 
-def _scannable_files() -> list[Path]:
-    """Files under ROOT, pruning skipped directories instead of descending them.
+def _tracked_files() -> list[Path] | None:
+    """Files git tracks, or ``None`` when this is not a usable git checkout.
 
-    `ROOT.rglob("*")` walked 49,273 files and then discarded all but 1,339,
-    because it still descends `.git`, `node_modules`, `target` and vendored
-    trees before the filter runs. Pruning at the directory level skips those
-    subtrees entirely.
+    The policy governs what this project authors and ships, and git already
+    knows exactly that set. Asking it is both the correct definition and the
+    only one that cannot rot: ``SKIP_PARTS`` is a denylist, so every new
+    untracked directory silently re-enters the scan.
     """
-    found: list[Path] = []
-    stack = [ROOT]
-    while stack:
-        directory = stack.pop()
-        try:
-            entries = list(directory.iterdir())
-        except OSError:
-            continue
-        for entry in entries:
-            if entry.name in SKIP_PARTS:
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(ROOT), "ls-files", "-z"],
+            capture_output=True,
+            check=True,
+            timeout=60,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    names = [n for n in out.decode("utf-8", "surrogateescape").split("\0") if n]
+    if not names:
+        return None
+    return sorted({ROOT / n for n in names})
+
+
+def _scannable_files() -> list[Path]:
+    """Files this project authors and ships.
+
+    Prefers git's tracked set and falls back to a pruned walk for a source
+    tarball with no `.git`.
+
+    Measured on this checkout: the pruned walk reached **54,430 files and
+    893,908,466 characters**, against **1,914 tracked files**. The excess was
+    entirely gitignored local state -- `openclaw_repo/` (`.gitignore:186`) and
+    `bench/.cache/` (`.gitignore:42`) -- carrying multi-megabyte *single-line*
+    build artifacts: an 11,617,863-character line in a benchmark JSON, 7-10 MB
+    `.tsbuildinfo` and minified-bundle lines.
+
+    That matters because `matches_prohibited` builds a set of every substring
+    window of every line, so a single 11.6 MB line costs ~23 million window
+    allocations. Total: ~1.79 billion. The check did not finish in 560s, so the
+    300s subprocess budget in `tests/test_docs_code_sync.py` could never be
+    reached and the gate was effectively offline -- the same opaque failure the
+    SKIP_PARTS comment above was written to fix, returned by a different door.
+    A denylist cannot fix it permanently: it must enumerate every directory a
+    developer might ever leave in the tree.
+
+    Tracked files are a subset of the pruned walk, so this can only narrow the
+    scan -- it cannot surface a violation the previous version would have
+    missed.
+    """
+    tracked = _tracked_files()
+    if tracked is None:
+        found: list[Path] = []
+        stack = [ROOT]
+        while stack:
+            directory = stack.pop()
+            try:
+                entries = list(directory.iterdir())
+            except OSError:
                 continue
-            if entry.is_dir():
-                stack.append(entry)
-            elif entry.is_file():
-                found.append(entry)
-    return sorted(found)
+            for entry in entries:
+                if entry.name in SKIP_PARTS:
+                    continue
+                if entry.is_dir():
+                    stack.append(entry)
+                elif entry.is_file():
+                    found.append(entry)
+        return sorted(found)
+
+    # Keep the directory denylist applied to the tracked set too, so the
+    # scanned corpus can only shrink relative to the previous behaviour.
+    return [
+        path
+        for path in tracked
+        if not any(part in SKIP_PARTS for part in path.relative_to(ROOT).parts)
+        and path.is_file()
+    ]
 
 
 def violations() -> list[str]:

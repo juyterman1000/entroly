@@ -68,3 +68,99 @@ def test_guidance_is_json_safe():
     g = _empty_context_guidance(0, "/repo")
     # Serializes cleanly for the MCP string return path.
     assert json.loads(json.dumps(g))["status"] == "no_codebase_indexed"
+
+
+def test_guidance_does_not_blame_the_working_directory():
+    """The message must not assert a cause that was measured not to be one.
+
+    It used to say an empty index "usually means the MCP server's working
+    directory is not your project root", and offered ENTROLY_SOURCE as the first
+    remedy. Measured against a freshly spawned `python -m entroly.server` on this
+    repository, with cwd at the repository root and ENTROLY_SOURCE set to it,
+    recall_relevant still returned count 0 -- so the stated cause was wrong and
+    the first remedy sent the reader to restart a server that came back equally
+    empty. Ingesting is what actually populated the index.
+    """
+    g = _empty_context_guidance(0, "/repo", tool="recall_relevant")
+
+    assert "working directory is not your project root" not in g["message"], (
+        "the message asserts a cause that a correct root does not fix"
+    )
+    # The first remedy must be the one that demonstrably works.
+    first = g["resolve"][0].lower()
+    assert any(t in first for t in ("ingest", "remember_fragment", "read_source_file")), (
+        f"first remedy should be ingestion, got: {g['resolve'][0]!r}"
+    )
+    # And it must still say an empty index is not proof the code is absent,
+    # which is the misreading that made this worth fixing at all.
+    assert "not evidence" in g["message"] or "nothing has been read" in g["message"]
+
+
+def test_message_names_the_tool_that_returned_nothing():
+    """The message is read by an agent choosing its next action.
+
+    It was hardcoded to ``optimize_context``, so reusing this guidance from any
+    other tool would tell the reader to go inspect a tool it never called.
+    """
+    assert "optimize_context" in _empty_context_guidance(0, "/repo")["message"]
+    recall = _empty_context_guidance(0, "/repo", tool="recall_relevant")["message"]
+    assert "recall_relevant" in recall
+    assert "optimize_context" not in recall
+
+
+def test_recall_relevant_reports_an_unindexed_server(monkeypatch, tmp_path):
+    """``recall_relevant`` is the first call the server instructions prescribe.
+
+    On a server that indexed nothing it returned ``count: 0`` plus a hint to
+    retry with ``full=True`` -- the one parameter that cannot help, since there
+    are no bodies to expand. An agent reads that as "this repository does not
+    contain the code", which is the opposite of the truth, and the fix (point
+    the server at the repo root) is never surfaced. optimize_context had warned
+    about exactly this since the original dogfood finding; recall_relevant was
+    simply never wired to the same check.
+    """
+    import json
+
+    from entroly import server as srv
+
+    monkeypatch.delenv("ENTROLY_SOURCE", raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    class _EmptyEngine:
+        _use_rust = False
+        _total_fragments_ingested = 0
+
+        def recall_relevant(self, query, top_k):
+            return []
+
+    payload = json.loads(
+        srv._recall_relevant_payload(_EmptyEngine(), "anything at all", 3, False)
+    )
+
+    assert payload["count"] == 0
+    assert "hint" not in payload, (
+        "an empty result must not advertise full=True, which cannot produce "
+        f"results; got {payload.get('hint')!r}"
+    )
+    assert payload["guidance"]["status"] == "no_codebase_indexed"
+    assert "recall_relevant" in payload["guidance"]["message"]
+
+
+def test_recall_relevant_keeps_the_slim_hint_when_it_found_something():
+    """The hint is still correct whenever there is a body to expand."""
+    import json
+
+    from entroly import server as srv
+
+    class _OneHitEngine:
+        _use_rust = False
+        _total_fragments_ingested = 7
+
+        def recall_relevant(self, query, top_k):
+            return [{"source": "a.py", "score": 0.9, "content": "def a(): pass"}]
+
+    payload = json.loads(
+        srv._recall_relevant_payload(_OneHitEngine(), "a", 3, False)
+    )
+    assert payload["count"] == 1
+    assert "full=True" in payload["hint"]

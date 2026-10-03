@@ -206,10 +206,11 @@ python scripts/codebase_graph.py --json g.json
 python scripts/codebase_graph.py --check      # non-zero if anything is unreachable
 ```
 
-Measured on the `entroly` 1.0.83 checkout: **332 modules, 915 import edges,
-167,087 lines.** Re-run the command above rather than trusting this line; it is
-a snapshot, and one earlier version of it sat at 1.0.80 numbers
-(311 / 859 / 158,852) while the tree grew by 21 modules underneath it.
+Measured on the `entroly` 1.0.85 checkout: **368 modules, 1,009 import edges,
+180,067 lines.** Re-run the command above rather than trusting this line; it is
+a snapshot, and it has now gone stale twice: it sat at 1.0.80 numbers
+(311 / 859 / 158,852) while the tree grew by 21 modules underneath it, then at
+1.0.83 numbers (332 / 915 / 167,087) while it grew by another 36.
 
 ### Entry points are narrower than they look
 
@@ -226,31 +227,46 @@ a snapshot, and one earlier version of it sat at 1.0.80 numbers
 | `entroly-work-graph-mcp` | `entroly.work_graph_mcp_server:main` |
 
 Plus `python -m entroly` (`entroly.__main__`) and `import entroly` / `entroly.sdk`.
-**Reachability must be computed from these**, not from `cli.py`. 295 of 332
-modules are reachable; the other 37 (13,101 lines) are imported only by tests and
-benchmarks. Before promoting anything in that set to a README claim, give it a
-real product path — a test that imports a module directly does not prove a user
-can reach it.
+**Reachability must be computed from these**, not from `cli.py`. 324 of 368
+modules are reachable; the other 44 (13,511 lines, 7.5% of the tree) are imported
+only by tests and benchmarks. Before promoting anything in that set to a README
+claim, give it a real product path — a test that imports a module directly does
+not prove a user can reach it. Note the set is *growing* (37 → 44), so it is
+accumulating faster than it is being wired up or deleted.
 
 ### Architectural hubs (PageRank over imports)
 
-`repository_intelligence.models`, `context_receipts.models`, `path_safety`,
-`esg`, `compression_retrieval_store_secure`, `server`, `native_status`,
-`models.registry`, `tree_sitter_support`, and `vault` are the current
-highest-blast-radius modules by PageRank over static imports.
+`repository_intelligence.models`, `tokens`, `codec`, `path_safety`,
+`context_receipts.models`, `compression_retrieval_store_secure`, `cli_recover`,
+`models.registry`, `vault`, and `config` are the current highest-blast-radius
+modules by PageRank over static imports. This list also drifts: `esg`, `server`,
+`native_status` and `tree_sitter_support` were in the top ten at 1.0.83 and are
+not now, so re-rank before using it to judge blast radius.
 
 ### Native boundary
 
-18 modules import `entroly_core` (PyO3). Each must explicitly provide a
+20 modules import `entroly_core` (PyO3). Each must explicitly provide a
 semantically compatible fallback or fail closed behind the shared native
 capability gate; importability alone is not proof of compatibility. `--json`
 lists them under `native_boundary`.
 
 ### Known import cycles
 
-7 cycles; the largest spans 31 modules around `entroly/__init__` ↔ `auto_index`
-↔ `cache_aligner` ↔ `compression_proxy_live` and the proxy stack. Import order in that cluster
-is load-bearing — prefer a function-local import over a new module-level one.
+4 cycles — but the largest is a **99-module** strongly connected component,
+26.9% of the package, around `entroly/__init__` ↔ `auto_index` ↔ `cache_aligner`
+↔ `compression_proxy_live` and the proxy stack. It contains every shipped entry
+point: `entroly`, `entroly.sdk`, `entroly.cli`, `entroly.server`,
+`entroly.proxy`, and `entroly.codec`.
+
+The cycle *count* fell from 7 while the largest cycle grew from 31 — smaller
+cycles were absorbed into the big one rather than broken, so counting cycles
+hides the regression. Verify with the forward/backward reachability intersection
+from any member, not by the cycle count.
+
+Import order in that cluster is load-bearing — prefer a function-local import
+over a new module-level one. A module-level import that closes another edge into
+this component is effectively unreviewable: nothing in it can be imported,
+tested, or reasoned about in isolation.
 
 ## Key Constraints
 
