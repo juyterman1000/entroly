@@ -629,6 +629,19 @@ pub struct WorkItemView {
     pub verification_ids: Vec<String>,
     #[serde(default)]
     pub evidence_ids: Vec<String>,
+    /// Work the recording agent explicitly stated was still outstanding.
+    ///
+    /// Recorded unconditionally on the workstream node as the `remaining_work`
+    /// attribute (see `canonicalize`/observation ingest), and conditionally on
+    /// the task node. It was stored and then never projected: a successor
+    /// reading `resume` saw status `blocked` with no statement of what remained,
+    /// so the single most actionable item in the handoff had to be re-derived
+    /// from diffs.
+    ///
+    /// Empty means "nothing was recorded", never "nothing remains". Callers must
+    /// not infer completion from an empty list.
+    #[serde(default)]
+    pub remaining_work: Vec<String>,
 }
 
 /// A claim, carried to the successor with the trust that qualifies it.
@@ -652,6 +665,38 @@ pub struct ClaimView {
     pub risk: Option<f64>,
 }
 
+/// A verification, carried to the successor with the verdict that qualifies it.
+///
+/// `resume` used to project these as bare labels, which is the same fail-open
+/// mistake `ClaimView` above was introduced to fix. A label reads
+/// "execution verification verify_923a3519bae178a6": the successor learns that
+/// *a* verification exists and cannot tell `Passed` from `Failed`. A failed test
+/// suite therefore arrived looking like evidence of progress, and the only way
+/// to discover otherwise was to re-run the suite -- precisely the duplicated
+/// work a handoff is supposed to remove.
+///
+/// Every field here is read from attributes the node already stores (see the
+/// `verification_attributes` map built when an execution chain is recorded).
+/// Nothing is derived, defaulted to a verdict, or inferred from status.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct VerificationView {
+    pub node_id: String,
+    pub label: String,
+    /// `passed` / `failed` / ... exactly as recorded. `None` means the node
+    /// carried no verdict -- unknown stays unknown.
+    pub verdict: Option<String>,
+    /// `current` / `stale` / ... as recorded. A stale pass is not a pass.
+    pub freshness: Option<String>,
+    /// Derived status already on the node (e.g. `NeedsVerification`), kept
+    /// alongside the verdict rather than instead of it.
+    pub status: WorkStatus,
+    pub trust: TrustLevel,
+    /// The repository state the verdict was established against, so a successor
+    /// can tell whether it still applies.
+    pub verified_repository_commitment: Option<String>,
+    pub updated_at_ms: i64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ResumeView {
     pub repo_id: String,
@@ -671,7 +716,19 @@ pub struct ResumeView {
     #[serde(default)]
     pub claims: Vec<ClaimView>,
     pub failures: Vec<String>,
-    pub verification: Vec<String>,
+    /// Verifications with their verdicts. Was `Vec<String>` of labels; see
+    /// `VerificationView`. Failed verifications sort first, because a truncated
+    /// read must show the blocking one rather than whichever the traversal
+    /// reached first -- the same ordering argument as `claims`.
+    pub verification: Vec<VerificationView>,
+    /// Work explicitly recorded as outstanding on the selected workstream.
+    ///
+    /// Duplicated from `selected_workstream.remaining_work` onto the top level
+    /// because this is the field a successor reads first and it was the single
+    /// most-missed item in the pre-fix projection. Both read the same stored
+    /// attribute; no second representation is introduced.
+    #[serde(default)]
+    pub outstanding_work: Vec<String>,
     pub changed_paths: Vec<String>,
     pub commits: Vec<String>,
     pub evidence: Vec<EvidenceRef>,
@@ -1132,12 +1189,50 @@ impl WorkGraph {
             .filter(|n| n.kind == NodeKind::Failure)
             .map(|n| n.label.clone())
             .collect();
-        let verification = related
+        let mut verification: Vec<VerificationView> = related
             .iter()
             .filter_map(|id| self.nodes.get(id))
             .filter(|n| matches!(n.kind, NodeKind::Test | NodeKind::CiRun))
-            .map(|n| n.label.clone())
+            .map(|n| VerificationView {
+                node_id: n.node_id.clone(),
+                label: n.label.clone(),
+                // Two ingest paths record the same concept under different keys
+                // and neither is going to be renamed here: `record_execution_chain`
+                // writes `verdict` from a VerificationRecord, while
+                // `observe_repository` writes `verification_state` from a
+                // VerificationObservation. Reading only one would have left the
+                // commoner observation path projecting `None` -- a half-fix that
+                // still hides a failing test. This is the minimum adapter over
+                // the two existing representations, not a third one.
+                verdict: attr_string(&n.attributes, "verdict")
+                    .or_else(|| attr_string(&n.attributes, "verification_state")),
+                freshness: attr_string(&n.attributes, "freshness"),
+                status: n.status,
+                trust: n.trust,
+                verified_repository_commitment: attr_string(
+                    &n.attributes,
+                    "verified_repository_commitment",
+                ),
+                updated_at_ms: n.updated_at_ms,
+            })
             .collect();
+        // Failed first, then anything without a recorded verdict, then passed.
+        // A successor reading a truncated list must see what is blocking it; an
+        // unknown verdict outranks a pass because it has not been cleared.
+        fn verdict_rank(view: &VerificationView) -> u8 {
+            match view.verdict.as_deref() {
+                Some("failed") => 0,
+                None => 1,
+                Some("passed") => 3,
+                Some(_) => 2,
+            }
+        }
+        verification.sort_by(|a, b| {
+            verdict_rank(a)
+                .cmp(&verdict_rank(b))
+                .then_with(|| a.label.cmp(&b.label))
+        });
+
         let evidence = self.context_evidence(&selected.node_id, max_evidence);
 
         Ok(ResumeView {
@@ -1151,6 +1246,7 @@ impl WorkGraph {
             claims,
             failures,
             verification,
+            outstanding_work: selected.remaining_work.clone(),
             changed_paths: selected.changed_paths,
             commits: selected.commit_ids,
             evidence,
@@ -2497,6 +2593,21 @@ impl WorkGraph {
             failure_ids: failure_ids.into_iter().collect(),
             verification_ids: verification_ids.into_iter().collect(),
             evidence_ids: evidence_ids.into_iter().collect(),
+            // Projected from the node's own recorded attribute. Not synthesised
+            // and not inferred from status: if the attribute is absent the list
+            // is empty, which the field doc defines as "not recorded".
+            remaining_work: node
+                .attributes
+                .get("remaining_work")
+                .and_then(|v| v.as_array())
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|v| v.as_str())
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default(),
         }
     }
 }
@@ -5682,6 +5793,174 @@ mod tests {
         let resume = graph.resume(None, 20).unwrap();
         assert!(!resume.evidence.is_empty());
         assert_eq!(resume.evidence[0].trust, TrustLevel::Verified);
+    }
+
+
+    /// P1-P8: the resume projection must carry the verdict and the outstanding
+    /// work the graph was already storing. Pre-fix, `verification` was a
+    /// `Vec<String>` of node labels, so a failed suite was indistinguishable
+    /// from a passing one, and `remaining_work` was written to the workstream
+    /// node and never read back.
+    fn resume_fixture_graph(state: VerificationState, remaining: Vec<String>) -> WorkGraph {
+        let mut graph = WorkGraph::new("repo-1").unwrap();
+        let mut obs = clean_observation();
+        obs.task_hint = Some(TaskHint {
+            task_id: String::new(),
+            title: "configurable budget".to_string(),
+            trust: TrustLevel::Observed,
+            source_kind: EvidenceKind::Checkpoint,
+            explicit_status: WorkStatus::InProgress,
+            remaining_work: remaining,
+            source_ref: "checkpoint".to_string(),
+        });
+        obs.verifications.push(VerificationObservation {
+            verification_id: String::new(),
+            name: "budget tests".to_string(),
+            state,
+            evidence_kind: EvidenceKind::TestResult,
+            source_ref: "pytest".to_string(),
+            digest: "abc".to_string(),
+            observed_at_ms: 1_000,
+        });
+        graph.observe_repository(obs).unwrap();
+        graph
+    }
+
+    #[test]
+    fn p1_failed_verification_survives_resume_projection() {
+        let graph = resume_fixture_graph(VerificationState::Failed, vec![]);
+        let resume = graph.resume(None, 20).unwrap();
+        assert!(!resume.verification.is_empty(), "verification was dropped");
+        let verdict = resume.verification[0].verdict.as_deref();
+        assert_eq!(verdict, Some("failed"), "a failed verdict must stay visible");
+        // The whole point: it must be readable from the serialized payload the
+        // next agent actually receives, not only from the Rust struct.
+        let json = graph.resume_json(None, 20, false).unwrap();
+        assert!(json.contains("failed"), "verdict absent from resume JSON");
+    }
+
+    #[test]
+    fn p2_passed_verification_survives_resume_projection() {
+        let graph = resume_fixture_graph(VerificationState::Passed, vec![]);
+        let resume = graph.resume(None, 20).unwrap();
+        assert_eq!(resume.verification[0].verdict.as_deref(), Some("passed"));
+    }
+
+    #[test]
+    fn p3_outstanding_work_survives_resume_projection() {
+        let graph = resume_fixture_graph(
+            VerificationState::Failed,
+            vec!["wire the config through the engine".to_string()],
+        );
+        let resume = graph.resume(None, 20).unwrap();
+        assert_eq!(
+            resume.outstanding_work,
+            vec!["wire the config through the engine".to_string()],
+            "recorded remaining work must reach the successor verbatim"
+        );
+        assert_eq!(
+            resume.selected_workstream.remaining_work, resume.outstanding_work,
+            "both read the same stored attribute"
+        );
+        let json = graph.resume_json(None, 20, false).unwrap();
+        assert!(json.contains("wire the config through the engine"));
+    }
+
+    #[test]
+    fn p4_absent_remaining_work_is_never_invented() {
+        let graph = resume_fixture_graph(VerificationState::Failed, vec![]);
+        let resume = graph.resume(None, 20).unwrap();
+        assert!(
+            resume.outstanding_work.is_empty(),
+            "projection fabricated outstanding work: {:?}",
+            resume.outstanding_work
+        );
+        // Empty means not recorded. It must not be read as "nothing remains",
+        // and the projection must not derive it from status either.
+        assert!(resume.selected_workstream.remaining_work.is_empty());
+    }
+
+    #[test]
+    fn p5_blocked_status_failed_verdict_and_outstanding_work_are_independent() {
+        let graph = resume_fixture_graph(
+            VerificationState::Failed,
+            vec!["re-run the suite".to_string()],
+        );
+        let resume = graph.resume(None, 20).unwrap();
+        // Three separate carriers; none derived from another.
+        assert_eq!(resume.verification[0].verdict.as_deref(), Some("failed"));
+        assert_eq!(resume.outstanding_work, vec!["re-run the suite".to_string()]);
+        assert!(matches!(
+            resume.selected_workstream.status,
+            WorkStatus::Blocked | WorkStatus::InProgress | WorkStatus::NeedsVerification
+        ));
+    }
+
+    #[test]
+    fn p6_failed_verdicts_sort_before_passed_in_a_truncated_read() {
+        let mut graph = WorkGraph::new("repo-1").unwrap();
+        let mut obs = clean_observation();
+        obs.task_hint = Some(TaskHint {
+            task_id: String::new(),
+            title: "mixed verdicts".to_string(),
+            trust: TrustLevel::Observed,
+            source_kind: EvidenceKind::Checkpoint,
+            explicit_status: WorkStatus::InProgress,
+            remaining_work: vec![],
+            source_ref: "checkpoint".to_string(),
+        });
+        for (name, state) in [
+            ("aaa passing", VerificationState::Passed),
+            ("zzz failing", VerificationState::Failed),
+        ] {
+            obs.verifications.push(VerificationObservation {
+                verification_id: String::new(),
+                name: name.to_string(),
+                state,
+                evidence_kind: EvidenceKind::TestResult,
+                source_ref: "pytest".to_string(),
+                digest: name.to_string(),
+                observed_at_ms: 1_000,
+            });
+        }
+        graph.observe_repository(obs).unwrap();
+        let resume = graph.resume(None, 20).unwrap();
+        assert_eq!(
+            resume.verification[0].verdict.as_deref(),
+            Some("failed"),
+            "the blocking verdict must come first despite sorting last by label"
+        );
+    }
+
+    #[test]
+    fn p7_projection_fields_do_not_change_the_graph_commitment() {
+        // The commitment covers the persisted graph, not a view serialization.
+        // If projecting extra fields moved it, every stored receipt would break.
+        let graph = resume_fixture_graph(
+            VerificationState::Failed,
+            vec!["still to do".to_string()],
+        );
+        let before = graph.graph_commitment.clone();
+        let _ = graph.resume(None, 20).unwrap();
+        let _ = graph.resume_json(None, 20, true).unwrap();
+        assert_eq!(graph.graph_commitment, before, "reading mutated the commitment");
+    }
+
+    #[test]
+    fn p8_resume_projection_is_deterministic() {
+        let a = resume_fixture_graph(
+            VerificationState::Failed,
+            vec!["b".to_string(), "a".to_string()],
+        );
+        let b = resume_fixture_graph(
+            VerificationState::Failed,
+            vec!["b".to_string(), "a".to_string()],
+        );
+        assert_eq!(a.graph_commitment, b.graph_commitment);
+        assert_eq!(
+            a.resume_json(None, 20, false).unwrap(),
+            b.resume_json(None, 20, false).unwrap()
+        );
     }
 
     #[test]

@@ -3104,7 +3104,9 @@ mod tests {
             );
         }
     }
-    use crate::work_graph::{EvidenceKind, NodeKind, TrustLevel, WorkItemView, WorkStatus};
+    use crate::work_graph::{
+        EvidenceKind, NodeKind, TrustLevel, VerificationView, WorkItemView, WorkStatus,
+    };
     use std::collections::BTreeMap;
 
     fn resume_fixture() -> ResumeView {
@@ -3128,13 +3130,24 @@ mod tests {
                 failure_ids: vec![],
                 verification_ids: vec![],
                 evidence_ids: vec!["evidence:git".into()],
+                remaining_work: vec!["remaining work prose".into()],
             },
             task_labels: vec!["prose must not leak into scope".into()],
             agents: vec!["display-name".into()],
             decisions: vec!["secret decision prose".into()],
             claims: vec![],
             failures: vec!["failure prose".into()],
-            verification: vec!["verification prose".into()],
+            verification: vec![VerificationView {
+                node_id: "test:auth".into(),
+                label: "verification prose".into(),
+                verdict: Some("failed".into()),
+                freshness: Some("current".into()),
+                status: WorkStatus::NeedsVerification,
+                trust: TrustLevel::Verified,
+                verified_repository_commitment: Some("sha256:head".into()),
+                updated_at_ms: 11,
+            }],
+            outstanding_work: vec!["remaining work prose".into()],
             changed_paths: vec!["tests/auth.rs".into(), "src/auth.rs".into()],
             commits: vec!["commit:1".into(), "commit:2".into()],
             evidence: vec![EvidenceRef {
@@ -3171,6 +3184,12 @@ mod tests {
         assert!(!json.contains("secret decision prose"));
         assert!(!json.contains("failure prose"));
         assert!(!json.contains("display-name"));
+        // The resume projection gained outstanding work and verification
+        // verdicts. Those belong on the agent-resume surface, not on this
+        // id-and-commitment scope, so the leakage guard must cover them too or
+        // it would silently stop protecting the newest prose in the view.
+        assert!(!json.contains("remaining work prose"));
+        assert!(!json.contains("verification prose"));
     }
 
     #[test]
