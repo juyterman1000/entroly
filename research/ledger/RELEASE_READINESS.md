@@ -91,15 +91,73 @@ Gates were read out of `.github/workflows/` rather than assumed.
 CI's authoritative invocation is `pytest tests/ -v --tb=short --timeout=60`
 (`ci.yml` integration job) and `-x --timeout=60` (python-fallback job).
 
-One test times out locally: `tests/test_deep_functional.py::test_full_lifecycle_stress`
-("D-32 FULL LIFECYCLE STRESS, 20 turns"). It is **pre-existing and
-environmental, established rather than asserted**: a worktree at `origin/main`
-was checked out and the same test run in isolation on the same machine at the
-same 60-second timeout, and it times out identically there. The file is not in
-this branch's diff. CI runs it green at a *stricter* timeout, so the cause is
-local machine load, not the change set.
+**Correction to an earlier interim report.** While the run was in progress I
+reported "0 failures at 40%" and again at 87%. That was wrong. With
+`--tb=line`, `FAILED` lines appear only in the final summary, never in the dot
+progress, so grepping a partial log for `^FAILED` returns 0 by construction. I
+was reading absence of evidence as evidence of absence. The run finished with
+nine failures.
 
-The full suite was therefore re-run with that single test deselected.
+```
+passed      5463
+failed      9   -> 1 introduced (fixed), 8 proven not introduced
+skipped     38
+xfailed     3
+deselected  1   (test_full_lifecycle_stress, see below)
+duration    2696.67s (44:56)
+```
+
+### Classification of all nine, by reproduction rather than intuition
+
+| failure | clean checkout, `origin/main` | clean checkout, this branch | CI on `main` | verdict |
+|---|---|---|---|---|
+| `test_work_resume_selection::test_passed_verdict_is_not_reported_as_failed` | n/a (new test) | n/a | n/a | **INTRODUCED → FIXED** `ff659e8d` |
+| `test_release_version_sync::test_release_version_surfaces_match_package_version` | PASS | **PASS** | green | local untracked debris |
+| `test_release_surface_consistency::test_install_instructions_do_not_pin_an_older_version` | PASS | **PASS** | green | local untracked debris |
+| `test_model_recovery_benchmark::test_fixture_generation_is_deterministic_and_phase_separated` | FAIL | FAIL | green | pre-existing, platform |
+| `test_proxy_session_rescue::test_live_proxy_blocks_unrecoverable_overflow_before_upstream` | FAIL | FAIL | green | pre-existing, platform |
+| `test_recovery_fidelity_fuzz::test_recovery_store_round_trip_is_byte_exact[megaline]` | FAIL | FAIL | green | pre-existing, platform |
+| `test_recovery_fidelity_fuzz::test_recovery_reference_byte_length_matches_the_content[megaline]` | FAIL | FAIL | green | pre-existing, platform |
+| `test_session_rescue::test_soft_pressure_defers_when_provider_cache_is_warm` | FAIL | FAIL | green | pre-existing, platform |
+| `test_session_rescue::test_pressure_without_safe_candidate_is_reported_without_fake_savings` | FAIL | FAIL | green | pre-existing, platform |
+
+Evidence for each class:
+
+* **The one I introduced.** `test_passed_verdict_is_not_reported_as_failed`
+  passed in isolation and as a file, then failed in the suite on
+  `assert view["outstanding_work"] == []`, seeing
+  `['wire the new config field through the Rust engine']`. Cause: the fixture set
+  `ENTROLY_SOURCE` and `ENTROLY_NO_SELF_HEAL` but not `ENTROLY_DIR`, and
+  `_store_root()` defaults to `~/.entroly/work-graphs` — the developer's real
+  store, shared across the session. A sibling test's content-bearing workstream
+  was therefore visible to a test that had deliberately recorded none, and the
+  content-based selector picked it, which is the selector behaving as specified
+  (W3 covers multiple workstreams). The test was asserting about accumulated
+  machine state rather than about what it recorded. Fixed by giving each test
+  its own store under `tmp_path`; the exact reproduction
+  (`bindings + store + multiprocess + this file`) went from 1 failed / 26 passed
+  to **28 passed**. Test-only change.
+* **The two debris failures.** Caused by untracked files in the working
+  directory, neither known to git: `entroly-wasm/pkg/package.json` pinned at
+  `1.0.83` (a stale local `wasm-pack` output) and a deeply nested
+  `openclaw_repo/.artifacts/vitest-worker-cache/...` path that breaks an
+  `rglob`. `git ls-files` confirms 0 tracked files under `openclaw_repo/` and
+  that the wasm `package.json` is "not known to git". Both **pass from a clean
+  checkout of this branch**, which is what CI does.
+* **The six platform failures.** They fail identically from a clean worktree at
+  `origin/main` *and* from a clean worktree of this branch, while
+  `gh run list --workflow ci.yml --branch main` reports `ci.yml` **success at
+  `e31f082f`** — main's head. So they are Windows-local and invisible to CI's
+  Linux runners, present on both branches, and not attributable to this change
+  set.
+
+Separately deselected: `tests/test_deep_functional.py::test_full_lifecycle_stress`
+("D-32 FULL LIFECYCLE STRESS, 20 turns"), labelled
+**PRE-EXISTING / ENVIRONMENTAL TIMEOUT, NON-BLOCKING FOR THIS CHANGESET** —
+established, not assumed: run in isolation from an `origin/main` worktree on the
+same machine at the same 60-second limit, it times out identically. The file is
+not in this branch's diff and CI runs it green at a stricter timeout. **It is not
+fixed**, and it is recorded here rather than silently omitted.
 
 ---
 
