@@ -1,6 +1,0 @@
-You are continuing work another agent started and could not finish.
-
-## Task
-stats.py must compute a numerically stable mean. Make tests/test_stats.py pass.
-
-Finish the task. Run the test suite to confirm before you stop.

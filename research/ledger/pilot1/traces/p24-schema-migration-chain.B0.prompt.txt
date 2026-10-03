@@ -1,6 +1,0 @@
-You are continuing work another agent started and could not finish.
-
-## Task
-schema.py must upgrade records through every intermediate version. Make tests/test_schema.py pass.
-
-Finish the task. Run the test suite to confirm before you stop.

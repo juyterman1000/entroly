@@ -1,6 +1,0 @@
-You are continuing work another agent started and could not finish.
-
-## Task
-stream.py must drop repeats inside a sliding window. Make tests/test_stream.py pass.
-
-Finish the task. Run the test suite to confirm before you stop.

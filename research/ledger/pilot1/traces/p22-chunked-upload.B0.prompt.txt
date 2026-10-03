@@ -1,6 +1,0 @@
-You are continuing work another agent started and could not finish.
-
-## Task
-upload.py must resume partial uploads. Make tests/test_upload.py pass.
-
-Finish the task. Run the test suite to confirm before you stop.

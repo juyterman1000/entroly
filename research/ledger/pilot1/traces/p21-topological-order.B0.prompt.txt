@@ -1,6 +1,0 @@
-You are continuing work another agent started and could not finish.
-
-## Task
-pipeline.py must order stages by dependency and detect cycles. Make tests/test_pipeline.py pass.
-
-Finish the task. Run the test suite to confirm before you stop.

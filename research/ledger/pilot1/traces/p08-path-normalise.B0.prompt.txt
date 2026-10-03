@@ -1,6 +1,0 @@
-You are continuing work another agent started and could not finish.
-
-## Task
-paths.py must normalise repo-relative paths. Make tests/test_paths.py pass.
-
-Finish the task. Run the test suite to confirm before you stop.

@@ -1,6 +1,0 @@
-You are continuing work another agent started and could not finish.
-
-## Task
-backfill.py must process records in bounded batches with progress. Make tests/test_backfill.py pass.
-
-Finish the task. Run the test suite to confirm before you stop.

@@ -184,3 +184,11 @@ docs/discoverability-registry.json
 # git repository, so staging it would create a broken gitlink, and whole-tree
 # scans (name policy, symbol walks) traverse it and stall.
 openclaw_repo/
+
+# Raw agent event traces from the continuity pilots. Kept on disk as the local
+# research record but never published: they embed absolute temp-workspace paths
+# from whichever machine ran the benchmark (and this repository is public). The
+# structured record -- manifests, results.json, analysis.json and the ledger
+# prose -- is personal-path-free and IS versioned.
+research/ledger/*/traces/
+research/ledger/pilot_wave2_INVALID/

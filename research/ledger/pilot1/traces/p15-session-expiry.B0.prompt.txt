@@ -1,6 +1,0 @@
-You are continuing work another agent started and could not finish.
-
-## Task
-session.py must expire idle sessions. Make tests/test_session.py pass.
-
-Finish the task. Run the test suite to confirm before you stop.

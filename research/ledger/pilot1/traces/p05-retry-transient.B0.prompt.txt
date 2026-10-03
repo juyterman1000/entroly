@@ -1,6 +1,0 @@
-You are continuing work another agent started and could not finish.
-
-## Task
-client.py should retry transient failures using backoff.py. Make tests/test_client.py pass.
-
-Finish the task. Run the test suite to confirm before you stop.

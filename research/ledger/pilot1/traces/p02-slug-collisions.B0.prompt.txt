@@ -1,6 +1,0 @@
-You are continuing work another agent started and could not finish.
-
-## Task
-slug.py must produce unique slugs. Make tests/test_slug.py pass.
-
-Finish the task. Run the test suite to confirm before you stop.

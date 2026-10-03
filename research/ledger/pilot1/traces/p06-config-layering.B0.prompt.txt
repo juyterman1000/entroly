@@ -1,6 +1,0 @@
-You are continuing work another agent started and could not finish.
-
-## Task
-config.py must layer defaults, file and env. Make tests/test_config.py pass.
-
-Finish the task. Run the test suite to confirm before you stop.
