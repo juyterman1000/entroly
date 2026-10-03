@@ -1,0 +1,218 @@
+{
+  "baseline_commit": "e31f082f",
+  "corpus_files": 120,
+  "by_budget": {
+    "2000": {
+      "mean_pinned_share": 0.0,
+      "mean_ranker_share": 0.9986,
+      "max_pinned_share": 0.0
+    },
+    "8000": {
+      "mean_pinned_share": 0.0,
+      "mean_ranker_share": 0.99,
+      "max_pinned_share": 0.0
+    },
+    "32000": {
+      "mean_pinned_share": 0.0,
+      "mean_ranker_share": 0.7257,
+      "max_pinned_share": 0.0
+    }
+  },
+  "rows": [
+    {
+      "budget": 2000,
+      "query": "how does knapsack selection handle pinned fragments ",
+      "fragments_indexed": 120,
+      "pinned_fragments": 0,
+      "protected_fragments": 3,
+      "pinned_tokens_in_corpus": 0,
+      "selected_tokens": 1999,
+      "selected_pinned_tokens": 0,
+      "ranker_controlled_tokens": 1999,
+      "pinned_share_of_budget": 0.0,
+      "ranker_share_of_budget": 0.9995
+    },
+    {
+      "budget": 2000,
+      "query": "where is the BM25 relevance score computed for a que",
+      "fragments_indexed": 120,
+      "pinned_fragments": 0,
+      "protected_fragments": 3,
+      "pinned_tokens_in_corpus": 0,
+      "selected_tokens": 1996,
+      "selected_pinned_tokens": 0,
+      "ranker_controlled_tokens": 1996,
+      "pinned_share_of_budget": 0.0,
+      "ranker_share_of_budget": 0.998
+    },
+    {
+      "budget": 2000,
+      "query": "how are context receipts recovered from omitted chun",
+      "fragments_indexed": 120,
+      "pinned_fragments": 0,
+      "protected_fragments": 3,
+      "pinned_tokens_in_corpus": 0,
+      "selected_tokens": 1994,
+      "selected_pinned_tokens": 0,
+      "ranker_controlled_tokens": 1994,
+      "pinned_share_of_budget": 0.0,
+      "ranker_share_of_budget": 0.997
+    },
+    {
+      "budget": 2000,
+      "query": "what happens when the native rust engine is unavaila",
+      "fragments_indexed": 120,
+      "pinned_fragments": 0,
+      "protected_fragments": 3,
+      "pinned_tokens_in_corpus": 0,
+      "selected_tokens": 2000,
+      "selected_pinned_tokens": 0,
+      "ranker_controlled_tokens": 2000,
+      "pinned_share_of_budget": 0.0,
+      "ranker_share_of_budget": 1.0
+    },
+    {
+      "budget": 2000,
+      "query": "how is a verification claim checked against supplied",
+      "fragments_indexed": 120,
+      "pinned_fragments": 0,
+      "protected_fragments": 3,
+      "pinned_tokens_in_corpus": 0,
+      "selected_tokens": 1997,
+      "selected_pinned_tokens": 0,
+      "ranker_controlled_tokens": 1997,
+      "pinned_share_of_budget": 0.0,
+      "ranker_share_of_budget": 0.9985
+    },
+    {
+      "budget": 8000,
+      "query": "how does knapsack selection handle pinned fragments ",
+      "fragments_indexed": 120,
+      "pinned_fragments": 0,
+      "protected_fragments": 3,
+      "pinned_tokens_in_corpus": 0,
+      "selected_tokens": 7983,
+      "selected_pinned_tokens": 0,
+      "ranker_controlled_tokens": 7983,
+      "pinned_share_of_budget": 0.0,
+      "ranker_share_of_budget": 0.9979
+    },
+    {
+      "budget": 8000,
+      "query": "where is the BM25 relevance score computed for a que",
+      "fragments_indexed": 120,
+      "pinned_fragments": 0,
+      "protected_fragments": 3,
+      "pinned_tokens_in_corpus": 0,
+      "selected_tokens": 7945,
+      "selected_pinned_tokens": 0,
+      "ranker_controlled_tokens": 7945,
+      "pinned_share_of_budget": 0.0,
+      "ranker_share_of_budget": 0.9931
+    },
+    {
+      "budget": 8000,
+      "query": "how are context receipts recovered from omitted chun",
+      "fragments_indexed": 120,
+      "pinned_fragments": 0,
+      "protected_fragments": 3,
+      "pinned_tokens_in_corpus": 0,
+      "selected_tokens": 7938,
+      "selected_pinned_tokens": 0,
+      "ranker_controlled_tokens": 7938,
+      "pinned_share_of_budget": 0.0,
+      "ranker_share_of_budget": 0.9922
+    },
+    {
+      "budget": 8000,
+      "query": "what happens when the native rust engine is unavaila",
+      "fragments_indexed": 120,
+      "pinned_fragments": 0,
+      "protected_fragments": 3,
+      "pinned_tokens_in_corpus": 0,
+      "selected_tokens": 7896,
+      "selected_pinned_tokens": 0,
+      "ranker_controlled_tokens": 7896,
+      "pinned_share_of_budget": 0.0,
+      "ranker_share_of_budget": 0.987
+    },
+    {
+      "budget": 8000,
+      "query": "how is a verification claim checked against supplied",
+      "fragments_indexed": 120,
+      "pinned_fragments": 0,
+      "protected_fragments": 3,
+      "pinned_tokens_in_corpus": 0,
+      "selected_tokens": 7837,
+      "selected_pinned_tokens": 0,
+      "ranker_controlled_tokens": 7837,
+      "pinned_share_of_budget": 0.0,
+      "ranker_share_of_budget": 0.9796
+    },
+    {
+      "budget": 32000,
+      "query": "how does knapsack selection handle pinned fragments ",
+      "fragments_indexed": 120,
+      "pinned_fragments": 0,
+      "protected_fragments": 3,
+      "pinned_tokens_in_corpus": 0,
+      "selected_tokens": 26738,
+      "selected_pinned_tokens": 0,
+      "ranker_controlled_tokens": 26738,
+      "pinned_share_of_budget": 0.0,
+      "ranker_share_of_budget": 0.8356
+    },
+    {
+      "budget": 32000,
+      "query": "where is the BM25 relevance score computed for a que",
+      "fragments_indexed": 120,
+      "pinned_fragments": 0,
+      "protected_fragments": 3,
+      "pinned_tokens_in_corpus": 0,
+      "selected_tokens": 23746,
+      "selected_pinned_tokens": 0,
+      "ranker_controlled_tokens": 23746,
+      "pinned_share_of_budget": 0.0,
+      "ranker_share_of_budget": 0.7421
+    },
+    {
+      "budget": 32000,
+      "query": "how are context receipts recovered from omitted chun",
+      "fragments_indexed": 120,
+      "pinned_fragments": 0,
+      "protected_fragments": 3,
+      "pinned_tokens_in_corpus": 0,
+      "selected_tokens": 22222,
+      "selected_pinned_tokens": 0,
+      "ranker_controlled_tokens": 22222,
+      "pinned_share_of_budget": 0.0,
+      "ranker_share_of_budget": 0.6944
+    },
+    {
+      "budget": 32000,
+      "query": "what happens when the native rust engine is unavaila",
+      "fragments_indexed": 120,
+      "pinned_fragments": 0,
+      "protected_fragments": 3,
+      "pinned_tokens_in_corpus": 0,
+      "selected_tokens": 21922,
+      "selected_pinned_tokens": 0,
+      "ranker_controlled_tokens": 21922,
+      "pinned_share_of_budget": 0.0,
+      "ranker_share_of_budget": 0.6851
+    },
+    {
+      "budget": 32000,
+      "query": "how is a verification claim checked against supplied",
+      "fragments_indexed": 120,
+      "pinned_fragments": 0,
+      "protected_fragments": 3,
+      "pinned_tokens_in_corpus": 0,
+      "selected_tokens": 21482,
+      "selected_pinned_tokens": 0,
+      "ranker_controlled_tokens": 21482,
+      "pinned_share_of_budget": 0.0,
+      "ranker_share_of_budget": 0.6713
+    }
+  ]
+}

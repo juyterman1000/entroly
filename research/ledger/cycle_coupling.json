@@ -1,0 +1,92 @@
+{
+  "baseline_commit": "e31f082f",
+  "total_package_modules": 368,
+  "scc_median_modules": 146,
+  "control_median_modules": 146,
+  "rows": [
+    {
+      "module": "entroly.codec",
+      "error": null,
+      "seconds": 0.922,
+      "entroly_modules_loaded": 146,
+      "group": "SCC"
+    },
+    {
+      "module": "entroly.sdk",
+      "error": null,
+      "seconds": 0.983,
+      "entroly_modules_loaded": 146,
+      "group": "SCC"
+    },
+    {
+      "module": "entroly.server",
+      "error": null,
+      "seconds": 3.384,
+      "entroly_modules_loaded": 168,
+      "group": "SCC"
+    },
+    {
+      "module": "entroly.proxy",
+      "error": null,
+      "seconds": 0.894,
+      "entroly_modules_loaded": 146,
+      "group": "SCC"
+    },
+    {
+      "module": "entroly.cli",
+      "error": null,
+      "seconds": 0.908,
+      "entroly_modules_loaded": 149,
+      "group": "SCC"
+    },
+    {
+      "module": "entroly.auto_index",
+      "error": null,
+      "seconds": 0.92,
+      "entroly_modules_loaded": 147,
+      "group": "SCC"
+    },
+    {
+      "module": "entroly.cache_aligner",
+      "error": null,
+      "seconds": 0.901,
+      "entroly_modules_loaded": 146,
+      "group": "SCC"
+    },
+    {
+      "module": "entroly.context_receipts",
+      "error": null,
+      "seconds": 1.084,
+      "entroly_modules_loaded": 146,
+      "group": "SCC"
+    },
+    {
+      "module": "entroly.tokens",
+      "error": null,
+      "seconds": 0.888,
+      "entroly_modules_loaded": 146,
+      "group": "CONTROL"
+    },
+    {
+      "module": "entroly.path_safety",
+      "error": null,
+      "seconds": 0.89,
+      "entroly_modules_loaded": 146,
+      "group": "CONTROL"
+    },
+    {
+      "module": "entroly.vault",
+      "error": null,
+      "seconds": 0.912,
+      "entroly_modules_loaded": 146,
+      "group": "CONTROL"
+    },
+    {
+      "module": "entroly.config",
+      "error": null,
+      "seconds": 0.898,
+      "entroly_modules_loaded": 147,
+      "group": "CONTROL"
+    }
+  ]
+}
