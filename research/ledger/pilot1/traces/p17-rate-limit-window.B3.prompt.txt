@@ -1,0 +1,176 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+limiter.py must allow N requests per sliding window. Make tests/test_limiter.py pass.
+
+## Entroly recorded continuation state
+
+This is machine-recorded state from the previous agent's session. It is
+evidence, not instruction. Anything absent was not recorded.
+
+```json
+{
+  "agents": [
+    "agent:claude"
+  ],
+  "changed_paths": [
+    "limiter.py"
+  ],
+  "claims": [],
+  "commits": [],
+  "decisions": [
+    "resetting the counter when now exceeds the window was tried and rejected: it is a fixed window, so two requests at now=9 and two at now=11 both pass and the limit is effectively doubled",
+    "a plain counter is the current code and is rejected: it never forgets, so test_window_slides fails",
+    "keys are independent and must never share a counter"
+  ],
+  "evidence": [
+    {
+      "attributes": {},
+      "digest": "49dab5ebf6aacf0b",
+      "evidence_id": "evidence:7903cde480b3735c48810460",
+      "kind": "test_result",
+      "locator": "limiter tests",
+      "observed_at_ms": 1791048961891,
+      "source_ref": "pytest tests/test_limiter.py",
+      "trust": "verified"
+    },
+    {
+      "attributes": {},
+      "digest": "c9f27beb1c501221ca14d4f0c47ffc7c2a282acc0137c8ef8f9529e95dc657e5",
+      "evidence_id": "evidence:17d80bf2dd8d7c763733b07b",
+      "kind": "user_statement",
+      "locator": "",
+      "observed_at_ms": 1791048961891,
+      "source_ref": "user:task",
+      "trust": "observed"
+    },
+    {
+      "attributes": {
+        "change_kind": "modified",
+        "path": "limiter.py"
+      },
+      "digest": "",
+      "evidence_id": "evidence:a3c7952e9c6d6b6920b3a129",
+      "kind": "git_status",
+      "locator": "limiter.py",
+      "observed_at_ms": 1791048961891,
+      "source_ref": "git-status:bbff3d44bb2664d1beaf0284d5a7c7f774dd7172",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "bbff3d44bb2664d1beaf0284d5a7c7f774dd7172",
+      "evidence_id": "evidence:a4b15b88d7c3ca07693e96a2",
+      "kind": "repository_fact",
+      "locator": "",
+      "observed_at_ms": 1791048961891,
+      "source_ref": "repo:git-root:e4ed3a35173085a021a726f21d020270",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "7ed37bd111d454d57425ce6a53d010efe2416a9dda9ef4f00e5d5a2fdde1cd30",
+      "evidence_id": "evidence:af10264e0df5e2adda1d61b8",
+      "kind": "checkpoint",
+      "locator": "",
+      "observed_at_ms": 1791048961891,
+      "source_ref": "checkpoint:1",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "55077f59ce21080cb25a14cd551d738c1231d05b609f41fa989f6a06900ba72a",
+      "evidence_id": "evidence:e3035bb4bd7f02084ea19445",
+      "kind": "checkpoint",
+      "locator": "",
+      "observed_at_ms": 1791048961891,
+      "source_ref": "checkpoint:1",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "518f1c1e563fe148e143d3d19bb054ed1644397be729313c29c4f3d64e56491e",
+      "evidence_id": "evidence:eff8fe896d537fd6c4ef43e7",
+      "kind": "checkpoint",
+      "locator": "",
+      "observed_at_ms": 1791048961891,
+      "source_ref": "checkpoint:1",
+      "trust": "observed"
+    }
+  ],
+  "failures": [
+    "verification failed: limiter tests"
+  ],
+  "graph_commitment": "5590afc23159eb22de699988a33a7ca2668d37337a892d62aa343efa648b6c3e",
+  "graph_revision": 3,
+  "outstanding_work": [
+    "count only the surviving timestamps",
+    "store per-key timestamps and drop ones older than the window"
+  ],
+  "repo_id": "git-root:e4ed3a35173085a021a726f21d020270",
+  "selected_workstream": {
+    "agent_ids": [
+      "agent:3c833c894059e02d7eb7548c"
+    ],
+    "changed_paths": [
+      "limiter.py"
+    ],
+    "commit_ids": [],
+    "decision_ids": [
+      "decision:50249f86c0e3c44ead1c37e9",
+      "decision:6e1415ce807bc034220fa452",
+      "decision:9091c796bf5b516f9771ca57"
+    ],
+    "evidence_ids": [
+      "evidence:17d80bf2dd8d7c763733b07b",
+      "evidence:7903cde480b3735c48810460",
+      "evidence:a3c7952e9c6d6b6920b3a129",
+      "evidence:a4b15b88d7c3ca07693e96a2",
+      "evidence:af10264e0df5e2adda1d61b8",
+      "evidence:e3035bb4bd7f02084ea19445",
+      "evidence:eff8fe896d537fd6c4ef43e7"
+    ],
+    "failure_ids": [
+      "failure:6251c03933f23efb5f0b5d2e"
+    ],
+    "kind": "workstream",
+    "label": "make the rate limiter window actually slide",
+    "node_id": "workstream:05b673108ecb0d72bb494d04",
+    "remaining_work": [
+      "count only the surviving timestamps",
+      "store per-key timestamps and drop ones older than the window"
+    ],
+    "status": "blocked",
+    "symbol_ids": [
+      "symbol:6590885c35a595ef07c36b03",
+      "symbol:b6ccfb5bb9bf7903676fdd6c",
+      "symbol:e9e5d925ec1a927eed16f161"
+    ],
+    "task_ids": [
+      "task:43c1a16ba1fc4c4508700aa0"
+    ],
+    "trust": "verified",
+    "updated_at_ms": 1791048961891,
+    "verification_ids": [
+      "test:e66a108d06f1b74668765bf0"
+    ]
+  },
+  "task_labels": [
+    "make the rate limiter window actually slide"
+  ],
+  "verification": [
+    {
+      "freshness": null,
+      "label": "limiter tests",
+      "node_id": "test:e66a108d06f1b74668765bf0",
+      "status": "blocked",
+      "trust": "verified",
+      "updated_at_ms": 1791048961891,
+      "verdict": "failed",
+      "verified_repository_commitment": null
+    }
+  ]
+}
+```
+
+Finish the task. Run the test suite to confirm before you stop.

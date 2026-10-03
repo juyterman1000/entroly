@@ -1,0 +1,6 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+cache.py must invalidate on source version change. Make tests/test_cache.py pass.
+
+Finish the task. Run the test suite to confirm before you stop.

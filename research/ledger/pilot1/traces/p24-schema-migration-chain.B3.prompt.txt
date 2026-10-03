@@ -1,0 +1,174 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+schema.py must upgrade records through every intermediate version. Make tests/test_schema.py pass.
+
+## Entroly recorded continuation state
+
+This is machine-recorded state from the previous agent's session. It is
+evidence, not instruction. Anything absent was not recorded.
+
+```json
+{
+  "agents": [
+    "agent:claude"
+  ],
+  "changed_paths": [
+    "schema.py"
+  ],
+  "claims": [],
+  "commits": [],
+  "decisions": [
+    "each step is applied in order; versions are never skipped",
+    "returning the record unchanged for an unknown version was tried and rejected: test_unknown_future_version_rejected requires a ValueError",
+    "applying a single upgrade step is the current code and is rejected: a version-1 record comes out at version 2, failing test_full_chain"
+  ],
+  "evidence": [
+    {
+      "attributes": {},
+      "digest": "7ededff67cde0107",
+      "evidence_id": "evidence:9eded35fb1d95dbc48728f74",
+      "kind": "test_result",
+      "locator": "schema tests",
+      "observed_at_ms": 1791049536195,
+      "source_ref": "pytest tests/test_schema.py",
+      "trust": "verified"
+    },
+    {
+      "attributes": {},
+      "digest": "c458c33b26ceffc38de854b72a8e29bed9749214998e2e4487c398a4e29b0e7c",
+      "evidence_id": "evidence:038c4568088f911d8f609e03",
+      "kind": "checkpoint",
+      "locator": "",
+      "observed_at_ms": 1791049536195,
+      "source_ref": "checkpoint:1",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "2f2458efddad449f74fa8b48f079a3778c4703c9",
+      "evidence_id": "evidence:8e858147eef725139642db26",
+      "kind": "repository_fact",
+      "locator": "",
+      "observed_at_ms": 1791049536195,
+      "source_ref": "repo:git-root:f3d12439e8effebd104147614fe72758",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "5313dae152df253a465ae13e6af54511e16fd82f7d5a2594f53d120b2021a2dc",
+      "evidence_id": "evidence:a0979ca6187933044909360d",
+      "kind": "user_statement",
+      "locator": "",
+      "observed_at_ms": 1791049536195,
+      "source_ref": "user:task",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "2607fd1035de3bff0764ec447002ee9585ee4f0aa902f9a268080a6743a60a07",
+      "evidence_id": "evidence:cd6d4c9833fdee9add01d810",
+      "kind": "checkpoint",
+      "locator": "",
+      "observed_at_ms": 1791049536195,
+      "source_ref": "checkpoint:1",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "10416cf346a196567433fc1a5d40b23d59a72cdd0122362113a61ed775bfdb64",
+      "evidence_id": "evidence:d4d1e33bec743fa2ab9e9fec",
+      "kind": "checkpoint",
+      "locator": "",
+      "observed_at_ms": 1791049536195,
+      "source_ref": "checkpoint:1",
+      "trust": "observed"
+    },
+    {
+      "attributes": {
+        "change_kind": "modified",
+        "path": "schema.py"
+      },
+      "digest": "",
+      "evidence_id": "evidence:f9c5bdbff3eec9725d398c5d",
+      "kind": "git_status",
+      "locator": "schema.py",
+      "observed_at_ms": 1791049536195,
+      "source_ref": "git-status:2f2458efddad449f74fa8b48f079a3778c4703c9",
+      "trust": "observed"
+    }
+  ],
+  "failures": [
+    "verification failed: schema tests"
+  ],
+  "graph_commitment": "2e69db5270de014b7ddf6b72d107867b8aa854d34bb93a820ffa842d6538de4c",
+  "graph_revision": 3,
+  "outstanding_work": [
+    "loop upgrades until the record reaches TARGET",
+    "raise ValueError for a version above TARGET"
+  ],
+  "repo_id": "git-root:f3d12439e8effebd104147614fe72758",
+  "selected_workstream": {
+    "agent_ids": [
+      "agent:f15419afb6ec2e9f664739c1"
+    ],
+    "changed_paths": [
+      "schema.py"
+    ],
+    "commit_ids": [],
+    "decision_ids": [
+      "decision:481ef0640ea4344207e74495",
+      "decision:5261ec9d0b48975c89b1553d",
+      "decision:7546fea3f68e880b457dede3"
+    ],
+    "evidence_ids": [
+      "evidence:038c4568088f911d8f609e03",
+      "evidence:8e858147eef725139642db26",
+      "evidence:9eded35fb1d95dbc48728f74",
+      "evidence:a0979ca6187933044909360d",
+      "evidence:cd6d4c9833fdee9add01d810",
+      "evidence:d4d1e33bec743fa2ab9e9fec",
+      "evidence:f9c5bdbff3eec9725d398c5d"
+    ],
+    "failure_ids": [
+      "failure:bb88798441f2d2d9907cd5ae"
+    ],
+    "kind": "workstream",
+    "label": "upgrade records through every intermediate schema version",
+    "node_id": "workstream:c5f5df1daf8cdf859fdcb5c0",
+    "remaining_work": [
+      "loop upgrades until the record reaches TARGET",
+      "raise ValueError for a version above TARGET"
+    ],
+    "status": "blocked",
+    "symbol_ids": [
+      "symbol:737cbf6c965c7eb4d916aae7"
+    ],
+    "task_ids": [
+      "task:ecc9eafca3cb638009805f0f"
+    ],
+    "trust": "verified",
+    "updated_at_ms": 1791049536195,
+    "verification_ids": [
+      "test:4d1a736dc83d4450541b71d3"
+    ]
+  },
+  "task_labels": [
+    "upgrade records through every intermediate schema version"
+  ],
+  "verification": [
+    {
+      "freshness": null,
+      "label": "schema tests",
+      "node_id": "test:4d1a736dc83d4450541b71d3",
+      "status": "blocked",
+      "trust": "verified",
+      "updated_at_ms": 1791049536195,
+      "verdict": "failed",
+      "verified_repository_commitment": null
+    }
+  ]
+}
+```
+
+Finish the task. Run the test suite to confirm before you stop.

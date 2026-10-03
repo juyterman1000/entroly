@@ -1,0 +1,678 @@
+{
+  "phase": "Pilot-1 (ContinuityStress-24)",
+  "provenance": {
+    "suite_sha256": "8bdffb59a0741708f8974fa644a0aed5500d28a33a48f1c84a75fdd620d81982",
+    "harness_sha256": "734f12d3b081598c5e0d4257bb3856f9e3ea8a789be0eff1644fbf861b47c433",
+    "rediscovery_sha256": "237ddf562cd9da400eaea180f79124f7d7df683e1d1865f634792ba5daaa0bdf",
+    "entroly_source_commit": "b112d24ddf03a61998cc0cde1c29bf2c4ba35ff8",
+    "native_loaded_sha256": "cf4d6e8352d87152339c1343e90a11ce8c65e979cf780a9195d096bfeb53a28a",
+    "native_match": true,
+    "codex_model": "gpt-5.5",
+    "codex_auth": "ChatGPT account (no token invoice; usage proxies only)"
+  },
+  "eligibility": {
+    "rows_total": 72,
+    "by_class": {
+      "ELIGIBLE": 15,
+      "ENVIRONMENT_FAILURE": 57
+    },
+    "matched_eligible_tasks": [
+      "p01-half-up",
+      "p02-slug-collisions",
+      "p03-truncate-words",
+      "p04-percent-change",
+      "p05-retry-transient"
+    ],
+    "dropped_tasks": {
+      "p06-config-layering": {
+        "B0": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B3": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B1S": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        }
+      },
+      "p07-event-dispatch": {
+        "B3": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B0": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B1S": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        }
+      },
+      "p08-path-normalise": {
+        "B1S": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B3": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B0": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        }
+      },
+      "p09-quantity-rename": {
+        "B0": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B1S": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B3": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        }
+      },
+      "p10-error-codes": {
+        "B1S": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B3": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B0": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        }
+      },
+      "p11-import-cycle": {
+        "B1S": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B0": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B3": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        }
+      },
+      "p12-settings-single-source": {
+        "B0": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B3": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B1S": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        }
+      },
+      "p13-quoted-delimiter": {
+        "B3": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B0": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B1S": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        }
+      },
+      "p14-version-cache": {
+        "B0": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B3": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B1S": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        }
+      },
+      "p15-session-expiry": {
+        "B1S": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B0": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B3": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        }
+      },
+      "p16-dedupe-stream": {
+        "B3": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B1S": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B0": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        }
+      },
+      "p17-rate-limit-window": {
+        "B0": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B3": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B1S": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        }
+      },
+      "p18-merge-conflict-markers": {
+        "B0": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B3": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B1S": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        }
+      },
+      "p19-partial-sum-overflow": {
+        "B0": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B3": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B1S": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        }
+      },
+      "p20-idempotent-migration": {
+        "B3": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B1S": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B0": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        }
+      },
+      "p21-topological-order": {
+        "B1S": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B3": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B0": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        }
+      },
+      "p22-chunked-upload": {
+        "B1S": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B0": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B3": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        }
+      },
+      "p23-backfill-batches": {
+        "B3": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B1S": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B0": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        }
+      },
+      "p24-schema-migration-chain": {
+        "B0": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B3": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        },
+        "B1S": {
+          "class": "ENVIRONMENT_FAILURE",
+          "reasons": [
+            "provider/sandbox refusal: hit your usage limit"
+          ]
+        }
+      }
+    }
+  },
+  "per_arm": {
+    "B0": {
+      "n": 5,
+      "verified_successes": 5,
+      "verified_rate": 1.0,
+      "wilson95": [
+        0.566,
+        1.0
+      ],
+      "rediscovery_median": 0.0,
+      "rediscovery_iqr": [
+        0.0,
+        0.0
+      ],
+      "first_progress_median": 5.0,
+      "cached_input_median": 215424.0,
+      "uncached_input_median": 20679.0,
+      "total_input_median": 237251.0,
+      "output_median": 1933.0,
+      "noncached_usage_proxy_median": 23033.0,
+      "wall_seconds_median": 130.1,
+      "command_count_median": 13.0,
+      "failed_commands_total": 9,
+      "handoff_tokens_median": 0.0
+    },
+    "B1S": {
+      "n": 5,
+      "verified_successes": 5,
+      "verified_rate": 1.0,
+      "wilson95": [
+        0.566,
+        1.0
+      ],
+      "rediscovery_median": 0.0,
+      "rediscovery_iqr": [
+        0.0,
+        0.0
+      ],
+      "first_progress_median": 3.0,
+      "cached_input_median": 427392.0,
+      "uncached_input_median": 33939.0,
+      "total_input_median": 461331.0,
+      "output_median": 2981.0,
+      "noncached_usage_proxy_median": 38565.0,
+      "wall_seconds_median": 256.1,
+      "command_count_median": 22.0,
+      "failed_commands_total": 20,
+      "handoff_tokens_median": 187.0
+    },
+    "B3": {
+      "n": 5,
+      "verified_successes": 5,
+      "verified_rate": 1.0,
+      "wilson95": [
+        0.566,
+        1.0
+      ],
+      "rediscovery_median": 0.0,
+      "rediscovery_iqr": [
+        0.0,
+        0.5
+      ],
+      "first_progress_median": 3.0,
+      "cached_input_median": 380544.0,
+      "uncached_input_median": 28811.0,
+      "total_input_median": 418564.0,
+      "output_median": 2965.0,
+      "noncached_usage_proxy_median": 30395.0,
+      "wall_seconds_median": 178.7,
+      "command_count_median": 19.0,
+      "failed_commands_total": 26,
+      "handoff_tokens_median": 1114.0
+    }
+  },
+  "paired": [
+    {
+      "task_id": "p01-half-up",
+      "B0": {
+        "verified": true,
+        "redisc": 0,
+        "progress_idx": 4,
+        "uncached": 14484,
+        "output": 751,
+        "handoff_tok": 0,
+        "cmds": 6
+      },
+      "stratum": "simple_local",
+      "B1S": {
+        "verified": true,
+        "redisc": 0,
+        "progress_idx": 3,
+        "uncached": 26786,
+        "output": 2981,
+        "handoff_tok": 170,
+        "cmds": 22
+      },
+      "B3": {
+        "verified": true,
+        "redisc": 0,
+        "progress_idx": 3,
+        "uncached": 27421,
+        "output": 2965,
+        "handoff_tok": 1084,
+        "cmds": 23
+      },
+      "delta_B3_minus_B1S": {
+        "redisc": 0,
+        "uncached": 635,
+        "output": -16
+      }
+    },
+    {
+      "task_id": "p02-slug-collisions",
+      "B0": {
+        "verified": true,
+        "redisc": 0,
+        "progress_idx": 6,
+        "uncached": 20679,
+        "output": 2354,
+        "handoff_tok": 0,
+        "cmds": 13
+      },
+      "stratum": "simple_local",
+      "B1S": {
+        "verified": true,
+        "redisc": 0,
+        "progress_idx": 3,
+        "uncached": 36549,
+        "output": 2826,
+        "handoff_tok": 185,
+        "cmds": 17
+      },
+      "B3": {
+        "verified": true,
+        "redisc": 0,
+        "progress_idx": 2,
+        "uncached": 38020,
+        "output": 3510,
+        "handoff_tok": 1101,
+        "cmds": 18
+      },
+      "delta_B3_minus_B1S": {
+        "redisc": 0,
+        "uncached": 1471,
+        "output": 684
+      }
+    },
+    {
+      "task_id": "p03-truncate-words",
+      "B0": {
+        "verified": true,
+        "redisc": 0,
+        "progress_idx": 5,
+        "uncached": 21827,
+        "output": 1933,
+        "handoff_tok": 0,
+        "cmds": 13
+      },
+      "stratum": "simple_local",
+      "B1S": {
+        "verified": true,
+        "redisc": 0,
+        "progress_idx": 3,
+        "uncached": 18485,
+        "output": 1407,
+        "handoff_tok": 187,
+        "cmds": 11
+      },
+      "B3": {
+        "verified": true,
+        "redisc": 0,
+        "progress_idx": 3,
+        "uncached": 23816,
+        "output": 2542,
+        "handoff_tok": 1114,
+        "cmds": 19
+      },
+      "delta_B3_minus_B1S": {
+        "redisc": 0,
+        "uncached": 5331,
+        "output": 1135
+      }
+    },
+    {
+      "task_id": "p04-percent-change",
+      "B0": {
+        "verified": true,
+        "redisc": 0,
+        "progress_idx": 3,
+        "uncached": 14050,
+        "output": 637,
+        "handoff_tok": 0,
+        "cmds": 5
+      },
+      "stratum": "simple_local",
+      "B1S": {
+        "verified": true,
+        "redisc": 0,
+        "progress_idx": 3,
+        "uncached": 33939,
+        "output": 4626,
+        "handoff_tok": 190,
+        "cmds": 24
+      },
+      "B3": {
+        "verified": true,
+        "redisc": 0,
+        "progress_idx": 3,
+        "uncached": 28811,
+        "output": 1584,
+        "handoff_tok": 1118,
+        "cmds": 10
+      },
+      "delta_B3_minus_B1S": {
+        "redisc": 0,
+        "uncached": -5128,
+        "output": -3042
+      }
+    },
+    {
+      "task_id": "p05-retry-transient",
+      "B0": {
+        "verified": true,
+        "redisc": 0,
+        "progress_idx": 6,
+        "uncached": 34205,
+        "output": 4624,
+        "handoff_tok": 0,
+        "cmds": 22
+      },
+      "stratum": "multi_file",
+      "B1S": {
+        "verified": true,
+        "redisc": 0,
+        "progress_idx": 0,
+        "uncached": 41308,
+        "output": 5426,
+        "handoff_tok": 188,
+        "cmds": 30
+      },
+      "B3": {
+        "verified": true,
+        "redisc": 1,
+        "progress_idx": 5,
+        "uncached": 32323,
+        "output": 5870,
+        "handoff_tok": 1124,
+        "cmds": 31
+      },
+      "delta_B3_minus_B1S": {
+        "redisc": 1,
+        "uncached": -8985,
+        "output": 444
+      }
+    }
+  ],
+  "decision": {
+    "comparison_name": "Production continuation payload value (NOT representation value)",
+    "why_not_representation": "B3 carries ~5.7x the payload of B1S, so any benefit cannot be attributed to structure. Larger payload is also not evidence of more semantic information; it is a confound, not a mechanism.",
+    "matched_eligible_tasks": 5,
+    "planned_tasks": 24,
+    "discreteness_note": "'3 additional successes = 12.5pp' holds at n=24. Realised matched n=5, so one task = 20.0pp.",
+    "success_delta_pp": 0.0,
+    "success_threshold_passed": false,
+    "rediscovery_threshold": "NOT RESOLVABLE (both medians 0)",
+    "noncached_usage_increase": -0.212,
+    "usage_guard_passed": true,
+    "usage_guard_basis": "medians over matched eligible tasks"
+  }
+}

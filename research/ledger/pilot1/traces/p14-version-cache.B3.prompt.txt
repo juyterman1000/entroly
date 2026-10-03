@@ -1,0 +1,164 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+cache.py must invalidate on source version change. Make tests/test_cache.py pass.
+
+## Entroly recorded continuation state
+
+This is machine-recorded state from the previous agent's session. It is
+evidence, not instruction. Anything absent was not recorded.
+
+```json
+{
+  "agents": [
+    "agent:claude"
+  ],
+  "changed_paths": [
+    "cache.py"
+  ],
+  "claims": [],
+  "commits": [],
+  "decisions": [
+    "equality in both directions; an older request must also miss",
+    "a monotonic version >= stored check was tried and rejected: it passes the newer case and fails test_miss_older"
+  ],
+  "evidence": [
+    {
+      "attributes": {},
+      "digest": "c99f584d2eed2dd9",
+      "evidence_id": "evidence:be49fcc55bd86c30071b51fb",
+      "kind": "test_result",
+      "locator": "cache tests",
+      "observed_at_ms": 1791048735575,
+      "source_ref": "pytest tests/test_cache.py",
+      "trust": "verified"
+    },
+    {
+      "attributes": {
+        "change_kind": "modified",
+        "path": "cache.py"
+      },
+      "digest": "",
+      "evidence_id": "evidence:1c2bdc1ff7bb7dd7a1b9c33c",
+      "kind": "git_status",
+      "locator": "cache.py",
+      "observed_at_ms": 1791048735575,
+      "source_ref": "git-status:24f4148395034b778a4c2283e577d0236f57e921",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "2fb4e00b5609aa52b718e96baed97500b409e7fbc2d91308839470a554c58280",
+      "evidence_id": "evidence:2ed795d82878b41b79962ffa",
+      "kind": "user_statement",
+      "locator": "",
+      "observed_at_ms": 1791048735575,
+      "source_ref": "user:task",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "ffbe56304c4ad8814ff3d12e95a6977c231b6582b4b409ef886ac12af72336f7",
+      "evidence_id": "evidence:50aaf8e38ff194447221b1c3",
+      "kind": "checkpoint",
+      "locator": "",
+      "observed_at_ms": 1791048735575,
+      "source_ref": "checkpoint:1",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "6bb5511a862ab4b7cf7af1d21207f788594fd578f0bbbaa7f94bfaa70b7857d1",
+      "evidence_id": "evidence:866655526618ab1b142aa789",
+      "kind": "checkpoint",
+      "locator": "",
+      "observed_at_ms": 1791048735575,
+      "source_ref": "checkpoint:1",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "24f4148395034b778a4c2283e577d0236f57e921",
+      "evidence_id": "evidence:f6ec7414db9b308fa55b01c8",
+      "kind": "repository_fact",
+      "locator": "",
+      "observed_at_ms": 1791048735575,
+      "source_ref": "repo:git-root:a98087a0738f4aee739d1827369cbee9",
+      "trust": "observed"
+    }
+  ],
+  "failures": [
+    "verification failed: cache tests"
+  ],
+  "graph_commitment": "8922ef7a3c3dd676d163cb71759b770051e6d14594a1ab0620a09f60c87e3a86",
+  "graph_revision": 3,
+  "outstanding_work": [
+    "miss unless the stored version equals the requested one",
+    "store the version with the value"
+  ],
+  "repo_id": "git-root:a98087a0738f4aee739d1827369cbee9",
+  "selected_workstream": {
+    "agent_ids": [
+      "agent:4013e2f8320d2c8c8b8c79e8"
+    ],
+    "changed_paths": [
+      "cache.py"
+    ],
+    "commit_ids": [],
+    "decision_ids": [
+      "decision:545c4a68a5c4551657f3a251",
+      "decision:8987ef7a9f1b52ed988fb3fb"
+    ],
+    "evidence_ids": [
+      "evidence:1c2bdc1ff7bb7dd7a1b9c33c",
+      "evidence:2ed795d82878b41b79962ffa",
+      "evidence:50aaf8e38ff194447221b1c3",
+      "evidence:866655526618ab1b142aa789",
+      "evidence:be49fcc55bd86c30071b51fb",
+      "evidence:f6ec7414db9b308fa55b01c8"
+    ],
+    "failure_ids": [
+      "failure:64dbf83d21ca796a9341fbf6"
+    ],
+    "kind": "workstream",
+    "label": "invalidate cache entries on version change",
+    "node_id": "workstream:2275cef34516384cc94173d0",
+    "remaining_work": [
+      "miss unless the stored version equals the requested one",
+      "store the version with the value"
+    ],
+    "status": "blocked",
+    "symbol_ids": [
+      "symbol:5181ebefcb12b21d8d1aae82",
+      "symbol:52ccfb223f8377649a9b4028",
+      "symbol:894d0a02f9acc43dec23531c",
+      "symbol:d6c9d7e0fcb036069bb57eb4"
+    ],
+    "task_ids": [
+      "task:0266c0e47fd8aa17eeec2481"
+    ],
+    "trust": "verified",
+    "updated_at_ms": 1791048735575,
+    "verification_ids": [
+      "test:76359604043d9228992dea31"
+    ]
+  },
+  "task_labels": [
+    "invalidate cache entries on version change"
+  ],
+  "verification": [
+    {
+      "freshness": null,
+      "label": "cache tests",
+      "node_id": "test:76359604043d9228992dea31",
+      "status": "blocked",
+      "trust": "verified",
+      "updated_at_ms": 1791048735575,
+      "verdict": "failed",
+      "verified_repository_commitment": null
+    }
+  ]
+}
+```
+
+Finish the task. Run the test suite to confirm before you stop.

@@ -1,0 +1,30 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+text.py must truncate on word boundaries. Make tests/test_text.py pass.
+
+## Handoff from the previous agent
+
+**Task:** truncate text on word boundaries
+**Branch:** fix/truncate-words
+
+### What is already done
+- `text.py` has been modified and holds partial work.
+
+### What is currently failing
+- text tests: **failed** (`pytest tests/test_text.py`)
+
+### What remains to be done
+- cut at the last space within the limit
+- fall back to a hard cut when there is no space
+
+### Decisions and constraints to preserve
+- no ellipsis is added; the tests compare exact strings
+
+### Approaches already tried and rejected - do not repeat these
+- rsplit(' ', 1)[0] was tried and rejected: with no space in the string it returns the whole word, failing the hard-cut case
+
+### Suggested next step
+- cut at the last space within the limit
+
+Finish the task. Run the test suite to confirm before you stop.

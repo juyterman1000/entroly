@@ -1,0 +1,30 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+upload.py must resume partial uploads. Make tests/test_upload.py pass.
+
+## Handoff from the previous agent
+
+**Task:** resume uploads from a byte offset
+**Branch:** feat/resumable-upload
+
+### What is already done
+- `upload.py` has been modified and holds partial work.
+
+### What is currently failing
+- upload tests: **failed** (`pytest tests/test_upload.py`)
+
+### What remains to be done
+- start chunking at already_sent
+- re-chunk from the offset so a mid-chunk resume realigns
+
+### Decisions and constraints to preserve
+- chunk boundaries are recomputed from the offset, not from the original alignment
+
+### Approaches already tried and rejected - do not repeat these
+- skipping already_sent // chunk_size whole chunks was tried and rejected: with already_sent=3 it drops byte 'd', failing test_resume_mid_chunk
+
+### Suggested next step
+- start chunking at already_sent
+
+Finish the task. Run the test suite to confirm before you stop.

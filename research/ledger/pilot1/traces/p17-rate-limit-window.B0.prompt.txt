@@ -1,0 +1,6 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+limiter.py must allow N requests per sliding window. Make tests/test_limiter.py pass.
+
+Finish the task. Run the test suite to confirm before you stop.

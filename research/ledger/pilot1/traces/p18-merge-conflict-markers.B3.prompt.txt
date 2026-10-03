@@ -1,0 +1,174 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+patchcheck.py must reject conflict markers. Make tests/test_patchcheck.py pass.
+
+## Entroly recorded continuation state
+
+This is machine-recorded state from the previous agent's session. It is
+evidence, not instruction. Anything absent was not recorded.
+
+```json
+{
+  "agents": [
+    "agent:claude"
+  ],
+  "changed_paths": [
+    "patchcheck.py"
+  ],
+  "claims": [],
+  "commits": [],
+  "decisions": [
+    "anchoring each marker to line start independently was tried and rejected: the markdown case still trips on its own line-initial '=======', so the markers have to be checked as a sequence",
+    "a markdown setext underline is legal content and must not be flagged",
+    "substring matching is the current code and is rejected: '=======' alone flags markdown headings"
+  ],
+  "evidence": [
+    {
+      "attributes": {},
+      "digest": "5b4bb1bde59afb1c",
+      "evidence_id": "evidence:635c38ccd9e529550f1e1a4e",
+      "kind": "test_result",
+      "locator": "patchcheck tests",
+      "observed_at_ms": 1791049036429,
+      "source_ref": "pytest tests/test_patchcheck.py",
+      "trust": "verified"
+    },
+    {
+      "attributes": {},
+      "digest": "ee9be9c19f2b3169f8acfcf69efb930d8ab7e57a9f90cc6346bc3d79589d2597",
+      "evidence_id": "evidence:0f3eb6676c46b3498ef7e4db",
+      "kind": "checkpoint",
+      "locator": "",
+      "observed_at_ms": 1791049036429,
+      "source_ref": "checkpoint:1",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "ee36ba70cc3241b95ce87f6213a91ab22fc9ba8afadb7f67b484dbb58d144cd6",
+      "evidence_id": "evidence:1c293a4a68c2bea28bdcb8ea",
+      "kind": "checkpoint",
+      "locator": "",
+      "observed_at_ms": 1791049036429,
+      "source_ref": "checkpoint:1",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "e6efd62462ce1ae2e2e7b46a6914093be2c5a50e0e712cadd16c019a3f0ebb9f",
+      "evidence_id": "evidence:597eea314ed3d0b43623edb0",
+      "kind": "user_statement",
+      "locator": "",
+      "observed_at_ms": 1791049036429,
+      "source_ref": "user:task",
+      "trust": "observed"
+    },
+    {
+      "attributes": {
+        "change_kind": "modified",
+        "path": "patchcheck.py"
+      },
+      "digest": "",
+      "evidence_id": "evidence:d4b8e77c6277950bb1beebe6",
+      "kind": "git_status",
+      "locator": "patchcheck.py",
+      "observed_at_ms": 1791049036429,
+      "source_ref": "git-status:ac5b22c43e6c270549accf266ebc19834ef3973c",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "a4e3bb43870129a499721e58fa108fb2677604d60d49427cf758ce9eeff1e89a",
+      "evidence_id": "evidence:f412d856881a499215bc7ac0",
+      "kind": "checkpoint",
+      "locator": "",
+      "observed_at_ms": 1791049036429,
+      "source_ref": "checkpoint:1",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "ac5b22c43e6c270549accf266ebc19834ef3973c",
+      "evidence_id": "evidence:fec7f784ef6d9bac1eed977b",
+      "kind": "repository_fact",
+      "locator": "",
+      "observed_at_ms": 1791049036429,
+      "source_ref": "repo:git-root:afc2de59d2225c74f34a364a36661b41",
+      "trust": "observed"
+    }
+  ],
+  "failures": [
+    "verification failed: patchcheck tests"
+  ],
+  "graph_commitment": "218a86844c27a7a5664f623e6d5c16b8e2da7ac885e3e5c546ebca533a27237c",
+  "graph_revision": 3,
+  "outstanding_work": [
+    "require a start marker at line start",
+    "require the matching separator and end marker to follow it"
+  ],
+  "repo_id": "git-root:afc2de59d2225c74f34a364a36661b41",
+  "selected_workstream": {
+    "agent_ids": [
+      "agent:5d0bd5875a9a53b027e234cd"
+    ],
+    "changed_paths": [
+      "patchcheck.py"
+    ],
+    "commit_ids": [],
+    "decision_ids": [
+      "decision:6f0ca933dd0e4ec7d0623763",
+      "decision:c681f84e7e9725d9a61835d6",
+      "decision:e08caafa147f0a07239ba6ac"
+    ],
+    "evidence_ids": [
+      "evidence:0f3eb6676c46b3498ef7e4db",
+      "evidence:1c293a4a68c2bea28bdcb8ea",
+      "evidence:597eea314ed3d0b43623edb0",
+      "evidence:635c38ccd9e529550f1e1a4e",
+      "evidence:d4b8e77c6277950bb1beebe6",
+      "evidence:f412d856881a499215bc7ac0",
+      "evidence:fec7f784ef6d9bac1eed977b"
+    ],
+    "failure_ids": [
+      "failure:f94eb8fe840c9f2fc5a3aa65"
+    ],
+    "kind": "workstream",
+    "label": "detect real conflict markers without false positives",
+    "node_id": "workstream:ae8af478d3f2e9d8c4fed42e",
+    "remaining_work": [
+      "require a start marker at line start",
+      "require the matching separator and end marker to follow it"
+    ],
+    "status": "blocked",
+    "symbol_ids": [
+      "symbol:c2fdb8933ced5c928d65f208"
+    ],
+    "task_ids": [
+      "task:a0e6b5ee847ee95c06883aae"
+    ],
+    "trust": "verified",
+    "updated_at_ms": 1791049036429,
+    "verification_ids": [
+      "test:1b1525b376433192edd4089f"
+    ]
+  },
+  "task_labels": [
+    "detect real conflict markers without false positives"
+  ],
+  "verification": [
+    {
+      "freshness": null,
+      "label": "patchcheck tests",
+      "node_id": "test:1b1525b376433192edd4089f",
+      "status": "blocked",
+      "trust": "verified",
+      "updated_at_ms": 1791049036429,
+      "verdict": "failed",
+      "verified_repository_commitment": null
+    }
+  ]
+}
+```
+
+Finish the task. Run the test suite to confirm before you stop.

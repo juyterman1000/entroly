@@ -1,0 +1,180 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+Break the import cycle so tests/test_graph.py passes.
+
+## Entroly recorded continuation state
+
+This is machine-recorded state from the previous agent's session. It is
+evidence, not instruction. Anything absent was not recorded.
+
+```json
+{
+  "agents": [
+    "agent:claude"
+  ],
+  "changed_paths": [
+    "edge.py",
+    "node.py"
+  ],
+  "claims": [],
+  "commits": [],
+  "decisions": [
+    "both import orders must work; the test exercises each",
+    "deleting the isinstance check was tried and rejected: it removes the assertion the cycle existed to support instead of fixing the cycle"
+  ],
+  "evidence": [
+    {
+      "attributes": {},
+      "digest": "540bd4fe3e0c7aa1",
+      "evidence_id": "evidence:4f9bc4b040f8a6a4db4e200c",
+      "kind": "test_result",
+      "locator": "graph tests",
+      "observed_at_ms": 1791048541508,
+      "source_ref": "pytest tests/test_graph.py",
+      "trust": "verified"
+    },
+    {
+      "attributes": {},
+      "digest": "356d9feb9941426235ef1dd671230da7b8fedbf928cf3d075d76e04c222cce77",
+      "evidence_id": "evidence:02ad11f35fd99752a4db1ae9",
+      "kind": "checkpoint",
+      "locator": "",
+      "observed_at_ms": 1791048541508,
+      "source_ref": "checkpoint:1",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "93157ffe8beeb330fafebcff25242f3363686098",
+      "evidence_id": "evidence:1a6bcfa6ce2ad1e7f8292018",
+      "kind": "repository_fact",
+      "locator": "",
+      "observed_at_ms": 1791048541508,
+      "source_ref": "repo:git-root:56011fb5ef40b111f37893a92219e371",
+      "trust": "observed"
+    },
+    {
+      "attributes": {
+        "change_kind": "modified",
+        "path": "edge.py"
+      },
+      "digest": "",
+      "evidence_id": "evidence:23171f7bb439f565416b8afa",
+      "kind": "git_status",
+      "locator": "edge.py",
+      "observed_at_ms": 1791048541508,
+      "source_ref": "git-status:93157ffe8beeb330fafebcff25242f3363686098",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "dea42310d14849fcdbff9864cf87d1ca28bd3956fdf85c69bb597337b7d8d8c2",
+      "evidence_id": "evidence:8c3f94bf4fda39b82aa9bc72",
+      "kind": "checkpoint",
+      "locator": "",
+      "observed_at_ms": 1791048541508,
+      "source_ref": "checkpoint:1",
+      "trust": "observed"
+    },
+    {
+      "attributes": {
+        "change_kind": "modified",
+        "path": "node.py"
+      },
+      "digest": "",
+      "evidence_id": "evidence:a4b3c9f20128354e6dcc4cb9",
+      "kind": "git_status",
+      "locator": "node.py",
+      "observed_at_ms": 1791048541508,
+      "source_ref": "git-status:93157ffe8beeb330fafebcff25242f3363686098",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "69835c8734ce174cccd7e429d1b22f346e22671b432ba1da78f0b0429f249e9f",
+      "evidence_id": "evidence:ded989120ef8e8a2d891d4bc",
+      "kind": "user_statement",
+      "locator": "",
+      "observed_at_ms": 1791048541508,
+      "source_ref": "user:task",
+      "trust": "observed"
+    }
+  ],
+  "failures": [
+    "verification failed: graph tests"
+  ],
+  "graph_commitment": "7b8a9ff628c018b99e397f2bf9026e9ff6cc7d3dab77192d7717077b87c7ce7c",
+  "graph_revision": 3,
+  "outstanding_work": [
+    "remove one module-level import and keep the isinstance check working"
+  ],
+  "repo_id": "git-root:56011fb5ef40b111f37893a92219e371",
+  "selected_workstream": {
+    "agent_ids": [
+      "agent:43c019f117b04b93c8c6e607"
+    ],
+    "changed_paths": [
+      "edge.py",
+      "node.py"
+    ],
+    "commit_ids": [],
+    "decision_ids": [
+      "decision:853b9afce76b0bb3b2596a3c",
+      "decision:b73563aa84338cba8adf4bd6"
+    ],
+    "evidence_ids": [
+      "evidence:02ad11f35fd99752a4db1ae9",
+      "evidence:1a6bcfa6ce2ad1e7f8292018",
+      "evidence:23171f7bb439f565416b8afa",
+      "evidence:4f9bc4b040f8a6a4db4e200c",
+      "evidence:8c3f94bf4fda39b82aa9bc72",
+      "evidence:a4b3c9f20128354e6dcc4cb9",
+      "evidence:ded989120ef8e8a2d891d4bc"
+    ],
+    "failure_ids": [
+      "failure:a4536cae69df3e09755db8a9"
+    ],
+    "kind": "workstream",
+    "label": "break the node/edge import cycle",
+    "node_id": "workstream:a5daeac2431ac4591df95f8e",
+    "remaining_work": [
+      "remove one module-level import and keep the isinstance check working"
+    ],
+    "status": "blocked",
+    "symbol_ids": [
+      "symbol:0a56a02a56a98148c9252f43",
+      "symbol:23df0adb28f87f57b2959606",
+      "symbol:25759c58b5d7ffdb905510ed",
+      "symbol:5dcb642ddc053cdfcbc1eef3",
+      "symbol:8f8579886a228b3e574211c7",
+      "symbol:ca8b72a2e1849d1649d9359e"
+    ],
+    "task_ids": [
+      "task:b62b6f06ddc82514ab569885"
+    ],
+    "trust": "verified",
+    "updated_at_ms": 1791048541508,
+    "verification_ids": [
+      "test:1c92f6bd1a8442fa62349481"
+    ]
+  },
+  "task_labels": [
+    "break the node/edge import cycle"
+  ],
+  "verification": [
+    {
+      "freshness": null,
+      "label": "graph tests",
+      "node_id": "test:1c92f6bd1a8442fa62349481",
+      "status": "blocked",
+      "trust": "verified",
+      "updated_at_ms": 1791048541508,
+      "verdict": "failed",
+      "verified_repository_commitment": null
+    }
+  ]
+}
+```
+
+Finish the task. Run the test suite to confirm before you stop.

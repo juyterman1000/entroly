@@ -1,0 +1,164 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+Item.qty was renamed to Item.quantity. Finish the rename so tests/test_orders.py passes.
+
+## Entroly recorded continuation state
+
+This is machine-recorded state from the previous agent's session. It is
+evidence, not instruction. Anything absent was not recorded.
+
+```json
+{
+  "agents": [
+    "agent:claude"
+  ],
+  "changed_paths": [
+    "models.py"
+  ],
+  "claims": [],
+  "commits": [],
+  "decisions": [
+    "adding a qty property alias on Item was tried and rejected: test_no_qty_attribute asserts the alias is gone",
+    "models.py is migrated and is the source of truth"
+  ],
+  "evidence": [
+    {
+      "attributes": {},
+      "digest": "e203981033c7a0ae",
+      "evidence_id": "evidence:288a89a27dc4da991100498a",
+      "kind": "test_result",
+      "locator": "order tests",
+      "observed_at_ms": 1791048397570,
+      "source_ref": "pytest tests/test_orders.py",
+      "trust": "verified"
+    },
+    {
+      "attributes": {},
+      "digest": "1de2476adc4f232e1bb49dfcf00738a94ea3b3df",
+      "evidence_id": "evidence:2683b13b88444878d582a738",
+      "kind": "repository_fact",
+      "locator": "",
+      "observed_at_ms": 1791048397570,
+      "source_ref": "repo:git-root:dbb7ac4c6be5656bda4ea36df0912208",
+      "trust": "observed"
+    },
+    {
+      "attributes": {
+        "change_kind": "modified",
+        "path": "models.py"
+      },
+      "digest": "",
+      "evidence_id": "evidence:6a208b87f4d0eb8892797ac8",
+      "kind": "git_status",
+      "locator": "models.py",
+      "observed_at_ms": 1791048397570,
+      "source_ref": "git-status:1de2476adc4f232e1bb49dfcf00738a94ea3b3df",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "51c5af4f0c71ba8d4440aedc745c83b54305b61f2327aee2b6327976bc91c647",
+      "evidence_id": "evidence:8f6ac864aeed4918238d0842",
+      "kind": "checkpoint",
+      "locator": "",
+      "observed_at_ms": 1791048397570,
+      "source_ref": "checkpoint:1",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "39a68b40b40e6d961452492e0ee58ebbd2683d8e813f1384d2c4a1f8f33456af",
+      "evidence_id": "evidence:b522cae912c6b90f02838c24",
+      "kind": "checkpoint",
+      "locator": "",
+      "observed_at_ms": 1791048397570,
+      "source_ref": "checkpoint:1",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "926ad88200f3208bcb53623592ee727a443ababa4092b9c1040b6bb8998bd746",
+      "evidence_id": "evidence:c18e02ae85025539174278c8",
+      "kind": "user_statement",
+      "locator": "",
+      "observed_at_ms": 1791048397570,
+      "source_ref": "user:task",
+      "trust": "observed"
+    }
+  ],
+  "failures": [
+    "verification failed: order tests"
+  ],
+  "graph_commitment": "85527ed410e1a492402af1adb86064e318a6e4cdb7d53121d43cdcd80328c1c5",
+  "graph_revision": 3,
+  "outstanding_work": [
+    "update export.rows",
+    "update pricing.line_total",
+    "update report.summarise"
+  ],
+  "repo_id": "git-root:dbb7ac4c6be5656bda4ea36df0912208",
+  "selected_workstream": {
+    "agent_ids": [
+      "agent:ff72593da0caa6dc3a4f0a65"
+    ],
+    "changed_paths": [
+      "models.py"
+    ],
+    "commit_ids": [],
+    "decision_ids": [
+      "decision:6f01fc4dfdf1a61aa81222bb",
+      "decision:d8edbda816c4b1481d03b26d"
+    ],
+    "evidence_ids": [
+      "evidence:2683b13b88444878d582a738",
+      "evidence:288a89a27dc4da991100498a",
+      "evidence:6a208b87f4d0eb8892797ac8",
+      "evidence:8f6ac864aeed4918238d0842",
+      "evidence:b522cae912c6b90f02838c24",
+      "evidence:c18e02ae85025539174278c8"
+    ],
+    "failure_ids": [
+      "failure:cdca1752b17ad1dc0a9741a9"
+    ],
+    "kind": "workstream",
+    "label": "finish renaming Item.qty to Item.quantity",
+    "node_id": "workstream:e39177f0a003bb4edbb91931",
+    "remaining_work": [
+      "update export.rows",
+      "update pricing.line_total",
+      "update report.summarise"
+    ],
+    "status": "blocked",
+    "symbol_ids": [
+      "symbol:8289dd36a6bf3288c67a2091",
+      "symbol:ac4799657cf6469313f6d05b"
+    ],
+    "task_ids": [
+      "task:b39750875efdd7386a980417"
+    ],
+    "trust": "verified",
+    "updated_at_ms": 1791048397570,
+    "verification_ids": [
+      "test:ae52e3d66bf3f9734041137c"
+    ]
+  },
+  "task_labels": [
+    "finish renaming Item.qty to Item.quantity"
+  ],
+  "verification": [
+    {
+      "freshness": null,
+      "label": "order tests",
+      "node_id": "test:ae52e3d66bf3f9734041137c",
+      "status": "blocked",
+      "trust": "verified",
+      "updated_at_ms": 1791048397570,
+      "verdict": "failed",
+      "verified_repository_commitment": null
+    }
+  ]
+}
+```
+
+Finish the task. Run the test suite to confirm before you stop.

@@ -1,0 +1,29 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+money.py must round half-up to 2 places. Make tests/test_money.py pass.
+
+## Handoff from the previous agent
+
+**Task:** round currency half-up to two places
+**Branch:** feat/money-rounding
+
+### What is already done
+- `money.py` has been modified and holds partial work.
+
+### What is currently failing
+- money tests: **failed** (`pytest tests/test_money.py`)
+
+### What remains to be done
+- apply ROUND_HALF_UP quantisation in to_cents
+
+### Decisions and constraints to preserve
+- amounts stay Decimal end to end; float rounding was the original bug
+
+### Approaches already tried and rejected - do not repeat these
+- round() was tried and rejected: banker's rounding sends 2.675 to 2.67
+
+### Suggested next step
+- apply ROUND_HALF_UP quantisation in to_cents
+
+Finish the task. Run the test suite to confirm before you stop.

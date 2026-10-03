@@ -1,0 +1,29 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+slug.py must produce unique slugs. Make tests/test_slug.py pass.
+
+## Handoff from the previous agent
+
+**Task:** suffix duplicate slugs with an incrementing counter
+**Branch:** feat/slug-uniqueness
+
+### What is already done
+- `slug.py` has been modified and holds partial work.
+
+### What is currently failing
+- slug tests: **failed** (`pytest tests/test_slug.py`)
+
+### What remains to be done
+- track emitted slugs and append -2, -3 on collision
+
+### Decisions and constraints to preserve
+- the first occurrence must stay unsuffixed; only later ones get -N
+
+### Approaches already tried and rejected - do not repeat these
+- hashing the title into the slug was tried and rejected: it changes the first slug too, breaking test_basic
+
+### Suggested next step
+- track emitted slugs and append -2, -3 on collision
+
+Finish the task. Run the test suite to confirm before you stop.

@@ -1,0 +1,6 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+Break the import cycle so tests/test_graph.py passes.
+
+Finish the task. Run the test suite to confirm before you stop.

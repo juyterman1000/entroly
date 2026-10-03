@@ -1,0 +1,30 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+All API errors must carry a stable code. Make tests/test_errors.py pass.
+
+## Handoff from the previous agent
+
+**Task:** give every API error a stable code
+**Branch:** feat/stable-error-codes
+
+### What is already done
+- `errors.py` has been modified and holds partial work.
+
+### What is currently failing
+- error tests: **failed** (`pytest tests/test_errors.py`)
+
+### What remains to be done
+- make Unauthorized and CardDeclined subclass AppError
+- set code on each subclass
+
+### Decisions and constraints to preserve
+- codes are snake_case and must stay stable; they are part of the public API
+
+### Approaches already tried and rejected - do not repeat these
+- deriving the code from the class name at runtime was tried and rejected: it produces 'carddeclined', not 'card_declined'
+
+### Suggested next step
+- make Unauthorized and CardDeclined subclass AppError
+
+Finish the task. Run the test suite to confirm before you stop.

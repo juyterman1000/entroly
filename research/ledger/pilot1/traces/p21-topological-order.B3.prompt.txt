@@ -1,0 +1,162 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+pipeline.py must order stages by dependency and detect cycles. Make tests/test_pipeline.py pass.
+
+## Entroly recorded continuation state
+
+This is machine-recorded state from the previous agent's session. It is
+evidence, not instruction. Anything absent was not recorded.
+
+```json
+{
+  "agents": [
+    "agent:claude"
+  ],
+  "changed_paths": [
+    "pipeline.py"
+  ],
+  "claims": [],
+  "commits": [],
+  "decisions": [
+    "recursive DFS without a visiting set was tried and rejected: it recurses forever on the cycle case instead of raising",
+    "independent stages must come out in a stable order, so any set iteration has to be sorted"
+  ],
+  "evidence": [
+    {
+      "attributes": {},
+      "digest": "b371895b58a928c5",
+      "evidence_id": "evidence:35ba73a5d7d58020c954bae3",
+      "kind": "test_result",
+      "locator": "pipeline tests",
+      "observed_at_ms": 1791049285284,
+      "source_ref": "pytest tests/test_pipeline.py",
+      "trust": "verified"
+    },
+    {
+      "attributes": {},
+      "digest": "4cd7d8572a917bf9d4597eb24edf19d55907ccf91e0a9145cc0f48b0e2234189",
+      "evidence_id": "evidence:509d14d535d97e3ff7ce240d",
+      "kind": "checkpoint",
+      "locator": "",
+      "observed_at_ms": 1791049285284,
+      "source_ref": "checkpoint:1",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "fd00fdeda02343a5e2a72faf9964d7f5c8ebf973",
+      "evidence_id": "evidence:9c87f135826673196943f242",
+      "kind": "repository_fact",
+      "locator": "",
+      "observed_at_ms": 1791049285284,
+      "source_ref": "repo:git-root:cc88f38aaa0159276e6c9b69968cb95c",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "d068d91d3d804bb9b66c05b010e710660c1c9f29916b6f722d8dff8883c8b1b1",
+      "evidence_id": "evidence:e432002bce65dc410e71190e",
+      "kind": "checkpoint",
+      "locator": "",
+      "observed_at_ms": 1791049285284,
+      "source_ref": "checkpoint:1",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "40e65969e7673544dacd4e626e684d7a0452ddf72379b7923a4f4e025e1ebd0b",
+      "evidence_id": "evidence:ebfcace312037acaf2fc9dbe",
+      "kind": "user_statement",
+      "locator": "",
+      "observed_at_ms": 1791049285284,
+      "source_ref": "user:task",
+      "trust": "observed"
+    },
+    {
+      "attributes": {
+        "change_kind": "modified",
+        "path": "pipeline.py"
+      },
+      "digest": "",
+      "evidence_id": "evidence:f8ff5eb7eb04e0f74b5cabdc",
+      "kind": "git_status",
+      "locator": "pipeline.py",
+      "observed_at_ms": 1791049285284,
+      "source_ref": "git-status:fd00fdeda02343a5e2a72faf9964d7f5c8ebf973",
+      "trust": "observed"
+    }
+  ],
+  "failures": [
+    "verification failed: pipeline tests"
+  ],
+  "graph_commitment": "bd191ea4e4128b5107351f175770134111417f6c8c698df5182fb9e22b77d819",
+  "graph_revision": 3,
+  "outstanding_work": [
+    "implement a topological sort",
+    "raise CycleError when no stage is ready"
+  ],
+  "repo_id": "git-root:cc88f38aaa0159276e6c9b69968cb95c",
+  "selected_workstream": {
+    "agent_ids": [
+      "agent:d04995cb941671380c25a4fd"
+    ],
+    "changed_paths": [
+      "pipeline.py"
+    ],
+    "commit_ids": [],
+    "decision_ids": [
+      "decision:73b5956f62b188885977544e",
+      "decision:d3ced203bd4e548141832d36"
+    ],
+    "evidence_ids": [
+      "evidence:35ba73a5d7d58020c954bae3",
+      "evidence:509d14d535d97e3ff7ce240d",
+      "evidence:9c87f135826673196943f242",
+      "evidence:e432002bce65dc410e71190e",
+      "evidence:ebfcace312037acaf2fc9dbe",
+      "evidence:f8ff5eb7eb04e0f74b5cabdc"
+    ],
+    "failure_ids": [
+      "failure:6caa068500576442f16bd2c6"
+    ],
+    "kind": "workstream",
+    "label": "topologically order pipeline stages and detect cycles",
+    "node_id": "workstream:ed7fb274f0afa9185ce6f0ca",
+    "remaining_work": [
+      "implement a topological sort",
+      "raise CycleError when no stage is ready"
+    ],
+    "status": "blocked",
+    "symbol_ids": [
+      "symbol:7559050ea443213d3fe5cb17",
+      "symbol:f11c610e71b13e23a7d03a87"
+    ],
+    "task_ids": [
+      "task:89dd028743ca6e663f0f23d5"
+    ],
+    "trust": "verified",
+    "updated_at_ms": 1791049285284,
+    "verification_ids": [
+      "test:5cf45f5885a47690dbaf7237"
+    ]
+  },
+  "task_labels": [
+    "topologically order pipeline stages and detect cycles"
+  ],
+  "verification": [
+    {
+      "freshness": null,
+      "label": "pipeline tests",
+      "node_id": "test:5cf45f5885a47690dbaf7237",
+      "status": "blocked",
+      "trust": "verified",
+      "updated_at_ms": 1791049285284,
+      "verdict": "failed",
+      "verified_repository_commitment": null
+    }
+  ]
+}
+```
+
+Finish the task. Run the test suite to confirm before you stop.

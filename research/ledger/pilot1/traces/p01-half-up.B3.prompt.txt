@@ -1,0 +1,159 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+money.py must round half-up to 2 places. Make tests/test_money.py pass.
+
+## Entroly recorded continuation state
+
+This is machine-recorded state from the previous agent's session. It is
+evidence, not instruction. Anything absent was not recorded.
+
+```json
+{
+  "agents": [
+    "agent:claude"
+  ],
+  "changed_paths": [
+    "money.py"
+  ],
+  "claims": [],
+  "commits": [],
+  "decisions": [
+    "amounts stay Decimal end to end; float rounding was the original bug",
+    "round() was tried and rejected: banker's rounding sends 2.675 to 2.67"
+  ],
+  "evidence": [
+    {
+      "attributes": {},
+      "digest": "bbb1974bceb6e8a6",
+      "evidence_id": "evidence:cb69b7fe2aaf69c43f763a82",
+      "kind": "test_result",
+      "locator": "money tests",
+      "observed_at_ms": 1791045286960,
+      "source_ref": "pytest tests/test_money.py",
+      "trust": "verified"
+    },
+    {
+      "attributes": {
+        "change_kind": "modified",
+        "path": "money.py"
+      },
+      "digest": "",
+      "evidence_id": "evidence:39390d52b0a62f95a680b84a",
+      "kind": "git_status",
+      "locator": "money.py",
+      "observed_at_ms": 1791045286960,
+      "source_ref": "git-status:a57e7d764a06e7ed3d99c6e93fab06dbb116b617",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "a57e7d764a06e7ed3d99c6e93fab06dbb116b617",
+      "evidence_id": "evidence:76ee64094dab48d6f5c801a1",
+      "kind": "repository_fact",
+      "locator": "",
+      "observed_at_ms": 1791045286960,
+      "source_ref": "repo:git-root:bf7cd6d1d7a1dbacd2576ed573d6a6b0",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "26766f083095bcc302f5e9011499e9575cb6fff195970630d9552c10aad857c3",
+      "evidence_id": "evidence:a838c307f61a423115619057",
+      "kind": "user_statement",
+      "locator": "",
+      "observed_at_ms": 1791045286960,
+      "source_ref": "user:task",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "fa961a2b80bc8a524d83fd57b18ea9b37bff4ec9bfecec1ec4e23c070c9dec91",
+      "evidence_id": "evidence:c8755e25184946c90a32b2a6",
+      "kind": "checkpoint",
+      "locator": "",
+      "observed_at_ms": 1791045286960,
+      "source_ref": "checkpoint:1",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "171d58f69f0d808e3c7b6bae6b7d6386fe99bc46799330d91f8e7e77a6fe6561",
+      "evidence_id": "evidence:ff3fb478e301194cd9403176",
+      "kind": "checkpoint",
+      "locator": "",
+      "observed_at_ms": 1791045286960,
+      "source_ref": "checkpoint:1",
+      "trust": "observed"
+    }
+  ],
+  "failures": [
+    "verification failed: money tests"
+  ],
+  "graph_commitment": "19641c9e5a55c6f6378163ef87297fe0e72d788ae582a2e3fdbd6031516c8725",
+  "graph_revision": 3,
+  "outstanding_work": [
+    "apply ROUND_HALF_UP quantisation in to_cents"
+  ],
+  "repo_id": "git-root:bf7cd6d1d7a1dbacd2576ed573d6a6b0",
+  "selected_workstream": {
+    "agent_ids": [
+      "agent:b4c16408b7207a69dea7fb35"
+    ],
+    "changed_paths": [
+      "money.py"
+    ],
+    "commit_ids": [],
+    "decision_ids": [
+      "decision:c6f81e8d4299808e8d4ef5af",
+      "decision:f16cc6a510f51f1fdd1abca8"
+    ],
+    "evidence_ids": [
+      "evidence:39390d52b0a62f95a680b84a",
+      "evidence:76ee64094dab48d6f5c801a1",
+      "evidence:a838c307f61a423115619057",
+      "evidence:c8755e25184946c90a32b2a6",
+      "evidence:cb69b7fe2aaf69c43f763a82",
+      "evidence:ff3fb478e301194cd9403176"
+    ],
+    "failure_ids": [
+      "failure:a1f848a8e1242fa8329818f9"
+    ],
+    "kind": "workstream",
+    "label": "round currency half-up to two places",
+    "node_id": "workstream:bdd752c8ef14739f3676581f",
+    "remaining_work": [
+      "apply ROUND_HALF_UP quantisation in to_cents"
+    ],
+    "status": "blocked",
+    "symbol_ids": [
+      "symbol:cb95e3f2d9f6f8c56e793c17"
+    ],
+    "task_ids": [
+      "task:eed42c201b904b6e4835d0c8"
+    ],
+    "trust": "verified",
+    "updated_at_ms": 1791045286960,
+    "verification_ids": [
+      "test:d2895e662bde8aab9af621ca"
+    ]
+  },
+  "task_labels": [
+    "round currency half-up to two places"
+  ],
+  "verification": [
+    {
+      "freshness": null,
+      "label": "money tests",
+      "node_id": "test:d2895e662bde8aab9af621ca",
+      "status": "blocked",
+      "trust": "verified",
+      "updated_at_ms": 1791045286960,
+      "verdict": "failed",
+      "verified_repository_commitment": null
+    }
+  ]
+}
+```
+
+Finish the task. Run the test suite to confirm before you stop.

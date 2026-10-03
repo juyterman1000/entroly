@@ -1,0 +1,30 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+pipeline.py must order stages by dependency and detect cycles. Make tests/test_pipeline.py pass.
+
+## Handoff from the previous agent
+
+**Task:** topologically order pipeline stages and detect cycles
+**Branch:** feat/pipeline-order
+
+### What is already done
+- `pipeline.py` has been modified and holds partial work.
+
+### What is currently failing
+- pipeline tests: **failed** (`pytest tests/test_pipeline.py`)
+
+### What remains to be done
+- implement a topological sort
+- raise CycleError when no stage is ready
+
+### Decisions and constraints to preserve
+- independent stages must come out in a stable order, so any set iteration has to be sorted
+
+### Approaches already tried and rejected - do not repeat these
+- recursive DFS without a visiting set was tried and rejected: it recurses forever on the cycle case instead of raising
+
+### Suggested next step
+- implement a topological sort
+
+Finish the task. Run the test suite to confirm before you stop.

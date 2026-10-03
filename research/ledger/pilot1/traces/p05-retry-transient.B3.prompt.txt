@@ -1,0 +1,162 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+client.py should retry transient failures using backoff.py. Make tests/test_client.py pass.
+
+## Entroly recorded continuation state
+
+This is machine-recorded state from the previous agent's session. It is
+evidence, not instruction. Anything absent was not recorded.
+
+```json
+{
+  "agents": [
+    "agent:claude"
+  ],
+  "changed_paths": [
+    "client.py"
+  ],
+  "claims": [],
+  "commits": [],
+  "decisions": [
+    "catching bare Exception was tried and rejected: it swallows ValueError and retries it three times",
+    "no real sleeps; the tests do not assert timing and sleeping slows the suite"
+  ],
+  "evidence": [
+    {
+      "attributes": {},
+      "digest": "abea562e2223c5b8",
+      "evidence_id": "evidence:878584ac284544b3316b61b4",
+      "kind": "test_result",
+      "locator": "client tests",
+      "observed_at_ms": 1791047173706,
+      "source_ref": "pytest tests/test_client.py",
+      "trust": "verified"
+    },
+    {
+      "attributes": {},
+      "digest": "63c35567fa8cd07debb1a3bec1c40e4b6e7126047d7f6273fae7310a8c80c661",
+      "evidence_id": "evidence:0b1fc166b9aca252d103b419",
+      "kind": "checkpoint",
+      "locator": "",
+      "observed_at_ms": 1791047173706,
+      "source_ref": "checkpoint:1",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "5113f3ea4ec952b5bf6157d6bee4dcb2cd33ca57",
+      "evidence_id": "evidence:60f5daf1bd468afceb5b2c9f",
+      "kind": "repository_fact",
+      "locator": "",
+      "observed_at_ms": 1791047173706,
+      "source_ref": "repo:git-root:9f1bba23f1a3e7e6bf9469a30526c967",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "125e0e27c19fb6540c98e8e7545998f9209b333591ea8663bc989858afd32c7f",
+      "evidence_id": "evidence:c67d47980f8625e8bbfe0e9a",
+      "kind": "user_statement",
+      "locator": "",
+      "observed_at_ms": 1791047173706,
+      "source_ref": "user:task",
+      "trust": "observed"
+    },
+    {
+      "attributes": {
+        "change_kind": "modified",
+        "path": "client.py"
+      },
+      "digest": "",
+      "evidence_id": "evidence:ceec89c3c546f0ab972488ef",
+      "kind": "git_status",
+      "locator": "client.py",
+      "observed_at_ms": 1791047173706,
+      "source_ref": "git-status:5113f3ea4ec952b5bf6157d6bee4dcb2cd33ca57",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "05856552da594ed66b293ccb450eaa1dd11c90ee5fdd93f85e41f5f509aec927",
+      "evidence_id": "evidence:d4d0f4d2e45a29d0effe46d5",
+      "kind": "checkpoint",
+      "locator": "",
+      "observed_at_ms": 1791047173706,
+      "source_ref": "checkpoint:1",
+      "trust": "observed"
+    }
+  ],
+  "failures": [
+    "verification failed: client tests"
+  ],
+  "graph_commitment": "5898cefe9577ce35127682a4d142f75a6ad20ed941fa38331dcbbae2a13a517d",
+  "graph_revision": 3,
+  "outstanding_work": [
+    "retry only Transient",
+    "write the retry loop in call() using delays()"
+  ],
+  "repo_id": "git-root:9f1bba23f1a3e7e6bf9469a30526c967",
+  "selected_workstream": {
+    "agent_ids": [
+      "agent:e7e40e76d48d5784492b2e34"
+    ],
+    "changed_paths": [
+      "client.py"
+    ],
+    "commit_ids": [],
+    "decision_ids": [
+      "decision:052b71c1311677d98d309c00",
+      "decision:bfbb8357bf06ca70da44a232"
+    ],
+    "evidence_ids": [
+      "evidence:0b1fc166b9aca252d103b419",
+      "evidence:60f5daf1bd468afceb5b2c9f",
+      "evidence:878584ac284544b3316b61b4",
+      "evidence:c67d47980f8625e8bbfe0e9a",
+      "evidence:ceec89c3c546f0ab972488ef",
+      "evidence:d4d0f4d2e45a29d0effe46d5"
+    ],
+    "failure_ids": [
+      "failure:fd14138781c1d2e78bdf6946"
+    ],
+    "kind": "workstream",
+    "label": "retry transient client failures with backoff",
+    "node_id": "workstream:5858c4f3029bfbb2e7f23c47",
+    "remaining_work": [
+      "retry only Transient",
+      "write the retry loop in call() using delays()"
+    ],
+    "status": "blocked",
+    "symbol_ids": [
+      "symbol:382e4fae93cb29294b4e6efe",
+      "symbol:922e7c7763da354fc88fe2b6"
+    ],
+    "task_ids": [
+      "task:943576ffbc79f81c60c1a1b5"
+    ],
+    "trust": "verified",
+    "updated_at_ms": 1791047173706,
+    "verification_ids": [
+      "test:cad69471ae3be9ede58a4477"
+    ]
+  },
+  "task_labels": [
+    "retry transient client failures with backoff"
+  ],
+  "verification": [
+    {
+      "freshness": null,
+      "label": "client tests",
+      "node_id": "test:cad69471ae3be9ede58a4477",
+      "status": "blocked",
+      "trust": "verified",
+      "updated_at_ms": 1791047173706,
+      "verdict": "failed",
+      "verified_repository_commitment": null
+    }
+  ]
+}
+```
+
+Finish the task. Run the test suite to confirm before you stop.

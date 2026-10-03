@@ -1,0 +1,6 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+metrics.py must compute percent change safely. Make tests/test_metrics.py pass.
+
+Finish the task. Run the test suite to confirm before you stop.

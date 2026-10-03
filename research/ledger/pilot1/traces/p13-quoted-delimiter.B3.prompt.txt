@@ -1,0 +1,161 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+tokenizer.py must handle quoted segments containing the delimiter. Make tests/test_tokenizer.py pass.
+
+## Entroly recorded continuation state
+
+This is machine-recorded state from the previous agent's session. It is
+evidence, not instruction. Anything absent was not recorded.
+
+```json
+{
+  "agents": [
+    "agent:claude"
+  ],
+  "changed_paths": [
+    "tokenizer.py"
+  ],
+  "claims": [],
+  "commits": [],
+  "decisions": [
+    "the csv module was tried and rejected: it also strips the mid-field quote, failing test_midfield_quote_kept",
+    "empty fields must survive, so filtering falsy segments is not allowed"
+  ],
+  "evidence": [
+    {
+      "attributes": {},
+      "digest": "e7de7780a0ece3ad",
+      "evidence_id": "evidence:cc67497e5f982b8223cd8bfb",
+      "kind": "test_result",
+      "locator": "tokenizer tests",
+      "observed_at_ms": 1791048639451,
+      "source_ref": "pytest tests/test_tokenizer.py",
+      "trust": "verified"
+    },
+    {
+      "attributes": {},
+      "digest": "42d51e01bc48e08693d35443e3b87a574d2066a7",
+      "evidence_id": "evidence:15db5e4442fdd6b3d84b69f6",
+      "kind": "repository_fact",
+      "locator": "",
+      "observed_at_ms": 1791048639451,
+      "source_ref": "repo:git-root:2b7c34a3814d415ab1c266b31893bd1d",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "3a312d2b8b1ca7b1e4f5ee461d62c7b19cb77f63ec9c0313e0a5bb402bf82311",
+      "evidence_id": "evidence:1c1d9c11df17f980b7840455",
+      "kind": "checkpoint",
+      "locator": "",
+      "observed_at_ms": 1791048639451,
+      "source_ref": "checkpoint:1",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "1d1810617dfb9929b4c7e0599c7465c19dae0fa39c5e87c9aa5d9f210b871fa3",
+      "evidence_id": "evidence:5053618bf7dc4133b7d31b31",
+      "kind": "user_statement",
+      "locator": "",
+      "observed_at_ms": 1791048639451,
+      "source_ref": "user:task",
+      "trust": "observed"
+    },
+    {
+      "attributes": {
+        "change_kind": "modified",
+        "path": "tokenizer.py"
+      },
+      "digest": "",
+      "evidence_id": "evidence:72148d6e3f3d8e9554b69d4d",
+      "kind": "git_status",
+      "locator": "tokenizer.py",
+      "observed_at_ms": 1791048639451,
+      "source_ref": "git-status:42d51e01bc48e08693d35443e3b87a574d2066a7",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "3aa255fabe82ef363d17fb4e03a88ae261830a1bc0a519a3b9680bf7bf0a26a5",
+      "evidence_id": "evidence:785fe89d9412872432b40b1a",
+      "kind": "checkpoint",
+      "locator": "",
+      "observed_at_ms": 1791048639451,
+      "source_ref": "checkpoint:1",
+      "trust": "observed"
+    }
+  ],
+  "failures": [
+    "verification failed: tokenizer tests"
+  ],
+  "graph_commitment": "08718e78e323a0b0ae7868f970cb91491c36bd1f0ce4075a17f6fadd56779842",
+  "graph_revision": 3,
+  "outstanding_work": [
+    "strip quotes only when they wrap the whole field",
+    "track in-quote state while scanning"
+  ],
+  "repo_id": "git-root:2b7c34a3814d415ab1c266b31893bd1d",
+  "selected_workstream": {
+    "agent_ids": [
+      "agent:c9f604a309884a6cf7cf7e83"
+    ],
+    "changed_paths": [
+      "tokenizer.py"
+    ],
+    "commit_ids": [],
+    "decision_ids": [
+      "decision:80aa813b45908f09fe4eb7ad",
+      "decision:f7ecc5cffba637f6e3d64c7a"
+    ],
+    "evidence_ids": [
+      "evidence:15db5e4442fdd6b3d84b69f6",
+      "evidence:1c1d9c11df17f980b7840455",
+      "evidence:5053618bf7dc4133b7d31b31",
+      "evidence:72148d6e3f3d8e9554b69d4d",
+      "evidence:785fe89d9412872432b40b1a",
+      "evidence:cc67497e5f982b8223cd8bfb"
+    ],
+    "failure_ids": [
+      "failure:9f9da6b9c26403cf5470ecf7"
+    ],
+    "kind": "workstream",
+    "label": "handle quoted delimiters in split_fields",
+    "node_id": "workstream:b710c5c6e5d77dd7aca24bf8",
+    "remaining_work": [
+      "strip quotes only when they wrap the whole field",
+      "track in-quote state while scanning"
+    ],
+    "status": "blocked",
+    "symbol_ids": [
+      "symbol:6e4558abd66f0eefd6b57f76"
+    ],
+    "task_ids": [
+      "task:e353e8492c4bb86c6a5de7df"
+    ],
+    "trust": "verified",
+    "updated_at_ms": 1791048639451,
+    "verification_ids": [
+      "test:d198036e0ee3742694ed1eb0"
+    ]
+  },
+  "task_labels": [
+    "handle quoted delimiters in split_fields"
+  ],
+  "verification": [
+    {
+      "freshness": null,
+      "label": "tokenizer tests",
+      "node_id": "test:d198036e0ee3742694ed1eb0",
+      "status": "blocked",
+      "trust": "verified",
+      "updated_at_ms": 1791048639451,
+      "verdict": "failed",
+      "verified_repository_commitment": null
+    }
+  ]
+}
+```
+
+Finish the task. Run the test suite to confirm before you stop.

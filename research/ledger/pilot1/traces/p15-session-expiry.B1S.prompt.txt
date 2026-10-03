@@ -1,0 +1,30 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+session.py must expire idle sessions. Make tests/test_session.py pass.
+
+## Handoff from the previous agent
+
+**Task:** expire idle sessions and evict them
+**Branch:** feat/session-expiry
+
+### What is already done
+- `session.py` has been modified and holds partial work.
+
+### What is currently failing
+- session tests: **failed** (`pytest tests/test_session.py`)
+
+### What remains to be done
+- compare now against the last touch plus idle_ttl
+- delete the entry when it is found expired
+
+### Decisions and constraints to preserve
+- expiry is idle-based, measured from the last touch, not from creation
+
+### Approaches already tried and rejected - do not repeat these
+- a read-only active() check was tried and rejected: it returns the right booleans but leaves the entry in _store, failing test_expired_session_is_evicted
+
+### Suggested next step
+- compare now against the last touch plus idle_ttl
+
+Finish the task. Run the test suite to confirm before you stop.

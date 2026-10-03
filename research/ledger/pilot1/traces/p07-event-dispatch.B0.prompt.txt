@@ -1,0 +1,6 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+bus.py must dispatch to handlers in registration order. Make tests/test_bus.py pass.
+
+Finish the task. Run the test suite to confirm before you stop.

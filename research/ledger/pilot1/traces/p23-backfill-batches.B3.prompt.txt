@@ -1,0 +1,163 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+backfill.py must process records in bounded batches with progress. Make tests/test_backfill.py pass.
+
+## Entroly recorded continuation state
+
+This is machine-recorded state from the previous agent's session. It is
+evidence, not instruction. Anything absent was not recorded.
+
+```json
+{
+  "agents": [
+    "agent:claude"
+  ],
+  "changed_paths": [
+    "backfill.py"
+  ],
+  "claims": [],
+  "commits": [],
+  "decisions": [
+    "len(records) and slicing was tried and rejected: a generator has no length and would be consumed by the first pass, failing test_generator_consumed_once",
+    "the input may be a one-shot generator, so it must be iterated exactly once"
+  ],
+  "evidence": [
+    {
+      "attributes": {},
+      "digest": "0824a21b88d39eb0",
+      "evidence_id": "evidence:e8365cc1d24c4148e30de8e0",
+      "kind": "test_result",
+      "locator": "backfill tests",
+      "observed_at_ms": 1791049423362,
+      "source_ref": "pytest tests/test_backfill.py",
+      "trust": "verified"
+    },
+    {
+      "attributes": {},
+      "digest": "469977f2adb396cd34c0aaac4ba516f978dc0c7c44b008b2ec94472f7ec24784",
+      "evidence_id": "evidence:36e07e006e6d66e0315a7315",
+      "kind": "checkpoint",
+      "locator": "",
+      "observed_at_ms": 1791049423362,
+      "source_ref": "checkpoint:1",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "84806d6ca98e40182766ab389157bb7f1b335d673ea8984193b426706ceaaa0f",
+      "evidence_id": "evidence:4c86261afca30135b970180f",
+      "kind": "user_statement",
+      "locator": "",
+      "observed_at_ms": 1791049423362,
+      "source_ref": "user:task",
+      "trust": "observed"
+    },
+    {
+      "attributes": {
+        "change_kind": "modified",
+        "path": "backfill.py"
+      },
+      "digest": "",
+      "evidence_id": "evidence:5dd9749b1109ae3f78702f2e",
+      "kind": "git_status",
+      "locator": "backfill.py",
+      "observed_at_ms": 1791049423362,
+      "source_ref": "git-status:3bb86944ebb3eaeabf7ca1d3c6b336e90544cede",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "370dcf4b4a667677f2b97688f39284ecfdbca5021c8adbdaef577e592a66cd3e",
+      "evidence_id": "evidence:61ebcf87e60b0f50809aff1b",
+      "kind": "checkpoint",
+      "locator": "",
+      "observed_at_ms": 1791049423362,
+      "source_ref": "checkpoint:1",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "3bb86944ebb3eaeabf7ca1d3c6b336e90544cede",
+      "evidence_id": "evidence:d4f28e4a80384eff8988400c",
+      "kind": "repository_fact",
+      "locator": "",
+      "observed_at_ms": 1791049423362,
+      "source_ref": "repo:git-root:088a0a7ee6425c77f2d6bd1e94b85ccc",
+      "trust": "observed"
+    }
+  ],
+  "failures": [
+    "verification failed: backfill tests"
+  ],
+  "graph_commitment": "4b4672d89b49ed737d59e3f1ceea49fbe073faf62c7ed6040360eb542b06388b",
+  "graph_revision": 3,
+  "outstanding_work": [
+    "accumulate records into batches of batch_size",
+    "invoke on_batch per batch including the short final one",
+    "return processed and batch counts"
+  ],
+  "repo_id": "git-root:088a0a7ee6425c77f2d6bd1e94b85ccc",
+  "selected_workstream": {
+    "agent_ids": [
+      "agent:6e3e03e2dbf24a0e63854d48"
+    ],
+    "changed_paths": [
+      "backfill.py"
+    ],
+    "commit_ids": [],
+    "decision_ids": [
+      "decision:844f28377b1da98cf842c010",
+      "decision:8aba5d09906e78b081d16c6b"
+    ],
+    "evidence_ids": [
+      "evidence:36e07e006e6d66e0315a7315",
+      "evidence:4c86261afca30135b970180f",
+      "evidence:5dd9749b1109ae3f78702f2e",
+      "evidence:61ebcf87e60b0f50809aff1b",
+      "evidence:d4f28e4a80384eff8988400c",
+      "evidence:e8365cc1d24c4148e30de8e0"
+    ],
+    "failure_ids": [
+      "failure:440548cdbde57c27d92bd7d3"
+    ],
+    "kind": "workstream",
+    "label": "process backfill records in bounded batches",
+    "node_id": "workstream:72aa7976ce84a5ab517de582",
+    "remaining_work": [
+      "accumulate records into batches of batch_size",
+      "invoke on_batch per batch including the short final one",
+      "return processed and batch counts"
+    ],
+    "status": "blocked",
+    "symbol_ids": [
+      "symbol:813e79089bcf59378a975e29"
+    ],
+    "task_ids": [
+      "task:ded3355f43558c0164cbed94"
+    ],
+    "trust": "verified",
+    "updated_at_ms": 1791049423362,
+    "verification_ids": [
+      "test:59b28cc312399e58bc4f65ff"
+    ]
+  },
+  "task_labels": [
+    "process backfill records in bounded batches"
+  ],
+  "verification": [
+    {
+      "freshness": null,
+      "label": "backfill tests",
+      "node_id": "test:59b28cc312399e58bc4f65ff",
+      "status": "blocked",
+      "trust": "verified",
+      "updated_at_ms": 1791049423362,
+      "verdict": "failed",
+      "verified_repository_commitment": null
+    }
+  ]
+}
+```
+
+Finish the task. Run the test suite to confirm before you stop.

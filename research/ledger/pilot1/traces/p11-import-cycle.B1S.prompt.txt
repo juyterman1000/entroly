@@ -1,0 +1,30 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+Break the import cycle so tests/test_graph.py passes.
+
+## Handoff from the previous agent
+
+**Task:** break the node/edge import cycle
+**Branch:** refactor/break-cycle
+
+### What is already done
+- `node.py` has been modified and holds partial work.
+- `edge.py` has been modified and holds partial work.
+
+### What is currently failing
+- graph tests: **failed** (`pytest tests/test_graph.py`)
+
+### What remains to be done
+- remove one module-level import and keep the isinstance check working
+
+### Decisions and constraints to preserve
+- both import orders must work; the test exercises each
+
+### Approaches already tried and rejected - do not repeat these
+- deleting the isinstance check was tried and rejected: it removes the assertion the cycle existed to support instead of fixing the cycle
+
+### Suggested next step
+- remove one module-level import and keep the isinstance check working
+
+Finish the task. Run the test suite to confirm before you stop.

@@ -1,0 +1,31 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+Item.qty was renamed to Item.quantity. Finish the rename so tests/test_orders.py passes.
+
+## Handoff from the previous agent
+
+**Task:** finish renaming Item.qty to Item.quantity
+**Branch:** refactor/quantity-rename
+
+### What is already done
+- `models.py` has been modified and holds partial work.
+
+### What is currently failing
+- order tests: **failed** (`pytest tests/test_orders.py`)
+
+### What remains to be done
+- update pricing.line_total
+- update report.summarise
+- update export.rows
+
+### Decisions and constraints to preserve
+- models.py is migrated and is the source of truth
+
+### Approaches already tried and rejected - do not repeat these
+- adding a qty property alias on Item was tried and rejected: test_no_qty_attribute asserts the alias is gone
+
+### Suggested next step
+- update pricing.line_total
+
+Finish the task. Run the test suite to confirm before you stop.

@@ -1,0 +1,30 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+config.py must layer defaults, file and env. Make tests/test_config.py pass.
+
+## Handoff from the previous agent
+
+**Task:** layer config as defaults then file then environment
+**Branch:** feat/config-layering
+
+### What is already done
+- `config.py` has been modified and holds partial work.
+
+### What is currently failing
+- config tests: **failed** (`pytest tests/test_config.py`)
+
+### What remains to be done
+- apply APP_* environment overrides last
+- coerce env values to the type of the default
+
+### Decisions and constraints to preserve
+- precedence is defaults < file < env and must not be reordered
+
+### Approaches already tried and rejected - do not repeat these
+- passing env strings straight through was tried and rejected: port becomes '7000' and APP_DEBUG='false' is truthy, so two tests fail
+
+### Suggested next step
+- apply APP_* environment overrides last
+
+Finish the task. Run the test suite to confirm before you stop.

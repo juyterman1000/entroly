@@ -1,0 +1,31 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+backfill.py must process records in bounded batches with progress. Make tests/test_backfill.py pass.
+
+## Handoff from the previous agent
+
+**Task:** process backfill records in bounded batches
+**Branch:** feat/bounded-backfill
+
+### What is already done
+- `backfill.py` has been modified and holds partial work.
+
+### What is currently failing
+- backfill tests: **failed** (`pytest tests/test_backfill.py`)
+
+### What remains to be done
+- accumulate records into batches of batch_size
+- invoke on_batch per batch including the short final one
+- return processed and batch counts
+
+### Decisions and constraints to preserve
+- the input may be a one-shot generator, so it must be iterated exactly once
+
+### Approaches already tried and rejected - do not repeat these
+- len(records) and slicing was tried and rejected: a generator has no length and would be consumed by the first pass, failing test_generator_consumed_once
+
+### Suggested next step
+- accumulate records into batches of batch_size
+
+Finish the task. Run the test suite to confirm before you stop.

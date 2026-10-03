@@ -1,0 +1,6 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+Item.qty was renamed to Item.quantity. Finish the rename so tests/test_orders.py passes.
+
+Finish the task. Run the test suite to confirm before you stop.

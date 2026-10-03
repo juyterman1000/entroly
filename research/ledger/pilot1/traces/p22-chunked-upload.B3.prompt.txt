@@ -1,0 +1,161 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+upload.py must resume partial uploads. Make tests/test_upload.py pass.
+
+## Entroly recorded continuation state
+
+This is machine-recorded state from the previous agent's session. It is
+evidence, not instruction. Anything absent was not recorded.
+
+```json
+{
+  "agents": [
+    "agent:claude"
+  ],
+  "changed_paths": [
+    "upload.py"
+  ],
+  "claims": [],
+  "commits": [],
+  "decisions": [
+    "chunk boundaries are recomputed from the offset, not from the original alignment",
+    "skipping already_sent // chunk_size whole chunks was tried and rejected: with already_sent=3 it drops byte 'd', failing test_resume_mid_chunk"
+  ],
+  "evidence": [
+    {
+      "attributes": {},
+      "digest": "91194f1304605c88",
+      "evidence_id": "evidence:d7a621308d9035a3d43bb87d",
+      "kind": "test_result",
+      "locator": "upload tests",
+      "observed_at_ms": 1791049395472,
+      "source_ref": "pytest tests/test_upload.py",
+      "trust": "verified"
+    },
+    {
+      "attributes": {
+        "change_kind": "modified",
+        "path": "upload.py"
+      },
+      "digest": "",
+      "evidence_id": "evidence:0cfd8cf59284e3abf041f033",
+      "kind": "git_status",
+      "locator": "upload.py",
+      "observed_at_ms": 1791049395472,
+      "source_ref": "git-status:14f04d6ca5e31c904cc26383924a0808afa4725e",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "9eada16f5dd7a7bd0bb159adcb29852e6e1d40ee2cd9a206ec582ffbe8fa8720",
+      "evidence_id": "evidence:26dbb338450938dbdb8dd9e5",
+      "kind": "user_statement",
+      "locator": "",
+      "observed_at_ms": 1791049395472,
+      "source_ref": "user:task",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "5f33ce182bd03c4327ed255a4d0169b8dd4719de764a090c185f8c63e3cf7880",
+      "evidence_id": "evidence:403f740dcba1943b435f1fbc",
+      "kind": "checkpoint",
+      "locator": "",
+      "observed_at_ms": 1791049395472,
+      "source_ref": "checkpoint:1",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "c6dfd4916a48ab7e6796f815084c968def69eec37b32bbed0da8c42e99618b25",
+      "evidence_id": "evidence:68968d1fc0bbbd6dd33f048f",
+      "kind": "checkpoint",
+      "locator": "",
+      "observed_at_ms": 1791049395472,
+      "source_ref": "checkpoint:1",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "14f04d6ca5e31c904cc26383924a0808afa4725e",
+      "evidence_id": "evidence:cd25b895af73a05966df9b8c",
+      "kind": "repository_fact",
+      "locator": "",
+      "observed_at_ms": 1791049395472,
+      "source_ref": "repo:git-root:6a4d97a16fd202379b49e79e3ad9f608",
+      "trust": "observed"
+    }
+  ],
+  "failures": [
+    "verification failed: upload tests"
+  ],
+  "graph_commitment": "fbe0d83e80bd3fb44cff0bf1b319dfb5ef609ee83c64ce702b24ff336c7bf2e9",
+  "graph_revision": 3,
+  "outstanding_work": [
+    "re-chunk from the offset so a mid-chunk resume realigns",
+    "start chunking at already_sent"
+  ],
+  "repo_id": "git-root:6a4d97a16fd202379b49e79e3ad9f608",
+  "selected_workstream": {
+    "agent_ids": [
+      "agent:0544a14628e4dc920a17a9c9"
+    ],
+    "changed_paths": [
+      "upload.py"
+    ],
+    "commit_ids": [],
+    "decision_ids": [
+      "decision:398f869901f1aef7fa9ae1ed",
+      "decision:64ccd54b3a7f94acfd472100"
+    ],
+    "evidence_ids": [
+      "evidence:0cfd8cf59284e3abf041f033",
+      "evidence:26dbb338450938dbdb8dd9e5",
+      "evidence:403f740dcba1943b435f1fbc",
+      "evidence:68968d1fc0bbbd6dd33f048f",
+      "evidence:cd25b895af73a05966df9b8c",
+      "evidence:d7a621308d9035a3d43bb87d"
+    ],
+    "failure_ids": [
+      "failure:f8ded995acba8fceff61d93e"
+    ],
+    "kind": "workstream",
+    "label": "resume uploads from a byte offset",
+    "node_id": "workstream:2bd220470696fc74ec91522f",
+    "remaining_work": [
+      "re-chunk from the offset so a mid-chunk resume realigns",
+      "start chunking at already_sent"
+    ],
+    "status": "blocked",
+    "symbol_ids": [
+      "symbol:acd31a490ee7dccdb8d8311e"
+    ],
+    "task_ids": [
+      "task:605281d7f38c1c547a8bce8f"
+    ],
+    "trust": "verified",
+    "updated_at_ms": 1791049395472,
+    "verification_ids": [
+      "test:f444fb21050dcf7cdb382a10"
+    ]
+  },
+  "task_labels": [
+    "resume uploads from a byte offset"
+  ],
+  "verification": [
+    {
+      "freshness": null,
+      "label": "upload tests",
+      "node_id": "test:f444fb21050dcf7cdb382a10",
+      "status": "blocked",
+      "trust": "verified",
+      "updated_at_ms": 1791049395472,
+      "verdict": "failed",
+      "verified_repository_commitment": null
+    }
+  ]
+}
+```
+
+Finish the task. Run the test suite to confirm before you stop.

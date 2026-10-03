@@ -1,0 +1,164 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+session.py must expire idle sessions. Make tests/test_session.py pass.
+
+## Entroly recorded continuation state
+
+This is machine-recorded state from the previous agent's session. It is
+evidence, not instruction. Anything absent was not recorded.
+
+```json
+{
+  "agents": [
+    "agent:claude"
+  ],
+  "changed_paths": [
+    "session.py"
+  ],
+  "claims": [],
+  "commits": [],
+  "decisions": [
+    "a read-only active() check was tried and rejected: it returns the right booleans but leaves the entry in _store, failing test_expired_session_is_evicted",
+    "expiry is idle-based, measured from the last touch, not from creation"
+  ],
+  "evidence": [
+    {
+      "attributes": {},
+      "digest": "ea98041d401fb993",
+      "evidence_id": "evidence:987a74babb1722cb762fe8dd",
+      "kind": "test_result",
+      "locator": "session tests",
+      "observed_at_ms": 1791048836716,
+      "source_ref": "pytest tests/test_session.py",
+      "trust": "verified"
+    },
+    {
+      "attributes": {
+        "change_kind": "modified",
+        "path": "session.py"
+      },
+      "digest": "",
+      "evidence_id": "evidence:25b093089573785a68b41b37",
+      "kind": "git_status",
+      "locator": "session.py",
+      "observed_at_ms": 1791048836716,
+      "source_ref": "git-status:ddbb4b1ceea28848a8edc8ba2529ea37dd985327",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "39dec94150bd3cc8e5099ae6344f9adf42b24e461ef6b718d1dcf29f64731cbf",
+      "evidence_id": "evidence:616a3f58ec1df1ee765fa41f",
+      "kind": "user_statement",
+      "locator": "",
+      "observed_at_ms": 1791048836716,
+      "source_ref": "user:task",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "ddbb4b1ceea28848a8edc8ba2529ea37dd985327",
+      "evidence_id": "evidence:635aaa6ecb647050dc72eec5",
+      "kind": "repository_fact",
+      "locator": "",
+      "observed_at_ms": 1791048836716,
+      "source_ref": "repo:git-root:eb521120da831e89125388de228b447e",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "58b6c38ff1c8443089c0bded8527637e43359bd9d75d30d717a6e996443e50a2",
+      "evidence_id": "evidence:b8c1cebb25b05712ac9f981e",
+      "kind": "checkpoint",
+      "locator": "",
+      "observed_at_ms": 1791048836716,
+      "source_ref": "checkpoint:1",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "97ebcaea2e0a98bf9d6ed94fc74fd51390779600e3f259118ef93f550193b353",
+      "evidence_id": "evidence:c27254d6526cdf688d19884f",
+      "kind": "checkpoint",
+      "locator": "",
+      "observed_at_ms": 1791048836716,
+      "source_ref": "checkpoint:1",
+      "trust": "observed"
+    }
+  ],
+  "failures": [
+    "verification failed: session tests"
+  ],
+  "graph_commitment": "04b7ec83d62567ccbb3a206e966f4db7b81eb9e8a38be184b508d13944eaf881",
+  "graph_revision": 3,
+  "outstanding_work": [
+    "compare now against the last touch plus idle_ttl",
+    "delete the entry when it is found expired"
+  ],
+  "repo_id": "git-root:eb521120da831e89125388de228b447e",
+  "selected_workstream": {
+    "agent_ids": [
+      "agent:72b0b2e8853d26bee9fde802"
+    ],
+    "changed_paths": [
+      "session.py"
+    ],
+    "commit_ids": [],
+    "decision_ids": [
+      "decision:7d67ec412dedefa040ab4527",
+      "decision:ab8cfc8c8fb7e56df91eba07"
+    ],
+    "evidence_ids": [
+      "evidence:25b093089573785a68b41b37",
+      "evidence:616a3f58ec1df1ee765fa41f",
+      "evidence:635aaa6ecb647050dc72eec5",
+      "evidence:987a74babb1722cb762fe8dd",
+      "evidence:b8c1cebb25b05712ac9f981e",
+      "evidence:c27254d6526cdf688d19884f"
+    ],
+    "failure_ids": [
+      "failure:ac0ab8ad68ce6b21bfa275f5"
+    ],
+    "kind": "workstream",
+    "label": "expire idle sessions and evict them",
+    "node_id": "workstream:b4145f3d260757e8870a965b",
+    "remaining_work": [
+      "compare now against the last touch plus idle_ttl",
+      "delete the entry when it is found expired"
+    ],
+    "status": "blocked",
+    "symbol_ids": [
+      "symbol:197ace8c6f083030f49f9c1c",
+      "symbol:58f4c0988717f41666968163",
+      "symbol:7349e9c0d491df2ee4075df5",
+      "symbol:8ed332954b969a606675f730"
+    ],
+    "task_ids": [
+      "task:4841e43c296ab208589bd594"
+    ],
+    "trust": "verified",
+    "updated_at_ms": 1791048836716,
+    "verification_ids": [
+      "test:061880210208b766f19b9592"
+    ]
+  },
+  "task_labels": [
+    "expire idle sessions and evict them"
+  ],
+  "verification": [
+    {
+      "freshness": null,
+      "label": "session tests",
+      "node_id": "test:061880210208b766f19b9592",
+      "status": "blocked",
+      "trust": "verified",
+      "updated_at_ms": 1791048836716,
+      "verdict": "failed",
+      "verified_repository_commitment": null
+    }
+  ]
+}
+```
+
+Finish the task. Run the test suite to confirm before you stop.

@@ -1,0 +1,6 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+tokenizer.py must handle quoted segments containing the delimiter. Make tests/test_tokenizer.py pass.
+
+Finish the task. Run the test suite to confirm before you stop.

@@ -1,0 +1,29 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+stream.py must drop repeats inside a sliding window. Make tests/test_stream.py pass.
+
+## Handoff from the previous agent
+
+**Task:** dedupe only within a sliding window
+**Branch:** fix/sliding-dedupe
+
+### What is already done
+- `stream.py` has been modified and holds partial work.
+
+### What is currently failing
+- stream tests: **failed** (`pytest tests/test_stream.py`)
+
+### What remains to be done
+- bound the seen set to the last `window` emitted items
+
+### Decisions and constraints to preserve
+- the window counts emitted items, not consumed ones
+
+### Approaches already tried and rejected - do not repeat these
+- an unbounded seen set is the current code and is rejected: it drops the 'a' that reappears outside the window, failing test_repeat_outside_window_kept
+
+### Suggested next step
+- bound the seen set to the last `window` emitted items
+
+Finish the task. Run the test suite to confirm before you stop.

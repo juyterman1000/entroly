@@ -1,0 +1,30 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+client.py should retry transient failures using backoff.py. Make tests/test_client.py pass.
+
+## Handoff from the previous agent
+
+**Task:** retry transient client failures with backoff
+**Branch:** feat/client-retry
+
+### What is already done
+- `client.py` has been modified and holds partial work.
+
+### What is currently failing
+- client tests: **failed** (`pytest tests/test_client.py`)
+
+### What remains to be done
+- write the retry loop in call() using delays()
+- retry only Transient
+
+### Decisions and constraints to preserve
+- no real sleeps; the tests do not assert timing and sleeping slows the suite
+
+### Approaches already tried and rejected - do not repeat these
+- catching bare Exception was tried and rejected: it swallows ValueError and retries it three times
+
+### Suggested next step
+- write the retry loop in call() using delays()
+
+Finish the task. Run the test suite to confirm before you stop.

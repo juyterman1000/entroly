@@ -1,0 +1,129 @@
+{
+  "suite_type": "ContinuityStress-24",
+  "suite_sha256": "8bdffb59a0741708f8974fa644a0aed5500d28a33a48f1c84a75fdd620d81982",
+  "harness_sha256": "734f12d3b081598c5e0d4257bb3856f9e3ea8a789be0eff1644fbf861b47c433",
+  "entroly_source_commit": "b112d24ddf03a61998cc0cde1c29bf2c4ba35ff8",
+  "codex_model": "gpt-5.5"
+}
+
+== [1/24] p01-half-up [simple_local] order=['B3', 'B0', 'B1S']
+   B3   ver=True ran=True redisc=0 prog=3 unc=27421 out=2965 cmds=23 178.67s
+   B0   ver=True ran=True redisc=0 prog=4 unc=14484 out=751 cmds=6 76.48s
+   B1S  ver=True ran=True redisc=0 prog=3 unc=26786 out=2981 cmds=22 256.1s
+
+== [2/24] p02-slug-collisions [simple_local] order=['B1S', 'B3', 'B0']
+   B1S  ver=True ran=True redisc=0 prog=3 unc=36549 out=2826 cmds=17 147.87s
+   B3   ver=True ran=True redisc=0 prog=2 unc=38020 out=3510 cmds=18 213.0s
+   B0   ver=True ran=True redisc=0 prog=6 unc=20679 out=2354 cmds=13 147.5s
+
+== [3/24] p03-truncate-words [simple_local] order=['B0', 'B1S', 'B3']
+   B0   ver=True ran=True redisc=0 prog=5 unc=21827 out=1933 cmds=13 130.07s
+   B1S  ver=True ran=True redisc=0 prog=3 unc=18485 out=1407 cmds=11 105.05s
+   B3   ver=True ran=True redisc=0 prog=3 unc=23816 out=2542 cmds=19 151.29s
+
+== [4/24] p04-percent-change [simple_local] order=['B0', 'B3', 'B1S']
+   B0   ver=True ran=True redisc=0 prog=3 unc=14050 out=637 cmds=5 68.93s
+   B3   ver=True ran=True redisc=0 prog=3 unc=28811 out=1584 cmds=10 114.2s
+   B1S  ver=True ran=True redisc=0 prog=3 unc=33939 out=4626 cmds=24 275.11s
+
+== [5/24] p05-retry-transient [multi_file] order=['B3', 'B0', 'B1S']
+   B3   ver=True ran=True redisc=1 prog=5 unc=32323 out=5870 cmds=31 330.47s
+   B0   ver=True ran=True redisc=0 prog=6 unc=34205 out=4624 cmds=22 274.1s
+   B1S  ver=True ran=True redisc=0 prog=0 unc=41308 out=5426 cmds=30 341.27s
+
+== [6/24] p06-config-layering [multi_file] order=['B0', 'B3', 'B1S']
+   B0   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 24.07s
+   B3   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 23.35s
+   B1S  ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 20.86s
+
+== [7/24] p07-event-dispatch [multi_file] order=['B3', 'B0', 'B1S']
+   B3   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 22.42s
+   B0   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 23.97s
+   B1S  ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 23.59s
+
+== [8/24] p08-path-normalise [multi_file] order=['B1S', 'B3', 'B0']
+   B1S  ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 22.48s
+   B3   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 21.89s
+   B0   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 19.96s
+
+== [9/24] p09-quantity-rename [repository_wide] order=['B0', 'B1S', 'B3']
+   B0   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 22.16s
+   B1S  ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 24.96s
+   B3   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 18.34s
+
+== [10/24] p10-error-codes [repository_wide] order=['B1S', 'B3', 'B0']
+   B1S  ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 20.8s
+   B3   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 22.88s
+   B0   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 22.45s
+
+== [11/24] p11-import-cycle [repository_wide] order=['B1S', 'B0', 'B3']
+   B1S  ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 24.22s
+   B0   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 24.26s
+   B3   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 22.82s
+
+== [12/24] p12-settings-single-source [repository_wide] order=['B0', 'B3', 'B1S']
+   B0   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 22.09s
+   B3   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 23.63s
+   B1S  ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 21.49s
+
+== [13/24] p13-quoted-delimiter [state_heavy] order=['B3', 'B0', 'B1S']
+   B3   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 22.49s
+   B0   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 22.5s
+   B1S  ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 21.09s
+
+== [14/24] p14-version-cache [state_heavy] order=['B0', 'B3', 'B1S']
+   B0   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 22.74s
+   B3   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 25.35s
+   B1S  ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 23.78s
+
+== [15/24] p15-session-expiry [state_heavy] order=['B1S', 'B0', 'B3']
+   B1S  ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 22.29s
+   B0   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 22.49s
+   B3   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 20.7s
+
+== [16/24] p16-dedupe-stream [state_heavy] order=['B3', 'B1S', 'B0']
+   B3   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 23.24s
+   B1S  ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 22.38s
+   B0   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 25.29s
+
+== [17/24] p17-rate-limit-window [failed_hypothesis] order=['B0', 'B3', 'B1S']
+   B0   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 23.94s
+   B3   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 22.64s
+   B1S  ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 23.21s
+
+== [18/24] p18-merge-conflict-markers [failed_hypothesis] order=['B0', 'B3', 'B1S']
+   B0   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 23.24s
+   B3   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 21.89s
+   B1S  ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 24.33s
+
+== [19/24] p19-partial-sum-overflow [failed_hypothesis] order=['B0', 'B3', 'B1S']
+   B0   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 24.96s
+   B3   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 25.14s
+   B1S  ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 25.97s
+
+== [20/24] p20-idempotent-migration [failed_hypothesis] order=['B3', 'B1S', 'B0']
+   B3   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 27.46s
+   B1S  ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 24.68s
+   B0   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 24.01s
+
+== [21/24] p21-topological-order [long_running] order=['B1S', 'B3', 'B0']
+   B1S  ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 24.28s
+   B3   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 24.98s
+   B0   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 25.19s
+
+== [22/24] p22-chunked-upload [long_running] order=['B1S', 'B0', 'B3']
+   B1S  ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 24.72s
+   B0   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 24.67s
+   B3   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 24.81s
+
+== [23/24] p23-backfill-batches [long_running] order=['B3', 'B1S', 'B0']
+   B3   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 25.87s
+   B1S  ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 25.98s
+   B0   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 26.17s
+
+== [24/24] p24-schema-migration-chain [long_running] order=['B0', 'B3', 'B1S']
+   B0   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 24.87s
+   B3   ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 24.93s
+   B1S  ver=False ran=False redisc=0 prog=None unc=0 out=0 cmds=0 26.03s
+
+wrote research\ledger\pilot1\results.json

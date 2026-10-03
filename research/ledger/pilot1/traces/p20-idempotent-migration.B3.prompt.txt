@@ -1,0 +1,176 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+migrate.py must apply each migration exactly once. Make tests/test_migrate.py pass.
+
+## Entroly recorded continuation state
+
+This is machine-recorded state from the previous agent's session. It is
+evidence, not instruction. Anything absent was not recorded.
+
+```json
+{
+  "agents": [
+    "agent:claude"
+  ],
+  "changed_paths": [
+    "migrate.py"
+  ],
+  "claims": [],
+  "commits": [],
+  "decisions": [
+    "wrapping each migration in try/except and continuing was tried and rejected: test_stops_on_failure requires 'c' not to run",
+    "returning a new applied set instead of mutating was tried and rejected: test_applied_set_updated inspects the caller's set",
+    "`applied` is mutated in place; callers rely on seeing the update"
+  ],
+  "evidence": [
+    {
+      "attributes": {},
+      "digest": "003765f4506ca11b",
+      "evidence_id": "evidence:30a45bf3d7b32c56715c37f9",
+      "kind": "test_result",
+      "locator": "migrate tests",
+      "observed_at_ms": 1791049174174,
+      "source_ref": "pytest tests/test_migrate.py",
+      "trust": "verified"
+    },
+    {
+      "attributes": {},
+      "digest": "88401d5c17af34f3af0211e6f2b481d07de203b8b74e96e8c1116e12b55a2474",
+      "evidence_id": "evidence:5b98852b7a407ad3766e1d64",
+      "kind": "checkpoint",
+      "locator": "",
+      "observed_at_ms": 1791049174174,
+      "source_ref": "checkpoint:1",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "ced9854c60d678f7177db22be4e684a508340f5186809a8e72106f347a0e3770",
+      "evidence_id": "evidence:60f5acb60c1b654403a52753",
+      "kind": "checkpoint",
+      "locator": "",
+      "observed_at_ms": 1791049174174,
+      "source_ref": "checkpoint:1",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "5937b91c1d7f76b312ab830bad2b0cddb6f83e0fe7d8c9f1b5b37754571d56b6",
+      "evidence_id": "evidence:6dabe046a041ac9aa1df56a5",
+      "kind": "checkpoint",
+      "locator": "",
+      "observed_at_ms": 1791049174174,
+      "source_ref": "checkpoint:1",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "17bf4a5db453654657c5bac9437d7eb64ba271f1",
+      "evidence_id": "evidence:788125b3ddcb06369656e49a",
+      "kind": "repository_fact",
+      "locator": "",
+      "observed_at_ms": 1791049174174,
+      "source_ref": "repo:git-root:eb6c9ed994fc47743c6d01ef274c1089",
+      "trust": "observed"
+    },
+    {
+      "attributes": {
+        "change_kind": "modified",
+        "path": "migrate.py"
+      },
+      "digest": "",
+      "evidence_id": "evidence:9d4960b4549e71d36a34c460",
+      "kind": "git_status",
+      "locator": "migrate.py",
+      "observed_at_ms": 1791049174174,
+      "source_ref": "git-status:17bf4a5db453654657c5bac9437d7eb64ba271f1",
+      "trust": "observed"
+    },
+    {
+      "attributes": {},
+      "digest": "4af015c6ded46fa29fa02007c83002b97017993803e3fa890197aee6a3f4f770",
+      "evidence_id": "evidence:f0cb5a9e3e36a2ab6b9eb9c1",
+      "kind": "user_statement",
+      "locator": "",
+      "observed_at_ms": 1791049174174,
+      "source_ref": "user:task",
+      "trust": "observed"
+    }
+  ],
+  "failures": [
+    "verification failed: migrate tests"
+  ],
+  "graph_commitment": "4049016de7649fa63633707e1975fe0a6aaf8e012d2056def002b451b903317b",
+  "graph_revision": 3,
+  "outstanding_work": [
+    "let an exception propagate without running later migrations",
+    "record each success into `applied`",
+    "skip migrations already in `applied`"
+  ],
+  "repo_id": "git-root:eb6c9ed994fc47743c6d01ef274c1089",
+  "selected_workstream": {
+    "agent_ids": [
+      "agent:80571e397ad7dc45bbec3a09"
+    ],
+    "changed_paths": [
+      "migrate.py"
+    ],
+    "commit_ids": [],
+    "decision_ids": [
+      "decision:3c8394a9c941676d5bda131c",
+      "decision:501723f1fa339c06c8628497",
+      "decision:ea46d741cd9d65737f880787"
+    ],
+    "evidence_ids": [
+      "evidence:30a45bf3d7b32c56715c37f9",
+      "evidence:5b98852b7a407ad3766e1d64",
+      "evidence:60f5acb60c1b654403a52753",
+      "evidence:6dabe046a041ac9aa1df56a5",
+      "evidence:788125b3ddcb06369656e49a",
+      "evidence:9d4960b4549e71d36a34c460",
+      "evidence:f0cb5a9e3e36a2ab6b9eb9c1"
+    ],
+    "failure_ids": [
+      "failure:d6b48be0430cc0b8bc95caeb"
+    ],
+    "kind": "workstream",
+    "label": "apply each migration exactly once and stop on failure",
+    "node_id": "workstream:9ec09d63abdd217add8598c0",
+    "remaining_work": [
+      "let an exception propagate without running later migrations",
+      "record each success into `applied`",
+      "skip migrations already in `applied`"
+    ],
+    "status": "blocked",
+    "symbol_ids": [
+      "symbol:890503774ed88adb1ac6c29c"
+    ],
+    "task_ids": [
+      "task:7188ad12a1c7d2a19ae4a9e8"
+    ],
+    "trust": "verified",
+    "updated_at_ms": 1791049174174,
+    "verification_ids": [
+      "test:579c7cf5f312dd6876fb689d"
+    ]
+  },
+  "task_labels": [
+    "apply each migration exactly once and stop on failure"
+  ],
+  "verification": [
+    {
+      "freshness": null,
+      "label": "migrate tests",
+      "node_id": "test:579c7cf5f312dd6876fb689d",
+      "status": "blocked",
+      "trust": "verified",
+      "updated_at_ms": 1791049174174,
+      "verdict": "failed",
+      "verified_repository_commitment": null
+    }
+  ]
+}
+```
+
+Finish the task. Run the test suite to confirm before you stop.

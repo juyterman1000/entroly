@@ -1,0 +1,30 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+stats.py must compute a numerically stable mean. Make tests/test_stats.py pass.
+
+## Handoff from the previous agent
+
+**Task:** numerically stable mean with an empty guard
+**Branch:** fix/stable-mean
+
+### What is already done
+- `stats.py` has been modified and holds partial work.
+
+### What is currently failing
+- stats tests: **failed** (`pytest tests/test_stats.py`)
+
+### What remains to be done
+- return None for an empty sequence
+- use a compensated or incremental sum so large offsets do not lose the small terms
+
+### Decisions and constraints to preserve
+- the result must stay a float; do not switch the public API to Decimal
+
+### Approaches already tried and rejected - do not repeat these
+- sorting the values before summing was tried and rejected: it reduces but does not eliminate the error, and it changes the cost from linear to n log n for no test benefit
+
+### Suggested next step
+- return None for an empty sequence
+
+Finish the task. Run the test suite to confirm before you stop.

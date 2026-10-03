@@ -1,0 +1,31 @@
+You are continuing work another agent started and could not finish.
+
+## Task
+schema.py must upgrade records through every intermediate version. Make tests/test_schema.py pass.
+
+## Handoff from the previous agent
+
+**Task:** upgrade records through every intermediate schema version
+**Branch:** feat/schema-chain
+
+### What is already done
+- `schema.py` has been modified and holds partial work.
+
+### What is currently failing
+- schema tests: **failed** (`pytest tests/test_schema.py`)
+
+### What remains to be done
+- loop upgrades until the record reaches TARGET
+- raise ValueError for a version above TARGET
+
+### Decisions and constraints to preserve
+- each step is applied in order; versions are never skipped
+
+### Approaches already tried and rejected - do not repeat these
+- applying a single upgrade step is the current code and is rejected: a version-1 record comes out at version 2, failing test_full_chain
+- returning the record unchanged for an unknown version was tried and rejected: test_unknown_future_version_rejected requires a ValueError
+
+### Suggested next step
+- loop upgrades until the record reaches TARGET
+
+Finish the task. Run the test suite to confirm before you stop.
