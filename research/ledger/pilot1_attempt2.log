@@ -1,0 +1,67 @@
+manifest already frozen at 2026-10-03T11:58:55
+{
+  "attempt_id": "pilot1-attempt2",
+  "suite_sha256": "8bdffb59a0741708f8974fa644a0aed5500d28a33a48f1c84a75fdd620d81982",
+  "attempt2_harness_sha256": "70bf2ad713033721b316e885e1b0b11392d9eeaa988c4a34346719867111fdea",
+  "entroly_head": "5361e27b0fc32f9ffd5f446966264e5c0e291842",
+  "codex_model": "gpt-5.5",
+  "usage_aggregation": "RATIO OF SUMS over MATCHED_PRIMARY_TASKS"
+}
+phase=PRE_INTERRUPTION
+
+== [1/24] p01-half-up [simple_local] order=['B3', 'B0', 'B1S']
+   B3   COMPLETE             ver=True redisc=0 unc=35206 out=3502 cmds=20 166.8s
+   B0   COMPLETE             ver=True redisc=1 unc=15828 out=1017 cmds=8 55.51s
+   B1S  COMPLETE             ver=True redisc=0 unc=29385 out=4559 cmds=25 195.52s
+== [2/24] p02-slug-collisions [simple_local] order=['B1S', 'B0', 'B3']
+   B1S  COMPLETE             ver=True redisc=2 unc=33671 out=5863 cmds=32 236.88s
+   B0   COMPLETE             ver=True redisc=0 unc=18796 out=2732 cmds=10 100.26s
+   B3   COMPLETE             ver=True redisc=1 unc=26420 out=3534 cmds=16 137.44s
+== [3/24] p03-truncate-words [simple_local] order=['B1S', 'B0', 'B3']
+   B1S  COMPLETE             ver=True redisc=0 unc=36737 out=5176 cmds=27 203.09s
+   B0   COMPLETE             ver=True redisc=0 unc=29232 out=5584 cmds=22 202.64s
+   B3   COMPLETE             ver=True redisc=0 unc=26132 out=2609 cmds=15 102.07s
+== [4/24] p04-percent-change [simple_local] order=['B1S', 'B3', 'B0']
+   B1S  COMPLETE             ver=True redisc=2 unc=24959 out=4018 cmds=24 150.72s
+   B3   COMPLETE             ver=True redisc=0 unc=31363 out=3354 cmds=19 124.05s
+   B0   COMPLETE             ver=True redisc=0 unc=27343 out=4393 cmds=23 164.02s
+== [5/24] p05-retry-transient [multi_file] order=['B1S', 'B0', 'B3']
+   B1S  COMPLETE             ver=True redisc=0 unc=37293 out=6343 cmds=28 213.31s
+   B0   COMPLETE             ver=True redisc=0 unc=32008 out=3208 cmds=19 114.03s
+   B3   COMPLETE             ver=True redisc=0 unc=25380 out=3478 cmds=21 111.88s
+== [6/24] p06-config-layering [multi_file] order=['B3', 'B0', 'B1S']
+   B3   COMPLETE             ver=True redisc=0 unc=22691 out=2943 cmds=17 99.39s
+   B0   COMPLETE             ver=True redisc=0 unc=19602 out=1991 cmds=12 78.18s
+   B1S  COMPLETE             ver=True redisc=1 unc=27421 out=4497 cmds=22 139.57s
+== [7/24] p07-event-dispatch [multi_file] order=['B0', 'B1S', 'B3']
+   B0   COMPLETE             ver=True redisc=2 unc=26442 out=4840 cmds=20 153.08s
+   B1S  COMPLETE             ver=True redisc=0 unc=17158 out=1382 cmds=11 60.17s
+   B3   COMPLETE             ver=True redisc=0 unc=27821 out=4547 cmds=21 137.43s
+== [8/24] p08-path-normalise [multi_file] order=['B1S', 'B3', 'B0']
+   B1S  COMPLETE             ver=True redisc=0 unc=23262 out=3059 cmds=18 117.63s
+   B3   COMPLETE             ver=True redisc=1 unc=24496 out=3174 cmds=18 104.1s
+   B0   COMPLETE             ver=True redisc=0 unc=20824 out=3119 cmds=18 107.53s
+== [9/24] p09-quantity-rename [repository_wide] order=['B3', 'B1S', 'B0']
+   B3   COMPLETE             ver=True redisc=0 unc=29372 out=4699 cmds=35 157.44s
+   B1S  COMPLETE             ver=True redisc=0 unc=26805 out=4012 cmds=26 129.63s
+   B0   COMPLETE             ver=True redisc=0 unc=33560 out=3163 cmds=19 116.94s
+== [10/24] p10-error-codes [repository_wide] order=['B3', 'B0', 'B1S']
+   B3   COMPLETE             ver=True redisc=0 unc=24430 out=3336 cmds=20 109.76s
+   B0   COMPLETE             ver=True redisc=1 unc=29148 out=5070 cmds=31 157.32s
+   B1S  COMPLETE             ver=True redisc=0 unc=26346 out=3973 cmds=23 136.06s
+== [11/24] p11-import-cycle [repository_wide] order=['B3', 'B1S', 'B0']
+   B3   COMPLETE             ver=True redisc=0 unc=23440 out=3331 cmds=17 108.11s
+   B1S  COMPLETE             ver=True redisc=1 unc=26833 out=4540 cmds=24 141.68s
+   B0   COMPLETE             ver=True redisc=0 unc=24630 out=3611 cmds=21 122.0s
+== [12/24] p12-settings-single-source [repository_wide] order=['B1S', 'B0', 'B3']
+   B1S  COMPLETE             ver=True redisc=1 unc=34589 out=6889 cmds=29 205.04s
+   B0   COMPLETE             ver=False redisc=0 unc=28222 out=4414 cmds=26 147.08s
+   B3   COMPLETE             ver=False redisc=0 unc=30669 out=4895 cmds=26 153.24s
+== [13/24] p13-quoted-delimiter [state_heavy] order=['B3', 'B1S', 'B0']
+   B3   COMPLETE             ver=True redisc=0 unc=27517 out=4121 cmds=18 137.4s
+   B1S  COMPLETE             ver=True redisc=0 unc=24374 out=4549 cmds=19 145.23s
+   B0   COMPLETE             ver=True redisc=0 unc=35347 out=3341 cmds=18 121.51s
+== [14/24] p14-version-cache [state_heavy] order=['B3', 'B0', 'B1S']
+   B3   TERMINAL PROVIDER_QUOTA_EXHAUSTED
+
+CIRCUIT BREAKER: stopping. 39 scientific rows preserved. Resume under the same manifest when the provider recovers.
