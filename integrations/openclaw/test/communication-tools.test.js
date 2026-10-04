@@ -35,7 +35,11 @@ function registerFixture({
       throw new Error(`unexpected operation: ${payload.operation}`);
     },
   };
-  registerCommunicationTools(api, { bridge, config });
+  const effectiveConfig = {
+    communicationSecretaryTools: true,
+    ...config,
+  };
+  registerCommunicationTools(api, { bridge, config: effectiveConfig });
   return { registrations, bridge };
 }
 
@@ -66,6 +70,21 @@ function ownerContext(overrides = {}) {
   });
   return ctx;
 }
+
+test("secretary read and assurance tools are absent until explicitly enabled", () => {
+  const { registrations } = registerFixture({
+    config: { communicationSecretaryTools: false },
+  });
+  const ctx = ownerContext();
+
+  for (const name of [
+    "entroly_communication_brief",
+    "entroly_communication_assure",
+    "entroly_communication_taste",
+  ]) {
+    assert.equal(materialize(registrations, name, ctx), null);
+  }
+});
 
 test("communication tools disappear for non-owner turns", () => {
   const { registrations } = registerFixture();
@@ -100,6 +119,46 @@ test("brief binds current scope from OpenClaw rather than model arguments", asyn
   assert.equal(bridge.requests[1].operation, "communication_resolve_taste");
   assert.deepEqual(result.details.resolved_taste, { response_length: "short" });
   assert.ok(ctx.currentChecks >= 1);
+});
+
+test("global brief is denied unless cross-conversation access is explicitly enabled", async () => {
+  const { registrations, bridge } = registerFixture({
+    config: {
+      communicationSecretaryTools: true,
+      communicationGlobalAccess: false,
+    },
+  });
+  const tool = materialize(
+    registrations,
+    "entroly_communication_brief",
+    ownerContext(),
+  );
+
+  await assert.rejects(
+    () => tool.execute("call-global-denied", { scope: "all" }),
+    /communicationGlobalAccess=true/,
+  );
+  assert.equal(bridge.requests.length, 0);
+});
+
+test("global brief is owner-bound and opt-in", async () => {
+  const { registrations, bridge } = registerFixture({
+    config: {
+      communicationSecretaryTools: true,
+      communicationGlobalAccess: true,
+    },
+  });
+  const tool = materialize(
+    registrations,
+    "entroly_communication_brief",
+    ownerContext(),
+  );
+
+  await tool.execute("call-global", { scope: "all", limit: 50 });
+
+  assert.equal(bridge.requests[0].operation, "communication_digest");
+  assert.equal(bridge.requests[0].owner_authorized, true);
+  assert.equal("conversation_id" in bridge.requests[0], false);
 });
 
 test("assurance cannot target a different conversation", async () => {
