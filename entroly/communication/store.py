@@ -23,6 +23,7 @@ from .models import (
     bounded_string,
     canonical_json,
 )
+from .preferences import CommunicationTaste
 
 DEFAULT_RETENTION_DAYS = 90
 MAX_RETENTION_DAYS = 3650
@@ -185,6 +186,14 @@ class CommunicationStore:
               ON communication_actions(
                 channel, account_id, conversation_id, updated_at
               );
+
+            CREATE TABLE IF NOT EXISTS communication_preferences (
+                scope_type TEXT NOT NULL,
+                scope_id TEXT NOT NULL,
+                profile_json TEXT NOT NULL,
+                updated_at REAL NOT NULL,
+                PRIMARY KEY(scope_type, scope_id)
+            );
             """
         )
         self._conn.commit()
@@ -403,6 +412,110 @@ class CommunicationStore:
             "oldest_observed_at": totals["oldest"],
             "newest_observed_at": totals["newest"],
         }
+
+    def set_explicit_taste(
+        self,
+        taste: CommunicationTaste,
+        *,
+        now: float | None = None,
+    ) -> None:
+        """Replace current explicit preference state for one exact scope."""
+        if taste.source != "explicit":
+            raise CommunicationStateError(
+                "only explicit taste belongs in authoritative preference state"
+            )
+        timestamp = time.time() if now is None else float(now)
+        payload = canonical_json(taste.to_dict())
+        with self._lock, self._conn:
+            self._conn.execute(
+                """
+                INSERT INTO communication_preferences(
+                    scope_type, scope_id, profile_json, updated_at
+                ) VALUES (?, ?, ?, ?)
+                ON CONFLICT(scope_type, scope_id) DO UPDATE SET
+                    profile_json = excluded.profile_json,
+                    updated_at = excluded.updated_at
+                """,
+                (taste.scope_type, taste.scope_id, payload, timestamp),
+            )
+
+    def get_explicit_taste(
+        self,
+        *,
+        scope_type: str,
+        scope_id: str,
+    ) -> CommunicationTaste | None:
+        """Read current explicit preference state for one exact scope."""
+        with self._lock:
+            row = self._conn.execute(
+                """
+                SELECT profile_json
+                FROM communication_preferences
+                WHERE scope_type = ? AND scope_id = ?
+                """,
+                (str(scope_type), str(scope_id)),
+            ).fetchone()
+        if row is None:
+            return None
+        try:
+            payload = json.loads(str(row["profile_json"]))
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise CommunicationStateError(
+                "stored communication preference is corrupted"
+            ) from exc
+        if not isinstance(payload, dict):
+            raise CommunicationStateError(
+                "stored communication preference is corrupted"
+            )
+        try:
+            return CommunicationTaste.build(
+                scope_type=str(payload.get("scope_type") or ""),  # type: ignore[arg-type]
+                scope_id=str(payload.get("scope_id") or ""),
+                source="explicit",
+                confidence=float(payload.get("confidence", 1.0)),
+                evidence_event_ids=tuple(
+                    str(item)
+                    for item in payload.get("evidence_event_ids", [])
+                    if str(item)
+                )
+                if isinstance(payload.get("evidence_event_ids"), list)
+                else (),
+                preferred_language=str(
+                    payload.get("preferred_language") or "adaptive"
+                ),
+                formality=str(payload.get("formality") or "adaptive"),
+                response_length=str(
+                    payload.get("response_length") or "adaptive"
+                ),
+                emoji_level=str(payload.get("emoji_level") or "adaptive"),
+                routine_action=str(payload.get("routine_action") or "none"),
+                preferred_reaction=str(
+                    payload.get("preferred_reaction") or ""
+                ),
+                greeting_style=str(payload.get("greeting_style") or ""),
+                signoff_style=str(payload.get("signoff_style") or ""),
+                notes=payload.get("notes")
+                if isinstance(payload.get("notes"), dict)
+                else {},
+            )
+        except (CommunicationStateError, TypeError, ValueError) as exc:
+            raise CommunicationStateError(
+                "stored communication preference is invalid"
+            ) from exc
+
+    def explicit_tastes_for_scopes(
+        self,
+        scopes: Sequence[tuple[str, str]],
+    ) -> list[CommunicationTaste]:
+        tastes: list[CommunicationTaste] = []
+        for scope_type, scope_id in scopes:
+            taste = self.get_explicit_taste(
+                scope_type=scope_type,
+                scope_id=scope_id,
+            )
+            if taste is not None:
+                tastes.append(taste)
+        return tastes
 
     def record_action(
         self,
