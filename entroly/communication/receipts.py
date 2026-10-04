@@ -281,28 +281,45 @@ class CommunicationReceiptLedger:
         store: "CommunicationStore",
         receipt: Mapping[str, Any],
     ) -> dict[str, Any]:
+        """Prove first, then append durably so failed signing leaves no row."""
         payload = dict(receipt)
         receipt_id = str(payload.get("receipt_id") or "").strip()
         if not receipt_id:
             raise CommunicationStateError("communication receipt_id is required")
-        store.record_receipt(payload)
-        log, rows = self._rebuild(store)
 
-        indices = [
-            index
-            for index, row in enumerate(rows)
-            if row["receipt_id"] == receipt_id
-        ]
-        if len(indices) != 1:
-            raise CommunicationStateConflict(
-                "communication receipt ledger lost stable receipt identity"
-            )
-        index = indices[0]
-        head = log.signed_tree_head()
-        leaf = log.leaf_at(index)
-        audit_path = log.prove_inclusion(index)
+        existing_rows = store.receipt_rows()
+        existing_index = next(
+            (
+                index
+                for index, row in enumerate(existing_rows)
+                if row["receipt_id"] == receipt_id
+            ),
+            None,
+        )
+        if existing_index is not None:
+            existing = existing_rows[existing_index]["receipt"]
+            if canonical_json(existing) != canonical_json(payload):
+                raise CommunicationStateConflict(
+                    "stable communication receipt identity was reused "
+                    "with different content"
+                )
+
+        # Build and cryptographically self-verify the candidate tree before
+        # mutating durable state.  This prevents an ALLOW receipt from being
+        # left behind if key loading/signing/proof generation fails.
+        candidate_log = ReceiptMerkleLog(self._key)
+        for row in existing_rows:
+            candidate_log.append(dict(row["receipt"]))
+        if existing_index is None:
+            candidate_index = candidate_log.append(payload)
+        else:
+            candidate_index = existing_index
+
+        head = candidate_log.signed_tree_head()
+        leaf = candidate_log.leaf_at(candidate_index)
+        audit_path = candidate_log.prove_inclusion(candidate_index)
         if not verify_inclusion(
-            index,
+            candidate_index,
             head.tree_size,
             leaf,
             audit_path,
@@ -316,10 +333,16 @@ class CommunicationReceiptLedger:
                 "communication receipt signed tree head failed self-verification"
             )
 
+        stored_index = store.record_receipt(payload)
+        if stored_index != candidate_index:
+            raise CommunicationStateConflict(
+                "communication receipt ledger index changed during append"
+            )
+
         return {
             "schema_version": RECEIPT_SCHEMA,
             "receipt_id": receipt_id,
-            "index": index,
+            "index": candidate_index,
             "leaf_hex": leaf.hex(),
             "audit_path": [item.hex() for item in audit_path],
             "tree_size": head.tree_size,
