@@ -58,6 +58,13 @@ class CommunicationPolicy:
             ):
                 return "deny", ("scope:cross_conversation",)
 
+        # Non-bounded modes never have automatic external authority. Resolve
+        # that policy decision before chat-kind checks so the default observe
+        # mode deterministically requires human approval even when passive
+        # host observation cannot prove direct-vs-group scope.
+        if self.mode != "bounded":
+            return "approval_required", (f"policy:{self.mode}",)
+
         if (
             proposal.action_type == "group_reply"
             and proposal.conversation_kind != "group"
@@ -74,8 +81,6 @@ class CommunicationPolicy:
             return "approval_required", (f"category:{proposal.category}",)
         if proposal.creates_commitment:
             return "approval_required", ("action:creates_commitment",)
-        if self.mode != "bounded":
-            return "approval_required", (f"policy:{self.mode}",)
         if proposal.action_type not in set(self.auto_actions):
             return "approval_required", ("policy:action_not_delegated",)
         if proposal.category not in set(self.auto_categories):
