@@ -28,6 +28,7 @@
   },
   "files": [
     "bridge-client.js",
+    "communication-hooks.js",
     "engine.js",
     "index.js",
     "proof-hooks.js",
