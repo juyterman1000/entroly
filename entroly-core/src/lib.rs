@@ -6606,6 +6606,12 @@ fn entroly_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(qccr::py_qccr_expand_query, m)?)?;
     m.add_function(wrap_pyfunction!(qccr::py_qccr_select, m)?)?;
     // ── Multi-Agent (additive — new classes, no existing API changes)
+    // Existing SCHIPC/Compliance/Pollination kernels are the native
+    // coordination plane consumed by MemoryFabric.  Export them so a native
+    // wheel does not silently fall back to the Python implementations.
+    m.add_class::<ipc::IpcBus>()?;
+    m.add_class::<compliance::ComplianceGate>()?;
+    m.add_class::<pollination::PollinationEngine>()?;
     m.add_class::<nkbe::NkbeAllocator>()?;
     m.add_function(wrap_pyfunction!(
         work_graph_bindings::work_graph_node_id,
