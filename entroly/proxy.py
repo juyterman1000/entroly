@@ -38,6 +38,8 @@ from urllib.parse import urlparse
 
 import httpx
 from starlette.applications import Starlette
+from starlette.middleware import Middleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, StreamingResponse
 from starlette.routing import Route
@@ -85,6 +87,7 @@ from .provider_policy import (
     ProviderTarget,
 )
 from .optimization_ledger import OptimizationEvent, OptimizationLedger, SavingsTier
+from .request_attribution import RequestAttributionStore, safe_request_id
 from .stable_prefix import compute_zone_budgets, conversation_anchor
 from .session_rescue import (
     SessionRescueController,
@@ -1036,7 +1039,12 @@ class PromptCompilerProxy:
         # request, injects them as engine fragments, and feeds outcomes back as
         # Bayesian updates. See entroly/coupling.py.
         self._vault: Any = None
-        self._last_injected_claim_ids: list[str] = []
+        # Per-request claim attribution. This replaced a single
+        # `_last_injected_claim_ids` attribute, which every request overwrote;
+        # since /outcome is a separate HTTP request, an outcome routinely
+        # applied its Bayesian update to a *later* request's beliefs. See
+        # entroly/request_attribution.py.
+        self._attribution = RequestAttributionStore()
         try:
             from . import coupling
             if coupling.is_enabled():
@@ -2313,7 +2321,16 @@ class PromptCompilerProxy:
 
         path = request.url.path
         headers = {k: v for k, v in request.headers.items()}
-        request_id = headers.get("x-request-id") or uuid.uuid4().hex[:12]
+        # The effective id is reflected back in X-Entroly-Request-Id, so a
+        # client-supplied value is validated rather than echoed: an unbounded or
+        # CR/LF-bearing header would otherwise be a response-splitting vector.
+        # An unusable value is replaced with a generated id, never rejected,
+        # because correlation is a diagnostic aid and must not fail the request.
+        # Resolved by the request-id middleware so the handler and the
+        # X-Entroly-Request-Id the client sees can never disagree.
+        request_id = getattr(
+            request.state, "entroly_request_id", None
+        ) or safe_request_id(headers.get("x-request-id"))
         usage_dimensions = self._usage_dimensions(headers)
         provider = detect_provider(path, headers, body)
         gateway_adapter = None
@@ -3541,8 +3558,12 @@ class PromptCompilerProxy:
                 )
             except Exception as e:
                 logger.debug("Vault coupling injection skipped: %s", e)
-        # Stash for outcome attribution at /outcome time
-        self._last_injected_claim_ids = injected_claim_ids
+        # Bind the injected claims to THIS request, so /outcome can attribute
+        # its result to the beliefs that actually shaped it. Without a
+        # request_id the claims are not recorded at all: attribution then
+        # abstains, which is correct, because guessing is what the previous
+        # global attribute did.
+        self._attribution.record(request_id, injected_claim_ids)
 
         result = self.engine.optimize_context(token_budget, user_message)
 
@@ -5772,18 +5793,36 @@ async def _record_outcome(request: Request) -> JSONResponse:
     # On failure, also enqueue them for reverification by FlowOrchestrator.
     belief_updates: list[dict] = []
     reverify_count = 0
-    if proxy._vault is not None and proxy._last_injected_claim_ids:
+    attribution_status = "not_enabled" if proxy._vault is None else "abstained"
+    # Attribute to the beliefs THIS request injected, identified by request_id.
+    # A missing, unknown, expired, already-consumed or concurrently-claimed id
+    # all yield None, and we abstain. There is deliberately no "most recent
+    # claims" fallback: that fallback was the defect.
+    request_id = str(body.get("request_id") or "")
+    claim_ids = (
+        proxy._attribution.claim(request_id) if proxy._vault is not None else None
+    )
+    if claim_ids:
         try:
             from . import coupling
             belief_updates = coupling.attribute_outcome(
-                proxy._last_injected_claim_ids, success, proxy._vault,
+                list(claim_ids), success, proxy._vault,
             )
             if not success:
                 reverify_count = coupling.enqueue_reverification(
-                    proxy._last_injected_claim_ids, proxy._vault,
+                    list(claim_ids), proxy._vault,
                 )
         except Exception as e:
-            logger.debug("Belief attribution skipped: %s", e)
+            # Leave the entry PENDING so a redelivery can retry. Marking it
+            # consumed here would silently discard the outcome.
+            proxy._attribution.release(request_id)
+            attribution_status = "failed_retryable"
+            logger.debug("Belief attribution failed, left retryable: %s", e)
+        else:
+            # Only a completed mutation consumes the entry, which is what makes
+            # duplicate delivery apply the update exactly once.
+            proxy._attribution.commit(request_id)
+            attribution_status = "attributed"
 
     with proxy._stats_lock:
         if success:
@@ -5801,6 +5840,10 @@ async def _record_outcome(request: Request) -> JSONResponse:
         "total_outcomes": total,
         "belief_updates": belief_updates,
         "beliefs_reverify_queued": reverify_count,
+        # Explicit, because "no updates" previously could not be distinguished
+        # from "attributed to the wrong request". Values: not_enabled,
+        # abstained, attributed, failed_retryable.
+        "belief_attribution": attribution_status,
     })
 
 
@@ -6566,7 +6609,25 @@ def create_proxy_app(
         yield
         await proxy.shutdown()
 
+    async def _request_id_middleware(request: Request, call_next):
+        """Resolve the effective request id once and reflect it to the client.
+
+        Middleware rather than per-response code because the id must be set
+        before headers commit, and six StreamingResponse sites would each have
+        to remember. Resolving here also makes `request.state` the single source
+        of truth, so the handler cannot derive a different id than the one the
+        client is told to correlate with.
+        """
+        effective = safe_request_id(request.headers.get("x-request-id"))
+        request.state.entroly_request_id = effective
+        response = await call_next(request)
+        # Streaming bodies are produced after this point, but the header map is
+        # already committed here, which is exactly why the id must exist now.
+        response.headers["X-Entroly-Request-Id"] = effective
+        return response
+
     app = Starlette(
+        middleware=[Middleware(BaseHTTPMiddleware, dispatch=_request_id_middleware)],
         routes=[
             Route("/v1/chat/completions", proxy.handle_proxy, methods=["POST"]),
             Route("/v1/messages", proxy.handle_proxy, methods=["POST"]),

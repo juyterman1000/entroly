@@ -39,6 +39,7 @@ export interface WorkGraphWorkItem {
   failure_ids: string[];
   verification_ids: string[];
   evidence_ids: string[];
+  remaining_work: string[];
 }
 
 export interface WorkGraphEvidence {
@@ -52,6 +53,17 @@ export interface WorkGraphEvidence {
   attributes: Record<string, unknown>;
 }
 
+export interface WorkGraphVerification {
+  node_id: string;
+  label: string;
+  verdict: string | null;
+  freshness: string | null;
+  status: WorkGraphStatus;
+  trust: WorkGraphTrust;
+  verified_repository_commitment: string | null;
+  updated_at_ms: number;
+}
+
 export interface WorkGraphResumeView {
   repo_id: string;
   graph_revision: number;
@@ -61,7 +73,8 @@ export interface WorkGraphResumeView {
   agents: string[];
   decisions: string[];
   failures: string[];
-  verification: string[];
+  verification: WorkGraphVerification[];
+  outstanding_work: string[];
   changed_paths: string[];
   commits: string[];
   evidence: WorkGraphEvidence[];

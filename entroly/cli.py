@@ -222,6 +222,7 @@ def cmd_activation(args):
         configure_kiro_hook,
         hook_context,
         parse_hook_input,
+        read_protocol_stdin,
         run_hook,
     )
 
@@ -248,7 +249,11 @@ def cmd_activation(args):
         return 2 if report["status"] == "conflict" else 0
 
     try:
-        payload = parse_hook_input(sys.stdin.read())
+        # Read the protocol payload as bytes and decode UTF-8 ourselves.
+        # sys.stdin.read() applied the Windows ANSI code page (measured:
+        # cp1252/surrogateescape), which silently rewrote any non-ASCII prompt
+        # before selection ever saw it. See read_protocol_stdin.
+        payload = parse_hook_input(read_protocol_stdin())
         result = run_hook(
             payload,
             host=args.host,
