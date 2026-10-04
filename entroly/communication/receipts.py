@@ -191,6 +191,95 @@ def build_action_receipt(
     }
 
 
+def build_learning_receipt(
+    feedback: Mapping[str, Any],
+    *,
+    selection: Mapping[str, Any],
+    source_events: Sequence[CommunicationEvent],
+) -> dict[str, Any]:
+    """Bind one taste-learning episode to exact evidence without raw text."""
+    feedback_id = str(feedback.get("feedback_id") or "").strip()
+    source = str(feedback.get("source") or "").strip()
+    scope_type = str(feedback.get("scope_type") or "").strip()
+    scope_id_hash = str(feedback.get("scope_id_hash") or "").strip()
+    raw_ids = feedback.get("evidence_event_ids")
+    evidence_ids = tuple(
+        str(item).strip()
+        for item in (raw_ids if isinstance(raw_ids, (list, tuple)) else ())
+        if str(item).strip()
+    )
+    if not feedback_id or not source or not scope_type or not scope_id_hash:
+        raise CommunicationStateError(
+            "learning receipt requires feedback identity, source, and scope"
+        )
+    if not evidence_ids:
+        raise CommunicationStateError(
+            "learning receipt requires exact evidence event ids"
+        )
+
+    by_id = {event.event_id: event for event in source_events}
+    evidence: list[dict[str, Any]] = []
+    for event_id in evidence_ids:
+        event = by_id.get(event_id)
+        if event is None:
+            raise CommunicationStateError(
+                f"learning receipt source event is unavailable: {event_id}"
+            )
+        evidence.append(
+            {
+                "event_id": event.event_id,
+                "content_sha256": event.content_sha256,
+                "commitment_sha256": event.commitment_sha256,
+                "direction": event.direction,
+                "source": event.source,
+                "message_identity_strength": event.identity_strength,
+            }
+        )
+
+    feature_vector = feedback.get("feature_vector")
+    if not isinstance(feature_vector, (list, tuple)) or len(feature_vector) != 5:
+        raise CommunicationStateError(
+            "learning receipt requires a five-dimensional PRISM feature vector"
+        )
+    selected_ids = selection.get("event_ids")
+    normalized_selected = sorted(
+        {
+            str(item).strip()
+            for item in (
+                selected_ids if isinstance(selected_ids, (list, tuple)) else ()
+            )
+            if str(item).strip()
+        }
+    )
+    if not normalized_selected or not set(normalized_selected).issubset(set(evidence_ids)):
+        raise CommunicationStateError(
+            "learning receipt selection must be covered by exact evidence ids"
+        )
+
+    material = {
+        "kind": "communication_taste_feedback",
+        "feedback_id": feedback_id,
+        "scope_type": scope_type,
+        "scope_id_hash": scope_id_hash,
+        "reward": float(feedback.get("reward", 0.0)),
+        "source": source,
+        "feature_vector": [float(value) for value in feature_vector],
+        "selection": {
+            "event_ids": normalized_selected,
+            "feature_mean": dict(selection.get("feature_mean") or {}),
+            "weights": dict(selection.get("weights") or {}),
+        },
+        "source_evidence": evidence,
+        "authority_surface": "none",
+    }
+    receipt_id = "commrcpt_" + sha256_text(canonical_json(material))[:40]
+    return {
+        "schema_version": RECEIPT_SCHEMA,
+        "receipt_id": receipt_id,
+        **material,
+    }
+
+
 class CommunicationReceiptLedger:
     """Rebuildable signed Merkle log over durable receipt rows."""
 
@@ -351,6 +440,31 @@ class CommunicationReceiptLedger:
             "operator_signature": head.signature,
             "operator_public_key": head.public_key,
             "verified": True,
+        }
+
+    def get_verified(
+        self,
+        store: "CommunicationStore",
+        receipt_id: str,
+    ) -> dict[str, Any] | None:
+        """Return receipt + a freshly verified signed-Merkle proof."""
+        proof = self.prove(store, receipt_id)
+        if proof is None:
+            return None
+        rows = store.receipt_rows()
+        row = next(
+            (item for item in rows if item["receipt_id"] == receipt_id),
+            None,
+        )
+        if row is None:
+            return None
+        if proof.get("operator_public_key") != self.public_key:
+            raise CommunicationStateConflict(
+                "communication receipt proof changed operator key"
+            )
+        return {
+            "receipt": dict(row["receipt"]),
+            "proof": proof,
         }
 
     def prove(
