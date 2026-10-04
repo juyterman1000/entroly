@@ -1931,7 +1931,6 @@ def handle_request(request: dict[str, Any]) -> dict[str, Any]:
             "provider_independent": True,
             "requires_host_token_budget": True,
             "supports_context_budget_discovery": True,
-            "supports_communication_assurance": True,
             "receipt_commit_protocol": "two_phase",
         }
     if operation == "resolve_context_budget":
