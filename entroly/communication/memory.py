@@ -142,18 +142,14 @@ class CommunicationMemory:
         mirror_owner_long_term: bool = True,
     ) -> dict[str, Any]:
         """Remember a preference observation without granting action authority."""
-        if taste.source == "default":
+        if taste.source != "inferred":
             raise CommunicationStateError(
-                "default taste does not need durable memory"
+                "CommunicationMemory stores inferred taste only; explicit taste is current policy state"
             )
         payload = _taste_payload(taste)
         agent_id = _scope_agent_id(taste.scope_type, taste.scope_id)
-        tier = "semantic" if taste.source == "explicit" else "episodic"
-        importance = (
-            1.0
-            if taste.source == "explicit"
-            else max(0.5, min(0.95, float(taste.confidence)))
-        )
+        tier = "episodic"
+        importance = max(0.5, min(0.95, float(taste.confidence)))
         tags = [
             "communication",
             "taste",
@@ -178,12 +174,8 @@ class CommunicationMemory:
                 "count": 0,
             }
             evidence_is_strong = (
-                taste.source == "explicit"
-                or (
-                    taste.source == "inferred"
-                    and taste.confidence >= 0.85
-                    and len(set(taste.evidence_event_ids)) >= 3
-                )
+                taste.confidence >= 0.85
+                and len(set(taste.evidence_event_ids)) >= 3
             )
             if (
                 mirror_owner_long_term
