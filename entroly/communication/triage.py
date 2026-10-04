@@ -331,6 +331,7 @@ def build_digest(
     events: Sequence[CommunicationEvent],
     *,
     max_attention_items: int = 20,
+    max_routine_items: int = 200,
 ) -> dict[str, object]:
     """Produce a bounded evidence-referenced secretary digest."""
 
@@ -377,12 +378,47 @@ def build_digest(
     for item in routine:
         routine_by_category[item.category] = routine_by_category.get(item.category, 0) + 1
 
+    routine_items: list[dict[str, object]] = []
+    routine_limit = max(1, min(int(max_routine_items), 1000))
+    for item in sorted(
+        routine,
+        key=lambda value: (
+            -(by_id[value.event_id].timestamp or 0),
+            value.event_id,
+        ),
+    )[:routine_limit]:
+        event = by_id[item.event_id]
+        candidates: list[str] = []
+        if item.reaction_candidate:
+            candidates.append("react")
+        if item.direct_reply_candidate:
+            candidates.append("reply")
+        if item.group_ack_candidate:
+            candidates.append("group_ack")
+        routine_items.append(
+            {
+                "event_id": event.event_id,
+                "channel": event.channel,
+                "account_id": event.account_id,
+                "conversation_id": event.conversation_id,
+                "conversation_kind": event.conversation_kind,
+                "sender_id": event.sender_id,
+                "message_id": event.message_id,
+                "timestamp": event.timestamp,
+                "category": item.category,
+                "risk_class": item.risk_class,
+                "candidate_actions": candidates,
+            }
+        )
+
     return {
         "total_events": len(events),
         "attention_count": len(attention),
         "urgent_count": sum(item.attention == "urgent" for item in attention),
         "routine_candidate_count": len(routine),
         "routine_by_category": dict(sorted(routine_by_category.items())),
+        "routine_items": routine_items,
+        "truncated_routine_items": max(0, len(routine) - len(routine_items)),
         "group_episodes": [episode.to_dict() for episode in episodes],
         "attention_items": attention_items,
         "truncated_attention_items": max(0, len(attention) - len(attention_items)),
