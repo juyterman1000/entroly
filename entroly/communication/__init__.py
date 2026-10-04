@@ -9,6 +9,16 @@ from .models import (
     event_from_adapter,
 )
 from .policy import CommunicationPolicy
+from .preferences import (
+    CommunicationTaste,
+    inferred_taste_may_authorize_action,
+    resolve_taste,
+)
+from .memory import (
+    CommunicationMemory,
+    default_communication_memory_path,
+    resolve_communication_memory_path,
+)
 from .triage import (
     CommunicationAssessment,
     CommunicationEpisode,
@@ -33,6 +43,12 @@ __all__ = [
     "CommunicationActionProposal",
     "CommunicationEvent",
     "CommunicationPolicy",
+    "CommunicationTaste",
+    "CommunicationMemory",
+    "resolve_taste",
+    "inferred_taste_may_authorize_action",
+    "default_communication_memory_path",
+    "resolve_communication_memory_path",
     "CommunicationAssessment",
     "CommunicationEpisode",
     "assess_event",
