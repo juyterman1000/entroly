@@ -116,6 +116,26 @@
         "default": 3,
         "title": "Recovery Message Limit",
         "description": "Maximum exact omitted messages appended to one revision instruction."
+      },
+      "communicationAssurance": {
+        "type": "boolean",
+        "default": false,
+        "title": "Communication Assurance",
+        "description": "Opt in to local observation of channel message_received/message_sent events for durable communication state. WhatsApp separately requires channels.whatsapp.pluginHooks.messageReceived=true."
+      },
+      "communicationStorePath": {
+        "type": "string",
+        "minLength": 1,
+        "title": "Communication Store Path",
+        "description": "Optional absolute path for the private local communication SQLite store. By default Entroly uses the operating-system user state directory, never the workspace."
+      },
+      "communicationRetentionDays": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 3650,
+        "default": 90,
+        "title": "Communication Evidence Retention",
+        "description": "Days to retain raw local communication evidence. Set 0 to disable automatic pruning."
       }
     }
   }
