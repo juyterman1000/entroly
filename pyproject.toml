@@ -166,8 +166,6 @@ ignore = [
     "UP045",   # Use `X | None` instead of `Optional[X]`
     "E501",    # Line too long — we use descriptive print strings
     "F401",    # Unused import — some are used conditionally
-    "E722",    # Bare except — used intentionally for resilient CLI
-    "W605",    # Invalid escape sequence — some are in regex patterns
 ]
 
 [tool.ruff.lint.per-file-ignores]

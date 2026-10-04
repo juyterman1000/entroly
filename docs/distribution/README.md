@@ -13,16 +13,10 @@ entry needs a reproducible install path.
 - [`targets.json`](targets.json) — machine-readable external target registry.
 - [`visibility-dimensions.json`](visibility-dimensions.json) — complete competitive
   visibility matrix across 30 dimensions.
-- [`competitive-visibility.md`](competitive-visibility.md) — category-leadership
-  rules and prioritization model.
 - [`submission-kit.md`](submission-kit.md) — canonical, evidence-bounded copy for
   directories, newsletters, guides, reviewers, and benchmark maintainers.
-- [`../marketing/README.md`](../marketing/README.md) — launch and outreach
-  operating rules.
 - [`../independent-review-program.md`](../independent-review-program.md) — minimum
   evidence for independent reviews and reproductions.
-- [`../press-kit.md`](../press-kit.md) — approved project facts, descriptions, media
-  assets, and claim boundaries.
 - [`../../scripts/check_distribution_surface.py`](../../scripts/check_distribution_surface.py)
   — offline validation for version alignment, required discovery assets, target
   states, visibility coverage, citation metadata, launch integrity, and proof

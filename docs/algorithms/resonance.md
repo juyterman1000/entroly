@@ -1,6 +1,6 @@
 # Resonance Matrix — Supermodular Pairwise Learning
 
-**Implementation:** [`entroly-core/src/resonance.rs`](../entroly-core/src/resonance.rs)
+**Implementation:** [`entroly-core/src/resonance.rs`](../../entroly-engine/src/resonance.rs)
 **Math reference:** [`../RESEARCH.md`](../RESEARCH.md)
 
 ## One-paragraph spec

@@ -1,6 +1,6 @@
 # BIPT — Byte-level Information Provenance Tracing
 
-**Implementation:** [`entroly/verifiers/provenance_tracer.py`](../entroly/verifiers/provenance_tracer.py)
+**Implementation:** [`entroly/verifiers/provenance_tracer.py`](../../entroly/verifiers/provenance_tracer.py)
 **Standalone exposition:** [`../BIPT.md`](../BIPT.md)
 **Math reference:** [`../RESEARCH.md`](../RESEARCH.md)
 

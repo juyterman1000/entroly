@@ -102,11 +102,8 @@ Marketplace badges are deliberately excluded from the simplified README until ex
 
 ## Discoverability evidence boundary
 
-The [discoverability registry](discoverability-registry.json) maps each priority
-AI-token intent to one canonical public answer, the evidence that answer may use,
-and the boundary it must preserve. It also records the measurement channels that
-must be connected before search visibility can be reported as observed rather
-than assumed.
+Search visibility requires independent measurement. Repository metadata alone
+does not establish traffic, useful completed tasks, or adoption.
 
 Search metadata, structured data, internal links, crawler access, and a sitemap
 can make Entroly easier to identify and index. They do **not** establish a Google

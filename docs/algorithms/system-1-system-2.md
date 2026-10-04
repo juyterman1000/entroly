@@ -1,6 +1,6 @@
 # System 1 ↔ System 2 — Dual-Process Coupling
 
-**Implementation:** [`entroly/coupling.py`](../entroly/coupling.py)
+**Implementation:** [`entroly/coupling.py`](../../entroly/coupling.py)
 **Math reference:** [`../RESEARCH.md`](../RESEARCH.md)
 **Commit history:** `4eaa0a5` (v0.19.1 introduction)
 
@@ -50,4 +50,4 @@ pending field tests; the architectural seam is in place since v0.19.1.
 ## References
 
 Kahneman 2011 (dual-process theory); Bayes 1763 (posterior update);
-[`coupling.py:attribute_outcome`](../entroly/coupling.py).
+[`coupling.py:attribute_outcome`](../../entroly/coupling.py).
