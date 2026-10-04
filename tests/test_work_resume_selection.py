@@ -32,6 +32,13 @@ from pathlib import Path
 
 import pytest
 
+# `work_resume` reaches the Work Graph, which is PyO3-only and raises
+# WorkGraphUnavailableError without the compiled engine. The pure-Python
+# fallback job installs the base package with no Rust engine on purpose, so the
+# whole module must skip there rather than fail: these tests are about which
+# workstream the resume path selects, not about whether the engine is present.
+pytest.importorskip("entroly_core", reason="work_resume requires the Rust engine")
+
 REMAINING = "wire the new config field through the Rust engine"
 DECISION = "budget must stay per-request; a global default broke cache alignment"
 
