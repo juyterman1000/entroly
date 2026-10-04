@@ -1254,6 +1254,17 @@ def test_signed_merkle_feedback_is_required_before_prism_update(
         )
         assert committed.receipt_id == proof["receipt_id"]
 
+        try:
+            from entroly_core import py_prism5d_step  # noqa: F401
+        except ImportError:
+            with pytest.raises(CommunicationStateError, match="native PRISM-5D is unavailable"):
+                optimizer.process_pending(
+                    receipt_store=store,
+                    receipt_ledger=ledger,
+                )
+            assert optimizer.stats()["processed_feedback"] == 0
+            return
+
         result = optimizer.process_pending(
             receipt_store=store,
             receipt_ledger=ledger,

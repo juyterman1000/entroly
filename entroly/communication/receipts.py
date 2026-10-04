@@ -74,11 +74,15 @@ def _scope_commitment(
 def action_evidence_verification(
     proposal: CommunicationActionProposal,
     source_events: Sequence[CommunicationEvent],
+    *,
+    payload: str,
 ) -> dict[str, Any]:
     """Run EICV only when the proposed text makes evidence-dependent claims."""
     if proposal.action_type in {"react", "no_action"}:
         return {"status": "not_applicable", "reason": "non_text_action"}
-    if not proposal.payload.strip():
+    if proposal.payload_sha256 != (sha256_text(payload) if payload else ""):
+        return {"status": "unavailable", "reason": "payload_commitment_mismatch"}
+    if not payload.strip():
         return {"status": "not_applicable", "reason": "empty_payload"}
     if proposal.category in _ROUTINE_NONFACTUAL:
         return {
@@ -104,7 +108,7 @@ def action_evidence_verification(
         from ..sdk import eicv_verify
 
         cert = eicv_verify(
-            proposal.payload,
+            payload,
             evidence=evidence,
             profile="dialogue",
         )

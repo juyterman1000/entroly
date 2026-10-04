@@ -54,6 +54,19 @@ def _birthday_proposal(event):
     )
 
 
+def test_evidence_verification_rejects_payload_outside_proposal_commitment() -> None:
+    event = _birthday_event()
+    proposal = _birthday_proposal(event)
+
+    verdict = communication.action_evidence_verification(
+        proposal,
+        [event],
+        payload="A different response",
+    )
+
+    assert verdict == {"status": "unavailable", "reason": "payload_commitment_mismatch"}
+
+
 def test_signed_merkle_receipt_survives_restart_without_raw_message_text(
     tmp_path: Path,
 ) -> None:
@@ -296,7 +309,7 @@ def test_eicv_can_only_remove_automatic_authority(
     monkeypatch.setattr(
         communication,
         "action_evidence_verification",
-        lambda proposal, source_events: {
+        lambda proposal, source_events, *, payload: {
             "status": "verified",
             "decision": "hallucinated",
             "phi": 0.1,
@@ -349,7 +362,7 @@ def test_prism_feedback_rejects_model_self_report_and_keeps_no_authority_surface
     )
 
     with pytest.raises(CommunicationStateError, match="user-grounded"):
-        optimizer.append_feedback(
+        optimizer.prepare_feedback(
             scope_type="owner",
             scope_id="owner-global",
             reward=1.0,
@@ -357,19 +370,21 @@ def test_prism_feedback_rejects_model_self_report_and_keeps_no_authority_surface
             source="model_self_report",
         )
 
-    optimizer.append_feedback(
+    prepared = optimizer.prepare_feedback(
         scope_type="owner",
         scope_id="owner-global",
         reward=1.0,
         selection=selection,
         source="explicit_approval",
     )
+    optimizer.append_feedback(prepared, receipt_id="commrcpt_" + "a" * 40)
     processed = optimizer.process_pending()
     stats = optimizer.stats()
 
-    assert processed["processed"] == 1
+    assert processed["processed"] == 0
+    assert processed["reason"] == "signed_receipt_verifier_required"
     assert stats["authority_surface"] == "none"
-    assert stats["processed_feedback"] == 1
+    assert stats["processed_feedback"] == 0
 
 
 def test_shadow_autotune_does_not_promote_without_holdout(tmp_path: Path) -> None:

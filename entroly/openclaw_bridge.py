@@ -2109,6 +2109,7 @@ def _communication_assure(request: dict[str, Any]) -> dict[str, Any]:
         evidence_verification = action_evidence_verification(
             proposal,
             events,
+            payload=payload,
         )
         if (
             decision == "allow"
