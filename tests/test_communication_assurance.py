@@ -8,6 +8,8 @@ from entroly.communication import (
     CommunicationActionProposal,
     CommunicationMemory,
     CommunicationPolicy,
+    CommunicationReceiptLedger,
+    CommunicationTasteOptimizer,
     CommunicationStateConflict,
     CommunicationStateError,
     CommunicationStore,
@@ -15,8 +17,10 @@ from entroly.communication import (
     assess_event,
     build_digest,
     build_group_episodes,
+    build_learning_receipt,
     event_from_adapter,
     infer_taste_from_outbound,
+    is_human_grounded_outbound,
     resolve_taste,
 )
 from entroly.openclaw_bridge import handle_request
@@ -1077,3 +1081,299 @@ def test_explicit_taste_bridge_requires_owner_and_overrides_memory(
     assert result["resolved"]["response_length"] == "very_short"
     assert result["resolved"]["emoji_level"] == "none"
     assert result["authority_expanded"] is False
+
+
+def _outbound_style_event(
+    index: int,
+    *,
+    source: str = "openclaw.message_sent",
+    human_authored: bool = False,
+):
+    return event_from_adapter(
+        {
+            "direction": "outbound",
+            "channel": "whatsapp",
+            "account_id": "personal",
+            "conversation_id": "dm-style",
+            "conversation_kind": "direct",
+            "recipient_id": "person-a",
+            "message_id": f"out-{index}",
+            "timestamp": 1_800_000_000 + index,
+            "content": "Thanks!" if index % 2 == 0 else "Thank you 😊",
+            "delivery_state": "sent",
+            "source": source,
+            "metadata": {"human_authored": human_authored},
+        }
+    )
+
+
+def test_openclaw_agent_sent_output_never_counts_as_human_taste_evidence() -> None:
+    agent_output = _outbound_style_event(1)
+    grounded = _outbound_style_event(
+        2,
+        source="owner_authored",
+        human_authored=True,
+    )
+
+    assert is_human_grounded_outbound(agent_output) is False
+    assert is_human_grounded_outbound(grounded) is True
+
+
+def test_bridge_taste_learning_refuses_to_train_on_its_own_agent_outputs(
+    tmp_path: Path,
+) -> None:
+    store_path = tmp_path / "communication.sqlite3"
+    memory_path = tmp_path / "taste-memory.json"
+    state_path = tmp_path / "taste-learning.json"
+    journal_path = tmp_path / "taste-feedback.jsonl"
+
+    for index in range(4):
+        event = _outbound_style_event(index)
+        handle_request(
+            {
+                "operation": "communication_ingest",
+                "store_path": str(store_path),
+                "retention_days": 0,
+                "event": event.to_dict(),
+            }
+        )
+
+    result = handle_request(
+        {
+            "operation": "communication_learn_taste",
+            "store_path": str(store_path),
+            "memory_path": str(memory_path),
+            "learning_state_path": str(state_path),
+            "learning_journal_path": str(journal_path),
+            "owner_authorized": True,
+            "scope_type": "owner",
+            "scope_id": "main",
+            "channel": "whatsapp",
+            "account_id": "personal",
+        }
+    )
+
+    assert result["learned"] is False
+    assert result["reason"] == "insufficient_human_grounded_outbound_evidence"
+    assert result["human_grounded_events"] == 0
+    assert not journal_path.exists()
+
+
+def test_prism_taste_feedback_cannot_process_without_signed_receipt_verifier(
+    tmp_path: Path,
+) -> None:
+    optimizer = CommunicationTasteOptimizer(
+        tmp_path / "taste-learning.json",
+        tmp_path / "taste-feedback.jsonl",
+    )
+    events = [
+        _outbound_style_event(
+            index,
+            source="owner_authored",
+            human_authored=True,
+        )
+        for index in range(3)
+    ]
+    selection = optimizer.select_examples(
+        events,
+        scope_type="owner",
+        scope_id="main",
+        top_k=3,
+    )
+    prepared = optimizer.prepare_feedback(
+        scope_type="owner",
+        scope_id="main",
+        reward=1.0,
+        selection=selection,
+        source="explicit_approval",
+        evidence_event_ids=[event.event_id for event in events],
+    )
+    optimizer.append_feedback(
+        prepared,
+        receipt_id="commrcpt_" + ("a" * 40),
+    )
+
+    result = optimizer.process_pending()
+
+    assert result["processed"] == 0
+    assert result["blocked"] == 1
+    assert result["reason"] == "signed_receipt_verifier_required"
+    assert optimizer.stats()["processed_feedback"] == 0
+
+
+def test_signed_merkle_feedback_is_required_before_prism_update(
+    tmp_path: Path,
+) -> None:
+    store_path = tmp_path / "communication.sqlite3"
+    receipt_dir = tmp_path / "receipt-state"
+    optimizer = CommunicationTasteOptimizer(
+        tmp_path / "taste-learning.json",
+        tmp_path / "taste-feedback.jsonl",
+    )
+    events = [
+        _outbound_style_event(
+            index,
+            source="owner_authored",
+            human_authored=True,
+        )
+        for index in range(3)
+    ]
+    selection = optimizer.select_examples(
+        events,
+        scope_type="owner",
+        scope_id="main",
+        top_k=3,
+    )
+    prepared = optimizer.prepare_feedback(
+        scope_type="owner",
+        scope_id="main",
+        reward=1.0,
+        selection=selection,
+        source="explicit_approval",
+        evidence_event_ids=[event.event_id for event in events],
+    )
+    receipt = build_learning_receipt(
+        prepared.to_dict(),
+        selection=selection.to_dict(),
+        source_events=events,
+    )
+
+    with CommunicationStore(store_path, retention_days=0) as store:
+        for index, event in enumerate(events):
+            store.record_event(event, observed_at=100 + index)
+        try:
+            ledger = CommunicationReceiptLedger(receipt_dir)
+        except CommunicationStateError as exc:
+            if "cryptography" in str(exc).lower():
+                pytest.skip("receipt-proof optional dependency is unavailable")
+            raise
+        proof = ledger.record(store, receipt)
+        committed = optimizer.append_feedback(
+            prepared,
+            receipt_id=proof["receipt_id"],
+        )
+        assert committed.receipt_id == proof["receipt_id"]
+
+        result = optimizer.process_pending(
+            receipt_store=store,
+            receipt_ledger=ledger,
+        )
+
+    assert result["processed"] == 1
+    assert optimizer.stats()["processed_feedback"] == 1
+    assert optimizer.stats()["authority_surface"] == "none"
+
+
+def test_tampered_taste_feedback_fails_closed_against_merkle_receipt(
+    tmp_path: Path,
+) -> None:
+    store_path = tmp_path / "communication.sqlite3"
+    receipt_dir = tmp_path / "receipt-state"
+    journal_path = tmp_path / "taste-feedback.jsonl"
+    optimizer = CommunicationTasteOptimizer(
+        tmp_path / "taste-learning.json",
+        journal_path,
+    )
+    events = [
+        _outbound_style_event(
+            index,
+            source="owner_authored",
+            human_authored=True,
+        )
+        for index in range(3)
+    ]
+    selection = optimizer.select_examples(
+        events,
+        scope_type="owner",
+        scope_id="main",
+        top_k=3,
+    )
+    prepared = optimizer.prepare_feedback(
+        scope_type="owner",
+        scope_id="main",
+        reward=1.0,
+        selection=selection,
+        source="explicit_approval",
+        evidence_event_ids=[event.event_id for event in events],
+    )
+    receipt = build_learning_receipt(
+        prepared.to_dict(),
+        selection=selection.to_dict(),
+        source_events=events,
+    )
+
+    with CommunicationStore(store_path, retention_days=0) as store:
+        for index, event in enumerate(events):
+            store.record_event(event, observed_at=200 + index)
+        try:
+            ledger = CommunicationReceiptLedger(receipt_dir)
+        except CommunicationStateError as exc:
+            if "cryptography" in str(exc).lower():
+                pytest.skip("receipt-proof optional dependency is unavailable")
+            raise
+        proof = ledger.record(store, receipt)
+        optimizer.append_feedback(prepared, receipt_id=proof["receipt_id"])
+
+        row = __import__("json").loads(journal_path.read_text(encoding="utf-8"))
+        row["reward"] = -1.0
+        journal_path.write_text(
+            __import__("json").dumps(row, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+        with pytest.raises(
+            CommunicationStateError,
+            match="does not bind feedback",
+        ):
+            optimizer.process_pending(
+                receipt_store=store,
+                receipt_ledger=ledger,
+            )
+
+
+def test_ingest_reensures_taste_autotune_after_bridge_restart(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    class _Thread:
+        name = "entroly-autotune-test"
+
+        @staticmethod
+        def is_alive() -> bool:
+            return True
+
+    def _start(**kwargs):
+        calls.append(kwargs)
+        return _Thread()
+
+    monkeypatch.setattr(
+        "entroly.communication.start_communication_taste_autotune_daemon",
+        _start,
+    )
+
+    result = handle_request(
+        {
+            "operation": "communication_ingest",
+            "store_path": str(tmp_path / "communication.sqlite3"),
+            "retention_days": 0,
+            "taste_learning_enabled": True,
+            "taste_autotune_interval_s": 45,
+            "event": {
+                "direction": "inbound",
+                "channel": "whatsapp",
+                "conversation_id": "chat-a",
+                "message_id": "m-autotune",
+                "content": "hello",
+            },
+        }
+    )
+
+    assert result["taste_autotune"]["alive"] is True
+    assert calls == [
+        {
+            "store_path": str(tmp_path / "communication.sqlite3"),
+            "interval_s": 45.0,
+        }
+    ]
