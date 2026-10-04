@@ -157,6 +157,59 @@ class MemoryFabric:
             safety_policy=safety_policy,
         )
 
+    def remember_long_term(
+        self,
+        content: str,
+        *,
+        source: str = "manual",
+        importance: float = 0.7,
+    ) -> dict[str, object]:
+        """Mirror one already-approved memory into optional Hippocampus LTM.
+
+        This does not replace MemoryOS persistence and should only be used when
+        the caller has already enforced its own privacy scope.  The current
+        Hippocampus adapter is global rather than agent-partitioned.
+        """
+        text = str(content or "").strip()
+        if not text:
+            raise ValueError("long-term memory content cannot be empty")
+        if self._long_term is None or not getattr(self._long_term, "active", False):
+            return {
+                "remembered": False,
+                "reason": "hippocampus_unavailable",
+                "count": 0,
+            }
+        bounded_importance = max(0.0, min(1.0, float(importance)))
+        fragment_id = "memory_fabric_long_term"
+        try:
+            count = int(
+                self._long_term.remember_fragments(
+                    [
+                        {
+                            "id": fragment_id,
+                            "content": text,
+                            "source": str(source or "manual"),
+                            "entropy_score": 0.0,
+                            "is_pinned": bounded_importance >= 0.95,
+                            "relevance": bounded_importance,
+                        }
+                    ],
+                    selected_ids={fragment_id},
+                )
+            )
+        except Exception as exc:  # pragma: no cover - optional dependency
+            self._long_term_error = str(exc)
+            return {
+                "remembered": False,
+                "reason": "hippocampus_error",
+                "count": 0,
+            }
+        return {
+            "remembered": count > 0,
+            "reason": "hippocampus_active" if count > 0 else "not_stored",
+            "count": count,
+        }
+
     def recall(
         self,
         query: str = "",
