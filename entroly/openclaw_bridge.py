@@ -2289,6 +2289,55 @@ def _communication_memory_status(request: dict[str, Any]) -> dict[str, Any]:
         "provider_call_performed": False,
     }
 
+
+def _communication_begin_action(request: dict[str, Any]) -> dict[str, Any]:
+    """Atomically claim an assured action for one external dispatch attempt."""
+    from .communication import CommunicationStore
+
+    action_id = str(request.get("action_id") or "").strip()
+    if not action_id:
+        raise ValueError("communication_begin_action requires action_id")
+    store_path = request.get("store_path")
+    if store_path is not None and not isinstance(store_path, str):
+        raise ValueError("communication store_path must be a string")
+    with CommunicationStore(store_path) as store:
+        claimed = store.begin_action_execution(action_id)
+        action = store.get_action(action_id)
+    return {
+        "schema_version": BRIDGE_SCHEMA,
+        "ok": True,
+        "action_id": action_id,
+        "claimed": claimed,
+        "execution_state": (action or {}).get("execution_state"),
+        "local_only": True,
+        "provider_call_performed": False,
+    }
+
+
+def _communication_fail_action(request: dict[str, Any]) -> dict[str, Any]:
+    """Record an observed OpenClaw dispatch exception."""
+    from .communication import CommunicationStore
+
+    action_id = str(request.get("action_id") or "").strip()
+    if not action_id:
+        raise ValueError("communication_fail_action requires action_id")
+    store_path = request.get("store_path")
+    if store_path is not None and not isinstance(store_path, str):
+        raise ValueError("communication store_path must be a string")
+    error = str(request.get("error") or "delivery_failed")
+    with CommunicationStore(store_path) as store:
+        recorded = store.fail_dispatch(action_id, error=error)
+        action = store.get_action(action_id)
+    return {
+        "schema_version": BRIDGE_SCHEMA,
+        "ok": True,
+        "action_id": action_id,
+        "recorded": recorded,
+        "execution_state": (action or {}).get("execution_state"),
+        "local_only": True,
+        "provider_call_performed": False,
+    }
+
 def handle_request(request: dict[str, Any]) -> dict[str, Any]:
     operation = request.get("operation")
     if operation == "health":
@@ -2349,6 +2398,10 @@ def handle_request(request: dict[str, Any]) -> dict[str, Any]:
         return _communication_resolve_taste(request)
     if operation == "communication_memory_status":
         return _communication_memory_status(request)
+    if operation == "communication_begin_action":
+        return _communication_begin_action(request)
+    if operation == "communication_fail_action":
+        return _communication_fail_action(request)
     raise ValueError(f"unsupported operation: {operation!r}")
 
 
