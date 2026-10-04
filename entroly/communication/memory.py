@@ -258,9 +258,10 @@ class CommunicationMemory:
         agent_id = _scope_agent_id(scope_type, scope_id)
         with self._lock:
             context = self.fabric.memory_os.recall(
-                "communication taste preference style",
+                "",
                 agent_id=agent_id,
                 budget=max(128, min(int(budget), 8192)),
+                tier="episodic",
                 include_shared=False,
             )
         profiles: list[CommunicationTaste] = []
