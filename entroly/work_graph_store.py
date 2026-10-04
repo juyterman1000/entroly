@@ -44,10 +44,16 @@ class WorkGraphStateError(WorkGraphStoreError):
 def continuation_outstanding_refs(view: dict[str, Any]) -> list[str]:
     """Select bounded durable references for a continuation proof.
 
-    Changed paths and failures are the most actionable references. A clean
-    explicitly claimed task has neither, so its stable task IDs are the
-    evidence-backed fallback that prevents a valid handoff from becoming an
-    empty, non-resumable proof.
+    Explicitly recorded outstanding work comes first: it is the one reference
+    that states what the next agent should *do*, rather than where previous work
+    happened. It was omitted here only because ``resume`` did not project it --
+    the attribute was stored on the workstream node and never read back -- which
+    is why the fallback chain below used to start at changed paths.
+
+    Changed paths and failures remain the next most actionable references. A
+    clean explicitly claimed task has none of the three, so its stable task IDs
+    are the evidence-backed fallback that prevents a valid handoff from becoming
+    an empty, non-resumable proof.
     """
     def string_values(value: Any) -> list[str]:
         return value if isinstance(value, list) else []
@@ -55,6 +61,7 @@ def continuation_outstanding_refs(view: dict[str, Any]) -> list[str]:
     selected = view.get("selected_workstream")
     task_ids = selected.get("task_ids", []) if isinstance(selected, dict) else []
     values = [
+        *string_values(view.get("outstanding_work")),
         *string_values(view.get("changed_paths")),
         *string_values(view.get("failures")),
         *string_values(task_ids),
