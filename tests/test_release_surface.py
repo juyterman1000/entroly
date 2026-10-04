@@ -76,7 +76,7 @@ def test_built_mcpb_matches_source_and_is_reproducible(tmp_path: Path) -> None:
 #: version first with
 #:     clawhub package validate integrations/openclaw --openclaw-version <ver>
 OPENCLAW_MANIFEST_TOP_LEVEL_KEYS = frozenset(
-    {"id", "activation", "name", "description", "icon", "configSchema"}
+    {"id", "kind", "activation", "name", "description", "icon", "configSchema"}
 )
 
 
@@ -88,6 +88,7 @@ def test_openclaw_manifest_has_no_unsupported_top_level_fields() -> None:
     into a local failure naming the offending field.
     """
     manifest = _read_json("integrations/openclaw/openclaw.plugin.json")
+    assert manifest["kind"] == "context-engine"
     unexpected = sorted(set(manifest) - OPENCLAW_MANIFEST_TOP_LEVEL_KEYS)
     assert not unexpected, (
         f"openclaw.plugin.json has top-level field(s) {unexpected} that ClawHub "
