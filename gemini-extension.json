@@ -1,6 +1,6 @@
 {
   "name": "entroly",
-  "version": "1.0.85",
+  "version": "1.0.86",
   "description": "Evidence operations and bounded context selection for Gemini CLI.",
   "contextFileName": "GEMINI.md",
   "mcpServers": {

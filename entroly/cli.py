@@ -61,7 +61,7 @@ from pathlib import Path
 try:
     from entroly import __version__
 except ImportError:
-    __version__ = "1.0.85"
+    __version__ = "1.0.86"
 
 from entroly.config import (
     load_active_tuning_config as _load_active_tuning_config,
@@ -4192,7 +4192,7 @@ def cmd_doctor(args):
         # to compiling an ancient sdist. Bust the cache + upgrade pip
         # first — that fixes it without any compile.
         print(f"    {C.GRAY}Fix:  python -m pip install --no-cache-dir -U pip && "
-              f"python -m pip install --no-cache-dir -U \"entroly-core>=1.0.85\"{C.RESET}")
+              f"python -m pip install --no-cache-dir -U \"entroly-core>=1.0.86\"{C.RESET}")
         print(f"    {C.GRAY}(If pip still compiles from source and fails on "
               f"a new Python, your pip is too old to{C.RESET}")
         print(f"    {C.GRAY} match the abi3 wheel — upgrading pip is the "

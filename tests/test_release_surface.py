@@ -14,13 +14,15 @@ from scripts._release_artifacts import MCPB_BUNDLE, MCPB_MANIFEST, rebuild_mcpb
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RELEASE_VERSION = "1.0.85"
+RELEASE_VERSION = "1.0.86"
 HOMEBREW_FORMULA_VERSION = "1.0.85"
 HOMEBREW_FORMULA_URL = (
     "https://files.pythonhosted.org/packages/38/89/ad182f4b8b18a3f52a4e458f6b"
     "7ca6637f0a37de8e258a0d9610a1e5b1b0/entroly-1.0.85.tar.gz"
 )
 HOMEBREW_FORMULA_SHA256 = "5791dbd0371f69dc92f81709c7de26166152916005c97021850db95b7f54ee27"
+SCOOP_MANIFEST_VERSION = "1.0.85"
+SCOOP_MANIFEST_SHA256 = "1f5301c6c043915566e90856fa79b51296c9004dc4958c02e86a670024d5781d"
 CANONICAL_MCP_NAME = "io.github.juyterman1000/entroly"
 CANONICAL_REPOSITORY = "https://github.com/juyterman1000/entroly"
 
@@ -40,7 +42,7 @@ def _read_project_metadata(path: str) -> dict[str, object]:
     return read_project_metadata(path)
 
 
-def test_public_package_versions_are_1_0_85() -> None:
+def test_public_package_versions_are_1_0_86() -> None:
     assert _read_project_metadata("pyproject.toml")["version"] == RELEASE_VERSION
     assert _read_project_metadata("entroly/pyproject.toml")["version"] == RELEASE_VERSION
     assert _read_json("entroly/npm/package.json")["version"] == RELEASE_VERSION
@@ -263,13 +265,11 @@ def test_scoop_manifest_targets_verified_release_binary() -> None:
     )
     release = manifest["architecture"]["64bit"]
 
-    assert manifest["version"] == RELEASE_VERSION
+    assert manifest["version"] == SCOOP_MANIFEST_VERSION
     assert release["url"].endswith(
-        f"/entroly-v{RELEASE_VERSION}/entroly-rs-x86_64-pc-windows-msvc.zip"
+        f"/entroly-v{SCOOP_MANIFEST_VERSION}/entroly-rs-x86_64-pc-windows-msvc.zip"
     )
-    assert release["hash"] == (
-        "1f5301c6c043915566e90856fa79b51296c9004dc4958c02e86a670024d5781d"
-    )
+    assert release["hash"] == SCOOP_MANIFEST_SHA256
     assert manifest["autoupdate"]["hash"]["url"] == "$url.sha256"
 
 
