@@ -63,6 +63,11 @@ class CommunicationPolicy:
             and proposal.conversation_kind != "group"
         ):
             return "ambiguous", ("scope:group_not_verified",)
+        if (
+            proposal.action_type == "reply"
+            and proposal.conversation_kind != "direct"
+        ):
+            return "ambiguous", ("scope:direct_not_verified",)
         if proposal.risk_class in {"high", "unknown"}:
             return "approval_required", (f"risk:{proposal.risk_class}",)
         if proposal.category in set(self.approval_categories):
