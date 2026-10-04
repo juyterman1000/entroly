@@ -6,7 +6,7 @@ import {
   formatCommunicationStatus,
 } from "../communication-hooks.js";
 
-function fixture() {
+function fixture(config = {}) {
   const requests = [];
   const warnings = [];
   const bridge = {
@@ -29,6 +29,7 @@ function fixture() {
     config: {
       communicationStorePath: "/private/communication.sqlite3",
       communicationRetentionDays: 90,
+      ...config,
     },
     logger: { warn: (message) => warnings.push(message) },
   });
@@ -140,6 +141,32 @@ test("failed outbound observation remains failed evidence", () => {
 
   assert.equal(requests[0].event.delivery_state, "failed");
   assert.equal(requests[0].event.metadata.delivery_error, "network error");
+});
+
+test("taste learning opt-in is forwarded for bridge restart recovery", () => {
+  const { hooks, requests } = fixture({
+    communicationTasteLearning: true,
+    communicationTasteAutotuneIntervalSeconds: 45,
+  });
+
+  hooks.onMessageReceived(
+    { content: "hello", messageId: "m-learning" },
+    { channelId: "whatsapp", conversationId: "chat-learning" },
+  );
+
+  assert.equal(requests[0].taste_learning_enabled, true);
+  assert.equal(requests[0].taste_autotune_interval_s, 45);
+});
+
+test("taste learning remains disabled by default on ingestion", () => {
+  const { hooks, requests } = fixture();
+
+  hooks.onMessageReceived(
+    { content: "hello", messageId: "m-default" },
+    { channelId: "whatsapp", conversationId: "chat-default" },
+  );
+
+  assert.equal(requests[0].taste_learning_enabled, false);
 });
 
 test("communication status is scalar and explains explicit opt in", async () => {
