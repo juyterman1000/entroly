@@ -38,3 +38,14 @@ def test_unexposed_queue_means_no_transitive_delivery_path() -> None:
         module = row.rust_module_if_shared
         assert module not in ctx["core_reachable"]
         assert module not in ctx["wasm_reachable"]
+
+
+def test_jetbrains_plugin_is_classified_as_a_shipped_host() -> None:
+    source = _row(
+        "extensions/jetbrains/src/main/java/io/github/juyterman1000/entroly/"
+        "EntrolyMcpConfig.java"
+    )
+    build = _row("extensions/jetbrains/build.gradle.kts")
+    assert source.canonical_owner == matrix.JAVA_HOST
+    assert source.public_entrypoints == "JetBrains plugin"
+    assert build.canonical_owner == matrix.TESTS_DOCS_PACKAGING
