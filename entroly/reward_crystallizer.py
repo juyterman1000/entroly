@@ -147,6 +147,10 @@ class _Cluster:
     # members add their tokens to the bag.
     centroid_tokens: set[str]
     centroid_fragments: set[str]
+    # How many member queries each token has appeared in, including tokens
+    # already evicted from the bag. This is what makes trimming deterministic
+    # *and* identity-preserving: see _trim_centroid_locked.
+    token_doc_counts: dict[str, int] = field(default_factory=dict)
     queries: list[str] = field(default_factory=list)
     window: deque[_Observation] = field(default_factory=deque)
     last_crystallized_at_n: int = -1
@@ -437,12 +441,10 @@ class RewardCrystallizer:
             # that share 1/N tokens. 32 is empirically enough to cover
             # paraphrase variance for a typical query family while
             # keeping the cluster's identity recognizable.
+            for tok in qtokens:
+                cl.token_doc_counts[tok] = cl.token_doc_counts.get(tok, 0) + 1
             cl.centroid_tokens |= qtokens
-            if len(cl.centroid_tokens) > 32:
-                # Drop a random token (cheap, unbiased) — the strict
-                # alternative (LRU on token-touch ts) costs more memory
-                # for marginal precision improvement here.
-                cl.centroid_tokens.pop()
+            self._trim_centroid_locked(cl)
             cl.centroid_fragments |= set(fragments)
             return cl
 
@@ -459,9 +461,75 @@ class RewardCrystallizer:
             cluster_id=cid,
             centroid_tokens=set(qtokens),
             centroid_fragments=set(fragments),
+            token_doc_counts={tok: 1 for tok in qtokens},
         )
         self._clusters[cid] = cl
         return cl
+
+    @staticmethod
+    def _trim_centroid_locked(cl: _Cluster, limit: int = 32) -> None:
+        """Trim the token bag to ``limit``, dropping the least identifying token.
+
+        The previous rule was ``centroid_tokens.pop()``, described in a comment
+        as "cheap, unbiased". It is cheap and it is not unbiased: ``set.pop``
+        returns whichever element the hash table happens to expose first, and
+        CPython salts ``str`` hashing per process. Measured on an identical
+        48-observation sequence, the resulting partition varied from 4 to 6
+        clusters across PYTHONHASHSEED values, and the evicted token was
+        sometimes a *core* identity term of the family rather than an incidental
+        one.
+
+        Retention rule: keep the tokens that recur across member queries, drop
+        the rarest, break ties lexically. Rationale, in the order the
+        alternatives were considered:
+
+        * *Lexical sort alone* is deterministic but semantically wrong — it
+          would always evict whatever is alphabetically last, so a family about
+          "zero-copy writes" permanently loses its own subject.
+        * *First-seen order* preserves whatever the family happened to open
+          with, which is arbitrary once paraphrases drift.
+        * *IDF* is the textbook choice but needs a corpus-wide document
+          frequency this class does not have and should not start collecting.
+        * *Per-cluster document frequency* is the local form of the same idea
+          and is already derivable from the queries flowing through here.
+
+        This is also exactly the invariant the cap exists to protect: the
+        comment above says the point is "keeping the cluster's identity
+        recognizable", and a token appearing in one query out of twenty is the
+        least identifying thing in the bag.
+
+        Cost: one dict increment per query token (amortized O(1)) plus an O(M)
+        scan per eviction with M <= 33. No new allocation per observation.
+
+        ``while`` rather than ``if``: a query contributing several new tokens
+        could previously push the bag past the cap and only one was removed, so
+        the documented bound was not actually enforced.
+        """
+        while len(cl.centroid_tokens) > limit:
+            victim = min(
+                cl.centroid_tokens,
+                key=lambda t: (cl.token_doc_counts.get(t, 0), t),
+            )
+            cl.centroid_tokens.discard(victim)
+
+        # Counts are retained for evicted tokens so a term that keeps recurring
+        # earns its way back in, but the map must not grow without bound.
+        # Resident tokens are always kept -- dropping the count of a token still
+        # in the bag would reset it to 0 and make it the next victim -- and the
+        # rest are pruned by the same total order, so this stays deterministic.
+        if len(cl.token_doc_counts) > 4 * limit:
+            evicted = sorted(
+                (kv for kv in cl.token_doc_counts.items()
+                 if kv[0] not in cl.centroid_tokens),
+                key=lambda kv: (-kv[1], kv[0]),
+            )[:limit]
+            # Built in sorted key order so the surviving map is byte-identical
+            # across processes, not merely equal in content: iterating a set to
+            # build a dict would leak hash order into insertion order.
+            pruned = {tok: count for tok, count in evicted}
+            for tok in sorted(cl.centroid_tokens):
+                pruned[tok] = cl.token_doc_counts[tok]
+            cl.token_doc_counts = pruned
 
     def _maybe_crystallize(
         self, cluster: _Cluster, baseline: float

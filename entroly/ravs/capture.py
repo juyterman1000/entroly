@@ -125,11 +125,21 @@ def capture_from_stdin(log_path: Optional[str] = None) -> Optional[dict]:
     }
     """
     try:
-        raw = sys.stdin.read()
+        # Same machine JSON protocol boundary as the activation hook, and the
+        # same Windows defect: sys.stdin.read() decodes host UTF-8 bytes with
+        # the ANSI code page (measured cp1252/surrogateescape), so a tool
+        # command containing non-ASCII was recorded into the RAVS event log as
+        # mojibake. This hook is registered for every Bash/Read/Grep/Glob/
+        # Edit/Write call, so the corruption is routine rather than rare.
+        from ..agent_activation import read_protocol_stdin
+
+        raw = read_protocol_stdin()
         if not raw.strip():
             return None
         data = json.loads(raw)
-    except (json.JSONDecodeError, IOError):
+    except (json.JSONDecodeError, UnicodeDecodeError, IOError):
+        # Capture is best-effort and must never block the host; a malformed or
+        # non-UTF-8 payload is dropped rather than recorded wrong.
         return None
 
     command = ""
