@@ -136,7 +136,92 @@
         "default": 90,
         "title": "Communication Evidence Retention",
         "description": "Days to retain raw local communication evidence. Set 0 to disable automatic pruning."
+      },
+      "communicationMemoryPath": {
+        "type": "string",
+        "minLength": 1,
+        "title": "Communication Memory Path",
+        "description": "Optional absolute path for Entroly MemoryOS communication-taste state. By default it lives beside the private communication store."
+      },
+      "communicationPolicyMode": {
+        "type": "string",
+        "enum": [
+          "observe",
+          "suggest",
+          "approve",
+          "bounded"
+        ],
+        "default": "observe",
+        "title": "Communication Delegation Mode",
+        "description": "Highest communication autonomy allowed by Entroly. bounded still requires explicit allowed action/category lists; observe is the safe default."
+      },
+      "communicationAutoActions": {
+        "type": "array",
+        "uniqueItems": true,
+        "default": [],
+        "items": {
+          "type": "string",
+          "enum": [
+            "reply",
+            "group_reply",
+            "react"
+          ]
+        },
+        "title": "Delegated Communication Actions",
+        "description": "Action types eligible for automatic ALLOW decisions only when communicationPolicyMode=bounded. Does not itself enable sending."
+      },
+      "communicationAutoCategories": {
+        "type": "array",
+        "uniqueItems": true,
+        "default": [],
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "title": "Delegated Communication Categories",
+        "description": "Low-risk categories eligible for automatic ALLOW decisions in bounded mode, such as birthday_wish. Unknown/high-risk content still fails closed."
+      },
+      "communicationExecution": {
+        "type": "boolean",
+        "default": false,
+        "title": "Enable Bounded Communication Execution",
+        "description": "Expose Entroly's optional current-conversation text execution tool. Off by default; requires an ALLOW decision, atomic dispatch claim, owner authority, and OpenClaw host-bound delivery."
       }
+    }
+  },
+  "contracts": {
+    "tools": [
+      "entroly_communication_brief",
+      "entroly_communication_assure",
+      "entroly_communication_execute",
+      "entroly_communication_taste"
+    ]
+  },
+  "toolMetadata": {
+    "entroly_communication_brief": {
+      "optional": true,
+      "profiles": [
+        "messaging"
+      ]
+    },
+    "entroly_communication_assure": {
+      "optional": true,
+      "profiles": [
+        "messaging"
+      ]
+    },
+    "entroly_communication_execute": {
+      "optional": true,
+      "profiles": [
+        "messaging"
+      ]
+    },
+    "entroly_communication_taste": {
+      "optional": true,
+      "profiles": [
+        "messaging"
+      ]
     }
   }
 }
