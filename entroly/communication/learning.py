@@ -28,7 +28,7 @@ import tempfile
 import threading
 import time
 from collections import Counter
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
@@ -67,6 +67,23 @@ SAFE_FEEDBACK_SOURCES = {
     "explicit_correction",
     "owner_rewrite",
 }
+HUMAN_GROUNDED_OUTBOUND_SOURCES = {
+    "openclaw.human_message_sent",
+    "host_human_action",
+    "owner_authored",
+}
+
+
+def is_human_grounded_outbound(event: CommunicationEvent) -> bool:
+    metadata = dict(event.metadata)
+    return (
+        event.direction == "outbound"
+        and event.event_type == "message"
+        and bool(event.content.strip())
+        and metadata.get("human_authored") is True
+        and event.source in HUMAN_GROUNDED_OUTBOUND_SOURCES
+    )
+
 _TOKEN_RE = re.compile(r"[\w']+", re.UNICODE)
 _EMOJI_PATTERN = re.compile("[\U0001F300-\U0001FAFF\u2600-\u27BF]")
 
@@ -258,6 +275,7 @@ class CommunicationFeedback:
     source: str
     evidence_event_ids: tuple[str, ...]
     created_at: float
+    receipt_id: str = ""
     schema: str = FEEDBACK_SCHEMA
 
     def to_dict(self) -> dict[str, Any]:
@@ -355,7 +373,7 @@ class CommunicationTasteOptimizer:
         }
         return SelectedTasteEvidence(selected_ids, feature_mean, weights)
 
-    def append_feedback(
+    def prepare_feedback(
         self,
         *,
         scope_type: str,
@@ -365,6 +383,7 @@ class CommunicationTasteOptimizer:
         source: str,
         evidence_event_ids: Sequence[str] = (),
     ) -> CommunicationFeedback:
+        """Prepare a feedback episode without making it learnable yet."""
         if source not in SAFE_FEEDBACK_SOURCES:
             raise CommunicationStateError(
                 "communication taste feedback must be explicitly user-grounded"
@@ -397,7 +416,7 @@ class CommunicationTasteOptimizer:
             "source": source,
             "evidence": evidence,
         }
-        feedback = CommunicationFeedback(
+        return CommunicationFeedback(
             feedback_id="commfb_" + sha256_text(canonical_json(material))[:40],
             scope_type=scope_type,
             scope_id_hash=scope_hash,
@@ -407,17 +426,37 @@ class CommunicationTasteOptimizer:
             evidence_event_ids=evidence,
             created_at=time.time(),
         )
+
+    def append_feedback(
+        self,
+        feedback: CommunicationFeedback,
+        *,
+        receipt_id: str,
+    ) -> CommunicationFeedback:
+        """Append only feedback already bound to a signed communication receipt."""
+        receipt_id = str(receipt_id or "").strip()
+        if not receipt_id.startswith("commrcpt_"):
+            raise CommunicationStateError(
+                "communication taste feedback requires a signed receipt id"
+            )
+        committed = replace(feedback, receipt_id=receipt_id)
         self.journal_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         if os.name == "posix":
             self.journal_path.parent.chmod(0o700)
         with self._lock:
+            existing_ids = {
+                str(item.get("feedback_id") or "")
+                for item in self._load_feedback()
+            }
+            if committed.feedback_id in existing_ids:
+                return committed
             with self.journal_path.open("a", encoding="utf-8") as handle:
-                handle.write(canonical_json(feedback.to_dict()) + "\n")
+                handle.write(canonical_json(committed.to_dict()) + "\n")
                 handle.flush()
                 os.fsync(handle.fileno())
             if os.name == "posix":
                 self.journal_path.chmod(0o600)
-        return feedback
+        return committed
 
     def _load_feedback(self) -> list[dict[str, Any]]:
         cutoff = time.time() - MAX_JOURNAL_AGE_S
@@ -432,6 +471,7 @@ class CommunicationTasteOptimizer:
                     if (
                         isinstance(item, dict)
                         and item.get("schema") == FEEDBACK_SCHEMA
+                        and str(item.get("receipt_id") or "").startswith("commrcpt_")
                         and float(item.get("created_at", 0.0) or 0.0) >= cutoff
                     ):
                         items.append(item)
@@ -484,8 +524,14 @@ class CommunicationTasteOptimizer:
             "spectral_energy": [],
         }
 
-    def process_pending(self, *, max_items: int = 100) -> dict[str, Any]:
-        """Apply unprocessed verified feedback through PRISM 5D."""
+    def process_pending(
+        self,
+        *,
+        receipt_store: Any | None = None,
+        receipt_ledger: Any | None = None,
+        max_items: int = 100,
+    ) -> dict[str, Any]:
+        """Apply only signed-receipt-bound feedback through PRISM 5D."""
         with self._lock:
             processed = set(self._state.get("processed_feedback_ids", []))
             episodes = [
@@ -493,9 +539,52 @@ class CommunicationTasteOptimizer:
                 for item in self._load_feedback()
                 if str(item.get("feedback_id") or "") not in processed
             ][: max(1, min(int(max_items), 1000))]
+            if episodes and (receipt_store is None or receipt_ledger is None):
+                return {
+                    "processed": 0,
+                    "remaining": len(episodes),
+                    "blocked": len(episodes),
+                    "reason": "signed_receipt_verifier_required",
+                    "last_diagnostic": None,
+                }
             updates = 0
             last_diagnostic: dict[str, Any] | None = None
             for item in episodes:
+                receipt_id = str(item.get("receipt_id") or "")
+                bound = receipt_ledger.get_verified(receipt_store, receipt_id)
+                if bound is None:
+                    raise CommunicationStateError(
+                        f"communication learning receipt is missing: {receipt_id}"
+                    )
+                receipt = bound.get("receipt")
+                if not isinstance(receipt, dict):
+                    raise CommunicationStateError(
+                        "communication learning receipt payload is invalid"
+                    )
+                expected_evidence = sorted(
+                    str(value)
+                    for value in item.get("evidence_event_ids", [])
+                    if str(value)
+                )
+                receipt_evidence = sorted(
+                    str(value.get("event_id") or "")
+                    for value in receipt.get("source_evidence", [])
+                    if isinstance(value, dict) and str(value.get("event_id") or "")
+                )
+                checks = (
+                    receipt.get("kind") == "communication_taste_feedback",
+                    receipt.get("feedback_id") == item.get("feedback_id"),
+                    receipt.get("scope_id_hash") == item.get("scope_id_hash"),
+                    receipt.get("source") == item.get("source"),
+                    float(receipt.get("reward", 0.0)) == float(item.get("reward", 0.0)),
+                    list(receipt.get("feature_vector") or [])
+                    == list(item.get("feature_vector") or []),
+                    receipt_evidence == expected_evidence,
+                )
+                if not all(checks):
+                    raise CommunicationStateError(
+                        f"communication learning receipt does not bind feedback: {receipt_id}"
+                    )
                 feedback_id = str(item.get("feedback_id") or "")
                 scope_key = str(item.get("scope_id_hash") or "")
                 if not feedback_id or not scope_key:
@@ -569,9 +658,7 @@ class CommunicationTasteOptimizer:
             [
                 event
                 for event in events
-                if event.direction == "outbound"
-                and event.event_type == "message"
-                and event.content.strip()
+                if is_human_grounded_outbound(event)
                 and event.timestamp is not None
             ],
             key=lambda event: (float(event.timestamp or 0), event.event_id),
@@ -694,13 +781,15 @@ class CommunicationTasteOptimizer:
         *,
         scope_type: str = "owner",
         scope_id: str = "owner-global",
+        receipt_store: Any | None = None,
+        receipt_ledger: Any | None = None,
     ) -> dict[str, Any]:
-        online = self.process_pending()
-        last_count = int(self._state.get("last_autotune_event_count", 0) or 0)
-        outbound_count = sum(
-            event.direction == "outbound" and event.event_type == "message"
-            for event in events
+        online = self.process_pending(
+            receipt_store=receipt_store,
+            receipt_ledger=receipt_ledger,
         )
+        last_count = int(self._state.get("last_autotune_event_count", 0) or 0)
+        outbound_count = sum(is_human_grounded_outbound(event) for event in events)
         autotune: dict[str, Any] = {
             "status": "unchanged",
             "promoted": False,
