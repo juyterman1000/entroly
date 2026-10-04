@@ -24,7 +24,7 @@ Sections:
   F-12  CHECKPOINT CRASH SIM    delete checkpoint mid-way, expect graceful resume fail
   F-13  LARGE BUDGET            selection stays within budget and source corpus
   F-14  TINY BUDGET             budget << smallest fragment → still returns something
-  F-15  RECALL vs OPTIMIZE      recall and optimize see same fragment universe
+  F-15  RECALL vs OPTIMIZE      both outputs trace to ingested fragments
   F-16  MIXED FEEDBACK          success then failure nets neutral or down
   F-17  PREFETCH PREDICTION     after co-access patterns, prefetch predicts correctly
   F-18  ZERO QUERY              empty query string handled gracefully
@@ -632,7 +632,7 @@ def test_tiny_budget():
 # ══════════════════════════════════════════════════════════════════════════════
 
 def test_recall_vs_optimize_universe():
-    section("F-15  RECALL vs OPTIMIZE  —  same fragment universe")
+    section("F-15  RECALL vs OPTIMIZE  —  both trace to ingested fragments")
     engine, _ = fresh_engine()
     sources = real_sources()
     ids = ingest_corpus(engine, sources)
@@ -640,18 +640,37 @@ def test_recall_vs_optimize_universe():
     Q = "optimization entropy scoring fragment relevance"
 
     recall_ids  = {r["fragment_id"] for r in engine.recall_relevant(Q, top_k=50)}
-    opt_ids     = {f["id"] for f in
-                   engine.optimize_context(token_budget=500_000, query=Q)
-                   .get("selected", [])}
+    selected = opt_selected(engine.optimize_context(token_budget=500_000, query=Q))
+    # QCCR emits one synthetic ID per source file; its source_fragment_ids
+    # carry the native ingestion IDs. Other selectors return native IDs.
+    opt_ids = {
+        origin_id
+        for fragment in selected
+        for origin_id in (
+            fragment.get("source_fragment_ids") or []
+            if str(fragment.get("id", "")).startswith("qccr::")
+            else [fragment["id"]]
+        )
+    }
     ingested_ids = set(v for v in ids.values() if v)
 
-    # All recalled/optimized IDs must come from the ingested set
+    # Every selected output must have a valid source and a nonempty lineage.
     assert check("all recall IDs are from ingested corpus",
-          recall_ids <= ingested_ids,
-          f"extra={recall_ids - ingested_ids}")
-    assert check("all optimize IDs are from ingested corpus",
+           recall_ids <= ingested_ids,
+           f"extra={recall_ids - ingested_ids}")
+    assert check("all optimize outputs carry source lineage",
+          bool(selected) and all(
+              fragment.get("source_fragment_ids")
+              if str(fragment.get("id", "")).startswith("qccr::")
+              else fragment.get("id")
+              for fragment in selected
+          ))
+    assert check("all optimize source IDs are from ingested corpus",
           opt_ids <= ingested_ids,
           f"extra={opt_ids - ingested_ids}")
+    assert check("all optimize sources are from ingested corpus",
+          {fragment.get("source") for fragment in selected}
+          <= {str(path) for _, path in sources})
 
 
 # ══════════════════════════════════════════════════════════════════════════════
