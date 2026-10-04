@@ -5955,6 +5955,65 @@ fn py_classify_query_transition(
 }
 
 #[pyfunction]
+#[pyo3(signature = (gradient, state_json=None, learning_rate=0.01))]
+fn py_prism5d_step(
+    gradient: Vec<f64>,
+    state_json: Option<&str>,
+    learning_rate: f64,
+) -> PyResult<String> {
+    if gradient.len() != 5 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            format!("PRISM-5D requires exactly 5 gradient dimensions, got {}", gradient.len())
+        ));
+    }
+    if gradient.iter().any(|value| !value.is_finite()) {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "PRISM-5D gradient values must be finite"
+        ));
+    }
+    if !learning_rate.is_finite() || learning_rate <= 0.0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "PRISM-5D learning_rate must be finite and positive"
+        ));
+    }
+
+    let mut optimizer: PrismOptimizer5D = match state_json {
+        Some(raw) if !raw.trim().is_empty() => serde_json::from_str(raw).map_err(|err| {
+            pyo3::exceptions::PyValueError::new_err(
+                format!("invalid PRISM-5D state JSON: {err}")
+            )
+        })?,
+        _ => PrismOptimizer5D::new(learning_rate),
+    };
+    // A persisted optimizer owns its covariance/history; the caller controls
+    // the step size for this domain without mutating unrelated engine state.
+    optimizer.learning_rate = learning_rate;
+
+    let update = optimizer.compute_update(&gradient);
+    let certificate = optimizer.convergence_certificate();
+    let eigenvalues = optimizer.eigenvalues();
+    let spectral_energy = optimizer.spectral_energy();
+    let serialized = serde_json::to_string(&optimizer).map_err(|err| {
+        pyo3::exceptions::PyValueError::new_err(
+            format!("failed to serialize PRISM-5D state: {err}")
+        )
+    })?;
+
+    Ok(serde_json::json!({
+        "update": update,
+        "state_json": serialized,
+        "condition_number": certificate.condition_number,
+        "effective_rank": certificate.effective_rank,
+        "regret_bound": certificate.regret_bound,
+        "phase": certificate.phase,
+        "steps": certificate.steps,
+        "eigenvalues": eigenvalues,
+        "spectral_energy": spectral_energy,
+    })
+    .to_string())
+}
+
+#[pyfunction]
 fn py_reward_weighted_optimize(
     episodes_json: &str,
     current_weights_json: &str,
@@ -6570,6 +6629,7 @@ fn entroly_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_scan_content, m)?)?;
     m.add_function(wrap_pyfunction!(py_prune_jsonl_by_ts, m)?)?;
     m.add_function(wrap_pyfunction!(py_classify_query_transition, m)?)?;
+    m.add_function(wrap_pyfunction!(py_prism5d_step, m)?)?;
     m.add_function(wrap_pyfunction!(py_reward_weighted_optimize, m)?)?;
     m.add_function(wrap_pyfunction!(py_optimize_task_profiles, m)?)?;
     m.add_function(wrap_pyfunction!(py_classify_learning_query, m)?)?;
