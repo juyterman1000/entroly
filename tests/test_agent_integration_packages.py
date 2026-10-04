@@ -47,6 +47,7 @@ def test_openclaw_remains_a_first_class_context_engine() -> None:
     assert 'api.on("llm_output"' in entry
     assert 'api.on("before_agent_finalize"' in entry
     assert manifest["id"] == "entroly"
+    assert manifest["kind"] == "context-engine"
     assert manifest["activation"]["onStartup"] is True
     assert manifest["configSchema"]["additionalProperties"] is False
     assert 'operation == "assemble"' in bridge
