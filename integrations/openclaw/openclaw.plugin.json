@@ -141,7 +141,7 @@
         "type": "string",
         "minLength": 1,
         "title": "Communication Memory Path",
-        "description": "Optional absolute path for Entroly MemoryOS communication-taste state. By default it lives beside the private communication store."
+        "description": "Optional absolute path for Entroly MemoryOS communication taste state. Defaults to the operating-system user state directory."
       },
       "communicationPolicyMode": {
         "type": "string",
@@ -151,42 +151,66 @@
           "approve",
           "bounded"
         ],
-        "default": "observe",
+        "default": "approve",
         "title": "Communication Delegation Mode",
-        "description": "Highest communication autonomy allowed by Entroly. bounded still requires explicit allowed action/category lists; observe is the safe default."
+        "description": "Controls action assurance. Only bounded mode can return ALLOW for explicitly delegated low-risk categories/actions; other modes require approval for external communication."
       },
       "communicationAutoActions": {
         "type": "array",
         "uniqueItems": true,
+        "maxItems": 3,
         "default": [],
         "items": {
           "type": "string",
           "enum": [
+            "react",
             "reply",
-            "group_reply",
-            "react"
+            "group_reply"
           ]
         },
         "title": "Delegated Communication Actions",
-        "description": "Action types eligible for automatic ALLOW decisions only when communicationPolicyMode=bounded. Does not itself enable sending."
+        "description": "Low-risk action types Entroly may authorize only when communicationPolicyMode is bounded and the message category is also explicitly delegated."
       },
       "communicationAutoCategories": {
         "type": "array",
         "uniqueItems": true,
+        "maxItems": 4,
         "default": [],
         "items": {
           "type": "string",
-          "minLength": 1,
-          "maxLength": 64
+          "enum": [
+            "birthday_wish",
+            "congratulations",
+            "holiday_wish",
+            "thanks"
+          ]
         },
-        "title": "Delegated Communication Categories",
-        "description": "Low-risk categories eligible for automatic ALLOW decisions in bounded mode, such as birthday_wish. Unknown/high-risk content still fails closed."
+        "title": "Delegated Routine Categories",
+        "description": "High-precision routine categories eligible for bounded delegation. Mixed-intent, risky, actionable, or unknown messages remain approval-only."
       },
       "communicationExecution": {
         "type": "boolean",
         "default": false,
         "title": "Enable Bounded Communication Execution",
         "description": "Expose Entroly's optional current-conversation text execution tool. Off by default; requires an ALLOW decision, atomic dispatch claim, owner authority, and OpenClaw host-bound delivery."
+      },
+      "communicationSecretaryTools": {
+        "type": "boolean",
+        "default": false,
+        "title": "Communication Secretary Tools",
+        "description": "Expose owner-bound optional Entroly tools for communication briefs, action assurance, and taste recall. The tools remain optional and must be allowed by OpenClaw tool policy."
+      },
+      "communicationGlobalAccess": {
+        "type": "boolean",
+        "default": false,
+        "title": "Cross-Conversation Secretary Access",
+        "description": "Allow the trusted owner secretary tools to review or preflight across stored conversations. Disabled by default even when communication observation is enabled."
+      },
+      "communicationTasteLearning": {
+        "type": "boolean",
+        "default": false,
+        "title": "Learn Communication Taste",
+        "description": "Allow owner-triggered inference of low-risk style preferences from observed outbound history. Learned taste is evidence-backed and never grants send authority."
       }
     }
   },
