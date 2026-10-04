@@ -64,6 +64,11 @@ function baseRequest(config) {
       config.communicationRetentionDays >= 0
         ? config.communicationRetentionDays
         : undefined,
+    taste_learning_enabled: config.communicationTasteLearning === true,
+    taste_autotune_interval_s:
+      Number.isFinite(config.communicationTasteAutotuneIntervalSeconds)
+        ? config.communicationTasteAutotuneIntervalSeconds
+        : undefined,
   };
 }
 
