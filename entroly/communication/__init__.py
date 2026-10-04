@@ -12,6 +12,7 @@ from .policy import CommunicationPolicy
 from .preferences import (
     CommunicationTaste,
     inferred_taste_may_authorize_action,
+    infer_taste_from_outbound,
     resolve_taste,
 )
 from .memory import (
@@ -47,6 +48,7 @@ __all__ = [
     "CommunicationMemory",
     "resolve_taste",
     "inferred_taste_may_authorize_action",
+    "infer_taste_from_outbound",
     "default_communication_memory_path",
     "resolve_communication_memory_path",
     "CommunicationAssessment",
