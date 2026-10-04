@@ -826,3 +826,48 @@ class CommunicationTasteOptimizer:
                 "learning_rate": self.learning_rate,
                 "authority_surface": "none",
             }
+
+
+def start_communication_taste_autotune_daemon(
+    *,
+    store_path: str | os.PathLike[str] | None = None,
+    receipt_dir: str | os.PathLike[str] | None = None,
+    learning_state_path: str | os.PathLike[str] | None = None,
+    learning_journal_path: str | os.PathLike[str] | None = None,
+    interval_s: float = 30.0,
+) -> threading.Thread:
+    """Run receipt-gated communication taste learning under Entroly autotune."""
+    from ..autotune import start_domain_autotune_daemon
+    from .receipts import CommunicationReceiptLedger
+    from .store import CommunicationStore, resolve_store_path
+
+    resolved_store = resolve_store_path(store_path)
+    optimizer = CommunicationTasteOptimizer(
+        learning_state_path,
+        learning_journal_path,
+    )
+    ledger = CommunicationReceiptLedger(receipt_dir)
+    domain_key = sha256_text(
+        canonical_json(
+            {
+                "store": str(resolved_store),
+                "state": str(optimizer.state_path),
+                "journal": str(optimizer.journal_path),
+            }
+        )
+    )[:16]
+
+    def _tick() -> None:
+        with CommunicationStore(resolved_store) as store:
+            events = store.recent_events(limit=5000)
+            optimizer.daemon_cycle(
+                events,
+                receipt_store=store,
+                receipt_ledger=ledger,
+            )
+
+    return start_domain_autotune_daemon(
+        f"communication-taste-{domain_key}",
+        _tick,
+        interval_s=interval_s,
+    )
