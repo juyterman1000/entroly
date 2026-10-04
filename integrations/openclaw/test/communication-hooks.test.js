@@ -153,3 +153,58 @@ test("communication status is scalar and explains explicit opt in", async () => 
   assert.match(disabled, /disabled/);
   assert.match(disabled, /messageReceived/);
 });
+
+
+test("100 direct birthday observations map to 100 isolated bridge events", () => {
+  const { hooks, requests } = fixture();
+
+  for (let index = 0; index < 100; index += 1) {
+    hooks.onMessageReceived(
+      {
+        content: "Happy birthday!",
+        senderId: `person-${String(index).padStart(3, "0")}`,
+        messageId: `birthday-${String(index).padStart(3, "0")}`,
+      },
+      {
+        channelId: "whatsapp",
+        accountId: "personal",
+        conversationId: `dm-${String(index).padStart(3, "0")}`,
+      },
+    );
+  }
+
+  assert.equal(requests.length, 100);
+  assert.equal(new Set(requests.map((item) => item.event.conversation_id)).size, 100);
+  assert.equal(new Set(requests.map((item) => item.event.message_id)).size, 100);
+  assert.ok(requests.every((item) => item.event.conversation_kind === "unknown"));
+});
+
+test("100 verified group birthday observations remain in one group scope", () => {
+  const { hooks, requests } = fixture();
+
+  for (let index = 0; index < 100; index += 1) {
+    hooks.onMessageReceived(
+      {
+        content: "Happy birthday!",
+        senderId: `member-${String(index).padStart(3, "0")}`,
+        messageId: `group-birthday-${String(index).padStart(3, "0")}`,
+        isGroup: true,
+      },
+      {
+        channelId: "whatsapp",
+        accountId: "personal",
+        conversationId: "family-birthday-group",
+      },
+    );
+  }
+
+  assert.equal(requests.length, 100);
+  assert.ok(
+    requests.every(
+      (item) =>
+        item.event.conversation_id === "family-birthday-group" &&
+        item.event.conversation_kind === "group",
+    ),
+  );
+  assert.equal(new Set(requests.map((item) => item.event.sender_id)).size, 100);
+});
