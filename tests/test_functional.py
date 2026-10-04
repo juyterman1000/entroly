@@ -731,29 +731,26 @@ def test_prefetch_prediction():
     engine, _ = fresh_engine()
     sources = real_sources()
 
-    # Build co-access: ingest server.py and knapsack.py always together
-    server_path  = next((p for _, p in sources if "server.py"  in str(p)), None)
-    knapsack_path = next((p for _, p in sources if "knapsack.py" in str(p)), None)
-
-    if not server_path or not knapsack_path:
-        skip("prefetch prediction", "required source files not in corpus")
-        return
+    # Use two shipped sources so this contract cannot silently skip after a rename.
+    server_path = next((p for _, p in sources if p.name == "server.py"), None)
+    config_path = next((p for _, p in sources if p.name == "config.py"), None)
+    assert server_path is not None and config_path is not None
 
     server_content   = server_path.read_text(encoding="utf-8", errors="replace")
-    knapsack_content = knapsack_path.read_text(encoding="utf-8", errors="replace")
+    config_content = config_path.read_text(encoding="utf-8", errors="replace")
 
     # Ingest both files once (for content availability)
     engine.ingest_fragment(server_content,   source=str(server_path),
                            token_count=max(1, len(server_content) // 4))
-    engine.ingest_fragment(knapsack_content, source=str(knapsack_path),
-                           token_count=max(1, len(knapsack_content) // 4))
+    engine.ingest_fragment(config_content, source=str(config_path),
+                           token_count=max(1, len(config_content) // 4))
 
     # Simulate 5 co-access sessions by directly recording access patterns.
     # Ingest deduplicates identical content, so record_access only fires once
     # per unique fragment. We test the prefetch co-access learning directly.
     for turn in range(5):
         engine._prefetch.record_access(str(server_path), turn)
-        engine._prefetch.record_access(str(knapsack_path), turn)
+        engine._prefetch.record_access(str(config_path), turn)
 
     # Pass empty source_content to isolate co-access learning from static
     # import analysis (server.py has many stdlib imports that fill max_results
@@ -761,10 +758,10 @@ def test_prefetch_prediction():
     predictions = engine.prefetch_related(str(server_path), source_content="")
     assert check("prefetch_related returns a list", isinstance(predictions, list))
 
-    # After seeing server.py 5× always with knapsack.py, knapsack should appear
+    # After seeing server.py 5× always with config.py, config should appear.
     predicted_paths = [p.get("path", "") for p in predictions]
-    assert check("prefetch predicts knapsack.py as co-accessed with server.py",
-          any("knapsack" in pp for pp in predicted_paths),
+    assert check("prefetch predicts config.py as co-accessed with server.py",
+          str(config_path) in predicted_paths,
           f"predictions={predicted_paths[:3]}")
 
 
