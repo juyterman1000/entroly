@@ -23,9 +23,6 @@ TESTS_DIR = pathlib.Path(__file__).parent
 # Known debt at the time this guard was installed. Only ever edit these numbers
 # DOWNWARD. A new entry here must be justified in review.
 LEGACY_ASSERTIONLESS: dict[str, int] = {
-    "test_deep_functional.py": 32,
-    "test_intensive_functional.py": 22,
-    "test_functional.py": 18,
     "test_comprehensive_eval.py": 15,
     "test_ios.py": 3,
     "test_pagerank_integration.py": 3,

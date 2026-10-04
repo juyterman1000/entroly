@@ -129,7 +129,7 @@ def test_token_count_accuracy():
 
     r = engine.ingest_fragment(content, source=str(path), token_count=tc_given)
     tc_returned = r.get("token_count", -1)
-    check("returned token_count matches given token_count",
+    assert check("returned token_count matches given token_count",
           tc_returned == tc_given, f"given={tc_given}, got={tc_returned}")
 
 
@@ -166,7 +166,7 @@ def test_feedback_idempotency():
                      for f in opt3.get("selected", []) if f.get("id") == fid),
                     score_1x)
 
-    check("score after 2× success >= score after 1× success",
+    assert check("score after 2× success >= score after 1× success",
           score_2x >= score_1x,
           f"1x={score_1x:.4f}, 2x={score_2x:.4f}")
 
@@ -191,14 +191,14 @@ def test_relevance_ordering():
     ids1 = [f["id"] for f in selected]
     opt2 = engine.optimize_context(token_budget=500_000, query="knapsack entropy scoring decay")
     ids2 = [f["id"] for f in opt2.get("selected", [])]
-    check("optimize result order is deterministic (same query → same order)",
+    assert check("optimize result order is deterministic (same query → same order)",
           ids1 == ids2, f"run1={ids1[:3]}, run2={ids2[:3]}")
 
     # Pinned/Critical fragments (auto-pinned) must come before unimportant fragments.
     # The first fragment must have relevance >= last fragment (priority ordering respects relevance
     # among equal-criticality items)
     scores = [f.get("relevance", 0.0) for f in selected]
-    check("first fragment relevance >= last fragment relevance",
+    assert check("first fragment relevance >= last fragment relevance",
           scores[0] >= scores[-1],
           f"first={scores[0]:.4f}, last={scores[-1]:.4f}")
 
@@ -214,21 +214,21 @@ def test_checkpoint_file_format():
     load_all(engine, real_sources())
     ckpt_path = engine.checkpoint()
 
-    check("checkpoint file exists", os.path.isfile(ckpt_path), f"path={ckpt_path}")
-    check("checkpoint has .json.gz extension", ckpt_path.endswith(".json.gz"))
+    assert check("checkpoint file exists", os.path.isfile(ckpt_path), f"path={ckpt_path}")
+    assert check("checkpoint has .json.gz extension", ckpt_path.endswith(".json.gz"))
 
     try:
         with gzip.open(ckpt_path, "rt", encoding="utf-8") as f:
             data = json.load(f)
-        check("checkpoint is valid JSON", True)
+        assert check("checkpoint is valid JSON", True)
     except Exception as e:
-        check("checkpoint is valid JSON", False, str(e))
+        assert check("checkpoint is valid JSON", False, str(e))
         return
 
     for key in ("checkpoint_id", "timestamp", "current_turn", "fragments"):
-        check(f"checkpoint has key '{key}'", key in data, f"keys={list(data.keys())}")
+        assert check(f"checkpoint has key '{key}'", key in data, f"keys={list(data.keys())}")
 
-    check("checkpoint.fragments is a list", isinstance(data["fragments"], list))
+    assert check("checkpoint.fragments is a list", isinstance(data["fragments"], list))
 
     # The Rust engine stores full engine state in metadata.engine_state (not fragments[]).
     # Reason: Rust memory layout is binary-serialized via export_state/import_state.
@@ -239,19 +239,19 @@ def test_checkpoint_file_format():
     )
     has_python_frags = len(data["fragments"]) > 0
 
-    check("checkpoint has fragment data (Rust: engine_state; Python: fragments[])",
+    assert check("checkpoint has fragment data (Rust: engine_state; Python: fragments[])",
           has_rust_state or has_python_frags,
           f"has_engine_state={has_rust_state}, frag_count={len(data['fragments'])}")
 
     if has_rust_state:
         engine_state = data["metadata"]["engine_state"]
-        check("Rust engine_state is non-empty", bool(engine_state),
+        assert check("Rust engine_state is non-empty", bool(engine_state),
               f"type={type(engine_state).__name__}")
     elif has_python_frags:
         # Validate fragment schema for Python path
         frag = data["fragments"][0]
         for fkey in ("fragment_id", "content", "token_count", "source"):
-            check(f"fragment has key '{fkey}'", fkey in frag)
+            assert check(f"fragment has key '{fkey}'", fkey in frag)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -275,20 +275,20 @@ def test_resume_full_state():
     # Resume into a fresh engine pointing at the same dir
     engine2, _ = fresh_engine(tmp=tmp)
     r = engine2.resume()
-    check("resume returns 'resumed' status", r.get("status") == "resumed",
+    assert check("resume returns 'resumed' status", r.get("status") == "resumed",
           f"status={r.get('status')}")
 
     # Feedback still functions on resumed engine
     opt2 = engine2.optimize_context(token_budget=500_000, query="optimization")
     sel2 = opt2.get("selected", [])
-    check("resumed engine can run optimize", len(sel2) > 0, f"count={len(sel2)}")
+    assert check("resumed engine can run optimize", len(sel2) > 0, f"count={len(sel2)}")
 
     if sel2:
         try:
             engine2.record_success([sel2[0]["id"]])
-            check("record_success works on resumed engine", True)
+            assert check("record_success works on resumed engine", True)
         except Exception as e:
-            check("record_success works on resumed engine", False, str(e))
+            assert check("record_success works on resumed engine", False, str(e))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -309,13 +309,13 @@ def test_multi_checkpoint_cycle():
              or stats.get("session", {}).get("total_fragments", 0))
         frag_counts.append(n)
 
-    check("fragment count is stable across 5 checkpoint cycles",
+    assert check("fragment count is stable across 5 checkpoint cycles",
           len(set(frag_counts)) == 1,
           f"counts={frag_counts}")
 
     # Disk usage: only last 3 checkpoints kept (default retention)
     gz_files = list(Path(tmp).glob("ckpt_*.json.gz"))
-    check("checkpoint retention ≤ 5 files", len(gz_files) <= 5,
+    assert check("checkpoint retention ≤ 5 files", len(gz_files) <= 5,
           f"files={len(gz_files)}")
 
 
@@ -336,10 +336,10 @@ def test_budget_utilization_math():
         if util_rep is not None and eff > 0:
             util_calc = used / eff
             close = abs(util_rep - util_calc) < 0.001
-            check(f"budget={budget:,}: utilization={util_rep:.4f} == {used}/{eff}",
+            assert check(f"budget={budget:,}: utilization={util_rep:.4f} == {used}/{eff}",
                   close, f"calc={util_calc:.4f}, reported={util_rep:.4f}")
         else:
-            check(f"budget={budget:,}: has utilization field", util_rep is not None)
+            assert check(f"budget={budget:,}: has utilization field", util_rep is not None)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -363,11 +363,11 @@ def test_sufficiency_contract():
         suf = exp.get("sufficiency", None)
         if suf is not None:
             qlabel = query[:20]
-            check(f"query={qlabel!r}: sufficiency in [0,1]",
+            assert check(f"query={qlabel!r}: sufficiency in [0,1]",
                   0.0 <= suf <= 1.0, f"sufficiency={suf}")
         else:
             qlabel = query[:20]
-            check(f"query={qlabel!r}: explain_selection returns dict",
+            assert check(f"query={qlabel!r}: explain_selection returns dict",
                   isinstance(exp, dict))
 
 
@@ -384,19 +384,19 @@ def test_provenance_chain():
     # Rust engine: provenance is exposed via explain_selection (included[].reason)
     exp = engine.explain_selection()
     included = exp.get("included", [])
-    check("explain_selection returns included list",
+    assert check("explain_selection returns included list",
           isinstance(included, list), f"keys={list(exp.keys())[:6]}")
 
     if included:
         frag_exp = included[0]
         has_reason = "reason" in frag_exp or "why" in frag_exp or "selection_reason" in frag_exp
-        check("explain_selection fragment has reason/why field",
+        assert check("explain_selection fragment has reason/why field",
               has_reason, f"keys={list(frag_exp.keys())[:8]}")
     else:
         # No included fragments (all pinned path) — verify at least the method is set
         method = exp.get("method", engine.optimize_context(
             token_budget=200_000, query="knapsack").get("method", ""))
-        check("provenance: selection method is documented", bool(method), f"method={method}")
+        assert check("provenance: selection method is documented", bool(method), f"method={method}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -425,7 +425,7 @@ def test_entropy_signal():
 
     ent_low  = r_low.get("entropy_score",  0.0)
     ent_high = r_high.get("entropy_score", 0.0)
-    check("repetitive boilerplate has lower entropy than complex logic",
+    assert check("repetitive boilerplate has lower entropy than complex logic",
           ent_low < ent_high,
           f"boilerplate={ent_low:.4f}, knapsack_rs={ent_high:.4f}")
 
@@ -462,7 +462,7 @@ def test_advance_turn_decay():
     score_t10 = recency_score()
 
     if score_t0 is not None and score_t10 is not None:
-        check("score after 10 turns < score at ingest (decay occurred)",
+        assert check("score after 10 turns < score at ingest (decay occurred)",
               score_t10 < score_t0,
               f"t0={score_t0:.4f}, t10={score_t10:.4f}")
     else:
@@ -506,7 +506,7 @@ def test_stats_after_eviction():
     n_after = frag_count()
 
     # Either evicted OR if auto-pin kicked in (Critical file), count stays same
-    check("fragment count unchanged or reduced after decay past threshold",
+    assert check("fragment count unchanged or reduced after decay past threshold",
           n_after <= n_before,
           f"before={n_before}, after={n_after}")
 
@@ -537,7 +537,7 @@ def test_record_success_monotone():
 
     if len(scores) >= 2:
         non_decreasing = all(scores[i] <= scores[i + 1] for i in range(len(scores) - 1))
-        check("relevance after N successes is monotonically non-decreasing",
+        assert check("relevance after N successes is monotonically non-decreasing",
               non_decreasing,
               f"scores={[round(s, 4) for s in scores]}")
 
@@ -557,10 +557,10 @@ def test_dedup_tokens_saved():
     engine.ingest_fragment(content, source=str(path), token_count=tc)
     r2 = engine.ingest_fragment(content, source=str(path), token_count=tc)
 
-    check("duplicate status", r2.get("status") == "duplicate",
+    assert check("duplicate status", r2.get("status") == "duplicate",
           f"status={r2.get('status')}")
     saved = r2.get("tokens_saved", 0)
-    check("tokens_saved > 0 on duplicate", saved > 0, f"tokens_saved={saved}")
+    assert check("tokens_saved > 0 on duplicate", saved > 0, f"tokens_saved={saved}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -576,16 +576,16 @@ def test_optimize_fields_contract():
     required = ["method", "total_tokens", "total_relevance", "selected_count",
                 "tokens_saved", "selected"]
     for key in required:
-        check(f"optimize result has '{key}'", key in opt,
+        assert check(f"optimize result has '{key}'", key in opt,
               f"keys={list(opt.keys())}")
 
     # selected list: each item must have 'id' and at least 'source' or 'content'
     selected = opt.get("selected", [])
     if selected:
         frag = selected[0]
-        check("selected fragment has 'id'", "id" in frag, f"keys={list(frag.keys())}")
+        assert check("selected fragment has 'id'", "id" in frag, f"keys={list(frag.keys())}")
         has_source = "source" in frag or "path" in frag
-        check("selected fragment has 'source' or 'path'", has_source,
+        assert check("selected fragment has 'source' or 'path'", has_source,
               f"keys={list(frag.keys())}")
 
 
@@ -603,13 +603,13 @@ def test_recall_top_k_exact():
     r5  = engine.recall_relevant(Q, top_k=5)
     r10 = engine.recall_relevant(Q, top_k=10)
     r50 = engine.recall_relevant(Q, top_k=50)
-    check("top_k=5: got ≤ 5 results",  len(r5)  <= 5,  f"got={len(r5)}")
-    check("top_k=10: got ≤ 10 results", len(r10) <= 10, f"got={len(r10)}")
-    check("top_k=50: got ≤ 50 results", len(r50) <= 50, f"got={len(r50)}")
+    assert check("top_k=5: got ≤ 5 results",  len(r5)  <= 5,  f"got={len(r5)}")
+    assert check("top_k=10: got ≤ 10 results", len(r10) <= 10, f"got={len(r10)}")
+    assert check("top_k=50: got ≤ 50 results", len(r50) <= 50, f"got={len(r50)}")
     # Larger top_k never returns fewer results than smaller top_k
-    check("top_k=50 returns ≥ top_k=5 count (monotone in k)", len(r50) >= len(r5),
+    assert check("top_k=50 returns ≥ top_k=5 count (monotone in k)", len(r50) >= len(r5),
           f"k5={len(r5)}, k50={len(r50)}")
-    check("top_k=10 returns ≥ top_k=5 count", len(r10) >= len(r5),
+    assert check("top_k=10 returns ≥ top_k=5 count", len(r10) >= len(r5),
           f"k5={len(r5)}, k10={len(r10)}")
 
 
@@ -624,17 +624,17 @@ def test_recall_scores_ordered():
     # Use the multi-file corpus — force a query that the LSH will probe broadly
     # If only 1 result comes back (all others below threshold), we verify it's a list
     r = engine.recall_relevant("knapsack optimization entropy scoring", top_k=20)
-    check("recall returns a list", isinstance(r, list))
+    assert check("recall returns a list", isinstance(r, list))
     if len(r) < 2:
         # Only 1 (or 0) result: the threshold filtered the rest. Not a bug — verify
         # the single result is a dict with expected keys
         if r:
-            check("single recall result has fragment_id",
+            assert check("single recall result has fragment_id",
                   "fragment_id" in r[0], f"keys={list(r[0].keys())[:5]}")
         return
     scores = [x.get("relevance", x.get("score", 0.0)) for x in r]
     is_desc = all(scores[i] >= scores[i + 1] for i in range(len(scores) - 1))
-    check("recall scores are in descending order", is_desc,
+    assert check("recall scores are in descending order", is_desc,
           f"scores={[round(s, 4) for s in scores[:5]]}")
 
 
@@ -660,9 +660,9 @@ def test_stats_after_feedback():
     n2 = (stats2.get("total_fragments")
           or stats2.get("session", {}).get("total_fragments", 0))
 
-    check("fragment count unchanged after pure feedback (no eviction)",
+    assert check("fragment count unchanged after pure feedback (no eviction)",
           n1 == n2, f"before={n1}, after={n2}")
-    check("get_stats returns dict both times",
+    assert check("get_stats returns dict both times",
           isinstance(stats1, dict) and isinstance(stats2, dict))
 
 
@@ -683,7 +683,7 @@ def test_config_propagates():
     r_strict = engine_strict.recall_relevant(Q, top_k=20)
     r_open   = engine_open.recall_relevant(Q, top_k=20)
 
-    check("strict threshold returns ≤ results than open threshold",
+    assert check("strict threshold returns ≤ results than open threshold",
           len(r_strict) <= len(r_open),
           f"strict={len(r_strict)}, open={len(r_open)}")
 
@@ -699,15 +699,15 @@ def test_empty_record_success():
 
     try:
         engine.record_success([])
-        check("record_success([]) does not crash", True)
+        assert check("record_success([]) does not crash", True)
     except Exception as e:
-        check("record_success([]) does not crash", False, str(e))
+        assert check("record_success([]) does not crash", False, str(e))
 
     try:
         engine.record_failure([])
-        check("record_failure([]) does not crash", True)
+        assert check("record_failure([]) does not crash", True)
     except Exception as e:
-        check("record_failure([]) does not crash", False, str(e))
+        assert check("record_failure([]) does not crash", False, str(e))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -720,15 +720,15 @@ def test_unknown_fragment_id():
 
     try:
         engine.record_success(["nonexistent_id_xyz_does_not_exist"])
-        check("record_success with unknown ID does not crash", True)
+        assert check("record_success with unknown ID does not crash", True)
     except Exception as e:
-        check("record_success with unknown ID does not crash", False, str(e))
+        assert check("record_success with unknown ID does not crash", False, str(e))
 
     try:
         engine.record_failure(["nonexistent_id_xyz_does_not_exist"])
-        check("record_failure with unknown ID does not crash", True)
+        assert check("record_failure with unknown ID does not crash", True)
     except Exception as e:
-        check("record_failure with unknown ID does not crash", False, str(e))
+        assert check("record_failure with unknown ID does not crash", False, str(e))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -758,7 +758,7 @@ def test_large_corpus_performance():
          or total.get("session", {}).get("total_fragments", 0))
 
     # Corpus must contain at least the base sources
-    check(f"corpus has ≥ {n_sources} fragments", n >= n_sources,
+    assert check(f"corpus has ≥ {n_sources} fragments", n >= n_sources,
           f"ingested={ingested}, in_store={n}")
 
     # Performance: optimize must complete in < 2 seconds on the real corpus
@@ -767,13 +767,13 @@ def test_large_corpus_performance():
                                   query="optimization entropy scoring knapsack")
     elapsed = time.perf_counter() - t0
 
-    check(f"optimize {n} fragments completes in < 2.0 s",
+    assert check(f"optimize {n} fragments completes in < 2.0 s",
           elapsed < 2.0, f"elapsed={elapsed:.3f}s, fragments={n}")
-    check("large optimize returns valid result",
+    assert check("large optimize returns valid result",
           isinstance(opt, dict) and "total_tokens" in opt)
 
     # Bonus: verify optimize result is still correct at scale (not degenerate)
-    check("optimize at scale returns ≥ 1 fragment",
+    assert check("optimize at scale returns ≥ 1 fragment",
           opt.get("selected_count", 0) >= 1, f"count={opt.get('selected_count')}")
 
 
@@ -797,6 +797,7 @@ def _entroly_version() -> str:
 
 
 def run():
+    global failed
     print("══════════════════════════════════════════════════════════════")
     print(f"  Entroly {_entroly_version()} — Intensive Functional Test Suite")
     print(f"  Corpus: {len(real_sources())} real project files")
@@ -828,9 +829,12 @@ def run():
     ]
 
     for t in tests:
+        failures_before = failed
         try:
             t()
         except Exception as exc:
+            if failed == failures_before:
+                failed += 1
             import traceback
             print(f"\n  EXCEPTION in {t.__name__}: {exc}", file=sys.stderr)
             traceback.print_exc(file=sys.stderr)
