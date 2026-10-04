@@ -29,6 +29,7 @@
   "files": [
     "bridge-client.js",
     "communication-hooks.js",
+    "communication-tools.js",
     "engine.js",
     "index.js",
     "proof-hooks.js",
@@ -37,7 +38,7 @@
   ],
   "scripts": {
     "test": "node --test test/*.test.js",
-    "check": "node --check bridge-client.js && node --check engine.js && node --check proof-hooks.js && node --check index.js",
+    "check": "node --check bridge-client.js && node --check communication-hooks.js && node --check communication-tools.js && node --check engine.js && node --check proof-hooks.js && node --check index.js",
     "pack:check": "npm pack --dry-run"
   },
   "peerDependencies": {
