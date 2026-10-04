@@ -86,13 +86,13 @@ def opt_selected(opt: dict) -> list[dict]:
 def opt_total_tokens(opt: dict) -> int:
     """Extract total_tokens from an optimize result."""
     stats = opt.get("optimization_stats", {})
-    return stats.get("total_tokens", opt.get("total_tokens", 0))
+    return opt.get("total_tokens", stats.get("total_tokens", 0))
 
 
 def opt_effective_budget(opt: dict, fallback: int) -> int:
     """Extract effective budget from an optimize result."""
     stats = opt.get("optimization_stats", {})
-    return stats.get("effective_budget", opt.get("effective_budget", fallback))
+    return opt.get("effective_budget", stats.get("effective_budget", fallback))
 
 
 # ── Corpus helpers ────────────────────────────────────────────────────────────
@@ -362,9 +362,15 @@ def test_multi_turn_lifecycle():
         assert check(f"turn {turn+1}: budget not exceeded",
               used <= opt_effective_budget(opt, 30_000),
               f"used={used:,}")
-        assert check(f"turn {turn+1}: at least 1 fragment selected",
-              len(selected) >= 1,
-              f"count={len(selected)}")
+        assert check(f"turn {turn+1}: selection or explicit no-match",
+              bool(selected) or (
+                  opt.get("status") == "no_match"
+                  and bool(opt.get("no_match", {}).get("reason"))
+              ),
+              f"count={len(selected)}, status={opt.get('status')}")
+        if not selected:
+            assert check(f"turn {turn+1}: no-match uses no context tokens",
+                  used == 0, f"used={used}")
 
         # Give positive feedback on top fragment
         if selected:

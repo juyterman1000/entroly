@@ -379,10 +379,16 @@ def test_provenance_chain():
     section("F-27", "PROVENANCE CHAIN — engine tracks WHY each fragment was selected")
     engine, _ = fresh_engine()
     load_all(engine, real_sources())
-    engine.optimize_context(token_budget=200_000, query="knapsack optimization budget")
+    opt = engine.optimize_context(token_budget=200_000, query="knapsack optimization budget")
 
     # Rust engine: provenance is exposed via explain_selection (included[].reason)
     exp = engine.explain_selection()
+    if not engine._use_rust:
+        assert check("fallback explicitly reports unavailable explainability",
+              exp.get("error") == "Explainability requires Rust engine")
+        assert check("fallback optimization still names its method",
+              bool(opt.get("method")))
+        return
     included = exp.get("included", [])
     assert check("explain_selection returns included list",
           isinstance(included, list), f"keys={list(exp.keys())[:6]}")

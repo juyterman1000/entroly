@@ -807,8 +807,26 @@ def apply_no_match_contract(
     result["selected_count"] = len(pinned)
     result["tokens_used"] = sum(int(f.get("token_count", 0) or 0) for f in pinned)
     result["total_tokens"] = result["tokens_used"]
+    result["total_relevance"] = round(
+        sum(float(f.get("relevance", f.get("relevance_score", 0)) or 0) for f in pinned),
+        4,
+    )
     result["tokens_saved"] = 0
     result["tokens_saved_this_call"] = 0
+    stats = result.get("optimization_stats")
+    if isinstance(stats, dict):
+        stats["total_tokens"] = result["total_tokens"]
+        stats["selected_count"] = result["selected_count"]
+        stats["total_relevance"] = result["total_relevance"]
+    effective_budget = result.get("effective_budget")
+    if effective_budget is None and isinstance(stats, dict):
+        effective_budget = stats.get("effective_budget")
+    if isinstance(effective_budget, (int, float)) and effective_budget > 0:
+        utilization = round(result["total_tokens"] / effective_budget, 4)
+        if "budget_utilization" in result:
+            result["budget_utilization"] = utilization
+        if isinstance(stats, dict) and "budget_utilization" in stats:
+            stats["budget_utilization"] = utilization
     considered_count = result.get("total_fragments", 0) or 0
 
     # Two different situations reach this point and they need different answers.
@@ -3034,7 +3052,7 @@ class EntrolyEngine:
             frag.turn_last_accessed = self._current_turn
             frag.access_count += 1
 
-        return {
+        result = {
             "selected_fragments": [
                 {
                     "id": f.fragment_id,
@@ -3065,6 +3083,17 @@ class EntrolyEngine:
             "tokens_saved_this_call": max(0, tokens_saved),
             "total_tokens_saved_session": self._total_tokens_saved,
         }
+        # Keep the public optimize shape consistent with the native selector.
+        # The nested stats remain available to existing fallback consumers.
+        result["selected"] = result["selected_fragments"]
+        result["method"] = stats["method"]
+        result["total_relevance"] = stats["total_relevance"]
+        result["effective_budget"] = token_budget
+        result["budget_utilization"] = round(
+            stats["total_tokens"] / max(token_budget, 1), 4
+        )
+        result["tokens_saved"] = max(0, tokens_saved)
+        return result
 
     def _recall_python(self, query, top_k):
         """Python fallback for recall."""
