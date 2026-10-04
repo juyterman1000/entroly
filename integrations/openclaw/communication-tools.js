@@ -177,6 +177,7 @@ export function registerCommunicationTools(api, { bridge, config = {} }) {
               request.conversation_id = trusted.conversationId;
             }
             const result = await bridge.request(request);
+            ctx.assertMemoryAudienceCurrent?.();
 
             const scopes = [
               {
@@ -249,6 +250,7 @@ export function registerCommunicationTools(api, { bridge, config = {} }) {
               source_event_ids: sourceIds(params),
               payload: typeof params.text === "string" ? params.text : "",
             });
+            ctx.assertMemoryAudienceCurrent?.();
             return jsonToolResult(result);
           },
         };
@@ -383,6 +385,7 @@ export function registerCommunicationTools(api, { bridge, config = {} }) {
               owner_authorized: true,
               scopes,
             });
+            ctx.assertMemoryAudienceCurrent?.();
             return jsonToolResult(result);
           },
         };
