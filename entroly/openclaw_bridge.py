@@ -1977,6 +1977,8 @@ def _communication_assure(request: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("communication store_path must be a string")
     if receipt_dir is not None and not isinstance(receipt_dir, str):
         raise ValueError("communication receipt_dir must be a string")
+    if receipt_dir is None and isinstance(store_path, str) and store_path.strip():
+        receipt_dir = str(Path(store_path).expanduser().absolute().parent / "receipts")
     retention = request.get("retention_days")
     action_type = str(request.get("action_type") or "").strip()
     allowed_actions = {"send_message", "reply", "react", "group_reply", "no_action"}
