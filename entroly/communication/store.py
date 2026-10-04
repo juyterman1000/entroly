@@ -590,7 +590,8 @@ class CommunicationStore:
                 """
                 SELECT action_type, channel, account_id, conversation_id,
                        source_event_ids_json, payload_sha256, category, risk_class,
-                       creates_commitment, conversation_kind
+                       creates_commitment, conversation_kind,
+                       execution_state
                 FROM communication_actions WHERE action_id = ?
                 """,
                 (proposal.action_id,),
@@ -599,9 +600,27 @@ class CommunicationStore:
                 raise CommunicationStateError(
                     "idempotent action insert lost stored row"
                 )
-            if tuple(existing) != row[1:11]:
+            if tuple(existing[:10]) != row[1:11]:
                 raise CommunicationStateConflict(
                     "stable action identity was reused with different content"
+                )
+            # A successfully observed send is terminal for duplicate prevention.
+            # Other states may be re-evaluated after an explicit policy change.
+            if existing["execution_state"] != "sent":
+                self._conn.execute(
+                    """
+                    UPDATE communication_actions
+                    SET policy_decision = ?, policy_reasons_json = ?,
+                        execution_state = ?, updated_at = ?
+                    WHERE action_id = ? AND execution_state != 'sent'
+                    """,
+                    (
+                        decision,
+                        row[12],
+                        execution_state,
+                        timestamp,
+                        proposal.action_id,
+                    ),
                 )
             return False
 
