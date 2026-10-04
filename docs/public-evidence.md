@@ -8,7 +8,7 @@ inspect the linked results, and evaluate it on your own repository.
 
 | You want to… | Start here |
 | --- | --- |
-| Select useful context within an explicit budget | [Context Receipts](context-receipts.md): inspect selected evidence, omissions, and ranking reasons. |
+| Select useful context within an explicit budget | [Context Receipts example](examples/context_receipt.md): inspect selected evidence, omissions, and ranking reasons. |
 | Recover evidence after compression | [Context Commits](context-commits.md): replay captured context and verify recovery integrity. |
 | Add context tools to an AI coding client | [MCP setup](mcp-server-guide.html): register the installed `entroly` stdio command. |
 | Apply context controls to provider requests | [Proxy guide](compression-proxy.md): configure forwarding, recovery, and optional verification. |
