@@ -329,3 +329,209 @@ def test_openclaw_bridge_refuses_relative_private_store_path() -> None:
                 "store_path": "relative/private.sqlite3",
             }
         )
+
+
+def test_birthday_burst_100_direct_messages_remain_isolated_and_idempotent(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "birthday-direct.sqlite3"
+    with CommunicationStore(path, retention_days=0) as store:
+        events = [
+            event_from_adapter(
+                {
+                    "direction": "inbound",
+                    "channel": "whatsapp",
+                    "account_id": "personal",
+                    "conversation_id": f"dm-{index:03d}",
+                    "conversation_kind": "direct",
+                    "sender_id": f"person-{index:03d}",
+                    "message_id": f"birthday-{index:03d}",
+                    "timestamp": 1_700_000_000 + index,
+                    "content": "Happy birthday!",
+                    "source": "birthday-scenario",
+                }
+            )
+            for index in range(100)
+        ]
+        assert all(store.record_event(event, observed_at=2_000 + index) for index, event in enumerate(events))
+        assert store.stats()["events"] == 100
+        assert store.stats()["conversations"] == 100
+
+        for index, event in enumerate(events):
+            scoped = store.events_for_scope(
+                channel="whatsapp",
+                account_id="personal",
+                conversation_id=f"dm-{index:03d}",
+            )
+            assert [item.event_id for item in scoped] == [event.event_id]
+            assert scoped[0].sender_id == f"person-{index:03d}"
+
+        # Replaying the full burst must not create a second copy of any message.
+        assert all(
+            store.record_event(event, observed_at=5_000 + index) is False
+            for index, event in enumerate(events)
+        )
+        assert store.stats()["events"] == 100
+
+
+def test_birthday_burst_100_group_messages_share_only_verified_group_scope(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "birthday-group.sqlite3"
+    group_id = "family-birthday-group"
+    with CommunicationStore(path, retention_days=0) as store:
+        events = [
+            event_from_adapter(
+                {
+                    "direction": "inbound",
+                    "channel": "whatsapp",
+                    "account_id": "personal",
+                    "conversation_id": group_id,
+                    "conversation_kind": "group",
+                    "sender_id": f"member-{index:03d}",
+                    "message_id": f"group-birthday-{index:03d}",
+                    "timestamp": 1_700_100_000 + index,
+                    "content": f"Happy birthday from member {index}!",
+                    "source": "birthday-scenario",
+                }
+            )
+            for index in range(100)
+        ]
+        for index, event in enumerate(events):
+            store.record_event(event, observed_at=10_000 + index)
+
+        scoped = store.events_for_scope(
+            channel="whatsapp",
+            account_id="personal",
+            conversation_id=group_id,
+            limit=200,
+        )
+
+        assert len(scoped) == 100
+        assert {item.sender_id for item in scoped} == {
+            f"member-{index:03d}" for index in range(100)
+        }
+        assert all(item.conversation_kind == "group" for item in scoped)
+        assert store.stats()["conversations"] == 1
+
+
+def test_birthday_100_direct_reply_proposals_need_approval_by_default() -> None:
+    policy = CommunicationPolicy()
+    for index in range(100):
+        event = event_from_adapter(
+            {
+                "direction": "inbound",
+                "channel": "whatsapp",
+                "account_id": "personal",
+                "conversation_id": f"dm-{index:03d}",
+                "conversation_kind": "direct",
+                "sender_id": f"person-{index:03d}",
+                "message_id": f"birthday-{index:03d}",
+                "content": "Happy birthday!",
+            }
+        )
+        proposal = CommunicationActionProposal.build(
+            action_type="reply",
+            channel="whatsapp",
+            account_id="personal",
+            conversation_id=f"dm-{index:03d}",
+            conversation_kind="direct",
+            source_event_ids=[event.event_id],
+            payload="Thank you so much!",
+            category="social_ack",
+            risk_class="low",
+        )
+        assert policy.evaluate(proposal, source_events=[event]) == (
+            "approval_required",
+            ("policy:observe",),
+        )
+
+
+def test_birthday_group_reply_is_allowed_only_when_explicitly_delegated_and_verified() -> None:
+    events = [
+        event_from_adapter(
+            {
+                "direction": "inbound",
+                "channel": "whatsapp",
+                "account_id": "personal",
+                "conversation_id": "family-birthday-group",
+                "conversation_kind": "group",
+                "sender_id": f"member-{index:03d}",
+                "message_id": f"group-birthday-{index:03d}",
+                "content": "Happy birthday!",
+            }
+        )
+        for index in range(100)
+    ]
+    proposal = CommunicationActionProposal.build(
+        action_type="group_reply",
+        channel="whatsapp",
+        account_id="personal",
+        conversation_id="family-birthday-group",
+        conversation_kind="group",
+        source_event_ids=[event.event_id for event in events],
+        payload="Thank you everyone for the wishes!",
+        category="social_ack",
+        risk_class="low",
+    )
+    bounded = CommunicationPolicy(
+        mode="bounded",
+        auto_categories=("social_ack",),
+        auto_actions=("group_reply",),
+    )
+
+    assert bounded.evaluate(proposal, source_events=events) == (
+        "allow",
+        ("policy:bounded_allow",),
+    )
+
+    unknown_scope = CommunicationActionProposal.build(
+        action_type="group_reply",
+        channel="whatsapp",
+        account_id="personal",
+        conversation_id="family-birthday-group",
+        conversation_kind="unknown",
+        source_event_ids=[event.event_id for event in events],
+        payload="Thank you everyone for the wishes!",
+        category="social_ack",
+        risk_class="low",
+    )
+    assert bounded.evaluate(unknown_scope, source_events=events) == (
+        "ambiguous",
+        ("scope:group_not_verified",),
+    )
+
+
+def test_birthday_burst_never_reuses_one_chat_evidence_for_another_reply() -> None:
+    event_a = event_from_adapter(
+        {
+            "direction": "inbound",
+            "channel": "whatsapp",
+            "account_id": "personal",
+            "conversation_id": "dm-a",
+            "conversation_kind": "direct",
+            "sender_id": "person-a",
+            "message_id": "birthday-a",
+            "content": "Happy birthday!",
+        }
+    )
+    proposal_b = CommunicationActionProposal.build(
+        action_type="reply",
+        channel="whatsapp",
+        account_id="personal",
+        conversation_id="dm-b",
+        conversation_kind="direct",
+        source_event_ids=[event_a.event_id],
+        payload="Thank you!",
+        category="social_ack",
+        risk_class="low",
+    )
+
+    assert CommunicationPolicy(
+        mode="bounded",
+        auto_categories=("social_ack",),
+        auto_actions=("reply",),
+    ).evaluate(proposal_b, source_events=[event_a]) == (
+        "deny",
+        ("scope:cross_conversation",),
+    )
