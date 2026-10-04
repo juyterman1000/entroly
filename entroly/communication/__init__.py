@@ -20,6 +20,12 @@ from .memory import (
     default_communication_memory_path,
     resolve_communication_memory_path,
 )
+from .learning import (
+    CommunicationTasteOptimizer,
+    SelectedTasteEvidence,
+    default_learning_journal_path,
+    default_learning_state_path,
+)
 from .triage import (
     CommunicationAssessment,
     CommunicationEpisode,
@@ -51,6 +57,10 @@ __all__ = [
     "infer_taste_from_outbound",
     "default_communication_memory_path",
     "resolve_communication_memory_path",
+    "CommunicationTasteOptimizer",
+    "SelectedTasteEvidence",
+    "default_learning_journal_path",
+    "default_learning_state_path",
     "CommunicationAssessment",
     "CommunicationEpisode",
     "assess_event",
