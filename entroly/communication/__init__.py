@@ -26,6 +26,14 @@ from .learning import (
     default_learning_journal_path,
     default_learning_state_path,
 )
+from .receipts import (
+    CommunicationReceiptLedger,
+    action_evidence_verification,
+    build_action_receipt,
+    default_receipt_state_dir,
+    eicv_supports_automatic_action,
+    resolve_receipt_state_dir,
+)
 from .triage import (
     CommunicationAssessment,
     CommunicationEpisode,
@@ -61,6 +69,12 @@ __all__ = [
     "SelectedTasteEvidence",
     "default_learning_journal_path",
     "default_learning_state_path",
+    "CommunicationReceiptLedger",
+    "action_evidence_verification",
+    "build_action_receipt",
+    "default_receipt_state_dir",
+    "eicv_supports_automatic_action",
+    "resolve_receipt_state_dir",
     "CommunicationAssessment",
     "CommunicationEpisode",
     "assess_event",
