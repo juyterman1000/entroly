@@ -1859,8 +1859,14 @@ def _communication_ingest(request: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("communication store_path must be a string")
     retention = request.get("retention_days")
     event = event_from_adapter(raw_event)
+    correlated_action_id = None
     with CommunicationStore(store_path, retention_days=retention) as store:
         inserted = store.record_event(event)
+        if event.direction == "outbound":
+            correlated_action_id = store.correlate_outbound_event(
+                event,
+                error=str(raw_event.get("delivery_error") or ""),
+            )
         stats = store.stats()
     return {
         "schema_version": BRIDGE_SCHEMA,
@@ -1872,11 +1878,11 @@ def _communication_ingest(request: dict[str, Any]) -> dict[str, Any]:
         "identity_strength": event.identity_strength,
         "conversation_kind": event.conversation_kind,
         "inserted": inserted,
+        "correlated_action_id": correlated_action_id,
         "stats": stats,
         "local_only": True,
         "provider_call_performed": False,
     }
-
 
 def _communication_status(request: dict[str, Any]) -> dict[str, Any]:
     """Return scalar store health without exposing message content."""
@@ -1893,6 +1899,187 @@ def _communication_status(request: dict[str, Any]) -> dict[str, Any]:
         "ok": True,
         "communication_schema": stats["schema"],
         "stats": stats,
+        "local_only": True,
+        "provider_call_performed": False,
+    }
+
+
+def _communication_digest(request: dict[str, Any]) -> dict[str, Any]:
+    """Build a bounded secretary digest from authorized local evidence."""
+    from .communication import CommunicationStore, build_digest
+
+    store_path = request.get("store_path")
+    if store_path is not None and not isinstance(store_path, str):
+        raise ValueError("communication store_path must be a string")
+    retention = request.get("retention_days")
+    channel = str(request.get("channel") or "").strip().lower()
+    account_id_raw = request.get("account_id")
+    account_id = None if account_id_raw is None else str(account_id_raw).strip()
+    conversation_id = str(request.get("conversation_id") or "").strip()
+    try:
+        limit = int(request.get("limit", 1000))
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("communication digest limit must be an integer") from exc
+    limit = max(1, min(limit, 10_000))
+
+    with CommunicationStore(store_path, retention_days=retention) as store:
+        if conversation_id:
+            if not channel:
+                raise ValueError("channel is required for conversation-scoped digest")
+            events = store.events_for_scope(
+                channel=channel,
+                account_id=account_id or "",
+                conversation_id=conversation_id,
+                limit=limit,
+            )
+            scope = "conversation"
+        else:
+            if request.get("owner_authorized") is not True:
+                raise PermissionError(
+                    "cross-conversation communication review requires trusted owner authorization"
+                )
+            events = store.recent_events(
+                channel=channel,
+                account_id=account_id,
+                limit=limit,
+            )
+            scope = "owner_global"
+        digest = build_digest(events)
+    return {
+        "schema_version": BRIDGE_SCHEMA,
+        "ok": True,
+        "scope": scope,
+        "digest": digest,
+        "local_only": True,
+        "provider_call_performed": False,
+    }
+
+
+def _communication_assure(request: dict[str, Any]) -> dict[str, Any]:
+    """Evaluate and persist a proposed external communication action."""
+    from .communication import (
+        CommunicationActionProposal,
+        CommunicationPolicy,
+        CommunicationStore,
+        assess_event,
+        combine_category,
+        combine_risk,
+        outgoing_creates_commitment,
+    )
+
+    store_path = request.get("store_path")
+    if store_path is not None and not isinstance(store_path, str):
+        raise ValueError("communication store_path must be a string")
+    retention = request.get("retention_days")
+    action_type = str(request.get("action_type") or "").strip()
+    allowed_actions = {"send_message", "reply", "react", "group_reply", "no_action"}
+    if action_type not in allowed_actions:
+        raise ValueError(f"unsupported communication action_type: {action_type!r}")
+    channel = str(request.get("channel") or "").strip().lower()
+    account_id = str(request.get("account_id") or "").strip()
+    conversation_id = str(request.get("conversation_id") or "").strip()
+    if not channel or not conversation_id:
+        raise ValueError("communication assurance requires trusted channel/conversation scope")
+
+    source_ids_raw = request.get("source_event_ids")
+    if not isinstance(source_ids_raw, list):
+        raise ValueError("source_event_ids must be a list")
+    source_ids = tuple(sorted({str(item).strip() for item in source_ids_raw if str(item).strip()}))
+    if action_type != "no_action" and not source_ids:
+        raise ValueError("external communication actions require source_event_ids")
+    payload = str(request.get("payload") or "")
+
+    mode = str(request.get("policy_mode") or "observe").strip().lower()
+    if mode not in {"observe", "suggest", "approve", "bounded"}:
+        raise ValueError("invalid communication policy_mode")
+    auto_actions_raw = request.get("auto_actions")
+    auto_categories_raw = request.get("auto_categories")
+    auto_actions = tuple(
+        item
+        for item in (
+            str(value).strip()
+            for value in (auto_actions_raw if isinstance(auto_actions_raw, list) else [])
+        )
+        if item in allowed_actions
+    )
+    auto_categories = tuple(
+        sorted(
+            {
+                str(value).strip()
+                for value in (
+                    auto_categories_raw if isinstance(auto_categories_raw, list) else []
+                )
+                if str(value).strip()
+            }
+        )
+    )
+
+    with CommunicationStore(store_path, retention_days=retention) as store:
+        events = []
+        for event_id in source_ids:
+            event = store.get_event(event_id)
+            if event is None:
+                raise ValueError(f"unknown communication source event: {event_id}")
+            events.append(event)
+
+        assessments = [assess_event(event) for event in events]
+        kinds = {event.conversation_kind for event in events}
+        conversation_kind = next(iter(kinds)) if len(kinds) == 1 else "unknown"
+        category = combine_category(assessments)
+        risk_class = combine_risk(assessments)
+        creates_commitment = outgoing_creates_commitment(payload)
+        proposal = CommunicationActionProposal.build(
+            action_type=action_type,  # type: ignore[arg-type]
+            channel=channel,
+            account_id=account_id,
+            conversation_id=conversation_id,
+            conversation_kind=conversation_kind,  # type: ignore[arg-type]
+            source_event_ids=source_ids,
+            payload=payload,
+            category=category,
+            risk_class=risk_class,
+            creates_commitment=creates_commitment,
+        )
+        policy = CommunicationPolicy(
+            mode=mode,  # type: ignore[arg-type]
+            auto_categories=auto_categories,
+            auto_actions=auto_actions,  # type: ignore[arg-type]
+        )
+        decision, reasons = policy.evaluate(
+            proposal,
+            source_events=events,
+            already_handled=store.action_is_handled(proposal.action_id),
+        )
+        state_by_decision = {
+            "allow": "assured",
+            "approval_required": "awaiting_approval",
+            "already_handled": "sent",
+            "deny": "blocked",
+            "ambiguous": "blocked",
+            "insufficient_context": "blocked",
+        }
+        inserted = store.record_action(
+            proposal,
+            decision=decision,
+            reasons=reasons,
+            execution_state=state_by_decision[decision],
+        )
+        action = store.get_action(proposal.action_id)
+
+    return {
+        "schema_version": BRIDGE_SCHEMA,
+        "ok": True,
+        "decision": decision,
+        "reasons": list(reasons),
+        "action_id": proposal.action_id,
+        "action_type": proposal.action_type,
+        "category": proposal.category,
+        "risk_class": proposal.risk_class,
+        "creates_commitment": proposal.creates_commitment,
+        "conversation_kind": proposal.conversation_kind,
+        "source_event_ids": list(proposal.source_event_ids),
+        "inserted": inserted,
+        "execution_state": (action or {}).get("execution_state"),
         "local_only": True,
         "provider_call_performed": False,
     }
@@ -1945,6 +2132,10 @@ def handle_request(request: dict[str, Any]) -> dict[str, Any]:
         return _communication_ingest(request)
     if operation == "communication_status":
         return _communication_status(request)
+    if operation == "communication_digest":
+        return _communication_digest(request)
+    if operation == "communication_assure":
+        return _communication_assure(request)
     raise ValueError(f"unsupported operation: {operation!r}")
 
 
