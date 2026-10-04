@@ -24,7 +24,7 @@
     "model-context-protocol"
   ],
   "engines": {
-    "node": ">=22.19"
+    "node": ">=24.16.0 <25 || >=26.1.0"
   },
   "files": [
     "bridge-client.js",
