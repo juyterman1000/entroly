@@ -1,4 +1,9 @@
-import { textResult } from "openclaw/plugin-sdk/tool-results";
+function textResult(text, details) {
+  return {
+    content: [{ type: "text", text: String(text ?? "") }],
+    details,
+  };
+}
 
 const TOOL_NAMES = [
   "entroly_communication_brief",
