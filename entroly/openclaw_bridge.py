@@ -2084,6 +2084,211 @@ def _communication_assure(request: dict[str, Any]) -> dict[str, Any]:
         "provider_call_performed": False,
     }
 
+
+def _communication_set_taste(request: dict[str, Any]) -> dict[str, Any]:
+    """Replace explicit communication taste for one owner-authorized scope."""
+    from .communication import CommunicationStore, CommunicationTaste
+
+    if request.get("owner_authorized") is not True:
+        raise PermissionError("explicit communication taste requires trusted owner authorization")
+    store_path = request.get("store_path")
+    if store_path is not None and not isinstance(store_path, str):
+        raise ValueError("communication store_path must be a string")
+    scope_type = str(request.get("scope_type") or "").strip()
+    scope_id = str(request.get("scope_id") or "").strip()
+    if scope_type not in {"owner", "contact", "group", "conversation"}:
+        raise ValueError("invalid communication taste scope_type")
+    if not scope_id:
+        raise ValueError("communication taste scope_id is required")
+    profile = request.get("taste")
+    if not isinstance(profile, dict):
+        raise ValueError("communication taste must be an object")
+
+    taste = CommunicationTaste.build(
+        scope_type=scope_type,  # type: ignore[arg-type]
+        scope_id=scope_id,
+        source="explicit",
+        confidence=1.0,
+        preferred_language=str(profile.get("preferred_language") or "adaptive"),
+        formality=str(profile.get("formality") or "adaptive"),
+        response_length=str(profile.get("response_length") or "adaptive"),
+        emoji_level=str(profile.get("emoji_level") or "adaptive"),
+        routine_action=str(profile.get("routine_action") or "none"),
+        preferred_reaction=str(profile.get("preferred_reaction") or ""),
+        greeting_style=str(profile.get("greeting_style") or ""),
+        signoff_style=str(profile.get("signoff_style") or ""),
+        notes=profile.get("notes") if isinstance(profile.get("notes"), dict) else {},
+    )
+    with CommunicationStore(store_path) as store:
+        store.set_explicit_taste(taste)
+    return {
+        "schema_version": BRIDGE_SCHEMA,
+        "ok": True,
+        "profile": taste.to_dict(),
+        "authority_expanded": False,
+        "local_only": True,
+        "provider_call_performed": False,
+    }
+
+
+def _communication_learn_taste(request: dict[str, Any]) -> dict[str, Any]:
+    """Infer low-risk communication style from owner-observed outbound history."""
+    from .communication import (
+        CommunicationMemory,
+        CommunicationStore,
+        infer_taste_from_outbound,
+    )
+
+    if request.get("owner_authorized") is not True:
+        raise PermissionError("communication taste learning requires trusted owner authorization")
+    store_path = request.get("store_path")
+    memory_path = request.get("memory_path")
+    if store_path is not None and not isinstance(store_path, str):
+        raise ValueError("communication store_path must be a string")
+    if memory_path is not None and not isinstance(memory_path, str):
+        raise ValueError("communication memory_path must be a string")
+    scope_type = str(request.get("scope_type") or "").strip()
+    scope_id = str(request.get("scope_id") or "").strip()
+    if scope_type not in {"owner", "contact", "group", "conversation"}:
+        raise ValueError("invalid communication taste scope_type")
+    if not scope_id:
+        raise ValueError("communication taste scope_id is required")
+    channel = str(request.get("channel") or "").strip().lower()
+    account_raw = request.get("account_id")
+    account_id = None if account_raw is None else str(account_raw).strip()
+    try:
+        limit = max(3, min(int(request.get("limit", 200)), 2000))
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("communication taste limit must be an integer") from exc
+
+    with CommunicationStore(store_path) as store:
+        if scope_type in {"group", "conversation"}:
+            if not channel:
+                raise ValueError("channel is required for conversation taste learning")
+            events = store.events_for_scope(
+                channel=channel,
+                account_id=account_id or "",
+                conversation_id=scope_id,
+                limit=limit,
+            )
+        else:
+            events = store.recent_events(
+                channel=channel,
+                account_id=account_id,
+                limit=limit,
+            )
+            if scope_type == "contact":
+                events = [
+                    event
+                    for event in events
+                    if event.sender_id == scope_id or event.recipient_id == scope_id
+                ]
+
+    taste = infer_taste_from_outbound(
+        events,
+        scope_type=scope_type,  # type: ignore[arg-type]
+        scope_id=scope_id,
+    )
+    if taste is None:
+        return {
+            "schema_version": BRIDGE_SCHEMA,
+            "ok": True,
+            "learned": False,
+            "reason": "insufficient_outbound_evidence",
+            "authority_expanded": False,
+            "local_only": True,
+            "provider_call_performed": False,
+        }
+
+    memory = CommunicationMemory(memory_path)
+    remembered = memory.remember_taste(taste)
+    return {
+        "schema_version": BRIDGE_SCHEMA,
+        "ok": True,
+        "learned": True,
+        "profile": taste.to_dict(),
+        "memory": remembered,
+        "authority_expanded": False,
+        "local_only": True,
+        "provider_call_performed": False,
+    }
+
+
+def _communication_resolve_taste(request: dict[str, Any]) -> dict[str, Any]:
+    """Resolve explicit policy + partitioned episodic preference memory."""
+    from .communication import (
+        CommunicationMemory,
+        CommunicationStore,
+        resolve_taste,
+    )
+
+    if request.get("owner_authorized") is not True:
+        raise PermissionError("communication taste recall requires trusted owner authorization")
+    store_path = request.get("store_path")
+    memory_path = request.get("memory_path")
+    if store_path is not None and not isinstance(store_path, str):
+        raise ValueError("communication store_path must be a string")
+    if memory_path is not None and not isinstance(memory_path, str):
+        raise ValueError("communication memory_path must be a string")
+    raw_scopes = request.get("scopes")
+    if not isinstance(raw_scopes, list) or not raw_scopes:
+        raise ValueError("communication taste scopes must be a non-empty list")
+    if len(raw_scopes) > 8:
+        raise ValueError("communication taste scopes are bounded to 8")
+    scopes: list[tuple[str, str]] = []
+    for raw in raw_scopes:
+        if not isinstance(raw, dict):
+            raise ValueError("communication taste scope must be an object")
+        scope_type = str(raw.get("scope_type") or "").strip()
+        scope_id = str(raw.get("scope_id") or "").strip()
+        if scope_type not in {"owner", "contact", "group", "conversation"}:
+            raise ValueError("invalid communication taste scope_type")
+        if not scope_id:
+            raise ValueError("communication taste scope_id is required")
+        scopes.append((scope_type, scope_id))
+
+    memory = CommunicationMemory(memory_path)
+    profiles = []
+    with CommunicationStore(store_path) as store:
+        explicit_by_scope = {
+            (taste.scope_type, taste.scope_id): taste
+            for taste in store.explicit_tastes_for_scopes(scopes)
+        }
+    for scope_type, scope_id in scopes:
+        profiles.extend(
+            memory.recall_tastes(scope_type=scope_type, scope_id=scope_id)
+        )
+        explicit = explicit_by_scope.get((scope_type, scope_id))
+        if explicit is not None:
+            profiles.append(explicit)
+
+    return {
+        "schema_version": BRIDGE_SCHEMA,
+        "ok": True,
+        "resolved": resolve_taste(*profiles),
+        "profiles": [profile.to_dict() for profile in profiles],
+        "memory_layers": [layer.as_dict() for layer in memory.fabric.capabilities()],
+        "authority_expanded": False,
+        "local_only": True,
+        "provider_call_performed": False,
+    }
+
+
+def _communication_memory_status(request: dict[str, Any]) -> dict[str, Any]:
+    from .communication import CommunicationMemory
+
+    memory_path = request.get("memory_path")
+    if memory_path is not None and not isinstance(memory_path, str):
+        raise ValueError("communication memory_path must be a string")
+    memory = CommunicationMemory(memory_path)
+    return {
+        "schema_version": BRIDGE_SCHEMA,
+        "ok": True,
+        "stats": memory.stats(),
+        "local_only": True,
+        "provider_call_performed": False,
+    }
+
 def handle_request(request: dict[str, Any]) -> dict[str, Any]:
     operation = request.get("operation")
     if operation == "health":
@@ -2136,6 +2341,14 @@ def handle_request(request: dict[str, Any]) -> dict[str, Any]:
         return _communication_digest(request)
     if operation == "communication_assure":
         return _communication_assure(request)
+    if operation == "communication_set_taste":
+        return _communication_set_taste(request)
+    if operation == "communication_learn_taste":
+        return _communication_learn_taste(request)
+    if operation == "communication_resolve_taste":
+        return _communication_resolve_taste(request)
+    if operation == "communication_memory_status":
+        return _communication_memory_status(request)
     raise ValueError(f"unsupported operation: {operation!r}")
 
 
