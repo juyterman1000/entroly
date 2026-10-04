@@ -2214,6 +2214,7 @@ def _communication_learn_taste(request: dict[str, Any]) -> dict[str, Any]:
         CommunicationStore,
         CommunicationTasteOptimizer,
         infer_taste_from_outbound,
+        is_human_grounded_outbound,
     )
 
     if request.get("owner_authorized") is not True:
@@ -2273,6 +2274,19 @@ def _communication_learn_taste(request: dict[str, Any]) -> dict[str, Any]:
                     or event.recipient_id == scope_id
                 ]
 
+    events = [event for event in events if is_human_grounded_outbound(event)]
+    if len(events) < 3:
+        return {
+            "schema_version": BRIDGE_SCHEMA,
+            "ok": True,
+            "learned": False,
+            "reason": "insufficient_human_grounded_outbound_evidence",
+            "human_grounded_events": len(events),
+            "authority_expanded": False,
+            "local_only": True,
+            "provider_call_performed": False,
+        }
+
     optimizer = CommunicationTasteOptimizer(
         learning_state_path,
         learning_journal_path,
@@ -2315,6 +2329,173 @@ def _communication_learn_taste(request: dict[str, Any]) -> dict[str, Any]:
         "selection": selection.to_dict(),
         "learning": optimizer.stats(),
         "memory": remembered,
+        "authority_expanded": False,
+        "local_only": True,
+        "provider_call_performed": False,
+    }
+
+
+def _communication_record_taste_feedback(
+    request: dict[str, Any],
+) -> dict[str, Any]:
+    """Persist only owner-grounded, signed-receipt-bound taste feedback."""
+    from .communication import (
+        CommunicationReceiptLedger,
+        CommunicationStore,
+        CommunicationTasteOptimizer,
+        build_learning_receipt,
+    )
+
+    if request.get("owner_authorized") is not True:
+        raise PermissionError(
+            "communication taste feedback requires trusted owner authorization"
+        )
+    store_path = request.get("store_path")
+    receipt_dir = request.get("receipt_dir")
+    learning_state_path = request.get("learning_state_path")
+    learning_journal_path = request.get("learning_journal_path")
+    for label, value in (
+        ("store_path", store_path),
+        ("receipt_dir", receipt_dir),
+        ("learning_state_path", learning_state_path),
+        ("learning_journal_path", learning_journal_path),
+    ):
+        if value is not None and not isinstance(value, str):
+            raise ValueError(f"communication {label} must be a string")
+
+    scope_type = str(request.get("scope_type") or "").strip()
+    scope_id = str(request.get("scope_id") or "").strip()
+    if scope_type not in {"owner", "contact", "group", "conversation"}:
+        raise ValueError("invalid communication taste feedback scope_type")
+    if not scope_id:
+        raise ValueError("communication taste feedback scope_id is required")
+    source = str(request.get("source") or "").strip()
+    try:
+        reward = float(request.get("reward"))
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("communication taste feedback reward must be numeric") from exc
+    raw_ids = request.get("source_event_ids")
+    if not isinstance(raw_ids, list):
+        raise ValueError("communication taste feedback source_event_ids must be a list")
+    source_ids = tuple(
+        sorted({str(value).strip() for value in raw_ids if str(value).strip()})
+    )
+    if len(source_ids) < 3:
+        raise ValueError(
+            "communication taste feedback requires at least three exact evidence events"
+        )
+    query = str(request.get("query") or "").strip()
+
+    optimizer = CommunicationTasteOptimizer(
+        learning_state_path,
+        learning_journal_path,
+    )
+    ledger = CommunicationReceiptLedger(receipt_dir)
+    with CommunicationStore(store_path) as store:
+        events = []
+        for event_id in source_ids:
+            event = store.get_event(event_id)
+            if event is None:
+                raise ValueError(
+                    f"unknown communication taste feedback event: {event_id}"
+                )
+            if scope_type in {"group", "conversation"} and event.conversation_id != scope_id:
+                raise ValueError(
+                    "communication taste feedback crosses conversation scope"
+                )
+            if (
+                scope_type == "contact"
+                and event.sender_id != scope_id
+                and event.recipient_id != scope_id
+            ):
+                raise ValueError(
+                    "communication taste feedback crosses contact scope"
+                )
+            events.append(event)
+
+        selection = optimizer.select_examples(
+            events,
+            scope_type=scope_type,
+            scope_id=scope_id,
+            query=query,
+            top_k=min(64, len(events)),
+        )
+        prepared = optimizer.prepare_feedback(
+            scope_type=scope_type,
+            scope_id=scope_id,
+            reward=reward,
+            selection=selection,
+            source=source,
+            evidence_event_ids=source_ids,
+        )
+        receipt = build_learning_receipt(
+            prepared.to_dict(),
+            selection=selection.to_dict(),
+            source_events=events,
+        )
+        receipt_proof = ledger.record(store, receipt)
+        committed = optimizer.append_feedback(
+            prepared,
+            receipt_id=str(receipt_proof["receipt_id"]),
+        )
+
+    return {
+        "schema_version": BRIDGE_SCHEMA,
+        "ok": True,
+        "feedback": committed.to_dict(),
+        "selection": selection.to_dict(),
+        "receipt": receipt_proof,
+        "queued_for_autotune": True,
+        "authority_expanded": False,
+        "local_only": True,
+        "provider_call_performed": False,
+    }
+
+
+def _communication_start_taste_autotune(
+    request: dict[str, Any],
+) -> dict[str, Any]:
+    """Start Entroly's receipt-gated communication taste autotune domain."""
+    from .communication import start_communication_taste_autotune_daemon
+
+    if request.get("owner_authorized") is not True:
+        raise PermissionError(
+            "communication taste autotune requires trusted owner authorization"
+        )
+    try:
+        interval_s = float(request.get("interval_s", 30.0))
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("communication taste autotune interval must be numeric") from exc
+    thread = start_communication_taste_autotune_daemon(
+        store_path=request.get("store_path"),
+        receipt_dir=request.get("receipt_dir"),
+        learning_state_path=request.get("learning_state_path"),
+        learning_journal_path=request.get("learning_journal_path"),
+        interval_s=interval_s,
+    )
+    return {
+        "schema_version": BRIDGE_SCHEMA,
+        "ok": True,
+        "started": True,
+        "thread_name": thread.name,
+        "alive": thread.is_alive(),
+        "authority_expanded": False,
+        "local_only": True,
+        "provider_call_performed": False,
+    }
+
+
+def _communication_learning_status(request: dict[str, Any]) -> dict[str, Any]:
+    from .communication import CommunicationTasteOptimizer
+
+    optimizer = CommunicationTasteOptimizer(
+        request.get("learning_state_path"),
+        request.get("learning_journal_path"),
+    )
+    return {
+        "schema_version": BRIDGE_SCHEMA,
+        "ok": True,
+        "learning": optimizer.stats(),
         "authority_expanded": False,
         "local_only": True,
         "provider_call_performed": False,
@@ -2500,6 +2681,12 @@ def handle_request(request: dict[str, Any]) -> dict[str, Any]:
         return _communication_set_taste(request)
     if operation == "communication_learn_taste":
         return _communication_learn_taste(request)
+    if operation == "communication_record_taste_feedback":
+        return _communication_record_taste_feedback(request)
+    if operation == "communication_start_taste_autotune":
+        return _communication_start_taste_autotune(request)
+    if operation == "communication_learning_status":
+        return _communication_learning_status(request)
     if operation == "communication_resolve_taste":
         return _communication_resolve_taste(request)
     if operation == "communication_memory_status":
