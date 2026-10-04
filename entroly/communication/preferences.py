@@ -8,9 +8,15 @@ settings; inferred settings must carry evidence and confidence.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Any, Literal, Mapping
+from typing import Any, Literal, Mapping, Sequence
 
-from .models import CommunicationStateError, bounded_string, canonical_json, sha256_text
+from .models import (
+    CommunicationEvent,
+    CommunicationStateError,
+    bounded_string,
+    canonical_json,
+    sha256_text,
+)
 
 PreferenceSource = Literal["default", "explicit", "inferred"]
 PreferenceScope = Literal["owner", "contact", "group", "conversation"]
@@ -172,3 +178,75 @@ def resolve_taste(*profiles: CommunicationTaste) -> dict[str, Any]:
 def inferred_taste_may_authorize_action(_: CommunicationTaste) -> bool:
     """Hard invariant: style inference cannot expand communication authority."""
     return False
+
+
+_EMOJI_PATTERN = __import__("re").compile(
+    "[\U0001F300-\U0001FAFF\u2600-\u27BF]"
+)
+
+
+def infer_taste_from_outbound(
+    events: Sequence[CommunicationEvent],
+    *,
+    scope_type: PreferenceScope,
+    scope_id: str,
+    minimum_samples: int = 3,
+) -> CommunicationTaste | None:
+    """Infer narrow presentation taste from observed owner-authored messages.
+
+    Only low-risk surface traits are inferred. The result never grants action
+    authority and always carries exact evidence IDs.
+    """
+    usable = [
+        event
+        for event in events
+        if event.direction == "outbound"
+        and event.content.strip()
+        and event.event_type == "message"
+    ]
+    # One physical message can be replayed; evidence identity, not row count,
+    # determines sample support.
+    by_id = {event.event_id: event for event in usable}
+    usable = list(by_id.values())
+    if len(usable) < max(3, int(minimum_samples)):
+        return None
+
+    lengths = [len(event.content.strip()) for event in usable]
+    average_length = sum(lengths) / len(lengths)
+    if average_length <= 24:
+        response_length = "very_short"
+    elif average_length <= 96:
+        response_length = "short"
+    else:
+        response_length = "medium"
+
+    emoji_messages = sum(
+        bool(_EMOJI_PATTERN.search(event.content)) for event in usable
+    )
+    emoji_ratio = emoji_messages / len(usable)
+    if emoji_ratio == 0:
+        emoji_level = "none"
+    elif emoji_ratio <= 0.35:
+        emoji_level = "light"
+    else:
+        emoji_level = "expressive"
+
+    confidence = min(0.95, 0.50 + 0.05 * len(usable))
+    evidence_ids = tuple(sorted(by_id))
+    return CommunicationTaste.build(
+        scope_type=scope_type,
+        scope_id=scope_id,
+        source="inferred",
+        confidence=confidence,
+        evidence_event_ids=evidence_ids,
+        response_length=response_length,
+        emoji_level=emoji_level,
+        # Permission-bearing fields stay neutral when inferred.
+        routine_action="none",
+        notes={
+            "sample_count": len(usable),
+            "average_response_chars": round(average_length, 2),
+            "emoji_message_ratio": round(emoji_ratio, 4),
+            "inference_version": 1,
+        },
+    )
