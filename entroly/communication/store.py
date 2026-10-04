@@ -9,7 +9,7 @@ import sqlite3
 import threading
 import time
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 from .models import (
     AssuranceDecision,
@@ -22,6 +22,7 @@ from .models import (
     bounded_metadata,
     bounded_string,
     canonical_json,
+    sha256_text,
 )
 from .preferences import CommunicationTaste
 
