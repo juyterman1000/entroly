@@ -76,7 +76,7 @@ def test_built_mcpb_matches_source_and_is_reproducible(tmp_path: Path) -> None:
 #: version first with
 #:     clawhub package validate integrations/openclaw --openclaw-version <ver>
 OPENCLAW_MANIFEST_TOP_LEVEL_KEYS = frozenset(
-    {"id", "kind", "activation", "name", "description", "icon", "configSchema"}
+    {"id", "kind", "activation", "name", "description", "icon", "configSchema", "contracts", "toolMetadata"}
 )
 
 
