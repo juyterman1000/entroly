@@ -305,6 +305,36 @@ class CommunicationStore:
             ).fetchall()
         return [self._row_to_event(row) for row in rows]
 
+    def recent_events(
+        self,
+        *,
+        channel: str = "",
+        account_id: str | None = None,
+        limit: int = 1000,
+    ) -> list[CommunicationEvent]:
+        """Owner-review retrieval across scopes; callers must enforce authorization."""
+        count = max(1, min(int(limit), 10_000))
+        clauses: list[str] = []
+        values: list[Any] = []
+        if channel:
+            clauses.append("channel = ?")
+            values.append(channel)
+        if account_id is not None:
+            clauses.append("account_id = ?")
+            values.append(account_id)
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        with self._lock:
+            rows = self._conn.execute(
+                f"""
+                SELECT * FROM communication_events
+                {where}
+                ORDER BY observed_at DESC, event_id DESC
+                LIMIT ?
+                """,
+                (*values, count),
+            ).fetchall()
+        return [self._row_to_event(row) for row in rows]
+
     def _row_to_event(self, row: sqlite3.Row) -> CommunicationEvent:
         return CommunicationEvent(
             event_id=row["event_id"],
@@ -472,6 +502,80 @@ class CommunicationStore:
                 (action_id,),
             ).fetchone()
         return row is not None and row["execution_state"] == "sent"
+
+    def correlate_outbound_event(
+        self,
+        event: CommunicationEvent,
+        *,
+        now: float | None = None,
+        window_seconds: float = 300.0,
+        error: str = "",
+    ) -> str | None:
+        """Bind one observed outbound delivery to exactly one allowed proposal.
+
+        Ambiguous matches are intentionally left unresolved rather than risking
+        a false handled state.
+        """
+        if event.direction != "outbound" or not event.content_sha256:
+            return None
+        timestamp = time.time() if now is None else float(now)
+        cutoff = timestamp - max(1.0, float(window_seconds))
+        with self._lock, self._conn:
+            rows = self._conn.execute(
+                """
+                SELECT action_id
+                FROM communication_actions
+                WHERE channel = ?
+                  AND account_id = ?
+                  AND conversation_id = ?
+                  AND payload_sha256 = ?
+                  AND policy_decision = 'allow'
+                  AND execution_state = 'assured'
+                  AND updated_at >= ?
+                ORDER BY updated_at DESC, action_id DESC
+                LIMIT 2
+                """,
+                (
+                    event.channel,
+                    event.account_id,
+                    event.conversation_id,
+                    event.content_sha256,
+                    cutoff,
+                ),
+            ).fetchall()
+            if len(rows) != 1:
+                return None
+            action_id = str(rows[0]["action_id"])
+            self._conn.execute(
+                """
+                UPDATE communication_actions
+                SET execution_state = ?, outbound_message_id = ?,
+                    error = ?, updated_at = ?
+                WHERE action_id = ?
+                """,
+                (
+                    "sent" if event.delivery_state == "sent" else "failed",
+                    bounded_string(event.message_id, 1024),
+                    bounded_string(error, 4096),
+                    timestamp,
+                    action_id,
+                ),
+            )
+            return action_id
+
+    def get_action(self, action_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM communication_actions WHERE action_id = ?",
+                (action_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        result = dict(row)
+        result["source_event_ids"] = json.loads(result.pop("source_event_ids_json"))
+        result["policy_reasons"] = json.loads(result.pop("policy_reasons_json"))
+        result["creates_commitment"] = bool(result["creates_commitment"])
+        return result
 
     def record_action_outcome(
         self,
