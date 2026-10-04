@@ -340,7 +340,7 @@ def test_release_workflow_sanitizes_version_once_and_probes_live_artifacts() -> 
     assert "oven-sh/setup-bun@v2" in text
     assert "pipx==1.16.7 uv==0.12.7" in text
     assert "needs: [release-metadata, probe-npm-openclaw]" in text
-    assert '"openclaw@2026.6.11" "entroly-openclaw@${RELEASE_VERSION}"' in text
+    assert '"openclaw@2026.9.8" "entroly-openclaw@${RELEASE_VERSION}"' in text
     wasm_publisher = text.split("  publish-npm:\n", 1)[1].split(
         "  publish-npm-mcp:\n", 1
     )[0]
