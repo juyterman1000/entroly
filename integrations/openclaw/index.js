@@ -14,6 +14,7 @@ import {
   createCommunicationHooks,
   formatCommunicationStatus,
 } from "./communication-hooks.js";
+import { registerCommunicationTools } from "./communication-tools.js";
 
 export default definePluginEntry({
   id: "entroly",
@@ -54,6 +55,7 @@ export default definePluginEntry({
         });
         api.on("message_received", communicationHooks.onMessageReceived);
         api.on("message_sent", communicationHooks.onMessageSent);
+        registerCommunicationTools(api, { bridge, config });
       }
     }
     if (config.proofGuidedRecovery === true) {
