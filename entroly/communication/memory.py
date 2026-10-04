@@ -108,6 +108,14 @@ def _taste_from_payload(
         return None
 
 
+_AGENT_ROLE_IDS = {
+    "observer": 4101,
+    "triage": 4102,
+    "memory": 4103,
+    "action": 4104,
+}
+
+
 class CommunicationMemory:
     """Durable learned communication preferences on Entroly MemoryFabric."""
 
@@ -135,6 +143,36 @@ class CommunicationMemory:
                 enable_native=enable_native,
             )
 
+    def route_signal(
+        self,
+        *,
+        sender_role: str,
+        receiver_role: str,
+        signal_type: str,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, object]:
+        """Send a metadata-only internal signal through Compliance -> SCHIPC.
+
+        Delivery/suppression is advisory for coordination only. Durable state
+        must never depend on this result.
+        """
+        sender_id = _AGENT_ROLE_IDS.get(sender_role)
+        receiver_id = _AGENT_ROLE_IDS.get(receiver_role)
+        if sender_id is None or receiver_id is None:
+            raise CommunicationStateError("unknown communication agent role")
+        safe_payload = dict(payload or {})
+        # The signal bus should carry commitments/IDs/counts, never raw chat text.
+        for forbidden in ("content", "body", "message", "text", "raw"):
+            safe_payload.pop(forbidden, None)
+        envelope = canonical_json(
+            {
+                "schema": "entroly.communication.signal.v1",
+                "type": str(signal_type or "unknown")[:128],
+                "payload": safe_payload,
+            }
+        )
+        return self.fabric.send_agent_message(sender_id, receiver_id, envelope)
+
     def remember_taste(
         self,
         taste: CommunicationTaste,
@@ -156,6 +194,18 @@ class CommunicationMemory:
             taste.source,
             f"scope:{taste.scope_type}",
         ]
+        signal = self.route_signal(
+            sender_role="triage",
+            receiver_role="memory",
+            signal_type="taste_observation",
+            payload={
+                "scope_type": taste.scope_type,
+                "scope_id_sha256": sha256_text(taste.scope_id)[:24],
+                "profile_id": taste.profile_id,
+                "confidence": float(taste.confidence),
+                "evidence_count": len(taste.evidence_event_ids),
+            },
+        )
         with self._lock:
             memory_id = self.fabric.remember(
                 payload,
@@ -194,6 +244,7 @@ class CommunicationMemory:
             "agent_partition": agent_id,
             "long_term": long_term,
             "authority_expanded": False,
+            "agent_signal": signal,
         }
 
     def recall_tastes(
