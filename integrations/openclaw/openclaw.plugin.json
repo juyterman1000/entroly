@@ -1,5 +1,6 @@
 {
   "id": "entroly",
+  "kind": "context-engine",
   "activation": {
     "onStartup": true
   },
