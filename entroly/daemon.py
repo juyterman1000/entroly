@@ -213,6 +213,9 @@ class EntrolyDaemon:
         self._learning_worker_started_at: float | None = None
         self._learning_worker_stopped_at: float | None = None
         self._learning_worker_exit_reason: str | None = "not_started"
+        self._communication_learning_optimizer: Any = None
+        self._communication_learning_last_result: dict[str, Any] | None = None
+        self._communication_learning_last_error: str | None = None
 
     # ── Lifecycle ──────────────────────────────────────────────────
 
@@ -621,6 +624,22 @@ class EntrolyDaemon:
                                     # Apply improved weights to live engine
                                     self._apply_dreamed_weights()
 
+                        # 3. Run the communication-specific PRISM/autotune
+                        # domain against durable observed outbound behavior.
+                        # This learner has no authority surface: it may only
+                        # alter evidence-selection weights for taste inference.
+                        try:
+                            self._communication_learning_last_result = (
+                                self._run_communication_learning_cycle()
+                            )
+                            self._communication_learning_last_error = None
+                        except Exception as exc:
+                            self._communication_learning_last_error = str(exc)
+                            logger.debug(
+                                "Communication learning cycle failed safely: %s",
+                                exc,
+                            )
+
                         self._learning_last_tick_saw_new_feedback = bool(saw_new_feedback)
                         self._learning_last_tick_optimized_profiles = bool(optimized_profiles)
                         self._learning_last_tick_dreamed = bool(dreamed)
@@ -745,6 +764,45 @@ class EntrolyDaemon:
         self._last_profile_optimize_at = now
         self._profile_optimize_runs = int(getattr(self, "_profile_optimize_runs", 0)) + 1
         return True
+
+    def _run_communication_learning_cycle(self) -> dict[str, Any]:
+        """Run the communication PRISM/autotune domain on durable local evidence.
+
+        This is deliberately separate from code-context PRISM state. The
+        communication learner can only tune which historical outbound examples
+        influence taste inference; it cannot modify delegation policy, allowed
+        actions/categories, owner authority, or transport.
+        """
+        from entroly.communication import (
+            CommunicationStore,
+            CommunicationTasteOptimizer,
+        )
+
+        store_path = os.environ.get("ENTROLY_COMMUNICATION_STORE") or None
+        state_path = os.environ.get("ENTROLY_COMMUNICATION_PRISM_STATE") or None
+        journal_path = os.environ.get("ENTROLY_COMMUNICATION_PRISM_JOURNAL") or None
+
+        optimizer = self._communication_learning_optimizer
+        if optimizer is None:
+            optimizer = CommunicationTasteOptimizer(
+                state_path,
+                journal_path,
+            )
+            self._communication_learning_optimizer = optimizer
+
+        # Read-only learning pass. retention_days=0 prevents this daemon-side
+        # reader from imposing a retention policy different from the channel
+        # adapter's configured policy.
+        with CommunicationStore(store_path, retention_days=0) as store:
+            events = store.recent_events(limit=5000)
+
+        result = optimizer.daemon_cycle(
+            events,
+            scope_type="owner",
+            scope_id="owner-global",
+        )
+        result["authority_surface"] = "none"
+        return result
 
     def _apply_dreamed_weights(self):
         """Apply DreamingLoop improvements to the live engine."""
