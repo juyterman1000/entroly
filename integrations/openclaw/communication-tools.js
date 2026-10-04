@@ -140,7 +140,10 @@ export function registerCommunicationTools(api, { bridge, config = {} }) {
     {
       contextVersion: 2,
       create: (ctx) => {
-        if (ctx.senderIsOwner !== true) return null;
+        if (
+          config.communicationSecretaryTools !== true ||
+          ctx.senderIsOwner !== true
+        ) return null;
         return {
           name: "entroly_communication_brief",
           label: "Entroly communication brief",
@@ -151,6 +154,11 @@ export function registerCommunicationTools(api, { bridge, config = {} }) {
             requireOwner(ctx);
             ctx.assertInvocationCurrent();
             const mode = params.scope === "all" ? "all" : "current";
+            if (mode === "all" && config.communicationGlobalAccess !== true) {
+              throw new Error(
+                "cross-conversation communication brief requires communicationGlobalAccess=true",
+              );
+            }
             const trusted = trustedScope(ctx);
             const request = {
               operation: "communication_digest",
@@ -199,6 +207,7 @@ export function registerCommunicationTools(api, { bridge, config = {} }) {
             } catch {
               taste = undefined;
             }
+            ctx.assertInvocationCurrent();
             return jsonToolResult({
               ...result,
               resolved_taste: taste?.resolved,
@@ -215,7 +224,10 @@ export function registerCommunicationTools(api, { bridge, config = {} }) {
     {
       contextVersion: 2,
       create: (ctx) => {
-        if (ctx.senderIsOwner !== true) return null;
+        if (
+          config.communicationSecretaryTools !== true ||
+          ctx.senderIsOwner !== true
+        ) return null;
         return {
           name: "entroly_communication_assure",
           label: "Entroly communication assurance",
@@ -333,7 +345,10 @@ export function registerCommunicationTools(api, { bridge, config = {} }) {
     {
       contextVersion: 2,
       create: (ctx) => {
-        if (ctx.senderIsOwner !== true) return null;
+        if (
+          config.communicationSecretaryTools !== true ||
+          ctx.senderIsOwner !== true
+        ) return null;
         return {
           name: "entroly_communication_taste",
           label: "Entroly communication taste",
