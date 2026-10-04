@@ -210,7 +210,15 @@
         "type": "boolean",
         "default": false,
         "title": "Learn Communication Taste",
-        "description": "Allow owner-triggered inference of low-risk style preferences from observed outbound history. Learned taste is evidence-backed and never grants send authority."
+        "description": "Enable receipt-gated self-improving communication taste. Entroly uses only externally grounded feedback plus exact evidence, MemoryOS/Hippocampus, signed Merkle receipts, and PRISM-5D/autotune. Agent-generated replies alone never train the profile and learned taste never grants send authority."
+      },
+      "communicationTasteAutotuneIntervalSeconds": {
+        "type": "integer",
+        "minimum": 5,
+        "maximum": 3600,
+        "default": 30,
+        "title": "Communication Taste Autotune Interval",
+        "description": "Seconds between low-priority receipt-gated PRISM-5D taste-learning cycles when communicationTasteLearning is enabled."
       }
     }
   },
