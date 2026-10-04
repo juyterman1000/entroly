@@ -151,7 +151,7 @@
           "approve",
           "bounded"
         ],
-        "default": "approve",
+        "default": "observe",
         "title": "Communication Delegation Mode",
         "description": "Controls action assurance. Only bounded mode can return ALLOW for explicitly delegated low-risk categories/actions; other modes require approval for external communication."
       },
