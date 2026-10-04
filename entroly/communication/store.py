@@ -194,6 +194,16 @@ class CommunicationStore:
                 updated_at REAL NOT NULL,
                 PRIMARY KEY(scope_type, scope_id)
             );
+
+            CREATE TABLE IF NOT EXISTS communication_receipts (
+                sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                receipt_id TEXT NOT NULL UNIQUE,
+                receipt_json TEXT NOT NULL,
+                receipt_sha256 TEXT NOT NULL,
+                created_at REAL NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_communication_receipts_created
+              ON communication_receipts(created_at, sequence);
             """
         )
         self._conn.commit()
@@ -411,7 +421,97 @@ class CommunicationStore:
             "conversations": int(totals["conversations"] or 0),
             "oldest_observed_at": totals["oldest"],
             "newest_observed_at": totals["newest"],
+            "receipts": self.receipt_count(),
         }
+
+    def record_receipt(
+        self,
+        receipt: Mapping[str, Any],
+        *,
+        now: float | None = None,
+    ) -> int:
+        """Append one content-addressed audit receipt and return zero-based index."""
+        payload = dict(receipt)
+        receipt_id = str(payload.get("receipt_id") or "").strip()
+        if not receipt_id:
+            raise CommunicationStateError("communication receipt_id is required")
+        receipt_json = canonical_json(payload)
+        receipt_sha256 = sha256_text(receipt_json)
+        timestamp = time.time() if now is None else float(now)
+        with self._lock, self._conn:
+            cursor = self._conn.execute(
+                """
+                INSERT OR IGNORE INTO communication_receipts(
+                    receipt_id, receipt_json, receipt_sha256, created_at
+                ) VALUES (?, ?, ?, ?)
+                """,
+                (receipt_id, receipt_json, receipt_sha256, timestamp),
+            )
+            if cursor.rowcount != 1:
+                existing = self._conn.execute(
+                    """
+                    SELECT sequence, receipt_sha256
+                    FROM communication_receipts
+                    WHERE receipt_id = ?
+                    """,
+                    (receipt_id,),
+                ).fetchone()
+                if existing is None:
+                    raise CommunicationStateError(
+                        "idempotent receipt insert lost stored row"
+                    )
+                if existing["receipt_sha256"] != receipt_sha256:
+                    raise CommunicationStateConflict(
+                        "stable communication receipt identity was reused "
+                        "with different content"
+                    )
+                return int(existing["sequence"]) - 1
+            sequence = int(cursor.lastrowid)
+        return sequence - 1
+
+    def receipt_rows(self) -> list[dict[str, Any]]:
+        """Return the append-only receipt ledger in canonical order."""
+        with self._lock:
+            rows = self._conn.execute(
+                """
+                SELECT sequence, receipt_id, receipt_json, receipt_sha256, created_at
+                FROM communication_receipts
+                ORDER BY sequence ASC
+                """
+            ).fetchall()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            try:
+                receipt = json.loads(str(row["receipt_json"]))
+            except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                raise CommunicationStateError(
+                    "stored communication receipt is corrupted"
+                ) from exc
+            if not isinstance(receipt, dict):
+                raise CommunicationStateError(
+                    "stored communication receipt is corrupted"
+                )
+            if sha256_text(canonical_json(receipt)) != row["receipt_sha256"]:
+                raise CommunicationStateConflict(
+                    "stored communication receipt hash mismatch"
+                )
+            result.append(
+                {
+                    "sequence": int(row["sequence"]),
+                    "receipt_id": str(row["receipt_id"]),
+                    "receipt": receipt,
+                    "receipt_sha256": str(row["receipt_sha256"]),
+                    "created_at": float(row["created_at"]),
+                }
+            )
+        return result
+
+    def receipt_count(self) -> int:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COUNT(*) AS count FROM communication_receipts"
+            ).fetchone()
+        return int(row["count"] or 0)
 
     def set_explicit_taste(
         self,
