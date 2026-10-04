@@ -1956,20 +1956,27 @@ def _communication_digest(request: dict[str, Any]) -> dict[str, Any]:
 
 
 def _communication_assure(request: dict[str, Any]) -> dict[str, Any]:
-    """Evaluate and persist a proposed external communication action."""
+    """Evaluate, verify, receipt, and persist one proposed external action."""
     from .communication import (
         CommunicationActionProposal,
         CommunicationPolicy,
+        CommunicationReceiptLedger,
         CommunicationStore,
+        action_evidence_verification,
         assess_event,
+        build_action_receipt,
         combine_category,
         combine_risk,
+        eicv_supports_automatic_action,
         outgoing_creates_commitment,
     )
 
     store_path = request.get("store_path")
+    receipt_dir = request.get("receipt_dir")
     if store_path is not None and not isinstance(store_path, str):
         raise ValueError("communication store_path must be a string")
+    if receipt_dir is not None and not isinstance(receipt_dir, str):
+        raise ValueError("communication receipt_dir must be a string")
     retention = request.get("retention_days")
     action_type = str(request.get("action_type") or "").strip()
     allowed_actions = {"send_message", "reply", "react", "group_reply", "no_action"}
@@ -1979,12 +1986,22 @@ def _communication_assure(request: dict[str, Any]) -> dict[str, Any]:
     account_id = str(request.get("account_id") or "").strip()
     conversation_id = str(request.get("conversation_id") or "").strip()
     if not channel or not conversation_id:
-        raise ValueError("communication assurance requires trusted channel/conversation scope")
+        raise ValueError(
+            "communication assurance requires trusted channel/conversation scope"
+        )
 
     source_ids_raw = request.get("source_event_ids")
     if not isinstance(source_ids_raw, list):
         raise ValueError("source_event_ids must be a list")
-    source_ids = tuple(sorted({str(item).strip() for item in source_ids_raw if str(item).strip()}))
+    source_ids = tuple(
+        sorted(
+            {
+                str(item).strip()
+                for item in source_ids_raw
+                if str(item).strip()
+            }
+        )
+    )
     if action_type != "no_action" and not source_ids:
         raise ValueError("external communication actions require source_event_ids")
     payload = str(request.get("payload") or "")
@@ -1998,7 +2015,9 @@ def _communication_assure(request: dict[str, Any]) -> dict[str, Any]:
         item
         for item in (
             str(value).strip()
-            for value in (auto_actions_raw if isinstance(auto_actions_raw, list) else [])
+            for value in (
+                auto_actions_raw if isinstance(auto_actions_raw, list) else []
+            )
         )
         if item in allowed_actions
     )
@@ -2007,24 +2026,32 @@ def _communication_assure(request: dict[str, Any]) -> dict[str, Any]:
             {
                 str(value).strip()
                 for value in (
-                    auto_categories_raw if isinstance(auto_categories_raw, list) else []
+                    auto_categories_raw
+                    if isinstance(auto_categories_raw, list)
+                    else []
                 )
                 if str(value).strip()
             }
         )
     )
 
+    receipt_proof: dict[str, Any] | None = None
+    receipt_error: str | None = None
     with CommunicationStore(store_path, retention_days=retention) as store:
         events = []
         for event_id in source_ids:
             event = store.get_event(event_id)
             if event is None:
-                raise ValueError(f"unknown communication source event: {event_id}")
+                raise ValueError(
+                    f"unknown communication source event: {event_id}"
+                )
             events.append(event)
 
         assessments = [assess_event(event) for event in events]
         kinds = {event.conversation_kind for event in events}
-        conversation_kind = next(iter(kinds)) if len(kinds) == 1 else "unknown"
+        conversation_kind = (
+            next(iter(kinds)) if len(kinds) == 1 else "unknown"
+        )
         category = combine_category(assessments)
         risk_class = combine_risk(assessments)
         creates_commitment = outgoing_creates_commitment(payload)
@@ -2050,6 +2077,51 @@ def _communication_assure(request: dict[str, Any]) -> dict[str, Any]:
             source_events=events,
             already_handled=store.action_is_handled(proposal.action_id),
         )
+        reasons = tuple(reasons)
+
+        evidence_verification = action_evidence_verification(
+            proposal,
+            events,
+        )
+        if (
+            decision == "allow"
+            and not eicv_supports_automatic_action(evidence_verification)
+        ):
+            decision = "approval_required"
+            reasons = tuple(
+                sorted(
+                    {
+                        *reasons,
+                        "eicv:automatic_action_not_supported",
+                    }
+                )
+            )
+
+        receipt = build_action_receipt(
+            proposal,
+            decision=decision,
+            reasons=reasons,
+            source_events=events,
+            evidence_verification=evidence_verification,
+        )
+        try:
+            receipt_proof = CommunicationReceiptLedger(
+                receipt_dir
+            ).record(store, receipt)
+        except Exception as exc:
+            receipt_error = type(exc).__name__
+            # Automatic external effects require a durable audit commitment.
+            if decision == "allow":
+                decision = "approval_required"
+                reasons = tuple(
+                    sorted(
+                        {
+                            *reasons,
+                            "audit:signed_receipt_unavailable",
+                        }
+                    )
+                )
+
         state_by_decision = {
             "allow": "assured",
             "approval_required": "awaiting_approval",
@@ -2078,12 +2150,14 @@ def _communication_assure(request: dict[str, Any]) -> dict[str, Any]:
         "creates_commitment": proposal.creates_commitment,
         "conversation_kind": proposal.conversation_kind,
         "source_event_ids": list(proposal.source_event_ids),
+        "evidence_verification": evidence_verification,
+        "receipt": receipt_proof,
+        "receipt_error": receipt_error,
         "inserted": inserted,
         "execution_state": (action or {}).get("execution_state"),
         "local_only": True,
         "provider_call_performed": False,
     }
-
 
 def _communication_set_taste(request: dict[str, Any]) -> dict[str, Any]:
     """Replace explicit communication taste for one owner-authorized scope."""
