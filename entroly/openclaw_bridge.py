@@ -1846,6 +1846,57 @@ def verify_proof_guided_output(request: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+
+def _communication_ingest(request: dict[str, Any]) -> dict[str, Any]:
+    """Persist one privacy-scoped channel observation locally."""
+    from .communication import CommunicationStore, event_from_adapter
+
+    raw_event = request.get("event")
+    if not isinstance(raw_event, dict):
+        raise ValueError("communication_ingest requires an event object")
+    store_path = request.get("store_path")
+    if store_path is not None and not isinstance(store_path, str):
+        raise ValueError("communication store_path must be a string")
+    retention = request.get("retention_days")
+    event = event_from_adapter(raw_event)
+    with CommunicationStore(store_path, retention_days=retention) as store:
+        inserted = store.record_event(event)
+        stats = store.stats()
+    return {
+        "schema_version": BRIDGE_SCHEMA,
+        "ok": True,
+        "communication_schema": event.schema,
+        "event_id": event.event_id,
+        "commitment_sha256": event.commitment_sha256,
+        "content_sha256": event.content_sha256,
+        "identity_strength": event.identity_strength,
+        "conversation_kind": event.conversation_kind,
+        "inserted": inserted,
+        "stats": stats,
+        "local_only": True,
+        "provider_call_performed": False,
+    }
+
+
+def _communication_status(request: dict[str, Any]) -> dict[str, Any]:
+    """Return scalar store health without exposing message content."""
+    from .communication import CommunicationStore
+
+    store_path = request.get("store_path")
+    if store_path is not None and not isinstance(store_path, str):
+        raise ValueError("communication store_path must be a string")
+    retention = request.get("retention_days")
+    with CommunicationStore(store_path, retention_days=retention) as store:
+        stats = store.stats()
+    return {
+        "schema_version": BRIDGE_SCHEMA,
+        "ok": True,
+        "communication_schema": stats["schema"],
+        "stats": stats,
+        "local_only": True,
+        "provider_call_performed": False,
+    }
+
 def handle_request(request: dict[str, Any]) -> dict[str, Any]:
     operation = request.get("operation")
     if operation == "health":
@@ -1880,6 +1931,7 @@ def handle_request(request: dict[str, Any]) -> dict[str, Any]:
             "provider_independent": True,
             "requires_host_token_budget": True,
             "supports_context_budget_discovery": True,
+            "supports_communication_assurance": True,
             "receipt_commit_protocol": "two_phase",
         }
     if operation == "resolve_context_budget":
@@ -1890,6 +1942,10 @@ def handle_request(request: dict[str, Any]) -> dict[str, Any]:
         return commit_receipt(request)
     if operation == "verify_proof_guided_output":
         return verify_proof_guided_output(request)
+    if operation == "communication_ingest":
+        return _communication_ingest(request)
+    if operation == "communication_status":
+        return _communication_status(request)
     raise ValueError(f"unsupported operation: {operation!r}")
 
 
