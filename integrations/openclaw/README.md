@@ -191,6 +191,94 @@ openclaw plugins inspect entroly --runtime --json
 openclaw plugins doctor
 ```
 
+## Optional Communication Assurance
+
+Communication Assurance is an opt-in local secretary layer for normalized
+channel events. OpenClaw remains the transport and authorization owner; Entroly
+stores scoped evidence, builds briefs, applies bounded policy, records signed
+action receipts, and keeps preference learning separate from send authority.
+
+Enable observation first:
+
+```json5
+{
+  plugins: {
+    entries: {
+      entroly: {
+        config: {
+          communicationAssurance: true,
+          communicationSecretaryTools: true
+        }
+      }
+    }
+  }
+}
+```
+
+For WhatsApp, OpenClaw must also have its own passive
+`message_received` plugin hook enabled. Cross-conversation briefing is a
+separate explicit grant via `communicationGlobalAccess: true`; it is off by
+default. Bounded execution is also separate and off by default:
+
+```json5
+{
+  plugins: {
+    entries: {
+      entroly: {
+        config: {
+          communicationAssurance: true,
+          communicationSecretaryTools: true,
+          communicationExecution: true,
+          communicationPolicyMode: "bounded",
+          communicationAutoActions: ["reply"],
+          communicationAutoCategories: ["birthday_wish"]
+        }
+      }
+    }
+  }
+}
+```
+
+An `ALLOW` result is not enough by itself. Entroly additionally requires exact
+source-event evidence, EICV support for the proposed action, a durable signed
+communication receipt, an atomic dispatch claim, current owner authority, and a
+verified conversation kind. Unknown direct/group scope is fail-closed.
+
+**Current OpenClaw host limitation:** the passive `message_received` plugin
+event does not currently expose the host's already-known direct/group fact.
+Entroly intentionally does not parse WhatsApp IDs or infer this from naming
+conventions. Therefore passive observation, scoped briefs, taste recall, and
+approval workflows work with current OpenClaw, while first-turn bounded
+automatic text execution remains blocked whenever the stored event's
+`conversation_kind` is `unknown`. A future/current host build that includes
+structured `isGroup`/chat-kind on the passive event unlocks that path without
+changing Entroly's policy model.
+
+Preference learning is also opt-in:
+
+```json5
+{
+  plugins: {
+    entries: {
+      entroly: {
+        config: {
+          communicationAssurance: true,
+          communicationTasteLearning: true,
+          communicationTasteAutotuneIntervalSeconds: 30
+        }
+      }
+    }
+  }
+}
+```
+
+This does **not** train on ordinary OpenClaw agent replies. PRISM-5D updates are
+accepted only from externally grounded feedback that is bound to exact source
+events and a signed Merkle communication receipt. If the native PRISM-5D engine,
+receipt proof, or evidence binding is unavailable, learning pauses rather than
+silently substituting another optimizer. Learned taste can influence style
+selection only; it never expands send or action authority.
+
 ## Reproduce the evidence-pinning control
 
 ```bash
