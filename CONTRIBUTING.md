@@ -95,6 +95,12 @@ See [architecture.md](docs/architecture.md) for system boundaries and
 [STYLE_GUIDE.md](docs/STYLE_GUIDE.md) for code, error-message, and documentation
 conventions.
 
+For a current file-by-file ownership inventory, run
+`python scripts/ownership_matrix.py --out ../entroly-ownership-matrix.md` and review the
+generated file locally. Run `python scripts/ownership_matrix.py --check` when
+adding new file types. The inventory is generated from the checkout so it does
+not become a stale committed snapshot.
+
 ## Run the relevant checks
 
 Start with the smallest relevant test, then expand in proportion to risk.

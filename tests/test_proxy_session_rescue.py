@@ -13,6 +13,11 @@ from entroly.proxy_config import ProxyConfig
 
 
 class _EmptyEngine:
+    def __init__(self) -> None:
+        # Match the turn state exposed by the real EntrolyEngine. Without it,
+        # proxy optimization falls back before the rescue path is exercised.
+        self._turn_counter = 0
+
     def advance_turn(self) -> None:
         return None
 
@@ -127,7 +132,9 @@ def test_live_proxy_blocks_unrecoverable_overflow_before_upstream(
                     "messages": [
                         {
                             "role": "user",
-                            "content": "essential user evidence " * 2_000,
+                            # A single active user message cannot be elided;
+                            # keep it above gpt-4's 8,192-token window.
+                            "content": "essential user evidence " * 4_000,
                         }
                     ],
                 },
