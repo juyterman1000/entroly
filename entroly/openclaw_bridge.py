@@ -2208,21 +2208,30 @@ def _communication_set_taste(request: dict[str, Any]) -> dict[str, Any]:
 
 
 def _communication_learn_taste(request: dict[str, Any]) -> dict[str, Any]:
-    """Infer low-risk communication style from owner-observed outbound history."""
+    """Infer low-risk communication style through PRISM-selected evidence."""
     from .communication import (
         CommunicationMemory,
         CommunicationStore,
+        CommunicationTasteOptimizer,
         infer_taste_from_outbound,
     )
 
     if request.get("owner_authorized") is not True:
-        raise PermissionError("communication taste learning requires trusted owner authorization")
+        raise PermissionError(
+            "communication taste learning requires trusted owner authorization"
+        )
     store_path = request.get("store_path")
     memory_path = request.get("memory_path")
-    if store_path is not None and not isinstance(store_path, str):
-        raise ValueError("communication store_path must be a string")
-    if memory_path is not None and not isinstance(memory_path, str):
-        raise ValueError("communication memory_path must be a string")
+    learning_state_path = request.get("learning_state_path")
+    learning_journal_path = request.get("learning_journal_path")
+    for label, value in (
+        ("store_path", store_path),
+        ("memory_path", memory_path),
+        ("learning_state_path", learning_state_path),
+        ("learning_journal_path", learning_journal_path),
+    ):
+        if value is not None and not isinstance(value, str):
+            raise ValueError(f"communication {label} must be a string")
     scope_type = str(request.get("scope_type") or "").strip()
     scope_id = str(request.get("scope_id") or "").strip()
     if scope_type not in {"owner", "contact", "group", "conversation"}:
@@ -2232,15 +2241,18 @@ def _communication_learn_taste(request: dict[str, Any]) -> dict[str, Any]:
     channel = str(request.get("channel") or "").strip().lower()
     account_raw = request.get("account_id")
     account_id = None if account_raw is None else str(account_raw).strip()
+    query = str(request.get("query") or "").strip()
     try:
-        limit = max(3, min(int(request.get("limit", 200)), 2000))
+        limit = max(3, min(int(request.get("limit", 500)), 5000))
     except (TypeError, ValueError, OverflowError) as exc:
         raise ValueError("communication taste limit must be an integer") from exc
 
     with CommunicationStore(store_path) as store:
         if scope_type in {"group", "conversation"}:
             if not channel:
-                raise ValueError("channel is required for conversation taste learning")
+                raise ValueError(
+                    "channel is required for conversation taste learning"
+                )
             events = store.events_for_scope(
                 channel=channel,
                 account_id=account_id or "",
@@ -2257,11 +2269,27 @@ def _communication_learn_taste(request: dict[str, Any]) -> dict[str, Any]:
                 events = [
                     event
                     for event in events
-                    if event.sender_id == scope_id or event.recipient_id == scope_id
+                    if event.sender_id == scope_id
+                    or event.recipient_id == scope_id
                 ]
 
-    taste = infer_taste_from_outbound(
+    optimizer = CommunicationTasteOptimizer(
+        learning_state_path,
+        learning_journal_path,
+    )
+    selection = optimizer.select_examples(
         events,
+        scope_type=scope_type,
+        scope_id=scope_id,
+        query=query,
+        top_k=min(24, max(3, len(events))),
+    )
+    selected = set(selection.event_ids)
+    selected_events = [
+        event for event in events if event.event_id in selected
+    ]
+    taste = infer_taste_from_outbound(
+        selected_events,
         scope_type=scope_type,  # type: ignore[arg-type]
         scope_id=scope_id,
     )
@@ -2270,7 +2298,8 @@ def _communication_learn_taste(request: dict[str, Any]) -> dict[str, Any]:
             "schema_version": BRIDGE_SCHEMA,
             "ok": True,
             "learned": False,
-            "reason": "insufficient_outbound_evidence",
+            "reason": "insufficient_prism_selected_outbound_evidence",
+            "selection": selection.to_dict(),
             "authority_expanded": False,
             "local_only": True,
             "provider_call_performed": False,
@@ -2283,12 +2312,13 @@ def _communication_learn_taste(request: dict[str, Any]) -> dict[str, Any]:
         "ok": True,
         "learned": True,
         "profile": taste.to_dict(),
+        "selection": selection.to_dict(),
+        "learning": optimizer.stats(),
         "memory": remembered,
         "authority_expanded": False,
         "local_only": True,
         "provider_call_performed": False,
     }
-
 
 def _communication_resolve_taste(request: dict[str, Any]) -> dict[str, Any]:
     """Resolve explicit policy + partitioned episodic preference memory."""
