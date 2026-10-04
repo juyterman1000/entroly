@@ -1868,6 +1868,30 @@ def _communication_ingest(request: dict[str, Any]) -> dict[str, Any]:
                 error=str(raw_event.get("delivery_error") or ""),
             )
         stats = store.stats()
+
+    autotune_status: dict[str, Any] | None = None
+    if request.get("taste_learning_enabled") is True:
+        from .communication import start_communication_taste_autotune_daemon
+
+        try:
+            interval_s = float(request.get("taste_autotune_interval_s", 30.0))
+            thread = start_communication_taste_autotune_daemon(
+                store_path=store_path,
+                interval_s=interval_s,
+            )
+            autotune_status = {
+                "enabled": True,
+                "thread_name": thread.name,
+                "alive": thread.is_alive(),
+            }
+        except Exception as exc:
+            # Observation remains fail-open; learning explicitly reports paused.
+            autotune_status = {
+                "enabled": True,
+                "alive": False,
+                "error": type(exc).__name__,
+            }
+
     return {
         "schema_version": BRIDGE_SCHEMA,
         "ok": True,
@@ -1880,6 +1904,7 @@ def _communication_ingest(request: dict[str, Any]) -> dict[str, Any]:
         "inserted": inserted,
         "correlated_action_id": correlated_action_id,
         "stats": stats,
+        "taste_autotune": autotune_status,
         "local_only": True,
         "provider_call_performed": False,
     }
