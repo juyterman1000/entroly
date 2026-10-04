@@ -1,22 +1,27 @@
 # Competitive evidence matrix
 
+This page records a historical investigation, not validation of the current
+release. Protocol links below point to the immutable Git revision before those
+files were removed from the current tree. Reproduction requires that revision
+and its recorded workload; the current checkout alone is insufficient.
+
 This protocol measures Entroly against the current released External Baseline A package
 without collapsing unlike properties into a promotional score. Quality,
 recovery, latency, provider behavior, reliability, security, packaging, cost,
 and operator experience are reported separately. A win in one dimension cannot
 hide a loss in another.
 
-The current additive index is
-[`benchmarks/competitive_evidence_protocol_v2.json`](../../benchmarks/competitive_evidence_protocol_v2.json).
+The investigation's additive index is
+[`benchmarks/competitive_evidence_protocol_v2.json`](https://github.com/juyterman1000/entroly/blob/5fe3eef1c11f3f30b0435a9f312b37138fc721ea/benchmarks/competitive_evidence_protocol_v2.json).
 The original
-[`competitive_evidence_protocol.json`](../../benchmarks/competitive_evidence_protocol.json)
+[`competitive_evidence_protocol.json`](https://github.com/juyterman1000/entroly/blob/5fe3eef1c11f3f30b0435a9f312b37138fc721ea/benchmarks/competitive_evidence_protocol.json)
 remains immutable because recovery artifacts embed it. Later dimensions use
 their own immutable protocol files rather than rewriting prior evidence.
 Thresholds and holdout parameters are frozen before results are inspected.
-The current 1.0.60 durability revalidation is frozen separately in
-[`recovery_resilience_protocol_v3.json`](../../benchmarks/recovery_resilience_protocol_v3.json).
+The 1.0.60 durability revalidation is frozen separately in
+[`recovery_resilience_protocol_v3.json`](https://github.com/juyterman1000/entroly/blob/5fe3eef1c11f3f30b0435a9f312b37138fc721ea/benchmarks/recovery_resilience_protocol_v3.json).
 It preserves the immutable
-[`v2 protocol`](../../benchmarks/recovery_resilience_protocol_v2.json), its
+[`v2 protocol`](https://github.com/juyterman1000/entroly/blob/5fe3eef1c11f3f30b0435a9f312b37138fc721ea/benchmarks/recovery_resilience_protocol_v2.json), its
 tie result, and the original 1.0.59 protocol and artifact.
 
 ## Claim rules

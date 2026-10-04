@@ -14,7 +14,7 @@ goal is to make decisions predictable while the contributor base grows.
   and enforce community standards.
 
 Current maintainers and ownership areas are listed in
-[MAINTAINERS.md](../docs/MAINTAINERS.md) and [`.github/CODEOWNERS`](.github/CODEOWNERS).
+[MAINTAINERS.md](../docs/MAINTAINERS.md) and [`.github/CODEOWNERS`](CODEOWNERS).
 
 ## Decision principles
 
@@ -50,9 +50,9 @@ role change.
 
 ## Releases and security
 
-Maintainers follow the release gates in [CLAUDE.md](CLAUDE.md), keep all package
+Maintainers follow the release gates in [CLAUDE.md](../CLAUDE.md), keep all package
 surfaces version-aligned, and publish from protected automation. Security
-reports follow [SECURITY.md](SECURITY.md) and may be handled privately until a
+reports follow [SECURITY.md](../SECURITY.md) and may be handled privately until a
 coordinated fix is available.
 
 ## Changes to governance

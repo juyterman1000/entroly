@@ -1,7 +1,7 @@
 # Entroly Cookbook
 
 Concrete recipes. Each one is a single, copyable command path that solves a real
-problem. Skip the architecture; come back to [docs/DETAILS.md](../docs/DETAILS.md)
+problem. Skip the architecture; come back to [docs/DETAILS.md](../DETAILS.md)
 when you want the deep dive.
 
 | # | Recipe | One-liner |
@@ -115,7 +115,7 @@ Enable it once — add this `PostToolUse` hook to your `.claude/settings.json`:
 
 > The `2>/dev/null || true` tail is intentional: a missing entroly binary or a
 > slow capture should never block Claude Code. Failure is silent and harmless.
-> The entroly repo's own [`.claude/settings.json`](../.claude/settings.json)
+> The entroly repo's own [`.claude/settings.json`](../../.claude/settings.json)
 > ships this hook — copy it as a reference.
 
 Then use Claude Code normally for a week. After enough observations:

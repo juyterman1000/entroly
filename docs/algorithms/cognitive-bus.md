@@ -1,6 +1,6 @@
 # Cognitive Bus — ISA Event Routing
 
-**Implementation:** [`entroly-core/src/cognitive_bus.rs`](../entroly-core/src/cognitive_bus.rs)
+**Implementation:** [`entroly-core/src/cognitive_bus.rs`](../../entroly-engine/src/cognitive_bus.rs)
 **Math reference:** [`../RESEARCH.md`](../RESEARCH.md)
 
 ## One-paragraph spec

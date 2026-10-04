@@ -6553,12 +6553,10 @@ def main():
     # attached MCP server, so the internal serve action stays protocol-clean.
     internal_attach_serve = args.command == "attach" and args.attach_action == "serve"
     machine_readable = (
-        (args.command == "value" and getattr(args, "json_output", False))
-        or (args.command == "learn" and getattr(args, "history", False)
-            and getattr(args, "json_output", False))
+        getattr(args, "json_output", False)
+        or getattr(args, "csv_output", False)
+        or getattr(args, "format", None) == "json"
         or args.command == "activation"
-        or (args.command in {"trial", "browser", "find", "response"}
-            and getattr(args, "json_output", False))
         or (args.command == "trial" and getattr(args, "report", None))
         or args.command == "shrink"
         or args.command == "proof"

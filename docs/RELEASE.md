@@ -9,7 +9,7 @@ a tag was created.
 The release commit must be on `main`, and every version-bearing surface must be
 synchronized by the repository's version tooling and release tests. The current
 user-facing history is indexed in [`../CHANGELOG.md`](../CHANGELOG.md), with
-version-specific notes under [`releases/`](releases/).
+version-specific notes published in [GitHub Releases](https://github.com/juyterman1000/entroly/releases).
 
 Primary automation and verification surfaces:
 

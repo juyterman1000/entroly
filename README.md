@@ -299,10 +299,10 @@ independent validation; consult its implementation and evaluation limitations.
 | Algorithm | What it does | Implementation |
 |---|---|---|
 | **BIPT** | Byte-level hallucination detection via Kolmogorov-inspired provenance tracing | [`provenance_tracer.py`](entroly/verifiers/provenance_tracer.py) |
-| **NKBE** | Nash-KKT multi-agent token budget equilibrium | [`nkbe.rs`](entroly-core/src/nkbe.rs) |
-| **Causal Context Graph** | Intervention-aware fragment feedback learning | [`causal.rs`](entroly-core/src/causal.rs) |
-| **Cognitive Bus** | ISA event routing with KL-divergence priority | [`cognitive_bus.rs`](entroly-core/src/cognitive_bus.rs) |
-| **Resonance Matrix** | Supermodular pairwise fragment value learning | [`resonance.rs`](entroly-core/src/resonance.rs) |
+| **NKBE** | Nash-KKT multi-agent token budget equilibrium | [`nkbe.rs`](entroly-engine/src/nkbe.rs) |
+| **Causal Context Graph** | Intervention-aware fragment feedback learning | [`causal.rs`](entroly-engine/src/causal.rs) |
+| **Cognitive Bus** | ISA event routing with KL-divergence priority | [`cognitive_bus.rs`](entroly-engine/src/cognitive_bus.rs) |
+| **Resonance Matrix** | Supermodular pairwise fragment value learning | [`resonance.rs`](entroly-engine/src/resonance.rs) |
 | **System 1 <> 2** | Dual-process verified-belief bridge (proxy <> vault) | [`coupling.py`](entroly/coupling.py) |
 
 > [Read the full research documentation](docs/RESEARCH.md) · [Cite Entroly](CITATION.cff)

@@ -6,24 +6,24 @@
 
 ## Why this page exists
 
-Most context engines combine retrieval, ranking, and token-budget allocation. Entroly does that, then adds local verification, recoverability, feedback learning, memory, and routing layers. The goal is not to claim perfect grounding; it is to make context selection inspectable, recoverable, and measurable. Code citations point to actual implementations, and limitations are called out in [docs/limitations.md](docs/limitations.md).
+Most context engines combine retrieval, ranking, and token-budget allocation. Entroly does that, then adds local verification, recoverability, feedback learning, memory, and routing layers. The goal is not to claim perfect grounding; it is to make context selection inspectable, recoverable, and measurable. Code citations point to actual implementations, and limitations are called out in [docs/limitations.md](limitations.md).
 
 A short summary of what's below:
 
 | Algorithm | What it does | Why it matters | Implementation |
 |---|---|---|---|
-| **BIPT** | Byte-level provenance heuristic inspired by conditional information | Detects invented or weakly grounded identifiers in code-like output | [`verifiers/provenance_tracer.py`](entroly/verifiers/provenance_tracer.py) |
-| **NKBE** | Nash-KKT multi-agent token budget allocation | Optimal split when N agents share one context window | [`entroly-core/src/nkbe.rs`](entroly-core/src/nkbe.rs) |
-| **Causal Context Graph** | Intervention-aware fragment feedback | Reduces co-selection bias in learned fragment values | [`entroly-core/src/causal.rs`](entroly-core/src/causal.rs) |
-| **Cognitive Bus** | ISA event routing with KL-divergence priority | Principled inter-agent communication substrate with hippocampus bridge | [`entroly-core/src/cognitive_bus.rs`](entroly-core/src/cognitive_bus.rs) |
-| **Resonance Matrix** | Supermodular pairwise fragment learning | Captures combinatorial context value beyond what knapsack expresses | [`entroly-core/src/resonance.rs`](entroly-core/src/resonance.rs) |
-| **System 1 ↔ System 2 coupling** | Dual-process bridge (proxy ↔ vault) | Kahneman-grade architecture; verified beliefs flow into proxy context, outcomes flow back | [`entroly/coupling.py`](entroly/coupling.py) |
+| **BIPT** | Byte-level provenance heuristic inspired by conditional information | Detects invented or weakly grounded identifiers in code-like output | [`verifiers/provenance_tracer.py`](../entroly/verifiers/provenance_tracer.py) |
+| **NKBE** | Nash-KKT multi-agent token budget allocation | Optimal split when N agents share one context window | [`entroly-core/src/nkbe.rs`](../entroly-engine/src/nkbe.rs) |
+| **Causal Context Graph** | Intervention-aware fragment feedback | Reduces co-selection bias in learned fragment values | [`entroly-core/src/causal.rs`](../entroly-engine/src/causal.rs) |
+| **Cognitive Bus** | ISA event routing with KL-divergence priority | Principled inter-agent communication substrate with hippocampus bridge | [`entroly-core/src/cognitive_bus.rs`](../entroly-engine/src/cognitive_bus.rs) |
+| **Resonance Matrix** | Supermodular pairwise fragment learning | Captures combinatorial context value beyond what knapsack expresses | [`entroly-core/src/resonance.rs`](../entroly-engine/src/resonance.rs) |
+| **System 1 ↔ System 2 coupling** | Dual-process bridge (proxy ↔ vault) | Kahneman-grade architecture; verified beliefs flow into proxy context, outcomes flow back | [`entroly/coupling.py`](../entroly/coupling.py) |
 
 ---
 
 ## 1. BIPT — Byte-level Information Provenance Tracing
 
-**File:** [`entroly/verifiers/provenance_tracer.py`](entroly/verifiers/provenance_tracer.py)
+**File:** [`entroly/verifiers/provenance_tracer.py`](../entroly/verifiers/provenance_tracer.py)
 **Standalone exposition:** [BIPT.md](BIPT.md)
 
 ### The question, restated
@@ -67,7 +67,7 @@ Standard hallucination detectors look at outputs *post hoc* and infer semantic s
 
 ## 2. NKBE — Nash-KKT Budgetary Equilibrium
 
-**File:** [`entroly-core/src/nkbe.rs`](entroly-core/src/nkbe.rs)
+**File:** [`entroly-core/src/nkbe.rs`](../entroly-engine/src/nkbe.rs)
 
 ### The problem
 
@@ -99,7 +99,7 @@ In real coding workflows (Aider with multiple panes, Claude Code with subagents,
 
 ## 3. Causal Context Graph — Do-Calculus on RAG
 
-**File:** [`entroly-core/src/causal.rs`](entroly-core/src/causal.rs)
+**File:** [`entroly-core/src/causal.rs`](../entroly-engine/src/causal.rs)
 
 ### The problem: selection bias in context optimization
 
@@ -132,7 +132,7 @@ This is an intervention-aware feedback model for retrieval-augmented generation.
 
 ## 4. Cognitive Bus — ISA Event Routing
 
-**File:** [`entroly-core/src/cognitive_bus.rs`](entroly-core/src/cognitive_bus.rs)
+**File:** [`entroly-core/src/cognitive_bus.rs`](../entroly-engine/src/cognitive_bus.rs)
 
 ### The architecture
 
@@ -169,7 +169,7 @@ Multi-agent AI workflows need a *coordination substrate*. Most projects bolt thi
 
 ## 5. Resonance Matrix — Supermodular Pairwise Learning
 
-**File:** [`entroly-core/src/resonance.rs`](entroly-core/src/resonance.rs)
+**File:** [`entroly-core/src/resonance.rs`](../entroly-engine/src/resonance.rs)
 
 ### The insight
 
@@ -211,19 +211,19 @@ Real codebases have *compositional* context value — a struct definition is use
 
 | Layer | Detector | Failure mode it catches |
 |---|---|---|
-| 1 | **BIPT** ([provenance_tracer](entroly/verifiers/provenance_tracer.py)) | Invented identifiers — Kolmogorov-bounded byte traceback |
-| 2 | **FORGE** ([repair_loop](entroly/verifiers/repair_loop.py)) | Ungrounded output → automated repair via context re-injection |
-| 3 | **TRIAD** ([commit_alignment](entroly/verifiers/commit_alignment.py)) | Diff-message-PR triangulation; catches misleading commits |
-| 4 | **PROVE** ([semantic_entropy](entroly/verifiers/semantic_entropy.py)) | Prose hallucination via causal-weighted predicate alignment (Kuhn / Gal / Farquhar, ICLR 2023) |
-| 5 | **CAVE** ([reasoning_chain](entroly/verifiers/reasoning_chain.py)) | Counterfactual decorative-premise ablation (Lightman 2023 PRM + Shi ICML 2023) |
+| 1 | **BIPT** ([provenance_tracer](../entroly/verifiers/provenance_tracer.py)) | Invented identifiers — Kolmogorov-bounded byte traceback |
+| 2 | **FORGE** ([repair_loop](../entroly/verifiers/repair_loop.py)) | Ungrounded output → automated repair via context re-injection |
+| 3 | **TRIAD** ([commit_alignment](../entroly/verifiers/commit_alignment.py)) | Diff-message-PR triangulation; catches misleading commits |
+| 4 | **PROVE** ([semantic_entropy](../entroly/verifiers/semantic_entropy.py)) | Prose hallucination via causal-weighted predicate alignment (Kuhn / Gal / Farquhar, ICLR 2023) |
+| 5 | **CAVE** ([reasoning_chain](../entroly/verifiers/reasoning_chain.py)) | Counterfactual decorative-premise ablation (Lightman 2023 PRM + Shi ICML 2023) |
 
-One detector misses; layered verification reduces blind spots. Cheap grounding checks can run on normal paths, while deeper checks and FORGE repair are risk-gated or explicit depending on configuration. See [docs/architecture.md](docs/architecture.md) and [docs/limitations.md](docs/limitations.md) for the production boundary.
+One detector misses; layered verification reduces blind spots. Cheap grounding checks can run on normal paths, while deeper checks and FORGE repair are risk-gated or explicit depending on configuration. See [docs/architecture.md](architecture.md) and [docs/limitations.md](limitations.md) for the production boundary.
 
 ---
 
 ## 7. System 1 ↔ System 2 Coupling
 
-**File:** [`entroly/coupling.py`](entroly/coupling.py)
+**File:** [`entroly/coupling.py`](../entroly/coupling.py)
 
 Kahneman's dual-process framework, applied to AI coding context:
 

@@ -1,6 +1,6 @@
 # Causal Context Graph — Do-Calculus on RAG
 
-**Implementation:** [`entroly-core/src/causal.rs`](../entroly-core/src/causal.rs)
+**Implementation:** [`entroly-core/src/causal.rs`](../../entroly-engine/src/causal.rs)
 **Math reference:** [`../RESEARCH.md`](../RESEARCH.md)
 
 ## One-paragraph spec
