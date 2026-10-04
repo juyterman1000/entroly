@@ -6,11 +6,18 @@ import pytest
 
 from entroly.communication import (
     CommunicationActionProposal,
+    CommunicationMemory,
     CommunicationPolicy,
     CommunicationStateConflict,
     CommunicationStateError,
     CommunicationStore,
+    CommunicationTaste,
+    assess_event,
+    build_digest,
+    build_group_episodes,
     event_from_adapter,
+    infer_taste_from_outbound,
+    resolve_taste,
 )
 from entroly.openclaw_bridge import handle_request
 
@@ -535,3 +542,538 @@ def test_birthday_burst_never_reuses_one_chat_evidence_for_another_reply() -> No
         "deny",
         ("scope:cross_conversation",),
     )
+
+
+def test_triage_separates_simple_birthday_from_mixed_financial_request() -> None:
+    routine = _event(
+        message_id="birthday-simple",
+        content="Happy birthday! 🎉",
+        kind="direct",
+    )
+    mixed = _event(
+        message_id="birthday-money",
+        content="Happy birthday! Can you send me $500 today?",
+        kind="direct",
+    )
+
+    routine_assessment = assess_event(routine)
+    mixed_assessment = assess_event(mixed)
+
+    assert routine_assessment.category == "birthday_wish"
+    assert routine_assessment.attention == "routine_candidate"
+    assert routine_assessment.risk_class == "low"
+    assert routine_assessment.routine_social is True
+    assert routine_assessment.direct_reply_candidate is True
+
+    assert mixed_assessment.category == "financial"
+    assert mixed_assessment.attention == "review"
+    assert mixed_assessment.risk_class == "high"
+    assert mixed_assessment.request is True
+    assert mixed_assessment.routine_social is False
+    assert mixed_assessment.direct_reply_candidate is False
+
+
+def test_group_episode_coalesces_100_verified_wishes_but_not_unknown_scope() -> None:
+    group_events = [
+        event_from_adapter(
+            {
+                "direction": "inbound",
+                "channel": "whatsapp",
+                "account_id": "personal",
+                "conversation_id": "family-group",
+                "conversation_kind": "group",
+                "sender_id": f"member-{index}",
+                "message_id": f"group-wish-{index}",
+                "timestamp": 1_700_000_000 + index,
+                "content": "Happy birthday!",
+            }
+        )
+        for index in range(100)
+    ]
+    unknown = event_from_adapter(
+        {
+            "direction": "inbound",
+            "channel": "whatsapp",
+            "account_id": "personal",
+            "conversation_id": "unknown-chat",
+            "conversation_kind": "unknown",
+            "sender_id": "person-x",
+            "message_id": "unknown-wish",
+            "timestamp": 1_700_000_050,
+            "content": "Happy birthday!",
+        }
+    )
+
+    episodes = build_group_episodes(group_events + [unknown])
+
+    assert len(episodes) == 1
+    episode = episodes[0]
+    assert episode.category == "birthday_wish"
+    assert episode.conversation_id == "family-group"
+    assert len(episode.source_event_ids) == 100
+    assert len(episode.participant_ids) == 100
+    assert unknown.event_id not in episode.source_event_ids
+
+
+def test_digest_reduces_mass_social_noise_but_surfaces_exception() -> None:
+    routine = [
+        event_from_adapter(
+            {
+                "direction": "inbound",
+                "channel": "whatsapp",
+                "account_id": "personal",
+                "conversation_id": f"dm-{index}",
+                "conversation_kind": "direct",
+                "sender_id": f"person-{index}",
+                "message_id": f"wish-{index}",
+                "timestamp": 1_700_000_000 + index,
+                "content": "Happy birthday!",
+            }
+        )
+        for index in range(100)
+    ]
+    exception = event_from_adapter(
+        {
+            "direction": "inbound",
+            "channel": "whatsapp",
+            "account_id": "personal",
+            "conversation_id": "dm-important",
+            "conversation_kind": "direct",
+            "sender_id": "important-person",
+            "message_id": "wish-question",
+            "timestamp": 1_700_000_500,
+            "content": "Happy birthday! Can you call me urgently?",
+        }
+    )
+
+    digest = build_digest(routine + [exception])
+
+    assert digest["total_events"] == 101
+    assert digest["routine_candidate_count"] == 100
+    assert digest["attention_count"] == 1
+    assert digest["urgent_count"] == 1
+    assert digest["attention_items"][0]["event_id"] == exception.event_id
+
+
+def test_inferred_taste_requires_real_evidence() -> None:
+    with pytest.raises(CommunicationStateError, match="evidence"):
+        CommunicationTaste.build(
+            scope_type="contact",
+            scope_id="person-a",
+            source="inferred",
+            confidence=0.8,
+            response_length="short",
+        )
+
+
+def test_explicit_narrow_taste_overrides_broader_inferred_taste() -> None:
+    owner = CommunicationTaste.build(
+        scope_type="owner",
+        scope_id="owner",
+        source="inferred",
+        confidence=0.9,
+        evidence_event_ids=("e1", "e2", "e3"),
+        response_length="short",
+        emoji_level="expressive",
+    )
+    contact = CommunicationTaste.build(
+        scope_type="contact",
+        scope_id="person-a",
+        source="explicit",
+        confidence=1.0,
+        response_length="very_short",
+        emoji_level="none",
+    )
+
+    resolved = resolve_taste(owner, contact)
+
+    assert resolved["response_length"] == "very_short"
+    assert resolved["emoji_level"] == "none"
+
+
+def test_taste_inference_uses_only_observed_outbound_surface_traits() -> None:
+    events = [
+        event_from_adapter(
+            {
+                "direction": "outbound",
+                "channel": "whatsapp",
+                "account_id": "personal",
+                "conversation_id": "dm-a",
+                "conversation_kind": "direct",
+                "recipient_id": "person-a",
+                "message_id": f"out-{index}",
+                "timestamp": 1_700_000_000 + index,
+                "content": text,
+                "delivery_state": "sent",
+            }
+        )
+        for index, text in enumerate(("Thanks 😊", "Sure 👍", "Done 😊"))
+    ]
+
+    taste = infer_taste_from_outbound(
+        events,
+        scope_type="contact",
+        scope_id="person-a",
+    )
+
+    assert taste is not None
+    assert taste.source == "inferred"
+    assert taste.routine_action == "none"
+    assert taste.response_length == "very_short"
+    assert taste.emoji_level == "expressive"
+    assert set(taste.evidence_event_ids) == {event.event_id for event in events}
+
+
+def test_communication_memory_persists_partitioned_episodic_taste(
+    tmp_path: Path,
+) -> None:
+    memory_path = tmp_path / "taste-memory.json"
+    taste = CommunicationTaste.build(
+        scope_type="contact",
+        scope_id="person-a",
+        source="inferred",
+        confidence=0.9,
+        evidence_event_ids=("e1", "e2", "e3"),
+        response_length="short",
+        emoji_level="light",
+    )
+
+    memory = CommunicationMemory(
+        memory_path,
+        enable_long_term=False,
+        enable_native=False,
+    )
+    remembered = memory.remember_taste(taste)
+
+    assert remembered["tier"] == "episodic"
+    assert remembered["authority_expanded"] is False
+
+    restored = CommunicationMemory(
+        memory_path,
+        enable_long_term=False,
+        enable_native=False,
+    )
+    recalled = restored.recall_tastes(
+        scope_type="contact",
+        scope_id="person-a",
+    )
+    wrong_scope = restored.recall_tastes(
+        scope_type="contact",
+        scope_id="person-b",
+    )
+
+    assert recalled
+    assert recalled[0].response_length == "short"
+    assert recalled[0].emoji_level == "light"
+    assert wrong_scope == []
+
+
+def test_contact_taste_never_mirrors_to_global_hippocampus(tmp_path: Path) -> None:
+    class FakeLongTerm:
+        active = True
+
+        def __init__(self) -> None:
+            self.calls = []
+
+        def remember_fragments(self, fragments, *, selected_ids):
+            self.calls.append((fragments, selected_ids))
+            return 1
+
+    memory = CommunicationMemory(
+        tmp_path / "taste-memory.json",
+        enable_long_term=False,
+        enable_native=False,
+    )
+    fake = FakeLongTerm()
+    memory.fabric._long_term = fake
+    taste = CommunicationTaste.build(
+        scope_type="contact",
+        scope_id="person-a",
+        source="inferred",
+        confidence=0.95,
+        evidence_event_ids=("e1", "e2", "e3", "e4"),
+        response_length="short",
+    )
+
+    result = memory.remember_taste(taste)
+
+    assert result["long_term"]["reason"] == "scope_partition_required"
+    assert fake.calls == []
+
+
+def test_strong_owner_taste_can_use_optional_hippocampus_mirror(
+    tmp_path: Path,
+) -> None:
+    class FakeLongTerm:
+        active = True
+
+        def __init__(self) -> None:
+            self.calls = []
+
+        def remember_fragments(self, fragments, *, selected_ids):
+            self.calls.append((fragments, selected_ids))
+            return 1
+
+    memory = CommunicationMemory(
+        tmp_path / "taste-memory.json",
+        enable_long_term=False,
+        enable_native=False,
+    )
+    fake = FakeLongTerm()
+    memory.fabric._long_term = fake
+    taste = CommunicationTaste.build(
+        scope_type="owner",
+        scope_id="owner-main",
+        source="inferred",
+        confidence=0.9,
+        evidence_event_ids=("e1", "e2", "e3"),
+        response_length="short",
+    )
+
+    result = memory.remember_taste(taste)
+
+    assert result["long_term"]["remembered"] is True
+    assert result["long_term"]["reason"] == "hippocampus_active"
+    assert len(fake.calls) == 1
+
+
+def test_explicit_taste_replaces_current_policy_state(tmp_path: Path) -> None:
+    path = tmp_path / "communication.sqlite3"
+    first = CommunicationTaste.build(
+        scope_type="contact",
+        scope_id="person-a",
+        source="explicit",
+        confidence=1.0,
+        response_length="short",
+        emoji_level="light",
+    )
+    replacement = CommunicationTaste.build(
+        scope_type="contact",
+        scope_id="person-a",
+        source="explicit",
+        confidence=1.0,
+        response_length="very_short",
+        emoji_level="none",
+    )
+
+    with CommunicationStore(path, retention_days=0) as store:
+        store.set_explicit_taste(first, now=100)
+        store.set_explicit_taste(replacement, now=101)
+        current = store.get_explicit_taste(
+            scope_type="contact",
+            scope_id="person-a",
+        )
+
+    assert current is not None
+    assert current.response_length == "very_short"
+    assert current.emoji_level == "none"
+
+
+def test_bridge_assure_claim_delivery_and_restart_prevent_duplicate_send(
+    tmp_path: Path,
+) -> None:
+    store_path = tmp_path / "communication.sqlite3"
+    inbound = {
+        "operation": "communication_ingest",
+        "store_path": str(store_path),
+        "retention_days": 0,
+        "event": {
+            "direction": "inbound",
+            "channel": "whatsapp",
+            "account_id": "personal",
+            "conversation_id": "dm-a",
+            "conversation_kind": "direct",
+            "sender_id": "person-a",
+            "message_id": "birthday-1",
+            "timestamp": 1_700_000_000,
+            "content": "Happy birthday!",
+            "source": "test",
+        },
+    }
+    ingested = handle_request(inbound)
+    event_id = ingested["event_id"]
+    assure_request = {
+        "operation": "communication_assure",
+        "store_path": str(store_path),
+        "retention_days": 0,
+        "channel": "whatsapp",
+        "account_id": "personal",
+        "conversation_id": "dm-a",
+        "action_type": "reply",
+        "source_event_ids": [event_id],
+        "payload": "Thank you so much!",
+        "policy_mode": "bounded",
+        "auto_actions": ["reply"],
+        "auto_categories": ["birthday_wish"],
+    }
+
+    assured = handle_request(assure_request)
+    assert assured["decision"] == "allow"
+    assert assured["execution_state"] == "assured"
+
+    first_claim = handle_request(
+        {
+            "operation": "communication_begin_action",
+            "store_path": str(store_path),
+            "action_id": assured["action_id"],
+        }
+    )
+    second_claim = handle_request(
+        {
+            "operation": "communication_begin_action",
+            "store_path": str(store_path),
+            "action_id": assured["action_id"],
+        }
+    )
+    assert first_claim["claimed"] is True
+    assert first_claim["execution_state"] == "dispatching"
+    assert second_claim["claimed"] is False
+
+    outbound = handle_request(
+        {
+            "operation": "communication_ingest",
+            "store_path": str(store_path),
+            "retention_days": 0,
+            "event": {
+                "direction": "outbound",
+                "channel": "whatsapp",
+                "account_id": "personal",
+                "conversation_id": "dm-a",
+                "conversation_kind": "direct",
+                "recipient_id": "person-a",
+                "message_id": "sent-1",
+                "content": "Thank you so much!",
+                "delivery_state": "sent",
+                "source": "openclaw.message_sent",
+            },
+        }
+    )
+    assert outbound["correlated_action_id"] == assured["action_id"]
+
+    # A fresh bridge/store instance sees the durable handled state.
+    after_restart = handle_request(assure_request)
+    assert after_restart["decision"] == "already_handled"
+    assert after_restart["execution_state"] == "sent"
+
+
+def test_unknown_chat_kind_blocks_bounded_text_reply(tmp_path: Path) -> None:
+    store_path = tmp_path / "communication.sqlite3"
+    ingested = handle_request(
+        {
+            "operation": "communication_ingest",
+            "store_path": str(store_path),
+            "retention_days": 0,
+            "event": {
+                "direction": "inbound",
+                "channel": "whatsapp",
+                "account_id": "personal",
+                "conversation_id": "opaque-chat",
+                "conversation_kind": "unknown",
+                "sender_id": "person-a",
+                "message_id": "birthday-1",
+                "content": "Happy birthday!",
+            },
+        }
+    )
+
+    assured = handle_request(
+        {
+            "operation": "communication_assure",
+            "store_path": str(store_path),
+            "retention_days": 0,
+            "channel": "whatsapp",
+            "account_id": "personal",
+            "conversation_id": "opaque-chat",
+            "action_type": "reply",
+            "source_event_ids": [ingested["event_id"]],
+            "payload": "Thank you!",
+            "policy_mode": "bounded",
+            "auto_actions": ["reply"],
+            "auto_categories": ["birthday_wish"],
+        }
+    )
+
+    assert assured["decision"] == "ambiguous"
+    assert assured["reasons"] == ["scope:direct_not_verified"]
+
+
+def test_global_digest_requires_trusted_owner_authority(tmp_path: Path) -> None:
+    store_path = tmp_path / "communication.sqlite3"
+    handle_request(
+        {
+            "operation": "communication_ingest",
+            "store_path": str(store_path),
+            "event": {
+                "direction": "inbound",
+                "channel": "whatsapp",
+                "conversation_id": "dm-a",
+                "message_id": "m-1",
+                "content": "Can you call me?",
+            },
+        }
+    )
+
+    with pytest.raises(PermissionError, match="owner"):
+        handle_request(
+            {
+                "operation": "communication_digest",
+                "store_path": str(store_path),
+                "channel": "whatsapp",
+            }
+        )
+
+    result = handle_request(
+        {
+            "operation": "communication_digest",
+            "store_path": str(store_path),
+            "channel": "whatsapp",
+            "owner_authorized": True,
+        }
+    )
+    assert result["scope"] == "owner_global"
+    assert result["digest"]["attention_count"] == 1
+
+
+def test_explicit_taste_bridge_requires_owner_and_overrides_memory(
+    tmp_path: Path,
+) -> None:
+    store_path = tmp_path / "communication.sqlite3"
+    memory_path = tmp_path / "taste-memory.json"
+
+    with pytest.raises(PermissionError, match="owner"):
+        handle_request(
+            {
+                "operation": "communication_set_taste",
+                "store_path": str(store_path),
+                "scope_type": "owner",
+                "scope_id": "main",
+                "taste": {"response_length": "very_short"},
+            }
+        )
+
+    handle_request(
+        {
+            "operation": "communication_set_taste",
+            "store_path": str(store_path),
+            "scope_type": "owner",
+            "scope_id": "main",
+            "owner_authorized": True,
+            "taste": {
+                "response_length": "very_short",
+                "emoji_level": "none",
+            },
+        }
+    )
+    result = handle_request(
+        {
+            "operation": "communication_resolve_taste",
+            "store_path": str(store_path),
+            "memory_path": str(memory_path),
+            "owner_authorized": True,
+            "scopes": [{"scope_type": "owner", "scope_id": "main"}],
+        }
+    )
+
+    assert result["resolved"]["response_length"] == "very_short"
+    assert result["resolved"]["emoji_level"] == "none"
+    assert result["authority_expanded"] is False
