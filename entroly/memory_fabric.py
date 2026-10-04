@@ -16,6 +16,7 @@ reported explicitly instead of being hidden behind import side effects.
 
 from __future__ import annotations
 
+import hashlib
 import os
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -180,7 +181,9 @@ class MemoryFabric:
                 "count": 0,
             }
         bounded_importance = max(0.0, min(1.0, float(importance)))
-        fragment_id = "memory_fabric_long_term"
+        fragment_id = "memory_fabric_long_term_" + hashlib.sha256(
+            f"{source}\0{text}".encode("utf-8")
+        ).hexdigest()[:24]
         try:
             count = int(
                 self._long_term.remember_fragments(
