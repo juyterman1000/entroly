@@ -101,7 +101,7 @@ TARGETS = [
     # warning in the first place.
     (".claude-plugin/marketplace.json",
         r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
-    (".mcpb-build/manifest.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
+    ("packaging/mcpb/manifest.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     ("plugin.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     ("gemini-extension.json", r'"version"\s*:\s*"[^"]+"', '"version": "{v}"'),
     (".agents/plugins/entroly/plugin.json",

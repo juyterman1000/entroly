@@ -23,7 +23,7 @@ daemon.sh text eol=lf
 install.sh text eol=lf
 scripts/*.sh linguist-vendored
 bench/*.sh linguist-vendored
-.githooks/** linguist-vendored
+.githooks/** text eol=lf linguist-vendored
 
 # Packaging metadata for downstream channels.
 Dockerfile* linguist-vendored

@@ -93,25 +93,27 @@ def test_synchronizer_rebuilds_mcp_bundle_from_updated_manifest(tmp_path: Path) 
     module = _load_sync_module()
     module.RELEASE_SURFACES = (
         "pyproject.toml",
-        ".mcpb-build/manifest.json",
+        "packaging/mcpb/manifest.json",
     )
 
     (tmp_path / "pyproject.toml").write_text(
         _pyproject("1.0.51"),
         encoding="utf-8",
     )
-    manifest = tmp_path / ".mcpb-build" / "manifest.json"
+    manifest = tmp_path / "packaging" / "mcpb" / "manifest.json"
     manifest.parent.mkdir(parents=True)
     manifest.write_text(
         '{"name":"entroly","version":"1.0.51"}\n',
         encoding="utf-8",
     )
-    (tmp_path / "entroly.mcpb").write_bytes(b"stale bundle")
+    bundle = tmp_path / "dist" / "entroly.mcpb"
+    bundle.parent.mkdir()
+    bundle.write_bytes(b"stale bundle")
 
     changed = module.synchronize(tmp_path, "1.0.52")
 
-    assert "entroly.mcpb" in changed
-    with zipfile.ZipFile(tmp_path / "entroly.mcpb") as archive:
+    assert "dist/entroly.mcpb" in changed
+    with zipfile.ZipFile(bundle) as archive:
         bundled = json.loads(archive.read("manifest.json"))
         assert archive.namelist() == ["manifest.json"]
     assert bundled["version"] == "1.0.52"

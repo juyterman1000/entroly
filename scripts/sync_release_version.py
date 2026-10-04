@@ -36,7 +36,7 @@ SEMVER_RE = re.compile(rf"^{SEMVER_TEXT}$")
 # are deliberately excluded.
 RELEASE_SURFACES: tuple[str, ...] = (
     ".claude-plugin/manifest.json",
-    ".mcpb-build/manifest.json",
+    "packaging/mcpb/manifest.json",
     "CITATION.cff",
     "codemeta.json",
     "entroly-core/Cargo.lock",
@@ -77,7 +77,7 @@ TOML_VERSION_SURFACES = {
 
 JSON_TOP_LEVEL_VERSION_SURFACES = {
     ".claude-plugin/manifest.json",
-    ".mcpb-build/manifest.json",
+    "packaging/mcpb/manifest.json",
     "codemeta.json",
     "entroly-wasm/package.json",
     "entroly/npm-alias/package.json",

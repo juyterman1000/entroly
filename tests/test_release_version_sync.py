@@ -118,7 +118,7 @@ def test_release_version_surfaces_match_package_version() -> None:
     assert _json_version(_read("entroly-wasm/package.json")) == __version__
     assert _json_version(_read("integrations/openclaw/package.json")) == __version__
     assert _json_version(_read(".claude-plugin/manifest.json")) == __version__
-    assert _json_version(_read(".mcpb-build/manifest.json")) == __version__
+    assert _json_version(_read("packaging/mcpb/manifest.json")) == __version__
 
     generated_wasm_package = ROOT / "entroly-wasm/pkg/package.json"
     if generated_wasm_package.exists():

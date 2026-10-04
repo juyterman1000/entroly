@@ -25,6 +25,35 @@ Issues labelled
 [`good first issue`](https://github.com/juyterman1000/entroly/labels/good%20first%20issue)
 are intended to be independently completable.
 
+## Repository layout
+
+| Area | Purpose |
+|---|---|
+| `entroly/` | Python CLI, SDK, MCP, proxy, and control-plane implementation |
+| `entroly-engine/`, `entroly-qccr/` | Shared Rust engine and query-conditioned selection |
+| `entroly-core/`, `entroly-wasm/` | Python/native and WASM delivery bindings |
+| `integrations/`, `extensions/` | Agent/framework adapters and IDE plugins |
+| `ui/`, `playground/` | Desktop application and browser demonstration |
+| `tests/`, `examples/` | Regression contracts and runnable usage examples |
+| `bench/` | CLI fixture comparisons and workload evaluation suites |
+| `benchmarks/`, `external_adapter/` | Controlled experiments, recorded evidence, and the operator-supplied baseline contract |
+| `docs/` | User guides, architecture, limitations, and evidence methodology |
+| `packaging/`, `deploy/` | Distribution source manifests and optional service deployment |
+| `scripts/`, `.github/`, `.githooks/` | Maintenance commands, CI/governance, and local Git hooks |
+
+Root manifests such as `pyproject.toml`, `server.json`, and `plugin.json` are
+build or client discovery entry points. The agent and IDE configuration
+directories are shared project integration sources; moving them changes how
+their clients find the project.
+
+Place new source, documentation, experiments, and packaging files in an
+existing area. A new root entry needs a concrete build, discovery, or
+contributor-navigation purpose explained in its PR. Build outputs belong in
+ignored `dist/` or release attachments. Local logs, agent handoffs, caches, and
+scratch prompts stay outside tracked source. Keep cited benchmark results with
+their provenance and limitations; regenerate distribution copies from reviewed
+sources rather than editing both independently.
+
 ## Development setup
 
 Entroly supports Python 3.10 or newer. The Python-only path is enough for most

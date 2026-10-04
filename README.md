@@ -34,101 +34,24 @@ Compression you can undo, on your own repository, in one command — without rep
   <b>English · <a href="docs/i18n/README.zh.md">简体中文</a> · <a href="docs/i18n/README.zh-TW.md">繁體中文</a> · <a href="docs/i18n/README.ja.md">日本語</a> · <a href="docs/i18n/README.ko.md">한국어</a> · <a href="docs/i18n/README.es.md">Español</a> · <a href="docs/i18n/README.hi.md">हिन्दी</a> · <a href="docs/i18n/README.fr.md">Français</a> · <a href="docs/i18n/README.de.md">Deutsch</a> · <a href="docs/i18n/README.pt-BR.md">Português</a> · <a href="docs/i18n/README.it.md">Italiano</a> · <a href="docs/i18n/README.tr.md">Türkçe</a> · <a href="docs/i18n/README.vi.md">Tiếng Việt</a> · <a href="docs/i18n/README.id.md">Bahasa Indonesia</a> · <a href="docs/i18n/README.pl.md">Polski</a> · <a href="docs/i18n/README.nl.md">Nederlands</a> · <a href="docs/i18n/README.th.md">ไทย</a> · <a href="docs/i18n/README.sv.md">Svenska</a> · <a href="docs/i18n/README.cs.md">Čeština</a> · <a href="docs/i18n/README.tl.md">Tagalog</a> · <a href="docs/i18n/README.ro.md">Română</a></b>
 </p>
 
-## Accuracy Retention
-
-> **Historical maintainer-reported experiment, not a quality guarantee.** The
-> table below reports one 50K-token-budget run. Overlapping confidence intervals
-> do not establish equivalence or rule out degradation. These results have not
-> been independently reproduced here.
-
-<sub>Model: <code>gpt-4o-mini</code> · Budget: 50K tokens · Wilson 95% CI · Reproduce: <code>python -m bench.accuracy --benchmark all</code></sub>
-
-| Benchmark | n | Baseline (95% CI) | Entroly (95% CI) | Retention | Benchmark Delta |
-|---|---|---|---|---|---|
-| **NeedleInAHaystack** | 20 | 100.0% [83.9–100%] | 100.0% [83.9–100%] | **100.0%** | Baseline |
-| **GSM8K** | 100 | 85.0% [76.7–90.7%] | 86.0% [77.9–91.5%] | **101.2%** | +1.0% |
-| **SQuAD 2.0** | 100 | 84.0% [75.6–89.9%] | 83.0% [74.5–89.1%] | **98.8%** | -1.0% |
-| **MMLU** (4-way MCQ) | 100 | 82.0% [73.3–88.3%] | 85.0% [76.7–90.7%] | **103.7%** | +3.0% |
-| **TruthfulQA** (MC1) | 100 | 72.0% [62.5–79.9%] | 73.0% [63.6–80.7%] | **101.4%** | +1.0% |
-| **LongBench** (HotpotQA) | 100 | 57.0% [47.2–66.3%] | 59.8% [49.8–69.0%] | **104.9%** | +2.8% |
-
-<sub>The reported SQuAD score fell from 84% to 83%. Retention ratios above 100%
-can reflect sampling or model variability. The displayed intervals are historical
-reported values, not a validated paired comparison; Wilson intervals require
-binary outcomes and do not justify uncertainty for averaged partial-credit scores.
-Establishing non-inferiority needs a predefined tolerance, paired per-task outcomes,
-appropriate uncertainty estimates, and adequate sample size. These results cannot
-be extrapolated to more aggressive compression or other models.</sub>
-
-### Context Selection Quality
-
-<sub>19-fragment synthetic corpus · 300-token budget · 3 fixture queries · Reproduce: <code>entroly benchmark</code></sub>
-
-| Metric | RAW (Naive FIFO) | TOP-K (local baseline) | **ENTROLY (Knapsack)** |
-|---|---|---|---|
-| Avg fragments selected | 6.0 | 6.0 | **8.7** |
-| Avg module coverage | 3.0 | 3.7 | **8.7** |
-| Total SAST catches | 0 | 0 | **3** |
-
-<sub>Entroly sees <b>8.7 modules</b> where TOP-K sees 3.7 — it includes auth, payments, AND rate limiting. TOP-K misses the rate limiter. <a href="BENCHMARKS.md">Full methodology, CIs, and reproduce commands →</a></sub>
-
----
-
-## Research
-
-Entroly includes the following research-oriented implementations. A module's
-presence does not establish production reliability, mathematical novelty, or
-independent validation; consult its implementation and evaluation limitations.
-
-| Algorithm | What it does | Implementation |
-|---|---|---|
-| **BIPT** | Byte-level hallucination detection via Kolmogorov-inspired provenance tracing | [`provenance_tracer.py`](entroly/verifiers/provenance_tracer.py) |
-| **NKBE** | Nash-KKT multi-agent token budget equilibrium | [`nkbe.rs`](entroly-core/src/nkbe.rs) |
-| **Causal Context Graph** | Intervention-aware fragment feedback learning | [`causal.rs`](entroly-core/src/causal.rs) |
-| **Cognitive Bus** | ISA event routing with KL-divergence priority | [`cognitive_bus.rs`](entroly-core/src/cognitive_bus.rs) |
-| **Resonance Matrix** | Supermodular pairwise fragment value learning | [`resonance.rs`](entroly-core/src/resonance.rs) |
-| **System 1 <> 2** | Dual-process verified-belief bridge (proxy <> vault) | [`coupling.py`](entroly/coupling.py) |
-
-> [Read the full research documentation](docs/RESEARCH.md) · [Cite Entroly](CITATION.cff)
----
-
 <p align="center">
-  <b><a href="#what-is-entroly-in-plain-english">What is it?</a> · <a href="#install">Install</a> · <a href="#quickstart--by-how-you-work">Quickstart</a> · <a href="#benchmarks">Benchmarks</a> · <a href="#common-questions">Questions</a></b>
+  <b><a href="#what-is-entroly-in-plain-english">What is it?</a> · <a href="#install">Install</a> · <a href="#quickstart--by-how-you-work">Quickstart</a> · <a href="#benchmarks">Benchmarks</a> · <a href="#common-questions">Questions</a> · <a href="CONTRIBUTING.md">Contribute</a></b>
 </p>
 
 ---
 
-## Integration hub
-
-Use Entroly at the SDK, framework, proxy, MCP, plugin or agent boundary. A
-listed name is not automatically a claim that hosted subscription inference is
-intercepted; provider-bound savings exist only when the request traverses an
-Entroly-controlled route.
-
-| Direct, tested paths | Guided or bounded paths |
-|---|---|
-| [Vercel AI SDK middleware](docs/integration-hub.md#vercel-ai-sdk) · [OpenAI SDK](docs/integration-hub.md#openai-sdk) · [Anthropic SDK](docs/integration-hub.md#anthropic-sdk) | [Agno](docs/integration-hub.md#agno) · [Strands Agents](docs/integration-hub.md#strands-agents) · [CrewAI](docs/integration-hub.md#crewai) · [AutoGen](docs/integration-hub.md#autogen) |
-| [LangChain](docs/integration-hub.md#langchain) · [LiteLLM](docs/integration-hub.md#litellm) · [MCP](docs/integration-hub.md#mcp) | [Claude Code on Vertex AI](docs/integration-hub.md#claude-code-on-vertex-ai) · [Claude Code on Azure AI Foundry](docs/integration-hub.md#claude-code-on-azure-ai-foundry) |
-| [OpenClaw](docs/integration-hub.md#openclaw) · [OpenCode](docs/integration-hub.md#opencode) | [Claude Code in VS Code](docs/integration-hub.md#claude-code-in-vs-code) · [VS Code Copilot](docs/integration-hub.md#vs-code-copilot) · [Grok](docs/integration-hub.md#grok) |
-
-**[Open the complete verified integration and operations hub →](docs/integration-hub.md)**
-
----
 ## What is Entroly? (in plain English)
 
-AI coding assistants have a memory limit. Hand one your whole codebase and it
-gets slow, expensive, and distracted — like giving someone a 500-page manual
-when they only needed page 47.
+Entroly is a local-first context control plane for AI coding tools. It selects
+evidence within a token budget, preserves recoverable omissions, and records
+selection decisions in receipts. Three properties to evaluate on your task:
 
-**Entroly finds page 47.**
-
-It sits between your code and the AI, reads everything, and passes along only
-the parts selected for the question. Three properties to evaluate on your task:
 |  |  |
 |---|---|
-| 💰 **Your bill goes down** | Fewer words sent to the AI means a smaller invoice. How much depends on the job — see the [real numbers](#benchmarks) below. |
+| 💰 **Avoidable input cost** | Smaller requests can reduce input cost when they reach a provider through an Entroly-controlled route. The result depends on the workload and provider cache — see the [real numbers](#benchmarks) below. |
 | 🔍 **Recoverable originals** | Receipt-backed recovery retains source material locally. Exact recovery requires the referenced store and source bytes to remain available; it does not guarantee answer quality. |
 | 🧾 **You can check its work** | Every decision comes with a receipt: what was kept, what was left out, and why. |
+
 **Do I have to change my code?** No. On hosts with a verified prompt hook,
 Entroly runs before the model plans. MCP-only integrations remain callable
 tools that an agent may skip; API traffic is intercepted only when it is routed
@@ -142,6 +65,15 @@ show you real numbers on your own project before you connect anything paid.
 the note under [Install](#install).)
 
 ---
+
+## Contributing
+
+Start with [development setup and repository layout](CONTRIBUTING.md), then
+follow the [architecture](docs/architecture.md), [style guide](docs/STYLE_GUIDE.md),
+and [test instructions](CONTRIBUTING.md#run-the-relevant-checks) for the surface
+being changed. Source, delivery adapters, and benchmark evidence have different
+review requirements; the contributor guide explains their boundaries.
+
 ## Install
 
 > **Not sure which one?** Pick **Python**. It's the complete version and what
@@ -252,6 +184,22 @@ entroly recover sha256:0b957c79... --out restored.json
 Full setup paths for every agent, IDE, and CI use case: [Get started in depth](docs/first-run-trust.md) · [Command reference](docs/DETAILS.md#command-reference).
 
 ---
+## Integration hub
+
+Use Entroly at the SDK, framework, proxy, MCP, plugin or agent boundary. A
+listed name is not automatically a claim that hosted subscription inference is
+intercepted; provider-bound savings exist only when the request traverses an
+Entroly-controlled route.
+
+| Direct, tested paths | Guided or bounded paths |
+|---|---|
+| [Vercel AI SDK middleware](docs/integration-hub.md#vercel-ai-sdk) · [OpenAI SDK](docs/integration-hub.md#openai-sdk) · [Anthropic SDK](docs/integration-hub.md#anthropic-sdk) | [Agno](docs/integration-hub.md#agno) · [Strands Agents](docs/integration-hub.md#strands-agents) · [CrewAI](docs/integration-hub.md#crewai) · [AutoGen](docs/integration-hub.md#autogen) |
+| [LangChain](docs/integration-hub.md#langchain) · [LiteLLM](docs/integration-hub.md#litellm) · [MCP](docs/integration-hub.md#mcp) | [Claude Code on Vertex AI](docs/integration-hub.md#claude-code-on-vertex-ai) · [Claude Code on Azure AI Foundry](docs/integration-hub.md#claude-code-on-azure-ai-foundry) |
+| [OpenClaw](docs/integration-hub.md#openclaw) · [OpenCode](docs/integration-hub.md#opencode) | [Claude Code in VS Code](docs/integration-hub.md#claude-code-in-vs-code) · [VS Code Copilot](docs/integration-hub.md#vs-code-copilot) · [Grok](docs/integration-hub.md#grok) |
+
+**[Open the complete verified integration and operations hub →](docs/integration-hub.md)**
+
+---
 ## See it work in 30 seconds
 
 Not mocked recordings — each video is rendered from a checked-in command that
@@ -302,6 +250,64 @@ Frozen evidence-selection benchmark (opt-in PRISM-R research prototype, not the 
 Recovery, latency, and head-to-head frontier results are in **[docs/BENCHMARKS.md](docs/BENCHMARKS.md)** with raw artifacts linked. None of these numbers are a universal or production-savings guarantee for your workload — reproduce them on your own repo with `entroly simulate` and `entroly value`.
 
 ---
+## Accuracy Retention
+
+> **Historical maintainer-reported experiment, not a quality guarantee.** The
+> table below reports one 50K-token-budget run. Overlapping confidence intervals
+> do not establish equivalence or rule out degradation. These results have not
+> been independently reproduced here.
+
+<sub>Model: <code>gpt-4o-mini</code> · Budget: 50K tokens · Wilson 95% CI · Reproduce: <code>python -m bench.accuracy --benchmark all</code></sub>
+
+| Benchmark | n | Baseline (95% CI) | Entroly (95% CI) | Retention | Benchmark Delta |
+|---|---|---|---|---|---|
+| **NeedleInAHaystack** | 20 | 100.0% [83.9–100%] | 100.0% [83.9–100%] | **100.0%** | Baseline |
+| **GSM8K** | 100 | 85.0% [76.7–90.7%] | 86.0% [77.9–91.5%] | **101.2%** | +1.0% |
+| **SQuAD 2.0** | 100 | 84.0% [75.6–89.9%] | 83.0% [74.5–89.1%] | **98.8%** | -1.0% |
+| **MMLU** (4-way MCQ) | 100 | 82.0% [73.3–88.3%] | 85.0% [76.7–90.7%] | **103.7%** | +3.0% |
+| **TruthfulQA** (MC1) | 100 | 72.0% [62.5–79.9%] | 73.0% [63.6–80.7%] | **101.4%** | +1.0% |
+| **LongBench** (HotpotQA) | 100 | 57.0% [47.2–66.3%] | 59.8% [49.8–69.0%] | **104.9%** | +2.8% |
+
+<sub>The reported SQuAD score fell from 84% to 83%. Retention ratios above 100%
+can reflect sampling or model variability. The displayed intervals are historical
+reported values, not a validated paired comparison; Wilson intervals require
+binary outcomes and do not justify uncertainty for averaged partial-credit scores.
+Establishing non-inferiority needs a predefined tolerance, paired per-task outcomes,
+appropriate uncertainty estimates, and adequate sample size. These results cannot
+be extrapolated to more aggressive compression or other models.</sub>
+
+### Context Selection Quality
+
+<sub>19-fragment synthetic corpus · 300-token budget · 3 fixture queries · Reproduce: <code>entroly benchmark</code></sub>
+
+| Metric | RAW (Naive FIFO) | TOP-K (local baseline) | **ENTROLY (Knapsack)** |
+|---|---|---|---|
+| Avg fragments selected | 6.0 | 6.0 | **8.7** |
+| Avg module coverage | 3.0 | 3.7 | **8.7** |
+| Total SAST catches | 0 | 0 | **3** |
+
+<sub>Entroly sees <b>8.7 modules</b> where TOP-K sees 3.7 — it includes auth, payments, AND rate limiting. TOP-K misses the rate limiter. <a href="BENCHMARKS.md">Full methodology, CIs, and reproduce commands →</a></sub>
+
+---
+
+## Research
+
+Entroly includes the following research-oriented implementations. A module's
+presence does not establish production reliability, mathematical novelty, or
+independent validation; consult its implementation and evaluation limitations.
+
+| Algorithm | What it does | Implementation |
+|---|---|---|
+| **BIPT** | Byte-level hallucination detection via Kolmogorov-inspired provenance tracing | [`provenance_tracer.py`](entroly/verifiers/provenance_tracer.py) |
+| **NKBE** | Nash-KKT multi-agent token budget equilibrium | [`nkbe.rs`](entroly-core/src/nkbe.rs) |
+| **Causal Context Graph** | Intervention-aware fragment feedback learning | [`causal.rs`](entroly-core/src/causal.rs) |
+| **Cognitive Bus** | ISA event routing with KL-divergence priority | [`cognitive_bus.rs`](entroly-core/src/cognitive_bus.rs) |
+| **Resonance Matrix** | Supermodular pairwise fragment value learning | [`resonance.rs`](entroly-core/src/resonance.rs) |
+| **System 1 <> 2** | Dual-process verified-belief bridge (proxy <> vault) | [`coupling.py`](entroly/coupling.py) |
+
+> [Read the full research documentation](docs/RESEARCH.md) · [Cite Entroly](CITATION.cff)
+---
+
 ## Features
 
 - **Picks first, shrinks second** — it works out which files actually answer your question, *then* compresses them.
