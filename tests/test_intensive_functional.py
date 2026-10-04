@@ -736,13 +736,18 @@ def test_unknown_fragment_id():
 # ══════════════════════════════════════════════════════════════════════════════
 
 def test_large_corpus_performance():
-    section("F-40", "LARGE CORPUS PERFORMANCE — optimize completes in < 2 seconds at scale")
+    section("F-40", "LARGE CORPUS PERFORMANCE — 100 real files in < 2 seconds")
     engine, _ = fresh_engine()
-    sources = real_sources()
+    all_sources = real_sources()
+    # Keep the documented 100-file workload fixed as the repository grows.
+    # Include both Python and Rust sources so the sample is not language-skewed.
+    sources = ([source for source in all_sources if source[1].suffix == ".py"][:80]
+               + [source for source in all_sources if source[1].suffix == ".rs"][:20])
     n_sources = len(sources)
+    assert check("performance corpus contains 80 Python and 20 Rust files",
+                 n_sources == 100)
 
-    # Ingest all real files — this is our actual corpus (SimHash deduplicates
-    # cosmetic variants of large files by design, so we use the real corpus as-is).
+    # Ingest real files; SimHash deduplicates cosmetic variants by design.
     ingested = 0
     for label, path in sources:
         content = path.read_text(encoding="utf-8", errors="replace")
