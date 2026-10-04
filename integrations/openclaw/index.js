@@ -14,7 +14,6 @@ import {
   createCommunicationHooks,
   formatCommunicationStatus,
 } from "./communication-hooks.js";
-import { registerCommunicationSecretaryTools } from "./secretary-tools.js";
 import { registerCommunicationTools } from "./communication-tools.js";
 
 export default definePluginEntry({
@@ -58,12 +57,6 @@ export default definePluginEntry({
         api.on("message_sent", communicationHooks.onMessageSent);
         registerCommunicationTools(api, { bridge, config });
       }
-    }
-    if (
-      config.communicationAssurance === true &&
-      config.communicationSecretaryTools === true
-    ) {
-      registerCommunicationSecretaryTools(api, { bridge, config });
     }
     if (config.proofGuidedRecovery === true) {
       if (typeof api.on !== "function") {
