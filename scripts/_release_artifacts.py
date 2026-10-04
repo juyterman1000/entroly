@@ -6,8 +6,8 @@ import zipfile
 from pathlib import Path
 
 
-MCPB_MANIFEST = Path(".mcpb-build/manifest.json")
-MCPB_BUNDLE = Path("entroly.mcpb")
+MCPB_MANIFEST = Path("packaging/mcpb/manifest.json")
+MCPB_BUNDLE = Path("dist/entroly.mcpb")
 
 
 def rebuild_mcpb(root: Path) -> Path:
@@ -18,6 +18,8 @@ def rebuild_mcpb(root: Path) -> Path:
 
     if not source.is_file():
         raise FileNotFoundError(f"MCP bundle manifest is missing: {source}")
+
+    target.parent.mkdir(parents=True, exist_ok=True)
 
     info = zipfile.ZipInfo("manifest.json", date_time=(1980, 1, 1, 0, 0, 0))
     info.compress_type = zipfile.ZIP_DEFLATED

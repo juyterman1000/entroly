@@ -10,6 +10,7 @@ import zipfile
 from pathlib import Path
 
 from pyproject_compat import read_project_metadata
+from scripts._release_artifacts import MCPB_BUNDLE, MCPB_MANIFEST, rebuild_mcpb
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -47,15 +48,23 @@ def test_public_package_versions_are_1_0_85() -> None:
     assert _read_json("entroly-wasm/package.json")["version"] == RELEASE_VERSION
     assert _read_json("integrations/openclaw/package.json")["version"] == RELEASE_VERSION
     assert _read_json(".claude-plugin/manifest.json")["version"] == RELEASE_VERSION
-    assert _read_json(".mcpb-build/manifest.json")["version"] == RELEASE_VERSION
+    assert _read_json("packaging/mcpb/manifest.json")["version"] == RELEASE_VERSION
 
 
-def test_bundled_mcpb_manifest_matches_release_source() -> None:
-    source = _read_json(".mcpb-build/manifest.json")
-    with zipfile.ZipFile(ROOT / "entroly.mcpb") as bundle:
+def test_built_mcpb_matches_source_and_is_reproducible(tmp_path: Path) -> None:
+    source = _read_json("packaging/mcpb/manifest.json")
+    manifest = tmp_path / MCPB_MANIFEST
+    manifest.parent.mkdir(parents=True)
+    manifest.write_bytes((ROOT / MCPB_MANIFEST).read_bytes())
+    target = rebuild_mcpb(tmp_path)
+    first_build = target.read_bytes()
+    with zipfile.ZipFile(target) as bundle:
         bundled = json.loads(bundle.read("manifest.json"))
+        assert bundle.namelist() == ["manifest.json"]
 
     assert bundled == source
+    assert target == tmp_path / MCPB_BUNDLE
+    assert rebuild_mcpb(tmp_path).read_bytes() == first_build
 
 
 #: Top-level keys ClawHub accepts in openclaw.plugin.json. An unlisted key is
@@ -223,7 +232,7 @@ def test_no_stale_package_advertising_versions() -> None:
     stale = []
     for path in (
         "server.json",
-        ".mcpb-build/manifest.json",
+        "packaging/mcpb/manifest.json",
         ".claude-plugin/manifest.json",
         "entroly/npm/package.json",
         "entroly/npm-alias/package.json",

@@ -2,7 +2,7 @@
 #
 # entroly pre-push hook
 #
-# Blocks accidental pushes of paths listed in .github-ignore to GitHub.
+# Blocks accidental pushes of paths listed in .githooks/blocked-paths to GitHub.
 # Useful when you keep proprietary helpers, internal docs, or unreleased
 # experiments alongside the public source. Pushes to non-GitHub remotes
 # pass through unchecked.
@@ -15,7 +15,7 @@
 #
 #   git push --no-verify
 #
-# Reads $REPO_ROOT/.github-ignore — one path or directory pattern per
+# Reads $REPO_ROOT/.githooks/blocked-paths — one path or directory pattern per
 # line. `# comment` and blank lines are ignored. Trailing slash means
 # "this directory and everything under it."
 
@@ -31,9 +31,9 @@ if [[ "$REMOTE_URL" != *"github.com"* ]] && [[ "$REMOTE_NAME" != "github" ]]; th
 fi
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-IGNORE_FILE="$REPO_ROOT/.github-ignore"
+IGNORE_FILE="$REPO_ROOT/.githooks/blocked-paths"
 
-# No .github-ignore = nothing to guard. Hook is a no-op.
+# No .githooks/blocked-paths = nothing to guard. Hook is a no-op.
 [[ -f "$IGNORE_FILE" ]] || exit 0
 
 BLOCKED=()
@@ -95,7 +95,7 @@ done
 
 if [[ ${#VIOLATIONS[@]} -gt 0 ]]; then
     echo ""
-    echo "pre-push: BLOCKED — these paths are listed in .github-ignore:"
+    echo "pre-push: BLOCKED — these paths are listed in .githooks/blocked-paths:"
     echo ""
     for v in "${VIOLATIONS[@]}"; do
         echo "  $v"
@@ -103,7 +103,7 @@ if [[ ${#VIOLATIONS[@]} -gt 0 ]]; then
     echo ""
     echo "Either:"
     echo "  - remove the file from your push, or"
-    echo "  - drop the pattern from .github-ignore if it's no longer sensitive, or"
+    echo "  - drop the pattern from .githooks/blocked-paths if it's no longer sensitive, or"
     echo "  - bypass for this push: git push --no-verify"
     exit 1
 fi
