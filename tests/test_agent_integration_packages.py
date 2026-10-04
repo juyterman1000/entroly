@@ -46,12 +46,18 @@ def test_openclaw_remains_a_first_class_context_engine() -> None:
     assert 'api.registerContextEngine("entroly"' in entry
     assert 'api.on("llm_output"' in entry
     assert 'api.on("before_agent_finalize"' in entry
+    assert 'api.on("message_received"' in entry
+    assert 'api.on("message_sent"' in entry
     assert manifest["id"] == "entroly"
     assert manifest["kind"] == "context-engine"
     assert manifest["activation"]["onStartup"] is True
     assert manifest["configSchema"]["additionalProperties"] is False
+    assert manifest["configSchema"]["properties"]["communicationAssurance"]["default"] is False
+    assert manifest["configSchema"]["properties"]["communicationRetentionDays"]["default"] == 90
     assert 'operation == "assemble"' in bridge
     assert 'operation == "verify_proof_guided_output"' in bridge
+    assert 'operation == "communication_ingest"' in bridge
+    assert 'operation == "communication_status"' in bridge
 
 
 def test_openclaw_docs_use_a_publicly_verifiable_install_path() -> None:
