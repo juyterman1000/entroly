@@ -643,7 +643,7 @@ class CommunicationStore:
                   AND conversation_id = ?
                   AND payload_sha256 = ?
                   AND policy_decision = 'allow'
-                  AND execution_state = 'assured'
+                  AND execution_state = 'dispatching'
                   AND updated_at >= ?
                 ORDER BY updated_at DESC, action_id DESC
                 LIMIT 2
@@ -675,6 +675,52 @@ class CommunicationStore:
                 ),
             )
             return action_id
+
+    def begin_action_execution(
+        self,
+        action_id: str,
+        *,
+        now: float | None = None,
+    ) -> bool:
+        """Atomically claim one assured action for dispatch.
+
+        False means the action is not in the exact dispatchable state. This
+        provides duplicate suppression across retries/restarts; callers must
+        never send when False is returned.
+        """
+        timestamp = time.time() if now is None else float(now)
+        with self._lock, self._conn:
+            cursor = self._conn.execute(
+                """
+                UPDATE communication_actions
+                SET execution_state = 'dispatching', updated_at = ?
+                WHERE action_id = ?
+                  AND policy_decision = 'allow'
+                  AND execution_state = 'assured'
+                """,
+                (timestamp, action_id),
+            )
+            return cursor.rowcount == 1
+
+    def fail_dispatch(
+        self,
+        action_id: str,
+        *,
+        error: str,
+        now: float | None = None,
+    ) -> bool:
+        """Record an observed host dispatch exception without reopening send."""
+        timestamp = time.time() if now is None else float(now)
+        with self._lock, self._conn:
+            cursor = self._conn.execute(
+                """
+                UPDATE communication_actions
+                SET execution_state = 'failed', error = ?, updated_at = ?
+                WHERE action_id = ? AND execution_state = 'dispatching'
+                """,
+                (bounded_string(error, 4096), timestamp, action_id),
+            )
+            return cursor.rowcount == 1
 
     def get_action(self, action_id: str) -> dict[str, Any] | None:
         with self._lock:
