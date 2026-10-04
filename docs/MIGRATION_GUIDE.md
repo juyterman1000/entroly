@@ -76,4 +76,4 @@ rollback with `doctor`, `verify-claims`, and an exact-passthrough request.
 - [1.0.62 release](https://github.com/juyterman1000/entroly/releases/tag/entroly-v1.0.62)
 - [1.0.61 release](https://github.com/juyterman1000/entroly/releases/tag/entroly-v1.0.61)
 - [1.0.60 release](https://github.com/juyterman1000/entroly/releases/tag/entroly-v1.0.60)
-- [All versioned notes](docs/releases/)
+- [All versioned notes](https://github.com/juyterman1000/entroly/releases)

@@ -9,7 +9,7 @@ respond efficiently.
 | Reproducible bug or compatibility regression | [Bug report](https://github.com/juyterman1000/entroly/issues/new?template=bug_report.yml) |
 | Feature proposal with a concrete workflow | [Feature request](https://github.com/juyterman1000/entroly/issues/new?template=feature_request.yml) |
 | Benchmark result or public-claim discrepancy | [Evidence report](https://github.com/juyterman1000/entroly/issues/new?template=evidence_report.yml) |
-| Vulnerability or credential/data exposure | Follow [SECURITY.md](SECURITY.md); do not file publicly |
+| Vulnerability or credential/data exposure | Follow [SECURITY.md](../SECURITY.md); do not file publicly |
 | Community conduct concern | Email `fastrunner10090@gmail.com` with subject `[Entroly conduct]` |
 
 ## Before asking for help

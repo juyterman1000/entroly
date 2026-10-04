@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 import entroly.cli as cli
 import entroly.runtime_doctor as doctor_module
 from entroly.runtime_doctor import SCHEMA_VERSION, runtime_doctor
@@ -87,3 +89,55 @@ def test_cmd_doctor_json_uses_machine_readable_exit_contract(
 
     assert result == 1
     assert json.loads(capsys.readouterr().out)["healthy"] is False
+
+
+@pytest.mark.parametrize(
+    "argv,handler_name",
+    [
+        (["doctor", "--json"], "cmd_doctor"),
+        (["capabilities", "--json"], "cmd_capabilities"),
+        (["usage", "--json"], "cmd_usage"),
+        (["usage", "--csv"], "cmd_usage"),
+        (["ravs", "report", "--format", "json"], "cmd_ravs"),
+        (["telemetry", "status", "--json"], "cmd_telemetry"),
+        (["attach", "list", "--json"], "cmd_attach"),
+    ],
+)
+def test_structured_cli_dispatch_skips_intro_and_update_checks(
+    argv, handler_name, tmp_path, monkeypatch, capsys
+) -> None:
+    """Fresh automation must not create welcome state or poll for updates."""
+    import sys
+
+    from entroly import product_telemetry
+
+    marker = tmp_path / ".welcome_shown"
+    monkeypatch.setattr(cli, "_ENTROLY_DIR", tmp_path)
+    monkeypatch.setattr(cli, "_FIRST_RUN_MARKER", marker)
+    monkeypatch.setenv("ENTROLY_ENABLE_UPDATE_CHECK", "1")
+    monkeypatch.setattr(sys, "argv", ["entroly", *argv])
+    monkeypatch.setattr(product_telemetry, "capture_cli_result", lambda *a, **k: None)
+    monkeypatch.setattr(product_telemetry, "flush", lambda: None)
+
+    def unexpected_update():
+        pytest.fail("structured output invoked the startup update check")
+
+    def handler(_args):
+        print('{"healthy":false}')
+        return 1
+
+    def exit_cli(code):
+        raise SystemExit(code)
+
+    monkeypatch.setattr(cli, "_check_for_update", unexpected_update)
+    monkeypatch.setattr(cli, handler_name, handler)
+    monkeypatch.setattr(cli.os, "_exit", exit_cli)
+
+    with pytest.raises(SystemExit) as stopped:
+        cli.main()
+
+    assert stopped.value.code == 1
+    captured = capsys.readouterr()
+    assert json.loads(captured.out) == {"healthy": False}
+    assert captured.err == ""
+    assert not marker.exists()

@@ -10,11 +10,12 @@ answers questions that are expensive to answer by reading files:
 * where the import cycles are
 * which modules cross the PyO3 boundary into the Rust core
 
-The reachability report is the load-bearing one. ``[project.scripts]`` in
-pyproject.toml, ``python -m entroly`` and ``import entroly`` are the only ways
-into the package from outside. A module that no entry point reaches is not on
-any path a user can trigger through the installed package, however many tests
-import it directly.
+The reachability report follows static imports from console scripts, package
+``__main__`` modules and the top-level SDK. Direct library imports, container
+commands, plugins and dynamic imports need separate inspection; add known
+launch modules with ``--entry-point``. Absence from this graph is a review
+candidate, never proof that a module is unused or safe to delete. Nested and
+conditional imports are included, so edges are not a runtime execution trace.
 
 Usage::
 
@@ -75,11 +76,16 @@ def _resolve(target: str, known: set[str]) -> str | None:
     return parent if parent in known else None
 
 
-def module_imports(path: Path, self_mod: str, known: set[str]) -> tuple[set[str], set[str]]:
+def module_imports(
+    path: Path, self_mod: str, known: set[str], *,
+    parse_errors: dict[str, str] | None = None,
+) -> tuple[set[str], set[str]]:
     """Return ``(internal_module_deps, native_extension_deps)`` for one file."""
     try:
         tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
-    except SyntaxError:
+    except SyntaxError as exc:
+        if parse_errors is not None:
+            parse_errors[self_mod] = f"line {exc.lineno}: {exc.msg}"
         return set(), set()
 
     internal: set[str] = set()
@@ -127,7 +133,9 @@ def module_imports(path: Path, self_mod: str, known: set[str]) -> tuple[set[str]
     return internal, native
 
 
-def build_graph(pkg_root: Path) -> tuple[dict[str, list[str]], dict[str, list[str]], dict[str, int]]:
+def build_graph(
+    pkg_root: Path, *, parse_errors: dict[str, str] | None = None,
+) -> tuple[dict[str, list[str]], dict[str, list[str]], dict[str, int]]:
     modules = discover_modules(pkg_root)
     known = set(modules)
     adjacency: dict[str, list[str]] = {}
@@ -135,7 +143,7 @@ def build_graph(pkg_root: Path) -> tuple[dict[str, list[str]], dict[str, list[st
     line_counts: dict[str, int] = {}
 
     for name, path in modules.items():
-        deps, nat = module_imports(path, name, known)
+        deps, nat = module_imports(path, name, known, parse_errors=parse_errors)
         adjacency[name] = sorted(deps)
         if nat:
             native[name] = sorted(nat)
@@ -147,9 +155,15 @@ def build_graph(pkg_root: Path) -> tuple[dict[str, list[str]], dict[str, list[st
 # ── graph analysis ───────────────────────────────────────────────────────────
 
 
-def shipped_entry_points(pkg: str) -> list[str]:
-    """Every module a user can reach without importing a private path."""
+def shipped_entry_points(pkg: str, pkg_root: Path | None = None) -> list[str]:
+    """Console scripts and executable packages covered by the static model."""
     entries = {pkg, f"{pkg}.__main__", f"{pkg}.sdk"}
+    pkg_root = pkg_root or REPO_ROOT / pkg
+    entries.update(
+        module_name(path, pkg_root)
+        for path in pkg_root.rglob("__main__.py")
+        if not SKIP_DIR_PARTS.intersection(path.parts)
+    )
     pyproject = REPO_ROOT / "pyproject.toml"
     if not pyproject.exists():
         return sorted(entries)
@@ -273,10 +287,19 @@ def pagerank(adjacency: dict[str, list[str]], damping: float = 0.85, iterations:
     return rank
 
 
-def analyse(pkg_root: Path) -> dict[str, object]:
+def analyse(pkg_root: Path, *, extra_entry_points: tuple[str, ...] = ()) -> dict[str, object]:
+    if not pkg_root.is_dir():
+        raise ValueError(f"Package directory does not exist: {pkg_root}")
     pkg = pkg_root.name
-    adjacency, native, lines = build_graph(pkg_root)
-    entries = [e for e in shipped_entry_points(pkg) if e in adjacency]
+    parse_errors: dict[str, str] = {}
+    adjacency, native, lines = build_graph(pkg_root, parse_errors=parse_errors)
+    missing = sorted(set(extra_entry_points) - set(adjacency))
+    if missing:
+        raise ValueError(f"Entry point modules absent from package: {', '.join(missing)}")
+    entries = sorted({
+        e for e in [*shipped_entry_points(pkg, pkg_root), *extra_entry_points]
+        if e in adjacency
+    })
     live = reachable(entries, adjacency)
     unreached = sorted(set(adjacency) - live)
     ranks = pagerank(adjacency)
@@ -286,6 +309,13 @@ def analyse(pkg_root: Path) -> dict[str, object]:
             in_degree[target] += 1
 
     return {
+        "analysis_scope": "static_import_reachability",
+        "parse_errors": parse_errors,
+        "limitations": [
+            "Direct library imports and external launchers require explicit entry points.",
+            "Dynamic imports are not resolved; conditional imports are included.",
+            "Unreached modules are review candidates, not proof of dead code.",
+        ],
         "package": pkg,
         "modules": len(adjacency),
         "edges": sum(len(v) for v in adjacency.values()),
@@ -315,9 +345,12 @@ def render(report: dict[str, object]) -> str:
     w(f"entry points       : {', '.join(report['entry_points'])}")  # type: ignore[arg-type]
     w(f"reachable modules  : {report['reachable']}/{report['modules']}")
     w(
-        f"UNREACHABLE        : {len(report['unreachable'])} modules, "  # type: ignore[arg-type]
+        f"STATICALLY UNREACHED: {len(report['unreachable'])} modules, "  # type: ignore[arg-type]
         f"{report['unreachable_lines']:,} lines"
     )
+    w("Scope: static imports only; unreached does not mean unused or safe to delete.")
+    for module, error in report.get("parse_errors", {}).items():  # type: ignore[union-attr]
+        w(f"INCOMPLETE: {module}: {error}")
     w("")
     w("architectural hubs (PageRank over imports):")
     for name, score in report["hubs"][:10]:  # type: ignore[index]
@@ -329,7 +362,7 @@ def render(report: dict[str, object]) -> str:
     w("")
     w(f"PyO3 / native boundary: {len(report['native_boundary'])} modules import the Rust core")  # type: ignore[arg-type]
     w("")
-    w("modules NOT reachable from any shipped entry point:")
+    w("modules not reached from the modeled entry points (review required):")
     for name in report["unreachable"]:  # type: ignore[index]
         w(f"  {name}")
     return "\n".join(out)
@@ -340,21 +373,32 @@ def main() -> int:
     parser.add_argument("--package", default=str(REPO_ROOT / "entroly"))
     parser.add_argument("--json", type=Path, help="write the full report as JSON")
     parser.add_argument(
+        "--entry-point", action="append", default=[], metavar="MODULE",
+        help="include an external launcher or public library module (repeatable)",
+    )
+    parser.add_argument(
         "--check",
         action="store_true",
-        help="exit 1 if any module is unreachable from a shipped entry point",
+        help="exit 1 if the static model leaves modules unreached (not a dead-code test)",
     )
     args = parser.parse_args()
 
-    report = analyse(Path(args.package).resolve())
+    try:
+        report = analyse(Path(args.package).resolve(), extra_entry_points=tuple(args.entry_point))
+    except ValueError as exc:
+        parser.error(str(exc))
     if args.json:
         args.json.write_text(json.dumps(report, indent=1), encoding="utf-8")
     print(render(report))
 
+    if report["parse_errors"]:
+        print("FAIL: import graph is incomplete due to source parse errors.", file=sys.stderr)
+        return 1
+
     if args.check and report["unreachable"]:
         print(
-            f"\nFAIL: {len(report['unreachable'])} modules are unreachable "  # type: ignore[arg-type]
-            "from every shipped entry point.",
+            f"\nREVIEW: {len(report['unreachable'])} modules are not reached "  # type: ignore[arg-type]
+            "by the static model. Inspect external and dynamic uses before removal.",
             file=sys.stderr,
         )
         return 1

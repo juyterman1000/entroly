@@ -11,12 +11,12 @@ For the standalone BIPT paper, see [`../BIPT.md`](../BIPT.md).
 
 | Paper | Status | Algorithm |
 |---|---|---|
-| **BIPT** — Byte-level Information Provenance Tracing via Suffix Automaton on Kolmogorov-Bounded Output | drafted ([`../BIPT.md`](../BIPT.md)) | [`entroly/verifiers/provenance_tracer.py`](../entroly/verifiers/provenance_tracer.py) |
-| **NKBE** — Nash-KKT Budgetary Equilibrium for Multi-Agent Context Allocation | outline | [`entroly-core/src/nkbe.rs`](../entroly-core/src/nkbe.rs) |
-| **Causal Context Graph** — Do-Calculus on Retrieval-Augmented Generation via Exploration as Instrument Variable | outline | [`entroly-core/src/causal.rs`](../entroly-core/src/causal.rs) |
-| **Cognitive Bus** — ISA Event Routing with Welford Online Spike Detection and a Hippocampus Bridge | outline | [`entroly-core/src/cognitive_bus.rs`](../entroly-core/src/cognitive_bus.rs) |
-| **Resonance** — Supermodular Pairwise Fragment Learning Beyond Knapsack | outline | [`entroly-core/src/resonance.rs`](../entroly-core/src/resonance.rs) |
-| **System 1 ↔ System 2** — A Dual-Process Architecture for AI Coding Context | drafted (commit log: `4eaa0a5`) | [`entroly/coupling.py`](../entroly/coupling.py) |
+| **BIPT** — Byte-level Information Provenance Tracing via Suffix Automaton on Kolmogorov-Bounded Output | drafted ([`../BIPT.md`](../BIPT.md)) | [`entroly/verifiers/provenance_tracer.py`](../../entroly/verifiers/provenance_tracer.py) |
+| **NKBE** — Nash-KKT Budgetary Equilibrium for Multi-Agent Context Allocation | outline | [`entroly-core/src/nkbe.rs`](../../entroly-engine/src/nkbe.rs) |
+| **Causal Context Graph** — Do-Calculus on Retrieval-Augmented Generation via Exploration as Instrument Variable | outline | [`entroly-core/src/causal.rs`](../../entroly-engine/src/causal.rs) |
+| **Cognitive Bus** — ISA Event Routing with Welford Online Spike Detection and a Hippocampus Bridge | outline | [`entroly-core/src/cognitive_bus.rs`](../../entroly-engine/src/cognitive_bus.rs) |
+| **Resonance** — Supermodular Pairwise Fragment Learning Beyond Knapsack | outline | [`entroly-core/src/resonance.rs`](../../entroly-engine/src/resonance.rs) |
+| **System 1 ↔ System 2** — A Dual-Process Architecture for AI Coding Context | drafted (commit log: `4eaa0a5`) | [`entroly/coupling.py`](../../entroly/coupling.py) |
 
 ## Reproducibility
 

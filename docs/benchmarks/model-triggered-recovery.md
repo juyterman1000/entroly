@@ -1,5 +1,10 @@
 # Model-triggered recovery holdout
 
+This page records a historical investigation, not validation of the current
+release. Protocol links below point to the immutable Git revision before those
+files were removed from the current tree. Reproduction requires that revision
+and its recorded workload; the current checkout alone is insufficient.
+
 This benchmark asks a narrower and harder question than active-context
 retention: after compression for one question, can a model answer a different
 future question by deciding when to retrieve and then using persistent source
@@ -33,7 +38,7 @@ retrieval permits one retry, and that retry becomes the final answer.
   prompting.
 
 The accepted protocol is
-[`model_recovery_protocol_v7.json`](../../benchmarks/model_recovery_protocol_v7.json).
+[`model_recovery_protocol_v7.json`](https://github.com/juyterman1000/entroly/blob/5fe3eef1c11f3f30b0435a9f312b37138fc721ea/benchmarks/model_recovery_protocol_v7.json).
 It freezes 24 holdout fixtures, participant versions, tokenizer, guard model,
 generation settings, budgets, seeds, and claim policy before the holdout is
 opened.

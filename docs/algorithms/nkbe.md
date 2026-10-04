@@ -1,6 +1,6 @@
 # NKBE — Nash-KKT Budgetary Equilibrium
 
-**Implementation:** [`entroly-core/src/nkbe.rs`](../entroly-core/src/nkbe.rs)
+**Implementation:** [`entroly-core/src/nkbe.rs`](../../entroly-engine/src/nkbe.rs)
 **Math reference:** [`../RESEARCH.md`](../RESEARCH.md)
 
 ## One-paragraph spec

@@ -162,7 +162,7 @@ entroly verify-claims
 That command is a bounded local install smoke, not an answer-quality or billing guarantee. For benchmark commands, raw artifacts, scope, and known limitations, use:
 
 - [public-evidence.md](public-evidence.md)
-- [benchmarks/README.md](../benchmarks/README.md)
+- [benchmarks/README.md](../benchmarks/)
 - [neural evidence frontier](benchmarks/neural-evidence-frontier.md)
 - [competitive evidence matrix](benchmarks/competitive-evidence-matrix.md)
 

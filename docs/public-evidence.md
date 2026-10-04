@@ -1,175 +1,154 @@
-# Entroly public evidence policy
+# Entroly: results you can inspect and reproduce
 
-Entroly separates **distribution**, **implementation**, **reproducible measurements**, **production outcomes**, and **external marketplace status**. A lower evidence tier must never be presented as proof of a higher one.
+Entroly helps developers work within context budgets while keeping selection
+visible and omitted evidence recoverable. Start with the workflow you need,
+inspect the linked results, and evaluate it on your own repository.
 
-| Evidence tier | What it establishes | Required support |
-|---|---|---|
-| Distribution | A package or license is publicly available | Direct registry or license link and exact package name |
-| Implementation | A capability exists in the repository | Source, tests, and accurate default/optional wording |
-| Reproducible measurement | A result occurred under a defined protocol | Committed artifact, configuration, sample size, command, and caveats |
-| Production outcome | A user workload achieved an outcome | Provider-observed usage, workload, baseline, and uncertainty |
-| Marketplace status | A third party indexed or validated a release | The current third-party page after publication |
+## Start with your use case
 
-A package badge does not prove benchmark quality. A local token estimate does not prove a billing reduction. Repository-local tests do not prove that an external marketplace validated a release.
+| You want to… | Start here |
+| --- | --- |
+| Select useful context within an explicit budget | [Context Receipts example](examples/context_receipt.md): inspect selected evidence, omissions, and ranking reasons. |
+| Recover evidence after compression | [Context Commits](context-commits.md): replay captured context and verify recovery integrity. |
+| Add context tools to an AI coding client | [MCP setup](mcp-server-guide.html): register the installed `entroly` stdio command. |
+| Apply context controls to provider requests | [Proxy guide](compression-proxy.md): configure forwarding, recovery, and optional verification. |
+| Inspect what your installation supports | Run `entroly doctor --json`; use [the architecture guide](architecture.md) to follow the actual execution path. |
 
-## Canonical distribution links
+For a local starting point:
 
-- [PyPI `entroly`](https://pypi.org/project/entroly/)
-- [npm `entroly`](https://www.npmjs.com/package/entroly)
-- [npm `entroly-mcp`](https://www.npmjs.com/package/entroly-mcp)
-- [npm `entroly-wasm`](https://www.npmjs.com/package/entroly-wasm)
-- [Apache-2.0 license](../LICENSE)
+```bash
+pip install entroly
+entroly doctor --json
+entroly simulate
+```
 
-The base Python package declares `entroly-core` as a required dependency for the standard supported install and uses the native engine when a compatible wheel is available. An internal pure-Python fallback remains for unsupported platforms, but the benchmarked query-conditioned selection path must not be described as an optional native extra. The npm `entroly` package is a separate Node/WASM runtime.
+`simulate` provides a local context estimate. Compare provider-observed usage
+and completed-task quality when evaluating an integration with your model.
 
-## MCP launch contract
+## Measured results
 
-The canonical installed-Python MCP registration is the argument-free `entroly` stdio command. Under an MCP client's stdin pipe, it launches the installed server. The `uvx` and `entroly-mcp` registrations likewise use no `serve` argument.
-
-`entroly serve` is the explicit Docker-first deployment path. `ENTROLY_NO_DOCKER=1 entroly serve` selects the installed Python runtime.
-
-## Reproducible evidence
+Each result below links to its artifact and names the workload it establishes.
+Recorded results describe the tested revision and configuration; they give you
+a reproducible starting point for evaluating a newer release.
 
 ### Context Commit integrity
 
-The committed synthetic conformance artifact reports:
+The synthetic conformance run achieved **128/128** deterministic replays,
+**576/576** exact omission recoveries, and **768/768** detected tamper mutations.
+This demonstrates replay, recovery, and tamper detection on the protocol's cases.
+The measurement is artifact integrity, **not answer quality** or a promise of
+identical selection across engines.
 
-- **128/128** deterministic replays;
-- **576/576** exact omission recoveries;
-- **768/768** detected tamper mutations.
-
-These results measure artifact integrity and recovery, **not answer quality** or identical cross-engine selection.
-
-- [Artifact](../benchmarks/results/context_commit_conformance.json)
+- [Inspect the artifact](../benchmarks/results/context_commit_conformance.json)
 - Reproduce: `python -m benchmarks.context_commit_conformance`
 
-### Recovery-resilience holdout
+### Recovery across processes and restarts
 
-The committed v5 recovery-resilience revalidation records **66/66** exact entries for Entroly 1.0.66 source and **66/66** for the External Baseline A 0.31.0 comparison under the frozen holdout protocol. This result establishes **parity, not leadership** for that recovery-integrity workload. It is historical, release-scoped evidence; later Entroly implementations require a new frozen revalidation before this result can be applied to them.
+The frozen holdout recorded **66/66** exact entries for Entroly 1.0.66 source
+and **66/66** for the External Baseline A 0.31.0 comparison. Every recorded entry
+was recovered exactly under that concurrent-write and restart workload.
 
-The clean revalidation reproduced no External Baseline A worker errors. It therefore does not permit a public leadership claim and **does not establish universal recovery superiority**, production reliability, task-quality improvement, or provider-cost reduction.
+This is historical, release-scoped evidence. Later implementations
+require a new frozen revalidation. The comparison establishes parity, not leadership;
+it does not establish universal recovery superiority or production reliability.
 
-- [Artifact](../benchmarks/results/recovery_resilience_holdout_revalidation_v5.json)
-- [Protocol implementation](../benchmarks/recovery_resilience.py)
+- [Inspect the recovery holdout](../benchmarks/results/recovery_resilience_holdout_revalidation_v5.json)
+- [Read the protocol implementation](../benchmarks/recovery_resilience.py)
 
-### WITNESS HaluEval-QA
+### WITNESS: identifying unsupported answers
 
-The committed faithful protocol reports **0.7976** full-dataset AUROC and **84.92%** accuracy on the **16,000**-decision held-out split. On the shared **1,200**-decision GPT sample, committed accuracy is **86.58%** for WITNESS and **86.25%** for gpt-4o-mini.
+The HaluEval-QA protocol recorded **0.7976** full-dataset AUROC and **84.92%**
+accuracy on the **16,000**-decision held-out split. On the shared **1,200**-decision
+GPT sample, accuracy was **86.58%** for WITNESS and **86.25%** for gpt-4o-mini.
 
-The uncertainty overlaps, so Entroly **does not claim superiority**, universal truth, or general hallucination prevention from this run.
+These results provide a concrete reference for evaluating the verifier on QA
+workloads. The uncertainty overlaps, so Entroly does not claim superiority from
+this comparison. WITNESS is configured by integration and enforcement mode;
+see [architecture](architecture.md) before enabling it on a response path.
 
-- [Artifact](../benchmarks/results/halueval_qa_faithful.json)
+- [Inspect HaluEval-QA results](../benchmarks/results/halueval_qa_faithful.json)
 - Reproduce: `python benchmarks/halueval_qa_faithful.py`
-
-### Token reduction and task quality
-
-Token reduction varies by corpus, query, budget, tokenizer, integration, provider, cache behavior, and recovery path. Use `entroly simulate` for a local estimate and provider-observed request usage before making a production billing claim.
-
-The same-input compression gauntlet is **not production-outcome evidence**. It is a versioned synthetic protocol for named fixtures.
-
-- [Compression gauntlet](../benchmarks/results/compression_gauntlet.json)
-- [Context Efficiency Frontier protocol](benchmarks/context-efficiency-frontier.md)
 
 ### Model-triggered recovery
 
-A frozen 24-case local Qwen2.5-1.5B holdout recorded 24/24 exact final answers for Entroly and 18/24 for the published External Baseline A 0.31.0 baseline. This is a synthetic, versioned workflow—not a universal product, provider-savings, or model-quality claim.
+A frozen 24-case local Qwen2.5-1.5B holdout recorded **24/24** exact final answers
+for Entroly and **18/24** for External Baseline A 0.31.0. It demonstrates a
+synthetic workflow in which the model retrieves omitted evidence before
+answering. The result is scoped to that model, workload, and recorded revision.
 
-- [Artifact](../benchmarks/results/model_recovery_v7_holdout.json)
-- [Protocol and limitations](benchmarks/model-triggered-recovery.md)
+- [Inspect the holdout](../benchmarks/results/model_recovery_v7_holdout.json)
+- [Protocol and reproduction scope](benchmarks/model-triggered-recovery.md)
 
-### PRISM-R neural research pilot
+### Token reduction and task quality
+
+Token reduction varies by corpus, query, budget, tokenizer, integration,
+provider, cache behavior, and recovery path. The useful evaluation is how much
+context you can reduce while preserving the evidence and outcomes your task
+needs. Include recovered text, latency, and cache effects in that comparison.
+
+The compression gauntlet compares named fixtures under a versioned synthetic
+protocol; it is not production-outcome evidence.
+
+- [Same-input compression gauntlet](../benchmarks/results/compression_gauntlet.json)
+- [Context Efficiency Frontier protocol](benchmarks/context-efficiency-frontier.md)
+
+### PRISM-R: query-shift research
 
 **PRISM-R is an opt-in research prototype, not the default compressor.**
 
-On a frozen 200-pair same-document query-shift pilot at a nominal 25% active budget, PRISM-R retained **87.0%** of current-query exact evidence versus **60.5%** for lexical selection. A different future question was revealed only after compression; exact local span recovery raised future evidence retention from **9.0%** to **90.5%**. Active plus recovered text was approximately **50.6%** of the original.
+On a frozen 200-pair same-document query-shift pilot at a nominal 25% active
+budget, PRISM-R retained **87.0%** of current-query exact evidence versus
+**60.5%** for lexical selection. When a different future question was revealed
+after compression, exact local span recovery raised future evidence retention
+from **9.0%** to **90.5%**. Active plus recovered text was approximately **50.6%**
+of the original.
 
-These results measure **exact answer-string retention** on short SQuAD paragraphs. They **do not measure generated answers**, general neural superiority, long-agent memory, production latency, or billing savings.
+The experiment explores a useful direction: preserve evidence for today's
+question and recover additional spans when the question changes. These figures
+measure exact answer-string retention on short SQuAD paragraphs. They
+do not measure generated answers, production latency, or billing savings.
 
 - [Research design](research/prism-r-neural-compression.md)
-- [Evidence story](benchmarks/neural-evidence-frontier.md)
+- [Evidence-selection results](benchmarks/neural-evidence-frontier.md)
 - [Retrieval artifact](../benchmarks/results/neural_evidence_frontier.json)
 - [Query-shift artifact](../benchmarks/results/neural_query_shift.json)
-- Reproduce: `python -m benchmarks.neural_query_shift verify benchmarks/results/neural_query_shift.json`
+- Verify the recorded artifact: `python -m benchmarks.neural_query_shift verify benchmarks/results/neural_query_shift.json`
 
-## Marketplace status
+## Choose an integration
 
-The LobeHub listing is an external discovery surface. **Only the live LobeHub page can establish the current external result.** Repository readiness, package publication, or local MCP tests cannot establish third-party validation.
+- [PyPI `entroly`](https://pypi.org/project/entroly/): Python SDK, CLI, and MCP entry point.
+- [npm `entroly`](https://www.npmjs.com/package/entroly): Node/WASM runtime.
+- [npm `entroly-mcp`](https://www.npmjs.com/package/entroly-mcp): MCP launch bridge.
+- [npm `entroly-wasm`](https://www.npmjs.com/package/entroly-wasm): WASM package.
+- [Apache-2.0 license](../LICENSE).
 
-- [Live LobeHub listing](https://lobehub.com/mcp/juyterman1000-entroly?activeTab=score)
-- [Dated score audit](lobehub-score-audit.md)
+The standard Python install declares `entroly-core` as a required dependency
+and uses the native engine when a compatible wheel is available. Supported
+Python fallback capabilities are reported separately by runtime diagnostics.
+The npm runtime is a separate integration surface.
 
-Marketplace badges are deliberately excluded from the simplified README until external indexing reflects the current release and validation state.
+For installed-Python MCP setup, register the argument-free `entroly` stdio
+command. `uvx` and `entroly-mcp` registrations also use no `serve` argument.
+`entroly serve` selects the explicit Docker-first deployment path;
+`ENTROLY_NO_DOCKER=1 entroly serve` selects installed Python.
 
-## Discoverability evidence boundary
+## Reading the evidence
 
-The [discoverability registry](discoverability-registry.json) maps each priority
-AI-token intent to one canonical public answer, the evidence that answer may use,
-and the boundary it must preserve. It also records the measurement channels that
-must be connected before search visibility can be reported as observed rather
-than assumed.
+Source and tests establish implementation; a committed benchmark establishes a
+result on its recorded workload. Provider-observed usage and a matched task
+baseline establish outcomes for your deployment. Use each kind of evidence to
+answer the corresponding question.
 
-Search metadata, structured data, internal links, crawler access, and a sitemap
-can make Entroly easier to identify and index. They do **not** establish a Google
-ranking, an answer-engine citation, product superiority, or independent authority.
-A private transcript is useful as a requirements source but is not a public
-discovery signal. A first-party Entroly page is evidence of Entroly's published
-position only; it becomes third-party coverage only when an external source
-independently publishes or cites it.
+[Independent review](independent-review-program.md) and reproducible reports
+help extend this evidence to new workloads. For external indexing,
+[visit the LobeHub listing](https://lobehub.com/mcp/juyterman1000-entroly?activeTab=score).
+Only the live LobeHub page can establish its current external result.
 
-Current visibility must therefore be measured separately by query intent, engine,
-locale, and observation time. Google Search Console and Bing Webmaster Tools
-require owner-controlled connections. ChatGPT, Claude, and other answer-engine
-probes are nondeterministic observations, not durable rank guarantees. Until those
-channels contain dated observations, the registry keeps their status as pending.
+A first-party Entroly page records the project's own evidence; independent
+coverage names its external source. A private transcript can guide a review,
+while answer-engine probes are nondeterministic observations recorded with a
+query and date. Repository metadata alone does not establish a Google ranking.
 
-## Quarantined public surfaces
-
-Legacy savings, prompt-compression, hallucination, projected-dashboard, and stale setup pages remain `noindex` redirects until their claims and setup instructions are rebuilt. An HTTP-successful page is not sufficient evidence that its copy or runtime is current.
-
-Archived translated READMEs must be regenerated from the canonical README, including trust links and caveats, before they return to primary navigation.
-
-## Retired and republished public pages
-
-A set of topic pages was reduced to `noindex` tombstones redirecting here,
-because their claims could not be sourced: a universal 70–95% range, a 0.844
-AUROC that a later tie-correction retired, equivalence conclusions drawn against
-an API judge, and verifier coverage described as "every response".
-
-Retirement removed those claims by removing the pages. It also removed every
-entry point to the topics, and left the repository with no indexable answer to
-questions Entroly can answer honestly.
-
-Those pages were republished on 2026-08-15 under a stricter condition than the
-one they failed: **every figure on a republished page must resolve to a
-committed artifact under `benchmarks/results/`, and the page must state the
-workload that produced it.** Where a benchmark set contains a loss case, the
-page states it next to the wins rather than omitting it — the SQuAD 2.0 row
-(43.8% savings, 90% retention on 233-token inputs) appears alongside the
-long-context results it is worse than.
-
-Retirement is no longer what keeps these pages honest. `STALE_PUBLIC_CLAIMS` in
-`scripts/verify_context_assurance_public.py` is, and every republished page is
-listed in `CLAIM_SENSITIVE_PUBLIC_FILES` so that scan applies to it. A page must
-not be republished by deleting its retirement entry without adding it there.
-
-`docs/dashboard.html` remains retired: it is an application view, not content.
-
-## Maintainer rules
-
-Before adding or strengthening a public claim:
-
-1. Link the exact package, source, or result.
-2. State the workload, model, budget, sample size, baseline, and caveats.
-3. Keep different benchmark protocols separate.
-4. Label estimates as estimates and provider-observed usage as observed.
-5. Do not infer a marketplace score from repository-local evidence.
-6. Remove or soften claims that cannot be reproduced.
-
-Run:
-
-```bash
-python scripts/verify_public_trust.py
-python scripts/verify_readme.py
-```
-
-Use `--online` only for bounded destination checks. After publication, `--require-published-version` can require PyPI and npm latest versions to match `server.json`.
+Maintainers can find publishing checks and historical page decisions in
+[Maintaining public evidence](evidence-maintenance.md). For contributors,
+[start with the development guide](../CONTRIBUTING.md).
