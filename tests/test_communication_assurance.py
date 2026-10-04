@@ -106,7 +106,7 @@ def test_retention_prunes_raw_evidence(tmp_path: Path) -> None:
 
 
 def test_default_policy_never_authorizes_external_send() -> None:
-    event = _event()
+    event = _event(kind="direct")
     proposal = CommunicationActionProposal.build(
         action_type="reply",
         channel="whatsapp",
