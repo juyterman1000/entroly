@@ -56,6 +56,26 @@ export default definePluginEntry({
         api.on("message_received", communicationHooks.onMessageReceived);
         api.on("message_sent", communicationHooks.onMessageSent);
         registerCommunicationTools(api, { bridge, config });
+        if (config.communicationTasteLearning === true) {
+          void bridge.request({
+            operation: "communication_start_taste_autotune",
+            owner_authorized: true,
+            store_path:
+              typeof config.communicationStorePath === "string"
+                ? config.communicationStorePath
+                : undefined,
+            interval_s:
+              Number.isFinite(config.communicationTasteAutotuneIntervalSeconds)
+                ? config.communicationTasteAutotuneIntervalSeconds
+                : 30,
+          }).catch((error) => {
+            api.logger.warn?.(
+              `entroly: taste autotune did not start; learning remains paused: ${String(
+                error?.message ?? error,
+              ).replace(/\s+/g, " ").slice(0, 240)}`,
+            );
+          });
+        }
       }
     }
     if (config.proofGuidedRecovery === true) {
