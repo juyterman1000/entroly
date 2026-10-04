@@ -33,4 +33,4 @@ Official browser extensions for Google Chrome and Mozilla Firefox that add 1-cli
 - [x] Manifest V3 compliant
 - [x] Content security policy verified (zero remote script execution)
 - [x] Scoped permissions (`activeTab`, `contextMenus`, `storage`, `https://github.com/*`)
-- [x] Privacy policy aligned ([PRIVACY.md](../../PRIVACY.md))
+- [x] Privacy policy aligned ([PRIVACY.md](../PRIVACY.md))

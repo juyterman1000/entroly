@@ -5,7 +5,7 @@
 > returns a subset `S` such that `v(S) ≥ (1 − 1/e) · v(OPT)`.
 
 This is the classic Nemhauser-Wolsey-Fisher result (1978). Entroly's
-implementation in [`entroly-core/src/knapsack.rs`](../../entroly-core/src/knapsack.rs)
+implementation in [`entroly-core/src/knapsack.rs`](../../../entroly-engine/src/knapsack.rs)
 is a faithful execution of greedy submodular maximization, so the
 theorem applies.
 

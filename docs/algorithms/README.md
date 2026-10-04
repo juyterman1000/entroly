@@ -7,12 +7,12 @@
 
 | Algorithm | One-line | Implementation | Doc |
 |---|---|---|---|
-| **BIPT** | Byte-level hallucination provenance via suffix automaton | [`provenance_tracer.py`](../entroly/verifiers/provenance_tracer.py) | [bipt.md](bipt.md) |
-| **NKBE** | Nash-KKT multi-agent token budget allocation | [`nkbe.rs`](../entroly-core/src/nkbe.rs) | [nkbe.md](nkbe.md) |
-| **Causal Context Graph** | Pearl-grade do-calculus on RAG | [`causal.rs`](../entroly-core/src/causal.rs) | [causal-cg.md](causal-cg.md) |
-| **Cognitive Bus** | ISA inter-agent event routing | [`cognitive_bus.rs`](../entroly-core/src/cognitive_bus.rs) | [cognitive-bus.md](cognitive-bus.md) |
-| **Resonance Matrix** | Supermodular pairwise fragment learning | [`resonance.rs`](../entroly-core/src/resonance.rs) | [resonance.md](resonance.md) |
-| **System 1 ↔ System 2** | Dual-process proxy ↔ vault coupling | [`coupling.py`](../entroly/coupling.py) | [system-1-system-2.md](system-1-system-2.md) |
+| **BIPT** | Byte-level hallucination provenance via suffix automaton | [`provenance_tracer.py`](../../entroly/verifiers/provenance_tracer.py) | [bipt.md](bipt.md) |
+| **NKBE** | Nash-KKT multi-agent token budget allocation | [`nkbe.rs`](../../entroly-engine/src/nkbe.rs) | [nkbe.md](nkbe.md) |
+| **Causal Context Graph** | Pearl-grade do-calculus on RAG | [`causal.rs`](../../entroly-engine/src/causal.rs) | [causal-cg.md](causal-cg.md) |
+| **Cognitive Bus** | ISA inter-agent event routing | [`cognitive_bus.rs`](../../entroly-engine/src/cognitive_bus.rs) | [cognitive-bus.md](cognitive-bus.md) |
+| **Resonance Matrix** | Supermodular pairwise fragment learning | [`resonance.rs`](../../entroly-engine/src/resonance.rs) | [resonance.md](resonance.md) |
+| **System 1 ↔ System 2** | Dual-process proxy ↔ vault coupling | [`coupling.py`](../../entroly/coupling.py) | [system-1-system-2.md](system-1-system-2.md) |
 
 ## Why split out from RESEARCH.md
 

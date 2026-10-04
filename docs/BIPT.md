@@ -75,4 +75,4 @@ print(result.invented_identifiers)  # compatibility name: unmatched identifiers
 - Lempel, A. & Ziv, J. (1976). *On the complexity of finite sequences.*
 - Blumer et al. (1985). *The smallest automaton recognizing the subwords of a text.*
 
-For benchmark scope and current public evidence, see [docs/public-evidence.md](docs/public-evidence.md).
+For benchmark scope and current public evidence, see [docs/public-evidence.md](public-evidence.md).

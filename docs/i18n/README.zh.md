@@ -149,7 +149,7 @@ context    = optimize(fragments, budget=8000, query="修复登录 bug")
 - **[架构和完整规范](../../docs/DETAILS.md)** — Rust 模块、压缩、溯源、命令参考。
 - **[代理兼容性](../../docs/agent-compatibility.md)** — 每个支持的客户端及其确切的认证边界。
 - **[局限性](../../docs/limitations.md)** — Entroly 在哪些方面有帮助，在哪些方面直通，不保证什么。
-- **[Cookbook](../../cookbook/README.md)** — 即用配方。
+- **[Cookbook](../cookbook/README.md)** — 即用配方。
 - **[Discord](https://juyterman1000.github.io/entroly/discord.html)** · **[Discussions](https://github.com/juyterman1000/entroly/discussions)** · **[Issues](https://github.com/juyterman1000/entroly/issues)**
 
 <p align="center"><sub>Apache-2.0 · 本地优先 · 默认不发送外部分析数据</sub></p>

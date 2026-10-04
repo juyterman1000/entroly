@@ -1,114 +1,137 @@
-# Entroly — Canonical Architecture
+# Entroly architecture
 
-Entroly is an **auditable context control plane**. For any context it:
+Entroly selects and compresses context, records selection evidence, and exposes
+recovery and verification tools. Its interfaces share components, but they do
+not execute one universal pipeline. SDK compression, MCP tool calls, and
+proxied provider requests have different contracts and failure policies.
 
-1. Takes any context.
-2. Secures it.
-3. Normalizes it.
-4. Scores it mathematically.
-5. Compresses / selects / distills it **safely**.
-6. Proves the decision with a **receipt**.
-7. Verifies hallucination risk.
-8. Routes to the cheapest **safe** model (opt-in).
-9. Preserves provider compliance.
-10. Verifies the output.
-11. Learns **privately** from outcomes.
-12. Promotes only **proven** policy improvements.
+This document describes implemented boundaries. Configuration and the tests
+linked below determine the behavior of a particular installation. Historical
+investigations and benchmarks describe their recorded revisions; they are not
+guarantees about every current execution path.
 
----
+## Entry points and responsibilities
 
-## Invariants (non-negotiable)
+| Surface | Entry and orchestration | Responsibility |
+| --- | --- | --- |
+| CLI | [`docker_launcher_safe.py`](../entroly/docker_launcher_safe.py), [`cli.py`](../entroly/cli.py), [`cli_parser.py`](../entroly/cli_parser.py) | Resolve launch mode, parse commands, invoke explicit operations, and return their exit status. |
+| Python SDK | [`__init__.py`](../entroly/__init__.py), [`sdk.py`](../entroly/sdk.py) | Public compression, retrieval, and message APIs without an HTTP proxy. |
+| Context Receipts | [`context_receipts/`](../entroly/context_receipts/) | Index documents, select a bounded evidence bundle, explain omissions, and recover stored content. |
+| Context MCP server | [`server.py`](../entroly/server.py) | Bind an engine to a source root and register callable tools. The host chooses which tools to call. |
+| Provider proxy | [`proxy.py`](../entroly/proxy.py), [`proxy_config.py`](../entroly/proxy_config.py), [`proxy_transform.py`](../entroly/proxy_transform.py) | Apply request controls, eligible transformations, forwarding, usage observation, and configured response verification. |
+| Repository intelligence | [`repository_intelligence/`](../entroly/repository_intelligence/) | Build source facts and dependency projections; expose queries through its own CLI/MCP surface. |
+| Work graph | [`work_graph_cli.py`](../entroly/work_graph_cli.py), [`work_graph_mcp_server.py`](../entroly/work_graph_mcp_server.py) | Record task state, provenance, attachments, and recovery across agents. |
 
-- **Fail-closed — only stages 2 and 11.** The Security/Privacy/Compliance gate and the Provider Gateway compliance contract never degrade. Unsafe input is rejected or stripped; it is never forwarded.
-- **Fail-open — everything else.** On uncertainty, low confidence, or internal error, Entroly passes the **exact original context through unchanged** and **emits a warning in the receipt**. Fail-open never means "silently compress anyway" and never means "break the request."
-- **Provider compliance.** Preserve provider protocol, headers, tools, parameters, ordering, and cache semantics. Transform **only** injected context and output. **Never mutate model/params/tools** *unless the user explicitly enables transparent routing* — and then the swap is recorded in the receipt.
-- **Receipt = the trace.** A receipt id is opened at the security pass, threaded through every stage, and finalized at stage 8. Tiered: lightweight by default, full receipt on high-risk or on demand.
-- **Verification is risk-gated.** Stage 6 runs **cheap pre-flight risk** (coverage gap, entropy signal) to set the token budget and verification depth. Stage 13 runs **post-flight** grounding cheaply on every answer; the expensive verifiers (STAVE/TRIAD/CAVE/PROVE) run **only when flagged**.
-- **FORGE repair is explicit.** If repair issues another model call it must be explicit, budget-controlled, provider-compliant, and **logged in the receipt** — never a hidden extra LLM call.
-- **Learning is async, gated, and canaried.** It runs off the request path. A candidate policy is promoted only if it reduces cost/latency, does not reduce quality, does not increase hallucination risk, violates no compliance/privacy/provider rule, and passes golden tests — then a **canary with auto-rollback** guards live regressions before atomic publish.
-- **CogOps is strictly additive.** Beliefs/vault/memory enrich selection, verification, receipts, and routing but are **never a hard dependency**; they degrade gracefully when stale or empty.
-- **Local proof, zero provider calls.** `entroly simulate` and `entroly perf` produce savings and quality estimates without any API cost.
+Published console entry points are declared in [`pyproject.toml`](../pyproject.toml).
+Client adapters and language bindings are separate launch surfaces; their
+manifests and distribution tests are part of the supported interface.
 
----
+## Runtime and language boundaries
 
-## Flow
+[`engine.py`](../entroly/engine.py) coordinates fragment ingestion, selection,
+feedback, and persistence. It delegates supported operations to the installed
+native extension and has Python fallback paths. These paths are not assumed to
+have identical capabilities: [`native_status.py`](../entroly/native_status.py)
+and [`runtime_capabilities.py`](../entroly/runtime_capabilities.py) report what
+the loaded installation actually provides.
+
+[`entroly-engine`](../entroly-engine/) contains Rust computation and storage
+components. [`entroly-core`](../entroly-core/) exposes the Python/native
+boundary, [`entroly-qccr`](../entroly-qccr/) provides query-conditioned selection,
+and [`entroly-wasm`](../entroly-wasm/) exposes browser/Node bindings. Python
+still owns substantial orchestration. Calling it a thin wrapper would hide
+where request policy and lifecycle behavior live.
+
+This diagram shows dependencies at a useful reading level, not every import or
+an assertion that all clients execute all components.
 
 ```mermaid
 flowchart TD
-  U["Agents / Apps / Users"]
-
-  subgraph REQ["REQUEST PATH — synchronous, latency-critical"]
-    direction TB
-    U --> ENTRY["1 · ENTRY (thin wrappers)<br/>SDK · CLI · Proxy · MCP · npm · integrations<br/>⟂ FAIL-OPEN → exact passthrough on wrapper error"]
-    ENTRY --> SEC{"2 · SECURITY / PRIVACY / COMPLIANCE<br/>🔒 FAIL-CLOSED<br/>auth · path-safety · injection · PII/secrets · protocol"}
-    SEC -->|"unsafe"| REJECT["reject / strip — never forward"]
-    SEC -->|"pass → open TRACE = receipt id"| ROUTER
-
-    ROUTER{"EPISTEMIC ROUTER<br/>intent · belief coverage · freshness · risk<br/>→ picks 1 of 5 flows"}
-    ROUTER -->|"fresh + low-risk<br/>⚡ FAST PATH (most requests)"| FAST["cached/known answer<br/>or minimal selection<br/>(skips heavy stages)"]
-    ROUTER -->|"stale / novel / high-risk<br/>FULL PATH"| NORM
-
-    NORM["3-4 · NORMALIZE + INDEX/FINGERPRINT<br/>⟂ FAIL-OPEN<br/>chunk ids · token+byte offsets · repo map · depgraph · scaffold"]
-    NORM --> ENGINE["5 · MATH CONTEXT ENGINE — Rust SSOT<br/>⟂ FAIL-OPEN<br/>BM25 · entropy · knapsack · submodular · dedup · depgraph · qccr · channel · cache-stable"]
-    ENGINE --> PRE{"6 · POLICY + PRE-FLIGHT RISK (cheap)<br/>coverage-gap · entropy signal<br/>→ sets budget + verification depth"}
-    PRE --> COMPRESS["7 · COMPRESS / SELECT / DISTILL<br/>⟂ FAIL-OPEN = exact passthrough (never unsafe compression)<br/>preserve deps · citations · tool structure · JSON shape · high-risk evidence"]
-    FAST --> COMPRESS
-
-    COMPRESS --> RECEIPT["8 · CONTEXT RECEIPT  (= the trace)<br/>selected/omitted + why · fingerprints · ratio · warnings · repro-hash<br/>↕ tiered: light by default · full on high-risk / on-demand"]
-    RECEIPT -.->|"simulate / perf — NO provider call"| SIM["LOCAL PROOF<br/>savings + quality estimate · zero API cost"]
-    RECEIPT --> ROUTE{"10 · ROUTING / CACHE / COST<br/>🟢 OPT-IN model routing — within user pool · transparent · in receipt<br/>fail-closed escalation · cache-align · cost cortex · value tracker"}
-    ROUTE --> GW["11 · PROVIDER / LOCAL GATEWAY<br/>🔒 preserve protocol · headers · tools · params · cache semantics<br/>transform context/output ONLY · routing opt-in+transparent+in-receipt<br/>OpenAI · Anthropic · Gemini · local"]
-    GW --> RESP["12 · MODEL RESPONSE"]
-    RESP --> VERIFY{"13 · POST-FLIGHT VERIFICATION (risk-gated)<br/>cheap ALWAYS: WITNESS/EICV grounding<br/>deep ONLY if flagged: STAVE · TRIAD · CAVE · PROVE<br/>FORGE repair: explicit · budgeted · logged in receipt · NO hidden LLM call"}
-    VERIFY -->|"pass"| OUT
-    VERIFY -->|"flag → suppress / repair"| OUT
-    OUT["14 · OUTPUT CONTROL → RESULT<br/>answer · tool result · code edit · receipt link · savings/risk summary"]
-  end
-
-  OUT --> STORE[("PRIVATE PROJECT STORAGE — .entroly/, local-only<br/>SQLite DB / JSONL fallback · receipts · feedback · ravs events · tuning_config<br/>retention + compaction · optional encryption/keyref · NO raw global sharing")]
-
-  subgraph LEARN["LEARNING PLANE — async, OFF the request path"]
-    direction TB
-    DAEMON["daemon · PRISM-5D · autotune · reward crystallizer · evolution · skills"]
-    GATE{"PROMOTION GATE<br/>cost↓ · quality↛ · halluc↛ · compliance✓ · golden tests"}
-    CANARY{"CANARY in prod<br/>auto-rollback on live regression"}
-    POLICY[["ACTIVE RUNTIME POLICY<br/>budgets · PRISM weights · thresholds · retention"]]
-    DAEMON --> GATE --> CANARY --> POLICY
-  end
-
-  STORE -.-> DAEMON
-  POLICY -. "atomic publish" .-> ENGINE
-  POLICY -. .-> PRE
-  POLICY -. .-> ROUTE
-
-  subgraph COG["COGOPS / MEMORY — strictly ADDITIVE, never a hard dependency"]
-    direction TB
-    VAULT["beliefs · vault · flow orchestrator · verification engine<br/>change pipeline · long-term + Kanerva memory · blast radius"]
-  end
-
-  STORE -.-> VAULT
-  VAULT -. "enrich · graceful if stale/empty" .-> ENGINE
-  VAULT -. .-> PRE
-  VAULT -. .-> VERIFY
-  VAULT -. .-> RECEIPT
+  CLI[CLI command] --> API[SDK and receipt APIs]
+  CLI --> MCP[MCP server tools]
+  CLI --> PROXY[Provider proxy]
+  HOST[MCP host] --> MCP
+  CLIENT[Provider client] --> PROXY
+  MCP --> ENGINE[Python engine orchestration]
+  PROXY --> ENGINE
+  API --> REC[Receipt selection and recovery]
+  ENGINE --> NATIVE[Native extension or supported Python fallback]
+  REC --> STORE[Configured artifact and recovery stores]
+  ENGINE --> STATE[Configured checkpoints and feedback]
+  PROXY --> GUARDS[Request controls and configured verification]
+  GUARDS --> UPSTREAM[Configured provider endpoint]
 ```
 
-**Legend:** 🔒 **FAIL-CLOSED** (stages 2 & 11 only — never degrade) · ⟂ **FAIL-OPEN** (pass exact original context + warn in receipt; never silently compress; never break the request) · 🟢 **OPT-IN** · ⚡ **fast path** (most requests short-circuit) · solid = synchronous request path · **dashed = asynchronous** (learning loop + additive CogOps enrichment + local-proof branch).
+## Proxy request boundary
 
----
+`PromptCompilerProxy.handle_proxy` owns the HTTP lifecycle. It checks
+rate/session limits, parses the request, identifies its provider shape, applies
+policy and eligible transformations, and forwards to the resolved upstream.
+The exact order matters: required redaction and emergency rescue must not be
+undone by optional cache-prefix preservation.
 
-## Storage rules
+[`context_boundary.py`](../entroly/context_boundary.py) handles eligible
+provider-native sequences. It protects the active turn and tool exchanges,
+retains provider system fields, and declines ambiguous or media-bearing
+requests. Recoverable omission requires a stored payload and successful
+recovery verification before use. Its token count is a local estimate, not a
+provider tokenizer or billing guarantee.
 
-| Class | Destination |
-|-------|-------------|
-| Raw private data | project-local `.entroly/` **only** (SQLite DB, JSONL fallback) |
-| Sanitized aggregates | optional user-global `.entroly/` (**opt-in**) |
-| Human instructions | `AGENTS.md` / `CLAUDE.md` **only** |
+Model routing, image optimization, response verification, and recovery retries
+have their own configuration gates. In particular, `ProxyConfig.witness_mode`
+defaults to `off`: WITNESS does not verify every response automatically.
+Enabling an optional feature does not establish quality on a new workload.
 
-**Maintenance:** retention policy, compaction, optional encryption / key-ref.
+## Failure policies belong to boundaries
 
-**Never store** raw prompts, tool outputs, documents, provider responses, or learned weights inside `AGENTS.md` / `CLAUDE.md`. **No raw global sharing.**
+There is no repository-wide rule that every error forwards the original
+request. Preserve the contract at the boundary being changed:
 
----
+| Boundary | Required behavior and evidence |
+| --- | --- |
+| Authorization, required redaction, session budgets | Enforce configured refusal or redaction before forwarding. Optional optimization failures cannot bypass these controls. See [`test_proxy_session_budget.py`](../tests/test_proxy_session_budget.py). |
+| Recoverable request omission | Do not use a boundary whose recovery cannot be verified. Unsupported shapes retain their original context. See [`test_context_boundary.py`](../tests/test_context_boundary.py). |
+| WITNESS | Respect the workload profile and enforcement mode. Verification failure must not be reported as successful proof. See [`test_witness_fail_closed_audit.py`](../tests/test_witness_fail_closed_audit.py). |
+| RAVS routing | Missing evidence, disabled routing, or an invalid gate retains the original model; fail-closed routing means refusing an unproven downgrade. See [`test_ravs_v3.py`](../tests/test_ravs_v3.py). |
+| Provider forwarding and streams | Propagate bounded, observable failures rather than claiming completion or silently retrying outside the configured policy. See [`test_proxy_stream_bounds.py`](../tests/test_proxy_stream_bounds.py). |
+| Diagnostics | Describe local capability/configuration; preserve a nonzero exit for unhealthy state. A healthy local report does not certify provider connectivity or production readiness. See [`test_runtime_doctor.py`](../tests/test_runtime_doctor.py). |
 
-*This document is the canonical reference for Entroly's request and learning flow. The implementation is migrating to a Rust single-source-of-truth core (`entroly-*` crates) with Python (PyO3), npm (wasm-bindgen), and the CLI as thin wrappers; the stages above describe behavior, not language boundaries.*
+Receipts record the scope of a selection or transformation. They are not a
+single trace guaranteed to traverse every interface, nor proof of answer
+correctness, provider savings, or successful downstream use.
+
+## Persistence and external calls
+
+Storage is configured per subsystem. Engine checkpoints use
+`EntrolyConfig.checkpoint_dir`: `ENTROLY_DIR` overrides the default project hash
+under `~/.entroly/checkpoints/`, with a temporary-directory fallback when the
+default is unwritable. Context Receipts resolve `.entroly/receipts` upward to a
+repository boundary. Other ledgers and recovery stores have their own explicit
+paths. Project isolation does not imply that every byte is stored beneath the
+repository root, or that all stores share one retention/encryption policy.
+
+Raw source, prompts, receipts, and recovery payloads require the same care as
+their inputs. Keep them out of committed instructions, sample fixtures, and
+logs unless intentionally public. See [`SECURITY.md`](../SECURITY.md) for
+reporting and deployment guidance.
+
+Provider forwarding makes a network call. Verification backends, configured
+telemetry uploads, dependency acquisition, and explicitly enabled update checks
+can also use the network. [`product_telemetry.py`](../entroly/product_telemetry.py)
+requires consent and honors its disable/air-gap controls; this is not a blanket
+network-isolation guarantee for every integration. Review the selected launch
+path and configuration for offline deployments.
+
+## Reviewing a change
+
+Start with the public trigger, follow the actual handler, then inspect the
+storage and policy boundaries it crosses. Use
+`python scripts/codebase_graph.py --json graph.json` for static imports; add
+container or library launch modules with `--entry-point`. Static cycles include
+lazy and conditional imports, and statically unreached modules may be public
+APIs. Neither result alone justifies deletion.
+
+Run tests for the affected contract before broad suites. Native or distribution
+changes also need binding/package checks. Record the tested configuration and
+revision, distinguish local estimates from provider usage, and make rollback
+possible. Contributor setup is in [`CONTRIBUTING.md`](../CONTRIBUTING.md).

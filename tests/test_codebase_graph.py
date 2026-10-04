@@ -171,7 +171,7 @@ def test_pagerank_handles_empty_graph():
 
 
 def test_entry_points_include_declared_console_scripts():
-    """The console scripts in pyproject are the only ways into the package."""
+    """Declared console scripts are included in the static model."""
     entries = codebase_graph.shipped_entry_points("entroly")
 
     assert "entroly" in entries
@@ -179,6 +179,53 @@ def test_entry_points_include_declared_console_scripts():
     assert "entroly.sdk" in entries
     # Declared in [project.scripts]; notably cli.py is NOT an entry point.
     assert "entroly.docker_launcher_safe" in entries
+
+
+def test_nested_executable_package_is_reached(tmp_path):
+    pkg = _write_pkg(tmp_path, {
+        "__init__.py": "",
+        "tools/__init__.py": "",
+        "tools/__main__.py": "from . import implementation\n",
+        "tools/implementation.py": "",
+        "public_library.py": "",
+    })
+    report = codebase_graph.analyse(pkg)
+    assert "pkg.tools.__main__" in report["entry_points"]
+    assert report["unreachable"] == ["pkg.public_library"]
+    assert report["analysis_scope"] == "static_import_reachability"
+    assert "not proof of dead code" in " ".join(report["limitations"])
+
+
+def test_external_launcher_can_be_added_to_the_model(tmp_path):
+    pkg = _write_pkg(tmp_path, {
+        "__init__.py": "",
+        "container_entry.py": "from . import worker\n",
+        "worker.py": "",
+    })
+    report = codebase_graph.analyse(pkg, extra_entry_points=("pkg.container_entry",))
+    assert report["unreachable"] == []
+    assert "pkg.container_entry" in report["entry_points"]
+    assert "safe to delete" in codebase_graph.render(report)
+
+
+def test_missing_explicit_entry_point_is_an_error(tmp_path):
+    pkg = _write_pkg(tmp_path, {"__init__.py": ""})
+    with pytest.raises(ValueError, match="pkg.missing"):
+        codebase_graph.analyse(pkg, extra_entry_points=("pkg.missing",))
+
+
+def test_broken_source_is_visible_in_the_report_and_fails_cli(tmp_path, monkeypatch):
+    pkg = _write_pkg(tmp_path, {"__init__.py": "", "broken.py": "def (:\n"})
+    report = codebase_graph.analyse(pkg)
+    assert "pkg.broken" in report["parse_errors"]
+    assert "INCOMPLETE: pkg.broken" in codebase_graph.render(report)
+    monkeypatch.setattr("sys.argv", ["codebase_graph", "--package", str(pkg)])
+    assert codebase_graph.main() == 1
+
+
+def test_nonexistent_package_is_an_error(tmp_path):
+    with pytest.raises(ValueError, match="Package directory does not exist"):
+        codebase_graph.analyse(tmp_path / "missing")
 
 
 # ── end-to-end on the real package ───────────────────────────────────────────
