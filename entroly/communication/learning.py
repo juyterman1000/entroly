@@ -499,30 +499,40 @@ class CommunicationTasteOptimizer:
         state_json: str | None,
         learning_rate: float,
     ) -> dict[str, Any]:
+        """Apply the real native PRISM-5D step or fail closed.
+
+        Communication Assurance may operate without the native engine, but
+        self-improving taste must never silently downgrade to a different
+        optimizer while still presenting itself as PRISM-5D.
+        """
         try:
             from entroly_core import py_prism5d_step  # type: ignore
+        except ImportError as exc:
+            raise CommunicationStateError(
+                "native PRISM-5D is unavailable; communication taste learning is paused"
+            ) from exc
 
-            result = json.loads(
-                py_prism5d_step(list(gradient), state_json, learning_rate)
+        try:
+            raw = py_prism5d_step(
+                list(gradient),
+                state_json,
+                learning_rate,
             )
-            if isinstance(result, dict):
-                return result
-        except Exception:
-            pass
-
-        # Pure-Python fallback: bounded isotropic step. It intentionally does
-        # not pretend to expose spectral diagnostics.
-        return {
-            "update": [learning_rate * float(value) for value in gradient],
-            "state_json": state_json,
-            "condition_number": None,
-            "effective_rank": None,
-            "regret_bound": None,
-            "phase": "python_fallback",
-            "steps": None,
-            "eigenvalues": [],
-            "spectral_energy": [],
-        }
+            result = json.loads(raw)
+        except Exception as exc:
+            raise CommunicationStateError(
+                "native PRISM-5D step failed; communication taste learning is paused"
+            ) from exc
+        if not isinstance(result, dict):
+            raise CommunicationStateError(
+                "native PRISM-5D returned an invalid result"
+            )
+        update = result.get("update")
+        if not isinstance(update, list) or len(update) != 5:
+            raise CommunicationStateError(
+                "native PRISM-5D returned an invalid five-dimensional update"
+            )
+        return result
 
     def process_pending(
         self,
