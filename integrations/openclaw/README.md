@@ -243,6 +243,9 @@ An `ALLOW` result is not enough by itself. Entroly additionally requires exact
 source-event evidence, EICV support for the proposed action, a durable signed
 communication receipt, an atomic dispatch claim, current owner authority, and a
 verified conversation kind. Unknown direct/group scope is fail-closed.
+For routine social events, automatic text is limited to built-in acknowledgement
+phrases for that category. Other proposed wording requires approval even when
+the incoming event and category are delegated.
 
 **Current OpenClaw host limitation:** the passive `message_received` plugin
 event does not currently expose the host's already-known direct/group fact.

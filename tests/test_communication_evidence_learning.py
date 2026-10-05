@@ -66,6 +66,53 @@ def test_evidence_verification_rejects_payload_outside_proposal_commitment() -> 
 
     assert verdict == {"status": "unavailable", "reason": "payload_commitment_mismatch"}
 
+    empty = CommunicationActionProposal.build(
+        action_type="reply",
+        channel="whatsapp",
+        account_id="personal",
+        conversation_id="dm-a",
+        conversation_kind="direct",
+        source_event_ids=[event.event_id],
+        payload="",
+        category="birthday_wish",
+        risk_class="low",
+    )
+    assert communication.action_evidence_verification(empty, [event], payload="") == {
+        "status": "insufficient_context",
+        "reason": "empty_text_payload",
+    }
+
+
+def test_routine_source_cannot_auto_authorize_unrelated_reply(tmp_path: Path) -> None:
+    store_path = tmp_path / "communication.sqlite3"
+    event = _birthday_event()
+    with CommunicationStore(store_path, retention_days=0) as store:
+        store.record_event(event)
+
+    result = handle_request(
+        {
+            "operation": "communication_assure",
+            "store_path": str(store_path),
+            "retention_days": 0,
+            "channel": "whatsapp",
+            "account_id": "personal",
+            "conversation_id": "dm-a",
+            "action_type": "reply",
+            "source_event_ids": [event.event_id],
+            "payload": "The vault code is 1234.",
+            "policy_mode": "bounded",
+            "auto_actions": ["reply"],
+            "auto_categories": ["birthday_wish"],
+        }
+    )
+
+    assert result["decision"] == "approval_required"
+    assert result["evidence_verification"] == {
+        "status": "insufficient_context",
+        "reason": "routine_reply_outside_bounded_templates",
+    }
+    assert "eicv:automatic_action_not_supported" in result["reasons"]
+
 
 def test_signed_merkle_receipt_survives_restart_without_raw_message_text(
     tmp_path: Path,

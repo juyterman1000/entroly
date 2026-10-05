@@ -28,11 +28,23 @@ if TYPE_CHECKING:
     from .store import CommunicationStore
 
 RECEIPT_SCHEMA = "entroly.communication.receipt.v1"
-_ROUTINE_NONFACTUAL = {
-    "birthday_wish",
-    "congratulations",
-    "holiday_wish",
-    "thanks",
+_ROUTINE_ACKNOWLEDGEMENTS = {
+    "birthday_wish": frozenset({
+        "thank you", "thank you!", "thank you so much", "thank you so much!",
+        "thanks", "thanks!", "thanks everyone", "thanks everyone!",
+        "thank you everyone for the wishes", "thank you everyone for the wishes!",
+    }),
+    "congratulations": frozenset({
+        "thank you", "thank you!", "thank you so much", "thank you so much!",
+        "thanks", "thanks!", "thanks everyone", "thanks everyone!",
+    }),
+    "holiday_wish": frozenset({
+        "thank you", "thank you!", "thanks", "thanks!",
+        "happy holidays", "happy holidays!",
+    }),
+    "thanks": frozenset({
+        "you're welcome", "you're welcome!", "happy to help", "happy to help!",
+    }),
 }
 _MAX_EICV_EVIDENCE_CHARS = 100_000
 
@@ -83,8 +95,13 @@ def action_evidence_verification(
     if proposal.payload_sha256 != (sha256_text(payload) if payload else ""):
         return {"status": "unavailable", "reason": "payload_commitment_mismatch"}
     if not payload.strip():
-        return {"status": "not_applicable", "reason": "empty_payload"}
-    if proposal.category in _ROUTINE_NONFACTUAL:
+        return {"status": "insufficient_context", "reason": "empty_text_payload"}
+    if proposal.category in _ROUTINE_ACKNOWLEDGEMENTS:
+        if payload.strip().casefold() not in _ROUTINE_ACKNOWLEDGEMENTS[proposal.category]:
+            return {
+                "status": "insufficient_context",
+                "reason": "routine_reply_outside_bounded_templates",
+            }
         return {
             "status": "not_applicable",
             "reason": "routine_nonfactual_acknowledgement",
