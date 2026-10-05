@@ -41,7 +41,7 @@ Sections:
   D-29  EBBINGHAUS DECAY MATH VERIFICATION
   D-30  KNAPSACK DP CORRECTNESS
   D-31  ENTROPY SCORING SANITY
-  D-32  FULL LIFECYCLE STRESS (20 turns)
+  D-32  FULL LIFECYCLE STRESS (15 turns)
 """
 
 import os
@@ -176,16 +176,16 @@ def test_unicode_binary():
     for name, content in cases:
         try:
             r = engine.ingest_fragment(content, source=f"{name}.py", token_count=0)
-            check(f"unicode/{name}: ingest succeeds",
+            assert check(f"unicode/{name}: ingest succeeds",
                   r.get("status") in ("ingested", "duplicate"),
                   f"status={r.get('status')}")
         except Exception as e:
-            check(f"unicode/{name}: no crash", False, f"{type(e).__name__}: {e}")
+            assert check(f"unicode/{name}: no crash", False, f"{type(e).__name__}: {e}")
     try:
         results = engine.recall_relevant("emoji hello", top_k=5)
-        check("unicode query recall returns list", isinstance(results, list))
+        assert check("unicode query recall returns list", isinstance(results, list))
     except Exception as e:
-        check("unicode query recall no crash", False, f"{type(e).__name__}: {e}")
+        assert check("unicode query recall no crash", False, f"{type(e).__name__}: {e}")
 
 
 # === D-02: MASSIVE FRAGMENT ===============================================
@@ -196,13 +196,13 @@ def test_massive_fragment():
     lines = [f"def function_{i}(x, y):\n    return x * y + {i}\n" for i in range(5000)]
     big = "\n".join(lines)
     tc = len(big) // 4
-    check("content is >100KB", len(big) > 100_000, f"size={len(big):,}")
+    assert check("content is >100KB", len(big) > 100_000, f"size={len(big):,}")
     r = engine.ingest_fragment(big, source="massive.py", token_count=tc)
-    check("massive fragment ingested", r.get("status") == "ingested")
+    assert check("massive fragment ingested", r.get("status") == "ingested")
     opt = engine.optimize_context(token_budget=1000, query="function result")
-    check("optimize with budget < massive doesn't crash", isinstance(opt, dict))
+    assert check("optimize with budget < massive doesn't crash", isinstance(opt, dict))
     opt2 = engine.optimize_context(token_budget=tc * 2, query="function")
-    check("massive fragment selectable with big budget", len(get_selected(opt2)) >= 1)
+    assert check("massive fragment selectable with big budget", len(get_selected(opt2)) >= 1)
 
 
 # === D-03: RAPID-FIRE INGEST =============================================
@@ -218,11 +218,11 @@ def test_rapid_fire_ingest():
         if r.get("fragment_id"):
             count += 1
     elapsed = time.perf_counter() - t0
-    check("500 fragments ingested", count >= 400, f"ingested={count}")
-    check("completes in <30s", elapsed < 30.0, f"elapsed={elapsed:.2f}s")
+    assert check("500 fragments ingested", count >= 400, f"ingested={count}")
+    assert check("completes in <30s", elapsed < 30.0, f"elapsed={elapsed:.2f}s")
     stats = engine.get_stats()
     total = get_total_fragments(stats)
-    check("stats reflects count", total >= 400, f"total={total}")
+    assert check("stats reflects count", total >= 400, f"total={total}")
 
 
 # === D-04: DEDUP NEAR-MISS ===============================================
@@ -232,12 +232,12 @@ def test_dedup_near_miss():
     engine, _ = fresh_engine()
     base = "def compute_score(x, y): return x * y + 42\n" * 20
     r1 = engine.ingest_fragment(base, source="original.py")
-    check("base ingested", r1.get("status") == "ingested")
+    assert check("base ingested", r1.get("status") == "ingested")
     variant = base[:-1] + "X"
     r2 = engine.ingest_fragment(variant, source="near1.py")
-    check("1-char-diff completes", "status" in r2, f"status={r2.get('status')}")
+    assert check("1-char-diff completes", "status" in r2, f"status={r2.get('status')}")
     r3 = engine.ingest_fragment(base, source="copy.py")
-    check("exact copy is duplicate", r3.get("status") == "duplicate")
+    assert check("exact copy is duplicate", r3.get("status") == "duplicate")
 
 
 # === D-05: DEDUP PARAGRAPH REORDER =======================================
@@ -249,9 +249,9 @@ def test_dedup_reorder():
     b = "class Gamma:\n    def delta(self): pass\n"
     c = "CONSTANT = 42\nVALUE = 99\n"
     r1 = engine.ingest_fragment(a + b + c, source="ordered.py")
-    check("original ingested", r1.get("status") == "ingested")
+    assert check("original ingested", r1.get("status") == "ingested")
     r2 = engine.ingest_fragment(c + a + b, source="reordered.py")
-    check("reordered completes",
+    assert check("reordered completes",
           r2.get("status") in ("ingested", "duplicate"), f"status={r2.get('status')}")
 
 
@@ -275,12 +275,12 @@ def test_feedback_saturation():
     after = next((f.get("relevance") for f in get_selected(opt2)
                   if f.get("id") == target), None)
     if after is not None:
-        check("100x success: no infinite score",
+        assert check("100x success: no infinite score",
               after < 100.0 and not math.isinf(after), f"score={after}")
-        check("100x success: score >= baseline",
+        assert check("100x success: score >= baseline",
               after >= base_score, f"base={base_score:.4f}, after={after:.4f}")
     else:
-        check("target still in selection", False, "target disappeared")
+        assert check("target still in selection", False, "target disappeared")
 
 
 # === D-07: FEEDBACK ON NONEXISTENT IDs ===================================
@@ -291,17 +291,17 @@ def test_feedback_nonexistent():
     fake = ["nonexistent_abc", "fake_xyz", ""]
     try:
         engine.record_success(fake)
-        check("record_success on fake IDs: no crash", True)
+        assert check("record_success on fake IDs: no crash", True)
     except Exception as e:
-        check("record_success on fake IDs: no crash", False, f"{type(e).__name__}")
+        assert check("record_success on fake IDs: no crash", False, f"{type(e).__name__}")
     try:
         engine.record_failure(fake)
-        check("record_failure on fake IDs: no crash", True)
+        assert check("record_failure on fake IDs: no crash", True)
     except Exception as e:
-        check("record_failure on fake IDs: no crash", False, f"{type(e).__name__}")
+        assert check("record_failure on fake IDs: no crash", False, f"{type(e).__name__}")
     engine.ingest_fragment("def real(): return 42", source="real.py")
     opt = engine.optimize_context(token_budget=10_000, query="real")
-    check("optimize works after fake feedback", isinstance(opt, dict))
+    assert check("optimize works after fake feedback", isinstance(opt, dict))
 
 
 # === D-08: OPTIMIZE AFTER AGGRESSIVE EVICTION ============================
@@ -323,10 +323,10 @@ def test_optimize_after_eviction():
     for _ in range(50):
         engine.advance_turn()
     n2 = get_total_fragments(engine.get_stats())
-    check("some fragments evicted after 50 turns (hl=5)",
+    assert check("some fragments evicted after 50 turns (hl=5)",
           n2 < n1 or n2 == 0, f"before={n1}, after={n2}")
     opt = engine.optimize_context(token_budget=100_000, query="function return")
-    check("optimize after eviction works", isinstance(opt, dict))
+    assert check("optimize after eviction works", isinstance(opt, dict))
 
 
 # === D-09: INTERLEAVED INGEST + OPTIMIZE =================================
@@ -342,7 +342,7 @@ def test_interleaved():
         engine.ingest_fragment(f"def late_{i}(): return {i}", source=f"l{i}.py")
     opt2 = engine.optimize_context(token_budget=100_000, query="function")
     n2 = len(get_selected(opt2))
-    check("second optimize sees more fragments", n2 >= n1, f"first={n1}, second={n2}")
+    assert check("second optimize sees more fragments", n2 >= n1, f"first={n1}, second={n2}")
 
 
 # === D-10: SPECIAL CHAR QUERIES ==========================================
@@ -359,9 +359,9 @@ def test_special_char_queries():
         label = repr(q[:30]) if len(q) > 30 else repr(q)
         try:
             r = engine.recall_relevant(q, top_k=5)
-            check(f"query {label}: no crash", isinstance(r, list))
+            assert check(f"query {label}: no crash", isinstance(r, list))
         except Exception as e:
-            check(f"query {label}: no crash", False, f"{type(e).__name__}")
+            assert check(f"query {label}: no crash", False, f"{type(e).__name__}")
 
 
 # === D-11: ALL PINNED, BUDGET < TOTAL ====================================
@@ -378,7 +378,7 @@ def test_pin_everything():
     opt = engine.optimize_context(token_budget=total_tc // 2, query="pinned function")
     selected = get_selected(opt)
     # Pinned items bypass budget, so all 10 should be included
-    check("pinned fragments selected even with small budget",
+    assert check("pinned fragments selected even with small budget",
           len(selected) >= 5, f"selected={len(selected)}")
 
 
@@ -391,9 +391,9 @@ def test_concurrent_like():
     results = []
     for q in ["knapsack", "entropy", "SimHash", "checkpoint", "decay"]:
         results.append(engine.optimize_context(token_budget=100_000, query=q))
-    check("all 5 return dicts", all(isinstance(r, dict) for r in results))
+    assert check("all 5 return dicts", all(isinstance(r, dict) for r in results))
     totals = [get_total_tokens(r) for r in results]
-    check("all token counts > 0", all(t > 0 for t in totals), f"totals={totals}")
+    assert check("all token counts > 0", all(t > 0 for t in totals), f"totals={totals}")
 
 
 # === D-13: CHECKPOINT ROUND-TRIP FIDELITY ================================
@@ -411,9 +411,9 @@ def test_checkpoint_fidelity():
     pre_ids = [r["fragment_id"] for r in engine.recall_relevant(Q, top_k=10)]
     engine2, _ = fresh_engine(tmp_dir=d)
     result = engine2.resume()
-    check("resume succeeds", result.get("status") == "resumed")
+    assert check("resume succeeds", result.get("status") == "resumed")
     post_ids = [r["fragment_id"] for r in engine2.recall_relevant(Q, top_k=10)]
-    check("recall IDs match after round-trip",
+    assert check("recall IDs match after round-trip",
           set(pre_ids) == set(post_ids),
           f"pre={len(pre_ids)}, post={len(post_ids)}, overlap={len(set(pre_ids) & set(post_ids))}")
 
@@ -428,9 +428,9 @@ def test_checkpoint_then_ingest():
     engine2, _ = fresh_engine(tmp_dir=d)
     engine2.resume()
     r = engine2.ingest_fragment("def brand_new(): return 2", source="new.py")
-    check("ingest after resume works", r.get("status") == "ingested")
+    assert check("ingest after resume works", r.get("status") == "ingested")
     recall = engine2.recall_relevant("function return", top_k=10)
-    check("recall finds fragments after resume+ingest", len(recall) >= 1)
+    assert check("recall finds fragments after resume+ingest", len(recall) >= 1)
 
 
 # === D-15: CORRUPTED CHECKPOINT ==========================================
@@ -445,9 +445,9 @@ def test_corrupted_checkpoint():
     engine2, _ = fresh_engine(tmp_dir=d)
     try:
         result = engine2.resume()
-        check("corrupted checkpoint: no crash", True, f"status={result.get('status')}")
+        assert check("corrupted checkpoint: no crash", True, f"status={result.get('status')}")
     except Exception as e:
-        check("corrupted checkpoint: no crash", False, f"{type(e).__name__}: {e}")
+        assert check("corrupted checkpoint: no crash", False, f"{type(e).__name__}: {e}")
 
 
 # === D-16: ZERO-TOKEN FRAGMENT ============================================
@@ -457,9 +457,9 @@ def test_zero_token_fragments():
     engine, _ = fresh_engine()
     content = "def hello(): return 'world'\n" * 5
     r = engine.ingest_fragment(content, source="z.py", token_count=0)
-    check("token_count=0 ingest succeeds", r.get("status") == "ingested")
+    assert check("token_count=0 ingest succeeds", r.get("status") == "ingested")
     reported = r.get("token_count", 0)
-    check("auto-estimated token count > 0", reported > 0, f"tc={reported}")
+    assert check("auto-estimated token count > 0", reported > 0, f"tc={reported}")
 
 
 # === D-17: SAME SOURCE DIFFERENT CONTENT =================================
@@ -468,10 +468,10 @@ def test_same_source_diff_content():
     section("D-17  SAME SOURCE DIFFERENT CONTENT")
     engine, _ = fresh_engine()
     r1 = engine.ingest_fragment("version 1: def foo(): return 1", source="shared.py", token_count=20)
-    check("first ingest succeeds", r1.get("status") == "ingested")
+    assert check("first ingest succeeds", r1.get("status") == "ingested")
     r2 = engine.ingest_fragment("version 2: completely different code with no overlap",
                                 source="shared.py", token_count=20)
-    check("different content same source completes",
+    assert check("different content same source completes",
           r2.get("status") in ("ingested", "duplicate"), f"status={r2.get('status')}")
 
 
@@ -485,11 +485,11 @@ def test_recall_topk_boundary():
     for k in [1, 2, 5, 99999]:
         try:
             r = engine.recall_relevant("function", top_k=k)
-            check(f"top_k={k}: returns list", isinstance(r, list))
-            check(f"top_k={k}: count <= max(k, corpus)",
+            assert check(f"top_k={k}: returns list", isinstance(r, list))
+            assert check(f"top_k={k}: count <= max(k, corpus)",
                   len(r) <= max(k, 5), f"count={len(r)}")
         except Exception as e:
-            check(f"top_k={k}: no crash", False, f"{type(e).__name__}")
+            assert check(f"top_k={k}: no crash", False, f"{type(e).__name__}")
 
 
 # === D-19: BUDGET = EXACT CORPUS TOTAL ===================================
@@ -505,8 +505,8 @@ def test_budget_equals_corpus():
         engine.ingest_fragment(content, source=f"f{i}.py", token_count=tc)
     opt = engine.optimize_context(token_budget=total, query="function return")
     used = get_total_tokens(opt)
-    check("exact budget: used <= budget", used <= total, f"used={used}, budget={total}")
-    check("exact budget: some selected", len(get_selected(opt)) >= 3)
+    assert check("exact budget: used <= budget", used <= total, f"used={used}, budget={total}")
+    assert check("exact budget: some selected", len(get_selected(opt)) >= 3)
 
 
 # === D-20: ADVANCE 1000 TURNS ============================================
@@ -519,9 +519,9 @@ def test_extreme_aging():
         engine.advance_turn()
     stats = engine.get_stats()
     total = get_total_fragments(stats)
-    check("fragment survives 1000 turns (min_relevance=0)", total >= 1, f"total={total}")
+    assert check("fragment survives 1000 turns (min_relevance=0)", total >= 1, f"total={total}")
     recall = engine.recall_relevant("ancient old", top_k=5)
-    check("fragment recallable after 1000 turns", len(recall) >= 1)
+    assert check("fragment recallable after 1000 turns", len(recall) >= 1)
 
 
 # === D-21: MULTI-ENGINE ISOLATION ========================================
@@ -534,7 +534,7 @@ def test_multi_engine_isolation():
     eb.ingest_fragment("def only_b(): return 'B'", source="b.py")
     ids_a = {r["fragment_id"] for r in ea.recall_relevant("only", top_k=10)}
     ids_b = {r["fragment_id"] for r in eb.recall_relevant("only", top_k=10)}
-    check("engines don't share state", ids_a.isdisjoint(ids_b))
+    assert check("engines don't share state", ids_a.isdisjoint(ids_b))
 
 
 # === D-22: EMPTY + WHITESPACE CONTENT ====================================
@@ -547,9 +547,9 @@ def test_empty_whitespace():
     for name, content in cases:
         try:
             r = engine.ingest_fragment(content, source=f"{name}.py")
-            check(f"{name}: ingest completes", "status" in r)
+            assert check(f"{name}: ingest completes", "status" in r)
         except Exception as e:
-            check(f"{name}: no crash", False, f"{type(e).__name__}")
+            assert check(f"{name}: no crash", False, f"{type(e).__name__}")
 
 
 # === D-23: SELF-SIMILAR CORPUS ===========================================
@@ -566,8 +566,8 @@ def test_self_similar_corpus():
             ingested += 1
         elif r.get("status") == "duplicate":
             deduped += 1
-    check("some ingested", ingested > 0, f"ingested={ingested}, deduped={deduped}")
-    check("all 50 processed", ingested + deduped == 50)
+    assert check("some ingested", ingested > 0, f"ingested={ingested}, deduped={deduped}")
+    assert check("all 50 processed", ingested + deduped == 50)
 
 
 # === D-24: QUERY REFINEMENT ==============================================
@@ -577,15 +577,15 @@ def test_query_refinement():
     engine, _ = fresh_engine()
     ingest_corpus(engine)
     vague = engine.optimize_context(token_budget=100_000, query="fix the bug")
-    check("vague query completes", isinstance(vague, dict))
+    assert check("vague query completes", isinstance(vague, dict))
     precise = engine.optimize_context(
         token_budget=100_000,
         query="knapsack_optimize function budget quantization dynamic programming DP"
     )
-    check("precise query completes", isinstance(precise, dict))
+    assert check("precise query completes", isinstance(precise, dict))
     # Vague query may have query_refinement info
     if "query_refinement" in vague:
-        check("vague query has refinement info", True,
+        assert check("vague query has refinement info", True,
               f"refined={vague['query_refinement'].get('refined_query', '')[:50]}")
 
 
@@ -603,10 +603,10 @@ def test_prefetch_coacccess():
         engine.advance_turn()
     # Pass empty source_content to isolate co-access from static import analysis
     preds = engine.prefetch_related("/project/file_a.py", source_content="")
-    check("prefetch returns list", isinstance(preds, list))
+    assert check("prefetch returns list", isinstance(preds, list))
     pred_paths = [p.get("path", "") for p in preds]
     has_b = any("file_b" in p for p in pred_paths)
-    check("prefetch predicts co-accessed file_b", has_b, f"preds={pred_paths[:5]}")
+    assert check("prefetch predicts co-accessed file_b", has_b, f"preds={pred_paths[:5]}")
 
 
 # === D-26: PREFETCH IMPORT ANALYSIS ======================================
@@ -623,11 +623,11 @@ def process(data):
 """
     preds = engine.prefetch_related("/project/mypackage/main.py", source_content=source)
     pred_paths = [p.get("path", "") for p in preds]
-    check("import analysis returns predictions", len(preds) > 0, f"count={len(preds)}")
+    assert check("import analysis returns predictions", len(preds) > 0, f"count={len(preds)}")
     has_utils = any("utils" in p for p in pred_paths)
     has_models = any("models" in p for p in pred_paths)
-    check("predicts mypackage.utils", has_utils, f"paths={pred_paths[:5]}")
-    check("predicts mypackage.models", has_models, f"paths={pred_paths[:5]}")
+    assert check("predicts mypackage.utils", has_utils, f"paths={pred_paths[:5]}")
+    assert check("predicts mypackage.models", has_models, f"paths={pred_paths[:5]}")
 
 
 # === D-27: STATS CONSISTENCY CHAIN =======================================
@@ -636,14 +636,14 @@ def test_stats_consistency():
     section("D-27  STATS CONSISTENCY CHAIN")
     engine, _ = fresh_engine()
     t0 = get_total_fragments(engine.get_stats())
-    check("empty engine: total_fragments=0", t0 == 0, f"total={t0}")
+    assert check("empty engine: total_fragments=0", t0 == 0, f"total={t0}")
     for i in range(3):
         engine.ingest_fragment(f"def fn_{i}(): return {i}", source=f"s{i}.py")
     t1 = get_total_fragments(engine.get_stats())
-    check("after 3 ingests: total_fragments=3", t1 == 3, f"total={t1}")
+    assert check("after 3 ingests: total_fragments=3", t1 == 3, f"total={t1}")
     engine.ingest_fragment("def fn_0(): return 0", source="s0.py")  # duplicate
     t2 = get_total_fragments(engine.get_stats())
-    check("after duplicate: still 3", t2 == 3, f"total={t2}")
+    assert check("after duplicate: still 3", t2 == 3, f"total={t2}")
 
 
 # === D-28: WILSON SCORE MATH =============================================
@@ -656,19 +656,19 @@ def test_wilson_score_math():
         skip_check("Wilson score", "tracker not importable")
         return
     t = _WilsonFeedbackTracker()
-    check("no data: multiplier=1.0", t.learned_value("x") == 1.0)
+    assert check("no data: multiplier=1.0", t.learned_value("x") == 1.0)
     t.record_success(["a"] * 10)
-    check("10 successes: > 1.0", t.learned_value("a") > 1.0, f"val={t.learned_value('a'):.4f}")
+    assert check("10 successes: > 1.0", t.learned_value("a") > 1.0, f"val={t.learned_value('a'):.4f}")
     t.record_failure(["b"] * 10)
-    check("10 failures: < 1.0", t.learned_value("b") < 1.0, f"val={t.learned_value('b'):.4f}")
+    assert check("10 failures: < 1.0", t.learned_value("b") < 1.0, f"val={t.learned_value('b'):.4f}")
     t.record_success(["c"] * 50)
     t.record_failure(["c"] * 50)
     vc = t.learned_value("c")
-    check("50/50: near 1.0 (+/-0.3)", 0.7 < vc < 1.3, f"val={vc:.4f}")
+    assert check("50/50: near 1.0 (+/-0.3)", 0.7 < vc < 1.3, f"val={vc:.4f}")
     t.record_success(["d"] * 1000)
-    check("1000 successes: <= 2.0", t.learned_value("d") <= 2.0, f"val={t.learned_value('d'):.4f}")
+    assert check("1000 successes: <= 2.0", t.learned_value("d") <= 2.0, f"val={t.learned_value('d'):.4f}")
     t.record_failure(["e"] * 1000)
-    check("1000 failures: >= 0.5", t.learned_value("e") >= 0.5, f"val={t.learned_value('e'):.4f}")
+    assert check("1000 failures: >= 0.5", t.learned_value("e") >= 0.5, f"val={t.learned_value('e'):.4f}")
 
 
 # === D-29: EBBINGHAUS DECAY MATH ========================================
@@ -681,17 +681,17 @@ def test_ebbinghaus_decay_math():
     frag.recency_score = 1.0
     frag.turn_last_accessed = 0
     [updated] = _decay([frag], current_turn=hl, half_life=hl)
-    check("1 half-life: recency ~= 0.5", abs(updated.recency_score - 0.5) < 0.01,
+    assert check("1 half-life: recency ~= 0.5", abs(updated.recency_score - 0.5) < 0.01,
           f"r={updated.recency_score:.4f}")
     updated.recency_score = 1.0
     updated.turn_last_accessed = 0
     [frag2] = _decay([updated], current_turn=2 * hl, half_life=hl)
-    check("2 half-lives: recency ~= 0.25", abs(frag2.recency_score - 0.25) < 0.01,
+    assert check("2 half-lives: recency ~= 0.25", abs(frag2.recency_score - 0.25) < 0.01,
           f"r={frag2.recency_score:.4f}")
     frag2.recency_score = 1.0
     frag2.turn_last_accessed = 100
     [frag3] = _decay([frag2], current_turn=100, half_life=hl)
-    check("0 turns: recency = 1.0", frag3.recency_score == 1.0)
+    assert check("0 turns: recency = 1.0", frag3.recency_score == 1.0)
 
 
 # === D-30: KNAPSACK DP CORRECTNESS =======================================
@@ -709,10 +709,10 @@ def test_knapsack_dp():
         frags.append(f)
     selected, stats = knapsack_optimize(frags, token_budget=100)
     total_tc = sum(f.token_count for f in selected)
-    check("total_tokens <= budget", total_tc <= 100, f"total={total_tc}")
-    check("at least 1 selected", len(selected) >= 1)
+    assert check("total_tokens <= budget", total_tc <= 100, f"total={total_tc}")
+    assert check("at least 1 selected", len(selected) >= 1)
     # Rust returns total_tokens/total_relevance in stats, no 'method' key
-    check("stats has total_tokens", "total_tokens" in stats, f"keys={list(stats.keys())}")
+    assert check("stats has total_tokens", "total_tokens" in stats, f"keys={list(stats.keys())}")
 
 
 # === D-31: ENTROPY SCORING ===============================================
@@ -731,17 +731,25 @@ def compute_gradient_descent(weights, learning_rate, loss_fn):
     sh = compute_information_score(high, [])
     sl = compute_information_score(low, [])
 
-    check("high-entropy > low-entropy", sh > sl, f"high={sh:.4f}, low={sl:.4f}")
-    check("scores in [0,1]", 0 <= sh <= 1 and 0 <= sl <= 1)
+    assert check("high-entropy > low-entropy", sh > sl, f"high={sh:.4f}, low={sl:.4f}")
+    assert check("scores in [0,1]", 0 <= sh <= 1 and 0 <= sl <= 1)
 
 
 # === D-32: FULL LIFECYCLE STRESS =========================================
 
 def test_full_lifecycle_stress():
-    section("D-32  FULL LIFECYCLE STRESS (20 turns)")
+    section("D-32  FULL LIFECYCLE STRESS (15 turns)")
     engine, d = fresh_engine()
-    ids = ingest_corpus(engine)
-    check("corpus ingested", len(ids) > 0, f"count={len(ids)}")
+    # Exercise feedback, checkpoint, and resume with representative real
+    # sources. Whole-repository performance belongs to the dedicated corpus
+    # tests: tying this lifecycle contract to every new source file made it
+    # take 158 seconds locally and abort the default 60-second pytest run.
+    sources = [
+        (f"entroly/{name}", REPO / "entroly" / name)
+        for name in ("tokens.py", "config.py", "checkpoint.py")
+    ]
+    ids = ingest_corpus(engine, sources=sources)
+    assert check("corpus ingested", len(ids) > 0, f"count={len(ids)}")
     queries = [
         "knapsack optimization dynamic programming",
         "entropy scoring Shannon information",
@@ -759,7 +767,7 @@ def test_full_lifecycle_stress():
         opt = engine.optimize_context(token_budget=100_000, query=q)
         used = get_total_tokens(opt)
         eff = get_effective_budget(opt, 100_000)
-        check(f"turn {turn+1}: budget OK", used <= eff or eff == 0, f"used={used}")
+        assert check(f"turn {turn+1}: budget OK", used <= eff or eff == 0, f"used={used}")
         sel = get_selected(opt)
         if sel:
             engine.record_success([sel[0]["id"]])
@@ -767,16 +775,16 @@ def test_full_lifecycle_stress():
                 engine.record_failure([sel[-1]["id"]])
         engine.advance_turn()
     ckpt = engine.checkpoint(metadata={"stress": "test"})
-    check("checkpoint created", os.path.isfile(ckpt))
+    assert check("checkpoint created", os.path.isfile(ckpt))
     engine2, _ = fresh_engine(tmp_dir=d)
     result = engine2.resume()
-    check("resume successful", result.get("status") == "resumed")
+    assert check("resume successful", result.get("status") == "resumed")
     for turn in range(10, 15):
         q = queries[turn % len(queries)]
         opt = engine2.optimize_context(token_budget=100_000, query=q)
-        check(f"post-resume turn {turn+1}: works", isinstance(opt, dict))
+        assert check(f"post-resume turn {turn+1}: works", isinstance(opt, dict))
     r = engine2.ingest_fragment("def post_resume(): return 'ok'", source="pr.py")
-    check("ingest after resume works", r.get("status") in ("ingested", "duplicate"))
+    assert check("ingest after resume works", r.get("status") in ("ingested", "duplicate"))
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -799,6 +807,7 @@ def _entroly_version() -> str:
 
 
 def run():
+    global failed
     print("=" * 70)
     print(f"  Entroly {_entroly_version()} -- Deep Functional Test Suite")
     print(f"  Corpus: {len(real_sources())} real project files")
@@ -840,9 +849,12 @@ def run():
     ]
 
     for t in tests:
+        failures_before = failed
         try:
             t()
         except Exception as exc:
+            if failed == failures_before:
+                failed += 1
             print(f"\n  EXCEPTION in {t.__name__}: {exc}", file=sys.stderr)
             import traceback
             traceback.print_exc(file=sys.stderr)

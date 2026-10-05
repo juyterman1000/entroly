@@ -213,6 +213,38 @@ def test_contract_keeps_pinned_evidence_through_a_no_match():
     assert result["tokens_used"] == 7
 
 
+def test_no_match_resets_flat_and_nested_accounting():
+    from entroly.server import apply_no_match_contract
+
+    selected = _selection(0.0, text="unrelated cache economics")
+    result = {
+        "selected_fragments": selected,
+        "selected": selected,
+        "total_fragments": 12,
+        "total_tokens": 160,
+        "total_relevance": 0.8,
+        "effective_budget": 1_000,
+        "budget_utilization": 0.16,
+        "optimization_stats": {
+            "total_tokens": 160,
+            "selected_count": len(selected),
+            "total_relevance": 0.8,
+            "effective_budget": 1_000,
+            "budget_utilization": 0.16,
+        },
+    }
+
+    apply_no_match_contract(result, "zzqqxx blorptastic wubbleflux")
+
+    assert result["status"] == "no_match"
+    assert result["selected"] == result["selected_fragments"] == []
+    assert result["total_tokens"] == result["total_relevance"] == 0
+    assert result["budget_utilization"] == 0
+    assert result["optimization_stats"]["total_tokens"] == 0
+    assert result["optimization_stats"]["selected_count"] == 0
+    assert result["optimization_stats"]["budget_utilization"] == 0
+
+
 def test_contract_leaves_a_real_match_alone():
     from entroly.server import apply_no_match_contract
 
