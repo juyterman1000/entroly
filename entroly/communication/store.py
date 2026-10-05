@@ -466,9 +466,17 @@ class CommunicationStore:
                         "stable communication receipt identity was reused "
                         "with different content"
                     )
-                return int(existing["sequence"]) - 1
-            sequence = int(cursor.lastrowid)
-        return sequence - 1
+                sequence = int(existing["sequence"])
+            else:
+                sequence = int(cursor.lastrowid)
+            # INSERT OR IGNORE can consume an AUTOINCREMENT value for a
+            # duplicate receipt. Merkle leaves use dense positions, while
+            # SQLite sequence numbers may therefore contain gaps.
+            index = self._conn.execute(
+                "SELECT COUNT(*) FROM communication_receipts WHERE sequence < ?",
+                (sequence,),
+            ).fetchone()[0]
+            return int(index)
 
     def receipt_rows(self) -> list[dict[str, Any]]:
         """Return the append-only receipt ledger in canonical order."""
@@ -705,15 +713,17 @@ class CommunicationStore:
                 raise CommunicationStateConflict(
                     "stable action identity was reused with different content"
                 )
-            # A successfully observed send is terminal for duplicate prevention.
-            # Other states may be re-evaluated after an explicit policy change.
-            if existing["execution_state"] != "sent":
+            # Once dispatch is claimed, its outcome may still be unknown.
+            # Re-assurance must never reopen dispatching or failed actions for
+            # another send, even if policy is re-evaluated concurrently.
+            if existing["execution_state"] not in {"dispatching", "failed", "sent"}:
                 self._conn.execute(
                     """
                     UPDATE communication_actions
                     SET policy_decision = ?, policy_reasons_json = ?,
                         execution_state = ?, updated_at = ?
-                    WHERE action_id = ? AND execution_state != 'sent'
+                    WHERE action_id = ?
+                      AND execution_state NOT IN ('dispatching', 'failed', 'sent')
                     """,
                     (
                         decision,

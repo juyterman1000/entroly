@@ -125,6 +125,27 @@ def test_signed_merkle_receipt_survives_restart_without_raw_message_text(
     assert stored["receipt_id"] == receipt["receipt_id"]
 
 
+def test_duplicate_receipt_keeps_later_merkle_index_dense(tmp_path: Path) -> None:
+    with CommunicationStore(tmp_path / "communication.sqlite3", retention_days=0) as store:
+        ledger = CommunicationReceiptLedger(tmp_path / "receipts")
+        for number in (1, 2):
+            event = _birthday_event(f"birthday-{number}")
+            store.record_event(event)
+            receipt = build_action_receipt(
+                _birthday_proposal(event),
+                decision="allow",
+                reasons=("policy:bounded_allow",),
+                source_events=[event],
+            )
+            proof = ledger.record(store, receipt)
+            if number == 1:
+                assert ledger.record(store, receipt)["index"] == 0
+
+        assert proof["index"] == 1
+        assert proof["tree_size"] == 2
+        assert proof["verified"] is True
+
+
 def test_receipt_tampering_is_detected_before_rebuild(tmp_path: Path) -> None:
     store_path = tmp_path / "communication.sqlite3"
     receipt_dir = tmp_path / "receipts"

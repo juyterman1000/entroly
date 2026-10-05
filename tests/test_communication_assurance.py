@@ -933,6 +933,17 @@ def test_bridge_assure_claim_delivery_and_restart_prevent_duplicate_send(
     assert first_claim["execution_state"] == "dispatching"
     assert second_claim["claimed"] is False
 
+    # A repeated preflight while delivery is in flight cannot reopen the claim.
+    in_flight = handle_request(assure_request)
+    assert in_flight["execution_state"] == "dispatching"
+    assert handle_request(
+        {
+            "operation": "communication_begin_action",
+            "store_path": str(store_path),
+            "action_id": assured["action_id"],
+        }
+    )["claimed"] is False
+
     outbound = handle_request(
         {
             "operation": "communication_ingest",
@@ -958,6 +969,44 @@ def test_bridge_assure_claim_delivery_and_restart_prevent_duplicate_send(
     after_restart = handle_request(assure_request)
     assert after_restart["decision"] == "already_handled"
     assert after_restart["execution_state"] == "sent"
+
+    # A failed host dispatch is also terminal until an operator starts a new
+    # action; an automatic preflight retry must not send it again.
+    failed_inbound = handle_request(
+        {
+            **inbound,
+            "event": {**inbound["event"], "message_id": "birthday-2"},
+        }
+    )
+    failed_request = {
+        **assure_request,
+        "source_event_ids": [failed_inbound["event_id"]],
+    }
+    failed_action = handle_request(failed_request)
+    assert failed_action["decision"] == "allow", failed_action["reasons"]
+    assert handle_request(
+        {
+            "operation": "communication_begin_action",
+            "store_path": str(store_path),
+            "action_id": failed_action["action_id"],
+        }
+    )["claimed"] is True
+    assert handle_request(
+        {
+            "operation": "communication_fail_action",
+            "store_path": str(store_path),
+            "action_id": failed_action["action_id"],
+            "error": "host delivery failed",
+        }
+    )["execution_state"] == "failed"
+    assert handle_request(failed_request)["execution_state"] == "failed"
+    assert handle_request(
+        {
+            "operation": "communication_begin_action",
+            "store_path": str(store_path),
+            "action_id": failed_action["action_id"],
+        }
+    )["claimed"] is False
 
 
 def test_unknown_chat_kind_blocks_bounded_text_reply(tmp_path: Path) -> None:
