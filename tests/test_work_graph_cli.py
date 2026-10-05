@@ -107,6 +107,9 @@ def test_cli_human_state_is_compact_and_not_raw_json(monkeypatch, capsys, tmp_pa
         json_output=False,
         project=str(tmp_path),
     )
+    # Earlier daemon tests may emit an asynchronous diagnostic during this
+    # test's setup. Check only stderr produced by the CLI invocation itself.
+    capsys.readouterr()
     assert c.run(args) == 0
     captured = capsys.readouterr()
     assert captured.err == ""
