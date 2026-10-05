@@ -22,9 +22,9 @@ Sections:
   F-10  STATS CONTRACT          get_stats() returns all expected keys and is consistent
   F-11  EXPLAIN SELECTION       explain_selection() reflects optimize decisions
   F-12  CHECKPOINT CRASH SIM    delete checkpoint mid-way, expect graceful resume fail
-  F-13  LARGE BUDGET            budget >> corpus → selects everything
+  F-13  LARGE BUDGET            selection stays within budget and source corpus
   F-14  TINY BUDGET             budget << smallest fragment → still returns something
-  F-15  RECALL vs OPTIMIZE      recall and optimize see same fragment universe
+  F-15  RECALL vs OPTIMIZE      both outputs trace to ingested fragments
   F-16  MIXED FEEDBACK          success then failure nets neutral or down
   F-17  PREFETCH PREDICTION     after co-access patterns, prefetch predicts correctly
   F-18  ZERO QUERY              empty query string handled gracefully
@@ -86,13 +86,13 @@ def opt_selected(opt: dict) -> list[dict]:
 def opt_total_tokens(opt: dict) -> int:
     """Extract total_tokens from an optimize result."""
     stats = opt.get("optimization_stats", {})
-    return stats.get("total_tokens", opt.get("total_tokens", 0))
+    return opt.get("total_tokens", stats.get("total_tokens", 0))
 
 
 def opt_effective_budget(opt: dict, fallback: int) -> int:
     """Extract effective budget from an optimize result."""
     stats = opt.get("optimization_stats", {})
-    return stats.get("effective_budget", opt.get("effective_budget", fallback))
+    return opt.get("effective_budget", stats.get("effective_budget", fallback))
 
 
 # ── Corpus helpers ────────────────────────────────────────────────────────────
@@ -149,22 +149,22 @@ def test_cold_start():
 
     # recall on empty engine must return an empty list, not crash
     result = engine.recall_relevant("anything at all", top_k=10)
-    check("recall on empty corpus returns []", result == [], f"got={result}")
+    assert check("recall on empty corpus returns []", result == [], f"got={result}")
 
     # optimize on empty engine must return a valid dict
     opt = engine.optimize_context(token_budget=1000, query="anything")
-    check("optimize on empty corpus returns dict", isinstance(opt, dict))
-    check("optimize on empty returns total_tokens=0",
+    assert check("optimize on empty corpus returns dict", isinstance(opt, dict))
+    assert check("optimize on empty returns total_tokens=0",
           opt_total_tokens(opt) == 0,
           f"total_tokens={opt_total_tokens(opt)}")
 
     # stats on empty engine must be consistent
     stats = engine.get_stats()
-    check("stats returns dict", isinstance(stats, dict))
+    assert check("stats returns dict", isinstance(stats, dict))
 
     # checkpoint on empty is legal
     ckpt = engine.checkpoint()
-    check("checkpoint on empty engine returns a path", os.path.isfile(ckpt),
+    assert check("checkpoint on empty engine returns a path", os.path.isfile(ckpt),
           f"path={ckpt}")
 
 
@@ -182,18 +182,18 @@ def test_single_file():
     r = engine.ingest_fragment(content, source=str(path),
                                token_count=max(1, len(content) // 4))
     fid = r.get("fragment_id", "")
-    check("ingest returns fragment_id", bool(fid), f"fid={fid}")
+    assert check("ingest returns fragment_id", bool(fid), f"fid={fid}")
 
     # recall must return this one fragment
     results = engine.recall_relevant("python module", top_k=5)
-    check("single-file recall has ≤ 1 result", len(results) <= 1,
+    assert check("single-file recall has ≤ 1 result", len(results) <= 1,
           f"count={len(results)}")
 
     # optimize must not exceed the single fragment's token count
     tc = r.get("token_count", 0)
     opt = engine.optimize_context(token_budget=1_000_000, query="python module")
     used = opt_total_tokens(opt)
-    check("optimize with 1 file uses ≤ file_tokens", used <= tc or tc == 0,
+    assert check("optimize with 1 file uses ≤ file_tokens", used <= tc or tc == 0,
           f"used={used}, token_count={tc}")
 
 
@@ -211,23 +211,23 @@ def test_ingest_contract():
     tc = max(1, len(content) // 4)
     r = engine.ingest_fragment(content, source=str(first_path), token_count=tc)
 
-    check("status is 'ingested'", r.get("status") == "ingested",
+    assert check("status is 'ingested'", r.get("status") == "ingested",
           f"status={r.get('status')}")
-    check("fragment_id is a non-empty string",
+    assert check("fragment_id is a non-empty string",
           isinstance(r.get("fragment_id"), str) and len(r.get("fragment_id", "")) > 0)
-    check("token_count is a positive int",
+    assert check("token_count is a positive int",
           isinstance(r.get("token_count"), int) and r.get("token_count", 0) > 0,
           f"token_count={r.get('token_count')}")
-    check("entropy_score is a float in [0,1]",
+    assert check("entropy_score is a float in [0,1]",
           isinstance(r.get("entropy_score"), float)
           and 0.0 <= r.get("entropy_score", -1) <= 1.0,
           f"entropy={r.get('entropy_score')}")
 
     # Re-ingest: must be duplicate
     r2 = engine.ingest_fragment(content, source=str(first_path), token_count=tc)
-    check("re-ingest returns status='duplicate'",
+    assert check("re-ingest returns status='duplicate'",
           r2.get("status") == "duplicate", f"status={r2.get('status')}")
-    check("duplicate has duplicate_of field",
+    assert check("duplicate has duplicate_of field",
           "duplicate_of" in r2, f"keys={list(r2.keys())}")
 
 
@@ -249,20 +249,20 @@ def test_dedup_boundary():
     # Exact copy: must dedup
     r2 = engine.ingest_fragment(content, source="copy.py",
                                 token_count=max(1, len(content) // 4))
-    check("exact-copy deduplicated",
+    assert check("exact-copy deduplicated",
           r2.get("status") == "duplicate", f"status={r2.get('status')}")
 
     # Whitespace-shifted: add a trailing newline — SimHash is content hash,
     # expectation: may or may not dedup (implementation-defined), BUT must not crash
     r3 = engine.ingest_fragment(content + "\n", source="shifted.py",
                                 token_count=max(1, len(content + "\n") // 4))
-    check("whitespace-shifted ingest completes without crash",
+    assert check("whitespace-shifted ingest completes without crash",
           "status" in r3, f"status={r3.get('status')}")
 
     # Completely different content must NOT dedup with original
     different = "# completely different file — no overlap with server.py\nx = 42\n"
     r4 = engine.ingest_fragment(different, source="different.py", token_count=10)
-    check("different content is not a duplicate of server.py",
+    assert check("different content is not a duplicate of server.py",
           r4.get("status") != "duplicate" or r4.get("duplicate_of") != fid,
           f"status={r4.get('status')}")
 
@@ -306,11 +306,11 @@ def test_feedback_loop():
     l_after = score_of(loser_id)
 
     if w_before is not None and w_after is not None:
-        check("10× success raises winner score",
+        assert check("10× success raises winner score",
               w_after > w_before,
               f"{w_before:.4f} → {w_after:.4f}")
     if l_before is not None and l_after is not None:
-        check("10× failure lowers loser score",
+        assert check("10× failure lowers loser score",
               l_after < l_before,
               f"{l_before:.4f} → {l_after:.4f}")
 
@@ -318,7 +318,7 @@ def test_feedback_loop():
     if w_after is not None and l_after is not None:
         spread_before = (w_before or 0) - (l_before or 0)
         spread_after  = (w_after  or 0) - (l_after  or 0)
-        check("feedback amplifies score spread",
+        assert check("feedback amplifies score spread",
               spread_after >= spread_before,
               f"spread: {spread_before:.4f} → {spread_after:.4f}")
 
@@ -359,12 +359,18 @@ def test_multi_turn_lifecycle():
 
         all_budgets.append(used)
 
-        check(f"turn {turn+1}: budget not exceeded",
+        assert check(f"turn {turn+1}: budget not exceeded",
               used <= opt_effective_budget(opt, 30_000),
               f"used={used:,}")
-        check(f"turn {turn+1}: at least 1 fragment selected",
-              len(selected) >= 1,
-              f"count={len(selected)}")
+        assert check(f"turn {turn+1}: selection or explicit no-match",
+              bool(selected) or (
+                  opt.get("status") == "no_match"
+                  and bool(opt.get("no_match", {}).get("reason"))
+              ),
+              f"count={len(selected)}, status={opt.get('status')}")
+        if not selected:
+            assert check(f"turn {turn+1}: no-match uses no context tokens",
+                  used == 0, f"used={used}")
 
         # Give positive feedback on top fragment
         if selected:
@@ -375,7 +381,7 @@ def test_multi_turn_lifecycle():
         engine.advance_turn()
         prev_top = selected[0]["id"] if selected else prev_top
 
-    check("used tokens varied across 10 turns (engine is query-sensitive)",
+    assert check("used tokens varied across 10 turns (engine is query-sensitive)",
           len(set(all_budgets)) > 1,
           f"budget values={all_budgets}")
 
@@ -407,7 +413,7 @@ def test_query_sensitivity():
 
     non_empty = [t for t in top_results if t]
     unique_tops = len(set(non_empty))
-    check("different queries return at least 2 distinct top-ranked fragments",
+    assert check("different queries return at least 2 distinct top-ranked fragments",
           unique_tops >= 2,
           f"unique_tops={unique_tops}, tops={non_empty}")
 
@@ -428,12 +434,12 @@ def test_score_stability():
 
     ids1 = [x["fragment_id"] for x in r1]
     ids2 = [x["fragment_id"] for x in r2]
-    check("same query twice returns identical fragment list",
+    assert check("same query twice returns identical fragment list",
           ids1 == ids2, f"r1={ids1[:3]}, r2={ids2[:3]}")
 
     scores1 = [x.get("relevance", x.get("score", 0)) for x in r1]
     scores2 = [x.get("relevance", x.get("score", 0)) for x in r2]
-    check("same query twice returns identical scores",
+    assert check("same query twice returns identical scores",
           scores1 == scores2, f"s1={scores1[:3]}, s2={scores2[:3]}")
 
 
@@ -458,7 +464,7 @@ def test_advance_turn():
     engine.advance_turn()
     t3 = get_turn()
 
-    check("advance_turn increments turn by 1 each call",
+    assert check("advance_turn increments turn by 1 each call",
           t1 == t0 + 1 and t3 == t0 + 3,
           f"t0={t0}, t1={t1}, t3={t3}")
 
@@ -480,21 +486,28 @@ def test_stats_contract():
     total_frags = (stats.get("total_fragments")
                    or stats.get("session", {}).get("total_fragments")
                    or 0)
-    check("stats reports total_fragments > 0 after ingest",
+    assert check("stats reports total_fragments > 0 after ingest",
           total_frags > 0, f"total_fragments={total_frags}")
-    check("stats total_fragments matches ingested count",
+    assert check("stats total_fragments matches ingested count",
           total_frags == n, f"reported={total_frags}, ingested={n}")
 
     # Ingest one more, check stats update
-    _, path = sources[0]
-    content = path.read_text(encoding="utf-8", errors="replace") + " # extra"
-    engine.ingest_fragment(content, source="extra.py",
-                           token_count=max(1, len(content) // 4))
+    # A copied source plus a comment is intentionally near-deduplicated.
+    # This contract needs a genuinely new fragment, not a cosmetic variant.
+    content = (
+        "def reconcile_inventory(sku, warehouse, shipment):\n"
+        "    remaining = warehouse.stock[sku] - shipment.quantity\n"
+        "    warehouse.commit_stock(sku, remaining)\n"
+        "    return {'sku': sku, 'remaining': remaining}\n"
+    )
+    added = engine.ingest_fragment(content, source="extra.py",
+                                   token_count=max(1, len(content) // 4))
+    assert check("new statistics fixture is ingested", added.get("status") == "ingested")
     stats2 = engine.get_stats()
     total2 = (stats2.get("total_fragments")
               or stats2.get("session", {}).get("total_fragments")
               or 0)
-    check("stats total_fragments increments after new ingest",
+    assert check("stats total_fragments increments after new ingest",
           total2 == total_frags + 1, f"before={total_frags}, after={total2}")
 
 
@@ -512,7 +525,7 @@ def test_explain_selection():
     engine.optimize_context(token_budget=200_000, query="knapsack budget optimization")
     exp = engine.explain_selection()
 
-    check("explain_selection returns a dict", isinstance(exp, dict))
+    assert check("explain_selection returns a dict", isinstance(exp, dict))
     # Must have either 'included' or at least not crash/return None
     # (Rust engine may structure this differently)
     has_content = (
@@ -521,7 +534,7 @@ def test_explain_selection():
         or "fragments" in exp
         or "error" in exp      # Python-only limitation is documented
     )
-    check("explain_selection has recognisable keys", has_content,
+    assert check("explain_selection has recognisable keys", has_content,
           f"keys={list(exp.keys())[:5]}")
 
 
@@ -534,9 +547,9 @@ def test_checkpoint_crash_sim():
     # Engine with empty dir → no checkpoint exists → resume must say so gracefully
     engine, _ = fresh_engine()
     result = engine.resume()
-    check("resume with no checkpoint returns status dict",
+    assert check("resume with no checkpoint returns status dict",
           isinstance(result, dict))
-    check("resume with no checkpoint returns a no-checkpoint status",
+    assert check("resume with no checkpoint returns a no-checkpoint status",
           result.get("status") in ("no_checkpoint_found", "not_found", "empty", ""),
           f"status={result.get('status')}")
 
@@ -553,11 +566,11 @@ def test_checkpoint_crash_sim():
     try:
         r2 = engine2.resume()
         # Either it recovers (unlikely) or returns an error status — must not raise
-        check("resume from corrupted checkpoint does not raise",
+        assert check("resume from corrupted checkpoint does not raise",
               True, f"status={r2.get('status')}")
     except Exception as e:
         # A hard crash here is a real bug
-        check("resume from corrupted checkpoint does not raise",
+        assert check("resume from corrupted checkpoint does not raise",
               False, f"raised {type(e).__name__}: {e}")
 
 
@@ -566,7 +579,7 @@ def test_checkpoint_crash_sim():
 # ══════════════════════════════════════════════════════════════════════════════
 
 def test_large_budget():
-    section("F-13  LARGE BUDGET  —  budget >> corpus → selects everything")
+    section("F-13  LARGE BUDGET  —  selected files remain within budget and corpus")
     engine, _ = fresh_engine()
     sources = real_sources()
     ids = ingest_corpus(engine, sources)
@@ -576,20 +589,25 @@ def test_large_budget():
         for _, p in sources
     )
 
-    # Budget 10× the corpus — must select every fragment
+    # A large budget removes token pressure, but query-conditioned retrieval
+    # still selects relevant files rather than returning the entire corpus.
     opt = engine.optimize_context(
         token_budget=total_corpus_tokens * 10,
         query="knapsack optimization entropy decay",
     )
     used  = opt_total_tokens(opt)
     eff   = opt_effective_budget(opt, total_corpus_tokens * 10)
-    count = len(opt_selected(opt))
+    selected = opt_selected(opt)
+    count = len(selected)
 
-    check("large budget: utilization ≤ 1.0", used <= eff,
+    assert check("large budget: utilization ≤ 1.0", used <= eff,
           f"used={used:,}, effective={eff:,}")
-    check("large budget: all fragments selected",
-          count == len([v for v in ids.values() if v]),
+    assert check("large budget: returns a bounded, nonempty selection",
+          0 < count <= len(ids),
           f"selected={count}, ingested={len(ids)}")
+    corpus_sources = {str(path) for _, path in sources}
+    assert check("large budget: selected sources came from the corpus",
+          all(fragment.get("source") in corpus_sources for fragment in selected))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -605,13 +623,13 @@ def test_tiny_budget():
     for budget in [0, 1, 10]:
         opt = engine.optimize_context(token_budget=budget,
                                       query="optimization budget knapsack")
-        check(f"budget={budget}: optimize doesn't crash",
+        assert check(f"budget={budget}: optimize doesn't crash",
               isinstance(opt, dict), f"got={type(opt)}")
         used = opt_total_tokens(opt)
         opt_effective_budget(opt, budget if budget > 0 else 1)
         # With very tiny budget: either 0 selected OR only pinned items (which bypass budget)
         # We just verify the return is a valid result
-        check(f"budget={budget}: total_tokens is non-negative int",
+        assert check(f"budget={budget}: total_tokens is non-negative int",
               isinstance(used, int) and used >= 0, f"total_tokens={used}")
 
 
@@ -620,7 +638,7 @@ def test_tiny_budget():
 # ══════════════════════════════════════════════════════════════════════════════
 
 def test_recall_vs_optimize_universe():
-    section("F-15  RECALL vs OPTIMIZE  —  same fragment universe")
+    section("F-15  RECALL vs OPTIMIZE  —  both trace to ingested fragments")
     engine, _ = fresh_engine()
     sources = real_sources()
     ids = ingest_corpus(engine, sources)
@@ -628,18 +646,37 @@ def test_recall_vs_optimize_universe():
     Q = "optimization entropy scoring fragment relevance"
 
     recall_ids  = {r["fragment_id"] for r in engine.recall_relevant(Q, top_k=50)}
-    opt_ids     = {f["id"] for f in
-                   engine.optimize_context(token_budget=500_000, query=Q)
-                   .get("selected", [])}
+    selected = opt_selected(engine.optimize_context(token_budget=500_000, query=Q))
+    # QCCR emits one synthetic ID per source file; its source_fragment_ids
+    # carry the native ingestion IDs. Other selectors return native IDs.
+    opt_ids = {
+        origin_id
+        for fragment in selected
+        for origin_id in (
+            fragment.get("source_fragment_ids") or []
+            if str(fragment.get("id", "")).startswith("qccr::")
+            else [fragment["id"]]
+        )
+    }
     ingested_ids = set(v for v in ids.values() if v)
 
-    # All recalled/optimized IDs must come from the ingested set
-    check("all recall IDs are from ingested corpus",
-          recall_ids <= ingested_ids,
-          f"extra={recall_ids - ingested_ids}")
-    check("all optimize IDs are from ingested corpus",
+    # Every selected output must have a valid source and a nonempty lineage.
+    assert check("all recall IDs are from ingested corpus",
+           recall_ids <= ingested_ids,
+           f"extra={recall_ids - ingested_ids}")
+    assert check("all optimize outputs carry source lineage",
+          bool(selected) and all(
+              fragment.get("source_fragment_ids")
+              if str(fragment.get("id", "")).startswith("qccr::")
+              else fragment.get("id")
+              for fragment in selected
+          ))
+    assert check("all optimize source IDs are from ingested corpus",
           opt_ids <= ingested_ids,
           f"extra={opt_ids - ingested_ids}")
+    assert check("all optimize sources are from ingested corpus",
+          {fragment.get("source") for fragment in selected}
+          <= {str(path) for _, path in sources})
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -686,7 +723,7 @@ def test_mixed_feedback():
     )
 
     if score_after_success is not None and score_after_mixed is not None:
-        check("3× success then 5× failure: score < pure-success score",
+        assert check("3× success then 5× failure: score < pure-success score",
               score_after_mixed < score_after_success,
               f"after_success={score_after_success:.4f}, after_mixed={score_after_mixed:.4f}")
 
@@ -700,40 +737,37 @@ def test_prefetch_prediction():
     engine, _ = fresh_engine()
     sources = real_sources()
 
-    # Build co-access: ingest server.py and knapsack.py always together
-    server_path  = next((p for _, p in sources if "server.py"  in str(p)), None)
-    knapsack_path = next((p for _, p in sources if "knapsack.py" in str(p)), None)
-
-    if not server_path or not knapsack_path:
-        skip("prefetch prediction", "required source files not in corpus")
-        return
+    # Use two shipped sources so this contract cannot silently skip after a rename.
+    server_path = next((p for _, p in sources if p.name == "server.py"), None)
+    config_path = next((p for _, p in sources if p.name == "config.py"), None)
+    assert server_path is not None and config_path is not None
 
     server_content   = server_path.read_text(encoding="utf-8", errors="replace")
-    knapsack_content = knapsack_path.read_text(encoding="utf-8", errors="replace")
+    config_content = config_path.read_text(encoding="utf-8", errors="replace")
 
     # Ingest both files once (for content availability)
     engine.ingest_fragment(server_content,   source=str(server_path),
                            token_count=max(1, len(server_content) // 4))
-    engine.ingest_fragment(knapsack_content, source=str(knapsack_path),
-                           token_count=max(1, len(knapsack_content) // 4))
+    engine.ingest_fragment(config_content, source=str(config_path),
+                           token_count=max(1, len(config_content) // 4))
 
     # Simulate 5 co-access sessions by directly recording access patterns.
     # Ingest deduplicates identical content, so record_access only fires once
     # per unique fragment. We test the prefetch co-access learning directly.
     for turn in range(5):
         engine._prefetch.record_access(str(server_path), turn)
-        engine._prefetch.record_access(str(knapsack_path), turn)
+        engine._prefetch.record_access(str(config_path), turn)
 
     # Pass empty source_content to isolate co-access learning from static
     # import analysis (server.py has many stdlib imports that fill max_results
     # before the co-access prediction appears)
     predictions = engine.prefetch_related(str(server_path), source_content="")
-    check("prefetch_related returns a list", isinstance(predictions, list))
+    assert check("prefetch_related returns a list", isinstance(predictions, list))
 
-    # After seeing server.py 5× always with knapsack.py, knapsack should appear
+    # After seeing server.py 5× always with config.py, config should appear.
     predicted_paths = [p.get("path", "") for p in predictions]
-    check("prefetch predicts knapsack.py as co-accessed with server.py",
-          any("knapsack" in pp for pp in predicted_paths),
+    assert check("prefetch predicts config.py as co-accessed with server.py",
+          str(config_path) in predicted_paths,
           f"predictions={predicted_paths[:3]}")
 
 
@@ -750,21 +784,21 @@ def test_zero_query():
     # recall with empty query
     try:
         r = engine.recall_relevant("", top_k=5)
-        check("empty-query recall returns list", isinstance(r, list),
+        assert check("empty-query recall returns list", isinstance(r, list),
               f"type={type(r).__name__}")
     except Exception as e:
-        check("empty-query recall does not crash", False,
+        assert check("empty-query recall does not crash", False,
               f"raised {type(e).__name__}: {e}")
 
     # optimize with empty query
     try:
         opt = engine.optimize_context(token_budget=100_000, query="")
-        check("empty-query optimize returns dict", isinstance(opt, dict))
-        check("empty-query optimize returns total_tokens",
+        assert check("empty-query optimize returns dict", isinstance(opt, dict))
+        assert check("empty-query optimize returns total_tokens",
               "total_tokens" in opt or "optimization_stats" in opt,
               f"keys={list(opt.keys())[:5]}")
     except Exception as e:
-        check("empty-query optimize does not crash", False,
+        assert check("empty-query optimize does not crash", False,
               f"raised {type(e).__name__}: {e}")
 
 
@@ -788,6 +822,7 @@ def _entroly_version() -> str:
 
 
 def run():
+    global failed
     print("══════════════════════════════════════════════════════════════")
     print(f"  Entroly {_entroly_version()} — Intensive Functional Test Suite")
     print(f"  Corpus: {len(real_sources())} real project files")
@@ -815,9 +850,12 @@ def run():
     ]
 
     for t in tests:
+        failures_before = failed
         try:
             t()
         except Exception as exc:
+            if failed == failures_before:
+                failed += 1
             print(f"\n  EXCEPTION in {t.__name__}: {exc}", file=sys.stderr)
             import traceback
             traceback.print_exc(file=sys.stderr)
