@@ -1846,6 +1846,811 @@ def verify_proof_guided_output(request: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+
+def _communication_ingest(request: dict[str, Any]) -> dict[str, Any]:
+    """Persist one privacy-scoped channel observation locally."""
+    from .communication import CommunicationStore, event_from_adapter
+
+    raw_event = request.get("event")
+    if not isinstance(raw_event, dict):
+        raise ValueError("communication_ingest requires an event object")
+    store_path = request.get("store_path")
+    if store_path is not None and not isinstance(store_path, str):
+        raise ValueError("communication store_path must be a string")
+    retention = request.get("retention_days")
+    event = event_from_adapter(raw_event)
+    correlated_action_id = None
+    with CommunicationStore(store_path, retention_days=retention) as store:
+        inserted = store.record_event(event)
+        if event.direction == "outbound":
+            correlated_action_id = store.correlate_outbound_event(
+                event,
+                error=str(raw_event.get("delivery_error") or ""),
+            )
+        stats = store.stats()
+
+    autotune_status: dict[str, Any] | None = None
+    if request.get("taste_learning_enabled") is True:
+        from .communication import start_communication_taste_autotune_daemon
+
+        try:
+            interval_s = float(request.get("taste_autotune_interval_s", 30.0))
+            thread = start_communication_taste_autotune_daemon(
+                store_path=store_path,
+                interval_s=interval_s,
+            )
+            autotune_status = {
+                "enabled": True,
+                "thread_name": thread.name,
+                "alive": thread.is_alive(),
+            }
+        except Exception as exc:
+            # Observation remains fail-open; learning explicitly reports paused.
+            autotune_status = {
+                "enabled": True,
+                "alive": False,
+                "error": type(exc).__name__,
+            }
+
+    return {
+        "schema_version": BRIDGE_SCHEMA,
+        "ok": True,
+        "communication_schema": event.schema,
+        "event_id": event.event_id,
+        "commitment_sha256": event.commitment_sha256,
+        "content_sha256": event.content_sha256,
+        "identity_strength": event.identity_strength,
+        "conversation_kind": event.conversation_kind,
+        "inserted": inserted,
+        "correlated_action_id": correlated_action_id,
+        "stats": stats,
+        "taste_autotune": autotune_status,
+        "local_only": True,
+        "provider_call_performed": False,
+    }
+
+def _communication_status(request: dict[str, Any]) -> dict[str, Any]:
+    """Return scalar store health without exposing message content."""
+    from .communication import CommunicationStore
+
+    store_path = request.get("store_path")
+    if store_path is not None and not isinstance(store_path, str):
+        raise ValueError("communication store_path must be a string")
+    retention = request.get("retention_days")
+    with CommunicationStore(store_path, retention_days=retention) as store:
+        stats = store.stats()
+    return {
+        "schema_version": BRIDGE_SCHEMA,
+        "ok": True,
+        "communication_schema": stats["schema"],
+        "stats": stats,
+        "local_only": True,
+        "provider_call_performed": False,
+    }
+
+
+def _communication_digest(request: dict[str, Any]) -> dict[str, Any]:
+    """Build a bounded secretary digest from authorized local evidence."""
+    from .communication import CommunicationStore, build_digest
+
+    store_path = request.get("store_path")
+    if store_path is not None and not isinstance(store_path, str):
+        raise ValueError("communication store_path must be a string")
+    retention = request.get("retention_days")
+    channel = str(request.get("channel") or "").strip().lower()
+    account_id_raw = request.get("account_id")
+    account_id = None if account_id_raw is None else str(account_id_raw).strip()
+    conversation_id = str(request.get("conversation_id") or "").strip()
+    try:
+        limit = int(request.get("limit", 1000))
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("communication digest limit must be an integer") from exc
+    limit = max(1, min(limit, 10_000))
+
+    with CommunicationStore(store_path, retention_days=retention) as store:
+        if conversation_id:
+            if not channel:
+                raise ValueError("channel is required for conversation-scoped digest")
+            events = store.events_for_scope(
+                channel=channel,
+                account_id=account_id or "",
+                conversation_id=conversation_id,
+                limit=limit,
+            )
+            scope = "conversation"
+        else:
+            if request.get("owner_authorized") is not True:
+                raise PermissionError(
+                    "cross-conversation communication review requires trusted owner authorization"
+                )
+            events = store.recent_events(
+                channel=channel,
+                account_id=account_id,
+                limit=limit,
+            )
+            scope = "owner_global"
+        digest = build_digest(events)
+    return {
+        "schema_version": BRIDGE_SCHEMA,
+        "ok": True,
+        "scope": scope,
+        "digest": digest,
+        "local_only": True,
+        "provider_call_performed": False,
+    }
+
+
+def _communication_assure(request: dict[str, Any]) -> dict[str, Any]:
+    """Evaluate, verify, receipt, and persist one proposed external action."""
+    from .communication import (
+        CommunicationActionProposal,
+        CommunicationPolicy,
+        CommunicationReceiptLedger,
+        CommunicationStore,
+        action_evidence_verification,
+        assess_event,
+        build_action_receipt,
+        combine_category,
+        combine_risk,
+        eicv_supports_automatic_action,
+        outgoing_creates_commitment,
+    )
+
+    store_path = request.get("store_path")
+    receipt_dir = request.get("receipt_dir")
+    if store_path is not None and not isinstance(store_path, str):
+        raise ValueError("communication store_path must be a string")
+    if receipt_dir is not None and not isinstance(receipt_dir, str):
+        raise ValueError("communication receipt_dir must be a string")
+    if receipt_dir is None and isinstance(store_path, str) and store_path.strip():
+        receipt_dir = str(Path(store_path).expanduser().absolute().parent / "receipts")
+    retention = request.get("retention_days")
+    action_type = str(request.get("action_type") or "").strip()
+    allowed_actions = {"send_message", "reply", "react", "group_reply", "no_action"}
+    if action_type not in allowed_actions:
+        raise ValueError(f"unsupported communication action_type: {action_type!r}")
+    channel = str(request.get("channel") or "").strip().lower()
+    account_id = str(request.get("account_id") or "").strip()
+    conversation_id = str(request.get("conversation_id") or "").strip()
+    if not channel or not conversation_id:
+        raise ValueError(
+            "communication assurance requires trusted channel/conversation scope"
+        )
+
+    source_ids_raw = request.get("source_event_ids")
+    if not isinstance(source_ids_raw, list):
+        raise ValueError("source_event_ids must be a list")
+    source_ids = tuple(
+        sorted(
+            {
+                str(item).strip()
+                for item in source_ids_raw
+                if str(item).strip()
+            }
+        )
+    )
+    if action_type != "no_action" and not source_ids:
+        raise ValueError("external communication actions require source_event_ids")
+    payload = str(request.get("payload") or "")
+
+    mode = str(request.get("policy_mode") or "observe").strip().lower()
+    if mode not in {"observe", "suggest", "approve", "bounded"}:
+        raise ValueError("invalid communication policy_mode")
+    auto_actions_raw = request.get("auto_actions")
+    auto_categories_raw = request.get("auto_categories")
+    auto_actions = tuple(
+        item
+        for item in (
+            str(value).strip()
+            for value in (
+                auto_actions_raw if isinstance(auto_actions_raw, list) else []
+            )
+        )
+        if item in allowed_actions
+    )
+    auto_categories = tuple(
+        sorted(
+            {
+                str(value).strip()
+                for value in (
+                    auto_categories_raw
+                    if isinstance(auto_categories_raw, list)
+                    else []
+                )
+                if str(value).strip()
+            }
+        )
+    )
+
+    receipt_proof: dict[str, Any] | None = None
+    receipt_error: str | None = None
+    with CommunicationStore(store_path, retention_days=retention) as store:
+        events = []
+        for event_id in source_ids:
+            event = store.get_event(event_id)
+            if event is None:
+                raise ValueError(
+                    f"unknown communication source event: {event_id}"
+                )
+            events.append(event)
+
+        assessments = [assess_event(event) for event in events]
+        kinds = {event.conversation_kind for event in events}
+        conversation_kind = (
+            next(iter(kinds)) if len(kinds) == 1 else "unknown"
+        )
+        category = combine_category(assessments)
+        risk_class = combine_risk(assessments)
+        creates_commitment = outgoing_creates_commitment(payload)
+        proposal = CommunicationActionProposal.build(
+            action_type=action_type,  # type: ignore[arg-type]
+            channel=channel,
+            account_id=account_id,
+            conversation_id=conversation_id,
+            conversation_kind=conversation_kind,  # type: ignore[arg-type]
+            source_event_ids=source_ids,
+            payload=payload,
+            category=category,
+            risk_class=risk_class,
+            creates_commitment=creates_commitment,
+        )
+        policy = CommunicationPolicy(
+            mode=mode,  # type: ignore[arg-type]
+            auto_categories=auto_categories,
+            auto_actions=auto_actions,  # type: ignore[arg-type]
+        )
+        decision, reasons = policy.evaluate(
+            proposal,
+            source_events=events,
+            already_handled=store.action_is_handled(proposal.action_id),
+        )
+        reasons = tuple(reasons)
+
+        evidence_verification = action_evidence_verification(
+            proposal,
+            events,
+            payload=payload,
+        )
+        if (
+            decision == "allow"
+            and not eicv_supports_automatic_action(evidence_verification)
+        ):
+            decision = "approval_required"
+            reasons = tuple(
+                sorted(
+                    {
+                        *reasons,
+                        "eicv:automatic_action_not_supported",
+                    }
+                )
+            )
+
+        receipt = build_action_receipt(
+            proposal,
+            decision=decision,
+            reasons=reasons,
+            source_events=events,
+            evidence_verification=evidence_verification,
+        )
+        try:
+            receipt_proof = CommunicationReceiptLedger(
+                receipt_dir
+            ).record(store, receipt)
+        except Exception as exc:
+            receipt_error = type(exc).__name__
+            # Automatic external effects require a durable audit commitment.
+            if decision == "allow":
+                decision = "approval_required"
+                reasons = tuple(
+                    sorted(
+                        {
+                            *reasons,
+                            "audit:signed_receipt_unavailable",
+                        }
+                    )
+                )
+
+        state_by_decision = {
+            "allow": "assured",
+            "approval_required": "awaiting_approval",
+            "already_handled": "sent",
+            "deny": "blocked",
+            "ambiguous": "blocked",
+            "insufficient_context": "blocked",
+        }
+        inserted = store.record_action(
+            proposal,
+            decision=decision,
+            reasons=reasons,
+            execution_state=state_by_decision[decision],
+        )
+        action = store.get_action(proposal.action_id)
+
+    return {
+        "schema_version": BRIDGE_SCHEMA,
+        "ok": True,
+        "decision": decision,
+        "reasons": list(reasons),
+        "action_id": proposal.action_id,
+        "action_type": proposal.action_type,
+        "category": proposal.category,
+        "risk_class": proposal.risk_class,
+        "creates_commitment": proposal.creates_commitment,
+        "conversation_kind": proposal.conversation_kind,
+        "source_event_ids": list(proposal.source_event_ids),
+        "evidence_verification": evidence_verification,
+        "receipt": receipt_proof,
+        "receipt_error": receipt_error,
+        "inserted": inserted,
+        "execution_state": (action or {}).get("execution_state"),
+        "local_only": True,
+        "provider_call_performed": False,
+    }
+
+def _communication_set_taste(request: dict[str, Any]) -> dict[str, Any]:
+    """Replace explicit communication taste for one owner-authorized scope."""
+    from .communication import CommunicationStore, CommunicationTaste
+
+    if request.get("owner_authorized") is not True:
+        raise PermissionError("explicit communication taste requires trusted owner authorization")
+    store_path = request.get("store_path")
+    if store_path is not None and not isinstance(store_path, str):
+        raise ValueError("communication store_path must be a string")
+    scope_type = str(request.get("scope_type") or "").strip()
+    scope_id = str(request.get("scope_id") or "").strip()
+    if scope_type not in {"owner", "contact", "group", "conversation"}:
+        raise ValueError("invalid communication taste scope_type")
+    if not scope_id:
+        raise ValueError("communication taste scope_id is required")
+    profile = request.get("taste")
+    if not isinstance(profile, dict):
+        raise ValueError("communication taste must be an object")
+
+    taste = CommunicationTaste.build(
+        scope_type=scope_type,  # type: ignore[arg-type]
+        scope_id=scope_id,
+        source="explicit",
+        confidence=1.0,
+        preferred_language=str(profile.get("preferred_language") or "adaptive"),
+        formality=str(profile.get("formality") or "adaptive"),
+        response_length=str(profile.get("response_length") or "adaptive"),
+        emoji_level=str(profile.get("emoji_level") or "adaptive"),
+        routine_action=str(profile.get("routine_action") or "none"),
+        preferred_reaction=str(profile.get("preferred_reaction") or ""),
+        greeting_style=str(profile.get("greeting_style") or ""),
+        signoff_style=str(profile.get("signoff_style") or ""),
+        notes=profile.get("notes") if isinstance(profile.get("notes"), dict) else {},
+    )
+    with CommunicationStore(store_path) as store:
+        store.set_explicit_taste(taste)
+    return {
+        "schema_version": BRIDGE_SCHEMA,
+        "ok": True,
+        "profile": taste.to_dict(),
+        "authority_expanded": False,
+        "local_only": True,
+        "provider_call_performed": False,
+    }
+
+
+def _communication_learn_taste(request: dict[str, Any]) -> dict[str, Any]:
+    """Infer low-risk communication style through PRISM-selected evidence."""
+    from .communication import (
+        CommunicationMemory,
+        CommunicationStore,
+        CommunicationTasteOptimizer,
+        infer_taste_from_outbound,
+        is_human_grounded_outbound,
+    )
+
+    if request.get("owner_authorized") is not True:
+        raise PermissionError(
+            "communication taste learning requires trusted owner authorization"
+        )
+    store_path = request.get("store_path")
+    memory_path = request.get("memory_path")
+    learning_state_path = request.get("learning_state_path")
+    learning_journal_path = request.get("learning_journal_path")
+    for label, value in (
+        ("store_path", store_path),
+        ("memory_path", memory_path),
+        ("learning_state_path", learning_state_path),
+        ("learning_journal_path", learning_journal_path),
+    ):
+        if value is not None and not isinstance(value, str):
+            raise ValueError(f"communication {label} must be a string")
+    scope_type = str(request.get("scope_type") or "").strip()
+    scope_id = str(request.get("scope_id") or "").strip()
+    if scope_type not in {"owner", "contact", "group", "conversation"}:
+        raise ValueError("invalid communication taste scope_type")
+    if not scope_id:
+        raise ValueError("communication taste scope_id is required")
+    channel = str(request.get("channel") or "").strip().lower()
+    account_raw = request.get("account_id")
+    account_id = None if account_raw is None else str(account_raw).strip()
+    query = str(request.get("query") or "").strip()
+    try:
+        limit = max(3, min(int(request.get("limit", 500)), 5000))
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("communication taste limit must be an integer") from exc
+
+    with CommunicationStore(store_path) as store:
+        if scope_type in {"group", "conversation"}:
+            if not channel:
+                raise ValueError(
+                    "channel is required for conversation taste learning"
+                )
+            events = store.events_for_scope(
+                channel=channel,
+                account_id=account_id or "",
+                conversation_id=scope_id,
+                limit=limit,
+            )
+        else:
+            events = store.recent_events(
+                channel=channel,
+                account_id=account_id,
+                limit=limit,
+            )
+            if scope_type == "contact":
+                events = [
+                    event
+                    for event in events
+                    if event.sender_id == scope_id
+                    or event.recipient_id == scope_id
+                ]
+
+    events = [event for event in events if is_human_grounded_outbound(event)]
+    if len(events) < 3:
+        return {
+            "schema_version": BRIDGE_SCHEMA,
+            "ok": True,
+            "learned": False,
+            "reason": "insufficient_human_grounded_outbound_evidence",
+            "human_grounded_events": len(events),
+            "authority_expanded": False,
+            "local_only": True,
+            "provider_call_performed": False,
+        }
+
+    optimizer = CommunicationTasteOptimizer(
+        learning_state_path,
+        learning_journal_path,
+    )
+    selection = optimizer.select_examples(
+        events,
+        scope_type=scope_type,
+        scope_id=scope_id,
+        query=query,
+        top_k=min(24, max(3, len(events))),
+    )
+    selected = set(selection.event_ids)
+    selected_events = [
+        event for event in events if event.event_id in selected
+    ]
+    taste = infer_taste_from_outbound(
+        selected_events,
+        scope_type=scope_type,  # type: ignore[arg-type]
+        scope_id=scope_id,
+    )
+    if taste is None:
+        return {
+            "schema_version": BRIDGE_SCHEMA,
+            "ok": True,
+            "learned": False,
+            "reason": "insufficient_prism_selected_outbound_evidence",
+            "selection": selection.to_dict(),
+            "authority_expanded": False,
+            "local_only": True,
+            "provider_call_performed": False,
+        }
+
+    memory = CommunicationMemory(memory_path)
+    remembered = memory.remember_taste(taste)
+    return {
+        "schema_version": BRIDGE_SCHEMA,
+        "ok": True,
+        "learned": True,
+        "profile": taste.to_dict(),
+        "selection": selection.to_dict(),
+        "learning": optimizer.stats(),
+        "memory": remembered,
+        "authority_expanded": False,
+        "local_only": True,
+        "provider_call_performed": False,
+    }
+
+
+def _communication_record_taste_feedback(
+    request: dict[str, Any],
+) -> dict[str, Any]:
+    """Persist only owner-grounded, signed-receipt-bound taste feedback."""
+    from .communication import (
+        CommunicationReceiptLedger,
+        CommunicationStore,
+        CommunicationTasteOptimizer,
+        build_learning_receipt,
+    )
+
+    if request.get("owner_authorized") is not True:
+        raise PermissionError(
+            "communication taste feedback requires trusted owner authorization"
+        )
+    store_path = request.get("store_path")
+    receipt_dir = request.get("receipt_dir")
+    learning_state_path = request.get("learning_state_path")
+    learning_journal_path = request.get("learning_journal_path")
+    for label, value in (
+        ("store_path", store_path),
+        ("receipt_dir", receipt_dir),
+        ("learning_state_path", learning_state_path),
+        ("learning_journal_path", learning_journal_path),
+    ):
+        if value is not None and not isinstance(value, str):
+            raise ValueError(f"communication {label} must be a string")
+
+    scope_type = str(request.get("scope_type") or "").strip()
+    scope_id = str(request.get("scope_id") or "").strip()
+    if scope_type not in {"owner", "contact", "group", "conversation"}:
+        raise ValueError("invalid communication taste feedback scope_type")
+    if not scope_id:
+        raise ValueError("communication taste feedback scope_id is required")
+    source = str(request.get("source") or "").strip()
+    try:
+        reward = float(request.get("reward"))
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("communication taste feedback reward must be numeric") from exc
+    raw_ids = request.get("source_event_ids")
+    if not isinstance(raw_ids, list):
+        raise ValueError("communication taste feedback source_event_ids must be a list")
+    source_ids = tuple(
+        sorted({str(value).strip() for value in raw_ids if str(value).strip()})
+    )
+    if len(source_ids) < 3:
+        raise ValueError(
+            "communication taste feedback requires at least three exact evidence events"
+        )
+    query = str(request.get("query") or "").strip()
+
+    optimizer = CommunicationTasteOptimizer(
+        learning_state_path,
+        learning_journal_path,
+    )
+    ledger = CommunicationReceiptLedger(receipt_dir)
+    with CommunicationStore(store_path) as store:
+        events = []
+        for event_id in source_ids:
+            event = store.get_event(event_id)
+            if event is None:
+                raise ValueError(
+                    f"unknown communication taste feedback event: {event_id}"
+                )
+            if scope_type in {"group", "conversation"} and event.conversation_id != scope_id:
+                raise ValueError(
+                    "communication taste feedback crosses conversation scope"
+                )
+            if (
+                scope_type == "contact"
+                and event.sender_id != scope_id
+                and event.recipient_id != scope_id
+            ):
+                raise ValueError(
+                    "communication taste feedback crosses contact scope"
+                )
+            events.append(event)
+
+        selection = optimizer.select_examples(
+            events,
+            scope_type=scope_type,
+            scope_id=scope_id,
+            query=query,
+            top_k=min(64, len(events)),
+        )
+        prepared = optimizer.prepare_feedback(
+            scope_type=scope_type,
+            scope_id=scope_id,
+            reward=reward,
+            selection=selection,
+            source=source,
+            evidence_event_ids=source_ids,
+        )
+        receipt = build_learning_receipt(
+            prepared.to_dict(),
+            selection=selection.to_dict(),
+            source_events=events,
+        )
+        receipt_proof = ledger.record(store, receipt)
+        committed = optimizer.append_feedback(
+            prepared,
+            receipt_id=str(receipt_proof["receipt_id"]),
+        )
+
+    return {
+        "schema_version": BRIDGE_SCHEMA,
+        "ok": True,
+        "feedback": committed.to_dict(),
+        "selection": selection.to_dict(),
+        "receipt": receipt_proof,
+        "queued_for_autotune": True,
+        "authority_expanded": False,
+        "local_only": True,
+        "provider_call_performed": False,
+    }
+
+
+def _communication_start_taste_autotune(
+    request: dict[str, Any],
+) -> dict[str, Any]:
+    """Start Entroly's receipt-gated communication taste autotune domain."""
+    from .communication import start_communication_taste_autotune_daemon
+
+    if request.get("owner_authorized") is not True:
+        raise PermissionError(
+            "communication taste autotune requires trusted owner authorization"
+        )
+    try:
+        interval_s = float(request.get("interval_s", 30.0))
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("communication taste autotune interval must be numeric") from exc
+    thread = start_communication_taste_autotune_daemon(
+        store_path=request.get("store_path"),
+        receipt_dir=request.get("receipt_dir"),
+        learning_state_path=request.get("learning_state_path"),
+        learning_journal_path=request.get("learning_journal_path"),
+        interval_s=interval_s,
+    )
+    return {
+        "schema_version": BRIDGE_SCHEMA,
+        "ok": True,
+        "started": True,
+        "thread_name": thread.name,
+        "alive": thread.is_alive(),
+        "authority_expanded": False,
+        "local_only": True,
+        "provider_call_performed": False,
+    }
+
+
+def _communication_learning_status(request: dict[str, Any]) -> dict[str, Any]:
+    from .communication import CommunicationTasteOptimizer
+
+    optimizer = CommunicationTasteOptimizer(
+        request.get("learning_state_path"),
+        request.get("learning_journal_path"),
+    )
+    return {
+        "schema_version": BRIDGE_SCHEMA,
+        "ok": True,
+        "learning": optimizer.stats(),
+        "authority_expanded": False,
+        "local_only": True,
+        "provider_call_performed": False,
+    }
+
+def _communication_resolve_taste(request: dict[str, Any]) -> dict[str, Any]:
+    """Resolve explicit policy + partitioned episodic preference memory."""
+    from .communication import (
+        CommunicationMemory,
+        CommunicationStore,
+        resolve_taste,
+    )
+
+    if request.get("owner_authorized") is not True:
+        raise PermissionError("communication taste recall requires trusted owner authorization")
+    store_path = request.get("store_path")
+    memory_path = request.get("memory_path")
+    if store_path is not None and not isinstance(store_path, str):
+        raise ValueError("communication store_path must be a string")
+    if memory_path is not None and not isinstance(memory_path, str):
+        raise ValueError("communication memory_path must be a string")
+    raw_scopes = request.get("scopes")
+    if not isinstance(raw_scopes, list) or not raw_scopes:
+        raise ValueError("communication taste scopes must be a non-empty list")
+    if len(raw_scopes) > 8:
+        raise ValueError("communication taste scopes are bounded to 8")
+    scopes: list[tuple[str, str]] = []
+    for raw in raw_scopes:
+        if not isinstance(raw, dict):
+            raise ValueError("communication taste scope must be an object")
+        scope_type = str(raw.get("scope_type") or "").strip()
+        scope_id = str(raw.get("scope_id") or "").strip()
+        if scope_type not in {"owner", "contact", "group", "conversation"}:
+            raise ValueError("invalid communication taste scope_type")
+        if not scope_id:
+            raise ValueError("communication taste scope_id is required")
+        scopes.append((scope_type, scope_id))
+
+    memory = CommunicationMemory(memory_path)
+    profiles = []
+    with CommunicationStore(store_path) as store:
+        explicit_by_scope = {
+            (taste.scope_type, taste.scope_id): taste
+            for taste in store.explicit_tastes_for_scopes(scopes)
+        }
+    for scope_type, scope_id in scopes:
+        profiles.extend(
+            memory.recall_tastes(scope_type=scope_type, scope_id=scope_id)
+        )
+        explicit = explicit_by_scope.get((scope_type, scope_id))
+        if explicit is not None:
+            profiles.append(explicit)
+
+    return {
+        "schema_version": BRIDGE_SCHEMA,
+        "ok": True,
+        "resolved": resolve_taste(*profiles),
+        "profiles": [profile.to_dict() for profile in profiles],
+        "memory_layers": [layer.as_dict() for layer in memory.fabric.capabilities()],
+        "authority_expanded": False,
+        "local_only": True,
+        "provider_call_performed": False,
+    }
+
+
+def _communication_memory_status(request: dict[str, Any]) -> dict[str, Any]:
+    from .communication import CommunicationMemory
+
+    memory_path = request.get("memory_path")
+    if memory_path is not None and not isinstance(memory_path, str):
+        raise ValueError("communication memory_path must be a string")
+    memory = CommunicationMemory(memory_path)
+    return {
+        "schema_version": BRIDGE_SCHEMA,
+        "ok": True,
+        "stats": memory.stats(),
+        "local_only": True,
+        "provider_call_performed": False,
+    }
+
+
+def _communication_begin_action(request: dict[str, Any]) -> dict[str, Any]:
+    """Atomically claim an assured action for one external dispatch attempt."""
+    from .communication import CommunicationStore
+
+    action_id = str(request.get("action_id") or "").strip()
+    if not action_id:
+        raise ValueError("communication_begin_action requires action_id")
+    store_path = request.get("store_path")
+    if store_path is not None and not isinstance(store_path, str):
+        raise ValueError("communication store_path must be a string")
+    with CommunicationStore(store_path) as store:
+        claimed = store.begin_action_execution(action_id)
+        action = store.get_action(action_id)
+    return {
+        "schema_version": BRIDGE_SCHEMA,
+        "ok": True,
+        "action_id": action_id,
+        "claimed": claimed,
+        "execution_state": (action or {}).get("execution_state"),
+        "local_only": True,
+        "provider_call_performed": False,
+    }
+
+
+def _communication_fail_action(request: dict[str, Any]) -> dict[str, Any]:
+    """Record an observed OpenClaw dispatch exception."""
+    from .communication import CommunicationStore
+
+    action_id = str(request.get("action_id") or "").strip()
+    if not action_id:
+        raise ValueError("communication_fail_action requires action_id")
+    store_path = request.get("store_path")
+    if store_path is not None and not isinstance(store_path, str):
+        raise ValueError("communication store_path must be a string")
+    error = str(request.get("error") or "delivery_failed")
+    with CommunicationStore(store_path) as store:
+        recorded = store.fail_dispatch(action_id, error=error)
+        action = store.get_action(action_id)
+    return {
+        "schema_version": BRIDGE_SCHEMA,
+        "ok": True,
+        "action_id": action_id,
+        "recorded": recorded,
+        "execution_state": (action or {}).get("execution_state"),
+        "local_only": True,
+        "provider_call_performed": False,
+    }
+
 def handle_request(request: dict[str, Any]) -> dict[str, Any]:
     operation = request.get("operation")
     if operation == "health":
@@ -1890,6 +2695,32 @@ def handle_request(request: dict[str, Any]) -> dict[str, Any]:
         return commit_receipt(request)
     if operation == "verify_proof_guided_output":
         return verify_proof_guided_output(request)
+    if operation == "communication_ingest":
+        return _communication_ingest(request)
+    if operation == "communication_status":
+        return _communication_status(request)
+    if operation == "communication_digest":
+        return _communication_digest(request)
+    if operation == "communication_assure":
+        return _communication_assure(request)
+    if operation == "communication_set_taste":
+        return _communication_set_taste(request)
+    if operation == "communication_learn_taste":
+        return _communication_learn_taste(request)
+    if operation == "communication_record_taste_feedback":
+        return _communication_record_taste_feedback(request)
+    if operation == "communication_start_taste_autotune":
+        return _communication_start_taste_autotune(request)
+    if operation == "communication_learning_status":
+        return _communication_learning_status(request)
+    if operation == "communication_resolve_taste":
+        return _communication_resolve_taste(request)
+    if operation == "communication_memory_status":
+        return _communication_memory_status(request)
+    if operation == "communication_begin_action":
+        return _communication_begin_action(request)
+    if operation == "communication_fail_action":
+        return _communication_fail_action(request)
     raise ValueError(f"unsupported operation: {operation!r}")
 
 

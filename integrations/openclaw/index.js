@@ -10,6 +10,11 @@ import {
   formatEntrolyStatus,
 } from "./engine.js";
 import { createProofGuidedHooks } from "./proof-hooks.js";
+import {
+  createCommunicationHooks,
+  formatCommunicationStatus,
+} from "./communication-hooks.js";
+import { registerCommunicationTools } from "./communication-tools.js";
 
 export default definePluginEntry({
   id: "entroly",
@@ -36,6 +41,43 @@ export default definePluginEntry({
         proofStateBySession,
       });
     });
+    let communicationHooks;
+    if (config.communicationAssurance === true) {
+      if (typeof api.on !== "function") {
+        api.logger.error?.(
+          "entroly: communicationAssurance requires typed OpenClaw message hooks",
+        );
+      } else {
+        communicationHooks = createCommunicationHooks({
+          bridge,
+          config,
+          logger: api.logger,
+        });
+        api.on("message_received", communicationHooks.onMessageReceived);
+        api.on("message_sent", communicationHooks.onMessageSent);
+        registerCommunicationTools(api, { bridge, config });
+        if (config.communicationTasteLearning === true) {
+          void bridge.request({
+            operation: "communication_start_taste_autotune",
+            owner_authorized: true,
+            store_path:
+              typeof config.communicationStorePath === "string"
+                ? config.communicationStorePath
+                : undefined,
+            interval_s:
+              Number.isFinite(config.communicationTasteAutotuneIntervalSeconds)
+                ? config.communicationTasteAutotuneIntervalSeconds
+                : 30,
+          }).catch((error) => {
+            api.logger.warn?.(
+              `entroly: taste autotune did not start; learning remains paused: ${String(
+                error?.message ?? error,
+              ).replace(/\s+/g, " ").slice(0, 240)}`,
+            );
+          });
+        }
+      }
+    }
     if (config.proofGuidedRecovery === true) {
       if (typeof api.on !== "function") {
         api.logger.error?.(
@@ -56,10 +98,30 @@ export default definePluginEntry({
     }
     api.registerCommand({
       name: "entroly-context",
-      description: "Show Entroly context savings or run `doctor`.",
+      description: "Show Entroly context status; use `doctor` or `communication`.",
       acceptsArgs: true,
       handler: async (ctx) => {
-        if (ctx.args?.trim().toLowerCase() === "doctor") {
+        const command = ctx.args?.trim().toLowerCase();
+        if (command === "communication" || command === "secretary") {
+          if (!communicationHooks) {
+            return {
+              text: formatCommunicationStatus({ enabled: false }),
+            };
+          }
+          try {
+            return {
+              text: formatCommunicationStatus({
+                enabled: true,
+                result: await communicationHooks.status(),
+              }),
+            };
+          } catch (error) {
+            return {
+              text: formatCommunicationStatus({ enabled: true, error }),
+            };
+          }
+        }
+        if (command === "doctor") {
           try {
             await bridge.health({
               workspaceDir: latestWorkspaceDir,

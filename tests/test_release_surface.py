@@ -78,7 +78,7 @@ def test_built_mcpb_matches_source_and_is_reproducible(tmp_path: Path) -> None:
 #: version first with
 #:     clawhub package validate integrations/openclaw --openclaw-version <ver>
 OPENCLAW_MANIFEST_TOP_LEVEL_KEYS = frozenset(
-    {"id", "activation", "name", "description", "icon", "configSchema"}
+    {"id", "kind", "activation", "name", "description", "icon", "configSchema", "contracts", "toolMetadata"}
 )
 
 
@@ -90,6 +90,7 @@ def test_openclaw_manifest_has_no_unsupported_top_level_fields() -> None:
     into a local failure naming the offending field.
     """
     manifest = _read_json("integrations/openclaw/openclaw.plugin.json")
+    assert manifest["kind"] == "context-engine"
     unexpected = sorted(set(manifest) - OPENCLAW_MANIFEST_TOP_LEVEL_KEYS)
     assert not unexpected, (
         f"openclaw.plugin.json has top-level field(s) {unexpected} that ClawHub "
@@ -339,7 +340,7 @@ def test_release_workflow_sanitizes_version_once_and_probes_live_artifacts() -> 
     assert "oven-sh/setup-bun@v2" in text
     assert "pipx==1.16.7 uv==0.12.7" in text
     assert "needs: [release-metadata, probe-npm-openclaw]" in text
-    assert '"openclaw@2026.6.11" "entroly-openclaw@${RELEASE_VERSION}"' in text
+    assert '"openclaw@2026.9.8" "entroly-openclaw@${RELEASE_VERSION}"' in text
     wasm_publisher = text.split("  publish-npm:\n", 1)[1].split(
         "  publish-npm-mcp:\n", 1
     )[0]

@@ -789,6 +789,61 @@ MAX_WEIGHT = 0.80
 JOURNAL_MAX_AGE_S = 14 * 24 * 60 * 60  # 14 days
 
 
+
+_DOMAIN_DAEMON_LOCK = threading.RLock()
+_DOMAIN_DAEMONS: dict[str, threading.Thread] = {}
+
+
+def start_domain_autotune_daemon(
+    name: str,
+    tick: Any,
+    *,
+    interval_s: float = 30.0,
+) -> threading.Thread:
+    """Run a bounded domain tuner under Entroly's autotune daemon model.
+
+    Domain tuners share daemon lifecycle/priority semantics but own independent
+    optimizer state.  Starting the same domain twice is idempotent.
+    """
+    domain = str(name or "").strip()
+    if not domain:
+        raise ValueError("autotune domain name is required")
+    if not callable(tick):
+        raise TypeError("autotune domain tick must be callable")
+    interval = max(5.0, min(float(interval_s), 3600.0))
+
+    with _DOMAIN_DAEMON_LOCK:
+        existing = _DOMAIN_DAEMONS.get(domain)
+        if existing is not None and existing.is_alive():
+            return existing
+
+        def _loop() -> None:
+            try:
+                os.nice(10)
+            except (AttributeError, OSError):
+                pass
+            while True:
+                try:
+                    tick()
+                except Exception:
+                    logger.exception("Autotune domain %s tick failed", domain)
+                time.sleep(interval)
+
+        thread = threading.Thread(
+            target=_loop,
+            name=f"entroly-autotune-{domain}",
+            daemon=True,
+        )
+        _DOMAIN_DAEMONS[domain] = thread
+        thread.start()
+        logger.info(
+            "Autotune domain daemon started: %s (interval=%.1fs)",
+            domain,
+            interval,
+        )
+        return thread
+
+
 class FeedbackJournal:
     """Persistent cross-session feedback journal (.jsonl)."""
 

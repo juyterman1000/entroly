@@ -46,11 +46,52 @@ def test_openclaw_remains_a_first_class_context_engine() -> None:
     assert 'api.registerContextEngine("entroly"' in entry
     assert 'api.on("llm_output"' in entry
     assert 'api.on("before_agent_finalize"' in entry
+    assert 'api.on("message_received"' in entry
+    assert 'api.on("message_sent"' in entry
     assert manifest["id"] == "entroly"
+    assert manifest["kind"] == "context-engine"
     assert manifest["activation"]["onStartup"] is True
     assert manifest["configSchema"]["additionalProperties"] is False
+    assert manifest["configSchema"]["properties"]["communicationAssurance"]["default"] is False
+    assert manifest["configSchema"]["properties"]["communicationRetentionDays"]["default"] == 90
+    assert manifest["configSchema"]["properties"]["communicationPolicyMode"]["default"] == "observe"
+    assert manifest["configSchema"]["properties"]["communicationExecution"]["default"] is False
+    assert manifest["configSchema"]["properties"]["communicationSecretaryTools"]["default"] is False
+    assert manifest["configSchema"]["properties"]["communicationGlobalAccess"]["default"] is False
+    assert manifest["configSchema"]["properties"]["communicationTasteLearning"]["default"] is False
+    assert manifest["configSchema"]["properties"]["communicationTasteAutotuneIntervalSeconds"]["default"] == 30
+    assert set(manifest["contracts"]["tools"]) == {
+        "entroly_communication_brief",
+        "entroly_communication_assure",
+        "entroly_communication_execute",
+        "entroly_communication_taste",
+    }
+    assert all(
+        manifest["toolMetadata"][name]["optional"] is True
+        for name in manifest["contracts"]["tools"]
+    )
+    assert 'registerCommunicationTools(api, { bridge, config })' in entry
+    package = json.loads((integration / "package.json").read_text(encoding="utf-8"))
+    assert "communication-tools.js" in package["files"]
+    assert "secretary-tools.js" not in package["files"]
+    assert "node --check communication-tools.js" in package["scripts"]["check"]
     assert 'operation == "assemble"' in bridge
     assert 'operation == "verify_proof_guided_output"' in bridge
+    for operation in (
+        "communication_ingest",
+        "communication_status",
+        "communication_digest",
+        "communication_assure",
+        "communication_set_taste",
+        "communication_learn_taste",
+        "communication_record_taste_feedback",
+        "communication_start_taste_autotune",
+        "communication_learning_status",
+        "communication_resolve_taste",
+        "communication_begin_action",
+        "communication_fail_action",
+    ):
+        assert f'operation == "{operation}"' in bridge
 
 
 def test_openclaw_docs_use_a_publicly_verifiable_install_path() -> None:

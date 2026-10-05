@@ -1,5 +1,6 @@
 {
   "id": "entroly",
+  "kind": "context-engine",
   "activation": {
     "onStartup": true
   },
@@ -115,7 +116,144 @@
         "default": 3,
         "title": "Recovery Message Limit",
         "description": "Maximum exact omitted messages appended to one revision instruction."
+      },
+      "communicationAssurance": {
+        "type": "boolean",
+        "default": false,
+        "title": "Communication Assurance",
+        "description": "Opt in to local observation of channel message_received/message_sent events for durable communication state. WhatsApp separately requires channels.whatsapp.pluginHooks.messageReceived=true."
+      },
+      "communicationStorePath": {
+        "type": "string",
+        "minLength": 1,
+        "title": "Communication Store Path",
+        "description": "Optional absolute path for the private local communication SQLite store. By default Entroly uses the operating-system user state directory, never the workspace."
+      },
+      "communicationRetentionDays": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 3650,
+        "default": 90,
+        "title": "Communication Evidence Retention",
+        "description": "Days to retain raw local communication evidence. Set 0 to disable automatic pruning."
+      },
+      "communicationMemoryPath": {
+        "type": "string",
+        "minLength": 1,
+        "title": "Communication Memory Path",
+        "description": "Optional absolute path for Entroly MemoryOS communication taste state. Defaults to the operating-system user state directory."
+      },
+      "communicationPolicyMode": {
+        "type": "string",
+        "enum": [
+          "observe",
+          "suggest",
+          "approve",
+          "bounded"
+        ],
+        "default": "observe",
+        "title": "Communication Delegation Mode",
+        "description": "Controls action assurance. Only bounded mode can return ALLOW for explicitly delegated low-risk categories/actions; other modes require approval for external communication."
+      },
+      "communicationAutoActions": {
+        "type": "array",
+        "uniqueItems": true,
+        "maxItems": 3,
+        "default": [],
+        "items": {
+          "type": "string",
+          "enum": [
+            "react",
+            "reply",
+            "group_reply"
+          ]
+        },
+        "title": "Delegated Communication Actions",
+        "description": "Low-risk action types Entroly may authorize only when communicationPolicyMode is bounded and the message category is also explicitly delegated."
+      },
+      "communicationAutoCategories": {
+        "type": "array",
+        "uniqueItems": true,
+        "maxItems": 4,
+        "default": [],
+        "items": {
+          "type": "string",
+          "enum": [
+            "birthday_wish",
+            "congratulations",
+            "holiday_wish",
+            "thanks"
+          ]
+        },
+        "title": "Delegated Routine Categories",
+        "description": "High-precision routine categories eligible for bounded delegation. Mixed-intent, risky, actionable, or unknown messages remain approval-only."
+      },
+      "communicationExecution": {
+        "type": "boolean",
+        "default": false,
+        "title": "Enable Bounded Communication Execution",
+        "description": "Expose Entroly's optional current-conversation text execution tool. Off by default; requires an ALLOW decision, atomic dispatch claim, owner authority, and OpenClaw host-bound delivery."
+      },
+      "communicationSecretaryTools": {
+        "type": "boolean",
+        "default": false,
+        "title": "Communication Secretary Tools",
+        "description": "Expose owner-bound optional Entroly tools for communication briefs, action assurance, and taste recall. The tools remain optional and must be allowed by OpenClaw tool policy."
+      },
+      "communicationGlobalAccess": {
+        "type": "boolean",
+        "default": false,
+        "title": "Cross-Conversation Secretary Access",
+        "description": "Allow the trusted owner secretary tools to review or preflight across stored conversations. Disabled by default even when communication observation is enabled."
+      },
+      "communicationTasteLearning": {
+        "type": "boolean",
+        "default": false,
+        "title": "Learn Communication Taste",
+        "description": "Enable receipt-gated self-improving communication taste. Entroly uses only externally grounded feedback plus exact evidence, MemoryOS/Hippocampus, signed Merkle receipts, and PRISM-5D/autotune. Agent-generated replies alone never train the profile and learned taste never grants send authority."
+      },
+      "communicationTasteAutotuneIntervalSeconds": {
+        "type": "integer",
+        "minimum": 5,
+        "maximum": 3600,
+        "default": 30,
+        "title": "Communication Taste Autotune Interval",
+        "description": "Seconds between low-priority receipt-gated PRISM-5D taste-learning cycles when communicationTasteLearning is enabled."
       }
+    }
+  },
+  "contracts": {
+    "tools": [
+      "entroly_communication_brief",
+      "entroly_communication_assure",
+      "entroly_communication_execute",
+      "entroly_communication_taste"
+    ]
+  },
+  "toolMetadata": {
+    "entroly_communication_brief": {
+      "optional": true,
+      "profiles": [
+        "messaging"
+      ]
+    },
+    "entroly_communication_assure": {
+      "optional": true,
+      "profiles": [
+        "messaging"
+      ]
+    },
+    "entroly_communication_execute": {
+      "optional": true,
+      "profiles": [
+        "messaging"
+      ]
+    },
+    "entroly_communication_taste": {
+      "optional": true,
+      "profiles": [
+        "messaging"
+      ]
     }
   }
 }

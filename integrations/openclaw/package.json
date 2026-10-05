@@ -24,10 +24,12 @@
     "model-context-protocol"
   ],
   "engines": {
-    "node": ">=22.19"
+    "node": ">=24.16.0 <25 || >=26.1.0"
   },
   "files": [
     "bridge-client.js",
+    "communication-hooks.js",
+    "communication-tools.js",
     "engine.js",
     "index.js",
     "proof-hooks.js",
@@ -36,11 +38,11 @@
   ],
   "scripts": {
     "test": "node --test test/*.test.js",
-    "check": "node --check bridge-client.js && node --check engine.js && node --check proof-hooks.js && node --check index.js",
+    "check": "node --check bridge-client.js && node --check communication-hooks.js && node --check communication-tools.js && node --check engine.js && node --check proof-hooks.js && node --check index.js",
     "pack:check": "npm pack --dry-run"
   },
   "peerDependencies": {
-    "openclaw": ">=2026.6.11"
+    "openclaw": ">=2026.9.8"
   },
   "peerDependenciesMeta": {
     "openclaw": {
@@ -55,14 +57,14 @@
       "clawhubSpec": "clawhub:entroly-openclaw",
       "npmSpec": "entroly-openclaw",
       "defaultChoice": "npm",
-      "minHostVersion": ">=2026.6.11"
+      "minHostVersion": ">=2026.9.8"
     },
     "compat": {
-      "pluginApi": ">=2026.6.11",
-      "minGatewayVersion": ">=2026.6.11"
+      "pluginApi": ">=2026.9.8",
+      "minGatewayVersion": ">=2026.9.8"
     },
     "build": {
-      "openclawVersion": "2026.6.11"
+      "openclawVersion": "2026.9.8"
     },
     "release": {
       "publishToClawHub": true,
