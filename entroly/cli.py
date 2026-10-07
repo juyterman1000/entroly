@@ -464,8 +464,9 @@ def _detect_ai_tool() -> dict:
             "config_key": "mcpServers",
         })
 
-    # Claude Desktop (global config) — only add if no project-local tool found
-    # Avoids overwriting global Claude config when user only uses Cursor/VS Code
+    # Claude Desktop (global config) — only add an existing config when no
+    # project-local tool was found. A guessed path is not evidence that Claude
+    # Desktop is installed; creating it would surprise unrelated CLI users.
     if not tools:
         system = platform.system()
         if system == "Darwin":
@@ -478,11 +479,12 @@ def _detect_ai_tool() -> dict:
         else:
             claude_cfg = os.path.expanduser("~/.config/claude/claude_desktop_config.json")
 
-        tools.append({
-            "name": "Claude Desktop",
-            "config_path": claude_cfg,
-            "config_key": "mcpServers",
-        })
+        if os.path.isfile(claude_cfg):
+            tools.append({
+                "name": "Claude Desktop",
+                "config_path": claude_cfg,
+                "config_key": "mcpServers",
+            })
 
     return {"tools": tools, "primary": tools[0] if tools else None}
 
@@ -726,8 +728,9 @@ def cmd_init(args):
     )
 
     print(f"""
-  {C.BOLD}Next:{C.RESET} Restart your AI tool. Entroly is now active.
-  {C.GRAY}The MCP server auto-indexes your codebase on startup.{C.RESET}
+  {C.BOLD}Next:{C.RESET} Restart your AI tool and call an Entroly MCP tool.
+  {C.GRAY}Registration alone does not prove the agent used it; MCP calls are optional.{C.RESET}
+  {C.GRAY}The MCP server auto-indexes your codebase when it starts.{C.RESET}
   {C.GRAY}Call {C.CYAN}entroly_dashboard{C.GRAY} from your AI to see live value metrics.{C.RESET}
 """)
 
@@ -2961,9 +2964,9 @@ def _recommend_quality(project: dict, file_count: int) -> str:
 
 
 def cmd_go(args):
-    """entroly go — one command to rule them all: init + proxy + dashboard."""
+    """Start local MCP setup, proxy, and dashboard."""
     print(f"""
-{C.CYAN}{C.BOLD}  ⚡ Entroly Go{C.RESET} — full setup in one command
+{C.CYAN}{C.BOLD}  ⚡ Entroly Go{C.RESET} — local MCP, proxy, and dashboard setup
 """)
 
     # Step 0: Codebase check
@@ -2984,11 +2987,11 @@ def cmd_go(args):
         for tool in tools["tools"]:
             try:
                 path = _write_config(tool)
-                print(f"  {C.GREEN}Configured{C.RESET} {tool['name']} ({path})")
+                print(f"  {C.GREEN}Registered MCP{C.RESET} for {tool['name']} ({path})")
             except Exception as e:
                 print(f"  {C.YELLOW}Skipped{C.RESET} {tool['name']}: {e}")
     else:
-        print(f"  {C.GRAY}No AI tool detected -- proxy mode works with any tool{C.RESET}")
+        print(f"  {C.GRAY}No MCP client detected -- route API traffic to the proxy manually{C.RESET}")
 
     # Step 3: Initialize engine + auto-index
     from entroly.auto_index import auto_index, start_incremental_watcher
@@ -3038,13 +3041,14 @@ def cmd_go(args):
     app = create_proxy_app(engine, config)
 
     print(f"""
-  {C.GREEN}{C.BOLD}Ready!{C.RESET}
+  {C.GREEN}{C.BOLD}Local services ready!{C.RESET}
 
   {C.GREEN}Proxy:{C.RESET}      http://localhost:{config.port}/v1
   {C.GREEN}Dashboard:{C.RESET}  http://localhost:9378
 
   {C.BOLD}Point your AI tool's API base URL to the proxy URL above.{C.RESET}
-  {C.GRAY}Every request: intercepted → optimized → forwarded. Live latency on the dashboard.{C.RESET}
+  {C.GRAY}Only traffic sent to this URL can be optimized; MCP registration alone does not route requests.{C.RESET}
+  {C.GRAY}After a real request, run `entroly value --json` and check provider_path.requests_observed.{C.RESET}
   {C.GRAY}Press Ctrl+C to stop.{C.RESET}
 """)
 

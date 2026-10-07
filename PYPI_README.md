@@ -45,12 +45,18 @@ entroly value
 
 ## Connect a supported AI tool
 
-Automatic project setup:
+Start the local proxy and register MCP for a detected project client:
 
 ```bash
 cd /your/repo
 entroly go
 ```
+
+This does not redirect model traffic automatically. Point an API client at the
+displayed proxy URL, or use a supported host hook. After a real request, check
+`entroly value --json` for provider-observed traffic or
+`entroly activation status --json` for a recent host-hook receipt. MCP
+registration alone does not prove the agent used Entroly.
 
 Examples:
 

@@ -32,7 +32,7 @@ This checks:
 - native Rust engine or pure-Python fallback mode
 - no provider API key requirement for the smoke test
 
-## 3. See savings before using a paid model
+## 3. Check local selection before using a paid model
 
 ```bash
 entroly simulate
