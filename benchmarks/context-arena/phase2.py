@@ -9,9 +9,16 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from enum import Enum
-from typing import Any, Iterable
+from typing import Any, Iterable, Protocol
 
-from .adapters.base import ContextAdapter
+
+class ContextAdapter(Protocol):
+    """Structural adapter contract; avoids package imports from hyphenated path."""
+
+    name: str
+
+    def prepare_context(self, task: dict[str, Any], token_budget: int) -> str:
+        ...
 
 
 class ArmStatus(str, Enum):
