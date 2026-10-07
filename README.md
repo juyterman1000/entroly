@@ -11,7 +11,7 @@ Compression you can undo, on your own repository, in one command — without rep
   <img src="docs/assets/entroly-demo.svg" alt="Entroly context selection and receipt workflow illustration" width="820">
 </p>
 
-<p align="center"><code>code --install-extension entroly.entroly-vscode</code> &nbsp;·&nbsp; <code>pip install -U entroly && entroly go</code> &nbsp;·&nbsp; <code>npx entroly</code></p>
+<p align="center"><code>pip install -U entroly</code> &nbsp;·&nbsp; <code>entroly verify-claims</code> &nbsp;·&nbsp; <code>entroly simulate</code></p>
 <p align="center">
   <sub>Entroly is an open-source, local-first AI token-efficiency and Context Assurance layer: budgeted evidence selection, recoverable context compression, content-addressed evidence recovery, and auditable receipts. Works through VS Code, Claude Code, Cursor, Codex, OpenClaw, GitHub Copilot, Aider, and OpenAI/Anthropic-compatible apps.</sub>
 </p>
@@ -77,11 +77,11 @@ review requirements; the contributor guide explains their boundaries.
 ## Install
 
 > **Not sure which one?** Pick **Python**. It's the complete version and what
-> most people use. The others are alternate ways to run the same engine.
+> most people use. The other packages expose different runtime surfaces.
 | Platform | Install | What you get |
 |---|---|---|
 | 🐍 **Python** (pip) — *recommended* | `pip install -U entroly` | Everything: the command-line tool, the server your AI editor talks to, and the code library |
-| 📦 **Node / npm** | `npm install -g entroly` | The same engine, nothing Python required |
+| 📦 **Node / npm** | `npm install -g entroly` | Local Node/WASM CLI; the Python package has a broader CLI, SDK, and proxy surface |
 | 🦀 **Rust** (source build) | `cd entroly-core && cargo build --release --bin entroly-rs --features proxy` | One self-contained program, no Python or Node needed |
 | 🍺 **Homebrew** | `brew install juyterman1000/entroly/entroly` | The command-line tool on macOS/Linux |
 | 🐳 **Docker** | `docker pull ghcr.io/juyterman1000/entroly:latest` | Runs in a container, nothing installed on your machine |
@@ -113,7 +113,10 @@ entroly verify-claims
 entroly simulate
 ```
 
-<sub>Both run locally. Neither one calls an AI or costs anything.</sub>
+<sub>Both run locally. Neither calls an AI or proves answer quality, activation,
+or a lower provider bill. Use a task-specific `--query` with `simulate`; if it
+reports **Relevance ranking is OFF**, run `entroly doctor` before evaluating the
+selection.</sub>
 
 <sub>Runtime package repair is **off by default**. If the native engine is missing,
 query-conditioned selection is unavailable and reduction figures are labelled
@@ -134,23 +137,24 @@ only optional workspace, offline, provider, and proxy settings.
 ---
 ## Quickstart — by how you work
 
-> **Just want it working?** `pip install -U entroly && entroly go` — that's the
-> whole thing. It finds your editor, sets itself up, and shows you a
-> before/after dashboard. The rest of this table is for specific setups.
+> **Start with the [local check](#install).** `entroly go` registers an MCP
+> server for a detected editor and starts a proxy and dashboard. Route API
+> traffic through that proxy or use a supported host hook, then verify that
+> the integration actually ran. The table below shows the available paths.
 | Your situation | Do this | What it gets you |
 |---|---|---|
-| 🟢 **"I just want it on."** *(pip / Python user)* | `pip install -U entroly && entroly go` | Auto-detects your editor, wraps your agent, opens a dashboard showing tokens before and after |
-| **"I use Node, not Python."** *(npm user)* | `npm install -g entroly && entroly init` | Same engine, nothing Python required |
+| 🟢 **"I control my app's API base URL."** *(pip / Python user)* | `pip install -U entroly && entroly go` | Starts the local proxy and dashboard; point your app at the displayed URL and check observed requests with `entroly value --json` |
+| **"I use Node, not Python."** *(npm user)* | `npm install -g entroly && entroly init` | Node/WASM CLI and local MCP path; use Python for the full proxy and SDK path |
 | **"I want one binary, no runtime."** *(Rust user)* | `cargo build --release --bin entroly-rs --features proxy` (from `entroly-core/`) | A single native program with no dependencies |
 | **"I use Claude Code, Codex, Gemini CLI, or VS Code agent plugins."** *(plugin user)* | Install the Entroly plugin/extension for that host, submit one prompt, then run `entroly activation status --json` | A trusted prompt hook performs bounded local selection before planning; a receipt proves the hook ran |
 | **"I use Cursor with third-party configs enabled."** | `entroly activation install --host cursor --project .` | Merges a reversible Claude-compatible prompt hook; native Cursor MCP remains advisory |
 | **"I use Kiro IDE 1.x or CLI 3.x."** | `entroly activation install --host kiro --project .` | Installs a reversible project `PromptSubmit` hook whose stdout is added to agent context |
 | **"I use another MCP host."** | `entroly attach create --client claude --project . --ttl 4h --install` or the client-specific command in the compatibility matrix | Scoped Entroly tools and receipts; the model can still skip MCP unless the host has a verified lifecycle hook |
 | **"I'm building my own app in Python."** *(SDK user)* | `from entroly import compress, compress_messages, optimize` | Call it straight from your code, anywhere you assemble a prompt |
+| **"I have an API key and my own app."** *(proxy user)* | `entroly proxy` → point `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` / `GOOGLE_GEMINI_BASE_URL` at `localhost:9377` | Requests sent through the proxy are eligible for optimization; inspect receipts and provider-observed usage after a real request |
 
 Cursor MCP users can also use this one-click install link (no marketplace
 account required): [Add Entroly to Cursor](cursor://anysphere.cursor-deeplink/mcp/install?name=entroly&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImVudHJvbHktbWNwQDEuMC44NCIsInNlcnZlIl0sImVudiI6eyJFTlRST0xZX05PX0RPQ0tFUiI6IjEiLCJFTlRST0xZX01DUF9QQVNTSVZFIjoiMSIsIkVOVFJPTFlfTUNQX1BST0ZJTEUiOiJwdWJsaWMiLCJFTlRST0xZX01BWF9GSUxFUyI6IjIwMCJ9fQ).
-| **"I have an API key and my own app."** *(proxy user)* | `entroly proxy` → point `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` / `GOOGLE_GEMINI_BASE_URL` at `localhost:9377` | Every request gets optimized on the way past — no code changes on your side |
 
 <sub>**Runaway-session rescue — automatic on the proxy, callable everywhere else.**
 When a long agent session approaches the provider's context limit, bulky tool
@@ -504,7 +508,7 @@ Honestly: it depends on your project. Run `entroly simulate` in your project —
 <details>
 <summary><b>I'm not a developer. Can I use this?</b></summary>
 <br>
-If you use an AI coding tool like Claude Code or Cursor, yes. Install it (`pip install -U entroly`), then run `entroly go` — it finds your editor, configures itself, and opens a dashboard.
+If you use an AI coding tool like Claude Code or Cursor, start with the [local check](#install), then choose its integration path. `entroly go` starts a proxy and dashboard and registers detected MCP clients; it does not by itself route every model request through the proxy.
 </details>
 
 <details>

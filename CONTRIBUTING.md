@@ -21,9 +21,12 @@ Good first contributions include:
 - **Browser & IDE Extensions**: Improving status bar metrics or adding keyboard shortcuts in [`extensions/`](extensions/).
 - **Documentation & i18n**: Correcting guides or translating the README.
 
-Issues labelled
-[`good first issue`](https://github.com/juyterman1000/entroly/labels/good%20first%20issue)
-are intended to be independently completable.
+The [`good first issue` list](https://github.com/juyterman1000/entroly/labels/good%20first%20issue)
+may be empty. You can still start with a reproducible documentation correction,
+a failing test for a specific CLI behavior, or a benchmark reproduction with its
+commands, raw result, and limitations. For a new adapter or broad feature,
+open a focused issue first with the affected interface and an acceptance test.
+Maintainers can help narrow it before you invest in the implementation.
 
 ## Repository layout
 

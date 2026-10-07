@@ -464,8 +464,9 @@ def _detect_ai_tool() -> dict:
             "config_key": "mcpServers",
         })
 
-    # Claude Desktop (global config) — only add if no project-local tool found
-    # Avoids overwriting global Claude config when user only uses Cursor/VS Code
+    # Claude Desktop (global config) — only add an existing config when no
+    # project-local tool was found. A guessed path is not evidence that Claude
+    # Desktop is installed; creating it would surprise unrelated CLI users.
     if not tools:
         system = platform.system()
         if system == "Darwin":
@@ -478,11 +479,12 @@ def _detect_ai_tool() -> dict:
         else:
             claude_cfg = os.path.expanduser("~/.config/claude/claude_desktop_config.json")
 
-        tools.append({
-            "name": "Claude Desktop",
-            "config_path": claude_cfg,
-            "config_key": "mcpServers",
-        })
+        if os.path.isfile(claude_cfg):
+            tools.append({
+                "name": "Claude Desktop",
+                "config_path": claude_cfg,
+                "config_key": "mcpServers",
+            })
 
     return {"tools": tools, "primary": tools[0] if tools else None}
 
@@ -726,8 +728,9 @@ def cmd_init(args):
     )
 
     print(f"""
-  {C.BOLD}Next:{C.RESET} Restart your AI tool. Entroly is now active.
-  {C.GRAY}The MCP server auto-indexes your codebase on startup.{C.RESET}
+  {C.BOLD}Next:{C.RESET} Restart your AI tool and call an Entroly MCP tool.
+  {C.GRAY}Registration alone does not prove the agent used it; MCP calls are optional.{C.RESET}
+  {C.GRAY}The MCP server auto-indexes your codebase when it starts.{C.RESET}
   {C.GRAY}Call {C.CYAN}entroly_dashboard{C.GRAY} from your AI to see live value metrics.{C.RESET}
 """)
 
@@ -2961,9 +2964,9 @@ def _recommend_quality(project: dict, file_count: int) -> str:
 
 
 def cmd_go(args):
-    """entroly go — one command to rule them all: init + proxy + dashboard."""
+    """Start local MCP setup, proxy, and dashboard."""
     print(f"""
-{C.CYAN}{C.BOLD}  ⚡ Entroly Go{C.RESET} — full setup in one command
+{C.CYAN}{C.BOLD}  ⚡ Entroly Go{C.RESET} — local MCP, proxy, and dashboard setup
 """)
 
     # Step 0: Codebase check
@@ -2984,11 +2987,11 @@ def cmd_go(args):
         for tool in tools["tools"]:
             try:
                 path = _write_config(tool)
-                print(f"  {C.GREEN}Configured{C.RESET} {tool['name']} ({path})")
+                print(f"  {C.GREEN}Registered MCP{C.RESET} for {tool['name']} ({path})")
             except Exception as e:
                 print(f"  {C.YELLOW}Skipped{C.RESET} {tool['name']}: {e}")
     else:
-        print(f"  {C.GRAY}No AI tool detected -- proxy mode works with any tool{C.RESET}")
+        print(f"  {C.GRAY}No MCP client detected -- route API traffic to the proxy manually{C.RESET}")
 
     # Step 3: Initialize engine + auto-index
     from entroly.auto_index import auto_index, start_incremental_watcher
@@ -3038,13 +3041,14 @@ def cmd_go(args):
     app = create_proxy_app(engine, config)
 
     print(f"""
-  {C.GREEN}{C.BOLD}Ready!{C.RESET}
+  {C.GREEN}{C.BOLD}Local services ready!{C.RESET}
 
   {C.GREEN}Proxy:{C.RESET}      http://localhost:{config.port}/v1
   {C.GREEN}Dashboard:{C.RESET}  http://localhost:9378
 
   {C.BOLD}Point your AI tool's API base URL to the proxy URL above.{C.RESET}
-  {C.GRAY}Every request: intercepted → optimized → forwarded. Live latency on the dashboard.{C.RESET}
+  {C.GRAY}Only traffic sent to this URL can be optimized; MCP registration alone does not route requests.{C.RESET}
+  {C.GRAY}After a real request, run `entroly value --json` and check provider_path.requests_observed.{C.RESET}
   {C.GRAY}Press Ctrl+C to stop.{C.RESET}
 """)
 
@@ -3094,23 +3098,26 @@ def cmd_demo(args):
 
     from entroly.value_tracker import estimate_cost
 
-    per_query_saved = report["total_tokens_saved"] // max(
-        len(report["queries"]), 1
-    )
-    print(
-        f"  {C.BOLD}Per-query savings{C.RESET} "
-        f"(current input rates, {per_query_saved:,} tokens saved/query):"
-    )
-    for model in ("gpt-4o", "claude-sonnet-4", "gemini-2.5-pro"):
-        cost = estimate_cost(per_query_saved, model)
-        print(
-            f"    {C.CYAN}{model:25s}{C.RESET} "
-            f"${cost:.4f}/query"
+    if report.get("query_conditioned_selection", True):
+        per_query_saved = report["total_tokens_saved"] // max(
+            len(report["queries"]), 1
         )
-    print(
-        f"  {C.GRAY}Multiply by your actual request volume. "
-        f"We don't know what that is.{C.RESET}"
-    )
+        print(
+            f"  {C.BOLD}Modeled per-query input cost difference{C.RESET} "
+            f"({per_query_saved:,} locally estimated tokens/query):"
+        )
+        for model in ("gpt-4o", "claude-sonnet-4", "gemini-2.5-pro"):
+            cost = estimate_cost(per_query_saved, model)
+            print(f"    {C.CYAN}{model:25s}{C.RESET} ${cost:.4f}/query")
+        print(
+            f"  {C.GRAY}This is not provider-observed usage or a bill. "
+            f"Multiply only after verifying your actual request path.{C.RESET}"
+        )
+    else:
+        print(
+            f"  {C.YELLOW}Cost projection unavailable: selection did not read "
+            f"the query.{C.RESET}"
+        )
 
     recommended = _recommend_quality(
         _detect_project_type(), report["files_indexed"]
@@ -3226,14 +3233,17 @@ def _run_local_simulation(args) -> dict:
         saved = max(0, baseline - selected_tokens) if selected else 0
         total_saved += saved
         latencies_ms.append(elapsed_ms)
+        budget_difference_pct = round(saved * 100 / max(baseline, 1), 2)
         rows.append(
             {
                 "query": query,
                 "selected_fragments": len(selected),
                 "selected_tokens": selected_tokens,
                 "baseline_tokens": baseline,
-                "tokens_saved": saved,
-                "reduction_pct": round(saved * 100 / max(baseline, 1), 2),
+                "tokens_saved": saved if query_conditioned else None,
+                "reduction_pct": budget_difference_pct if query_conditioned else None,
+                "budget_difference_tokens": saved,
+                "budget_difference_pct": budget_difference_pct,
                 "latency_ms": round(elapsed_ms, 2),
                 "top_sources": [
                     str(f.get("source", f.get("id", "?"))) for f in selected[:5]
@@ -3253,9 +3263,18 @@ def _run_local_simulation(args) -> dict:
         "max_files": max_files,
         "baseline_tokens_per_query": baseline,
         "queries": rows,
-        "total_tokens_saved": total_saved,
-        "average_reduction_pct": round(
+        "total_tokens_saved": total_saved if query_conditioned else None,
+        "average_reduction_pct": (
+            round(total_saved * 100 / max(baseline * len(rows), 1), 2)
+            if query_conditioned else None
+        ),
+        "total_budget_difference_tokens": total_saved,
+        "average_budget_difference_pct": round(
             total_saved * 100 / max(baseline * len(rows), 1), 2
+        ),
+        "measurement_status": (
+            "query_conditioned_local_estimate" if query_conditioned
+            else "unranked_budget_arithmetic"
         ),
         "latency_ms": {
             "min": round(min(latencies_ms), 2) if latencies_ms else 0.0,
@@ -3266,7 +3285,7 @@ def _run_local_simulation(args) -> dict:
         "selection_engine": "qccr-native" if query_conditioned else "python-fallback-unranked",
         "limitations": [
             "No LLM call was made; quality is not judged here.",
-            "Savings are estimated against the stated local baseline, not your provider bill.",
+            "Token differences are estimated against the stated local baseline, not your provider bill.",
             "Provider cache discounts, output tokens, and retries are excluded.",
         ] + ([] if query_conditioned else [
             "The native engine is unavailable, so selection did not read the query: "
@@ -3294,12 +3313,8 @@ def _print_local_simulation(report: dict, *, title: str, include_perf: bool) -> 
     # repair (self_heal) normally prevents anyone seeing this at all; it is
     # reached when repair is disabled, blocked, or offline.
     #
-    # The figure is still shown rather than withheld -- a first run that reports
-    # nothing is worthless to the user -- but it is labelled in the same block
-    # as the number, because on its own it is `(baseline - selected_tokens) /
-    # baseline`: decided by the budget, identical for every possible question,
-    # and silent about whether the answer-bearing evidence survived. A claim and
-    # its caveat have to travel together or the caveat does not exist.
+    # Show the arithmetic separately from savings: without ranking, the budget
+    # decides the percentage and no answer-bearing evidence has been checked.
     degraded = not report.get("query_conditioned_selection", True)
     if degraded:
         print()
@@ -3319,19 +3334,23 @@ def _print_local_simulation(report: dict, *, title: str, include_perf: bool) -> 
     print()
     for row in report["queries"]:
         print(f"    {C.CYAN}Q:{C.RESET} {row['query'][:80]}")
-        suffix = f" {C.GRAY}[unearned]{C.RESET}" if degraded else ""
+        if degraded:
+            difference = (f"{row['budget_difference_pct']:.1f}% budget difference; "
+                          f"{row['budget_difference_tokens']:,} estimated tokens excluded "
+                          f"[unearned]")
+        else:
+            difference = (f"{row['reduction_pct']:.1f}% fewer; "
+                          f"{row['tokens_saved']:,} tokens saved")
         print(
             f"       {row['selected_fragments']} fragments, "
-            f"{row['selected_tokens']:,} tokens "
-            f"({row['reduction_pct']:.1f}% fewer; "
-            f"{row['tokens_saved']:,} tokens saved){suffix}"
+            f"{row['selected_tokens']:,} tokens ({difference})"
         )
         if include_perf:
             print(f"       latency: {row['latency_ms']:.2f} ms")
         top = ", ".join(Path(s).name for s in row["top_sources"][:3]) or "none"
         print(f"       {C.GRAY}top: {top}{C.RESET}\n")
 
-    avg = report["average_reduction_pct"]
+    avg = report["average_budget_difference_pct"] if degraded else report["average_reduction_pct"]
     # Gate on "did we actually save nothing", NOT merely on "the repo fits in
     # the budget". A 2,623-token project fits inside a 4,096-token budget and
     # still reduced context 42-98%, because the resolution ladder demotes
@@ -3341,7 +3360,7 @@ def _print_local_simulation(report: dict, *, title: str, include_perf: bool) -> 
     nothing_saved = report.get("budget_narrowed_to_demonstrate") and avg <= 0.0
     if degraded:
         print(
-            f"  {C.YELLOW}{C.BOLD}Average reduction: {avg:.1f}%{C.RESET} "
+            f"  {C.YELLOW}{C.BOLD}Average budget difference: {avg:.1f}%{C.RESET} "
             f"{C.RED}-- unearned{C.RESET}{C.GRAY}: selection was unranked, so "
             f"this is the budget, not a measured saving.{C.RESET}"
         )

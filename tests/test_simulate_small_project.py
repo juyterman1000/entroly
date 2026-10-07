@@ -114,9 +114,11 @@ def test_forcing_a_smaller_budget_demonstrates_selection(tiny_project: Path):
         "def login user pw token verify_password issue_session_token",
     )
     assert report["budget_narrowed_to_demonstrate"] is False
-    assert report["average_reduction_pct"] > 0, (
-        f"--budget 30 should force real selection, got {report!r}"
-    )
+    assert report["average_budget_difference_pct"] > 0, report
+    if report["query_conditioned_selection"]:
+        assert report["average_reduction_pct"] > 0, report
+    else:
+        assert report["average_reduction_pct"] is None
     for row in report["queries"]:
         assert row["selected_fragments"] > 0
 
