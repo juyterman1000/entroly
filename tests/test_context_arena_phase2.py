@@ -47,3 +47,13 @@ def test_budget_violation_invalidates_comparison():
     oversize = phase2.prepare_arm(Oversize(), {"task_id": "t1"}, 5)
     assert oversize.status is phase2.ArmStatus.BUDGET_VIOLATION
     assert not phase2.comparison_is_claimable([good, oversize])
+
+
+def test_comparison_requires_every_arm_to_be_valid():
+    good = phase2.prepare_arm(Good(), {"task_id": "t1"}, 20)
+    blocked = phase2.prepare_arm(Blocked(), {"task_id": "t1"}, 20)
+    assert phase2.comparison_is_claimable([good, blocked]) is False
+
+
+def test_empty_comparison_is_not_claimable():
+    assert phase2.comparison_is_claimable([]) is False
