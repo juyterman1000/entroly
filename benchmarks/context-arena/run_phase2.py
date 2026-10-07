@@ -51,11 +51,24 @@ def main() -> int:
     parser.add_argument("--tasks", type=Path, required=True)
     parser.add_argument("--budget", type=int, required=True)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--adapter", action="append", default=[], metavar="PATH:CLASS", help="Load an additional adapter class without bundling competitor dependencies")
     args = parser.parse_args()
     if args.budget <= 0:
         parser.error("--budget must be positive")
 
     adapters = [base.NoContextAdapter()]
+    adapter_load_errors = []
+    for index, adapter_spec in enumerate(args.adapter):
+        try:
+            path_text, class_name = adapter_spec.rsplit(":", 1)
+            module = _load(f"context_arena_external_{index}", Path(path_text).resolve())
+            adapters.append(getattr(module, class_name)())
+        except Exception as exc:  # noqa: BLE001 - configuration failures are evidence
+            adapter_load_errors.append({
+                "adapter_spec": adapter_spec,
+                "status": "blocked",
+                "detail": f"{type(exc).__name__}: {exc}",
+            })
     task_rows = _tasks(args.tasks)
     results = [
         result
@@ -72,13 +85,14 @@ def main() -> int:
         "token_budget": args.budget,
         "tasks": len(task_rows),
         "adapters": [adapter.name for adapter in adapters],
-        "claimable": all(
+        "adapter_load_errors": adapter_load_errors,
+        "claimable": not adapter_load_errors and all(
             phase2.comparison_is_claimable(rows) for rows in by_task.values()
         ) if by_task else False,
         "results": [result.to_dict() for result in results],
         "limitations": [
             "Preflight only: no model was called and no task-success claim is produced.",
-            "NO-CONTEXT is the only built-in adapter until external adapters are explicitly configured.",
+            "NO-CONTEXT is built in; external adapters must be explicitly configured with --adapter PATH:CLASS.",
             "Provider-observed token usage is required for economic claims.",
         ],
     }
