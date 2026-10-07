@@ -3098,23 +3098,26 @@ def cmd_demo(args):
 
     from entroly.value_tracker import estimate_cost
 
-    per_query_saved = report["total_tokens_saved"] // max(
-        len(report["queries"]), 1
-    )
-    print(
-        f"  {C.BOLD}Per-query savings{C.RESET} "
-        f"(current input rates, {per_query_saved:,} tokens saved/query):"
-    )
-    for model in ("gpt-4o", "claude-sonnet-4", "gemini-2.5-pro"):
-        cost = estimate_cost(per_query_saved, model)
-        print(
-            f"    {C.CYAN}{model:25s}{C.RESET} "
-            f"${cost:.4f}/query"
+    if report.get("query_conditioned_selection", True):
+        per_query_saved = report["total_tokens_saved"] // max(
+            len(report["queries"]), 1
         )
-    print(
-        f"  {C.GRAY}Multiply by your actual request volume. "
-        f"We don't know what that is.{C.RESET}"
-    )
+        print(
+            f"  {C.BOLD}Modeled per-query input cost difference{C.RESET} "
+            f"({per_query_saved:,} locally estimated tokens/query):"
+        )
+        for model in ("gpt-4o", "claude-sonnet-4", "gemini-2.5-pro"):
+            cost = estimate_cost(per_query_saved, model)
+            print(f"    {C.CYAN}{model:25s}{C.RESET} ${cost:.4f}/query")
+        print(
+            f"  {C.GRAY}This is not provider-observed usage or a bill. "
+            f"Multiply only after verifying your actual request path.{C.RESET}"
+        )
+    else:
+        print(
+            f"  {C.YELLOW}Cost projection unavailable: selection did not read "
+            f"the query.{C.RESET}"
+        )
 
     recommended = _recommend_quality(
         _detect_project_type(), report["files_indexed"]
@@ -3230,14 +3233,17 @@ def _run_local_simulation(args) -> dict:
         saved = max(0, baseline - selected_tokens) if selected else 0
         total_saved += saved
         latencies_ms.append(elapsed_ms)
+        budget_difference_pct = round(saved * 100 / max(baseline, 1), 2)
         rows.append(
             {
                 "query": query,
                 "selected_fragments": len(selected),
                 "selected_tokens": selected_tokens,
                 "baseline_tokens": baseline,
-                "tokens_saved": saved,
-                "reduction_pct": round(saved * 100 / max(baseline, 1), 2),
+                "tokens_saved": saved if query_conditioned else None,
+                "reduction_pct": budget_difference_pct if query_conditioned else None,
+                "budget_difference_tokens": saved,
+                "budget_difference_pct": budget_difference_pct,
                 "latency_ms": round(elapsed_ms, 2),
                 "top_sources": [
                     str(f.get("source", f.get("id", "?"))) for f in selected[:5]
@@ -3257,9 +3263,18 @@ def _run_local_simulation(args) -> dict:
         "max_files": max_files,
         "baseline_tokens_per_query": baseline,
         "queries": rows,
-        "total_tokens_saved": total_saved,
-        "average_reduction_pct": round(
+        "total_tokens_saved": total_saved if query_conditioned else None,
+        "average_reduction_pct": (
+            round(total_saved * 100 / max(baseline * len(rows), 1), 2)
+            if query_conditioned else None
+        ),
+        "total_budget_difference_tokens": total_saved,
+        "average_budget_difference_pct": round(
             total_saved * 100 / max(baseline * len(rows), 1), 2
+        ),
+        "measurement_status": (
+            "query_conditioned_local_estimate" if query_conditioned
+            else "unranked_budget_arithmetic"
         ),
         "latency_ms": {
             "min": round(min(latencies_ms), 2) if latencies_ms else 0.0,
@@ -3270,7 +3285,7 @@ def _run_local_simulation(args) -> dict:
         "selection_engine": "qccr-native" if query_conditioned else "python-fallback-unranked",
         "limitations": [
             "No LLM call was made; quality is not judged here.",
-            "Savings are estimated against the stated local baseline, not your provider bill.",
+            "Token differences are estimated against the stated local baseline, not your provider bill.",
             "Provider cache discounts, output tokens, and retries are excluded.",
         ] + ([] if query_conditioned else [
             "The native engine is unavailable, so selection did not read the query: "
@@ -3298,12 +3313,8 @@ def _print_local_simulation(report: dict, *, title: str, include_perf: bool) -> 
     # repair (self_heal) normally prevents anyone seeing this at all; it is
     # reached when repair is disabled, blocked, or offline.
     #
-    # The figure is still shown rather than withheld -- a first run that reports
-    # nothing is worthless to the user -- but it is labelled in the same block
-    # as the number, because on its own it is `(baseline - selected_tokens) /
-    # baseline`: decided by the budget, identical for every possible question,
-    # and silent about whether the answer-bearing evidence survived. A claim and
-    # its caveat have to travel together or the caveat does not exist.
+    # Show the arithmetic separately from savings: without ranking, the budget
+    # decides the percentage and no answer-bearing evidence has been checked.
     degraded = not report.get("query_conditioned_selection", True)
     if degraded:
         print()
@@ -3323,19 +3334,23 @@ def _print_local_simulation(report: dict, *, title: str, include_perf: bool) -> 
     print()
     for row in report["queries"]:
         print(f"    {C.CYAN}Q:{C.RESET} {row['query'][:80]}")
-        suffix = f" {C.GRAY}[unearned]{C.RESET}" if degraded else ""
+        if degraded:
+            difference = (f"{row['budget_difference_pct']:.1f}% budget difference; "
+                          f"{row['budget_difference_tokens']:,} estimated tokens excluded "
+                          f"[unearned]")
+        else:
+            difference = (f"{row['reduction_pct']:.1f}% fewer; "
+                          f"{row['tokens_saved']:,} tokens saved")
         print(
             f"       {row['selected_fragments']} fragments, "
-            f"{row['selected_tokens']:,} tokens "
-            f"({row['reduction_pct']:.1f}% fewer; "
-            f"{row['tokens_saved']:,} tokens saved){suffix}"
+            f"{row['selected_tokens']:,} tokens ({difference})"
         )
         if include_perf:
             print(f"       latency: {row['latency_ms']:.2f} ms")
         top = ", ".join(Path(s).name for s in row["top_sources"][:3]) or "none"
         print(f"       {C.GRAY}top: {top}{C.RESET}\n")
 
-    avg = report["average_reduction_pct"]
+    avg = report["average_budget_difference_pct"] if degraded else report["average_reduction_pct"]
     # Gate on "did we actually save nothing", NOT merely on "the repo fits in
     # the budget". A 2,623-token project fits inside a 4,096-token budget and
     # still reduced context 42-98%, because the resolution ladder demotes
@@ -3345,7 +3360,7 @@ def _print_local_simulation(report: dict, *, title: str, include_perf: bool) -> 
     nothing_saved = report.get("budget_narrowed_to_demonstrate") and avg <= 0.0
     if degraded:
         print(
-            f"  {C.YELLOW}{C.BOLD}Average reduction: {avg:.1f}%{C.RESET} "
+            f"  {C.YELLOW}{C.BOLD}Average budget difference: {avg:.1f}%{C.RESET} "
             f"{C.RED}-- unearned{C.RESET}{C.GRAY}: selection was unranked, so "
             f"this is the budget, not a measured saving.{C.RESET}"
         )

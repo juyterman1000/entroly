@@ -30,11 +30,12 @@ import io
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from entroly import self_heal
-from entroly.cli import _print_local_simulation
+from entroly.cli import _print_local_simulation, _run_local_simulation
 
 
 @pytest.fixture(autouse=True)
@@ -59,8 +60,10 @@ def _report(*, query_conditioned: bool) -> dict:
         "baseline_tokens_per_query": 32_000,
         "budget": 8_000,
         "budget_narrowed_to_demonstrate": False,
-        "average_reduction_pct": 76.29,
-        "total_tokens_saved": 24_412,
+        "average_reduction_pct": 76.29 if query_conditioned else None,
+        "total_tokens_saved": 24_412 if query_conditioned else None,
+        "average_budget_difference_pct": 76.29,
+        "total_budget_difference_tokens": 24_412,
         "query_conditioned_selection": query_conditioned,
         "selection_engine": "qccr-native" if query_conditioned else "python-fallback-unranked",
         "queries": [
@@ -68,8 +71,10 @@ def _report(*, query_conditioned: bool) -> dict:
                 "query": "why did this project stop growing",
                 "selected_fragments": 23,
                 "selected_tokens": 7_588,
-                "reduction_pct": 76.29,
-                "tokens_saved": 24_412,
+                "reduction_pct": 76.29 if query_conditioned else None,
+                "tokens_saved": 24_412 if query_conditioned else None,
+                "budget_difference_pct": 76.29,
+                "budget_difference_tokens": 24_412,
                 "latency_ms": 15.96,
                 "top_sources": ["file:pkg/rare.py", "file:src/qccr.rs"],
             }
@@ -106,7 +111,7 @@ def test_degraded_number_is_labelled_unearned_in_the_same_block() -> None:
 
     assert "unearned" in out
     headline = next(
-        line for line in out.splitlines() if "Average reduction" in line
+        line for line in out.splitlines() if "Average budget difference" in line
     )
     assert "unearned" in headline, (
         f"the caveat must be on the headline itself, got: {headline!r}"
@@ -140,11 +145,40 @@ def test_report_exposes_selection_mode_for_machine_consumers() -> None:
 
     assert degraded["query_conditioned_selection"] is False
     assert degraded["selection_engine"] == "python-fallback-unranked"
+    assert degraded["total_tokens_saved"] is None
+    assert degraded["average_reduction_pct"] is None
+    assert degraded["queries"][0]["tokens_saved"] is None
+    assert degraded["total_budget_difference_tokens"] == 24_412
     assert any("NOT a measured saving" in line for line in degraded["limitations"])
 
     assert healthy["query_conditioned_selection"] is True
     assert healthy["selection_engine"] == "qccr-native"
     assert not any("NOT a measured saving" in line for line in healthy["limitations"])
+
+
+def test_degraded_json_does_not_credit_budget_arithmetic_as_savings(monkeypatch) -> None:
+    class FakeEngine:
+        def advance_turn(self):
+            pass
+
+        def optimize_context(self, *, token_budget, query):
+            return {"selected_fragments": [{"token_count": 20, "source": "a.py"}]}
+
+    from entroly import cli
+
+    monkeypatch.setattr(
+        cli, "_load_local_simulation_engine",
+        lambda _: (FakeEngine(), 1, 100, "ok"),
+    )
+    monkeypatch.setattr(cli, "_query_conditioned_selection_active", lambda _: False)
+    report = _run_local_simulation(
+        SimpleNamespace(max_files=1, budget=50, baseline=100, query=["auth"])
+    )
+    assert report["total_tokens_saved"] is None
+    assert report["average_reduction_pct"] is None
+    assert report["queries"][0]["tokens_saved"] is None
+    assert report["total_budget_difference_tokens"] == 80
+    assert report["measurement_status"] == "unranked_budget_arithmetic"
 
 
 # ── self-heal gating ─────────────────────────────────────────────────────────

@@ -52,6 +52,25 @@ def test_demo_cannot_reintroduce_direct_auto_indexing():
     assert "auto_index" not in calls
 
 
+def test_demo_omits_cost_projection_when_selection_is_unranked(monkeypatch, capsys):
+    args = SimpleNamespace(json=False)
+    report = {
+        "files_indexed": 1,
+        "queries": [{"query": "q"}],
+        "query_conditioned_selection": False,
+        "total_tokens_saved": None,
+    }
+    monkeypatch.setattr(cli, "_run_local_simulation", lambda _: report)
+    monkeypatch.setattr(cli, "_print_local_simulation", lambda *a, **k: None)
+    monkeypatch.setattr(cli, "_detect_project_type", lambda: "python")
+    monkeypatch.setattr(cli, "_recommend_quality", lambda *_: "balanced")
+
+    cli.cmd_demo(args)
+    out = capsys.readouterr().out
+    assert "Cost projection unavailable" in out
+    assert "$/query" not in out
+
+
 def test_demo_json_output_is_machine_readable(monkeypatch, capsys):
     args = SimpleNamespace(json=True)
     report = {
