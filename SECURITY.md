@@ -55,39 +55,16 @@ For a confirmed vulnerability, maintainers will:
 
 ## Triaged dependency advisories
 
-Open Dependabot alerts that remain unpatched are recorded here with their
-reasoning, so the default branch's security surface is auditable rather than
-merely quiet.
+### PyO3 — `entroly-core`, `entroly-engine`
 
-### PyO3 0.25.1 — `entroly-core`, `entroly-engine`
-
-Audited at commit `e31f082f`, where `Cargo.lock` pins `pyo3 0.25.1` and both
-crates declare `pyo3 = { version = "0.25", ... }`.
-
-| advisory | severity | first patched |
-| --- | --- | --- |
-| Out-of-bounds read in `nth` / `nth_back` for `PyList` and `PyTuple` iterators | High | 0.29.0 |
-| Missing `Sync` bound on `PyCFunction::new_closure` closures | Moderate | 0.29.0 |
-
-**A repository search at that commit found no affected PyO3 usage.**
-`PyCFunction` and `new_closure` do not appear in `entroly-core/src`,
-`entroly-engine/src` or `entroly-wasm/src`. Every `.nth(` and `.nth_back(`
-call site in those trees is on a Rust iterator — `str::split`, `str::rsplit`,
-`split_whitespace`, `char_indices` — rather than on a `PyList` or `PyTuple`
-iterator.
-
-That is a search result over the call sites present in this repository. It is
-**not** a proof of unreachability: it does not exclude an affected path reached
-indirectly, produced by a macro expansion, or living in a dependency. The
-upgrade is the actual fix.
-
-**Planned remediation.** Moving to PyO3 0.29 is tracked separately because it
-is a migration, not a version bump. `cargo check` against 0.29.3 produced 150
-compile errors in `entroly-core` — 54 × `cannot find type PyObject`,
-54 × E0034 ambiguous method, 44 × E0599 no method found — which is the
-`Bound<'py, T>` API change. Bundling that with unrelated work would deny a
-native-binding migration its own review and its own full Rust and Python test
-matrix.
+Both source crates and lockfiles now use PyO3 0.29.3, past the 0.29.0 first
+patched version for [GHSA-36hh-v3qg-5jq4](https://github.com/advisories/GHSA-36hh-v3qg-5jq4)
+and [GHSA-chgr-c6px-7xpp](https://github.com/advisories/GHSA-chgr-c6px-7xpp).
+The binding migration replaces removed PyO3 APIs while preserving the public
+Python return types. It was checked with Rust unit tests and Clippy in both
+crates, a release-mode wheel build, and an isolated wheel import and engine
+smoke test. Published artifacts remain on their prior dependencies until a
+new release is built and distributed; a source fix alone does not update them.
 
 ### Non-shipping surfaces
 

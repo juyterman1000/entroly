@@ -19,6 +19,7 @@
     clippy::too_many_arguments
 )]
 
+use crate::PyObject;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 use serde::{Deserialize, Serialize};
@@ -1363,7 +1364,7 @@ impl CogOpsEngine {
 
     /// Route a query through the epistemic routing matrix.
     pub fn route(&mut self, query: &str, is_event: bool, event_type: &str) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let intent = classify_intent(query);
             let risk = assess_risk(query);
             let entity_key = extract_entity_key(query);
@@ -1425,7 +1426,7 @@ impl CogOpsEngine {
 
     /// Extract entities from source code.
     pub fn extract_entities(&self, content: &str, file_path: &str) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let entities = extract_entities(content, file_path);
             let list = PyList::empty(py);
             for e in &entities {
@@ -1444,7 +1445,7 @@ impl CogOpsEngine {
 
     /// Compile a directory of source files into belief artifacts.
     pub fn compile_beliefs(&mut self, directory: &str, max_files: usize) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let root = Path::new(directory);
             let skip: HashSet<&str> = [
                 "__pycache__",
@@ -1566,7 +1567,7 @@ impl CogOpsEngine {
 
     /// Run full verification pass on all beliefs.
     pub fn verify_beliefs(&self) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let beliefs = read_all_beliefs(&self.vault_path);
             let total = beliefs.len();
             let contras = detect_contradictions(&beliefs);
@@ -1603,7 +1604,7 @@ impl CogOpsEngine {
 
     /// Compute blast radius for changed files.
     pub fn blast_radius(&self, changed_files: Vec<String>) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let beliefs = read_all_beliefs(&self.vault_path);
             let refs: Vec<&str> = changed_files.iter().map(|s| s.as_str()).collect();
             let (ab, ae, risk) = compute_blast_radius(&beliefs, &refs);
@@ -1623,7 +1624,7 @@ impl CogOpsEngine {
         commit_msg: &str,
         pr_title: &str,
     ) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let cs = parse_diff(diff_text, commit_msg);
             let findings = review_diff(diff_text);
 
@@ -1688,7 +1689,7 @@ impl CogOpsEngine {
         status: &str,
         sources: Vec<String>,
     ) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let artifact = BeliefArtifact {
                 claim_id: generate_claim_id(),
                 entity: entity.to_string(),
@@ -1719,7 +1720,7 @@ impl CogOpsEngine {
 
     /// Get vault status and coverage index.
     pub fn vault_status(&self) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let beliefs = read_all_beliefs(&self.vault_path);
             let result = PyDict::new(py);
             result.set_item("total_beliefs", beliefs.len())?;
@@ -1761,7 +1762,7 @@ impl CogOpsEngine {
         entity_key: &str,
         failing_queries: Vec<String>,
     ) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let skill_id = format!(
                 "{:012x}",
                 SystemTime::now()
@@ -1825,7 +1826,7 @@ impl CogOpsEngine {
 
     /// List all skills.
     pub fn list_skills(&self) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let skills_dir = self.vault_path.join("evolution/skills");
             let list = PyList::empty(py);
             if let Ok(entries) = fs::read_dir(&skills_dir) {
@@ -1874,7 +1875,7 @@ impl CogOpsEngine {
 
     /// Find source files with no corresponding belief in the vault.
     pub fn coverage_gaps(&self, directory: &str) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let root = Path::new(directory);
             let beliefs = read_all_beliefs(&self.vault_path);
             let skip: HashSet<&str> = [
@@ -1952,7 +1953,7 @@ impl CogOpsEngine {
 
     /// Mark beliefs as stale after file changes.
     pub fn refresh_beliefs(&self, changed_files: Vec<String>) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let beliefs_dir = self.vault_path.join("beliefs");
             let mut refreshed: Vec<String> = Vec::new();
 
@@ -2006,7 +2007,7 @@ impl CogOpsEngine {
 
     /// Benchmark a skill by running its test cases in a subprocess.
     pub fn benchmark_skill(&self, skill_id: &str) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             if !is_valid_skill_id(skill_id) {
                 let r = PyDict::new(py);
                 r.set_item("status", "invalid_skill_id")?;
@@ -2120,7 +2121,7 @@ impl CogOpsEngine {
 
     /// Promote or prune a skill based on fitness score.
     pub fn promote_skill(&self, skill_id: &str) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             if !is_valid_skill_id(skill_id) {
                 let r = PyDict::new(py);
                 r.set_item("status", "invalid_skill_id")?;
@@ -2211,7 +2212,7 @@ impl CogOpsEngine {
         is_event: bool,
         event_type: &str,
     ) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             // Step 1: Route
             let intent = classify_intent(query);
             let risk = assess_risk(query);
@@ -2485,7 +2486,7 @@ impl CogOpsEngine {
     /// Returns top_k results ranked by TF-IDF with entity-name boosting (3x).
     #[pyo3(signature = (query, top_k=5))]
     pub fn vault_search(&self, query: &str, top_k: usize) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let beliefs = read_all_beliefs(&self.vault_path);
             if beliefs.is_empty() {
                 let empty = PyList::empty(py);
@@ -2579,7 +2580,7 @@ impl CogOpsEngine {
     /// Doc beliefs get confidence 0.80 (human-authored > machine-inferred).
     #[pyo3(signature = (directory, max_files=50))]
     pub fn compile_docs(&self, directory: &str, max_files: usize) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let root = Path::new(directory);
             let doc_patterns = [
                 "README",
@@ -2747,7 +2748,7 @@ impl CogOpsEngine {
     /// Leverages PRISM scoring dimensions for quality-weighted sampling.
     #[pyo3(signature = (output_path, format="jsonl"))]
     pub fn export_training_data(&self, output_path: &str, format: &str) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let beliefs = read_all_beliefs(&self.vault_path);
 
             let mut lines: Vec<String> = Vec::new();

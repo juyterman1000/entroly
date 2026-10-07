@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 // policy has to live on the struct. This additionally exposes
 // `eligibility_trace` and `entropy_pre_belief` to Python, which were
 // previously Rust-only — additive, and breaks no existing caller.
-#[cfg_attr(feature = "python", pyclass(get_all, set_all))]
+#[cfg_attr(feature = "python", pyclass(get_all, set_all, from_py_object))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ContextFragment {
     pub fragment_id: String,

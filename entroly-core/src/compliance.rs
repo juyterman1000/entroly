@@ -14,6 +14,7 @@
 //! standalone. We replicate the core regex logic from compliance/pii.rs
 //! to stay dependency-free.
 
+use crate::PyObject;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use std::collections::HashMap;
@@ -175,7 +176,7 @@ impl ComplianceGate {
     /// Returns a dict:
     ///   {"allowed": bool, "reason": str, "pii_types": list}
     pub fn check_message(&mut self, sender_id: u64, receiver_id: u64, content: &str) -> PyObject {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let result = PyDict::new(py);
 
             // 1. Prompt injection check
@@ -252,7 +253,7 @@ impl ComplianceGate {
 
     /// Compliance statistics.
     pub fn stats(&self) -> PyObject {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let d = PyDict::new(py);
             d.set_item("total_allowed", self.total_allowed).unwrap();
             d.set_item("blocked_pii", self.total_blocked_pii).unwrap();

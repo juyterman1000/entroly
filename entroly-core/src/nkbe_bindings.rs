@@ -10,6 +10,7 @@
 //! npm). Same shape as the cognitive bus: live semantics in a binding crate,
 //! a dead twin in the other one, and the engine owning neither.
 
+use crate::PyObject;
 use pyo3::prelude::*;
 
 use entroly_engine::nkbe::NkbeAllocator as EngineAllocator;

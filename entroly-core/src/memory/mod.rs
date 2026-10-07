@@ -29,6 +29,7 @@ use episode::{
 use kanerva::KanervaSDM;
 use lsh::LSHIndex;
 
+use crate::PyObject;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 use std::collections::BTreeMap;
@@ -288,7 +289,7 @@ impl MemoryManager {
         self.total_recalled += selected.len() as u64;
 
         // Build Python result
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let result = PyList::empty(py);
             for &idx in &selected {
                 if idx < self.episodes.len() {
@@ -400,7 +401,7 @@ impl MemoryManager {
             }
         }
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let d = PyDict::new(py);
             d.set_item("total_entries", self.episodes.len()).unwrap();
             d.set_item("l1_working_count", l1_count).unwrap();
@@ -491,7 +492,7 @@ mod tests {
 
     #[test]
     fn test_remember_and_recall() {
-        pyo3::prepare_freethreaded_python();
+        Python::initialize();
         let mut mm = MemoryManager::new(4096, 16384, 65536, 50.0);
         let id = mm.remember(1, "test memory content".into(), 0.8, "working", None);
         assert!(id > 0);
@@ -500,7 +501,7 @@ mod tests {
 
     #[test]
     fn test_dedup_identical() {
-        pyo3::prepare_freethreaded_python();
+        Python::initialize();
         let mut mm = MemoryManager::new(4096, 16384, 65536, 50.0);
         let id1 = mm.remember(1, "hello world test".into(), 0.5, "working", None);
         let id2 = mm.remember(1, "hello world test".into(), 0.5, "working", None);
@@ -510,7 +511,7 @@ mod tests {
 
     #[test]
     fn test_ebbinghaus_forget() {
-        pyo3::prepare_freethreaded_python();
+        Python::initialize();
         let mut mm = MemoryManager::new(4096, 16384, 65536, 50.0);
         mm.remember(1, "old low-importance memory".into(), 0.1, "working", None);
 
@@ -522,9 +523,9 @@ mod tests {
         // Memory may have been evicted by auto-consolidation OR by explicit forget().
         // Either way, total_forgotten should be at least 1.
         let _ = mm.forget(0.01); // explicit pass — may return 0 if already evicted
-        Python::with_gil(|py| {
-            let stats: pyo3::PyObject = mm.stats();
-            let dict = stats.downcast_bound::<pyo3::types::PyDict>(py).unwrap();
+        Python::attach(|py| {
+            let stats: PyObject = mm.stats();
+            let dict = stats.cast_bound::<pyo3::types::PyDict>(py).unwrap();
             let total_forgotten: u64 = dict
                 .get_item("total_forgotten")
                 .unwrap()
@@ -551,7 +552,7 @@ mod tests {
 
     #[test]
     fn test_semantic_never_forgotten() {
-        pyo3::prepare_freethreaded_python();
+        Python::initialize();
         let mut mm = MemoryManager::new(4096, 16384, 65536, 50.0);
         mm.remember(1, "core pattern knowledge".into(), 0.1, "semantic", None);
 
@@ -565,7 +566,7 @@ mod tests {
 
     #[test]
     fn test_consolidation_promotes() {
-        pyo3::prepare_freethreaded_python();
+        Python::initialize();
         let mut mm = MemoryManager::new(4096, 16384, 65536, 50.0);
         mm.remember(
             1,
@@ -590,7 +591,7 @@ mod tests {
 
     #[test]
     fn test_stats() {
-        pyo3::prepare_freethreaded_python();
+        Python::initialize();
         let mut mm = MemoryManager::new(4096, 16384, 65536, 50.0);
         mm.remember(1, "working mem".into(), 0.5, "working", None);
         mm.remember(1, "episode mem".into(), 0.5, "episodic", None);
@@ -600,7 +601,7 @@ mod tests {
 
     #[test]
     fn test_spaced_recall_reinforcement() {
-        pyo3::prepare_freethreaded_python();
+        Python::initialize();
         let mut mm = MemoryManager::new(4096, 16384, 65536, 50.0);
         mm.remember(
             1,
@@ -612,7 +613,7 @@ mod tests {
         let initial_salience = mm.episodes[0].salience;
 
         // Recall triggers reinforcement
-        Python::with_gil(|_py| {
+        Python::attach(|_py| {
             mm.recall(1, None, None);
         });
 
@@ -627,7 +628,7 @@ mod tests {
 
     #[test]
     fn test_emotional_tag_multiplier() {
-        pyo3::prepare_freethreaded_python();
+        Python::initialize();
         let mut mm = MemoryManager::new(4096, 16384, 65536, 50.0);
 
         // Low importance → Neutral (1.0×)

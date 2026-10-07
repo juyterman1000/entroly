@@ -4,6 +4,7 @@
 //! Each binding renders those into its own types; on the Python side that
 //! rendering is this function, written once rather than once per binding module.
 
+use crate::PyObject;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 
