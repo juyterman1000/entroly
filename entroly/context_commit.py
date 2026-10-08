@@ -7,13 +7,16 @@ import importlib
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass
 from importlib import metadata
-from typing import Any
+from typing import Any, TYPE_CHECKING, Sequence
 
 from .context_receipts import ingest_documents, recover_omitted, select_from_index
-from .context_receipts.models import stable_hash, text_fingerprint
+from .context_receipts.models import byte_digest, stable_hash, text_fingerprint
 from .context_receipts.recover import build_recovery_bundle
 
 CONTEXT_COMMIT_SCHEMA = "entroly.context-commit.v1"
+
+if TYPE_CHECKING:
+    from .context_assurance import AssuranceScope, HardObligation
 
 
 def _package_version(name: str) -> str:
@@ -88,6 +91,9 @@ def create_context_commit(
     overlap_tokens: int = 32,
     parent_commit_id: str | None = None,
     prefer_rust: bool = True,
+    assurance_scope: AssuranceScope | None = None,
+    mandatory_ids: Sequence[str] = (),
+    obligations: Sequence[HardObligation] = (),
 ) -> dict[str, Any]:
     """Create a self-contained commit for selected and omitted context."""
 
@@ -104,6 +110,17 @@ def create_context_commit(
         token_budget=token_budget,
         prefer_rust=prefer_rust,
     )
+    if assurance_scope is not None or mandatory_ids or obligations:
+        from .context_assurance import audit_receipt, bind_assurance_scope
+
+        certificate = audit_receipt(index, receipt, mandatory_ids=mandatory_ids,
+                                    obligations=obligations)
+        if assurance_scope is not None:
+            certificate = bind_assurance_scope(certificate, assurance_scope)
+        receipt["risk_summary"]["context_assurance"] = certificate
+        receipt_hash = stable_hash({k: v for k, v in receipt.items()
+                                    if k not in {"receipt_id", "reproducibility_hash"}})
+        receipt.update(receipt_id="cr_" + receipt_hash[:12], reproducibility_hash=receipt_hash)
     recovery = build_recovery_bundle(index)
     payload: dict[str, Any] = {
         "schema_version": CONTEXT_COMMIT_SCHEMA,
@@ -114,6 +131,8 @@ def create_context_commit(
         "recovery_bundle_digest": stable_hash(recovery),
         "recovery_bundle": recovery,
     }
+    if assurance_scope is not None:
+        payload["assurance_scope"] = asdict(assurance_scope)
     return {"commit_id": "ctx_" + stable_hash(payload)[:24], **payload}
 
 
@@ -164,6 +183,9 @@ def verify_context_commit(commit: Mapping[str, Any] | object) -> ContextCommitVe
             break
         text = str(entry.get("text", ""))
         if text_fingerprint(text) != str(entry.get("content_sha", "")):
+            chunk_integrity = False
+            break
+        if entry.get("fragment_sha256") and byte_digest(text) != entry["fragment_sha256"]:
             chunk_integrity = False
             break
 

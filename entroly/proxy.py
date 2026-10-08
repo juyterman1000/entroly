@@ -3544,8 +3544,16 @@ class PromptCompilerProxy:
             except Exception as e:
                 logger.debug("Context cache-align skipped: %s", e)
 
+        from .context_assurance import audit_engine_selection
+
+        context_assurance = audit_engine_selection(
+            [{"source": "proxy:rendered-context", "content": context_text}],
+            query=user_message, token_budget=token_budget,
+        )
+        elapsed_ms = (time.perf_counter() - t0) * 1000
         return {
             "context": context_text,
+            "context_assurance": context_assurance,
             "elapsed_ms": elapsed_ms,
             "selected_fragments": selected,
             "recoverable_fragments": [*selected, *recovery_candidates],

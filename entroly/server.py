@@ -1499,6 +1499,15 @@ def create_mcp_server(
         # only when every in-process consumer has finished.
         compact_optimize_result_for_wire(result)
 
+        # Rebind after hardening and wire compaction: earlier commitments must
+        # not attest to text which the MCP boundary subsequently changed.
+        from .context_assurance import audit_engine_selection
+
+        result["context_assurance"] = audit_engine_selection(
+            result.get("selected_fragments", result.get("selected", [])),
+            query=query, token_budget=token_budget,
+        )
+
         # Pretty-printing costs 17% of the payload in indentation that no agent
         # reads. On a real 395-fragment result that is ~26,000 characters spent
         # on whitespace. Compact separators for anything large; keep the

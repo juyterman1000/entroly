@@ -157,6 +157,9 @@ def select_from_index(
 
     budget = _at_least(token_budget, default=0, floor=0)
     safe_query = _str_or_default(query)
+    from ..context_assurance import attach_receipt_assurance
+
+    index_payload = index if isinstance(index, dict) else index.to_dict()
     if prefer_rust and (core := _rust_core("context_receipts_select")) is not None:
         index_json = json.dumps(
             index if isinstance(index, dict) else index.to_dict(), sort_keys=True
@@ -164,10 +167,10 @@ def select_from_index(
         receipt = json.loads(
             core.context_receipts_select(index_json, safe_query, budget)
         )
-        return _attach_novelty_frontier(receipt, index)
+        return attach_receipt_assurance(index_payload, _attach_novelty_frontier(receipt, index))
     py_index = ContextIndex.from_dict(index) if isinstance(index, dict) else index
     receipt = _py_build_receipt(py_index, query=safe_query, token_budget=budget)
-    return receipt.to_dict()
+    return attach_receipt_assurance(index_payload, receipt.to_dict())
 
 
 def run_receipt_pipeline(
@@ -205,13 +208,13 @@ def run_receipt_pipeline(
         rust_index = json.loads(
             core.context_receipts_ingest(docs, chunk_token_count, overlap_token_count)
         )
-        return _attach_novelty_frontier(receipt, rust_index)
+        from ..context_assurance import attach_receipt_assurance
+
+        return attach_receipt_assurance(rust_index, _attach_novelty_frontier(receipt, rust_index))
     index = _py_ingest_documents(
         docs, chunk_tokens=chunk_token_count, overlap_tokens=overlap_token_count
     )
-    return _py_build_receipt(
-        index, query=_str_or_default(query), token_budget=budget
-    ).to_dict()
+    return select_from_index(index, query=query, token_budget=budget, prefer_rust=False)
 
 
 def markdown_report(

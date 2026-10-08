@@ -25,8 +25,11 @@ Usage::
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, TYPE_CHECKING, Sequence
 from .profiles import get_profile
+
+if TYPE_CHECKING:
+    from .context_assurance import AssuranceScope, HardObligation
 
 from .universal_compress import (
     detect_content_type,
@@ -1484,6 +1487,11 @@ def optimize(
         "fragments_total": len(fragments),
         "context_text": "\n\n".join(context_parts),
     }
+    from .context_assurance import audit_engine_selection
+
+    out["context_assurance"] = audit_engine_selection(
+        selected, query=query, token_budget=budget,
+    )
 
     # `stats()` is an EntrolyEngine method, but `optimize` accepts any object
     # satisfying the selection protocol -- including the lightweight fakes the
@@ -1547,6 +1555,58 @@ def _normalize_receipt_documents(documents: Any) -> list[tuple[str, str]]:
             source, text = item
             normalized.append((str(source), str(text)))
     return normalized
+
+
+def assure_context(
+    documents: Any,
+    *,
+    query: str,
+    budget: int,
+    scope: AssuranceScope,
+    mandatory_ids: Sequence[str] = (),
+    obligations: Sequence[HardObligation] = (),
+    require_decision_risk: bool = False,
+    prefer_rust: bool = True,
+) -> dict[str, Any]:
+    """Select, check a structural contract, and retain a scoped exact snapshot.
+
+    Raises ContextAssuranceError instead of returning context that violates the
+    declared contract. Downstream decision risk is unmeasured; requests requiring
+    it fail closed. The returned commit contains source text and must stay local.
+    Scope binds artifacts, not caller identity. Use existing signed audits when
+    authenticating a commit across a trust boundary.
+    """
+    from .context_assurance import AssuranceScope, require_assurance
+    from .context_commit import create_context_commit, replay_context
+
+    if not isinstance(scope, AssuranceScope):
+        raise ValueError("scope must declare project, session and agent")
+    if type(budget) is not int or budget <= 0:
+        raise ValueError("budget must be a positive integer")
+    docs = _normalize_receipt_documents(documents)
+    if len({path for path, _ in docs}) != len(docs):
+        raise ValueError("source paths must be unique")
+    commit = create_context_commit(
+        docs, query=query, token_budget=budget,
+        prefer_rust=prefer_rust, assurance_scope=scope,
+        mandatory_ids=mandatory_ids, obligations=obligations,
+    )
+    certificate = commit["receipt"]["risk_summary"]["context_assurance"]
+    require_assurance(certificate, decision_risk=require_decision_risk)
+    selected = replay_context(commit)
+    selected_ids = {item["chunk_id"] for item in selected}
+    return {
+        "selected_context": selected,
+        "certificate": certificate,
+        "context_commit": commit,
+        "recovery_map": {
+            cid: {"commit_id": commit["commit_id"], "chunk_id": cid,
+                  "fragment_sha256": item["fragment_sha256"],
+                  "scope": commit["assurance_scope"]}
+            for cid, item in commit["recovery_bundle"]["chunks"].items()
+            if cid not in selected_ids
+        },
+    }
 
 
 def create_context_receipt(
