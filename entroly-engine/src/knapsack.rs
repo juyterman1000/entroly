@@ -33,8 +33,10 @@
 //! ½-approximation below refers to. (Under the `sᵢ − th` form it would instead
 //! recover a *score*-sorted greedy, a different and weaker algorithm; that is why
 //! the distinction is worth stating.) The objective here is linear (Σ sᵢ·xᵢ), i.e.
-//! modular, so density-greedy on a knapsack gives the ½-approximation of
-//! Dantzig-style rounding — NOT (1-1/e), which requires a submodular
+//! modular, so the better of density-greedy and the best feasible singleton
+//! gives the classic ½-approximation from LP/Dantzig-style rounding. Density
+//! greedy alone does not earn that bound. This is NOT (1-1/e), which requires
+//! a submodular
 //! objective. If redundancy/diversity terms are added to the score (making
 //! it submodular), Sviridenko's partial-enumeration variant would be needed
 //! to recover the (1-1/e - ε) bound; this file does not do that.
@@ -789,7 +791,13 @@ fn knapsack_dp(scored: &[(usize, f64)], fragments: &[ContextFragment], budget: u
 }
 
 /// Greedy approximation for very large sets (N > 2000) under hard τ.
-/// Sort by relevance/token density. Provable 0.5 optimality (Dantzig, 1957).
+///
+/// For a modular 0/1 knapsack objective, density-greedy by itself has no 1/2
+/// guarantee: one tiny high-density item can block a much more valuable item
+/// whose cost is the whole budget.  The classic constant-factor repair is to
+/// return the better of (a) the density-greedy feasible set and (b) the best
+/// feasible singleton.  That earns the 1/2 bound against the optimal modular
+/// knapsack value while preserving O(N log N) time.
 fn knapsack_greedy(
     scored: &[(usize, f64)],
     fragments: &[ContextFragment],
@@ -797,6 +805,9 @@ fn knapsack_greedy(
 ) -> Vec<usize> {
     let mut density: Vec<(usize, f64)> = scored
         .iter()
+        .filter(|&&(idx, rel)| {
+            rel.is_finite() && rel > 0.0 && fragments[idx].token_count <= budget
+        })
         .map(|&(idx, rel)| (idx, rel / fragments[idx].token_count.max(1) as f64))
         .collect();
     // Total order, ties broken on fragment id -- see the note in
@@ -807,15 +818,49 @@ fn knapsack_greedy(
             .then_with(|| fragments[a.0].fragment_id.cmp(&fragments[b.0].fragment_id))
     });
 
+    let score_by_index: HashMap<usize, f64> = scored
+        .iter()
+        .copied()
+        .filter(|(_, rel)| rel.is_finite() && *rel > 0.0)
+        .collect();
+
     let mut selected = Vec::new();
     let mut remaining = budget;
+    let mut greedy_value = 0.0_f64;
     for (idx, _) in density {
         if fragments[idx].token_count <= remaining {
             selected.push(idx);
             remaining -= fragments[idx].token_count;
+            greedy_value += score_by_index.get(&idx).copied().unwrap_or(0.0);
         }
         if remaining == 0 {
             break;
+        }
+    }
+
+    let best_singleton = scored
+        .iter()
+        .filter(|&&(idx, rel)| {
+            rel.is_finite()
+                && rel > 0.0
+                && fragments[idx].token_count <= budget
+        })
+        .max_by(|&&(idx_a, rel_a), &&(idx_b, rel_b)| {
+            rel_a
+                .total_cmp(&rel_b)
+                .then_with(|| {
+                    // max_by chooses the greater element; reverse the id
+                    // comparison so the lexicographically smaller id wins ties.
+                    fragments[idx_b]
+                        .fragment_id
+                        .cmp(&fragments[idx_a].fragment_id)
+                })
+        })
+        .copied();
+
+    if let Some((singleton_idx, singleton_value)) = best_singleton {
+        if singleton_value > greedy_value {
+            return vec![singleton_idx];
         }
     }
     selected
@@ -995,6 +1040,20 @@ mod tests {
         ((*state >> 33) as f64) / ((1u64 << 31) as f64)
     }
 
+    /// Density-greedy alone can be arbitrarily bad for 0/1 knapsack.
+    /// A one-token item with slightly higher density can consume just enough
+    /// budget to make the true high-value singleton infeasible.  The shipped
+    /// large-N fallback therefore must compare against the best singleton.
+    #[test]
+    fn greedy_fallback_uses_best_feasible_singleton_when_it_dominates() {
+        let fragments = vec![
+            ContextFragment::new("tiny".into(), "x".into(), 1, "".into()),
+            ContextFragment::new("whole-budget".into(), "y".into(), 100, "".into()),
+        ];
+        let scored = vec![(0usize, 2.0_f64), (1usize, 100.0_f64)];
+        let selected = knapsack_greedy(&scored, &fragments, 100);
+        assert_eq!(selected, vec![1]);
+    }
     /// The soft bisection is a heuristic; the DP below 0.05 is exact. Randomised
     /// instances let the exact path referee the approximate one.
     ///
