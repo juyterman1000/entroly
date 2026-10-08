@@ -51,7 +51,7 @@ Instead of raw truncation, Entroly provides:
 
 | Engine | What it does | How it works |
 |--------|-------------|--------------|
-| **Knapsack Optimizer** | Selects a high-value context subset (exact for the modular objective via DP; greedy fallback within ½ of optimal) | 0/1 Knapsack DP with budget quantization (N ≤ 2000), greedy fallback (N > 2000) |
+| **Knapsack Optimizer** | Selects a high-value context subset (quantized DP for smaller sets; large-set modular fallback uses the better of density-greedy and the best feasible singleton) | 0/1 Knapsack DP with budget quantization (N ≤ 2000), ½-approximate modular fallback (N > 2000) |
 | **Entropy Scorer** | Measures information density per fragment | Shannon entropy (40%) + boilerplate detection (30%) + cross-fragment multi-scale n-gram redundancy (30%) |
 | **SimHash Dedup** | Catches near-duplicate content in O(1) | 64-bit SimHash fingerprints with 4-band LSH bucketing, Hamming threshold = 3 |
 | **Multi-Probe LSH Index** | Sub-linear semantic recall over 100K+ fragments | 12-table LSH with 10-bit sampling + 3-neighbor multi-probe queries |
@@ -222,7 +222,7 @@ Subject to: Σ c(fᵢ) · x(fᵢ) ≤ B  (token budget)
 
 **Two strategies** based on fragment count:
 - **N ≤ 2000**: Exact DP with budget quantization into 1000 bins — O(N × 1000)
-- **N > 2000**: Greedy density sort — O(N log N), Dantzig 0.5-optimality guarantee
+- **N > 2000**: Better of density-greedy and the best feasible singleton — O(N log N), 1/2 approximation for the non-negative modular knapsack objective
 
 Pinned fragments (safety-critical files, config files) are always included; remaining budget is allocated via DP/greedy.
 
