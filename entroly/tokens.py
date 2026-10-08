@@ -10,6 +10,11 @@ overflow fallback.
 from __future__ import annotations
 
 from functools import lru_cache
+import hashlib
+import os
+from pathlib import Path
+import tempfile
+from types import FunctionType
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -18,11 +23,66 @@ if TYPE_CHECKING:
 
 @lru_cache(maxsize=1)
 def _encoding():
+    """Use the canonical encoder from verified local assets; never download.
+
+    Clone the installed constructor's globals locally to replace its asset
+    reader. This retains its canonical regex/ranks without patching process-wide
+    tiktoken functions or letting a missing/corrupt cache trigger a remote fetch.
+    Unsupported constructor layouts fail closed to the documented heuristic.
+    """
     try:
         import tiktoken
+        from tiktoken import registry
+        from tiktoken.load import load_tiktoken_bpe
+        from tiktoken_ext.openai_public import o200k_base
 
-        return tiktoken.get_encoding("o200k_base")
-    except (ImportError, ValueError):
+        if ready := registry.ENCODINGS.get("o200k_base"):
+            return ready
+        constants = o200k_base.__code__.co_consts
+        urls = [x for x in constants if isinstance(x, str) and x.startswith("https://")]
+        hashes = [
+            x
+            for x in constants
+            if isinstance(x, str)
+            and len(x) == 64
+            and all(c in "0123456789abcdef" for c in x)
+        ]
+        if len(urls) != 1 or len(hashes) != 1:
+            return None
+        url, expected_hash = urls[0], hashes[0]
+        cache_dir = os.environ.get(
+            "TIKTOKEN_CACHE_DIR",
+            os.environ.get(
+                "DATA_GYM_CACHE_DIR",
+                str(Path(tempfile.gettempdir()) / "data-gym-cache"),
+            ),
+        )
+        if not cache_dir:
+            return None
+        cache_path = Path(cache_dir) / hashlib.sha1(url.encode()).hexdigest()
+        with cache_path.open("rb") as asset:
+            data = asset.read(8 * 1024 * 1024 + 1)
+        if (
+            len(data) > 8 * 1024 * 1024
+            or hashlib.sha256(data).hexdigest() != expected_hash
+        ):
+            return None
+
+        def local_read(blobpath, checksum):
+            if blobpath != url or checksum != expected_hash:
+                raise ValueError("unsupported encoding asset")
+            return data
+
+        local_loader = FunctionType(
+            load_tiktoken_bpe.__code__,
+            {**load_tiktoken_bpe.__globals__, "read_file_cached": local_read},
+        )
+        local_constructor = FunctionType(
+            o200k_base.__code__,
+            {**o200k_base.__globals__, "load_tiktoken_bpe": local_loader},
+        )
+        return tiktoken.Encoding(**local_constructor())
+    except (ImportError, OSError, ValueError, AttributeError, TypeError):
         return None
 
 
@@ -172,11 +232,14 @@ def trim_messages(
         while True:
             if strategy == "last" and (not selected or selected[-1] is not rest[-1]):
                 return messages
-            canonical = json.dumps(dropped, sort_keys=True, ensure_ascii=True, separators=(",", ":"))
+            canonical = json.dumps(
+                dropped, sort_keys=True, ensure_ascii=True, separators=(",", ":")
+            )
             digest = content_digest(canonical)
             detail = (
                 f"Recoverable via: `entroly recover {digest}`"
-                if store_recovery else f"Digest: {digest}"
+                if store_recovery
+                else f"Digest: {digest}"
             )
             stub = {
                 "role": "system",
@@ -186,7 +249,8 @@ def trim_messages(
                 ),
             }
             compacted = (
-                system + [stub] + selected if strategy == "last"
+                system + [stub] + selected
+                if strategy == "last"
                 else system + selected + [stub]
             )
             if reply_priming + sum(_msg_tokens(msg) for msg in compacted) <= max_tokens:
@@ -205,14 +269,18 @@ def trim_messages(
             try:
                 path = default_recovery_store_path()
                 store = RecoveryStore(path)
-                reference = store.put(canonical, item_count=len(dropped), item_label="message(s)")
+                reference = store.put(
+                    canonical, item_count=len(dropped), item_label="message(s)"
+                )
                 reopened = RecoveryStore(path)
                 recovered_ref = reopened.reference_for(reference.digest)
-                if recovered_ref is None or reopened.recover(recovered_ref) != canonical:
+                if (
+                    recovered_ref is None
+                    or reopened.recover(recovered_ref) != canonical
+                ):
                     return messages
             except Exception:
                 return messages
         return compacted
 
     return system + selected
-
