@@ -1068,8 +1068,68 @@ mod tests {
         let selected = knapsack_greedy(&scored, &fragments, 100);
         assert_eq!(selected, vec![1]);
     }
-    /// The soft bisection is a heuristic; the DP below 0.05 is exact. Randomised
-    /// instances let the exact path referee the approximate one.
+    /// Exhaustive small instances referee the theorem implemented by the
+    /// large-N fallback.  The production path only uses this algorithm when
+    /// N > 2000, but the approximation property is size-independent, so small
+    /// instances let us compare against the true optimum cheaply.
+    #[test]
+    fn greedy_fallback_stays_above_half_of_bruteforce_optimum() {
+        let mut seed = 0xA55U64;
+
+        for case in 0..80 {
+            let n = 5 + (case % 7) as usize;
+            let mut fragments = Vec::with_capacity(n);
+            let mut scored = Vec::with_capacity(n);
+            for i in 0..n {
+                let cost = 1 + (lcg(&mut seed) * 99.0) as u32;
+                let value = 0.01 + lcg(&mut seed) * 1.99;
+                fragments.push(ContextFragment::new(
+                    format!("bf-{case:02}-{i:02}"),
+                    "x".into(),
+                    cost,
+                    "".into(),
+                ));
+                scored.push((i, value));
+            }
+            let total: u32 = fragments.iter().map(|f| f.token_count).sum();
+            let budget = (1 + (lcg(&mut seed) * total.max(1) as f64) as u32)
+                .min(total.max(1));
+
+            let selected = knapsack_greedy(&scored, &fragments, budget);
+            let got: f64 = selected
+                .iter()
+                .map(|&idx| scored[idx].1)
+                .sum();
+
+            let mut optimum = 0.0_f64;
+            for mask in 0usize..(1usize << n) {
+                let mut cost = 0u32;
+                let mut value = 0.0_f64;
+                for (idx, &(_, item_value)) in scored.iter().enumerate() {
+                    if mask & (1usize << idx) != 0 {
+                        cost = cost.saturating_add(fragments[idx].token_count);
+                        value += item_value;
+                    }
+                }
+                if cost <= budget {
+                    optimum = optimum.max(value);
+                }
+            }
+
+            if optimum > 0.0 {
+                assert!(
+                    got + 1e-12 >= 0.5 * optimum,
+                    "case {case}: fallback={got:.8}, optimum={optimum:.8}, ratio={:.6}",
+                    got / optimum
+                );
+            }
+        }
+    }
+
+    /// The soft bisection is a heuristic. For this regression test we cap the
+    /// budget below 2000 tokens so the hard-DP granularity is exactly one token;
+    /// that makes the low-temperature path a genuine exact referee rather than
+    /// a quantized approximation.
     ///
     /// Three properties, in increasing order of how much a violation would cost:
     ///   1. neither path may exceed the token budget -- overrunning it is what
@@ -1113,7 +1173,8 @@ mod tests {
 
             let total: u32 = fragments.iter().map(|f| f.token_count).sum();
             // A budget that binds: too large and every instance is trivial.
-            let budget = (total as f64 * (0.25 + 0.4 * lcg(&mut seed))) as u32;
+            let budget =
+                ((total as f64 * (0.25 + 0.4 * lcg(&mut seed))) as u32).min(1999);
             if budget == 0 {
                 continue;
             }
