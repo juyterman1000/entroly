@@ -121,7 +121,7 @@ Select the optimal context subset for a token budget. Includes dependency boosti
 optimize_context(token_budget=128000, query="fix payment bug")
 → {
     "selected_fragments": [...],
-    "optimization_stats": {"method": "exact_dp", "budget_utilization": 0.73},
+    "optimization_stats": {"method": "soft_bisection", "budget_utilization": 0.73},
     "tokens_saved_this_call": 42000,
     "sufficiency": 0.91,
     "hallucination_risk": "low"
