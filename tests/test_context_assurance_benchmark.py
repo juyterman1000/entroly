@@ -1,0 +1,20 @@
+from benchmarks.context_assurance import run_benchmark
+
+
+def test_frozen_local_controls_and_long_turn_instrumentation():
+    result = run_benchmark(performance_samples=2)
+    assert result["false_passes_declared_obligations"] == 0
+    assert result["inexact_recoveries"] == 0
+    assert result["provider_observed_usage"] is None
+    assert result["provider_cost"] is None
+    assert result["risk_calibration"].startswith("unavailable")
+    assert {row["turns"] for row in result["summaries"]} == {20, 50, 100}
+    for report in result["summaries"]:
+        assert report["model_self_divergence"] == 0
+        assert report["risk_bound"] is None
+        if report["strategy"] in {"full", "receipt_exact_recovery"}:
+            assert report["decision_divergence_regret"] == 0
+            assert report["cumulative_missed_context_debt"] == 0
+        else:
+            assert report["decision_divergence_regret"] == report["trials"]
+            assert report["cumulative_missed_context_debt"] == report["trials"]
