@@ -12,7 +12,7 @@
 > [`entroly-engine/src/knapsack.rs`](../../../entroly-engine/src/knapsack.rs)
 > now implements exactly this better-of-two rule.
 
-The earlier scaffold incorrectly targeted a \((1-1/e)\) submodular guarantee.
+The earlier scaffold incorrectly targeted the \((1-1/e)\) submodular bound.
 That theorem does not describe this selector: the shipped fallback objective is
 modular, and the selector does not implement the partial-enumeration algorithm
 needed for the stronger submodular-knapsack result.
