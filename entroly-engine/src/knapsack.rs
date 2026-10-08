@@ -43,8 +43,10 @@
 //!
 //! # Hard DP fallback (τ < 0.05)
 //!
-//! Exact 0/1 DP with budget quantization: O(N × Q), Q = 1000.
-//! Used when weights have converged (τ is at floor) for maximum precision.
+//! Bounded 0/1 DP with token-cost quantization: O(N × Q), Q = 1000.
+//! It is exact only when the quantization granularity is one token; at larger
+//! budgets it is a hard-budget-feasible approximation. Used when weights have
+//! converged (τ is at floor) for maximum discrete precision at bounded memory.
 //!
 use crate::fragment::{compute_relevance, ContextFragment};
 use std::collections::HashMap;
@@ -365,8 +367,17 @@ pub fn knapsack_optimize(
             soft_bisection_select(&scored, fragments, remaining_budget, temperature);
         ("soft_bisection", sel, lam, gap, cert)
     } else if scored.len() <= 2000 {
+        // knapsack_dp bounds its table by quantizing token costs into ~1000
+        // bins.  With g=1 the original costs are preserved exactly; otherwise
+        // the solver is approximate (with a real-token post-check for
+        // feasibility) and must not advertise itself as exact.
+        let method = if remaining_budget < 2000 {
+            "exact_dp"
+        } else {
+            "quantized_dp"
+        };
         (
-            "exact_dp",
+            method,
             knapsack_dp(&scored, fragments, remaining_budget),
             0.0,
             0.0,
@@ -713,10 +724,13 @@ fn soft_bisection_select(
 
 // ── Hard DP fallback (τ < 0.05) ──────────────────────────────────────────────
 
-/// Exact 0/1 knapsack via DP with budget quantization.
+/// Bounded 0/1 knapsack DP with token-cost quantization.
 ///
-/// Quantize budget into Q=1000 bins to bound the DP table at N×1000.
-/// Precision loss: < 0.1% of optimal value.
+/// Quantize costs into Q=1000 budget bins to bound the DP table at N×1000.
+/// When the granularity is one token this is the ordinary exact 0/1 DP.
+/// For larger granularities the cost rounding changes the discrete problem, so
+/// no objective-approximation ratio is claimed here.  The post-DP guard below
+/// does guarantee feasibility in the original token units.
 ///
 /// Small fragments (token_count < granularity) are "free" items:
 /// always included, real cost subtracted from budget. This prevents
@@ -1438,6 +1452,26 @@ mod tests {
         );
     }
 
+    #[test]
+    fn method_label_does_not_call_quantized_dp_exact() {
+        let weights = ScoringWeights::default();
+        let mut items = Vec::new();
+        for i in 0..4 {
+            let mut f = ContextFragment::new(format!("q{i}"), "x".into(), 701, "".into());
+            f.recency_score = 0.8 - i as f64 * 0.05;
+            f.frequency_score = f.recency_score;
+            f.semantic_score = f.recency_score;
+            f.entropy_score = f.recency_score;
+            items.push(f);
+        }
+        let result = knapsack_optimize(&items, 2500, &weights, &no_feedback(), 0.0);
+        assert_eq!(result._method, "quantized_dp");
+        assert!(result.total_tokens <= 2500);
+
+        let exact_budget = knapsack_optimize(&items, 1500, &weights, &no_feedback(), 0.0);
+        assert_eq!(exact_budget._method, "exact_dp");
+        assert!(exact_budget.total_tokens <= 1500);
+    }
     #[test]
     fn test_quantized_dp_respects_real_token_budget() {
         let fragments = vec![
