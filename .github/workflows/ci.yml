@@ -394,7 +394,13 @@ jobs:
 
       - name: Run Python tests
         run: |
-          .venv/bin/pip install pytest pytest-timeout --timeout 120 --retries 5
+          # Exercise exact selected-text budget assurance with the optional
+          # tokenizer declared by the project's test extra. Base-install
+          # fallback tests independently verify fail-closed unavailability.
+          .venv/bin/pip install pytest pytest-timeout "tiktoken>=0.9,<0.15" --timeout 120 --retries 5
+          # Explicit online test setup; runtime token counting never acquires
+          # assets on an air-gapped user's behalf.
+          .venv/bin/python -c "import tiktoken; tiktoken.get_encoding('o200k_base')"
           # --durations prints the slowest tests on every run, so the growth
           # that consumed the old budget stays visible in the log instead of
           # only surfacing the next time it runs out of one.

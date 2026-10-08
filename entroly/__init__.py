@@ -54,6 +54,7 @@ try:
     from .sdk import detect_hallucination, optimize  # noqa: F401
     from .sdk import eicv_verify, eicv_suppress  # noqa: F401
     from .sdk import (  # noqa: F401
+        assure_context,
         certify_omission_containment,
         certify_receipt_containment,
         context_receipt_from_path,
@@ -66,6 +67,13 @@ try:
     )
 except ImportError:
     pass  # Graceful degradation if dependencies missing
+
+from .context_assurance import (  # noqa: F401
+    AssuranceScope,
+    ContextAssuranceError,
+    HardObligation,
+    recover_context_evidence,
+)
 
 from .tokens import count_tokens, trim_messages  # noqa: F401
 

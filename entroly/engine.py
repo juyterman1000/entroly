@@ -1474,6 +1474,12 @@ class EntrolyEngine:
             # lexical check decides alone. Passing True instead would read every
             # fast-path hit as unranked and discard it.
             apply_no_match_contract(fp_result, query, scores_are_ranked=False)
+            from .context_assurance import audit_engine_selection
+
+            fp_result["context_assurance"] = audit_engine_selection(
+                fp_result.get("selected_fragments", fp_result.get("selected", [])),
+                query=query, token_budget=token_budget,
+            )
             return fp_result
 
         # Query refinement: expand vague queries using in-memory file context.
@@ -1965,6 +1971,12 @@ class EntrolyEngine:
             result,
             query,
             scores_are_ranked=result.get("selector") != "qccr",
+        )
+        from .context_assurance import audit_engine_selection
+
+        result["context_assurance"] = audit_engine_selection(
+            result.get("selected_fragments", result.get("selected", [])),
+            query=query, token_budget=token_budget,
         )
         return result
     def set_crystallization_callback(self, fn: Any) -> None:

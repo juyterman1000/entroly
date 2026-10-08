@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, asdict
 from pathlib import Path
+import re
 from typing import Any
 
 from . import store as _store
@@ -114,9 +115,14 @@ def build_recovery_bundle(index: dict[str, Any]) -> dict[str, Any]:
 
 
 def recovery_path(receipt_id: str, store_dir: str | Path | None = None) -> Path:
+    if not isinstance(receipt_id, str) or not re.fullmatch(r"cr_[A-Za-z0-9_-]+", receipt_id):
+        raise ValueError("invalid receipt identity for recovery")
     base = Path(store_dir) if store_dir is not None else _store.resolve_store()
     base.mkdir(parents=True, exist_ok=True)
-    return base / f"{receipt_id}{RECOVERY_SUFFIX}"
+    candidate = base / f"{receipt_id}{RECOVERY_SUFFIX}"
+    if candidate.is_symlink() or candidate.resolve().parent != base.resolve():
+        raise ValueError("recovery artifact must remain in the declared store")
+    return candidate
 
 
 def save_recovery_bundle(
@@ -172,6 +178,9 @@ def recover_omitted(
     omitted = _list_of_mappings(rec.get("omitted_context", []))
     if chunk_id is not None:
         omitted = [o for o in omitted if o.get("chunk_id") == chunk_id]
+
+    if not omitted:
+        return []
 
     source = _resolve_source(receipt_id, index, bundle, store_dir)
 
