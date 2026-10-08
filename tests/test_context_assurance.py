@@ -29,6 +29,7 @@ from entroly.context_receipts import (
 )
 from entroly.context_receipts.models import stable_hash
 from entroly.context_receipts.recover import recovery_path
+from entroly.tokens import _encoding
 
 SCOPE = AssuranceScope("repo:test", "session:test", "agent:test")
 DOCS = [
@@ -102,7 +103,12 @@ def test_certificate_is_deterministic_and_unordered_census_permutation_invariant
     permuted["chunks"].reverse()
     assert first == audit_receipt(permuted, receipt, mandatory_ids=ids)
     assert first["decision_risk"]["upper_risk_bound"] is None
-    assert first["verdict"] == "structurally_valid_risk_unmeasured"
+    assert first["verdict"] == (
+        "structurally_valid_risk_unmeasured" if _encoding() is not None else "uncertain"
+    )
+    assert first["structural_assurance"]["budget"]["status"] == (
+        "passed" if _encoding() is not None else "unavailable"
+    )
 
 
 @pytest.mark.parametrize(
@@ -211,11 +217,21 @@ def test_public_pipeline_binds_nested_certificate_to_receipt_hash(prefer_rust):
 
 
 def test_scoped_sdk_contract_and_risk_requirement():
-    result = assure_context(
-        DOCS, query="evidence", budget=1000, scope=SCOPE, prefer_rust=False
-    )
-    assert result["certificate"]["scope"]["session"] == SCOPE.session
-    assert verify_context_commit(result["context_commit"]).valid
+    if _encoding() is None:
+        with pytest.raises(ContextAssuranceError) as error:
+            assure_context(
+                DOCS, query="evidence", budget=1000, scope=SCOPE, prefer_rust=False
+            )
+        assert (
+            error.value.certificate["structural_assurance"]["budget"]["status"]
+            == "unavailable"
+        )
+    else:
+        result = assure_context(
+            DOCS, query="evidence", budget=1000, scope=SCOPE, prefer_rust=False
+        )
+        assert result["certificate"]["scope"]["session"] == SCOPE.session
+        assert verify_context_commit(result["context_commit"]).valid
     with pytest.raises(ContextAssuranceError):
         assure_context(
             DOCS,
