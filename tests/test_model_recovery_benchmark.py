@@ -22,11 +22,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _protocol() -> dict:
-    return json.loads(
-        (ROOT / "benchmarks" / "model_recovery_protocol_v5.json").read_text(
-            encoding="utf-8"
-        )
+    # The frozen protocol is embedded in the retained result artifact; the
+    # standalone v5 protocol was removed during the public-repo cleanup.
+    report = json.loads(
+        (
+            ROOT / "benchmarks" / "results" / "model_recovery_v7_development.json"
+        ).read_text(encoding="utf-8")
     )
+    return report["protocol"]
 
 
 def test_fixture_generation_is_deterministic_and_phase_separated() -> None:
