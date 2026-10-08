@@ -26,6 +26,13 @@ messages. Other provider tokenizers require separate accounting. When the local
 encoder is unavailable, the character heuristic cannot earn budget assurance.
 Install the declared `entroly[test]` or `entroly[benchmark]` extra when exact
 local budget assurance is required; the base-install path remains fail closed.
+Canonical token counting only loads a verified local tiktoken asset or an
+already initialized encoder. Missing or corrupt assets remain unavailable;
+installing the optional package alone does not authorize an asset download.
+An explicit online setup step can provision it with
+`python -c "import tiktoken; tiktoken.get_encoding('o200k_base')"` before going
+offline. Runtime counting preserves corrupt cache files and uses the documented
+heuristic when no verified asset is available.
 
 The index is the trust anchor supplied by the caller. Digest consistency is not
 an authenticated observation of the current filesystem. Mutating an index
