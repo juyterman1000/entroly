@@ -54,7 +54,9 @@ def test_soft_pressure_defers_when_provider_cache_is_warm(tmp_path: Path) -> Non
     result = controller.rescue(
         "conv",
         messages,
-        context_window=4_000,
+        # Keep this fixture at 50% utilization under both the canonical
+        # tokenizer and the offline fallback estimator.
+        context_window=estimate_message_tokens(messages) * 2,
         cache_warm=True,
     )
 
@@ -268,7 +270,9 @@ def test_pressure_without_safe_candidate_is_reported_without_fake_savings(
     )
     messages = [{"role": "user", "content": "essential evidence " * 100}]
 
-    result = controller.rescue("conv", messages, context_window=2_000)
+    result = controller.rescue(
+        "conv", messages, context_window=estimate_message_tokens(messages) * 2
+    )
 
     assert result.action == "pressure-observed"
     assert result.tokens_saved == 0
