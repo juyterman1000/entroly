@@ -37,7 +37,9 @@ def test_corrupt_tokenizer_asset_is_preserved_and_never_refetched(isolated_encod
         for x in o200k_base.__code__.co_consts
         if isinstance(x, str) and x.startswith("https://")
     )
-    path = isolated_encoder / hashlib.sha1(url.encode()).hexdigest()
+    path = (
+        isolated_encoder / hashlib.sha1(url.encode(), usedforsecurity=False).hexdigest()
+    )
     path.write_bytes(b"corrupt local asset")
     assert _encoding() is None
     assert path.read_bytes() == b"corrupt local asset"

@@ -59,7 +59,12 @@ def _encoding():
         )
         if not cache_dir:
             return None
-        cache_path = Path(cache_dir) / hashlib.sha1(url.encode()).hexdigest()
+        # SHA-1 matches tiktoken's filename convention; SHA-256 below verifies
+        # asset integrity. The filename hash carries no security authority.
+        cache_path = (
+            Path(cache_dir)
+            / hashlib.sha1(url.encode(), usedforsecurity=False).hexdigest()
+        )
         with cache_path.open("rb") as asset:
             data = asset.read(8 * 1024 * 1024 + 1)
         if (
