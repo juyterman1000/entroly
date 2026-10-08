@@ -1,7 +1,12 @@
+import pytest
+
 from benchmarks.context_assurance import run_benchmark
 
 
 def test_frozen_local_controls_and_long_turn_instrumentation():
+    pytest.importorskip(
+        "tiktoken", reason="frozen protocol requires exact o200k_base counting"
+    )
     result = run_benchmark(performance_samples=2)
     assert result["false_passes_declared_obligations"] == 0
     assert result["inexact_recoveries"] == 0
@@ -18,3 +23,11 @@ def test_frozen_local_controls_and_long_turn_instrumentation():
         else:
             assert report["decision_divergence_regret"] == report["trials"]
             assert report["cumulative_missed_context_debt"] == report["trials"]
+
+
+def test_protocol_refuses_to_relabel_heuristic_tokens_as_o200k(monkeypatch):
+    import benchmarks.context_assurance as harness
+
+    monkeypatch.setattr(harness, "_encoding", lambda: None)
+    with pytest.raises(RuntimeError, match="tokenizer"):
+        harness.run_benchmark(performance_samples=1)

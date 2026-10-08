@@ -34,8 +34,10 @@ automatic detector of future relevance or an adaptive stopping guarantee.
 
 ## Frozen local fixture
 
-Run `python -m benchmarks.context_assurance --output PATH`. The committed
-`benchmarks/context_assurance_protocol.json` specifies the fixture and gates.
+Run `python -m benchmarks.context_assurance --output PATH`. The frozen
+protocol requires the declared `entroly[benchmark]` tokenizer extra; it refuses
+to run with heuristic token counts. `benchmarks/context_assurance_protocol.json`
+specifies the fixture and gates.
 The output records protocol, workload and harness fingerprints, source SHA,
 dirty-worktree state, observations and latency percentiles.
 

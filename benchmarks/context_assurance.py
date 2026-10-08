@@ -31,7 +31,7 @@ from entroly.decision_evaluation import (
     continuity_debt,
     observe_decisions,
 )
-from entroly.tokens import count_tokens
+from entroly.tokens import _encoding, count_tokens
 
 PROTOCOL_PATH = Path(__file__).with_name("context_assurance_protocol.json")
 
@@ -66,6 +66,10 @@ def _percentiles(values: list[float]) -> dict:
 
 
 def run_benchmark(*, performance_samples: int | None = None) -> dict:
+    if _encoding() is None:
+        raise RuntimeError(
+            "the frozen o200k_base protocol requires the benchmark tokenizer extra"
+        )
     protocol_bytes = PROTOCOL_PATH.read_bytes()
     protocol = json.loads(protocol_bytes)
     protocol_hash = hashlib.sha256(protocol_bytes).hexdigest()
