@@ -19,7 +19,7 @@ proxy = ["dep:tiny_http", "dep:ureq"]
 # The shared compute engine. Every algorithm lives there exactly once, so a fix
 # reaches the PyO3 and WebAssembly distributions together or not at all.
 entroly-engine = { path = "../entroly-engine", features = ["python"] }
-pyo3 = { version = "0.25", features = ["abi3-py310"] }
+pyo3 = { version = "0.29", features = ["abi3-py310"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 regex = "1.11"

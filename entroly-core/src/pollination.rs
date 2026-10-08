@@ -16,6 +16,7 @@
 //!   - Sutton & Barto (2018): TD(0) temporal-difference learning
 //!   - ebbiforge-core: swarm/pollination.rs, intel/pollination.rs
 
+use crate::PyObject;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 use std::collections::HashMap;
@@ -327,7 +328,7 @@ impl PollinationEngine {
 
     /// Statistics for the pollination engine.
     pub fn stats(&self) -> PyObject {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let d = PyDict::new(py);
             d.set_item("total_agents", self.agents.len()).unwrap();
             d.set_item("total_packs_created", self.total_packs_created)
@@ -383,7 +384,7 @@ mod tests {
 
     #[test]
     fn test_td_convergence() {
-        pyo3::prepare_freethreaded_python();
+        Python::initialize();
         let mut engine = PollinationEngine::new(0.1, 0.9, 1.0);
         engine.register_agent("agent_a".to_string());
         engine.register_agent("agent_b".to_string());
@@ -420,7 +421,7 @@ mod tests {
 
     #[test]
     fn test_negative_reward_suppresses() {
-        pyo3::prepare_freethreaded_python();
+        Python::initialize();
         let mut engine = PollinationEngine::new(0.1, 0.9, 1.0);
         engine.register_agent("selfish".to_string());
         engine.register_agent("other".to_string());
@@ -442,7 +443,7 @@ mod tests {
 
     #[test]
     fn test_surprise_boosts_sharing() {
-        pyo3::prepare_freethreaded_python();
+        Python::initialize();
         let _engine = PollinationEngine::new(0.1, 0.9, 1.0);
 
         // Create a state with low share probability
@@ -471,7 +472,7 @@ mod tests {
 
     #[test]
     fn test_recency_window() {
-        pyo3::prepare_freethreaded_python();
+        Python::initialize();
         let mut engine = PollinationEngine::new(0.1, 0.9, 1.0);
         engine.register_agent("agent_a".to_string());
         engine.register_agent("agent_b".to_string());
@@ -497,7 +498,7 @@ mod tests {
 
     #[test]
     fn test_share_lessons_count() {
-        pyo3::prepare_freethreaded_python();
+        Python::initialize();
         let mut engine = PollinationEngine::new(0.1, 0.9, 1.0);
         engine.register_agent("teacher".to_string());
         engine.register_agent("student".to_string());
@@ -512,14 +513,14 @@ mod tests {
 
     #[test]
     fn test_stats() {
-        pyo3::prepare_freethreaded_python();
+        Python::initialize();
         let mut engine = PollinationEngine::new(0.1, 0.9, 1.0);
         engine.register_agent("a".to_string());
         engine.register_agent("b".to_string());
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let stats: PyObject = engine.stats();
-            let dict = stats.downcast_bound::<PyDict>(py).unwrap();
+            let dict = stats.cast_bound::<PyDict>(py).unwrap();
             let n: usize = dict
                 .get_item("total_agents")
                 .unwrap()
@@ -533,7 +534,7 @@ mod tests {
     #[test]
     fn test_amp_bridge_reciprocity() {
         // Verify that share_probability maps directly to AMP reciprocity
-        pyo3::prepare_freethreaded_python();
+        Python::initialize();
         let mut engine = PollinationEngine::new(0.1, 0.9, 1.0);
         engine.register_agent("cooperative".to_string());
 

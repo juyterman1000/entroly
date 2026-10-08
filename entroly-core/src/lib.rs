@@ -81,6 +81,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+// PyO3 0.29 removed the old alias; keep the binding return types readable.
+pub(crate) type PyObject = Py<pyo3::types::PyAny>;
+
 use bm25::BM25Index;
 use cache::CacheLookup;
 use causal::CausalContextGraph;
@@ -649,7 +652,7 @@ impl EntrolyEngine {
         token_count: u32,
         is_pinned: bool,
     ) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             self.total_fragments_ingested += 1;
 
             let tc = if token_count == 0 {
@@ -847,7 +850,7 @@ impl EntrolyEngine {
     /// for files deleted from disk.  Source-atomic removal prevents two
     /// contradictory versions of the same file from competing in retrieval.
     pub fn remove_sources(&mut self, sources: Vec<String>) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let requested: HashSet<String> = sources.into_iter().collect();
             let removed_ids: HashSet<String> = self
                 .fragments
@@ -911,7 +914,7 @@ impl EntrolyEngine {
         self.last_optimization = None;
         self.last_cache_feedback_eligible = false;
         self.egsc_cache.clear();
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let result = PyDict::new(py);
             result.set_item("nodes", self.dep_graph.node_count())?;
             result.set_item("edges", self.dep_graph.edge_count())?;
@@ -952,7 +955,7 @@ impl EntrolyEngine {
     /// For VSCode (30K files): creates 30K shadows in ~300ms. Then top-500
     /// content fragments are batch_ingested. Total: <1s for full repo visibility.
     pub fn ingest_paths_stubs(&mut self, paths_sizes: Vec<(String, u64)>) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let total = paths_sizes.len();
             let mut ingested = 0u32;
 
@@ -1013,7 +1016,7 @@ impl EntrolyEngine {
     }
 
     pub fn batch_ingest(&mut self, items: Vec<(String, String, u32)>) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let t0 = std::time::Instant::now();
             let n = items.len();
 
@@ -1462,7 +1465,7 @@ impl EntrolyEngine {
     ///
     /// Wires in: feedback loop, dependency graph, context ordering.
     pub fn optimize(&mut self, token_budget: u32, query: String) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             self.total_optimizations += 1;
 
             // Store query for cache feedback routing (used by record_success/failure)
@@ -3400,7 +3403,7 @@ impl EntrolyEngine {
     /// +frequency+feedback). Falls back to O(N) scan when LSH returns no
     /// candidates (cold start with < NUM_TABLES fragments).
     pub fn recall(&self, query: String, top_k: usize) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let query_fp = simhash(&query);
 
             // ── LSH candidate retrieval ─────────────────────────────────
@@ -3480,7 +3483,7 @@ impl EntrolyEngine {
     ///
     /// Complexity: O(N * Q) where N=fragments, Q=query terms.
     pub fn recall_bm25(&self, query: String, top_k: usize) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             if query.is_empty() || self.fragments.is_empty() {
                 return Ok(pyo3::types::PyList::empty(py).into());
             }
@@ -3575,7 +3578,7 @@ impl EntrolyEngine {
 
     /// Get session statistics.
     pub fn stats(&mut self) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let total_tokens: u32 = self.fragments.values().map(|f| f.token_count).sum();
             let avg_entropy = if self.fragments.is_empty() {
                 0.0
@@ -3949,7 +3952,7 @@ impl EntrolyEngine {
 
     /// Get detailed query manifold stats (per-archetype weights, health, particles).
     pub fn query_manifold_stats(&self) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let ms = self.query_manifold.stats();
             let result = PyDict::new(py);
             result.set_item("enabled", self.enable_query_personas)?;
@@ -4155,7 +4158,7 @@ impl EntrolyEngine {
         // background thread. Format detection by magic bytes: 0x1f 0x8b is
         // gzip; '{' is a legacy plain-JSON index — both kept for back-compat.
         let snapshot: IndexSnapshot = py
-            .allow_threads(|| -> Result<IndexSnapshot, LoadErr> {
+            .detach(|| -> Result<IndexSnapshot, LoadErr> {
                 let raw = std::fs::read(path).map_err(|e| LoadErr::Io(e.to_string()))?;
                 let decoded: Vec<u8> = if raw.len() >= 2 && raw[0] == 0x1f && raw[1] == 0x8b {
                     use flate2::read::GzDecoder;
@@ -4656,7 +4659,7 @@ impl EntrolyEngine {
 
     /// Classify a task query and return the recommended budget multiplier.
     pub fn classify_task(&self, query: &str) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let task_type = TaskType::classify(query);
             let result = PyDict::new(py);
             result.set_item("task_type", format!("{:?}", task_type))?;
@@ -4667,7 +4670,7 @@ impl EntrolyEngine {
 
     /// Get dependency graph stats.
     pub fn dep_graph_stats(&self) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let result = PyDict::new(py);
             result.set_item("nodes", self.dep_graph.node_count())?;
             result.set_item("edges", self.dep_graph.edge_count())?;
@@ -4681,7 +4684,7 @@ impl EntrolyEngine {
     /// structurally central code (hub files imported by many others).
     /// Used by the EvolutionDaemon to prioritize skill gaps in hub files.
     pub fn compute_pagerank(&self) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let fragment_ids: Vec<String> = self.fragments.keys().cloned().collect();
             let scores = hierarchical::compute_pagerank(
                 &self.dep_graph,
@@ -4710,7 +4713,7 @@ impl EntrolyEngine {
         query: String,
         seed_ids: Option<Vec<String>>,
     ) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             // Collect all fragments in a stable order
             let mut frags: Vec<ContextFragment> = self.fragments.values().cloned().collect();
             frags.sort_by(|a, b| a.fragment_id.cmp(&b.fragment_id));
@@ -4878,7 +4881,7 @@ impl EntrolyEngine {
     /// Returns per-fragment scoring breakdowns with all dimensions visible.
     /// Call after optimize() to understand selection decisions.
     pub fn explain_selection(&self) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let snapshot = match &self.last_optimization {
                 Some(s) => s,
                 None => {
@@ -5278,7 +5281,7 @@ impl EntrolyEngine {
 
     /// Export fragments for checkpoint (returns list of dicts).
     pub fn export_fragments(&self) -> PyResult<PyObject> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let list = pyo3::types::PyList::empty(py);
             // Stable order, for the same reason the cogops candidate vector is
             // sorted: HashMap iteration is randomized per map instance, and

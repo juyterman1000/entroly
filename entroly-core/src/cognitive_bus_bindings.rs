@@ -12,6 +12,7 @@
 //! exported to npm). Shared product semantics live once in Rust; the engine is
 //! where "once" is, and a binding crate is not.
 
+use crate::PyObject;
 use pyo3::prelude::*;
 
 use entroly_engine::cognitive_bus::{BusEvent, CognitiveBus as EngineBus};

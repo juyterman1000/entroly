@@ -28,6 +28,7 @@
 //!   let archetype_id = engine.classify(&fp);
 //!   let weights = engine.get_weights(archetype_id);
 
+use crate::PyObject;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use serde::{Deserialize, Serialize};
@@ -206,7 +207,7 @@ impl Archetype {
 /// Maintains an online k-means clustering of codebase fingerprints.
 /// Each cluster (archetype) has its own optimized weight profile
 /// that the DreamingLoop evolves independently.
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ArchetypeEngine {
     archetypes: Vec<Archetype>,

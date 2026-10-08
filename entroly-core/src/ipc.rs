@@ -64,6 +64,7 @@ use std::collections::HashMap;
 use std::hash::{BuildHasherDefault, Hasher};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use crate::PyObject;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
@@ -260,7 +261,7 @@ impl IpcBus {
         self.total_sent.fetch_add(1, Ordering::Relaxed);
         let fp = simhash(content.as_bytes());
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let result = PyDict::new(py);
             let sketch = match self.id_map.get(&receiver_id).copied() {
                 Some(idx) => &mut self.sketches[idx as usize],
@@ -316,7 +317,7 @@ impl IpcBus {
             .filter(|&id| id != sender_id)
             .collect();
 
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let results = pyo3::types::PyList::empty(py);
             for rid in receiver_ids {
                 let r = self.send(sender_id, rid, content);
@@ -350,7 +351,7 @@ impl IpcBus {
 
     /// Full statistics dict (lock-free reads via Relaxed atomics).
     pub fn stats(&self) -> PyObject {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let d = PyDict::new(py);
             d.set_item("total_sent", self.total_sent.load(Ordering::Relaxed))
                 .unwrap();
@@ -520,7 +521,7 @@ mod tests {
     fn ensure_python() {
         static PY_INIT: std::sync::Once = std::sync::Once::new();
         PY_INIT.call_once(|| {
-            pyo3::prepare_freethreaded_python();
+            Python::initialize();
         });
     }
 
