@@ -24,6 +24,8 @@ Budget assurance covers the specified double-newline rendering of selected
 text. It excludes receipt metadata, provider wrappers, system prompts and tool
 messages. Other provider tokenizers require separate accounting. When the local
 encoder is unavailable, the character heuristic cannot earn budget assurance.
+Install the declared `entroly[test]` or `entroly[benchmark]` extra when exact
+local budget assurance is required; the base-install path remains fail closed.
 
 The index is the trust anchor supplied by the caller. Digest consistency is not
 an authenticated observation of the current filesystem. Mutating an index
