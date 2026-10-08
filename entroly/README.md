@@ -221,7 +221,7 @@ Subject to: Σ c(fᵢ) · x(fᵢ) ≤ B  (token budget)
 ```
 
 **Two strategies** based on fragment count:
-- **N ≤ 2000**: Exact DP with budget quantization into 1000 bins — O(N × 1000)
+- **N ≤ 2000**: Bounded DP with token-cost quantization into ~1000 bins — O(N × 1000); exact only when the granularity is one token
 - **N > 2000**: Better of density-greedy and the best feasible singleton — O(N log N), 1/2 approximation for the non-negative modular knapsack objective
 
 Pinned fragments (safety-critical files, config files) are always included; remaining budget is allocated via DP/greedy.
