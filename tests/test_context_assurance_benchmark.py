@@ -1,6 +1,6 @@
 import pytest
 
-from benchmarks.context_assurance import run_benchmark
+from benchmarks.context_assurance import run_benchmark, source_digest
 
 
 def test_frozen_local_controls_and_long_turn_instrumentation():
@@ -31,3 +31,9 @@ def test_protocol_refuses_to_relabel_heuristic_tokens_as_o200k(monkeypatch):
     monkeypatch.setattr(harness, "_encoding", lambda: None)
     with pytest.raises(RuntimeError, match="tokenizer"):
         harness.run_benchmark(performance_samples=1)
+
+
+def test_protocol_identity_survives_windows_checkout_line_endings():
+    original = b'{\n  "budget":20\n}\n'
+    assert source_digest(original) == source_digest(original.replace(b"\n", b"\r\n"))
+    assert source_digest(original) != source_digest(original.replace(b"20", b"21"))

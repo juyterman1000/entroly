@@ -40,6 +40,9 @@ to run with heuristic token counts. `benchmarks/context_assurance_protocol.json`
 specifies the fixture and gates.
 The output records protocol, workload and harness fingerprints, source SHA,
 dirty-worktree state, observations and latency percentiles.
+Source fingerprints normalize CRLF to LF for Windows checkout portability;
+the raw protocol-file digest is also recorded. The frozen policy and gates do
+not change when Git converts line endings.
 
 The policy extracts a declared command route and runs an actual local Python
 assertion command. A route introduced at turn one becomes relevant after a

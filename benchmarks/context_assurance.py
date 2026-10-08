@@ -36,6 +36,11 @@ from entroly.tokens import _encoding, count_tokens
 PROTOCOL_PATH = Path(__file__).with_name("context_assurance_protocol.json")
 
 
+def source_digest(data: bytes) -> str:
+    """Commit portable source identity separately from checkout byte identity."""
+    return hashlib.sha256(data.replace(b"\r\n", b"\n")).hexdigest()
+
+
 def _git(*args: str) -> str:
     return subprocess.check_output(
         ["git", *args], cwd=PROTOCOL_PATH.parent.parent, text=True
@@ -72,7 +77,7 @@ def run_benchmark(*, performance_samples: int | None = None) -> dict:
         )
     protocol_bytes = PROTOCOL_PATH.read_bytes()
     protocol = json.loads(protocol_bytes)
-    protocol_hash = hashlib.sha256(protocol_bytes).hexdigest()
+    protocol_hash = source_digest(protocol_bytes)
     sha = _git("rev-parse", "HEAD")
     projection = JsonFieldProjection(
         protocol["projection"], tuple(protocol["decision_fields"])
@@ -283,10 +288,12 @@ def run_benchmark(*, performance_samples: int | None = None) -> dict:
     return {
         "schema": protocol["schema"],
         "protocol_sha256": protocol_hash,
+        "protocol_file_sha256": hashlib.sha256(protocol_bytes).hexdigest(),
+        "fingerprint_normalization": "source CRLF normalized to LF; raw protocol bytes also recorded",
         "git_sha": sha,
         "branch": _git("branch", "--show-current"),
         "dirty_worktree": bool(_git("status", "--porcelain", "--untracked-files=no")),
-        "harness_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "harness_sha256": source_digest(Path(__file__).read_bytes()),
         "dataset_workload_sha256": workload_hash,
         "claim_scope": protocol["claim_scope"],
         "limitations": protocol["limitations"],
