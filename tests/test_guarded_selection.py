@@ -179,3 +179,43 @@ def test_raise_mode_surfaces_attempt_receipt() -> None:
 
     assert "raise_uncertified" in str(exc.value)
     assert "requested_budget" in str(exc.value)
+
+
+def test_live_qccr_certificate_key_is_consumed_fail_closed() -> None:
+    """Production QCCR uses the public sufficiency key, not only the legacy private key."""
+    fragments = [
+        {"source": "a.txt", "content": "x" * 1000, "token_count": 250}
+    ]
+
+    def selector(_fragments, *, token_budget: int, query: str):
+        assert query == "find answer"
+        return [
+            {
+                "source": "a.txt",
+                "content": "relevant topic",
+                "token_count": 4,
+                "sufficiency": {
+                    "verdict": "sufficient",
+                    "scope": "optimizer_proxy",
+                    "reasons": ["optimizer residual only"],
+                },
+            }
+        ]
+
+    output, receipt = select_guarded(
+        fragments,
+        token_budget=100,
+        query="find answer",
+        max_expansions=0,
+        required_scope="semantic",
+        selector=selector,
+    )
+
+    # The certificate must be observed, but its weaker scope must still be
+    # rejected. Before this regression fix the live key was treated as if no
+    # certificate existed at all.
+    assert output == fragments
+    assert receipt.decision == "bypass_uncertified"
+    assert receipt.attempts[0]["certificate_verdict"] == "sufficient"
+    assert receipt.attempts[0]["certificate_scope"] == "optimizer_proxy"
+    assert any("does not satisfy" in reason for reason in receipt.reasons)
