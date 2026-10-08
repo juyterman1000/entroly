@@ -1074,7 +1074,7 @@ mod tests {
     /// instances let us compare against the true optimum cheaply.
     #[test]
     fn greedy_fallback_stays_above_half_of_bruteforce_optimum() {
-        let mut seed = 0xA55U64;
+        let mut seed = 0xA55_u64;
 
         for case in 0..80 {
             let n = 5 + (case % 7) as usize;
