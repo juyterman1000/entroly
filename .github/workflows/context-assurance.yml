@@ -1,0 +1,57 @@
+name: Context Assurance Contract
+
+on:
+  pull_request:
+    paths:
+      - 'entroly/context_assurance.py'
+      - 'entroly/context_commit.py'
+      - 'entroly/context_receipts/**'
+      - 'entroly/decision_evaluation.py'
+      - 'entroly/tokens.py'
+      - 'benchmarks/context_assurance*'
+      - 'tests/test_context_assurance*'
+      - 'tests/test_decision_evaluation.py'
+      - 'tests/test_tokens_offline.py'
+      - '.github/workflows/context-assurance.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: context-assurance-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: Assurance and paired controls / Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.12']
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install exact-head runtime and explicit test assets
+        run: |
+          python scripts/ci_install_exact_head.py --extras test,proxy
+          python -c "import tiktoken; tiktoken.get_encoding('o200k_base')"
+      - name: Check structural, recovery, offline and paired contracts
+        env:
+          ENTROLY_DISABLE_UPDATE_CHECK: '1'
+          PYTHONUTF8: '1'
+        run: |
+          python -m pytest -q --tb=short --timeout=60 \
+            tests/test_context_assurance.py tests/test_tokens_offline.py \
+            tests/test_decision_evaluation.py tests/test_context_assurance_benchmark.py \
+            tests/test_context_receipts.py tests/test_context_receipt_parity.py \
+            tests/test_context_commit.py tests/test_recoverable_receipts.py \
+            tests/test_sdk_optimize_engine_parity.py tests/test_sdk_optimize_isolation.py \
+            tests/test_mcp_wire_budget.py
+      - name: Check tokenizer-unavailable fail-closed behavior
+        run: |
+          python -c "import sys; sys.modules['tiktoken'] = None; import pytest; raise SystemExit(pytest.main(['tests/test_context_assurance.py', '-q', '--tb=short', '--timeout=60']))"

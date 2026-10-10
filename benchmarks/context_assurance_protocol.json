@@ -1,0 +1,38 @@
+{
+  "schema": "entroly.context-assurance-benchmark.v1",
+  "claim_scope": "local structural conformance and deterministic command-policy fixture; no LLM quality or provider-cost claim",
+  "remote_evaluation": false,
+  "context_strategies": ["full", "static_prefix", "receipt_selection", "receipt_exact_recovery"],
+  "policy": "first exact routing fact matching the requested command",
+  "projection": "command-route.v1",
+  "decision_fields": ["target", "exit_code"],
+  "evaluator": "subprocess-exit-and-declared-target.v1",
+  "task_family": "delayed-command-route-fixture",
+  "seeds": [7, 7, 7],
+  "temperature": null,
+  "budget": 20,
+  "turn_counts": [20, 50, 100],
+  "fact_introduction_turn": 1,
+  "required_fact_delay_turns": 19,
+  "fact": "command_route = 'approved_target'",
+  "query": "execute approved target command",
+  "selection_query": "runtime logs tracing",
+  "target": "approved_target",
+  "performance_samples": 100,
+  "performance_unit_count": 30,
+  "falsification": {
+    "reject_nonzero_false_passes_for_declared_hard_carrier_obligations": true,
+    "reject_any_inexact_committed_recovery": true,
+    "require_full_full_repeat_control": true,
+    "no_risk_bound_from_fixture": true,
+    "no_promotion_or_production_enforcement": true
+  },
+  "limitations": [
+    "Synthetic delayed command facts, not autonomous coding agents.",
+    "Recovery is task-oracle addressed to isolate snapshot availability; it is not an automatic proof-guided recovery success measurement.",
+    "Repeated turns are dependent and cannot serve as iid risk-calibration samples.",
+    "Static-prefix and receipt selection strategies are compared at the declared local selected-text budget; full and recovery controls use additional context.",
+    "Memory and proof-guided policies are excluded because neither is in the tested path.",
+    "No context-risk, adaptive-stopping or runtime-granularity frontier is calibrated by this fixture."
+  ]
+}
