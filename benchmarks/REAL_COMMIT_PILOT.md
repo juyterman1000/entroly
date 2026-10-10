@@ -29,6 +29,8 @@ worktree and the exact touched tests. Oversized corpora, changed oracles,
 selection errors, unusable patches, and test failures remain distinct results.
 An in-progress artifact is checkpointed after every row; only `status=complete`
 means the run finished.
+The private result artifact retains unusable model output for diagnosis. Keep
+it outside the repository; it may echo the task's source or test content.
 
 This small, single-repository development set cannot establish a population
 risk bound, causal context effect, non-inferiority, answer quality improvement,

@@ -8,6 +8,7 @@ import pytest
 from benchmarks.real_commit_pilot import (
     _apply_patch,
     _check_patch_paths,
+    _extract_patch,
     _load_tasks,
     _local_model_digest,
     _oracle,
@@ -62,6 +63,31 @@ def test_unapproved_patch_path_is_rejected(path):
     patch = f"--- a/{path}\n+++ b/{path}\n@@ -1 +1 @@\n-old\n+new\n"
     with pytest.raises(ValueError, match="outside the task source files"):
         _check_patch_paths(patch, ["solver.py"])
+
+
+def test_noncanonical_model_diff_is_reported_as_path_error():
+    response = "```diff\n--- solver.py\n+++ test_solver.py\n@@ -1 +1 @@\n-old\n+new\n```"
+    patch = _extract_patch(response)
+    with pytest.raises(ValueError, match="only modify existing source files"):
+        _check_patch_paths(patch, ["solver.py"])
+
+
+def test_timestamped_unified_headers_keep_the_same_source_path():
+    patch = (
+        "--- a/solver.py\t2026-01-01\n"
+        "+++ b/solver.py\t2026-01-02\n"
+        "@@ -1 +1 @@\n-old\n+new\n"
+    )
+    _check_patch_paths(patch, ["solver.py"])
+
+
+def test_extra_unapproved_diff_after_fence_is_not_ignored():
+    response = (
+        "```diff\n--- a/solver.py\n+++ b/solver.py\n@@ -1 +1 @@\n-old\n+new\n```\n"
+        "--- a/tests/test_solver.py\n+++ b/tests/test_solver.py\n"
+    )
+    with pytest.raises(ValueError, match="outside its diff fence"):
+        _extract_patch(response)
 
 
 def test_task_file_must_match_frozen_candidate_set(tmp_path):

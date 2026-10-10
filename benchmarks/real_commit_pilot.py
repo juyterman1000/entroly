@@ -107,10 +107,14 @@ def _task_worktree(repo: Path, task: dict[str, Any]) -> Iterator[Path]:
 
 def _extract_patch(response: str) -> str:
     fenced = re.search(r"```(?:diff|patch)?\s*\n(.*?)\n```", response, re.S | re.I)
+    if fenced and (response[:fenced.start()].strip() or response[fenced.end():].strip()):
+        raise ValueError("model output has content outside its diff fence")
     patch = fenced.group(1) if fenced else response
     start = patch.find("diff --git ")
     if start < 0:
         start = patch.find("--- a/")
+    if start < 0:
+        start = patch.find("--- ")
     if start < 0:
         raise ValueError("model output has no unified diff")
     return patch[start:].strip() + "\n"
@@ -123,6 +127,8 @@ def _check_patch_paths(patch: str, allowed: list[str]) -> None:
     if not old_paths or len(old_paths) != len(new_paths):
         raise ValueError("patch lacks paired old/new file headers")
     for old, new in zip(old_paths, new_paths):
+        old = old.split("\t", 1)[0].rstrip()
+        new = new.split("\t", 1)[0].rstrip()
         if not old.startswith("a/") or not new.startswith("b/"):
             raise ValueError("patch may only modify existing source files")
         if old[2:] != new[2:] or old[2:] not in allowed_set:
@@ -214,7 +220,10 @@ def _run_arm(
         try:
             patch_hash, patch = _apply_patch(root, generation["text"], task["source_files"])
         except (ValueError, RuntimeError) as exc:
-            return {**row, "outcome": "unusable_patch", "patch_error": str(exc)}
+            return {
+                **row, "outcome": "unusable_patch", "patch_error": str(exc),
+                "model_output": generation["text"],
+            }
         outcome, oracle_tail = _oracle(root, task, test_timeout)
         return {
             **row, "outcome": outcome, "patch_sha256": patch_hash,
