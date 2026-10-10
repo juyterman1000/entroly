@@ -1573,8 +1573,9 @@ def assure_context(
     Raises ContextAssuranceError instead of returning context that violates the
     declared contract. Downstream decision risk is unmeasured; requests requiring
     it fail closed. The returned commit contains source text and must stay local.
-    Scope binds artifacts, not caller identity. Use existing signed audits when
-    authenticating a commit across a trust boundary.
+    Scope binds artifacts, not caller identity. A trusted host that will recover
+    later must pin ``context_commit_anchor(commit)`` outside the portable commit
+    and enforce caller authorization separately.
     """
     from .context_assurance import AssuranceScope, require_assurance
     from .context_commit import create_context_commit, replay_context

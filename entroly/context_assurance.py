@@ -376,20 +376,30 @@ def bind_assurance_scope(
 
 
 def recover_context_evidence(
-    commit: Mapping[str, Any], chunk_id: str, *, scope: AssuranceScope
+    commit: Mapping[str, Any], chunk_id: str, *, scope: AssuranceScope,
+    trusted_anchor: str | None = None,
 ) -> dict[str, Any]:
     """Recover any omitted committed chunk, including beyond the preview cap.
 
-    The caller must trust the supplied commit (or verify its existing signed
-    audit). Declared scope binding is not principal authentication. No source
-    path is opened: recovery uses only the supplied committed local snapshot.
+    The host must pin ``context_commit_anchor`` when the commit is issued and
+    supply that value from independent trusted state. Recomputing the anchor
+    from an untrusted commit at recovery time supplies no authentication.
+    Declared scope binding is not principal authorization. No source path is
+    opened: recovery uses only the supplied committed local snapshot.
     """
     from .context_commit import verify_context_commit
     from .context_receipts.recover import recover_omitted
 
     if commit.get("assurance_scope") != asdict(scope):
         raise ValueError("context recovery scope mismatch")
-    if not verify_context_commit(commit).valid:
+    if not isinstance(trusted_anchor, str) or not re.fullmatch(
+        r"sha256:[0-9a-f]{64}", trusted_anchor
+    ):
+        raise ValueError("context recovery requires an independently trusted anchor")
+    verification = verify_context_commit(commit, trusted_anchor=trusted_anchor)
+    if not verification.checks.get("trusted_anchor"):
+        raise ValueError("trusted context commit anchor mismatch")
+    if not verification.valid:
         raise ValueError("context commit integrity verification failed")
     receipt = commit["receipt"]
     if chunk_id in {item["chunk_id"] for item in receipt["selected_context"]}:
@@ -397,8 +407,8 @@ def recover_context_evidence(
     entry = commit["recovery_bundle"]["chunks"].get(chunk_id)
     if not entry:
         raise ValueError("requested evidence is not in the committed snapshot")
-    # This descriptor is authenticated by the whole commit, rather than by the
-    # bounded receipt preview. Reuse the exact-byte recovery implementation.
+    # This descriptor is bound to the pinned whole-commit anchor, rather than
+    # to the bounded receipt preview. Reuse exact-byte recovery validation.
     descriptor = {**entry, "chunk_id": chunk_id, "omission_reason": "not_selected"}
     expanded = {**receipt, "omitted_context": [descriptor]}
     recovered = recover_omitted(expanded, chunk_id, bundle=commit["recovery_bundle"])

@@ -79,7 +79,10 @@ to provider traffic, and no new MCP tool is introduced.
 ## Scoped selection and recovery
 
 ```python
-from entroly import AssuranceScope, assure_context, recover_context_evidence
+from entroly import (
+    AssuranceScope, assure_context, context_commit_anchor,
+    recover_context_evidence,
+)
 
 scope = AssuranceScope(project="repo:app", session="task:123", agent="agent:1")
 result = assure_context(
@@ -90,18 +93,26 @@ result = assure_context(
 )
 selected = result["selected_context"]
 certificate = result["certificate"]
-# Each omitted handle binds the complete committed snapshot and declared scope.
+# The trusted host pins this full digest separately when it issues the commit.
+trusted_anchor = context_commit_anchor(result["context_commit"])
+# Each omitted handle identifies an omitted chunk and declared scope.
 for chunk_id in result["recovery_map"]:
-    recovered = recover_context_evidence(result["context_commit"], chunk_id, scope=scope)
+    recovered = recover_context_evidence(
+        result["context_commit"], chunk_id,
+        scope=scope, trusted_anchor=trusted_anchor,
+    )
 ```
 
 The commit and recovery map contain source evidence and must remain local.
 Recovery never opens a recorded source path. It verifies the whole supplied
 commit and exact UTF-8 snapshot bytes, including unlisted omissions. Restart
-recovery uses the same serialized commit. Project, session or agent mismatches
-are rejected. Scope binding is not principal authentication: callers must trust
-the supplied commit or authenticate it using the existing signed audit before
-crossing a trust boundary. Existing recovery stores use private POSIX file
+recovery uses the same serialized commit and the full SHA-256 anchor retained
+separately by the trusted host. A second, self-consistent commit with the same
+declared scope fails against that pinned anchor. Recomputing the anchor from a
+commit received across a trust boundary would defeat this check. Project,
+session or agent mismatches are rejected. Scope and the pinned digest do not
+authenticate a human principal or authorize disclosure; the host must enforce
+caller identity and access policy. Existing recovery stores use private POSIX file
 permissions; Windows inherits parent ACLs. Recovery rejects unsafe receipt IDs
 and symlinked artifact files. Trusted parent directory and local-user access
 remain assumptions; no encryption or sandbox boundary is claimed.

@@ -89,10 +89,11 @@ try:
 except ImportError:
     pass
 
-# Context Commit: portable, content-addressed proof of what an agent received.
+# Context Commit: portable, self-consistent record of what an agent received.
 try:
     from .context_commit import (  # noqa: F401
         ContextCommitVerification,
+        context_commit_anchor,
         create_context_commit,
         replay_context,
         verify_context_commit,
