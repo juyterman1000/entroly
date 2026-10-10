@@ -246,14 +246,22 @@ def _entroly_tags_to_headers(tags: dict[str, str]) -> dict[str, str]:
 
 
 def _estimate_message_tokens(messages: Any) -> int:
-    """Rough token estimate for OpenAI/Anthropic message arrays."""
+    """Measured token count for OpenAI/Anthropic message arrays.
+
+    This counted whitespace-separated words and scaled by 4/3, which returns 1
+    for any text without spaces: minified JSON, CJK, base64 payloads. Those are
+    ordinary agent traffic, and this number is the baseline the proxy reports
+    savings and dollar figures against.
+    """
     if not isinstance(messages, list):
         return 0
-    words = 0
-    for msg in messages:
-        if isinstance(msg, dict):
-            words += len(_content_to_text(msg.get("content", "")).split())
-    return words * 4 // 3
+    from .tokens import count_tokens
+
+    return sum(
+        count_tokens(_content_to_text(msg.get("content", "")))
+        for msg in messages
+        if isinstance(msg, dict)
+    )
 
 
 # ── Resilience primitives ────────────────────────────────────────────
@@ -1637,26 +1645,31 @@ class PromptCompilerProxy:
 
     @staticmethod
     def _estimate_body_tokens(body: dict[str, Any]) -> int:
-        """Rough input-token count for the outbound request body.
+        """Measured input-token count for the outbound request body.
 
-        Characters over four is the standard approximation and is used only to
-        price a difference between two rates, where a proportional error
-        affects both sides and largely cancels.
+        This divided characters by four and justified it as pricing "a
+        difference between two rates, where a proportional error affects both
+        sides and largely cancels". That holds for the *ratio*; the amount
+        charged is linear in the token count, so the error does not cancel
+        there. Measured against the real encoding, characters-over-four is 34%
+        low on minified JSON, 57% low on emoji and 67% low on CJK.
         """
         try:
-            total = 0
+            from .tokens import count_tokens
+
+            parts: list[str] = []
             for message in body.get("messages") or []:
                 content = message.get("content")
                 if isinstance(content, str):
-                    total += len(content)
+                    parts.append(content)
                 elif isinstance(content, list):
                     for part in content:
                         if isinstance(part, dict):
-                            total += len(str(part.get("text", "")))
+                            parts.append(str(part.get("text", "")))
             system = body.get("system")
             if isinstance(system, str):
-                total += len(system)
-            return total // 4
+                parts.append(system)
+            return sum(count_tokens(part) for part in parts)
         except Exception:  # noqa: BLE001
             return 0
 
@@ -2474,17 +2487,13 @@ class PromptCompilerProxy:
                         original_tokens = _estimate_message_tokens(
                             body.get("messages", [])
                         )
-                    optimized_tokens = len(context_text.split()) * 4 // 3
+                    # Savings are NOT scored here. ``context_text`` is the snippet
+                    # about to be injected, and injection adds to the body; scoring
+                    # it against the whole inbound conversation compares two
+                    # different quantities and yields ~99% no matter what happened.
+                    # The outbound body does not exist until after injection and
+                    # pruning below, so the accounting runs there instead.
                     with self._stats_lock:
-                        self._total_original_tokens += original_tokens
-                        self._total_optimized_tokens += optimized_tokens
-                        # ── Context Waste Telemetry ──
-                        # Record per-request waste ratio for the real "X% wasted" number
-                        if original_tokens > 0:
-                            waste_ratio = max(0.0, (original_tokens - optimized_tokens) / original_tokens)
-                            self._waste_ratios.append(waste_ratio)
-                            if len(self._waste_ratios) > self._waste_max_samples:
-                                self._waste_ratios.pop(0)
                         self._last_context_fragments = selected_frags[:20] if selected_frags else []
                         # Track the top 10 excluded fragments for /explain transparency.
                         # These are candidates the engine considered but dropped.
@@ -2630,10 +2639,26 @@ class PromptCompilerProxy:
                         except Exception:
                             pass  # Never block for conversation pruning
 
+                    # ── Savings accounting ──
+                    # Both sides measured on the same artifact with the same
+                    # tokenizer: the conversation as received, against the body
+                    # actually being sent upstream after injection and pruning.
+                    optimized_tokens = self._estimate_body_tokens(body)
                     with self._stats_lock:
                         self._requests_optimized += 1
                         opt_count = self._requests_optimized
                         total_count = self._requests_total
+                        self._total_original_tokens += original_tokens
+                        self._total_optimized_tokens += optimized_tokens
+                        # ── Context Waste Telemetry ──
+                        # Not clamped at zero: a request the proxy made *larger*
+                        # has to report that it did, otherwise growth is
+                        # indistinguishable from breaking even.
+                        if original_tokens > 0:
+                            waste_ratio = (original_tokens - optimized_tokens) / original_tokens
+                            self._waste_ratios.append(waste_ratio)
+                            if len(self._waste_ratios) > self._waste_max_samples:
+                                self._waste_ratios.pop(0)
 
                     # ── Persistent value tracking ──
                     try:

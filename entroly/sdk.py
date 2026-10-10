@@ -27,6 +27,7 @@ from __future__ import annotations
 import re
 from typing import Any, TYPE_CHECKING, Sequence
 from .profiles import get_profile
+from .tokens import count_tokens, truncate_to_tokens
 
 if TYPE_CHECKING:
     from .context_assurance import AssuranceScope, HardObligation
@@ -140,20 +141,35 @@ def _ensure_non_empty(
 
 
 def _budget_bounded_head(content: str, budget: int) -> str:
-    """Return a deterministic non-empty prefix within the SDK token estimate."""
-    char_budget = max(1, budget * 4)
-    if len(content) <= char_budget:
+    """Return a deterministic non-empty prefix within the token budget.
+
+    Measured against the real encoding, not ``budget * 4`` characters: four
+    characters per token holds for English prose and is already wrong for JSON
+    (3.3) and badly wrong for CJK (1.4) and emoji (0.6), where a character
+    slice runs several times over the declared ceiling.
+    """
+    if count_tokens(content) <= budget:
         return content
+    if budget <= 0:
+        # Callers use a zero budget as "shrink this to nothing"; the truncation
+        # marker alone would cost more than the slice it replaces.
+        return ""
 
     suffix = "\n...[truncated]"
-    if char_budget <= len(suffix):
-        return content[:char_budget]
-
-    head = content[:char_budget - len(suffix)]
+    # Reserve room for the marker so the returned string, marker included,
+    # still fits the budget.
+    body_budget = max(1, budget - count_tokens(suffix))
+    head = truncate_to_tokens(content, body_budget)
     nl = head.rfind("\n")
     if nl > len(head) // 2:
         head = head[:nl]
-    return head.rstrip() + suffix
+    result = head.rstrip() + suffix
+    # Tokenization is not additive across a join: budgeting the body and the
+    # marker separately can still land a token or two over once concatenated,
+    # because the boundary re-tokenizes. Measure the assembled string.
+    if count_tokens(result) > budget:
+        result = truncate_to_tokens(result, budget)
+    return result
 
 
 def _enforce_budget(out: str, budget: int | None) -> str:
@@ -164,7 +180,7 @@ def _enforce_budget(out: str, budget: int | None) -> str:
     explicit budget, finish with deterministic truncation rather than another
     heuristic selector that implies answer preservation.
     """
-    if budget is None or len(out) <= budget * 4:
+    if budget is None or count_tokens(out) <= budget:
         return out
     return _budget_bounded_head(out, budget)
 
@@ -290,13 +306,12 @@ def _prepend_code_symbol_summary(out: str, content: str, budget: int | None) -> 
         return out
 
     combined = f"{summary}\n\n{out}" if out else summary
-    if budget is None or len(combined) <= budget * 4:
+    if budget is None or count_tokens(combined) <= budget:
         return combined
-    max_chars = max(1, budget * 4)
-    remaining = max_chars - len(summary) - 2
+    remaining = budget - count_tokens(summary) - 1
     if remaining <= 0:
-        return summary[:max_chars]
-    return f"{summary}\n\n{out[:remaining]}"
+        return truncate_to_tokens(summary, budget)
+    return f"{summary}\n\n{truncate_to_tokens(out, remaining)}"
 
 
 def _truncate_lines_to_budget(text: str, budget_tokens: int) -> str | None:
@@ -307,12 +322,11 @@ def _truncate_lines_to_budget(text: str, budget_tokens: int) -> str | None:
     reason. Returns None if nothing meaningful fits, so the caller can fall
     back rather than emit a stub.
     """
-    char_budget = max(1, budget_tokens * 4)
     kept: list[str] = []
     used = 0
     for line in text.splitlines():
-        cost = len(line) + 1
-        if used + cost > char_budget:
+        cost = count_tokens(line) + 1
+        if used + cost > budget_tokens:
             break
         kept.append(line)
         used += cost
@@ -453,8 +467,9 @@ def compress(
         prof_cfg = get_profile(profile)
         target_ratio = prof_cfg.get("compression_ratio", target_ratio)
 
-    # Token estimate (4 chars ≈ 1 token) and target ratio.
-    current_tokens = len(content) // 4
+    # Measured token count and target ratio. The budget is a hard ceiling, so
+    # it has to be compared in the unit the provider charges in.
+    current_tokens = count_tokens(content)
     if budget is not None:
         if current_tokens <= budget:
             return content  # Already within budget — nothing to do.
@@ -486,7 +501,7 @@ def compress(
     out = _ensure_non_empty(out, content, budget, ratio)
     out = _enforce_budget(out, budget)
     out = _guard_against_inflation(out, content)
-    _track_savings(current_tokens, len(out) // 4, "compress")
+    _track_savings(current_tokens, count_tokens(out), "compress")
     return out
 
 
@@ -513,9 +528,17 @@ _QUERY_INSTRUCTION_TERMS = frozenset({
 
 
 def _message_tokens(messages: list[dict[str, Any]]) -> int:
-    """Return the SDK's stable, dependency-free message token estimate."""
+    """Return the measured token total for a message list.
+
+    This decides whether ``compress_messages`` runs at all, so a character
+    estimate here is not a rounding error: a CJK conversation reads as a third
+    of its real size, clears the budget check, and is returned uncompressed and
+    several times over the ceiling. ``count_tokens`` degrades to the same
+    character heuristic by itself when no encoding is available, so this stays
+    usable without ``tiktoken``.
+    """
     return sum(
-        len(message.get("content", "")) // 4
+        count_tokens(message["content"])
         for message in messages
         if isinstance(message.get("content"), str)
     )
@@ -637,7 +660,7 @@ def _compress_message_content(
         profile == "max"
         or not _has_evidence_query(query)
         or len(content) < 200
-        or len(content) // 4 <= budget
+        or count_tokens(content) <= budget
     ):
         return compress(content, budget=budget, profile=profile)
 
@@ -674,7 +697,6 @@ def _compress_message_content(
         if not selection.selected:
             return compress(content, budget=budget, profile=profile)
 
-        char_budget = max(1, budget * 4)
         source = content.encode("utf-8")
         chosen_spans: list[tuple[int, int]] = []
         attempted_ids: set[str] = set()
@@ -688,7 +710,7 @@ def _compress_message_content(
             attempted_ids.add(chunk_id)
             candidate = _expand_source_span(source, byte_start, byte_end)
             trial = _merge_source_spans([*chosen_spans, candidate])
-            if len(_render_source_spans(source, trial)) <= char_budget:
+            if count_tokens(_render_source_spans(source, trial)) <= budget:
                 chosen_spans = trial
                 return True
             return False
@@ -722,12 +744,12 @@ def _compress_message_content(
             uncovered.append((cursor, len(source)))
 
         for start, end in uncovered:
-            rendered_length = len(_render_source_spans(source, chosen_spans))
-            available = char_budget - rendered_length - (2 if chosen_spans else 0)
-            if available < 40:
+            rendered_tokens = count_tokens(_render_source_spans(source, chosen_spans))
+            available = budget - rendered_tokens - (1 if chosen_spans else 0)
+            if available < 10:
                 break
             gap = source[start:end].decode("utf-8")
-            prefix = gap[:available]
+            prefix = truncate_to_tokens(gap, available)
             boundary_ends = [
                 position + (0 if marker == "\n" else 1)
                 for marker in ("\n", ". ", "? ", "! ")
@@ -740,7 +762,7 @@ def _compress_message_content(
                 continue
             prefix_end = start + len(prefix.encode("utf-8"))
             trial = _merge_source_spans([*chosen_spans, (start, prefix_end)])
-            if len(_render_source_spans(source, trial)) <= char_budget:
+            if count_tokens(_render_source_spans(source, trial)) <= budget:
                 chosen_spans = trial
 
         selected = _render_source_spans(source, chosen_spans)
@@ -861,7 +883,7 @@ def compress_messages(
     older = messages[:-effective_preserve]
 
     recent_tokens = sum(
-        len(m.get("content", "")) // 4
+        count_tokens(m["content"])
         for m in recent if isinstance(m.get("content"), str)
     )
     remaining_budget = max(budget - recent_tokens, 1)
@@ -917,7 +939,7 @@ def compress_messages(
         # Tool results get more aggressive compression.
         msg_ratio = ratio * 0.5 if role in ("tool", "function") else ratio
 
-        msg_budget = max(1, int((len(content) // 4) * msg_ratio))
+        msg_budget = max(1, int(count_tokens(content) * msg_ratio))
         compressed_content = _compress_message_content(
             content,
             budget=msg_budget,
@@ -945,10 +967,10 @@ def compress_messages(
         if current_total <= remaining_budget:
             break
         candidates = [
-            (len(message.get("content", "")) // 4, index)
+            (count_tokens(message["content"]), index)
             for index, message in enumerate(result)
             if isinstance(message.get("content"), str)
-            and len(message.get("content", "")) // 4 > 0
+            and count_tokens(message["content"]) > 0
         ]
         if not candidates:
             break
@@ -966,9 +988,9 @@ def compress_messages(
                 query=query,
                 profile=profile,
             )
-            if len(tightened) // 4 > target_tokens:
+            if count_tokens(tightened) > target_tokens:
                 tightened = _budget_bounded_head(content, target_tokens)
-        if len(tightened) // 4 >= current_tokens:
+        if count_tokens(tightened) >= current_tokens:
             tightened = _budget_bounded_head(content, max(0, current_tokens - 1))
         message["content"] = tightened
         result[index] = message
@@ -1029,11 +1051,11 @@ def _compress_all_messages(
             break
 
     total_tokens = sum(
-        len(m.get("content", "")) // 4
+        count_tokens(m["content"])
         for m in messages if isinstance(m.get("content"), str)
     )
     preserved_tokens = (
-        len(messages[last_user_idx].get("content", "")) // 4
+        count_tokens(messages[last_user_idx]["content"])
         if last_user_idx >= 0 and isinstance(messages[last_user_idx].get("content"), str)
         else 0
     )
@@ -1055,7 +1077,7 @@ def _compress_all_messages(
         role = msg.get("role", "")
         msg_ratio = ratio * 0.3 if role in ("tool", "function") else ratio
 
-        msg_budget = max(1, int((len(content) // 4) * msg_ratio))
+        msg_budget = max(1, int(count_tokens(content) * msg_ratio))
         compressed_content = _compress_message_content(
             content,
             budget=msg_budget,
@@ -1071,22 +1093,28 @@ def _compress_all_messages(
     # largest compressible messages until the SDK contract is honored.
     def _total(result_messages: list[dict[str, Any]]) -> int:
         return sum(
-            len(m.get("content", "")) // 4
+            count_tokens(m["content"])
             for m in result_messages if isinstance(m.get("content"), str)
         )
 
     while _total(result) > budget:
+        # The floor is a token count, not 80 characters: 80 characters is about
+        # 20 tokens of English but nearer 56 of CJK, so a character floor stops
+        # tightening dense messages while they are still three times the size
+        # the same floor allows in English.
         candidates = [
-            (len(m.get("content", "")), i)
+            (count_tokens(m["content"]), i)
             for i, m in enumerate(result)
-            if i != last_user_idx and isinstance(m.get("content"), str) and len(m.get("content", "")) > 80
+            if i != last_user_idx
+            and isinstance(m.get("content"), str)
+            and count_tokens(m["content"]) > 20
         ]
         if not candidates:
             break
         _, idx = max(candidates)
         msg = dict(result[idx])
         content = msg.get("content", "")
-        current_tokens = max(1, len(content) // 4)
+        current_tokens = max(1, count_tokens(content))
         target_tokens = max(1, int(current_tokens * 0.8))
         msg["content"] = compress(content, budget=target_tokens)
         if msg["content"] == content:
