@@ -78,7 +78,8 @@ def test_timestamped_unified_headers_keep_the_same_source_path():
         "+++ b/solver.py\t2026-01-02\n"
         "@@ -1 +1 @@\n-old\n+new\n"
     )
-    _check_patch_paths(patch, ["solver.py"])
+    _check_patch_paths(patch, ["solver.py"])  # must not raise
+    assert patch.startswith("--- a/solver.py")
 
 
 def test_extra_unapproved_diff_after_fence_is_not_ignored():
