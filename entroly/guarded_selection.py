@@ -100,9 +100,15 @@ def _extract_certificate(
     fragments: Sequence[dict[str, Any]],
 ) -> dict[str, Any] | None:
     for fragment in fragments:
-        value = fragment.get("_sufficiency")
-        if isinstance(value, dict):
-            return value
+        # QCCR's production selector emits the public certificate under
+        # `sufficiency`. Older experimental callers used `_sufficiency`.
+        # Prefer the production key but keep the legacy spelling so guarded
+        # selection can audit historical/custom selectors without silently
+        # treating their certificate as missing.
+        for key in ("sufficiency", "_sufficiency"):
+            value = fragment.get(key)
+            if isinstance(value, dict):
+                return value
     return None
 
 

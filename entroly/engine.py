@@ -337,8 +337,8 @@ def _py_knapsack_optimize(
     # knapsack rather than a cardinality constraint it further needs
     # Sviridenko (2004) partial enumeration. KMN's own better-of-two
     # result is ½(1 − 1/e) ≈ 0.32, for submodular coverage.
-    # The Rust 0/1-DP hot path is exact for this modular objective; this
-    # keeps the degraded fallback within ½ of that.
+    # This better-of-two rule is within ½ of the true modular optimum on its
+    # own; it does not rely on any Rust path being exact.
     cand_budget = token_budget - pinned_tokens
     best_single = None
     best_single_rel = 0.0

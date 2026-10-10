@@ -33,16 +33,20 @@
 //! ½-approximation below refers to. (Under the `sᵢ − th` form it would instead
 //! recover a *score*-sorted greedy, a different and weaker algorithm; that is why
 //! the distinction is worth stating.) The objective here is linear (Σ sᵢ·xᵢ), i.e.
-//! modular, so density-greedy on a knapsack gives the ½-approximation of
-//! Dantzig-style rounding — NOT (1-1/e), which requires a submodular
+//! modular, so the better of density-greedy and the best feasible singleton
+//! gives the classic ½-approximation from LP/Dantzig-style rounding. Density
+//! greedy alone does not earn that bound. This is NOT (1-1/e), which requires
+//! a submodular
 //! objective. If redundancy/diversity terms are added to the score (making
 //! it submodular), Sviridenko's partial-enumeration variant would be needed
 //! to recover the (1-1/e - ε) bound; this file does not do that.
 //!
 //! # Hard DP fallback (τ < 0.05)
 //!
-//! Exact 0/1 DP with budget quantization: O(N × Q), Q = 1000.
-//! Used when weights have converged (τ is at floor) for maximum precision.
+//! Bounded 0/1 DP with token-cost quantization: O(N × Q), Q = 1000.
+//! It is exact only when the quantization granularity is one token; at larger
+//! budgets it is a hard-budget-feasible approximation. Used when weights have
+//! converged (τ is at floor) for maximum discrete precision at bounded memory.
 //!
 use crate::fragment::{compute_relevance, ContextFragment};
 use std::collections::HashMap;
@@ -363,8 +367,17 @@ pub fn knapsack_optimize(
             soft_bisection_select(&scored, fragments, remaining_budget, temperature);
         ("soft_bisection", sel, lam, gap, cert)
     } else if scored.len() <= 2000 {
+        // knapsack_dp bounds its table by quantizing token costs into ~1000
+        // bins.  With g=1 the original costs are preserved exactly; otherwise
+        // the solver is approximate (with a real-token post-check for
+        // feasibility) and must not advertise itself as exact.
+        let method = if remaining_budget < 2000 {
+            "exact_dp"
+        } else {
+            "quantized_dp"
+        };
         (
-            "exact_dp",
+            method,
             knapsack_dp(&scored, fragments, remaining_budget),
             0.0,
             0.0,
@@ -711,10 +724,13 @@ fn soft_bisection_select(
 
 // ── Hard DP fallback (τ < 0.05) ──────────────────────────────────────────────
 
-/// Exact 0/1 knapsack via DP with budget quantization.
+/// Bounded 0/1 knapsack DP with token-cost quantization.
 ///
-/// Quantize budget into Q=1000 bins to bound the DP table at N×1000.
-/// Precision loss: < 0.1% of optimal value.
+/// Quantize costs into Q=1000 budget bins to bound the DP table at N×1000.
+/// When the granularity is one token this is the ordinary exact 0/1 DP.
+/// For larger granularities the cost rounding changes the discrete problem, so
+/// no objective-approximation ratio is claimed here.  The post-DP guard below
+/// does guarantee feasibility in the original token units.
 ///
 /// Small fragments (token_count < granularity) are "free" items:
 /// always included, real cost subtracted from budget. This prevents
@@ -789,7 +805,13 @@ fn knapsack_dp(scored: &[(usize, f64)], fragments: &[ContextFragment], budget: u
 }
 
 /// Greedy approximation for very large sets (N > 2000) under hard τ.
-/// Sort by relevance/token density. Provable 0.5 optimality (Dantzig, 1957).
+///
+/// For a modular 0/1 knapsack objective, density-greedy by itself has no 1/2
+/// guarantee: one tiny high-density item can block a much more valuable item
+/// whose cost is the whole budget.  The classic constant-factor repair is to
+/// return the better of (a) the density-greedy feasible set and (b) the best
+/// feasible singleton.  That earns the 1/2 bound against the optimal modular
+/// knapsack value while preserving O(N log N) time.
 fn knapsack_greedy(
     scored: &[(usize, f64)],
     fragments: &[ContextFragment],
@@ -797,6 +819,9 @@ fn knapsack_greedy(
 ) -> Vec<usize> {
     let mut density: Vec<(usize, f64)> = scored
         .iter()
+        .filter(|&&(idx, rel)| {
+            rel.is_finite() && rel > 0.0 && fragments[idx].token_count <= budget
+        })
         .map(|&(idx, rel)| (idx, rel / fragments[idx].token_count.max(1) as f64))
         .collect();
     // Total order, ties broken on fragment id -- see the note in
@@ -807,15 +832,49 @@ fn knapsack_greedy(
             .then_with(|| fragments[a.0].fragment_id.cmp(&fragments[b.0].fragment_id))
     });
 
+    let score_by_index: HashMap<usize, f64> = scored
+        .iter()
+        .copied()
+        .filter(|(_, rel)| rel.is_finite() && *rel > 0.0)
+        .collect();
+
     let mut selected = Vec::new();
     let mut remaining = budget;
+    let mut greedy_value = 0.0_f64;
     for (idx, _) in density {
         if fragments[idx].token_count <= remaining {
             selected.push(idx);
             remaining -= fragments[idx].token_count;
+            greedy_value += score_by_index.get(&idx).copied().unwrap_or(0.0);
         }
         if remaining == 0 {
             break;
+        }
+    }
+
+    let best_singleton = scored
+        .iter()
+        .filter(|&&(idx, rel)| {
+            rel.is_finite()
+                && rel > 0.0
+                && fragments[idx].token_count <= budget
+        })
+        .max_by(|&&(idx_a, rel_a), &&(idx_b, rel_b)| {
+            rel_a
+                .total_cmp(&rel_b)
+                .then_with(|| {
+                    // max_by chooses the greater element; reverse the id
+                    // comparison so the lexicographically smaller id wins ties.
+                    fragments[idx_b]
+                        .fragment_id
+                        .cmp(&fragments[idx_a].fragment_id)
+                })
+        })
+        .copied();
+
+    if let Some((singleton_idx, singleton_value)) = best_singleton {
+        if singleton_value > greedy_value {
+            return vec![singleton_idx];
         }
     }
     selected
@@ -995,8 +1054,82 @@ mod tests {
         ((*state >> 33) as f64) / ((1u64 << 31) as f64)
     }
 
-    /// The soft bisection is a heuristic; the DP below 0.05 is exact. Randomised
-    /// instances let the exact path referee the approximate one.
+    /// Density-greedy alone can be arbitrarily bad for 0/1 knapsack.
+    /// A one-token item with slightly higher density can consume just enough
+    /// budget to make the true high-value singleton infeasible.  The shipped
+    /// large-N fallback therefore must compare against the best singleton.
+    #[test]
+    fn greedy_fallback_uses_best_feasible_singleton_when_it_dominates() {
+        let fragments = vec![
+            ContextFragment::new("tiny".into(), "x".into(), 1, "".into()),
+            ContextFragment::new("whole-budget".into(), "y".into(), 100, "".into()),
+        ];
+        let scored = vec![(0usize, 2.0_f64), (1usize, 100.0_f64)];
+        let selected = knapsack_greedy(&scored, &fragments, 100);
+        assert_eq!(selected, vec![1]);
+    }
+    /// Exhaustive small instances referee the theorem implemented by the
+    /// large-N fallback.  The production path only uses this algorithm when
+    /// N > 2000, but the approximation property is size-independent, so small
+    /// instances let us compare against the true optimum cheaply.
+    #[test]
+    fn greedy_fallback_stays_above_half_of_bruteforce_optimum() {
+        let mut seed = 0xA55_u64;
+
+        for case in 0..80 {
+            let n = 5 + (case % 7) as usize;
+            let mut fragments = Vec::with_capacity(n);
+            let mut scored = Vec::with_capacity(n);
+            for i in 0..n {
+                let cost = 1 + (lcg(&mut seed) * 99.0) as u32;
+                let value = 0.01 + lcg(&mut seed) * 1.99;
+                fragments.push(ContextFragment::new(
+                    format!("bf-{case:02}-{i:02}"),
+                    "x".into(),
+                    cost,
+                    "".into(),
+                ));
+                scored.push((i, value));
+            }
+            let total: u32 = fragments.iter().map(|f| f.token_count).sum();
+            let budget = (1 + (lcg(&mut seed) * total.max(1) as f64) as u32)
+                .min(total.max(1));
+
+            let selected = knapsack_greedy(&scored, &fragments, budget);
+            let got: f64 = selected
+                .iter()
+                .map(|&idx| scored[idx].1)
+                .sum();
+
+            let mut optimum = 0.0_f64;
+            for mask in 0usize..(1usize << n) {
+                let mut cost = 0u32;
+                let mut value = 0.0_f64;
+                for (idx, &(_, item_value)) in scored.iter().enumerate() {
+                    if mask & (1usize << idx) != 0 {
+                        cost = cost.saturating_add(fragments[idx].token_count);
+                        value += item_value;
+                    }
+                }
+                if cost <= budget {
+                    optimum = optimum.max(value);
+                }
+            }
+
+            if optimum > 0.0 {
+                assert!(
+                    got + 1e-12 >= 0.5 * optimum,
+                    "case {case}: fallback={got:.8}, optimum={optimum:.8}, ratio={:.6}",
+                    got / optimum
+                );
+            }
+        }
+    }
+
+    /// The soft bisection is a heuristic. For this regression test we cap the
+    /// budget below 2000 tokens so the hard-DP granularity is exactly one token;
+    /// that makes the low-temperature path a genuine exact referee rather than
+    /// a quantized approximation.
     ///
     /// Three properties, in increasing order of how much a violation would cost:
     ///   1. neither path may exceed the token budget -- overrunning it is what
@@ -1040,7 +1173,8 @@ mod tests {
 
             let total: u32 = fragments.iter().map(|f| f.token_count).sum();
             // A budget that binds: too large and every instance is trivial.
-            let budget = (total as f64 * (0.25 + 0.4 * lcg(&mut seed))) as u32;
+            let budget =
+                ((total as f64 * (0.25 + 0.4 * lcg(&mut seed))) as u32).min(1999);
             if budget == 0 {
                 continue;
             }
@@ -1379,6 +1513,26 @@ mod tests {
         );
     }
 
+    #[test]
+    fn method_label_does_not_call_quantized_dp_exact() {
+        let weights = ScoringWeights::default();
+        let mut items = Vec::new();
+        for i in 0..4 {
+            let mut f = ContextFragment::new(format!("q{i}"), "x".into(), 701, "".into());
+            f.recency_score = 0.8 - i as f64 * 0.05;
+            f.frequency_score = f.recency_score;
+            f.semantic_score = f.recency_score;
+            f.entropy_score = f.recency_score;
+            items.push(f);
+        }
+        let result = knapsack_optimize(&items, 2500, &weights, &no_feedback(), 0.0);
+        assert_eq!(result._method, "quantized_dp");
+        assert!(result.total_tokens <= 2500);
+
+        let exact_budget = knapsack_optimize(&items, 1500, &weights, &no_feedback(), 0.0);
+        assert_eq!(exact_budget._method, "exact_dp");
+        assert!(exact_budget.total_tokens <= 1500);
+    }
     #[test]
     fn test_quantized_dp_respects_real_token_budget() {
         let fragments = vec![

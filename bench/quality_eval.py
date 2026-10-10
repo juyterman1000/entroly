@@ -39,13 +39,13 @@ TASKS = [
         "id": "knapsack_selector",
         "query": "How does Entroly's knapsack selector decide which fragments to include?",
         "ground_truth": (
-            "Entroly uses 0/1 knapsack-style selection. When the problem size "
-            "fits (fragments × budget small enough), it runs an exact dynamic-"
-            "programming 0/1 knapsack over (score, tokens). When DP is "
-            "infeasible, it falls back to a density-greedy approximation: sort "
-            "fragments by score/tokens and take them in order until the budget "
-            "is exhausted. Knapsack is NP-hard, so both paths are "
-            "approximations (DP is pseudo-polynomial; greedy is a heuristic)."
+            "Entroly uses 0/1 knapsack-style selection. On the bounded hard-DP "
+            "path it quantizes token costs into roughly 1000 budget bins; that "
+            "path is exact only when the quantization granularity is one token, "
+            "and otherwise remains hard-budget feasible but approximate. For "
+            "very large candidate sets it returns the better of density-greedy "
+            "and the best feasible singleton, which gives the classic 1/2 "
+            "approximation for the non-negative modular objective."
         ),
     },
     {
