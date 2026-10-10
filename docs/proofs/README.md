@@ -25,7 +25,7 @@ nothing load-bearing or prove a tautology. We're taking the opposite bet:
 
 | Theorem | Property | Status |
 |---|---|---|
-| **knapsack** | Entroly's submodular knapsack selector returns a result within (1 − 1/e) of the optimal under the standard cardinality constraint. | scaffold |
+| **knapsack** | For the large-set non-negative modular fallback, the better of density-greedy and the best feasible singleton has value at least 1/2 of the optimal 0/1 knapsack value. | scaffold |
 | **bipt** | BIPT's IPD score is monotonic in the byte-level provenance of the output (longer matches → lower IPD, no edge cases). | scaffold |
 | **provenance-preservation** | Every fragment injected by the proxy carries a claim_id that survives compression, contradiction-guard eviction, and re-ordering. | scaffold |
 

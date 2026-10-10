@@ -352,6 +352,11 @@ def _attach_sufficiency(
         boundary_exposure_measured=False,
     )
     payload: dict[str, Any] = certificate.to_dict()
+    # This certificate is derived from optimizer/retrieval residuals.  It is
+    # useful assurance evidence, but it is not a semantic or answer-preservation
+    # proof.  State that scope explicitly so policy layers can fail closed
+    # instead of inferring a stronger guarantee from a bare verdict.
+    payload["scope"] = "optimizer_proxy"
     for fragment in selected:
         if isinstance(fragment, dict):
             fragment["sufficiency"] = payload

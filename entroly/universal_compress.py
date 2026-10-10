@@ -2,26 +2,23 @@
 Entroly Universal Content Compressor
 =====================================
 
-Information-theoretic text compression for ANY content type — not just code.
-Works on legal documents, customer support logs, API responses, PDFs, emails,
-medical records, financial reports, and any unstructured text.
+Deterministic text summarization and compression heuristics for non-code text.
+Inputs can come from documents, logs, API responses, and other text sources;
+preserving task-critical meaning requires separate evaluation.
 
 Architecture:
     Code content  → AST Skeleton + Belief Pipeline (existing Rust engine)
     Other content → Universal Compressor (this module)
 
-Compression techniques (all pure math, zero ML inference):
-    1. TF-IDF Extractive Summarization — select highest-information sentences
+Compression techniques (no neural model inference in this module):
+    1. TF-IDF Extractive Summarization — select sentences by coverage score
     2. Structural Compression — preserve headers/tables, compress bodies
-    3. Semantic Deduplication — SimHash near-duplicate removal
-    4. Entropy-Based Selection — keep sentences with highest information density
+    3. SimHash-based near-duplicate removal
+    4. Entropy-Based Selection — score sentences using a text statistic
 
-Why this beats ModernBERT:
-    - Zero latency (no neural network inference)
-    - Deterministic (same input → same output)
-    - Works fully offline (no model weights to download)
-    - Runs in ~1ms vs ~100ms for BERT inference
-    - Scales linearly O(N) vs quadratic attention in transformers
+These heuristics run locally and are deterministic for a fixed input. Their
+latency, compression, and answer-quality effects depend on the workload; no
+comparison with a neural summarizer is established here.
 """
 
 from __future__ import annotations
@@ -68,28 +65,11 @@ def detect_content_type(text: str) -> str:
 
 # ─── Marginal Information Gain (MIG) Extractive Summarizer ───────────────
 #
-# Novel algorithm for context compression. Published nowhere — invented here.
-#
-# Standard TF-IDF scores sentences INDEPENDENTLY: each sentence gets a
-# score, pick the top-K. This is suboptimal because it ignores redundancy
-# — two sentences about the same topic both score high, but selecting
-# both wastes budget.
-#
-# MIG uses GREEDY SUBMODULAR MAXIMIZATION (Nemhauser-Wolsey-Fisher 1978):
-# At each step, select the sentence with the highest MARGINAL information
-# gain — how much NEW information it adds relative to already-selected
-# sentences. This is equivalent to maximizing the set function:
-#
-#   f(S) = I(S; D) = Σ_{w ∈ vocab} [ P(w|S) * log(P(w|S) / P(w|D)) ]
-#
-# where S = selected sentences, D = full document.
-#
-# By the Nemhauser theorem, greedy maximization of a monotone submodular
-# function achieves a (1 - 1/e) ≈ 0.63 approximation ratio — the best
-# possible in polynomial time.
-#
-# Practical impact: MIG produces summaries with ~30% more information
-# density than TF-IDF because it eliminates redundant selections.
+# This deterministic heuristic scores a sentence by the new TF-IDF weighted
+# term coverage it adds to the selected set. It also applies position boosts
+# and a minimum-sentence floor. Those choices are not a mutual-information
+# calculation or a proven approximation algorithm, and no quality gain over
+# another summarizer is claimed without a paired benchmark.
 
 _SENTENCE_SPLIT = re.compile(r'(?<=[.!?])\s+(?=[A-Z])|(?<=\n)\s*\n')
 _WORD_TOKENIZE = re.compile(r'\b\w{2,}\b')
@@ -150,13 +130,13 @@ def tfidf_extractive_summarize(
 ) -> str:
     """Compress text using Marginal Information Gain (MIG) summarization.
 
-    Unlike standard TF-IDF (scores sentences independently), MIG uses
-    greedy submodular maximization: at each step, select the sentence
-    that adds the MOST new information relative to already-selected
-    sentences. This eliminates redundancy and maximizes information
-    coverage within the token budget.
+    Unlike an independent top-K TF-IDF ranking, this heuristic scores the
+    remaining weighted term coverage after each selection. Position boosts and
+    a minimum-sentence floor also affect the result. It does not guarantee
+    optimal coverage or a measured gain in answer quality.
 
-    Provably (1-1/e)-optimal by the Nemhauser-Wolsey-Fisher theorem.
+    This is a deterministic coverage heuristic. Position boosts and the
+    minimum-sentence floor mean no approximation ratio is claimed here.
 
     Args:
         text: Input text to summarize
@@ -202,7 +182,8 @@ def tfidf_extractive_summarize(
     #   Δf(j|S) = Σ_w max(0, vec_j[w] - covered[w])
     #
     # This is the "weighted coverage" submodular function.
-    # Greedy gives (1-1/e) approximation.
+    # The position boost and non-annihilation floor change the standard
+    # cardinality-greedy rule; no approximation ratio is claimed here.
 
     target_count = max(
         min_sentences,

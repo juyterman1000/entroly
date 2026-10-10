@@ -38,3 +38,23 @@ def test_misaligned_precomputed_terms_fail_visibly() -> None:
 
 def test_empty_corpus_still_returns_a_value_per_term() -> None:
     assert _idf_map(TERMS, [], []) == {term: 1.0 for term in TERMS}
+
+
+def test_qccr_attached_certificate_declares_optimizer_scope() -> None:
+    from entroly.qccr import _attach_sufficiency
+
+    selected = [{"source": "auth.py", "content": "session token login", "token_count": 3}]
+    _attach_sufficiency(
+        selected,
+        candidate_utility={"auth.py": 1.0, "noise.py": 0.0},
+        by_file={
+            "auth.py": [{"source": "auth.py", "content": "session token login"}],
+            "noise.py": [{"source": "noise.py", "content": "unrelated filler"}],
+        },
+        query="how is the session token issued after login",
+        token_budget=16,
+    )
+
+    certificate = selected[0]["sufficiency"]
+    assert certificate["scope"] == "optimizer_proxy"
+    assert certificate["verdict"] != "sufficient"

@@ -1,28 +1,22 @@
-//! IOS — Information-Optimal Selection (v2: full-dominance fix)
+//! IOS multi-resolution selector (historical name: Information-Optimal Selection)
 //!
-//! Two novel algorithms that compose into a single selection pass:
+//! Two heuristic components that compose into a single selection pass:
 //!
 //! 1. **Submodular Diversity Selection (SDS)**
 //!    Standard knapsack treats value(A ∪ B) = value(A) + value(B).
-//!    Reality: value(A ∪ B) ≤ value(A) + value(B) — information has
-//!    diminishing returns. SDS penalizes redundancy using SimHash
-//!    Hamming distance as a proxy for content overlap.
+//!    This selector penalizes redundancy using SimHash Hamming distance as a
+//!    proxy for content overlap. The resulting score is not a measured amount
+//!    of information preserved.
 //!
 //!    Algorithm: Lazy greedy with diversity penalty.
-//!    Approximation: the (1 - 1/e) ≈ 0.63 ratio (Feige 1998 for cardinality;
-//!    Sviridenko 2004 for knapsack) applies to *monotone* submodular
-//!    objectives. A subtractive redundancy penalty can violate monotonicity
-//!    — f(S ∪ {x}) may fall below f(S) for a near-duplicate x. For that
-//!    regime, the best known polynomial-time ratio under a knapsack is
-//!    0.325 (Chekuri, Vondrák, Zenklusen 2011 via continuous greedy +
-//!    rounding). This implementation's empirical performance is measured in
-//!    `bench/compare.py`; no tight worst-case ratio is claimed here.
+//!    Classical approximation ratios require objective and algorithm
+//!    assumptions that this subtractive heuristic does not establish.
+//!    This implementation has no proven worst-case ratio.
 //!
 //! 2. **Multi-Resolution Knapsack (MRK)**
-//!    Each fragment has up to 3 representations:
-//!   - Full: ~100% information, ~100% tokens
-//!   - Skeleton: ~70% information, ~20% tokens
-//!   - Reference: ~15% information, ~2% tokens
+//!    Each fragment has up to 4 representations: full, skeleton, belief, and
+//!    reference. The configurable value factors are heuristic scoring weights,
+//!    not measured fractions of information preserved.
 //!
 //!    This is the Multiple Choice Knapsack Problem (MCKP).
 //!    Combined with SDS, each candidate is a (fragment, resolution)
@@ -41,12 +35,11 @@ use std::collections::HashMap;
 
 /// Resolution level for a selected fragment.
 ///
-/// Hierarchical Context Synthesis: four abstraction levels that mirror
-/// how engineers actually hold code in working memory.
-///   Full      → raw code (100% info, 100% tokens)
-///   Skeleton  → signatures + structure (70% info, 20% tokens)
-///   Belief    → vault knowledge graph summary (50% info, 10-15% tokens)
-///   Reference → file path only (15% info, 2% tokens)
+/// Hierarchical Context Synthesis: four representation levels.
+///   Full      → raw code
+///   Skeleton  → signatures + structure
+///   Belief    → vault knowledge graph summary
+///   Reference → file path only
 // `Ord` is derived so resolution can act as a stable tie-break key when two
 // candidates score identically; see the candidate sort in `sds_select`. The
 // sibling `conversation_pruner::Resolution` already derives it.
@@ -62,14 +55,13 @@ pub enum Resolution {
     Reference,
 }
 
-/// Configurable information retention factors for each resolution level.
-/// These control the value/cost trade-off in multi-resolution knapsack.
+/// Configurable heuristic value factors for each resolution level.
+/// These control the value/cost trade-off in multi-resolution knapsack; they
+/// are not measured information-retention fractions.
 /// Tunable via tuning_config.json → autotune daemon.
 ///
-/// Belief factor (0.50): vault beliefs capture ~50% of a file's information
-/// value at ~10-15% token cost. This is the key ratio for Hierarchical
-/// Context Synthesis — beliefs provide architectural understanding that
-/// makes raw code fragments cheaper to comprehend.
+/// Belief factor (0.50) is a configurable default score multiplier, not a
+/// guarantee about the information retained by a vault belief.
 pub struct InfoFactors {
     pub skeleton: f64,  // default 0.70
     pub belief: f64,    // default 0.50
@@ -87,7 +79,7 @@ impl Default for InfoFactors {
 }
 
 impl Resolution {
-    /// Information retention factor for this resolution level.
+    /// Heuristic value factor for this resolution level.
     fn info_factor(&self, factors: &InfoFactors) -> f64 {
         match self {
             Resolution::Full => 1.0,
@@ -189,7 +181,7 @@ pub struct SdsResult {
     pub curvature: SelectionCurvature,
 }
 
-/// Curvature certificate for IOS selection (Pillar IV).
+/// Observed diversity-penalty diagnostic for IOS selection (Pillar IV).
 ///
 /// The SDS diversity penalty f(S∪{x}) = base_value(x) · diversity(x,S)
 /// is not monotone: adding a near-duplicate can decrease the marginal
@@ -197,10 +189,9 @@ pub struct SdsResult {
 /// parameter α captures how far from monotone the objective was during
 /// this particular selection.
 ///
-/// For a monotone submodular objective, the greedy algorithm achieves
-/// (1-1/e) ≈ 0.632 of optimal. With curvature α ∈ [0,1], the guarantee
-/// weakens to (1-1/e)(1 - α). α = 0 is fully monotone; α = 1 is the
-/// worst case where adding any item could zero out the objective.
+/// The recorded penalty is not a theorem's total curvature or an
+/// approximation certificate. This implementation's subtractive objective can
+/// be nonmonotone, and its selection procedure has no proven worst-case ratio.
 ///
 /// Production value: when curvature is high, the diversity penalty is
 /// costing more than it's saving. The system should consider relaxing
@@ -208,7 +199,7 @@ pub struct SdsResult {
 #[derive(Clone, Debug)]
 pub struct SelectionCurvature {
     /// Maximum diversity penalty observed: max_over_steps(1 - diversity_factor).
-    /// 0.0 = all additions were to fully novel items.
+    /// 0.0 = no observed diversity penalty.
     /// 1.0 = a near-exact duplicate was considered.
     pub max_penalty: f64,
     /// Mean diversity factor across all greedy steps.
@@ -217,8 +208,8 @@ pub struct SelectionCurvature {
     pub high_overlap_count: u32,
     /// Total greedy steps taken.
     pub steps: u32,
-    /// Effective curvature α ∈ [0,1]: the mean penalty weighted by
-    /// how much value it displaced.
+    /// Observed penalty proxy α ∈ [0,1]: the mean penalty weighted by
+    /// how much value it displaced; not a formal curvature bound.
     pub alpha: f64,
     /// Stable rank of the selected set: how many independent fragments the
     /// selection is actually worth. Lies in [1, m] for a selection of size m;
@@ -252,8 +243,8 @@ pub struct SelectionCurvature {
 /// information — the costly direction of the error.
 ///
 /// Returns a value in [0, 1] where:
-///   1.0 = completely novel information
-///   0.0 = identical to something already selected
+///   1.0 = no estimated similarity penalty
+///   0.0 = maximum estimated similarity penalty
 #[inline]
 fn diversity_factor(candidate_hash: Option<u64>, selected_hashes: &[u64]) -> f64 {
     let Some(candidate_hash) = candidate_hash else {
@@ -367,7 +358,7 @@ fn compute_stable_rank(hashes: &[u64]) -> f64 {
     ((m_f * m_f / frobenius_sq) * 10000.0).round() / 10000.0
 }
 
-/// IOS: Information-Optimal Selection
+/// IOS: multi-resolution, redundancy-aware selection (historical name)
 ///
 /// Combines Submodular Diversity Selection with Multi-Resolution Knapsack
 /// in a single greedy pass.
@@ -1569,10 +1560,10 @@ mod tests {
             "mean_diversity must be in [0,1]: {}",
             result.curvature.mean_diversity
         );
-        let guarantee = (1.0 - 1.0_f64.exp().recip()) * (1.0 - result.curvature.alpha);
+        assert!(result.curvature.max_penalty.is_finite());
         assert!(
-            guarantee > 0.0,
-            "approximation guarantee must be positive: {guarantee}"
+            (0.0..=1.0).contains(&result.curvature.max_penalty),
+            "observed penalty must be in [0,1]"
         );
     }
 

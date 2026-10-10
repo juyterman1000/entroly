@@ -143,7 +143,7 @@ The system has two layers: a **Python orchestration layer** (`entroly/`) and a *
 
 | Module | Role |
 |--------|------|
-| `knapsack.rs` | Token-budget solver: KKT-dual soft bisection + greedy fill, with an exact 0/1 DP fallback. The objective is modular, so density-greedy gives Dantzig-style ½ — **not** (1-1/e) |
+| `knapsack.rs` | Token-budget solver: KKT-dual soft bisection + greedy fill, with a bounded quantized 0/1 DP fallback (exact only at one-token granularity). The large-set modular fallback takes the better of density-greedy and the best feasible singleton, earning the classic ½ bound — **not** (1-1/e) |
 | `knapsack_sds.rs` | IOS: submodular diversity selection over a multiple-choice knapsack (3 resolutions per fragment). The subtractive redundancy penalty can break monotonicity, so no tight worst-case ratio is claimed |
 | `entropy.rs` | Shannon entropy = information density per token |
 | `semantic_dedup.rs` | SimHash O(1) duplicate detection |
