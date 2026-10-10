@@ -318,16 +318,21 @@ No explanation, no markdown fences."""
 
 
 def call_model(
-    *, base_url: str, model: str, prompt: str, seed: int, timeout: float
+    *, base_url: str, model: str, prompt: str, seed: int, timeout: float,
+    max_output_tokens: int = 512,
+    context_window: int | None = None,
 ) -> dict[str, Any]:
     """One generation. Raises rather than returning a placeholder."""
+    options = {"temperature": 0, "seed": seed, "num_predict": max_output_tokens}
+    if context_window is not None:
+        options["num_ctx"] = context_window
     payload = {
         "model": model,
         "prompt": prompt,
         "stream": False,
         # Held identical across arms: Entroly changes context, never
         # generation parameters.
-        "options": {"temperature": 0, "seed": seed, "num_predict": 512},
+        "options": options,
     }
     request = urllib.request.Request(
         f"{base_url.rstrip('/')}/api/generate",
