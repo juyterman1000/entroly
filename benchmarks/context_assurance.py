@@ -19,7 +19,7 @@ from entroly.context_assurance import (
     audit_receipt,
     recover_context_evidence,
 )
-from entroly.context_commit import create_context_commit
+from entroly.context_commit import context_commit_anchor, create_context_commit
 from entroly.context_receipts import ingest_documents, select_from_index
 from entroly.context_receipts.models import stable_hash
 from entroly.context_receipts.receipts import build_receipt
@@ -110,13 +110,16 @@ def run_benchmark(*, performance_samples: int | None = None) -> dict:
             prefer_rust=False,
             assurance_scope=artifact_scope,
         )
+        issued_anchor = context_commit_anchor(commit)
         receipt = commit["receipt"]
         selected_text = "\n\n".join(c["text"] for c in receipt["selected_context"])
         selected_ids = {c["chunk_id"] for c in receipt["selected_context"]}
         assert target_id not in selected_ids, (
             "the frozen delayed-fact fixture was not omitted"
         )
-        recovered = recover_context_evidence(commit, target_id, scope=artifact_scope)
+        recovered = recover_context_evidence(
+            commit, target_id, scope=artifact_scope, trusted_anchor=issued_anchor
+        )
         inexact_recoveries += int(recovered["text"] != protocol["fact"])
         obligation = HardObligation("command_route", (target_id,))
         for strategy in protocol["context_strategies"]:
@@ -265,6 +268,7 @@ def run_benchmark(*, performance_samples: int | None = None) -> dict:
         assurance_scope=perf_scope,
         prefer_rust=False,
     )
+    perf_anchor = context_commit_anchor(perf_commit)
     perf_selected = {c["chunk_id"] for c in perf_commit["receipt"]["selected_context"]}
     perf_omitted = next(
         cid
@@ -283,7 +287,9 @@ def run_benchmark(*, performance_samples: int | None = None) -> dict:
         )
         certificate_tokens.append(count_tokens(json.dumps(cert, separators=(",", ":"))))
         start = time.perf_counter()
-        recover_context_evidence(perf_commit, perf_omitted, scope=perf_scope)
+        recover_context_evidence(
+            perf_commit, perf_omitted, scope=perf_scope, trusted_anchor=perf_anchor
+        )
         recover_ms.append((time.perf_counter() - start) * 1000)
     return {
         "schema": protocol["schema"],

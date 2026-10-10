@@ -1,8 +1,13 @@
-"""Portable, content-addressed commits for the context an agent received."""
+"""Portable, self-consistent commits for the context an agent received.
+
+A commit's own hashes do not authenticate its issuer. A trusted caller can pin
+``context_commit_anchor`` separately before handing the commit to another actor.
+"""
 
 from __future__ import annotations
 
 import copy
+import hmac
 import importlib
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass
@@ -67,6 +72,19 @@ def _commit_payload(commit: Mapping[str, Any]) -> dict[str, Any]:
     payload = copy.deepcopy(dict(commit))
     payload.pop("commit_id", None)
     return payload
+
+
+def context_commit_anchor(commit: Mapping[str, Any]) -> str:
+    """Full SHA-256 anchor to pin in trusted state when the commit is issued.
+
+    Computing this from an untrusted commit at recovery time supplies no trust.
+    The caller must retain the issued value independently of portable evidence.
+    """
+    if not isinstance(commit, Mapping):
+        raise TypeError("context commit must be a mapping")
+    # The payload includes CONTEXT_COMMIT_SCHEMA. Use the same full digest that
+    # verification already computes for the commit_id's 24-hex prefix.
+    return "sha256:" + stable_hash(_commit_payload(commit))
 
 
 @dataclass(frozen=True)
@@ -148,7 +166,9 @@ def replay_context(commit: Mapping[str, Any]) -> list[dict[str, Any]]:
     return [copy.deepcopy(dict(item)) for item in selected if isinstance(item, Mapping)]
 
 
-def verify_context_commit(commit: Mapping[str, Any] | object) -> ContextCommitVerification:
+def verify_context_commit(
+    commit: Mapping[str, Any] | object, *, trusted_anchor: str | None = None
+) -> ContextCommitVerification:
     """Fail closed unless the commit, receipt, replay, and recovery all verify."""
 
     if not isinstance(commit, Mapping):
@@ -165,7 +185,8 @@ def verify_context_commit(commit: Mapping[str, Any] | object) -> ContextCommitVe
     omitted_raw = receipt_map.get("omitted_context", [])
     omitted = omitted_raw if isinstance(omitted_raw, list) else []
 
-    expected_commit_id = "ctx_" + stable_hash(_commit_payload(data))[:24]
+    payload_digest = stable_hash(_commit_payload(data))
+    expected_commit_id = "ctx_" + payload_digest[:24]
     receipt_payload = {
         key: value
         for key, value in receipt_map.items()
@@ -224,6 +245,10 @@ def verify_context_commit(commit: Mapping[str, Any] | object) -> ContextCommitVe
         "parent_lineage": data.get("parent_commit_id") is None
         or str(data.get("parent_commit_id", "")).startswith("ctx_"),
     }
+    if trusted_anchor is not None:
+        checks["trusted_anchor"] = isinstance(trusted_anchor, str) and hmac.compare_digest(
+            "sha256:" + payload_digest, trusted_anchor
+        )
     errors = tuple(name for name, passed in checks.items() if not passed)
     return ContextCommitVerification(
         valid=not errors,
@@ -238,6 +263,7 @@ def verify_context_commit(commit: Mapping[str, Any] | object) -> ContextCommitVe
 __all__ = [
     "CONTEXT_COMMIT_SCHEMA",
     "ContextCommitVerification",
+    "context_commit_anchor",
     "create_context_commit",
     "replay_context",
     "verify_context_commit",

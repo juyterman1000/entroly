@@ -21,7 +21,11 @@ from entroly.context_assurance import (
     recover_context_evidence,
     require_assurance,
 )
-from entroly.context_commit import create_context_commit, verify_context_commit
+from entroly.context_commit import (
+    context_commit_anchor,
+    create_context_commit,
+    verify_context_commit,
+)
 from entroly.context_receipts import (
     ingest_documents,
     run_receipt_pipeline,
@@ -257,6 +261,7 @@ def test_every_omission_is_committed_and_recoverable_after_restart(tmp_path):
     commit = create_context_commit(
         docs, query="evidence", token_budget=5, assurance_scope=SCOPE, prefer_rust=False
     )
+    trusted_anchor = context_commit_anchor(commit)
     path = tmp_path / "commit.json"
     path.write_text(json.dumps(commit), encoding="utf-8")
     restored = json.loads(path.read_text(encoding="utf-8"))
@@ -267,7 +272,9 @@ def test_every_omission_is_committed_and_recoverable_after_restart(tmp_path):
         "omitted_count"
     ] == len(omitted_ids)
     for cid in omitted_ids:
-        recovered = recover_context_evidence(restored, cid, scope=SCOPE)
+        recovered = recover_context_evidence(
+            restored, cid, scope=SCOPE, trusted_anchor=trusted_anchor
+        )
         assert recovered["text"].encode("utf-8") == restored["recovery_bundle"][
             "chunks"
         ][cid]["text"].encode("utf-8")
@@ -278,15 +285,47 @@ def test_recovery_rejects_cross_scope_and_corruption():
     commit = create_context_commit(
         DOCS, query="evidence", token_budget=1, assurance_scope=SCOPE, prefer_rust=False
     )
+    trusted_anchor = context_commit_anchor(commit)
     cid = next(iter(commit["recovery_bundle"]["chunks"]))
     for key in asdict(SCOPE):
         other = AssuranceScope(**{**asdict(SCOPE), key: "other"})
         with pytest.raises(ValueError, match="scope"):
-            recover_context_evidence(commit, cid, scope=other)
+            recover_context_evidence(
+                commit, cid, scope=other, trusted_anchor=trusted_anchor
+            )
     broken = copy.deepcopy(commit)
     broken["recovery_bundle"]["chunks"][cid]["text"] += " tampered"
-    with pytest.raises(ValueError, match="integrity"):
-        recover_context_evidence(broken, cid, scope=SCOPE)
+    with pytest.raises(ValueError, match="anchor mismatch"):
+        recover_context_evidence(
+            broken, cid, scope=SCOPE, trusted_anchor=trusted_anchor
+        )
+    assert not verify_context_commit(broken).valid
+
+
+def test_recovery_rejects_a_self_consistent_same_scope_substitute():
+    issued = create_context_commit(
+        DOCS, query="evidence", token_budget=1, assurance_scope=SCOPE, prefer_rust=False
+    )
+    trusted_anchor = context_commit_anchor(issued)
+    substitute = create_context_commit(
+        [(path, text + " substituted") for path, text in DOCS],
+        query="evidence", token_budget=1, assurance_scope=SCOPE, prefer_rust=False,
+    )
+    assert verify_context_commit(issued).valid
+    assert verify_context_commit(substitute).valid
+    assert verify_context_commit(issued, trusted_anchor=trusted_anchor).valid
+    assert not verify_context_commit(substitute, trusted_anchor=trusted_anchor).valid
+    cid = next(iter(substitute["recovery_bundle"]["chunks"]))
+    with pytest.raises(ValueError, match="anchor mismatch"):
+        recover_context_evidence(
+            substitute, cid, scope=SCOPE, trusted_anchor=trusted_anchor
+        )
+    with pytest.raises(ValueError, match="independently trusted anchor"):
+        recover_context_evidence(issued, cid, scope=SCOPE)
+    with pytest.raises(ValueError, match="independently trusted anchor"):
+        recover_context_evidence(
+            issued, cid, scope=SCOPE, trusted_anchor=issued["commit_id"]
+        )
 
 
 @pytest.mark.parametrize(
