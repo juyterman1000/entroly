@@ -27,6 +27,45 @@ loss stays unavailable. Finite observations do not supply a population risk
 bound: `risk_bound` remains null. No calibration from WITNESS, RAVS or another
 task family is reused.
 
+## Offline fixed-policy divergence calibration
+
+`entroly.decision_evaluation.calibrate_fixed_policy_divergence` can now examine
+paired observations from one frozen policy. A
+`FixedPolicyCalibrationProtocol` declares the exact scope and projection,
+dataset identity, sampling design, external precommit reference, disjoint
+calibration and holdout task IDs, a risk target and an error probability
+`alpha`. The offline command reads that protocol and one
+JSON array of sealed observations:
+
+```bash
+python -m benchmarks.context_risk_calibration \
+  --protocol protocol.json \
+  --observations paired-observations.json \
+  --output divergence-report.json
+```
+
+The command makes no provider calls. It requires every declared task exactly
+once, rejects cross-scope or edited observation seals, and outputs aggregate
+counts plus source-file digests. The calibration split is descriptive; the
+untouched holdout split supplies a one-sided exact binomial upper confidence
+limit for the rate of projected full/selected decision disagreement. The
+method inverts the binomial CDF at the predeclared `alpha`, including the
+zero-divergence case `1 - alpha ** (1 / n)` ([NIST exact binomial limits](https://www.itl.nist.gov/div898/software/dataplot/refman2/auxillar/exacbici.htm)).
+This is a statement about a fixed
+policy's population disagreement rate **conditional** on independently sampled,
+identically distributed paired tasks, fixed settings/projection, and a split
+declared before holdout outcomes. The protocol hash detects edits; it does not
+prove preregistration, independence, provider identity or source authenticity.
+
+Full/full-repeat divergence is reported alongside the bound and is never
+subtracted from it. A bound on observed disagreement is not a causal bound on
+context-induced error, an answer-quality measure, a per-request guarantee or
+evidence for an adaptive budget policy. The report's `production_authority`
+field is always false. `require_assurance(decision_risk=True)` still fails
+closed; real-model collection, external split provenance and a valid control
+policy are needed before a production risk claim can be considered. Existing
+WITNESS/RAVS calibration is not transferred to this different loss.
+
 `continuity_debt` measures previously omitted units that become required later.
 An exact recovery discharges a missed-unit obligation only when it is verified
 and visible before the decision. This declaration-based accounting is not an
