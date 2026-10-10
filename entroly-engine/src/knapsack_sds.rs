@@ -189,7 +189,7 @@ pub struct SdsResult {
     pub curvature: SelectionCurvature,
 }
 
-/// Curvature certificate for IOS selection (Pillar IV).
+/// Observed diversity-penalty diagnostic for IOS selection (Pillar IV).
 ///
 /// The SDS diversity penalty f(S∪{x}) = base_value(x) · diversity(x,S)
 /// is not monotone: adding a near-duplicate can decrease the marginal
@@ -197,10 +197,9 @@ pub struct SdsResult {
 /// parameter α captures how far from monotone the objective was during
 /// this particular selection.
 ///
-/// For a monotone submodular objective, the greedy algorithm achieves
-/// (1-1/e) ≈ 0.632 of optimal. With curvature α ∈ [0,1], the guarantee
-/// weakens to (1-1/e)(1 - α). α = 0 is fully monotone; α = 1 is the
-/// worst case where adding any item could zero out the objective.
+/// The recorded penalty is not a theorem's total curvature or an
+/// approximation certificate. This implementation's subtractive objective can
+/// be nonmonotone, and its selection procedure has no proven worst-case ratio.
 ///
 /// Production value: when curvature is high, the diversity penalty is
 /// costing more than it's saving. The system should consider relaxing
@@ -217,8 +216,8 @@ pub struct SelectionCurvature {
     pub high_overlap_count: u32,
     /// Total greedy steps taken.
     pub steps: u32,
-    /// Effective curvature α ∈ [0,1]: the mean penalty weighted by
-    /// how much value it displaced.
+    /// Observed penalty proxy α ∈ [0,1]: the mean penalty weighted by
+    /// how much value it displaced; not a formal curvature bound.
     pub alpha: f64,
     /// Stable rank of the selected set: how many independent fragments the
     /// selection is actually worth. Lies in [1, m] for a selection of size m;

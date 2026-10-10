@@ -156,7 +156,8 @@ def tfidf_extractive_summarize(
     sentences. This eliminates redundancy and maximizes information
     coverage within the token budget.
 
-    Provably (1-1/e)-optimal by the Nemhauser-Wolsey-Fisher theorem.
+    This is a deterministic coverage heuristic. Position boosts and the
+    minimum-sentence floor mean no approximation ratio is claimed here.
 
     Args:
         text: Input text to summarize
@@ -202,7 +203,8 @@ def tfidf_extractive_summarize(
     #   Δf(j|S) = Σ_w max(0, vec_j[w] - covered[w])
     #
     # This is the "weighted coverage" submodular function.
-    # Greedy gives (1-1/e) approximation.
+    # The position boost and non-annihilation floor change the standard
+    # cardinality-greedy rule; no approximation ratio is claimed here.
 
     target_count = max(
         min_sentences,

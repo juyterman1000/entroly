@@ -143,9 +143,9 @@
   <!-- IOS Diversity -->
   <rect x="440" y="258" width="180" height="78" rx="6" fill="url(#box-select)" stroke="#22c55e" stroke-width="1" opacity="0.9"/>
   <text x="530" y="278" text-anchor="middle" class="box-label">IOS + Diversity</text>
-  <text x="530" y="294" text-anchor="middle" class="box-detail">submodular diversity penalty</text>
-  <text x="530" y="308" text-anchor="middle" class="box-detail">multi-resolution: full/skel/ref</text>
-  <text x="530" y="322" text-anchor="middle" class="box-detail">(1-1/e) ≈ 63% optimal</text>
+  <text x="530" y="294" text-anchor="middle" class="box-detail">redundancy-aware penalty</text>
+  <text x="530" y="308" text-anchor="middle" class="box-detail">full/skel/belief/ref</text>
+  <text x="530" y="322" text-anchor="middle" class="box-detail">no proven ratio</text>
   <text x="530" y="335" text-anchor="middle" class="box-metric">auth + DB + API not 3× auth</text>
 
   <!-- Arrow -->
