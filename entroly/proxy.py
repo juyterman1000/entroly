@@ -31,7 +31,7 @@ from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse, StreamingResponse
+from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
 from .adaptive_budget import AdaptiveBudgetModel, extract_features
@@ -4020,60 +4020,63 @@ class PromptCompilerProxy:
         # Capture selected fragments for per-variant utilization tracking (Change 4)
         _selected_frags = getattr(self, '_last_context_fragments', []) if _feedback_enabled else []
 
+        # ── Upstream status is decided here, not inside the generator ──
+        # A StreamingResponse fixes its status when it is constructed, and the
+        # generator does not run until after those headers are on the wire. The
+        # previous code opened the stream inside the generator, so an upstream
+        # 401/400/403 could only be reported by yielding its body into a
+        # text/event-stream that had already claimed 200. Clients stream by
+        # default, and a provider error body is not SSE-framed, so the SDK
+        # parsed zero events and raised nothing: a wrong API key surfaced as an
+        # empty assistant turn, and a 429 arrived without Retry-After so the
+        # SDK's backoff never engaged.
+        _client = await self._ensure_client()
+        try:
+            upstream = await _client.send(
+                _client.build_request("POST", url, json=body, headers=headers),
+                stream=True,
+            )
+        except httpx.TimeoutException as exc:
+            self._breaker.record_failure()
+            logger.warning("Upstream timeout opening stream: %s", exc)
+            return JSONResponse({"error": "upstream_timeout"}, status_code=504)
+        except Exception as exc:  # noqa: BLE001
+            self._breaker.record_failure()
+            logger.warning("Upstream unavailable opening stream: %s", exc)
+            return JSONResponse(
+                {"error": "upstream_unavailable", "detail": str(exc)[:200]},
+                status_code=502,
+            )
+
+        if upstream.status_code >= 400:
+            self._breaker.record_failure()
+            error_body = await upstream.aread()
+            await upstream.aclose()
+            error_headers: dict[str, str] = {}
+            retry_after = upstream.headers.get("retry-after")
+            if retry_after:
+                # Without this the client cannot honour the provider's own
+                # backoff signal and will retry immediately.
+                error_headers["Retry-After"] = retry_after
+            logger.warning(
+                "Upstream %d on streaming request", upstream.status_code
+            )
+            # The provider's body is passed through unchanged so the client's
+            # own error parsing keeps working.
+            return Response(
+                content=error_body,
+                status_code=upstream.status_code,
+                media_type=upstream.headers.get("content-type", "application/json"),
+                headers=error_headers,
+            )
+
         async def event_generator():
             buffer = [] if (_feedback_enabled or _witness_enabled) else None
             buffer_size = 0
             usage_tail = bytearray()
             try:
-                client = await self._ensure_client()
-                async with client.stream(
-                    "POST", url, json=body, headers=headers
-                ) as response:
-                    # ── Pre-flight status check before streaming ──
-                    # httpx streams don't raise on 4xx/5xx — we must
-                    # check before blindly iterating chunks.
-                    if response.status_code == 429:
-                        self._breaker.record_failure()
-                        retry_after = _parse_retry_after(
-                            response.headers.get("retry-after")
-                        )
-
-                        logger.warning(
-                            "Upstream 429 on streaming request (Retry-After=%s)",
-                            retry_after,
-                        )
-                        import json as _json
-                        err_body = _json.dumps({
-                            "error": "rate_limited",
-                            "status": 429,
-                            "detail": "Upstream rate-limited; honor Retry-After.",
-                            "retry_after_s": retry_after,
-                            "source": "upstream_api",
-                        })
-                        yield (
-                            f'data: {err_body}\n\n'
-                            f'data: [DONE]\n\n'
-                        ).encode()
-                        return
-                    if response.status_code >= 500:
-                        self._breaker.record_failure()
-                        logger.warning(
-                            "Upstream %d on streaming request",
-                            response.status_code,
-                        )
-                        import json as _json
-                        err_body = _json.dumps({
-                            "error": "upstream_error",
-                            "status": response.status_code,
-                            "detail": f"Upstream returned {response.status_code}",
-                            "source": "upstream_api",
-                        })
-                        yield (
-                            f'data: {err_body}\n\n'
-                            f'data: [DONE]\n\n'
-                        ).encode()
-                        return
-                    async for chunk in response.aiter_bytes():
+                try:
+                    async for chunk in upstream.aiter_bytes():
                         # Tee: pass through AND accumulate for analysis
                         if buffer is not None and buffer_size < _buffer_cap:
                             buffer.append(chunk)
@@ -4082,6 +4085,8 @@ class PromptCompilerProxy:
                         if len(usage_tail) > _usage_tail_cap:
                             del usage_tail[:-_usage_tail_cap]
                         yield chunk
+                finally:
+                    await upstream.aclose()
                 self._breaker.record_success()
                 if usage_tail:
                     await self._observe_stream_usage(
@@ -4219,6 +4224,7 @@ class PromptCompilerProxy:
 
         return StreamingResponse(
             event_generator(),
+            status_code=upstream.status_code,
             media_type="text/event-stream",
             headers=resp_headers,
         )
