@@ -1194,6 +1194,33 @@ class PromptCompilerProxy:
         self._auto_recovery_failed = 0
         self._auto_recovery_last: dict[str, Any] | None = None
 
+        # Recovery retries on a verification verdict, so it only runs where a
+        # verdict exists. Those two places do not agree:
+        #
+        #   non-streaming  _forward_response                gated on _witness_enabled
+        #   streaming      _buffered_witness_stream_response reached only when the
+        #                                                    mode is annotate/strict
+        #
+        # The default mode is "audit", so a streaming request takes the plain
+        # path and never reaches a verdict or a recovery attempt. Coding agents
+        # stream, which makes that the common case, while /stats reported
+        # `enabled: true` beside `attempted: 0` with nothing naming the reason.
+        self._auto_recovery_streaming_blocked_by: str | None = None
+        if self._auto_recovery_enabled and self._witness_mode not in {
+            "annotate",
+            "strict",
+        }:
+            self._auto_recovery_streaming_blocked_by = (
+                f"witness_mode={self._witness_mode or 'off'}"
+            )
+            logger.warning(
+                "Auto-recovery will not run on streaming requests: it retries "
+                "on a verification verdict, and witness_mode=%s produces one "
+                "only on the non-streaming path. Set "
+                "ENTROLY_WITNESS_MODE=annotate (or strict) to cover streaming.",
+                self._witness_mode or "off",
+            )
+
         # P2: Conformal cascade observability counters
         # Track post-response WITNESS→ECE→escalation.py decisions
         self._cascade_total = 0
@@ -6142,6 +6169,17 @@ async def _proxy_stats(request: Request) -> JSONResponse:
             },
             "auto_recovery": {
                 "enabled": proxy._auto_recovery_enabled,
+                # `enabled` is the operator's setting. Whether it can actually
+                # run differs by path, because the verification verdict that
+                # triggers it is only produced on one of them by default.
+                "active_buffered": bool(
+                    proxy._auto_recovery_enabled and proxy._witness_enabled
+                ),
+                "active_streaming": bool(
+                    proxy._auto_recovery_enabled
+                    and proxy._witness_mode in {"annotate", "strict"}
+                ),
+                "streaming_blocked_by": proxy._auto_recovery_streaming_blocked_by,
                 "attempted": proxy._auto_recovery_attempted,
                 "succeeded": proxy._auto_recovery_succeeded,
                 "failed": proxy._auto_recovery_failed,
