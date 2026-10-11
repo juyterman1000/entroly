@@ -29,7 +29,8 @@ html_page = """
     <div id="term"></div>
     <script>
         const term = document.getElementById('term');
-        const ws = new WebSocket('ws://' + window.location.host + '/ws');
+        const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const ws = new WebSocket(proto + '//' + window.location.host + '/ws');
 
         ws.onopen = function() {
             term.innerHTML += "<span style='color: #58a6ff'>workspace/langfuse></span> entroly wrap claude -p \\"Explain how trace ingestion works in the worker package\\"\\n\\n";

@@ -35,6 +35,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shlex
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -153,7 +154,7 @@ def evaluate(name: str, text: str) -> Row:
 def _capture(cmd: str) -> str:
     try:
         proc = subprocess.run(
-            cmd, shell=True, capture_output=True, text=True, timeout=120, cwd=REPO
+            shlex.split(cmd), capture_output=True, text=True, timeout=120, cwd=REPO
         )
         return (proc.stdout or "") + (proc.stderr or "")
     except (OSError, subprocess.SubprocessError):
