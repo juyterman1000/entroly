@@ -69,6 +69,7 @@ from .vault import (
     VaultManager,
 )
 from .verification_engine import VerificationEngine
+from .brain_execute import brain_execute, brain_execute_enabled
 
 # Re-exported so `from entroly.server import X` keeps working for every
 # existing caller and test after the engine moved to `entroly.engine`.
@@ -979,6 +980,41 @@ def create_mcp_server(
         if issues:
             result["quality_issues"] = issues
         return json.dumps(result, indent=2)
+
+    # Registered only on explicit opt-in. A tool that is advertised and then
+    # refuses every call teaches the model to stop trying it, and a schema for
+    # local code execution should not be in the listing of an installation
+    # that has not asked for it.
+    if brain_execute_enabled():
+
+        @mcp.tool()
+        def brain_execute_script(
+            code: str,
+            timeout_s: float = 20.0,
+            max_output_bytes: int = 32768,
+        ) -> str:
+            """Answer a question about the workspace by computing it.
+
+            Write a short Python script that inspects the workspace and prints
+            only its conclusion. Use this when the answer is an aggregate over
+            many files -- counting, locating, measuring, comparing -- because
+            reading every candidate into context to produce one number costs
+            the whole corpus to learn one line of it.
+
+            Do not use it to read a file you intend to reason about. Selection
+            exists for that, and a printed summary is not a substitute for the
+            text when the question is about intent rather than quantity.
+
+            The script runs with the workspace as its working directory. Only
+            what it prints comes back, and the output is capped -- a run that
+            exceeds the cap says so rather than returning a silent prefix.
+            """
+            result = brain_execute(
+                code,
+                timeout_s=timeout_s,
+                max_output_bytes=max_output_bytes,
+            )
+            return json.dumps(result.to_dict(), indent=2)
 
     @mcp.tool()
     def optimize_context(
