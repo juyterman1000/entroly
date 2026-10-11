@@ -34,6 +34,8 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from .work_graph_resume import recover_workstream
+
 _lock = threading.Lock()
 _started: dict[str, dict[str, Any]] = {}
 
@@ -94,10 +96,9 @@ def start_session(project: str = "", *, force: bool = False) -> dict[str, Any]:
 
         path = mcp_adapter._project_path(project)
         store = mcp_adapter._store_for_path(path)
-        store.submit_repository_observation(
-            mcp_adapter._passive_observation(path), repository_path=path
+        view = recover_workstream(
+            store, path, mcp_adapter._passive_observation(path), max_evidence=128
         )
-        view = store.resume(None, max_evidence=128)
     except Exception as exc:  # noqa: BLE001 - handshake must survive anything
         # "no unfinished workstream" is the documented null control, not a
         # failure: a clean checkout has nothing to continue, and resume refuses
@@ -121,7 +122,8 @@ def start_session(project: str = "", *, force: bool = False) -> dict[str, Any]:
         # gate cannot be armed, the honest outcome is a loud failure, not a
         # session that reports takeover while nothing enforces it.
         acknowledgement = arm(
-            store.repo_dir, token, mcp_adapter._recovery_unknowns(view)
+            store.repo_dir, token, mcp_adapter._recovery_unknowns(view),
+            workspace_commitment=view["current_workspace_commitment"],
         )
         summary["recovered"] = True
         summary["gate_armed"] = True

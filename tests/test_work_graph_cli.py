@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
 from entroly import work_graph_cli as c
+from entroly.work_graph_resume import attach_current_worktree_changes, recovery_unknowns
 
 
 class FakeGraph:
@@ -22,6 +25,8 @@ class FakeGraph:
 class FakeStore:
     def __init__(self):
         self.observation = None
+        self._state_dir = TemporaryDirectory()
+        self.repo_dir = Path(self._state_dir.name)
 
     def load(self):
         return FakeGraph()
@@ -47,6 +52,16 @@ class FakeStore:
 
     def continuation_proof(self, handoff, **manifest):
         return {"handoff": handoff, "manifest": manifest}
+
+
+def test_live_change_projection_is_bounded_and_marks_unknown_tail():
+    view = attach_current_worktree_changes(
+        {}, {"changes": [{"path": "b.py"}, {"path": "a.py"}]}, max_paths=1
+    )
+    assert view["current_worktree_changed_paths"] == ["a.py"]
+    assert view["current_worktree_change_count"] == 2
+    assert view["current_worktree_changes_truncated"] is True
+    assert "unknown:current-worktree-changes-truncated" in recovery_unknowns(view)
 
 
 def test_cli_claim_uses_user_statement(monkeypatch, capsys, tmp_path):
@@ -87,11 +102,13 @@ def test_cli_claim_uses_user_statement(monkeypatch, capsys, tmp_path):
 def test_standalone_parser_exposes_all_work_actions():
     parser = c.build_parser()
     assert parser.prog == "entroly-work"
-    for action in ("state", "claim", "resume", "handoff"):
+    for action in ("state", "claim", "resume", "acknowledge", "handoff"):
         if action == "claim":
             args = parser.parse_args([action, "--agent", "codex", "--task", "Fix auth"])
         elif action == "handoff":
             args = parser.parse_args([action, "--workstream", "w", "--from-agent", "claude", "--to-agent", "codex"])
+        elif action == "acknowledge":
+            args = parser.parse_args([action, "--token", "recovery:abc"])
         else:
             args = parser.parse_args([action])
         assert args.work_action == action
@@ -213,6 +230,61 @@ def test_cli_resume_can_emit_no_handoff_proof(monkeypatch, capsys, tmp_path):
     payload = json.loads(capsys.readouterr().out)
     assert payload["continuation_proof"]["to_agent"] == "codex"
     assert payload["continuation_proof"]["from_agent"] == ""
+    assert payload["acknowledgement"]["required"] is True
+    assert payload["acknowledgement"]["unknowns"] == ["unknown:previous-agent-intent"]
+
+
+def test_cli_resume_prefers_recorded_work_over_newer_placeholder(monkeypatch, capsys, tmp_path):
+    fake = FakeStore()
+    selected = []
+    monkeypatch.setattr(c, "_store_for_path", lambda _p: fake)
+    monkeypatch.setattr(c, "_passive_observation", lambda _p: {"repo_id": "repo:test"})
+    fake.load = lambda: SimpleNamespace(unfinished=lambda: [
+        {"node_id": "workstream:placeholder", "remaining_work": []},
+        {"node_id": "workstream:real", "remaining_work": ["finish test"]},
+    ])
+    fake.resume = lambda workstream, **_kwargs: (
+        selected.append(workstream) or {"selected_workstream": {"node_id": workstream}}
+    )
+    args = c.build_parser().parse_args(["--project", str(tmp_path), "--json", "resume"])
+
+    assert c.run(args) == 0
+    assert selected == ["workstream:real"]
+    assert json.loads(capsys.readouterr().out)["resume"]["selected_workstream"]["node_id"] == "workstream:real"
+
+
+def test_cli_recovery_blocks_claim_until_matching_acknowledgement(monkeypatch, capsys, tmp_path):
+    fake = FakeStore()
+    monkeypatch.setattr(c, "_store_for_path", lambda _p: fake)
+    monkeypatch.setattr(c, "_passive_observation", lambda _p: {"repo_id": "repo:test"})
+    fake.resume = lambda *_args, **_kwargs: {
+        "selected_workstream": {"node_id": "workstream:real"},
+        "changed_paths": ["app.py"],
+    }
+    parser = c.build_parser()
+    options = ["--project", str(tmp_path), "--json"]
+    assert c.run(parser.parse_args([*options, "resume"])) == 0
+    token = json.loads(capsys.readouterr().out)["acknowledgement"]["token"]
+
+    claim = parser.parse_args([*options, "claim", "--agent", "codex", "--task", "finish"])
+    assert c.run(claim) == 1
+    assert json.loads(capsys.readouterr().out)["error"] == "recovery_acknowledgement_required"
+    handoff = parser.parse_args([
+        *options, "handoff", "--workstream", "workstream:real",
+        "--from-agent", "claude", "--to-agent", "codex",
+    ])
+    assert c.run(handoff) == 1
+    assert json.loads(capsys.readouterr().out)["error"] == "recovery_acknowledgement_required"
+    assert c.run(parser.parse_args([*options, "acknowledge", "--token", "recovery:wrong"])) == 1
+    assert json.loads(capsys.readouterr().out)["status"] == "error"
+    assert c.run(claim) == 1
+    capsys.readouterr()
+
+    assert c.run(parser.parse_args([*options, "acknowledge", "--token", token])) == 0
+    assert json.loads(capsys.readouterr().out)["acknowledged"] is True
+    monkeypatch.setattr(c, "discover_repository_observation", lambda *_a, **_k: {"repo_id": "repo:test", "leases": []})
+    monkeypatch.setattr(c, "enrich_worktree_content_digests", lambda _p, observation: observation)
+    assert c.run(claim) == 0
 
 
 def test_cli_clean_claim_uses_task_id_in_continuation_proof(monkeypatch, capsys, tmp_path):

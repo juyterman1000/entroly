@@ -69,7 +69,13 @@ def _marker_path(state_root: str | os.PathLike[str]) -> Path:
     return Path(state_root) / _MARKER_NAME
 
 
-def arm(state_root: str | os.PathLike[str], token: str, unknowns: list[str]) -> dict[str, Any]:
+def arm(
+    state_root: str | os.PathLike[str],
+    token: str,
+    unknowns: list[str],
+    *,
+    workspace_commitment: str = "",
+) -> dict[str, Any]:
     """Record that recovered state is outstanding, and describe what is unknown.
 
     Written atomically: a half-written marker would be unparseable, and a
@@ -79,6 +85,8 @@ def arm(state_root: str | os.PathLike[str], token: str, unknowns: list[str]) -> 
     root = Path(state_root)
     root.mkdir(parents=True, exist_ok=True)
     record = {"token": token, "trust": _TRUST_LABEL, "unknowns": sorted(set(unknowns))}
+    if workspace_commitment:
+        record["workspace_commitment"] = workspace_commitment
     payload = json.dumps(record, sort_keys=True, ensure_ascii=False).encode("utf-8")
 
     handle, temp_name = tempfile.mkstemp(dir=str(root), prefix=".ack-", suffix=".tmp")
@@ -128,7 +136,12 @@ def require_acknowledged(state_root: str | os.PathLike[str]) -> None:
         raise RecoveryAcknowledgementRequired(str(outstanding.get("token", "")))
 
 
-def acknowledge(state_root: str | os.PathLike[str], token: str) -> dict[str, Any]:
+def acknowledge(
+    state_root: str | os.PathLike[str],
+    token: str,
+    *,
+    workspace_commitment: str = "",
+) -> dict[str, Any]:
     """Accept responsibility for one specific recovered state.
 
     Refuses a token that does not match the outstanding one, so acknowledging
@@ -143,6 +156,12 @@ def acknowledge(state_root: str | os.PathLike[str], token: str) -> dict[str, Any
         raise ValueError(
             "acknowledgement token does not match the outstanding recovered "
             "state; call work_resume again and acknowledge what it returns"
+        )
+    expected_workspace = outstanding.get("workspace_commitment")
+    if expected_workspace and workspace_commitment != expected_workspace:
+        raise ValueError(
+            "repository changed after recovery; call work_resume again and "
+            "acknowledge the current state"
         )
     try:
         _marker_path(state_root).unlink()
