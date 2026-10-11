@@ -68,7 +68,8 @@ def test_public_mcp_profile_keeps_marketplace_tool_surface_small(tmp_path, monke
     tools = set(server._tool_manager._tools)
 
     assert tools == set(_PUBLIC_MCP_TOOLS)
-    assert len(tools) == 13
+    assert len(tools) == 22
+    assert {"work_capabilities", "work_handoff", "work_pending_handoffs", "work_record_review", "work_reviews"} <= tools
     assert "locate_evidence" in tools
     assert "retrieve_context" in tools
     assert "read_source_file" in tools
@@ -92,7 +93,7 @@ def test_public_mcp_profile_keeps_marketplace_tool_surface_small(tmp_path, monke
     assert "read_source_file" in instructions
     assert "retrieve_context" in instructions
     assert "smart_read" not in instructions
-    assert "work_resume" not in instructions
+    assert "work_resume" in instructions
 
 
 def test_unconfigured_mcp_profile_preserves_existing_clients(tmp_path, monkeypatch) -> None:

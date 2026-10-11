@@ -51,6 +51,22 @@ def register_work_graph_tools(mcp: Any) -> Any:
     while leaving all state transitions in the Rust-backed Work Graph.
     """
     @mcp.tool()
+    def work_capabilities(project: str = "") -> str:
+        """Confirm the active repository and available local review operations."""
+        from .work_graph_mcp import _project_path, _store_for_path
+
+        try:
+            path = _project_path(project)
+            store = _store_for_path(path)
+            return _json({
+                "status": "ok", "kind": "work_capabilities", "runtime": "python",
+                "project_root": str(path), "repo_id": store.repo_id,
+                "review_schema": 1, "storage": "local_work_graph",
+            })
+        except Exception as exc:
+            return _json({"status": "error", "kind": "work_capabilities", "detail": str(exc)})
+
+    @mcp.tool()
     def work_state(project: str = "", now_ms: int = 0) -> str:
         """Inspect persisted shared work state without appending a polling event."""
         _takeover(project)
@@ -278,6 +294,47 @@ def register_work_graph_tools(mcp: Any) -> Any:
         """Accept responsibility for recovered work state so acting is allowed."""
         _takeover(project)
         return _json(_work.work_acknowledge_recovery(token=token, project=project))
+
+    @mcp.tool()
+    def work_record_review(
+        handoff: dict[str, Any], reviewer_id: str, verdict: str,
+        findings: list[dict[str, Any]], summary: str, project: str = "",
+        checks: list[dict[str, Any]] | None = None,
+    ) -> str:
+        """Record an agent review bound to the handoff and exact source state."""
+        from .work_graph_review import record_review
+
+        try:
+            return _json(record_review(
+                handoff=handoff, reviewer_id=reviewer_id, verdict=verdict,
+                findings=findings, summary=summary, project=project, checks=checks,
+            ))
+        except Exception as exc:
+            return _json({"status": "error", "kind": "work_record_review", "detail": str(exc)})
+
+    @mcp.tool()
+    def work_reviews(project: str = "", workstream_id: str = "") -> str:
+        """Read review findings with a current or stale source marker."""
+        from .work_graph_review import reviews
+
+        try:
+            return _json(reviews(project=project, workstream_id=workstream_id))
+        except Exception as exc:
+            return _json({"status": "error", "kind": "work_reviews", "detail": str(exc)})
+
+    @mcp.tool()
+    def work_pending_handoffs(to_agent: str, project: str = "") -> str:
+        """Find compact local handoffs addressed to this agent."""
+        from .work_graph_inbox import pending_handoffs
+        from .work_graph_mcp import _project_path, _store_for_path
+
+        try:
+            path = _project_path(project)
+            return _json(pending_handoffs(
+                root=path, store=_store_for_path(path), to_agent=to_agent,
+            ))
+        except Exception as exc:
+            return _json({"status": "error", "kind": "work_pending_handoffs", "detail": str(exc)})
 
     return mcp
 
