@@ -83,6 +83,64 @@ def test_compressed_arm_actually_drops_something() -> None:
     assert built.estimated_tokens < build_raw(FRAGMENTS).estimated_tokens
 
 
+def test_compressed_arm_sends_selected_excerpt_and_tracks_original() -> None:
+    original = Fragment("large.py", "prefix\ncritical line\nsuffix\n" + "filler\n" * 100)
+
+    def _excerpt(payload, budget, query):  # noqa: ANN001, ARG001
+        return {"selected": [{"source": "large.py", "content": "critical line"}]}
+
+    built = build_compressed(
+        [original], query="q", budget=20, optimize_fn=_excerpt
+    )
+    assert built.included == [Fragment("large.py", "critical line")]
+    assert original.content not in built.text
+    assert built.omitted == [original]
+    assert built.estimated_tokens < 20
+    assert built.to_dict()["omitted_digests"] == [original.digest]
+
+    recovered = build_closed_loop(built, recovered=[original])
+    assert recovered.included == [original]
+    assert recovered.omitted == []
+    assert recovered.text == build_raw([original]).text
+
+
+def test_compressed_arm_rejects_source_only_selection() -> None:
+    def _source_only(payload, budget, query):  # noqa: ANN001, ARG001
+        return {"selected": ["auth.py"]}
+
+    with pytest.raises(TypeError, match="source and content"):
+        build_compressed(
+            FRAGMENTS, query="q", budget=40, optimize_fn=_source_only
+        )
+
+
+def test_recovery_replaces_multiple_excerpts_once() -> None:
+    original = Fragment("large.py", "first\nmiddle\nlast")
+
+    def _excerpts(payload, budget, query):  # noqa: ANN001, ARG001
+        return {"selected": [
+            {"source": "large.py", "content": "first"},
+            {"source": "large.py", "content": "last"},
+        ]}
+
+    built = build_compressed(
+        [original], query="q", budget=20, optimize_fn=_excerpts
+    )
+    assert [f.content for f in built.included] == ["first", "last"]
+    assert built.omitted == [original]
+    recovered = build_closed_loop(built, recovered=[original, original])
+    assert recovered.included == [original]
+    assert recovered.text == build_raw([original]).text
+
+
+def test_compressed_arm_rejects_ambiguous_candidate_sources() -> None:
+    with pytest.raises(ValueError, match="sources must be unique"):
+        build_compressed(
+            [Fragment("same.py", "one"), Fragment("same.py", "two")],
+            query="q", budget=20, optimize_fn=_stub_optimize(["same.py"]),
+        )
+
+
 def test_compressed_arm_refuses_to_silently_become_the_raw_arm() -> None:
     """An empty selection must fail, not fall back to full context."""
     with pytest.raises(RuntimeError, match="refusing to fall back"):
