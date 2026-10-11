@@ -12,7 +12,20 @@ from typing import Any, Sequence
 
 from .work_graph import WorkGraphUnavailableError
 from .work_graph_content_digest import enrich_worktree_content_digests
+from .work_graph_recovery_ack import (
+    RecoveryAcknowledgementRequired,
+    acknowledge as recovery_acknowledge,
+    arm as recovery_arm,
+    recovery_token,
+    require_acknowledged as recovery_require_acknowledged,
+)
 from .work_graph_repo import discover_repository_identity, discover_repository_observation
+from .work_graph_resume import (
+    attach_current_worktree_changes,
+    recover_workstream,
+    recovery_unknowns,
+    workspace_commitment,
+)
 from .work_graph_store import (
     continuation_outstanding_refs,
     WorkGraphLockTimeout,
@@ -134,11 +147,19 @@ def _human_lines(payload: dict[str, Any]) -> list[str]:
         _add_field(lines, "Work status", _first(view, "status", "work_status"))
         _add_field(lines, "Tasks", _first(view, "task_ids", "tasks"))
         _add_field(lines, "Agents", _first(view, "agent_ids", "agents"))
-        _add_field(lines, "Changes", _first(view, "changed_paths", "changes"))
+        _add_field(lines, "Live changes", view.get("current_worktree_changed_paths"))
+        _add_field(lines, "Past changes", _first(view, "changed_paths", "changes"))
         _add_field(lines, "Evidence", _first(view, "evidence_ids", "evidence"))
         _add_field(lines, "Remaining", _first(view, "remaining_work", "remaining"))
+        acknowledgement = _mapping(payload.get("acknowledgement"))
+        _add_field(lines, "Ack token", acknowledgement.get("token"))
+        if acknowledgement.get("required"):
+            lines.append("  Next         Review the recovered state, then run acknowledge --token <token>.")
         if len(lines) == 2:
             lines.append("  State        Recovery succeeded; use --json for the complete view.")
+
+    elif "acknowledged" in payload:
+        lines.append("  Status       Recovered work state acknowledged.")
 
     elif "handoff" in payload:
         receipt = _mapping(payload.get("handoff"))
@@ -180,6 +201,8 @@ def _error(exc: Exception) -> dict[str, Any]:
         code = "work_graph_state_error"
     elif isinstance(exc, WorkGraphStoreError):
         code = "work_graph_store_error"
+    elif isinstance(exc, RecoveryAcknowledgementRequired):
+        code = "recovery_acknowledgement_required"
     elif isinstance(exc, ValueError):
         code = "invalid_work_graph_request"
     else:
@@ -213,6 +236,7 @@ def _claim(project: Path, args: Any) -> tuple[Any, str]:
     if len(session_id) > _MAX_ID_CHARS or "\x00" in session_id:
         raise ValueError(f"--session may not exceed {_MAX_ID_CHARS} characters or contain NUL")
     store = _store_for_path(project)
+    recovery_require_acknowledged(store.repo_dir)
     now_ms = int(time.time() * 1000)
     lease_id = uuid.uuid4().hex
     observation = discover_repository_observation(
@@ -287,13 +311,19 @@ def run(args: Any) -> int:
             # Resume is an explicit recovery action: refresh bounded durable
             # repository/checkpoint facts plus exact unstaged worktree identity
             # before Rust reconstructs the workstream.
-            store.submit_repository_observation(
-                _passive_observation(project), repository_path=project
+            resume_view = recover_workstream(
+                store, project, _passive_observation(project),
+                workstream_id=workstream, max_evidence=max_evidence,
             )
-            resume_view = store.resume(workstream or None, max_evidence=max_evidence)
             payload = {
                 "status": "ok",
                 "resume": resume_view,
+                "acknowledgement": recovery_arm(
+                    store.repo_dir,
+                    recovery_token(resume_view),
+                    recovery_unknowns(resume_view),
+                    workspace_commitment=resume_view["current_workspace_commitment"],
+                ),
             }
             target_agent = str(getattr(args, "to_agent", "") or "").strip()
             if target_agent:
@@ -304,18 +334,30 @@ def run(args: Any) -> int:
                     outstanding_work_refs=continuation_outstanding_refs(resume_view),
                     created_at_ms=int(time.time() * 1000),
                 )
+        elif action == "acknowledge":
+            token = _required_id(args.token, "--token")
+            store = _store_for_path(project)
+            payload = {
+                "status": "ok",
+                **recovery_acknowledge(
+                    store.repo_dir, token,
+                    workspace_commitment=workspace_commitment(_passive_observation(project)),
+                ),
+            }
         elif action == "handoff":
             workstream = _required_id(args.workstream, "--workstream")
             source_agent = _required_id(args.from_agent, "--from-agent")
             target_agent = _required_id(args.to_agent, "--to-agent")
             store = _store_for_path(project)
+            recovery_require_acknowledged(store.repo_dir)
             # A handoff receipt must commit to the latest durable worktree and
             # checkpoint facts, including exact unstaged worktree content identity.
-            store.submit_repository_observation(
-                _passive_observation(project), repository_path=project
-            )
+            observation = _passive_observation(project)
+            store.submit_repository_observation(observation, repository_path=project)
             handoff = store.handoff(workstream, source_agent, target_agent)
-            resume_view = store.resume(workstream, max_evidence=128)
+            resume_view = attach_current_worktree_changes(
+                store.resume(workstream, max_evidence=128), observation
+            )
             payload = {
                 "status": "ok",
                 "handoff": handoff,
@@ -329,7 +371,7 @@ def run(args: Any) -> int:
             payload = {
                 "status": "error",
                 "error": "missing_work_action",
-                "detail": "choose state, claim, resume, or handoff",
+                "detail": "choose state, claim, resume, acknowledge, or handoff",
             }
     except Exception as exc:
         payload = _error(exc)
@@ -367,6 +409,10 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         help="Also seal an evidence-bounded no-handoff continuation proof",
     )
+    acknowledge = actions.add_parser(
+        "acknowledge", help="Accept responsibility for the recovered state"
+    )
+    acknowledge.add_argument("--token", required=True)
     handoff = actions.add_parser("handoff", help="Seal a graph-bound cross-agent handoff")
     handoff.add_argument("--workstream", required=True)
     handoff.add_argument("--from-agent", required=True)
