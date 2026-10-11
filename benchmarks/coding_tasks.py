@@ -94,19 +94,29 @@ class BenchmarkHarness:
             shutil.rmtree(task_dir)
         task_dir.mkdir(parents=True)
 
-        # Run setup
-        try:
-            subprocess.run(
-                task.setup_command,
-                shell=True,
-                cwd=task_dir,
-                check=True,
-                capture_output=True,
-                timeout=10,
+        # Run setup (explicit file writing for built-in tasks; safe split for custom commands)
+        if task.id == "python_syntax_fix":
+            (task_dir / "server.py").write_text('def hello() print("world")\n', encoding="utf-8")
+        elif task.id == "rust_test_fix":
+            src_dir = task_dir / "src"
+            src_dir.mkdir(parents=True, exist_ok=True)
+            (src_dir / "lib.rs").write_text(
+                '#[test] fn test_val() { assert_eq!(get_val(), 42); } fn get_val() -> i32 { 0 }\n',
+                encoding="utf-8",
             )
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Task {task.id} setup failed: {e.stderr.decode()}")
-            raise
+        elif task.setup_command:
+            import shlex
+            try:
+                subprocess.run(
+                    shlex.split(task.setup_command),
+                    cwd=task_dir,
+                    check=True,
+                    capture_output=True,
+                    timeout=10,
+                )
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Task {task.id} setup failed: {e.stderr.decode()}")
+                raise
 
         return task_dir
 

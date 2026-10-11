@@ -67,6 +67,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import statistics
 import subprocess
 import sys
@@ -124,7 +125,7 @@ def _required(text: str, cap: int = 300) -> list[str]:
 
 def _capture(cmd: str) -> str:
     try:
-        proc = subprocess.run(cmd, shell=True, capture_output=True, text=True,
+        proc = subprocess.run(shlex.split(cmd), capture_output=True, text=True,
                               timeout=180, cwd=REPO, encoding="utf-8", errors="replace")
         return (proc.stdout or "") + (proc.stderr or "")
     except (OSError, subprocess.SubprocessError):
