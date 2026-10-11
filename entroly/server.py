@@ -383,8 +383,9 @@ def _prepare_public_mcp_surface(mcp: Any) -> None:
                 "Read one current workspace file at an exact or relevance-based "
                 "resolution. Use this for a known path; use recall_relevant to search "
                 "stored fragments and retrieve_context for a CCR handle. resolution=full "
-                "or a line range returns exact source text. It reads only within the "
-                "configured project root and makes no network call."
+                "or a line range returns exact source text. This is a read-only "
+                "inspection tool: it cannot submit findings or a review verdict. "
+                "It reads only within the configured project root and makes no network call."
             ),
             "annotations": (True, False, True, True),
             "parameters": {
@@ -476,13 +477,19 @@ def _prepare_public_mcp_surface(mcp: Any) -> None:
             "parameters": {"to_agent": "Reviewer identifier used by the writer.", "project": "Optional path within the configured repository root."},
         },
         "work_record_review": {
-            "description": "Record an untrusted agent review statement bound to a verified handoff and source digests.",
+            "description": (
+                "Submit a caller-authored review verdict, findings, and observed checks "
+                "against a verified handoff receipt. This writes a local review record "
+                "after reading bounded files to bind their digests; it does not return "
+                "source text or perform the review for the caller. "
+                "The verdict is an agent statement, not a correctness proof."
+            ),
             "annotations": (False, False, False, False),
             "parameters": {
                 "handoff": "Exact receipt returned by work_handoff or work_pending_handoffs.",
                 "reviewer_id": "Reviewer identifier matching the handoff target; self asserted.",
                 "verdict": "approve, changes_requested, or comment.",
-                "findings": "Bounded path, line, severity, and message records.",
+                "findings": "Caller-supplied path, line, severity, and message records.",
                 "summary": "Short reviewer conclusion.",
                 "checks": "Optional observed check names and exit codes; caller statements only.",
                 "project": "Optional path within the configured repository root.",
