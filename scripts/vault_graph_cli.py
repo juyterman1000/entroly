@@ -81,7 +81,7 @@ class VaultGraphParser:
                         if value:
                             result[key] = value
                 return result
-            except:
+            except Exception:
                 return {}
         return {}
 

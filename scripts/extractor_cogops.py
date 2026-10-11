@@ -1,5 +1,6 @@
 import os
 import ast
+from pathlib import Path
 
 def extract_python(filepath):
     output = []
@@ -45,8 +46,6 @@ def extract_rust(filepath):
         elif not line.startswith("#["):
             current_doc = []
     return "\n".join(output)
-
-from pathlib import Path
 
 
 def main():

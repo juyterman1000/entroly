@@ -1,4 +1,7 @@
+import hashlib
+
 from entroly.relate import compile_query_contract, EvidenceCandidate, RelationVector, detect_semantic_collision, extract_differential_spans, normalize_action, verify_omission_safety, compute_residual, extract_dimensions, check_dimension_coverage, verify_omission_with_dimensions, verify_joint_omission_safety, asymmetry, certify_recoverable, conditional_residual, is_subsumed
+from entroly.context_receipts.models import stable_hash
 from entroly.relate.compression_residual import certify_containment
 from entroly.context_receipts.firewall import verify_receipt_closure
 from entroly.relate.counterfactual import make_counterfactual
@@ -566,9 +569,6 @@ def test_containment_is_fail_closed_across_compressors():
 
 
 # --- Receipt-Closed Selection Firewall (Pillar V) ---
-
-import hashlib
-from entroly.context_receipts.models import stable_hash
 
 
 def _make_minimal_receipt():

@@ -1,5 +1,6 @@
 import os
 import ast
+from pathlib import Path
 
 def extract_python(filepath):
     output = []
@@ -47,10 +48,8 @@ def extract_generic(filepath):
         with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
             lines = f.readlines()
         return "".join(lines[:50])
-    except:
+    except OSError:
         return ""
-
-from pathlib import Path
 
 
 def main():
