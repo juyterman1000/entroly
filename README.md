@@ -413,6 +413,25 @@ tools first. A direct `entroly serve` invocation remains backwards compatible
 and exposes the full tool surface. You can choose either behavior explicitly
 with `ENTROLY_MCP_PROFILE=public` or `ENTROLY_MCP_PROFILE=full`.
 
+### Cross-agent review from a source checkout
+
+The bundled `entroly-agent-review` skill guides a local Claude-to-Codex (or
+other agent) code review. With both agents pointed at the same repository and
+local Entroly state, ask the writer to claim the task, use `work_state` to get
+its `workstream_id`, and call `work_handoff` for the reviewer. The reviewer uses
+`work_pending_handoffs`, `work_resume`, and `work_acknowledge_recovery` before
+claiming further work, then independently inspects the diff and calls
+`work_record_review`. `work_reviews` reports whether the reviewed source is
+still current. Start with `work_capabilities` in each host to check the actual
+repository root; MCP registration by itself does not establish that the right
+checkout is selected.
+
+The handoff and review are local Work Graph records. They bind a reviewer
+statement to observed Git state and file digests; they do not attest the
+reviewer's model identity or prove the verdict correct. This flow currently
+requires shared local state. A customer-hosted multi-machine service, identity
+policy, and audit administration are separate enterprise work.
+
 The MCP path is provider-neutral: the host can use OpenAI, Anthropic, Google,
 Mistral, DeepSeek, Kimi, GLM, or a local model. There is no separate plugin
 marketplace for each model provider; the host's MCP or extension contract is

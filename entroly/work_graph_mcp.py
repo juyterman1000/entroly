@@ -552,9 +552,12 @@ def work_handoff(
             outstanding_work_refs=continuation_outstanding_refs(view),
             created_at_ms=int(time.time() * 1000),
         )
+        from .work_graph_inbox import save_handoff
+
+        handoff_ref = save_handoff(store, receipt, proof)
         return _render_untrusted(
             "work_handoff",
-            {"handoff": receipt, "continuation_proof": proof},
+            {"handoff": receipt, "continuation_proof": proof, "handoff_ref": handoff_ref},
         )
     except Exception as exc:
         return _error("work_handoff", exc)

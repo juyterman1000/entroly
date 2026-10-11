@@ -255,6 +255,11 @@ def test_mcp_handoff_fingerprints_latest_repo_before_sealing_receipt(monkeypatch
         lambda handoff, **manifest: calls.append("proof")
         or original_proof(handoff, **manifest)
     )
+    from entroly import work_graph_inbox
+    monkeypatch.setattr(
+        work_graph_inbox, "save_handoff",
+        lambda _store, _handoff, _proof: calls.append("inbox") or "handoff:test",
+    )
 
     result = m.work_handoff(
         workstream_id="workstream:1",
@@ -263,7 +268,7 @@ def test_mcp_handoff_fingerprints_latest_repo_before_sealing_receipt(monkeypatch
     )
 
     assert result["status"] == "ok"
-    assert calls == ["observe", "fingerprint", "persist", "handoff", "resume", "proof"]
+    assert calls == ["observe", "fingerprint", "persist", "handoff", "resume", "proof", "inbox"]
     assert fake.observation["changes"][0]["content_digest"] == "git-blob:def"
     assert '"from_agent":"claude"' in result["context"]
     assert '"to_agent":"codex"' in result["context"]
