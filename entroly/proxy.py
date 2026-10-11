@@ -23,6 +23,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlparse
 
@@ -31,7 +32,9 @@ from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse, StreamingResponse
+from starlette.responses import JSONResponse, Response, StreamingResponse
+
+from .tokens import count_tokens
 from starlette.routing import Route
 
 from .adaptive_budget import AdaptiveBudgetModel, extract_features
@@ -246,14 +249,21 @@ def _entroly_tags_to_headers(tags: dict[str, str]) -> dict[str, str]:
 
 
 def _estimate_message_tokens(messages: Any) -> int:
-    """Rough token estimate for OpenAI/Anthropic message arrays."""
+    """Local token estimate for OpenAI/Anthropic message arrays.
+
+    This counted whitespace-separated words and scaled by 4/3, which returns 1
+    for any text without spaces: minified JSON, CJK, base64 payloads. Those are
+    ordinary agent traffic, and this number is the baseline the proxy reports
+    savings estimates against. The o200k count is not provider-billed usage;
+    without its verified local asset, count_tokens uses a character heuristic.
+    """
     if not isinstance(messages, list):
         return 0
-    words = 0
-    for msg in messages:
-        if isinstance(msg, dict):
-            words += len(_content_to_text(msg.get("content", "")).split())
-    return words * 4 // 3
+    return sum(
+        count_tokens(_content_to_text(msg.get("content", "")))
+        for msg in messages
+        if isinstance(msg, dict)
+    )
 
 
 # ── Resilience primitives ────────────────────────────────────────────
@@ -421,6 +431,60 @@ def _dp_round(value: int, granularity: int = 100) -> int:
 # ── Progressive Conversation Compression ──────────────────────────────────
 
 
+def _scored_role(content: Any, envelope_role: str) -> str:
+    """The role the progressive scorer should see for this content.
+
+    Anthropic carries tool results inside a ``role="user"`` message. The
+    scorer keys on role and holds every user turn verbatim, so a conversation
+    whose bulk is tool output is scored as untouchable user text and nothing
+    is compressed. The envelope is a transport detail; the blocks say what the
+    message actually is.
+    """
+    if not isinstance(content, list):
+        return envelope_role
+    kinds = {
+        block.get("type") for block in content if isinstance(block, dict)
+    }
+    if kinds and kinds <= {"tool_result"}:
+        return "tool"
+    return envelope_role
+
+
+def _compress_content_blocks(content: list, compress: Callable[[str], str]) -> list:
+    """Compress the text inside provider content blocks, preserving structure.
+
+    ``tool_use`` is deliberately untouched: its ``input`` is the structured
+    argument object the provider parses, and rewriting it would corrupt the
+    call rather than shorten it. Identity fields such as ``tool_use_id`` and
+    ``type`` are carried through unchanged for the same reason.
+    """
+    out: list = []
+    for block in content:
+        if not isinstance(block, dict):
+            out.append(block)
+            continue
+        kind = block.get("type")
+        if kind == "text" and isinstance(block.get("text"), str):
+            rewritten = dict(block)
+            rewritten["text"] = compress(block["text"])
+            out.append(rewritten)
+        elif kind == "thinking" and isinstance(block.get("thinking"), str):
+            rewritten = dict(block)
+            rewritten["thinking"] = compress(block["thinking"])
+            out.append(rewritten)
+        elif kind == "tool_result":
+            inner = block.get("content")
+            rewritten = dict(block)
+            if isinstance(inner, str):
+                rewritten["content"] = compress(inner)
+            elif isinstance(inner, list):
+                rewritten["content"] = _compress_content_blocks(inner, compress)
+            out.append(rewritten)
+        else:
+            out.append(block)
+    return out
+
+
 def compress_conversation_messages(
     messages: list[dict],
     context_window: int = 128_000,
@@ -458,9 +522,9 @@ def compress_conversation_messages(
         for i, msg in enumerate(messages):
             raw_content = msg.get("content", "")
             content = _content_to_text(raw_content)
-            role = msg.get("role", "user")
+            role = _scored_role(raw_content, msg.get("role", "user"))
             tool_name = msg.get("name") or msg.get("tool_name")
-            token_count = len(content) // 4  # rough estimate
+            token_count = count_tokens(content)
             blocks.append({
                 "index": i,
                 "role": role,
@@ -487,12 +551,33 @@ def compress_conversation_messages(
                 compressed.append(msg)
             else:
                 content = msg.get("content", "")
+                role = msg.get("role", "user")
+                tool_name = msg.get("name") or msg.get("tool_name")
+
+                if isinstance(content, list):
+                    # Block-list content used to bail here, which made this a
+                    # silent no-op for every Anthropic request: the resolution
+                    # was decided on flattened text above and then discarded
+                    # because the raw content was not a str.
+                    scored = _scored_role(content, role)
+                    new_msg = dict(msg)
+                    new_msg["content"] = _compress_content_blocks(
+                        content,
+                        lambda text: py_compress_block(
+                            scored,
+                            text,
+                            count_tokens(text),
+                            resolution,
+                            tool_name,
+                        ),
+                    )
+                    compressed.append(new_msg)
+                    continue
+
                 if not isinstance(content, str):
                     compressed.append(msg)
                     continue
-                role = msg.get("role", "user")
-                tool_name = msg.get("name") or msg.get("tool_name")
-                token_count = len(content) // 4
+                token_count = count_tokens(content)
 
                 new_content = py_compress_block(
                     role, content, token_count, resolution, tool_name
@@ -1110,6 +1195,33 @@ class PromptCompilerProxy:
         self._auto_recovery_failed = 0
         self._auto_recovery_last: dict[str, Any] | None = None
 
+        # Recovery retries on a verification verdict, so it only runs where a
+        # verdict exists. Those two places do not agree:
+        #
+        #   non-streaming  _forward_response                gated on _witness_enabled
+        #   streaming      _buffered_witness_stream_response reached only when the
+        #                                                    mode is annotate/strict
+        #
+        # The default mode is "audit", so a streaming request takes the plain
+        # path and never reaches a verdict or a recovery attempt. Coding agents
+        # stream, which makes that the common case, while /stats reported
+        # `enabled: true` beside `attempted: 0` with nothing naming the reason.
+        self._auto_recovery_streaming_blocked_by: str | None = None
+        if self._auto_recovery_enabled and self._witness_mode not in {
+            "annotate",
+            "strict",
+        }:
+            self._auto_recovery_streaming_blocked_by = (
+                f"witness_mode={self._witness_mode or 'off'}"
+            )
+            logger.warning(
+                "Auto-recovery will not run on streaming requests: it retries "
+                "on a verification verdict, and witness_mode=%s produces one "
+                "only on the non-streaming path. Set "
+                "ENTROLY_WITNESS_MODE=annotate (or strict) to cover streaming.",
+                self._witness_mode or "off",
+            )
+
         # P2: Conformal cascade observability counters
         # Track post-response WITNESS→ECE→escalation.py decisions
         self._cascade_total = 0
@@ -1637,26 +1749,30 @@ class PromptCompilerProxy:
 
     @staticmethod
     def _estimate_body_tokens(body: dict[str, Any]) -> int:
-        """Rough input-token count for the outbound request body.
+        """Local input-token estimate for the outbound request body.
 
-        Characters over four is the standard approximation and is used only to
-        price a difference between two rates, where a proportional error
-        affects both sides and largely cancels.
+        This divided characters by four and justified it as pricing "a
+        difference between two rates, where a proportional error affects both
+        sides and largely cancels". That holds for the *ratio*; the amount
+        charged is linear in the token count, so the error does not cancel
+        there. Against a local o200k encoding, characters-over-four was 34%
+        low on minified JSON, 57% low on emoji and 67% low on CJK in tested
+        examples. Provider billing can differ.
         """
         try:
-            total = 0
+            parts: list[str] = []
             for message in body.get("messages") or []:
                 content = message.get("content")
                 if isinstance(content, str):
-                    total += len(content)
+                    parts.append(content)
                 elif isinstance(content, list):
                     for part in content:
                         if isinstance(part, dict):
-                            total += len(str(part.get("text", "")))
+                            parts.append(str(part.get("text", "")))
             system = body.get("system")
             if isinstance(system, str):
-                total += len(system)
-            return total // 4
+                parts.append(system)
+            return sum(count_tokens(part) for part in parts)
         except Exception:  # noqa: BLE001
             return 0
 
@@ -2474,17 +2590,13 @@ class PromptCompilerProxy:
                         original_tokens = _estimate_message_tokens(
                             body.get("messages", [])
                         )
-                    optimized_tokens = len(context_text.split()) * 4 // 3
+                    # Savings are NOT scored here. ``context_text`` is the snippet
+                    # about to be injected, and injection adds to the body; scoring
+                    # it against the whole inbound conversation compares two
+                    # different quantities and yields ~99% no matter what happened.
+                    # The outbound body does not exist until after injection and
+                    # pruning below, so the accounting runs there instead.
                     with self._stats_lock:
-                        self._total_original_tokens += original_tokens
-                        self._total_optimized_tokens += optimized_tokens
-                        # ── Context Waste Telemetry ──
-                        # Record per-request waste ratio for the real "X% wasted" number
-                        if original_tokens > 0:
-                            waste_ratio = max(0.0, (original_tokens - optimized_tokens) / original_tokens)
-                            self._waste_ratios.append(waste_ratio)
-                            if len(self._waste_ratios) > self._waste_max_samples:
-                                self._waste_ratios.pop(0)
                         self._last_context_fragments = selected_frags[:20] if selected_frags else []
                         # Track the top 10 excluded fragments for /explain transparency.
                         # These are candidates the engine considered but dropped.
@@ -2630,10 +2742,26 @@ class PromptCompilerProxy:
                         except Exception:
                             pass  # Never block for conversation pruning
 
+                    # ── Savings accounting ──
+                    # Both sides measured on the same artifact with the same
+                    # tokenizer: the conversation as received, against the body
+                    # actually being sent upstream after injection and pruning.
+                    optimized_tokens = self._estimate_body_tokens(body)
                     with self._stats_lock:
                         self._requests_optimized += 1
                         opt_count = self._requests_optimized
                         total_count = self._requests_total
+                        self._total_original_tokens += original_tokens
+                        self._total_optimized_tokens += optimized_tokens
+                        # ── Context Waste Telemetry ──
+                        # Not clamped at zero: a request the proxy made *larger*
+                        # has to report that it did, otherwise growth is
+                        # indistinguishable from breaking even.
+                        if original_tokens > 0:
+                            waste_ratio = (original_tokens - optimized_tokens) / original_tokens
+                            self._waste_ratios.append(waste_ratio)
+                            if len(self._waste_ratios) > self._waste_max_samples:
+                                self._waste_ratios.pop(0)
 
                     # ── Persistent value tracking ──
                     try:
@@ -3430,7 +3558,13 @@ class PromptCompilerProxy:
         security_issues: list[str] = []
         if self.config.enable_security_scan and hasattr(self.engine, '_guard') and self.engine._guard.available:
             for frag in selected:
-                content = frag.get("preview", frag.get("content", ""))
+                # Scan what is injected, not a summary of it. The hierarchical
+                # path attaches a `preview` that is the first 100 characters of
+                # the fragment (entroly-core/src/lib.rs), so preferring it meant
+                # a credential below the first line of a config file was never
+                # looked at while the whole file went to the model. Every other
+                # consumer already reads `content` first; this was the outlier.
+                content = frag.get("content") or frag.get("preview", "")
                 source = frag.get("source", "")
                 issues = self.engine._guard.scan(content, source)
                 for issue in issues:
@@ -3995,60 +4129,63 @@ class PromptCompilerProxy:
         # Capture selected fragments for per-variant utilization tracking (Change 4)
         _selected_frags = getattr(self, '_last_context_fragments', []) if _feedback_enabled else []
 
+        # ── Upstream status is decided here, not inside the generator ──
+        # A StreamingResponse fixes its status when it is constructed, and the
+        # generator does not run until after those headers are on the wire. The
+        # previous code opened the stream inside the generator, so an upstream
+        # 401/400/403 could only be reported by yielding its body into a
+        # text/event-stream that had already claimed 200. Clients stream by
+        # default, and a provider error body is not SSE-framed, so the SDK
+        # parsed zero events and raised nothing: a wrong API key surfaced as an
+        # empty assistant turn, and a 429 arrived without Retry-After so the
+        # SDK's backoff never engaged.
+        _client = await self._ensure_client()
+        try:
+            upstream = await _client.send(
+                _client.build_request("POST", url, json=body, headers=headers),
+                stream=True,
+            )
+        except httpx.TimeoutException as exc:
+            self._breaker.record_failure()
+            logger.warning("Upstream timeout opening stream: %s", exc)
+            return JSONResponse({"error": "upstream_timeout"}, status_code=504)
+        except Exception as exc:  # noqa: BLE001
+            self._breaker.record_failure()
+            logger.warning("Upstream unavailable opening stream: %s", exc)
+            return JSONResponse(
+                {"error": "upstream_unavailable", "detail": str(exc)[:200]},
+                status_code=502,
+            )
+
+        if upstream.status_code >= 400:
+            self._breaker.record_failure()
+            error_body = await upstream.aread()
+            await upstream.aclose()
+            error_headers: dict[str, str] = {}
+            retry_after = upstream.headers.get("retry-after")
+            if retry_after:
+                # Without this the client cannot honour the provider's own
+                # backoff signal and will retry immediately.
+                error_headers["Retry-After"] = retry_after
+            logger.warning(
+                "Upstream %d on streaming request", upstream.status_code
+            )
+            # The provider's body is passed through unchanged so the client's
+            # own error parsing keeps working.
+            return Response(
+                content=error_body,
+                status_code=upstream.status_code,
+                media_type=upstream.headers.get("content-type", "application/json"),
+                headers=error_headers,
+            )
+
         async def event_generator():
             buffer = [] if (_feedback_enabled or _witness_enabled) else None
             buffer_size = 0
             usage_tail = bytearray()
             try:
-                client = await self._ensure_client()
-                async with client.stream(
-                    "POST", url, json=body, headers=headers
-                ) as response:
-                    # ── Pre-flight status check before streaming ──
-                    # httpx streams don't raise on 4xx/5xx — we must
-                    # check before blindly iterating chunks.
-                    if response.status_code == 429:
-                        self._breaker.record_failure()
-                        retry_after = _parse_retry_after(
-                            response.headers.get("retry-after")
-                        )
-
-                        logger.warning(
-                            "Upstream 429 on streaming request (Retry-After=%s)",
-                            retry_after,
-                        )
-                        import json as _json
-                        err_body = _json.dumps({
-                            "error": "rate_limited",
-                            "status": 429,
-                            "detail": "Upstream rate-limited; honor Retry-After.",
-                            "retry_after_s": retry_after,
-                            "source": "upstream_api",
-                        })
-                        yield (
-                            f'data: {err_body}\n\n'
-                            f'data: [DONE]\n\n'
-                        ).encode()
-                        return
-                    if response.status_code >= 500:
-                        self._breaker.record_failure()
-                        logger.warning(
-                            "Upstream %d on streaming request",
-                            response.status_code,
-                        )
-                        import json as _json
-                        err_body = _json.dumps({
-                            "error": "upstream_error",
-                            "status": response.status_code,
-                            "detail": f"Upstream returned {response.status_code}",
-                            "source": "upstream_api",
-                        })
-                        yield (
-                            f'data: {err_body}\n\n'
-                            f'data: [DONE]\n\n'
-                        ).encode()
-                        return
-                    async for chunk in response.aiter_bytes():
+                try:
+                    async for chunk in upstream.aiter_bytes():
                         # Tee: pass through AND accumulate for analysis
                         if buffer is not None and buffer_size < _buffer_cap:
                             buffer.append(chunk)
@@ -4057,6 +4194,8 @@ class PromptCompilerProxy:
                         if len(usage_tail) > _usage_tail_cap:
                             del usage_tail[:-_usage_tail_cap]
                         yield chunk
+                finally:
+                    await upstream.aclose()
                 self._breaker.record_success()
                 if usage_tail:
                     await self._observe_stream_usage(
@@ -4194,6 +4333,7 @@ class PromptCompilerProxy:
 
         return StreamingResponse(
             event_generator(),
+            status_code=upstream.status_code,
             media_type="text/event-stream",
             headers=resp_headers,
         )
@@ -5460,6 +5600,75 @@ async def _metrics_prometheus(request: Request) -> StreamingResponse:
     return StreamingResponse(_gen(), media_type="text/plain; version=0.0.4")
 
 
+_OVERLAY_MAX_BYTES = 512 * 1024
+
+
+async def _buffer_overlay(request: Request) -> JSONResponse:
+    """Override the indexed content for a path with an editor's unsaved buffer.
+
+    Entroly indexes files from disk and re-indexes them when they change, so a
+    saved edit is picked up. An unsaved buffer is invisible to that: selection
+    ranks the version on disk while the developer is asking about the version
+    in front of them. Only the editor can see a dirty buffer, so it has to push.
+
+    `content` replaces what is indexed for `path`; a null `content` drops the
+    override and re-reads the file, so a save or a crashed editor returns the
+    index to disk rather than leaving it serving text that exists nowhere.
+    """
+    proxy = request.app.state.proxy
+    engine = getattr(proxy, "engine", None)
+    if engine is None:
+        return JSONResponse({"error": "engine_unavailable"}, status_code=503)
+
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    if not isinstance(body, dict):
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+
+    raw_path = body.get("path")
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        return JSONResponse({"error": "path_required"}, status_code=400)
+
+    # The index is a trusted store, so an endpoint that writes into it is
+    # confined to the workspace. resolve_file_within also requires the file to
+    # exist, which keeps a never-saved buffer from inventing a source path.
+    from .path_safety import resolve_file_within
+
+    root = os.environ.get("ENTROLY_SOURCE") or os.getcwd()
+    resolved = resolve_file_within(root, raw_path)
+    if resolved is None:
+        return JSONResponse({"error": "path_outside_workspace"}, status_code=403)
+    source = str(resolved)
+
+    content = body.get("content")
+
+    if content is None:
+        engine.remove_sources([source])
+        restored = False
+        try:
+            disk = resolved.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            disk = ""
+        if disk:
+            engine.ingest_fragment(disk, source, count_tokens(disk), False)
+            restored = True
+        return JSONResponse(
+            {"status": "cleared", "path": source, "restored_from_disk": restored}
+        )
+
+    if not isinstance(content, str):
+        return JSONResponse({"error": "content_must_be_string"}, status_code=400)
+    if len(content.encode("utf-8")) > _OVERLAY_MAX_BYTES:
+        return JSONResponse({"error": "content_too_large"}, status_code=413)
+
+    tokens = count_tokens(content)
+    engine.remove_sources([source])
+    engine.ingest_fragment(content, source, tokens, False)
+    return JSONResponse({"status": "applied", "path": source, "tokens": tokens})
+
+
 async def _record_outcome(request: Request) -> JSONResponse:
     """Gap #37: Record whether entroly's optimization helped or hurt.
 
@@ -6031,6 +6240,17 @@ async def _proxy_stats(request: Request) -> JSONResponse:
             },
             "auto_recovery": {
                 "enabled": proxy._auto_recovery_enabled,
+                # `enabled` is the operator's setting. Whether it can actually
+                # run differs by path, because the verification verdict that
+                # triggers it is only produced on one of them by default.
+                "active_buffered": bool(
+                    proxy._auto_recovery_enabled and proxy._witness_enabled
+                ),
+                "active_streaming": bool(
+                    proxy._auto_recovery_enabled
+                    and proxy._witness_mode in {"annotate", "strict"}
+                ),
+                "streaming_blocked_by": proxy._auto_recovery_streaming_blocked_by,
                 "attempted": proxy._auto_recovery_attempted,
                 "succeeded": proxy._auto_recovery_succeeded,
                 "failed": proxy._auto_recovery_failed,
@@ -6339,6 +6559,8 @@ def create_proxy_app(
             Route("/context", _sidecar_guard(_context_inspect)),          # Gap #29
             Route("/metrics", _sidecar_guard(_metrics_prometheus)),        # Gap #34
             Route("/outcome", _sidecar_guard(_record_outcome), methods=["POST"]),  # Gap #37
+            # Editor-supplied unsaved buffers; the only component that can see them.
+            Route("/overlay", _sidecar_guard(_buffer_overlay), methods=["POST"]),
             Route("/bypass", _sidecar_guard(_toggle_bypass), methods=["POST"]),    # Gap #28
             Route("/feedback", _sidecar_guard(_fragment_feedback), methods=["POST"]),  # Gap #42
             Route("/explain", _sidecar_guard(_context_explain)),                       # Gap #43

@@ -1097,14 +1097,30 @@ def test_jsonl_server_correlates_success_and_error(tmp_path):
     assert "unsupported operation" in responses[1]["error"]
 
 
-def test_committed_openclaw_benchmark_matches_runtime():
+def test_committed_openclaw_benchmark_matches_runtime(monkeypatch):
+    from entroly import tokens
+
     root = Path(__file__).resolve().parents[1]
-    expected = json.loads(
-        (root / "benchmarks/results/openclaw_evidence_pinning.json").read_text(
-            encoding="utf-8"
+    has_encoder = tokens._encoding() is not None
+
+    # Both documented local modes must reproduce their own committed result.
+    # The canonical asset is deliberately not downloaded on a fresh runner.
+    with monkeypatch.context() as patch:
+        patch.setattr(tokens, "_encoding", lambda: None)
+        expected = json.loads(
+            (root / "benchmarks/results/openclaw_evidence_pinning.json").read_text(
+                encoding="utf-8"
+            )
         )
-    )
-    assert run_openclaw_benchmark() == expected
+        assert run_openclaw_benchmark() == expected
+
+    if has_encoder:
+        expected = json.loads(
+            (root / "benchmarks/results/openclaw_evidence_pinning_o200k.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert run_openclaw_benchmark() == expected
 
 
 def _pytest_log(count: int, tag: str) -> str:
@@ -1182,6 +1198,16 @@ def test_old_tool_output_is_compressed_and_keeps_the_failure(tmp_path):
     assert "assert 3 == 4" in block["content"]
     assert "1 failed, 300 passed" in block["content"]
     assert len(block["content"]) < len(messages[1]["content"][0]["content"])
+
+
+def test_tool_savings_are_zero_when_safe_budget_falls_back(tmp_path):
+    messages = _session_with_old_tool_logs()
+    result = _assemble_session(tmp_path, messages, budget=100)
+
+    assert result["messages"] == messages
+    assert result["tool_output_tokens_saved"] == 0
+    assert result["tokens_saved"] == 0
+    assert any("exact original" in warning for warning in result["warnings"])
 
 
 def test_compressed_tool_result_keeps_its_protocol_identity(tmp_path):

@@ -7,6 +7,7 @@ import json
 import pytest
 
 from entroly import sdk
+from entroly.tokens import count_tokens
 
 
 @pytest.mark.parametrize("content_type", ["prose", "code", "json", "log"])
@@ -35,7 +36,10 @@ def test_explicit_budget_is_an_estimated_upper_bound(content_type):
     out = sdk.compress(content, budget=120, content_type=content_type)
 
     assert out.strip()
-    assert len(out) <= 120 * 4
+    # The budget is declared in tokens, so it is checked in tokens. The old
+    # ``len(out) <= budget * 4`` form held only for ASCII prose and let dense
+    # content through several times over the ceiling.
+    assert count_tokens(out) <= 120
 
 
 def test_code_compression_preserves_symbol_skeleton_under_budget():
@@ -58,7 +62,7 @@ def test_code_compression_preserves_symbol_skeleton_under_budget():
 
     out = sdk.compress(content, budget=160, content_type="code")
 
-    assert len(out) <= 160 * 4
+    assert count_tokens(out) <= 160
     assert "IngestionService" in out
     assert "processTraceEventList" in out
     assert "mapTraceEventsToRecords" in out
@@ -146,7 +150,7 @@ def test_compress_messages_compresses_huge_recent_context_to_budget():
     out = sdk.compress_messages(messages, budget=500, preserve_last_n=4, distill=False)
 
     assert out[-1] == messages[-1]
-    assert sum(len(message["content"]) // 4 for message in out) <= 500
+    assert sum(count_tokens(message["content"]) for message in out) <= 500
     assert len(out[1]["content"]) < len(messages[1]["content"])
 
 

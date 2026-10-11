@@ -1,6 +1,6 @@
 {
   "name": "entroly-vscode",
-  "displayName": "Entroly — Context Compression & Receipts",
+  "displayName": "Entroly \u2014 Context Compression & Receipts",
   "description": "Select and compress repository context for AI tools with auditable receipts.",
   "version": "1.0.86",
   "publisher": "entroly",
@@ -82,6 +82,16 @@
           "type": "boolean",
           "default": true,
           "description": "Use local 'entroly' CLI / MCP server if installed on the host"
+        },
+        "entroly.syncUnsavedBuffers": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow sending unsaved editor buffers to the configured Entroly proxy so context selection can rank what you see, not the version on disk."
+        },
+        "entroly.proxyUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:9377",
+          "description": "Base URL of the local Entroly proxy used for unsaved-buffer sync."
         }
       }
     }
@@ -89,7 +99,8 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "test": "tsc -p ./ && node --test \"out/**/*.test.js\""
   },
   "devDependencies": {
     "@types/node": "^18.11.18",

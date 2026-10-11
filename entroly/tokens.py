@@ -106,6 +106,30 @@ def estimate_tokens(text: str) -> int:
     return count_tokens(text)
 
 
+def truncate_to_tokens(text: str, max_tokens: int) -> str:
+    """Return the longest prefix of ``text`` that encodes to ``max_tokens`` or fewer.
+
+    Slicing on characters cannot bound tokens: o200k spends roughly one token
+    per 1.4 characters of CJK and under one per emoji, against roughly four for
+    English. A ``budget * 4`` character slice is therefore a ceiling only for
+    ASCII prose, and silently several times over budget for everything else.
+
+    Falls back to the same character heuristic as :func:`count_tokens` when the
+    encoding is unavailable, so this stays usable without ``tiktoken``.
+    """
+    if max_tokens <= 0 or not text:
+        return ""
+    enc = _encoding()
+    if enc is None:
+        return text[: max(1, max_tokens * 4)]
+    ids = enc.encode(text)
+    if len(ids) <= max_tokens:
+        return text
+    # Cutting the id list can split a multi-byte character; tiktoken renders the
+    # remainder as U+FFFD. Drop it rather than hand back a corrupt tail.
+    return enc.decode(ids[:max_tokens]).rstrip("�")
+
+
 def count_messages_tokens(
     messages: Sequence[dict],
     *,

@@ -52,8 +52,16 @@ DOCUMENTED_BASE_EXPORTS = (
 
 
 def _estimated_tokens(messages: list[dict]) -> int:
+    """Measured token total for the compressed conversation.
+
+    This divided characters by four, which is the unit the SDK no longer
+    enforces in: the budget is a token ceiling, and four characters per token
+    is wrong by roughly 3x on CJK and 7x on emoji.
+    """
+    from entroly.tokens import count_tokens
+
     return sum(
-        len(message.get("content", "")) // 4
+        count_tokens(message["content"])
         for message in messages
         if isinstance(message, dict) and isinstance(message.get("content"), str)
     )

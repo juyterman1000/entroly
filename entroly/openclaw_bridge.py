@@ -21,6 +21,7 @@ from typing import Any, TextIO
 
 from .context_receipts.retrieval import tokenize
 from .sdk import compress
+from .tokens import count_tokens
 
 BRIDGE_SCHEMA = "entroly.openclaw.bridge.v2"
 RECEIPT_SCHEMA = "entroly.openclaw.receipt.v2"
@@ -57,7 +58,7 @@ def _hmac_sha256(key: bytes, label: str, value: str) -> str:
 
 def _estimate_value_tokens(value: Any) -> int:
     if isinstance(value, str):
-        return max(1, (len(value) + 3) // 4) if value else 0
+        return count_tokens(value)
     if value is None or isinstance(value, (bool, int, float)):
         return 1
     if isinstance(value, list):
@@ -458,6 +459,56 @@ def _compress_message_bodies(
     for index, item in enumerate(relevance):
         item["allocated_tokens"] = allocations[index]
     return result, pinned, relevance, distillation_failures, tool_tokens_saved
+
+
+def _tighten_tool_results(
+    messages: list[dict[str, Any]], protected_indexes: set[int], budget: int
+) -> tuple[list[dict[str, Any]], int]:
+    """Spend any remaining overage on rewritable tool text, preserving envelopes."""
+    assembled_tokens = estimate_messages_tokens(messages)
+    if assembled_tokens <= budget:
+        return messages, 0
+
+    result = copy.deepcopy(messages)
+    saved = 0
+    for _ in range(3):
+        locations = [
+            (message_index, block_index, inner_index, text)
+            for message_index, message in enumerate(result)
+            if message_index not in protected_indexes
+            for block_index, inner_index, text in _tool_result_text_locations(message)
+        ]
+        tool_tokens = sum(_estimate_value_tokens(text) for _, _, _, text in locations)
+        if not tool_tokens or assembled_tokens <= budget:
+            break
+        non_tool_tokens = assembled_tokens - tool_tokens
+        available = max(0, budget - non_tool_tokens)
+        if not available:
+            break
+        changed = False
+        for message_index, block_index, inner_index, text in locations:
+            current = _estimate_value_tokens(text)
+            target = max(1, int(current * available / tool_tokens))
+            if target >= current:
+                continue
+            try:
+                shortened = compress(text, budget=target)
+            except Exception:
+                continue
+            reduction = current - _estimate_value_tokens(shortened)
+            if reduction <= 0:
+                continue
+            block = result[message_index]["content"][block_index]
+            if inner_index is None:
+                block["content"] = shortened
+            else:
+                block["content"][inner_index]["text"] = shortened
+            saved += reduction
+            changed = True
+        assembled_tokens = estimate_messages_tokens(result)
+        if not changed:
+            break
+    return result, saved
 
 
 def _safe_session_name(session_id: str) -> str:
@@ -1550,11 +1601,18 @@ def assemble(request: dict[str, Any]) -> dict[str, Any]:
                     "original text instead."
                 )
 
+    if assembled != messages:
+        assembled, extra_tool_saved = _tighten_tool_results(
+            assembled, protected_indexes, budget
+        )
+        tool_tokens_saved += extra_tool_saved
+
     try:
         _validate_assembly_invariants(messages, assembled, protected_indexes)
     except ValueError:
         assembled = messages
         evidence = {}
+        tool_tokens_saved = 0
         warnings.append(
             "An internal preservation invariant rejected the assembled context; "
             "Entroly returned the exact original context."
@@ -1565,6 +1623,7 @@ def assemble(request: dict[str, Any]) -> dict[str, Any]:
         assembled = messages
         assembled_tokens = source_tokens
         evidence = {}
+        tool_tokens_saved = 0
         warnings.append(
             "The minimum safe structured context could not fit the token budget; "
             "Entroly returned the exact original context for OpenClaw recovery."
