@@ -62,6 +62,7 @@ def continuation_outstanding_refs(view: dict[str, Any]) -> list[str]:
     task_ids = selected.get("task_ids", []) if isinstance(selected, dict) else []
     values = [
         *string_values(view.get("outstanding_work")),
+        *string_values(view.get("current_worktree_changed_paths")),
         *string_values(view.get("changed_paths")),
         *string_values(view.get("failures")),
         *string_values(task_ids),

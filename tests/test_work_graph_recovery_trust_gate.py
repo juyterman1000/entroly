@@ -173,6 +173,12 @@ def test_claim_is_refused_until_recovery_is_acknowledged(tmp_path, monkeypatch):
     wrong = work_acknowledge_recovery(project=str(repo), token="recovery:" + "0" * 32)
     assert wrong["status"] == "error"
 
+    (repo / "app.py").write_text("x = 9\n", encoding="utf-8")
+    stale = work_acknowledge_recovery(project=str(repo), token=ack["token"])
+    assert stale["status"] == "error"
+    assert "repository changed after recovery" in stale["detail"]
+    (repo / "app.py").write_text("x = 1\n", encoding="utf-8")
+
     accepted = work_acknowledge_recovery(project=str(repo), token=ack["token"])
     assert accepted["status"] == "ok"
     assert accepted["acknowledged"] is True

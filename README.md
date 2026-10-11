@@ -64,6 +64,14 @@ show you real numbers on your own project before you connect anything paid.
 (Missing native-engine support is reported without downloading packages — see
 the note under [Install](#install).)
 
+**Switching coding agents mid-task?** `entroly-work resume` reconstructs
+unfinished work from durable repository evidence, even if the previous agent
+left no handoff. The receiving agent must review the inferred state and
+acknowledge it before claiming work through Entroly. Start with
+[`entroly-work --project . --json resume --to-agent codex`](docs/agent-continuity.md);
+the [agent continuity guide](docs/agent-continuity.md) shows the complete flow
+and how to measure whether it actually saves rediscovery work on your tasks.
+
 ---
 
 ## Contributing
