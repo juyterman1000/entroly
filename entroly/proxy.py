@@ -23,6 +23,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlparse
 
@@ -32,6 +33,8 @@ from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response, StreamingResponse
+
+from .tokens import count_tokens
 from starlette.routing import Route
 
 from .adaptive_budget import AdaptiveBudgetModel, extract_features
@@ -255,8 +258,6 @@ def _estimate_message_tokens(messages: Any) -> int:
     """
     if not isinstance(messages, list):
         return 0
-    from .tokens import count_tokens
-
     return sum(
         count_tokens(_content_to_text(msg.get("content", "")))
         for msg in messages
@@ -429,6 +430,60 @@ def _dp_round(value: int, granularity: int = 100) -> int:
 # ── Progressive Conversation Compression ──────────────────────────────────
 
 
+def _scored_role(content: Any, envelope_role: str) -> str:
+    """The role the progressive scorer should see for this content.
+
+    Anthropic carries tool results inside a ``role="user"`` message. The
+    scorer keys on role and holds every user turn verbatim, so a conversation
+    whose bulk is tool output is scored as untouchable user text and nothing
+    is compressed. The envelope is a transport detail; the blocks say what the
+    message actually is.
+    """
+    if not isinstance(content, list):
+        return envelope_role
+    kinds = {
+        block.get("type") for block in content if isinstance(block, dict)
+    }
+    if kinds and kinds <= {"tool_result"}:
+        return "tool"
+    return envelope_role
+
+
+def _compress_content_blocks(content: list, compress: Callable[[str], str]) -> list:
+    """Compress the text inside provider content blocks, preserving structure.
+
+    ``tool_use`` is deliberately untouched: its ``input`` is the structured
+    argument object the provider parses, and rewriting it would corrupt the
+    call rather than shorten it. Identity fields such as ``tool_use_id`` and
+    ``type`` are carried through unchanged for the same reason.
+    """
+    out: list = []
+    for block in content:
+        if not isinstance(block, dict):
+            out.append(block)
+            continue
+        kind = block.get("type")
+        if kind == "text" and isinstance(block.get("text"), str):
+            rewritten = dict(block)
+            rewritten["text"] = compress(block["text"])
+            out.append(rewritten)
+        elif kind == "thinking" and isinstance(block.get("thinking"), str):
+            rewritten = dict(block)
+            rewritten["thinking"] = compress(block["thinking"])
+            out.append(rewritten)
+        elif kind == "tool_result":
+            inner = block.get("content")
+            rewritten = dict(block)
+            if isinstance(inner, str):
+                rewritten["content"] = compress(inner)
+            elif isinstance(inner, list):
+                rewritten["content"] = _compress_content_blocks(inner, compress)
+            out.append(rewritten)
+        else:
+            out.append(block)
+    return out
+
+
 def compress_conversation_messages(
     messages: list[dict],
     context_window: int = 128_000,
@@ -466,9 +521,9 @@ def compress_conversation_messages(
         for i, msg in enumerate(messages):
             raw_content = msg.get("content", "")
             content = _content_to_text(raw_content)
-            role = msg.get("role", "user")
+            role = _scored_role(raw_content, msg.get("role", "user"))
             tool_name = msg.get("name") or msg.get("tool_name")
-            token_count = len(content) // 4  # rough estimate
+            token_count = count_tokens(content)
             blocks.append({
                 "index": i,
                 "role": role,
@@ -495,12 +550,33 @@ def compress_conversation_messages(
                 compressed.append(msg)
             else:
                 content = msg.get("content", "")
+                role = msg.get("role", "user")
+                tool_name = msg.get("name") or msg.get("tool_name")
+
+                if isinstance(content, list):
+                    # Block-list content used to bail here, which made this a
+                    # silent no-op for every Anthropic request: the resolution
+                    # was decided on flattened text above and then discarded
+                    # because the raw content was not a str.
+                    scored = _scored_role(content, role)
+                    new_msg = dict(msg)
+                    new_msg["content"] = _compress_content_blocks(
+                        content,
+                        lambda text: py_compress_block(
+                            scored,
+                            text,
+                            count_tokens(text),
+                            resolution,
+                            tool_name,
+                        ),
+                    )
+                    compressed.append(new_msg)
+                    continue
+
                 if not isinstance(content, str):
                     compressed.append(msg)
                     continue
-                role = msg.get("role", "user")
-                tool_name = msg.get("name") or msg.get("tool_name")
-                token_count = len(content) // 4
+                token_count = count_tokens(content)
 
                 new_content = py_compress_block(
                     role, content, token_count, resolution, tool_name
@@ -1655,8 +1731,6 @@ class PromptCompilerProxy:
         low on minified JSON, 57% low on emoji and 67% low on CJK.
         """
         try:
-            from .tokens import count_tokens
-
             parts: list[str] = []
             for message in body.get("messages") or []:
                 content = message.get("content")
