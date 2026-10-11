@@ -85,8 +85,8 @@
         },
         "entroly.syncUnsavedBuffers": {
           "type": "boolean",
-          "default": true,
-          "description": "Send unsaved editor buffers to the local Entroly proxy so context selection ranks what you see, not the version on disk."
+          "default": false,
+          "description": "Allow sending unsaved editor buffers to the configured Entroly proxy so context selection can rank what you see, not the version on disk."
         },
         "entroly.proxyUrl": {
           "type": "string",

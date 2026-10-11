@@ -170,3 +170,22 @@ test('dispose retracts every installed overlay', async () => {
     ['/w/a.py', '/w/b.py']
   );
 });
+
+test('dispose waits for an in-flight push before retracting it', async () => {
+  const calls: string[] = [];
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const overlay = new BufferOverlay({
+    push: async () => { await gate; calls.push('push'); },
+    clear: async () => { calls.push('clear'); },
+  });
+
+  overlay.recordChange('/w/a.py', 'dirty', true);
+  const flushing = overlay.flush();
+  const disposing = overlay.dispose();
+  release();
+  await Promise.all([flushing, disposing]);
+
+  assert.deepEqual(calls, ['push', 'clear']);
+  assert.deepEqual(overlay.activePaths(), []);
+});

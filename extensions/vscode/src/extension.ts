@@ -53,7 +53,7 @@ export function activate(context: vscode.ExtensionContext) {
   const overlayEnabled = () =>
     vscode.workspace
       .getConfiguration('entroly')
-      .get<boolean>('syncUnsavedBuffers', true);
+      .get<boolean>('syncUnsavedBuffers', false);
 
   context.subscriptions.push(
     // `file` only: an untitled buffer has no path on disk for the index to
@@ -82,6 +82,15 @@ export function activate(context: vscode.ExtensionContext) {
       }
       overlay.recordClose(document.uri.fsPath);
       scheduleFlush();
+    }),
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (event.affectsConfiguration('entroly.syncUnsavedBuffers') && !overlayEnabled()) {
+        if (flushTimer) {
+          clearTimeout(flushTimer);
+          flushTimer = undefined;
+        }
+        void overlay.dispose();
+      }
     }),
     {
       dispose: () => {

@@ -43,6 +43,7 @@ const DEFAULT_EXCLUDED: RegExp[] = [
 export class BufferOverlay {
   private readonly pending = new Map<string, string>();
   private readonly active = new Set<string>();
+  private inFlight: Promise<void> = Promise.resolve();
   private readonly maxBytes: number;
   private readonly excluded: RegExp[];
 
@@ -112,23 +113,26 @@ export class BufferOverlay {
    * optimisation over disk, and a stuck retry loop against a proxy that is not
    * running would be worse than ranking the saved version of the file.
    */
-  async flush(): Promise<void> {
+  flush(): Promise<void> {
     const batch = [...this.pending.entries()];
     this.pending.clear();
-    for (const [path, content] of batch) {
-      try {
-        if (content === '') {
-          await this.transport.clear(path);
-          this.active.delete(path);
-        } else {
-          await this.transport.push(path, content);
-          this.active.add(path);
+    const run = this.inFlight.then(async () => {
+      for (const [path, content] of batch) {
+        try {
+          if (content === '') {
+            await this.transport.clear(path);
+            this.active.delete(path);
+          } else {
+            await this.transport.push(path, content);
+            this.active.add(path);
+          }
+        } catch {
+          // A failed clear may leave the remote overlay installed.
         }
-      } catch {
-        // Leave `active` as it was: on a failed clear the index may still hold
-        // the overlay, and claiming otherwise would hide it from `activePaths`.
       }
-    }
+    });
+    this.inFlight = run;
+    return run;
   }
 
   /**
@@ -138,6 +142,7 @@ export class BufferOverlay {
    */
   async dispose(): Promise<void> {
     this.pending.clear();
+    await this.inFlight;
     for (const path of [...this.active]) {
       try {
         await this.transport.clear(path);
