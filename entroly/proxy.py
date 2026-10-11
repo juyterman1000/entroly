@@ -3529,7 +3529,13 @@ class PromptCompilerProxy:
         security_issues: list[str] = []
         if self.config.enable_security_scan and hasattr(self.engine, '_guard') and self.engine._guard.available:
             for frag in selected:
-                content = frag.get("preview", frag.get("content", ""))
+                # Scan what is injected, not a summary of it. The hierarchical
+                # path attaches a `preview` that is the first 100 characters of
+                # the fragment (entroly-core/src/lib.rs), so preferring it meant
+                # a credential below the first line of a config file was never
+                # looked at while the whole file went to the model. Every other
+                # consumer already reads `content` first; this was the outlier.
+                content = frag.get("content") or frag.get("preview", "")
                 source = frag.get("source", "")
                 issues = self.engine._guard.scan(content, source)
                 for issue in issues:
