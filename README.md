@@ -426,6 +426,12 @@ still current. Start with `work_capabilities` in each host to check the actual
 repository root; MCP registration by itself does not establish that the right
 checkout is selected.
 
+If the writer's model budget ends before it calls `work_handoff`, the reviewer
+can call `work_resume(to_agent=...)` to obtain a reconstructed no-handoff proof
+and current changed-file evidence. It must treat previous-agent intent as
+unknown, acknowledge the recovered state, and review the source independently.
+It cannot create or record a Claude-authored handoff after Claude is gone.
+
 The handoff and review are local Work Graph records. They bind a reviewer
 statement to observed Git state and file digests; they do not attest the
 reviewer's model identity or prove the verdict correct. This flow currently

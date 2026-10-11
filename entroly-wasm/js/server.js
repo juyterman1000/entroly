@@ -18,7 +18,8 @@ const { buildRepoMap, renderRepoMapMarkdown } = require('./repo_map');
 const { ingestDiff, ingestDiagram, ingestVoice } = require('./multimodal');
 const { discoverRepositoryIdentity } = require('./work_graph_repo');
 const { WorkGraphStore } = require('./work_graph_store');
-const { handoffRepositoryWithProof, resumeRepository } = require('./work_graph_continuity');
+const { handoffRepositoryWithProof, resumeRepository, currentWorkspaceCommitment,
+  continuationOutstandingRefs } = require('./work_graph_continuity');
 const { recordReview, reviews } = require('./work_graph_review');
 const { pendingHandoffs, saveHandoff } = require('./work_graph_inbox');
 const { acknowledge: acknowledgeRecovery, arm: armRecovery, requireAcknowledged } = require('./work_graph_recovery_ack');
@@ -181,7 +182,7 @@ class EntrolyMCPServer {
       { name: 'work_capabilities', description: 'Check the active repository and local Work Graph review capability.', inputSchema: { type: 'object', properties: { project: { type: 'string', default: '' } } } },
       { name: 'work_state', description: 'Inspect persisted work state without a model-generated summary.', inputSchema: { type: 'object', properties: { project: { type: 'string', default: '' } } } },
       { name: 'work_claim', description: 'Claim an explicit task and bounded scope.', inputSchema: { type: 'object', properties: { agent_id: { type: 'string' }, task_title: { type: 'string' }, task_id: { type: 'string', default: '' }, session_id: { type: 'string', default: '' }, scope_paths: { type: 'array', items: { type: 'string' }, default: [] }, project: { type: 'string', default: '' } }, required: ['agent_id', 'task_title'] } },
-      { name: 'work_resume', description: 'Recover durable repository work and exact changed-file identities.', inputSchema: { type: 'object', properties: { project: { type: 'string', default: '' }, workstream_id: { type: 'string', default: '' }, max_evidence: { type: 'integer', default: 128 } } } },
+      { name: 'work_resume', description: 'Recover durable repository work and exact changed-file identities, optionally with a no-handoff proof.', inputSchema: { type: 'object', properties: { project: { type: 'string', default: '' }, workstream_id: { type: 'string', default: '' }, max_evidence: { type: 'integer', default: 128 }, to_agent: { type: 'string', default: '' } } } },
       { name: 'work_acknowledge_recovery', description: 'Accept responsibility for one recovered work state before claiming work.', inputSchema: { type: 'object', properties: { token: { type: 'string' }, project: { type: 'string', default: '' } }, required: ['token'] } },
       { name: 'work_handoff', description: 'Seal a graph-bound cross-agent handoff and continuation proof.', inputSchema: { type: 'object', properties: { from_agent: { type: 'string' }, to_agent: { type: 'string' }, workstream_id: { type: 'string' }, project: { type: 'string', default: '' } }, required: ['from_agent', 'to_agent', 'workstream_id'] } },
       { name: 'work_pending_handoffs', description: 'Find compact local handoffs addressed to one agent and check source freshness.', inputSchema: { type: 'object', properties: { to_agent: { type: 'string' }, project: { type: 'string', default: '' } }, required: ['to_agent'] } },
@@ -608,16 +609,25 @@ class EntrolyMCPServer {
         return { status: 'ok', kind: name, lease_id: leaseId, summary: graph.summary() };
       }
       case 'work_resume': {
+        const target = args.to_agent == null ? '' : String(args.to_agent).trim();
+        if (target.length > 512 || target.includes('\0')) throw new Error('invalid to_agent');
         const view = resumeRepository(repo, {
             workstreamId: args.workstream_id, maxEvidence: args.max_evidence,
           });
-        const acknowledgement = armRecovery(WorkGraphStore.forRepository(repo), view);
+        const store = WorkGraphStore.forRepository(repo);
+        const acknowledgement = armRecovery(store, view);
+        const continuation_proof = target ? store.reconstructedContinuationProof(
+          view.selected_workstream.node_id, target, {
+            outstanding_work_refs: continuationOutstandingRefs(view),
+            created_at_ms: Date.now(),
+          }) : undefined;
         return { status: 'ok', kind: name, trust: 'untrusted_recovered_work_state',
-          resume: view, acknowledgement };
+          resume: view, acknowledgement, ...(continuation_proof ? { continuation_proof } : {}) };
       }
       case 'work_acknowledge_recovery':
         return { status: 'ok', kind: name,
-          ...acknowledgeRecovery(WorkGraphStore.forRepository(repo), args.token) };
+          ...acknowledgeRecovery(WorkGraphStore.forRepository(repo), args.token,
+            currentWorkspaceCommitment(repo)) };
       case 'work_handoff': {
         const bundle = handoffRepositoryWithProof(repo, {
           fromAgent: args.from_agent, toAgent: args.to_agent, workstreamId: args.workstream_id,

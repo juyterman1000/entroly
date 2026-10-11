@@ -46,8 +46,12 @@ const sealed = server.handleTool('work_handoff', {
 });
 assert.strictEqual(sealed.handoff.to_agent, 'codex');
 assert.strictEqual(server.handleTool('work_pending_handoffs', { to_agent: 'codex' }).handoffs[0].current, true);
-const resumed = server.handleTool('work_resume', { workstream_id: workstream.node_id });
+const resumed = server.handleTool('work_resume', {
+  workstream_id: workstream.node_id, to_agent: 'codex',
+});
 assert.strictEqual(resumed.status, 'ok');
+assert.strictEqual(resumed.continuation_proof.to_agent, 'codex');
+assert(resumed.resume.current_workspace_commitment.startsWith('workspace:'));
 assert.throws(() => server.handleTool('work_claim', {
   agent_id: 'codex', task_title: 'Fix review findings', task_id: 'fix-review',
 }), /acknowledge/);
@@ -70,4 +74,14 @@ assert.throws(() => server.handleTool('work_record_review', {
   handoff: sealed.handoff, reviewer_id: 'codex', verdict: 'approve',
   findings: [], summary: 'Looks good',
 }), /stale|integrity/);
+const interrupted = server.handleTool('work_resume', { to_agent: 'codex' });
+assert.strictEqual(interrupted.continuation_proof.to_agent, 'codex');
+fs.writeFileSync(file, 'VALUE = 4\n');
+assert.throws(() => server.handleTool('work_acknowledge_recovery', {
+  token: interrupted.acknowledgement.token,
+}), /repository changed/);
+const currentRecovery = server.handleTool('work_resume', { to_agent: 'codex' });
+assert.strictEqual(server.handleTool('work_acknowledge_recovery', {
+  token: currentRecovery.acknowledgement.token,
+}).acknowledged, true);
 console.log('work graph review MCP test passed');
