@@ -26,6 +26,25 @@ from entroly.sdk import compress, compress_messages
 from entroly.tokens import count_tokens
 
 
+def _tokenizer_present() -> bool:
+    """True when count_tokens measures rather than falling back to chars/4.
+
+    tiktoken is an optional extra, so a base `pip install entroly` degrades
+    count_tokens to the same character heuristic the budget used to use. The
+    contract still holds there -- enforcement and assertion share one unit --
+    but a fixture built to show the tokenizer disagreeing with chars/4 cannot,
+    because in that environment it agrees by construction.
+    """
+    dense = "这是一个关于上下文压缩的技术文档。"
+    return count_tokens(dense) != max(1, (len(dense) + 3) // 4)
+
+
+requires_tokenizer = pytest.mark.skipif(
+    not _tokenizer_present(),
+    reason="no tokenizer installed; count_tokens is the chars/4 fallback",
+)
+
+
 # Deliberately spans characters-per-token from ~0.6 (emoji) to ~4.3 (English).
 SCRIPTS: dict[str, str] = {
     "english": "The quick brown fox jumps over the lazy dog. " * 120,
@@ -47,14 +66,16 @@ def test_compress_never_exceeds_the_token_budget(script: str, budget: int) -> No
 
 @pytest.mark.parametrize("script", sorted(SCRIPTS))
 def test_compress_messages_never_exceeds_the_token_budget(script: str) -> None:
-    body = SCRIPTS[script][: len(SCRIPTS[script]) // 10]
+    # Full-size bodies, not a tenth of them. compress_messages has a per-message
+    # floor (see test_compress_messages_has_a_per_message_floor), so a fixture
+    # small enough for a third of its own size to fall under that floor tests
+    # the floor rather than the budget.
+    body = SCRIPTS[script]
     messages = [
         {"role": "user" if index % 2 == 0 else "assistant", "content": body}
         for index in range(10)
     ]
     source = sum(count_tokens(m["content"]) for m in messages)
-    # A budget the character heuristic would wave through: below the real total
-    # but at or above the ``len // 4`` reading of it.
     budget = max(1, source // 3)
 
     out = compress_messages(messages, budget=budget)
@@ -62,6 +83,38 @@ def test_compress_messages_never_exceeds_the_token_budget(script: str) -> None:
     assert sum(count_tokens(m["content"]) for m in out) <= budget
 
 
+def test_compress_messages_has_a_per_message_floor() -> None:
+    """Below a certain budget the result stops shrinking, and says so here.
+
+    The tightening loop stops considering a message once it is down to about
+    twenty tokens, and the live user turn is never compressed. The sum of
+    those floors is the smallest conversation this can produce, so a budget
+    under it is not achievable. That is a real limit on the contract and is
+    pinned rather than hidden: budgets of 50, 100 and 150 all return the same
+    size.
+    """
+    body = "这是一个关于上下文压缩的技术文档，描述了令牌预算的执行方式。" * 6
+    messages = [
+        {"role": "user" if index % 2 == 0 else "assistant", "content": body}
+        for index in range(10)
+    ]
+
+    sizes = {
+        budget: sum(
+            count_tokens(m["content"])
+            for m in compress_messages(messages, budget=budget)
+        )
+        for budget in (50, 100, 150)
+    }
+
+    assert len(set(sizes.values())) == 1, (
+        f"expected one floor across unreachable budgets, got {sizes}"
+    )
+    floor = next(iter(sizes.values()))
+    assert floor > 150, "fixture must sit below the floor for this to mean anything"
+
+
+@requires_tokenizer
 def test_compress_messages_does_not_silently_skip_dense_input() -> None:
     """The decision to compress must be made in tokens, not characters.
 
@@ -85,6 +138,7 @@ def test_compress_messages_does_not_silently_skip_dense_input() -> None:
     assert sum(count_tokens(m["content"]) for m in out) <= char_estimate + 10
 
 
+@requires_tokenizer
 def test_reported_savings_are_measured_not_estimated() -> None:
     """Savings are reported to users, so they have to be real counts."""
     body = "这是一个关于上下文压缩的技术文档，描述了令牌预算的执行方式。" * 60
