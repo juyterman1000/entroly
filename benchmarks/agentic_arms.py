@@ -67,9 +67,9 @@ class Fragment:
 class BuiltContext:
     """What an arm decided to show the model, and what it held back.
 
-    `omitted` is not discarded: the closed-loop arm reads it on retry, and the
-    artifact records it so a failure can be attributed to a specific dropped
-    span rather than to compression in the abstract.
+    `omitted` holds recoverable original candidates, including sources shown
+    only in excerpt form. The artifact records their digests; these identify
+    recovery inputs, not the exact byte ranges absent from an excerpt.
     """
 
     arm: Arm
@@ -145,12 +145,16 @@ def build_compressed(
     payload = [fragment.to_engine_dict() for fragment in fragments]
     result = optimize_fn(payload, budget=budget, query=query)
 
-    selected_sources = _selected_sources(result)
     by_source = {fragment.source: fragment for fragment in fragments}
+    if len(by_source) != len(fragments):
+        raise ValueError("candidate fragment sources must be unique")
 
-    # Preserve the engine's ordering where it gave one; fall back to input
-    # order so the arm stays deterministic even if the engine does not rank.
-    included = [by_source[s] for s in selected_sources if s in by_source]
+    # The engine can select excerpts of a source. Sending the original file
+    # here would silently turn a compressed arm back into the RAW arm.
+    included = [
+        fragment for fragment in _selected_fragments(result)
+        if fragment.source in by_source
+    ]
     if not included:
         # Fail loudly rather than silently degrading into the RAW arm: an
         # empty selection is a real finding about the engine, not a reason to
@@ -161,8 +165,15 @@ def build_compressed(
             "compressed anything"
         )
 
-    included_sources = {fragment.source for fragment in included}
-    omitted = [f for f in fragments if f.source not in included_sources]
+    selected_by_source: dict[str, list[str]] = {}
+    for fragment in included:
+        selected_by_source.setdefault(fragment.source, []).append(fragment.content)
+    # A partial selection leaves the original full source recoverable, even
+    # when its path also appears in the first attempt's included sources.
+    omitted = [
+        original for original in fragments
+        if selected_by_source.get(original.source) != [original.content]
+    ]
 
     return BuiltContext(
         arm=Arm.COMPRESS,
@@ -183,13 +194,22 @@ def build_closed_loop(
     This is the arm that tests whether recovery earns its cost: it only runs
     when the first attempt failed, and it is charged for both attempts.
     """
-    recovered_list = [f for f in recovered if f.source not in {
-        frag.source for frag in base.included
-    }]
-    included = list(base.included) + recovered_list
+    recoverable = {(f.source, f.digest) for f in base.omitted}
+    recovered_list: list[Fragment] = []
+    seen_sources: set[str] = set()
+    for fragment in recovered:
+        if (fragment.source, fragment.digest) in recoverable and fragment.source not in seen_sources:
+            recovered_list.append(fragment)
+            seen_sources.add(fragment.source)
+    recovered_sources = {f.source for f in recovered_list}
+    # Replace all selected excerpts of a recovered source with its original
+    # full content; appending it would send duplicate, conflicting blocks.
+    included = [
+        f for f in base.included if f.source not in recovered_sources
+    ] + recovered_list
     still_omitted = [
         f for f in base.omitted
-        if f.source not in {frag.source for frag in recovered_list}
+        if f.source not in recovered_sources
     ]
     return BuiltContext(
         arm=Arm.CLOSED_LOOP,
@@ -234,8 +254,8 @@ def build_for_arm(
     raise ValueError(f"unknown arm: {arm!r}")
 
 
-def _selected_sources(result: dict[str, Any]) -> list[str]:
-    """Read the selected sources out of an optimize() result.
+def _selected_fragments(result: dict[str, Any]) -> list[Fragment]:
+    """Read the exact selected content out of an optimize() result.
 
     optimize() has carried its selection under more than one key across
     versions. Rather than guess, this checks the known shapes and raises if
@@ -255,16 +275,17 @@ def _selected_sources(result: dict[str, Any]) -> list[str]:
         if not isinstance(value, list):
             continue
         recognised_key = True
-        sources: list[str] = []
+        selected: list[Fragment] = []
         for item in value:
-            if isinstance(item, dict):
-                source = item.get("source") or item.get("path") or item.get("id")
-                if isinstance(source, str):
-                    sources.append(source)
-            elif isinstance(item, str):
-                sources.append(item)
-        if sources:
-            return sources
+            if not isinstance(item, dict):
+                raise TypeError("optimize() selected entry must include source and content")
+            source = item.get("source") or item.get("path") or item.get("id")
+            content = item.get("content")
+            if not isinstance(source, str) or not isinstance(content, str):
+                raise TypeError("optimize() selected entry must include source and content")
+            selected.append(Fragment(source=source, content=content))
+        if selected:
+            return selected
 
     if recognised_key:
         return []  # genuinely empty selection; the caller decides what that means
