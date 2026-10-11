@@ -45,8 +45,13 @@ function requireAcknowledged(store) {
 
 function arm(store, view) {
   const value = token(view);
-  const unknowns = [...new Set(['unknown:previous-agent-intent', ...(Array.isArray(view.unknowns) ? view.unknowns : [])])].sort();
-  const record = { token: value, trust: TRUST, unknowns };
+  const unknowns = [...new Set([
+    'unknown:previous-agent-intent',
+    ...(Array.isArray(view.unknowns) ? view.unknowns : []),
+    ...(view.current_worktree_changes_truncated ? ['unknown:current-worktree-changes-truncated'] : []),
+  ])].sort();
+  const record = { token: value, trust: TRUST, unknowns,
+    workspace_commitment: view.current_workspace_commitment };
   fs.mkdirSync(store.repoDir, { recursive: true, mode: 0o700 });
   const temporary = path.join(store.repoDir, `.ack-${crypto.randomUUID()}.tmp`);
   try {
@@ -60,11 +65,14 @@ function arm(store, view) {
   return { ...record, required: true };
 }
 
-function acknowledge(store, supplied) {
+function acknowledge(store, supplied, workspaceCommitment) {
   const record = pending(store);
   if (record === null) return { acknowledged: true, already_clear: true };
   if (!record.token || typeof supplied !== 'string' || supplied.trim() !== record.token) {
     throw new WorkGraphStateError('acknowledgement token does not match recovered state; call work_resume again');
+  }
+  if (record.workspace_commitment && workspaceCommitment !== record.workspace_commitment) {
+    throw new WorkGraphStateError('repository changed after recovery; call work_resume again');
   }
   fs.unlinkSync(markerPath(store));
   return { acknowledged: true, token: record.token, trust: TRUST, unknowns: record.unknowns };
