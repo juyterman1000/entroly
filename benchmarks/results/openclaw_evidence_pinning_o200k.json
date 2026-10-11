@@ -1,0 +1,21 @@
+{
+  "assembled_reproducibility_hash": "5eedd106b3fea290f2865fe4d769a0a1840a8ccdde4293f8a71d37ad890d0c83",
+  "caveat": "Synthetic deterministic benchmark; token counts are estimates, not billed usage.",
+  "evidence_pinning": {
+    "assembled_tokens_estimated": 1799,
+    "evidence_pinned": 1,
+    "exact_needle_retained": true,
+    "tokens_saved_estimated": 25920
+  },
+  "message_count": 11,
+  "model_calls": 0,
+  "source_tokens_estimated": 27719,
+  "token_budget_estimated": 1800,
+  "uniform_control": {
+    "assembled_tokens_estimated": 1789,
+    "evidence_pinned": 0,
+    "exact_needle_retained": false,
+    "tokens_saved_estimated": 25930
+  },
+  "workload": "synthetic normalized multi-provider OpenClaw session"
+}

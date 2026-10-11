@@ -249,12 +249,13 @@ def _entroly_tags_to_headers(tags: dict[str, str]) -> dict[str, str]:
 
 
 def _estimate_message_tokens(messages: Any) -> int:
-    """Measured token count for OpenAI/Anthropic message arrays.
+    """Local token estimate for OpenAI/Anthropic message arrays.
 
     This counted whitespace-separated words and scaled by 4/3, which returns 1
     for any text without spaces: minified JSON, CJK, base64 payloads. Those are
     ordinary agent traffic, and this number is the baseline the proxy reports
-    savings and dollar figures against.
+    savings estimates against. The o200k count is not provider-billed usage;
+    without its verified local asset, count_tokens uses a character heuristic.
     """
     if not isinstance(messages, list):
         return 0
@@ -1748,14 +1749,15 @@ class PromptCompilerProxy:
 
     @staticmethod
     def _estimate_body_tokens(body: dict[str, Any]) -> int:
-        """Measured input-token count for the outbound request body.
+        """Local input-token estimate for the outbound request body.
 
         This divided characters by four and justified it as pricing "a
         difference between two rates, where a proportional error affects both
         sides and largely cancels". That holds for the *ratio*; the amount
         charged is linear in the token count, so the error does not cancel
-        there. Measured against the real encoding, characters-over-four is 34%
-        low on minified JSON, 57% low on emoji and 67% low on CJK.
+        there. Against a local o200k encoding, characters-over-four was 34%
+        low on minified JSON, 57% low on emoji and 67% low on CJK in tested
+        examples. Provider billing can differ.
         """
         try:
             parts: list[str] = []

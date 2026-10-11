@@ -141,9 +141,9 @@ def _ensure_non_empty(
 
 
 def _budget_bounded_head(content: str, budget: int) -> str:
-    """Return a deterministic non-empty prefix within the token budget.
+    """Return a deterministic prefix within the local counter's budget.
 
-    Measured against the real encoding, not ``budget * 4`` characters: four
+    Counted with local o200k when available, not ``budget * 4`` characters: four
     characters per token holds for English prose and is already wrong for JSON
     (3.3) and badly wrong for CJK (1.4) and emoji (0.6), where a character
     slice runs several times over the declared ceiling.
@@ -467,8 +467,8 @@ def compress(
         prof_cfg = get_profile(profile)
         target_ratio = prof_cfg.get("compression_ratio", target_ratio)
 
-    # Measured token count and target ratio. The budget is a hard ceiling, so
-    # it has to be compared in the unit the provider charges in.
+    # Local token count and target ratio. This bounds the local counter, not
+    # every provider tokenizer or the provider's final billed input.
     current_tokens = count_tokens(content)
     if budget is not None:
         if current_tokens <= budget:
@@ -528,7 +528,7 @@ _QUERY_INSTRUCTION_TERMS = frozenset({
 
 
 def _message_tokens(messages: list[dict[str, Any]]) -> int:
-    """Return the measured token total for a message list.
+    """Return the local token estimate for a message list.
 
     This decides whether ``compress_messages`` runs at all, so a character
     estimate here is not a rounding error: a CJK conversation reads as a third

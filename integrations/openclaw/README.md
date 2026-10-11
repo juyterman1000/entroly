@@ -290,8 +290,10 @@ python -m benchmarks.openclaw_evidence_pinning
 
 The committed synthetic workload compares query-aware evidence pinning with
 uniform budget compression at the same estimated token budget. See the
-[result JSON](../../benchmarks/results/openclaw_evidence_pinning.json). It uses
-no model calls and does not claim downstream task accuracy.
+[fallback-count result JSON](../../benchmarks/results/openclaw_evidence_pinning.json)
+and the [local o200k result](../../benchmarks/results/openclaw_evidence_pinning_o200k.json).
+The active count depends on whether the verified local tokenizer asset is
+available. It uses no model calls and does not claim downstream task accuracy.
 
 Receipts are written under `<workspace>/.entroly/receipts/openclaw/` unless
 `receiptDir` is configured. They record keyed per-message digests and decisions,
