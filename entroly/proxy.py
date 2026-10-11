@@ -5598,6 +5598,75 @@ async def _metrics_prometheus(request: Request) -> StreamingResponse:
     return StreamingResponse(_gen(), media_type="text/plain; version=0.0.4")
 
 
+_OVERLAY_MAX_BYTES = 512 * 1024
+
+
+async def _buffer_overlay(request: Request) -> JSONResponse:
+    """Override the indexed content for a path with an editor's unsaved buffer.
+
+    Entroly indexes files from disk and re-indexes them when they change, so a
+    saved edit is picked up. An unsaved buffer is invisible to that: selection
+    ranks the version on disk while the developer is asking about the version
+    in front of them. Only the editor can see a dirty buffer, so it has to push.
+
+    `content` replaces what is indexed for `path`; a null `content` drops the
+    override and re-reads the file, so a save or a crashed editor returns the
+    index to disk rather than leaving it serving text that exists nowhere.
+    """
+    proxy = request.app.state.proxy
+    engine = getattr(proxy, "engine", None)
+    if engine is None:
+        return JSONResponse({"error": "engine_unavailable"}, status_code=503)
+
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    if not isinstance(body, dict):
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+
+    raw_path = body.get("path")
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        return JSONResponse({"error": "path_required"}, status_code=400)
+
+    # The index is a trusted store, so an endpoint that writes into it is
+    # confined to the workspace. resolve_file_within also requires the file to
+    # exist, which keeps a never-saved buffer from inventing a source path.
+    from .path_safety import resolve_file_within
+
+    root = os.environ.get("ENTROLY_SOURCE") or os.getcwd()
+    resolved = resolve_file_within(root, raw_path)
+    if resolved is None:
+        return JSONResponse({"error": "path_outside_workspace"}, status_code=403)
+    source = str(resolved)
+
+    content = body.get("content")
+
+    if content is None:
+        engine.remove_sources([source])
+        restored = False
+        try:
+            disk = resolved.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            disk = ""
+        if disk:
+            engine.ingest_fragment(disk, source, count_tokens(disk), False)
+            restored = True
+        return JSONResponse(
+            {"status": "cleared", "path": source, "restored_from_disk": restored}
+        )
+
+    if not isinstance(content, str):
+        return JSONResponse({"error": "content_must_be_string"}, status_code=400)
+    if len(content.encode("utf-8")) > _OVERLAY_MAX_BYTES:
+        return JSONResponse({"error": "content_too_large"}, status_code=413)
+
+    tokens = count_tokens(content)
+    engine.remove_sources([source])
+    engine.ingest_fragment(content, source, tokens, False)
+    return JSONResponse({"status": "applied", "path": source, "tokens": tokens})
+
+
 async def _record_outcome(request: Request) -> JSONResponse:
     """Gap #37: Record whether entroly's optimization helped or hurt.
 
@@ -6488,6 +6557,8 @@ def create_proxy_app(
             Route("/context", _sidecar_guard(_context_inspect)),          # Gap #29
             Route("/metrics", _sidecar_guard(_metrics_prometheus)),        # Gap #34
             Route("/outcome", _sidecar_guard(_record_outcome), methods=["POST"]),  # Gap #37
+            # Editor-supplied unsaved buffers; the only component that can see them.
+            Route("/overlay", _sidecar_guard(_buffer_overlay), methods=["POST"]),
             Route("/bypass", _sidecar_guard(_toggle_bypass), methods=["POST"]),    # Gap #28
             Route("/feedback", _sidecar_guard(_fragment_feedback), methods=["POST"]),  # Gap #42
             Route("/explain", _sidecar_guard(_context_explain)),                       # Gap #43

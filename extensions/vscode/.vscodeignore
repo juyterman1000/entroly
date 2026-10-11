@@ -4,3 +4,6 @@ node_modules/
 *.tsbuildinfo
 .gitignore
 .vscodeignore
+out/**/*.test.js
+out/**/*.test.js.map
+out/**/*.test.d.ts

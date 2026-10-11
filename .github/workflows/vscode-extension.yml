@@ -1,0 +1,76 @@
+name: VS Code extension
+
+# The extension shipped with no workflow of its own: nothing installed it,
+# type-checked it, or ran a test against it. It is published to users from a
+# `tsc` build that only ever ran on a developer's machine.
+
+on:
+  pull_request:
+    paths:
+      - "extensions/vscode/**"
+      - ".github/workflows/vscode-extension.yml"
+  push:
+    branches: [main]
+    paths:
+      - "extensions/vscode/**"
+      - ".github/workflows/vscode-extension.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Keyed on the pull request number so concurrent pull requests never cancel
+# each other; `github.ref` is the fallback for push and dispatch events. Only
+# pull-request runs cancel, matching the other workflows in this repository.
+concurrency:
+  group: vscode-extension-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  verify:
+    name: Build and test VS Code extension
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: extensions/vscode
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: extensions/vscode/package-lock.json
+
+      # `ci` rather than `install` so a lockfile that disagrees with
+      # package.json fails here instead of resolving to something nobody tested.
+      - run: npm ci
+
+      # Type-check separately from the build. tsconfig sets `strict: true`, so
+      # this is the check that actually has teeth; a build failure after a
+      # green type-check would mean something is wrong with the build itself.
+      - name: Type-check
+        run: npx tsc -p ./ --noEmit
+
+      - name: Compile
+        run: npm run compile
+
+      # node:test is in the runtime, so the extension gets a test harness
+      # without taking on @vscode/test-electron and a virtual display for
+      # logic that does not need the editor host to run.
+      - name: Test
+        run: npm test
+
+      # The packaged artifact is what users install, so .vscodeignore and the
+      # manifest are verified here rather than at publish time.
+      - name: Package
+        run: npx --yes @vscode/vsce package --no-dependencies --out entroly-vscode.vsix
+
+      - name: Upload packaged extension
+        uses: actions/upload-artifact@v7
+        with:
+          name: entroly-vscode
+          path: extensions/vscode/entroly-vscode.vsix
+          if-no-files-found: error
