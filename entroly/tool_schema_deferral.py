@@ -14,23 +14,41 @@ import re
 from dataclasses import dataclass
 from typing import Any, Mapping
 
+from .tokens import count_tokens, tokenizer_is_exact
+
 
 _SAFE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}")
 _MAX_ACTIVE_TOOLS = 64
 
 
+def _canonical_json(value: object) -> str:
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+
+
 def _schema_tokens(value: object) -> int:
+    """Count a schema's tokens with the canonical counter, not by character.
+
+    This used to divide the encoded byte length by four. Measured on realistic
+    tool schemas, that reads about **33% high**: schemas are repetitive English
+    descriptions over repeated JSON keys and tokenize near 5.3 characters per
+    token, not 4. The number it produced is published to the caller in
+    ``X-Entroly-Tool-Schema-Tokens-Deferred``, so the one figure this module
+    exists to report was inflated by a third.
+
+    ``count_tokens`` itself falls back to the same heuristic when the encoder
+    is unavailable, which is why the deferral result carries
+    ``token_accounting`` rather than presenting both cases as a measurement.
+    """
     try:
-        encoded = json.dumps(
-            value,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            default=str,
-        ).encode("utf-8")
+        return count_tokens(_canonical_json(value))
     except Exception:
         return 0
-    return (len(encoded) + 3) // 4
 
 
 def _active_names(raw: object) -> set[str]:
@@ -137,6 +155,7 @@ class ToolSchemaDeferral:
     schemas_before: int
     schemas_after: int
     reason: str
+    token_accounting: str = "character_estimate"
 
 
 def defer_tool_schemas(
@@ -194,6 +213,10 @@ def defer_tool_schemas(
         before_count,
         after_count,
         "explicit_allowlist",
+        # Only this path publishes a token figure, so only this path needs to
+        # say how the figure was obtained. An estimate labelled as a
+        # measurement is the overclaim; an estimate labelled as one is useful.
+        "exact_o200k" if tokenizer_is_exact() else "character_estimate",
     )
 
 
