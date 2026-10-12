@@ -54,11 +54,24 @@ def retrieve_exact(handle: str, *, store: Any | None = None) -> dict[str, Any]:
         raise ExactRecoveryError(
             f"exact recovery handle {canonical!r} is unavailable or was evicted"
         )
+    # Unavailable and corrupt are different operational failures and must not
+    # share a message. An evicted handle is routine and the caller can re-derive
+    # the content; bytes that no longer hash to their commitment mean the store
+    # is damaged, and re-requesting will not help. Reporting the second as the
+    # first sends the caller to retry a path that cannot succeed.
+    integrity = str(entry.get("integrity", ""))
+    if integrity and integrity != "verified":
+        detail = entry.get("integrity_detail") or {}
+        raise ExactRecoveryError(
+            f"exact recovery handle {canonical!r} failed its integrity check "
+            f"({integrity}): {detail.get('reason', 'commitment mismatch')}"
+        )
     original = entry.get("original")
     if not isinstance(original, str):
         raise ExactRecoveryError("stored recovery entry has no exact original content")
     return {
         "status": "recovered",
+        "integrity": integrity or "unchecked",
         "lookup": "hash_only",
         "full_content": True,
         "retrieval_handle": canonical,
