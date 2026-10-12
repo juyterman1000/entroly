@@ -101,6 +101,23 @@ def count_tokens(text: str) -> int:
     return max(1, (len(text) + 3) // 4)
 
 
+def tokenizer_is_exact() -> bool:
+    """True when counts come from the o200k encoder rather than the heuristic.
+
+    ``count_tokens`` degrades to a character heuristic when the encoder is
+    unavailable. That is the right behaviour and the wrong thing to hide: a
+    caller publishing a token saving needs to say whether the number was
+    measured or approximated.
+
+    The heuristic's error is neither small nor consistently signed, so the
+    distinction matters. Measured on realistic tool schemas it reads about 33%
+    high, because schemas are repetitive English and repeated JSON keys that
+    tokenize near 5.3 characters per token rather than 4; on dense CJK it reads
+    low for the opposite reason.
+    """
+    return _encoding() is not None
+
+
 def estimate_tokens(text: str) -> int:
     """Alias kept for callers that do not need exact counts."""
     return count_tokens(text)

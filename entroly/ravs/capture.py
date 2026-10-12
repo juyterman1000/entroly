@@ -142,6 +142,20 @@ def capture_from_stdin(log_path: Optional[str] = None) -> Optional[dict]:
         # non-UTF-8 payload is dropped rather than recorded wrong.
         return None
 
+    # Count the tool call before classifying it. The classifier below returns
+    # early for anything that is not a recognised CLI verifier, which is every
+    # Read/Grep/Glob/Edit/Write/TodoWrite call -- so this hook received the
+    # harness tool name on every call and recorded it on almost none. That
+    # absence is what left tool-schema deferral with no evidence to justify an
+    # allowlist. Only the name is counted; no command, path or argument.
+    try:
+        from ..tool_activity import record_tool_use
+
+        record_tool_use(data.get("tool_name"))
+    except Exception:
+        # Observation must never fail the call it is observing.
+        pass
+
     command = ""
     if isinstance(data.get("tool_input"), dict):
         command = data["tool_input"].get("command", "")

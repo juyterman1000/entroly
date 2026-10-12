@@ -106,6 +106,27 @@ def slice_recovery_content(
     return f"{lead}{_RECOVERY_GAP}{local}", True
 
 
+class CcrHandleCollision(RuntimeError):
+    """Two different payloads addressed by one handle.
+
+    A handle is ``sha256(source + NUL + content)`` truncated to 24 hex
+    characters, so it carries 96 bits. That is a compact identifier and it is
+    not a guarantee: at 96 bits two distinct payloads can share a handle.
+
+    Before, an existing entry was replaced unconditionally, so a collision
+    silently substituted one payload for another under an identifier the caller
+    had already been handed and may already have published. Recovery would then
+    return bytes that were never compressed, while every digest in the entry
+    agreed with the substitute -- an internally consistent lie, and the one
+    failure mode a content-addressed store exists to rule out.
+
+    Identical content under the same handle is not a collision; it is the same
+    payload re-stored, which is idempotent and allowed. Only differing content
+    raises, and it raises rather than overwriting, because the stored payload is
+    the one some handle already promises.
+    """
+
+
 class CompressedContextStore:
     """Lossless compressed context store with LRU eviction.
 
@@ -161,9 +182,23 @@ class CompressedContextStore:
             until LRU eviction.
         """
         handle = _retrieval_handle(source, original_content)
+        content_sha256 = _content_hash(original_content)
         with self._lock:
             # Move to end if exists (LRU refresh)
             if handle in self._store:
+                existing = self._store[handle].get("content_sha256")
+                if existing and existing != content_sha256:
+                    # A 96-bit handle can collide. Replacing the entry would
+                    # substitute one payload for another under an identifier
+                    # already handed to a caller, and every digest in the new
+                    # entry would agree with the substitute. Refuse instead:
+                    # the stored payload is the one an outstanding handle
+                    # already promises.
+                    raise CcrHandleCollision(
+                        f"handle {handle} already addresses different content "
+                        f"(stored {existing[:16]}..., incoming "
+                        f"{content_sha256[:16]}...); refusing to overwrite"
+                    )
                 self._store.move_to_end(handle)
             self._store[handle] = {
                 "source": source,
@@ -173,7 +208,7 @@ class CompressedContextStore:
                 "resolution": resolution,
                 "original_tokens": original_tokens,
                 "compressed_tokens": compressed_tokens,
-                "content_sha256": _content_hash(original_content),
+                "content_sha256": content_sha256,
                 "compressed_sha256": _content_hash(compressed_content),
                 "fragment_id": fragment_id,
                 "relevance": relevance,
@@ -207,15 +242,51 @@ class CompressedContextStore:
         Returns dict with 'original', 'compressed', 'resolution', etc.
         Accepts either a source key or an exact content-addressed handle.
         Returns None if no matching entry is stored.
+
+        The content is re-hashed here and the result reported as ``integrity``.
+        Before, the stored ``content_sha256`` was carried out of the store
+        untouched: a commitment was *reported* rather than *checked*, so the
+        one question a content-addressed store exists to answer -- are these the
+        bytes the handle names -- went unanswered on the Python path, while the
+        Rust path (``recovery_handle_verify_bytes``) recomputed and could return
+        ``not_recoverable``. Same nominal guarantee, two behaviours.
+
+        Absent and corrupt stay distinct, because they call for different
+        actions. ``None`` means nothing is stored for this key, which for an
+        exact handle means that version was evicted. An entry whose bytes do not
+        hash to its commitment comes back with ``integrity`` set to
+        ``commitment_mismatch`` and ``original`` withheld, so a caller that ignores
+        the field cannot use unverified bytes by accident -- it gets nothing
+        rather than something plausible.
         """
         with self._lock:
             handle = self._latest_by_source.get(source_or_handle, source_or_handle)
             entry = self._store.get(handle)
-            if entry is not None:
-                self._store.move_to_end(handle)  # LRU refresh
-                self._total_retrieved += 1
-                return dict(entry)
-            return None
+            if entry is None:
+                return None
+            self._store.move_to_end(handle)  # LRU refresh
+            self._total_retrieved += 1
+            result = dict(entry)
+
+        expected = result.get("content_sha256")
+        original = result.get("original")
+        actual = _content_hash(original) if isinstance(original, str) else None
+        if expected and actual == expected:
+            result["integrity"] = "verified"
+            return result
+
+        result["integrity"] = "commitment_mismatch"
+        result["integrity_detail"] = {
+            "expected_content_sha256": expected or "",
+            "actual_content_sha256": actual or "",
+            "reason": (
+                "stored content does not hash to its recorded commitment"
+                if expected
+                else "stored entry carries no content commitment to check"
+            ),
+        }
+        result["original"] = None
+        return result
 
     def retrieve_or_materialize(
         self,

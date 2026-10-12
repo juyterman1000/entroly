@@ -548,6 +548,10 @@ def _apply_tool_schema_deferral(
             "X-Entroly-Tool-Schema-Tokens-Deferred": str(
                 decision.tokens_deferred
             ),
+            # Published alongside the figure, not instead of it: without the
+            # encoder the count is a character estimate, and a caller doing
+            # cost arithmetic needs to know which one it received.
+            "X-Entroly-Tool-Schema-Token-Accounting": decision.token_accounting,
             "X-Entroly-Tool-Schemas-Before": str(decision.schemas_before),
             "X-Entroly-Tool-Schemas-After": str(decision.schemas_after),
         }
