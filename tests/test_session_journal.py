@@ -231,3 +231,50 @@ def test_a_long_detail_is_bounded_on_disk(home) -> None:
 
     assert len(payload["detail"]) < 400, "one failing command must not dump 20 KB"
     assert payload["kind"] == "error"
+
+
+# ── the frontier must survive length normalisation ────────────────────
+
+
+def test_a_matching_error_is_never_ranked_out_of_the_result(home) -> None:
+    """BM25 buries the event this journal exists to preserve.
+
+    Length normalisation penalises an error *because* it carries the failure
+    text. Measured directly: for the query "ccr", a routine edit of
+    entroly/ccr.py scores 1.0000 while an error on the same file scores 0.5413
+    and ranks last of 21. The adversarial arm of
+    benchmarks/session_journal_retrieval.py went from 0 wins and 3 losses
+    against plain recency to 6 wins and 0 losses once a slot was reserved.
+    """
+    for _ in range(20):
+        record_event(tool="Edit", target="entroly/ccr.py", status="ok")
+    record_event(
+        tool="Bash",
+        target="entroly/ccr.py",
+        status="exit:1",
+        detail="FAILED test_retrieve - AssertionError: digest drift",
+    )
+    for _ in range(20):
+        record_event(tool="Edit", target="entroly/ccr.py", status="ok")
+
+    result = recall("ccr", limit=8)
+
+    errors = [event for event in result.events if event.kind == "error"]
+    assert errors, (
+        "a failure matching the query must reach the result; ranking alone "
+        "puts it below every shorter event that shares its terms"
+    )
+    assert "digest drift" in errors[0].detail
+    assert any("length normalisation" in note for note in result.notes), (
+        "and the promotion must be disclosed, not silently applied"
+    )
+
+
+def test_the_reserved_slot_does_not_displace_an_error_already_present(home) -> None:
+    record_event(tool="Bash", target="entroly/ccr.py", status="exit:1", detail="boom")
+    record_event(tool="Edit", target="entroly/ccr.py", status="ok")
+
+    result = recall("ccr", limit=8)
+
+    assert len([e for e in result.events if e.kind == "error"]) == 1
+    assert result.notes == (), "nothing was promoted, so nothing to disclose"

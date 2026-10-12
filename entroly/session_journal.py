@@ -393,6 +393,32 @@ def recall(
         )
 
     chosen = hits[:bound]
+    notes: list[str] = []
+
+    # Reserve a slot for the frontier.
+    #
+    # BM25 normalises by document length, and an error event is longer than a
+    # plain one precisely because it carries the failure text. Measured: for the
+    # query "ccr", a routine edit of entroly/ccr.py scores 1.0000 while an error
+    # on the same file scores 0.5413 and ranks last of 21. So the ranker buries
+    # the events this journal exists to preserve, and only surfaces them when
+    # the query already names the failure -- which the resuming agent does not
+    # yet know.
+    #
+    # The fix is composition, not scoring. Inflating an error's score would
+    # claim it is more lexically relevant, which is false. Reserving a slot says
+    # something true instead: whatever else matched, a failure among the matches
+    # is worth one of the k, because the frontier is what was lost.
+    if bound > 1 and not any(event.kind == "error" for event in chosen):
+        first_error = next((event for event in hits if event.kind == "error"), None)
+        if first_error is not None:
+            chosen = chosen[: bound - 1] + [first_error]
+            notes.append(
+                "a matching error was promoted into the result; length "
+                "normalisation ranks failures below shorter events that share "
+                "their terms"
+            )
+
     return Recall(
         events=tuple(chosen),
         matched=len(hits),
@@ -400,6 +426,7 @@ def recall(
         scanned=len(events),
         truncated_scan=truncated,
         reason="lexical_rank",
+        notes=tuple(notes),
     )
 
 
