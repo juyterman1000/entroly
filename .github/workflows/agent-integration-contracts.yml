@@ -7,7 +7,7 @@ on:
       - "PYPI_README.md"
       - "pyproject.toml"
       - "entroly/pyproject.toml"
-      - "entroly/npm/package.json"
+      - "entroly/npm/**"
       - "entroly/npm-alias/package.json"
       - "entroly/npm-alias/**"
       - "entroly-wasm/package.json"
@@ -104,6 +104,9 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: "20"
+      - name: Test the Python bridge launcher
+        working-directory: entroly/npm
+        run: npm test
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown

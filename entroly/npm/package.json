@@ -12,10 +12,11 @@
     "NOTICE",
     "README.md",
     "index.js",
+    "launcher.test.js",
     "bin/entroly-mcp.js"
   ],
   "scripts": {
-    "test": "echo \"No JS tests yet\""
+    "test": "node --test launcher.test.js"
   },
   "repository": {
     "type": "git",

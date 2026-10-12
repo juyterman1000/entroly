@@ -287,7 +287,7 @@ def _seed_ledger(ledger, n=5):
 
 def test_query_returns_events_in_reverse_chronological_order() -> None:
     with UsageLedger() as ledger:
-        base = _seed_ledger(ledger)
+        _seed_ledger(ledger)
         events = ledger.query(limit=10)
 
     assert len(events) == 5

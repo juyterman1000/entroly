@@ -61,28 +61,25 @@ class VaultGraphParser:
         """Extract YAML frontmatter from markdown"""
         match = re.match(r'^---\n(.*?)\n---', content, re.DOTALL)
         if match:
-            try:
-                fm_text = match.group(1)
-                result = {}
-                current_key = None
-                for line in fm_text.split('\n'):
-                    if line.startswith('  - '):
-                        # List item
-                        if current_key:
-                            if current_key not in result:
-                                result[current_key] = []
-                            result[current_key].append(line[4:].strip())
-                    elif ':' in line and not line.startswith('  '):
-                        # Key-value pair
-                        key, value = line.split(':', 1)
-                        key = key.strip()
-                        value = value.strip()
-                        current_key = key
-                        if value:
-                            result[key] = value
-                return result
-            except:
-                return {}
+            fm_text = match.group(1)
+            result = {}
+            current_key = None
+            for line in fm_text.split('\n'):
+                if line.startswith('  - '):
+                    # List item
+                    if current_key:
+                        if current_key not in result:
+                            result[current_key] = []
+                        result[current_key].append(line[4:].strip())
+                elif ':' in line and not line.startswith('  '):
+                    # Key-value pair
+                    key, value = line.split(':', 1)
+                    key = key.strip()
+                    value = value.strip()
+                    current_key = key
+                    if value:
+                        result[key] = value
+            return result
         return {}
 
     def _extract_wikilinks(self, content: str) -> List[str]:

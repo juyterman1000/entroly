@@ -1,6 +1,7 @@
 import os
 import ast
 import json
+from pathlib import Path
 
 def extract_python(filepath):
     output = []
@@ -48,8 +49,6 @@ def extract_rust(filepath):
             current_doc = []
 
     return "\n".join(output)
-
-from pathlib import Path
 
 
 def main():
