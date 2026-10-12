@@ -24,16 +24,12 @@ import pytest
 
 from entroly.tool_activity import (
     MAX_TRACKED_TOOLS,
-    MIN_OBSERVATIONS,
     activity_path,
     compact_activity,
     journal_path,
     load_activity,
-    recommend_active_tools,
     record_tool_use,
 )
-
-DECLARED = ["Read", "Edit", "Bash", "Grep", "Glob", "Write", "TodoWrite", "WebFetch"]
 
 
 @pytest.fixture()
@@ -46,99 +42,6 @@ def _observe(counts: dict[str, int]) -> None:
     for name, times in counts.items():
         for _ in range(times):
             assert record_tool_use(name)
-
-
-# ── refusal, which is the default ─────────────────────────────────────
-
-
-def test_no_evidence_means_send_every_schema(home) -> None:
-    names, reason = recommend_active_tools(DECLARED)
-
-    assert names == []
-    assert reason == "insufficient_observations"
-
-
-def test_too_little_evidence_still_refuses(home) -> None:
-    _observe({"Read": MIN_OBSERVATIONS - 1})
-
-    names, reason = recommend_active_tools(DECLARED)
-
-    assert names == [], (
-        "a narrow allowlist from a handful of calls would be a guess wearing "
-        "the costume of evidence"
-    )
-    assert reason == "insufficient_observations"
-
-
-def test_evidence_about_other_tools_does_not_narrow_these(home) -> None:
-    _observe({"cargo_test": MIN_OBSERVATIONS * 2})
-
-    names, reason = recommend_active_tools(DECLARED)
-
-    assert names == []
-    assert reason == "no_overlap_with_declared_tools"
-
-
-def test_a_recommendation_that_narrows_nothing_is_not_returned(home) -> None:
-    _observe({name: 20 for name in DECLARED})
-
-    names, reason = recommend_active_tools(DECLARED)
-
-    assert names == []
-    assert reason == "no_safe_reduction"
-
-
-def test_an_empty_declaration_is_refused(home) -> None:
-    _observe({"Read": MIN_OBSERVATIONS * 2})
-    assert recommend_active_tools([]) == ([], "no_declared_tools")
-
-
-# ── recommending, once earned ─────────────────────────────────────────
-
-
-def test_a_skewed_project_narrows_to_what_it_uses(home) -> None:
-    _observe({"Read": 400, "Edit": 200, "Bash": 100, "Grep": 2})
-
-    names, reason = recommend_active_tools(DECLARED, coverage=0.95)
-
-    assert reason == "observed_frequency"
-    assert {"Read", "Edit", "Bash"} <= set(names)
-    assert len(names) < len(DECLARED)
-
-
-def test_never_seen_tools_are_always_kept(home) -> None:
-    """Absence of evidence is not evidence of disuse."""
-    _observe({"Read": 400, "Edit": 200})
-
-    names, _ = recommend_active_tools(DECLARED, coverage=0.50)
-
-    for unseen in ("WebFetch", "TodoWrite", "Glob"):
-        assert unseen in names, (
-            f"{unseen} has no history, so withholding it would turn a cost "
-            "optimisation into a capability regression"
-        )
-
-
-def test_a_rarely_used_tool_is_the_one_dropped(home) -> None:
-    _observe({"Read": 500, "Edit": 300, "Grep": 1, "Glob": 1, "Bash": 1,
-              "Write": 1, "TodoWrite": 1, "WebFetch": 1})
-
-    names, reason = recommend_active_tools(DECLARED, coverage=0.90)
-
-    assert reason == "observed_frequency"
-    assert "Read" in names and "Edit" in names
-    assert len(names) < len(DECLARED)
-
-
-def test_the_recommendation_is_deterministic(home) -> None:
-    """Selection feeds a request prefix; it must be byte-stable."""
-    _observe({"Read": 100, "Edit": 100, "Bash": 50, "Grep": 1})
-
-    first = recommend_active_tools(DECLARED, coverage=0.9)
-    second = recommend_active_tools(DECLARED, coverage=0.9)
-
-    assert first == second
-    assert first[0] == sorted(first[0]), "ties must break by name, not hash order"
 
 
 # ── the counter itself ────────────────────────────────────────────────
@@ -252,7 +155,6 @@ def test_a_damaged_table_reads_as_no_evidence(home) -> None:
     activity_path().write_text("{not json", encoding="utf-8")
 
     assert load_activity().total == 0
-    assert recommend_active_tools(DECLARED)[1] == "insufficient_observations"
 
 
 def test_hostile_values_in_the_table_are_dropped(home) -> None:

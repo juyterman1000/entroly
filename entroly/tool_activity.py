@@ -29,10 +29,11 @@ than an event log**:
   *what* was edited, so this adds no new privacy surface to a local-first
   product. A per-call journal would; that is a separate decision with its own
   deletion semantics, and is not taken here.
-* It fails closed in the only direction that matters. No counter, too little
-  data, or an unrecognised project means no allowlist, which means every schema
-  is sent. A caller must still opt in; this produces a *recommendation*, never
-  an applied filter.
+* It only counts. Turning counts into an allowlist is a policy decision with
+  its own correctness risk -- withholding a needed schema is a capability
+  regression, not a saving -- so that policy lands with the caller that applies
+  it, not before. Nothing here reads these counts yet; the hook writes them so
+  the evidence exists by the time it is needed.
 
 One safety property worth stating because it is not obvious. An allowlist
 derived from observed use cannot be shrunk by injected content: text in a web
@@ -59,17 +60,11 @@ __all__ = [
     "compact_activity",
     "record_tool_use",
     "load_activity",
-    "recommend_active_tools",
 ]
 
 # Matches the allowlist header's own grammar, so a counted name is always a
 # name the applier would accept.
 _SAFE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}")
-
-# A ranked allowlist is only worth proposing once enough turns have been seen.
-# Below this the empirical frequencies are noise and the honest answer is "send
-# everything".
-MIN_OBSERVATIONS = 50
 
 # Bound the table so a pathological caller cannot grow it without limit. The
 # applier caps an allowlist at 64 names; counting more than this serves no
@@ -279,56 +274,3 @@ def compact_activity(entroly_dir: str | Path | None = None) -> bool:
     except (OSError, ValueError):
         return False
     return True
-
-
-def recommend_active_tools(
-    declared: list[str] | tuple[str, ...],
-    *,
-    coverage: float = 0.99,
-    entroly_dir: str | Path | None = None,
-) -> tuple[list[str], str]:
-    """Recommend an allowlist covering ``coverage`` of observed calls.
-
-    Returns ``(names, reason)``. An empty list means "send every schema", and
-    the reason says why -- the caller is entitled to know whether it got a
-    recommendation or a refusal.
-
-    The rule is the smallest prefix of the frequency ranking whose counts sum
-    to at least ``coverage`` of all observations, plus every declared tool that
-    has never been seen. That last clause is the fail-open half and it is not
-    optional: a tool with no history is not evidence of disuse, it is absence
-    of evidence, and withholding it would turn a cost optimisation into a
-    capability regression. It also means the recommendation only ever narrows
-    on tools this project has actually exercised.
-
-    This is a frequency rule, not a risk bound. It does not certify a miss rate,
-    and it must not be described as doing so: that needs held-out turns and a
-    one-sided bound, which the counter alone cannot supply.
-    """
-    names = [name for name in (_normalize(item) for item in declared) if name]
-    if not names:
-        return [], "no_declared_tools"
-
-    activity = load_activity(entroly_dir)
-    if activity.total < MIN_OBSERVATIONS:
-        return [], "insufficient_observations"
-
-    seen = {name: count for name, count in activity.counts.items() if name in names}
-    if not seen:
-        return [], "no_overlap_with_declared_tools"
-
-    unseen = [name for name in names if name not in seen]
-
-    target = max(0.0, min(1.0, coverage)) * sum(seen.values())
-    chosen: list[str] = []
-    running = 0
-    for name, count in sorted(seen.items(), key=lambda item: (-item[1], item[0])):
-        chosen.append(name)
-        running += count
-        if running >= target:
-            break
-
-    recommended = sorted(set(chosen) | set(unseen))
-    if len(recommended) >= len(names):
-        return [], "no_safe_reduction"
-    return recommended, "observed_frequency"
