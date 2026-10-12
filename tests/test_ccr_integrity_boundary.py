@@ -89,7 +89,7 @@ def test_tampered_content_is_reported_and_withheld(store) -> None:
     entry = store.retrieve(handle)
 
     assert entry is not None, "corrupt is not absent"
-    assert entry["integrity"] == "content_mismatch"
+    assert entry["integrity"] == "commitment_mismatch"
     assert entry["original"] is None, (
         "unverified bytes must not be returned; a caller that ignores the "
         "integrity field would otherwise use them"
@@ -105,7 +105,7 @@ def test_an_entry_with_no_commitment_cannot_be_called_verified(store) -> None:
 
     entry = store.retrieve(handle)
 
-    assert entry["integrity"] == "content_mismatch"
+    assert entry["integrity"] == "commitment_mismatch"
     assert "no content commitment" in entry["integrity_detail"]["reason"]
     assert entry["original"] is None
 
@@ -129,7 +129,7 @@ def test_exact_recovery_distinguishes_evicted_from_corrupt(store) -> None:
 
     message = str(corrupt.value)
     assert "integrity check" in message
-    assert "content_mismatch" in message
+    assert "commitment_mismatch" in message
     assert "evicted" not in message, (
         "a damaged store must not be reported as an eviction; re-requesting "
         "cannot fix it and the caller would retry forever"
