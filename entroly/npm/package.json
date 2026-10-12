@@ -12,6 +12,7 @@
     "NOTICE",
     "README.md",
     "index.js",
+    "launcher.test.js",
     "bin/entroly-mcp.js"
   ],
   "scripts": {

@@ -19,7 +19,7 @@ def extract_python(filepath):
                 doc = ast.get_docstring(node) or ""
                 doc = doc.replace('\n', ' ')
                 output.append(f"FUNC: {node.name} - {doc[:100]}")
-    except Exception:
+    except (SyntaxError, ValueError):
         pass
     return "\n".join(output)
 
