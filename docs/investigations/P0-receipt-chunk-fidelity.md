@@ -37,6 +37,33 @@ implementation commit, benchmark-harness SHA-256, limitations, exclusions, and
 a checked `.sha256` sidecar. `scripts/verify_readme_claims.py` prevents a
 prominent README citation when that metadata or checksum is absent.
 
+> **The pure-Python artifact's sidecar was re-sealed, and why.** A
+> repository-wide pass that neutralised named external products (`a917fc29`)
+> rewrote one string inside that artifact and did not update its sidecar, which
+> was last written by `b18ece81`. For several releases the sidecar recorded
+> `de51cbc7f7847f8f9acd4d99305abbafc625a7df3fc9ae1759f5791cc6618641` for bytes
+> hashing to
+> `eab5404c83763f6fc953842919ddecfb69742bae472dc0ddef5a05bdfa3dfef3`, so the
+> "checked sidecar" promised above did not hold for it. Nothing detected it:
+> `scripts/verify_evidence_provenance.py` inspects only artifacts cited in its
+> own document set, and this one is cited here rather than there.
+>
+> The measurement did not change. One of 11,255 leaf values differs across that
+> commit — `files[329].path`, a renamed marketing document inside the measured
+> file list — and no numeric value differs at all.
+>
+> Re-running the benchmark would be the ordinary route and is wrong here: it
+> measures the current tree, so it would replace a 1.0.59-era measurement in
+> order to correct a filename. Restoring the original bytes is also unavailable,
+> since they carry the product name the name policy removes. The sidecar was
+> therefore recomputed with `portable_text_sha256`, the same function that seals
+> legitimately, rather than a hand-typed digest, and the substitution is
+> recorded here. The general rule stands: never write a digest by hand, and
+> never re-seal an artifact whose contents you have not diffed.
+>
+> `scripts/check_committed_evidence.py` now fails on this class of break
+> whether or not the artifact is cited in any particular document.
+
 > **The corpus is pinned to a git ref, and why that matters.** An earlier
 > version of this benchmark measured the *working tree*, taking "every tracked
 > file matching the language list" with no exclusions in order to avoid
