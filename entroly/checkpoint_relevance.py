@@ -49,27 +49,75 @@ class CheckpointMatch:
     matched_terms: tuple[str, ...]
 
 
-def normalize_decisions(value: Any, *, limit: int = 20) -> list[str]:
-    """Normalize explicit decisions without inferring intent from arbitrary code."""
+DECISION_CHAR_LIMIT = 500
+
+_TRUNCATION_NOTE = " [truncated: {kept} of {total} chars]"
+_OVERFLOW_NOTE = "[{count} further decision(s) not carried: raise max_decisions]"
+# Parsed, not merely skipped, so a count lost at an earlier checkpoint is still
+# reported after a later merge drops the note itself.
+_OVERFLOW_RE = re.compile(r"^\[(\d+) further decision\(s\) not carried")
+
+
+def bounded_text(value: str, limit: int) -> str:
+    """Bound ``value`` and say so when it does not fit.
+
+    Bounds keep a checkpoint from growing without limit, which is correct. Cutting
+    silently is not: a resuming agent receives a decision that stops mid-sentence
+    with no indication that anything is missing, and cannot tell a complete
+    instruction from a severed one. Marking the cut costs a few characters and
+    turns invisible loss into a visible, actionable one.
+    """
+    if limit <= 0 or len(value) <= limit:
+        return value
+    return value[:limit] + _TRUNCATION_NOTE.format(kept=limit, total=len(value))
+
+
+def normalize_decisions(
+    value: Any, *, limit: int = 20, char_limit: int = DECISION_CHAR_LIMIT
+) -> list[str]:
+    """Normalize explicit decisions without inferring intent from arbitrary code.
+
+    Both bounds here are reported rather than applied silently, because this is
+    the handoff path: whatever is dropped is dropped from the only record the
+    next agent will read.
+
+    Deduplication keys on the full text, not the bounded text. Keying on the
+    bounded form made two decisions that differ only past the limit collide, so
+    the second was discarded as a duplicate — a correctness bug, not just a
+    visibility one, and the longer the decisions the likelier it fired.
+    """
     if isinstance(value, str):
         candidates: Iterable[Any] = [value]
     elif isinstance(value, Sequence) and not isinstance(value, (bytes, bytearray)):
         candidates = value
     else:
         return []
-    output: list[str] = []
+
+    unique: list[str] = []
     seen: set[str] = set()
+    carried_over = 0
     for candidate in candidates:
         if not isinstance(candidate, str):
             continue
-        decision = " ".join(candidate.strip().split())[:500]
-        key = decision.casefold()
-        if not decision or key in seen:
+        full = " ".join(candidate.strip().split())
+        if not full:
+            continue
+        overflow = _OVERFLOW_RE.match(full)
+        if overflow:
+            carried_over += int(overflow.group(1))
+            continue
+        key = full.casefold()
+        if key in seen:
             continue
         seen.add(key)
-        output.append(decision)
-        if len(output) >= limit:
-            break
+        unique.append(full)
+
+    output = [bounded_text(text, char_limit) for text in unique[:limit]]
+    dropped = len(unique) - len(output) + carried_over
+    if dropped > 0:
+        # Exceeds ``limit`` by one on purpose: the note is an accounting record,
+        # not a decision, and losing it would re-hide the loss it reports.
+        output.append(_OVERFLOW_NOTE.format(count=dropped))
     return output
 
 
@@ -195,17 +243,22 @@ def render_recovery_context(match: CheckpointMatch) -> str:
     for key in ("task", "step", "remaining_work"):
         value = metadata.get(key)
         if isinstance(value, str) and value.strip():
-            lines.append(f"{key}: {' '.join(value.split())[:1000]}")
+            lines.append(f"{key}: {bounded_text(' '.join(value.split()), 1000)}")
     decisions = normalize_decisions(metadata.get("decisions"))
     if decisions:
         lines.append("decisions:")
         lines.extend(f"- {decision}" for decision in decisions)
     files = metadata.get("modified_files")
     if isinstance(files, Sequence) and not isinstance(files, (str, bytes, bytearray)):
-        safe_files = [str(path)[:300] for path in files[:50]]
+        # A silently cut path is worse than an absent one: it looks openable and
+        # is not. Mark it, and say how many files did not fit at all.
+        safe_files = [bounded_text(str(path), 300) for path in files[:50]]
         if safe_files:
             lines.append("modified_files:")
             lines.extend(f"- {path}" for path in safe_files)
+            hidden = len(files) - len(safe_files)
+            if hidden > 0:
+                lines.append(f"- [{hidden} further modified file(s) not listed]")
     rendered, _report = sanitize_injected_context("\n".join(lines), fence=True)
     return rendered
 
