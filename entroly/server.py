@@ -70,6 +70,7 @@ from .vault import (
 )
 from .verification_engine import VerificationEngine
 from .brain_execute import brain_execute, brain_execute_enabled
+from .mcp_response import apply_response_profile
 
 # Re-exported so `from entroly.server import X` keeps working for every
 # existing caller and test after the engine moved to `entroly.engine`.
@@ -1603,6 +1604,16 @@ def create_mcp_server(
             result.get("selected_fragments", result.get("selected", [])),
             query=query, token_budget=token_budget,
         )
+
+        # Agents pay for the receipt on every call, and the receipt is not
+        # cacheable the way the tool catalog is. Measured on a call that
+        # selected zero fragments: 1,967 tokens across 34 keys, one of which
+        # was the answer. Under the public profile -- the one every agent
+        # install manifest already sets -- the diagnostics move into the
+        # content-addressed store and are replaced by a redeemable handle.
+        # The full profile, which is what the SDK, proxy and library callers
+        # get, is returned untouched.
+        result = apply_response_profile(result, profile=_mcp_profile_name())
 
         # Pretty-printing costs 17% of the payload in indentation that no agent
         # reads. On a real 395-fragment result that is ~26,000 characters spent
