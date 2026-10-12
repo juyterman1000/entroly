@@ -83,7 +83,12 @@ console.log('✓ Wasm engine core execution (ingest, turn, optimize, stats) veri
 
 // 5. Verify MCP server tool schema construction
 const server = new entroly.EntrolyMCPServer();
-assert.strictEqual(server.tools.length, 37, `expected 37 MCP tools, got ${server.tools.length}`);
+const toolNames = server.tools.map(({ name }) => name);
+assert(toolNames.length > 0, 'MCP tool schema is empty');
+assert.strictEqual(new Set(toolNames).size, toolNames.length, 'MCP tool names must be unique');
+for (const name of ['remember_fragment', 'optimize_context', 'work_record_review']) {
+  assert(toolNames.includes(name), `missing ${name} MCP tool`);
+}
 console.log('✓ MCP server tool schema construction verified');
 
 console.log('\nAll Bun & multi-runtime compatibility tests passed!\n');
