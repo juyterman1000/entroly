@@ -547,6 +547,64 @@ def _mcp_profile_allowed_tools(profile: str) -> set[str] | None:
 # MCP Server Definition
 # ══════════════════════════════════════════════════════════════════════
 
+def _smart_read_elision(
+    total_blocks: Any, resolution_counts: Any
+) -> dict[str, Any]:
+    """State what the reader left out, and whether it can be got back.
+
+    This reader reduces blocks it judges less relevant to a signature, or omits
+    them entirely. That is the feature. What was missing is any statement of it
+    in the response: a caller saw ``resolution_counts`` and had to infer both
+    that content was dropped and whether anything could restore it.
+
+    Inference went the wrong way in practice. The response carried a field named
+    ``recovery``, so a reduced read looked like a read whose content was
+    confirmed unrecoverable. Two separate problems: ``recovery`` here meant
+    "re-read past the session cache", unrelated to the content recovery the same
+    word denotes everywhere else in Entroly (``receipt_id``/``span_id``,
+    ``retrieval_handles``), and the cache-hit branch returns before that
+    dictionary is built, so the field could only ever be null.
+
+    So the four states are named rather than implied. ``not_required`` is a read
+    that dropped nothing. ``unavailable_on_this_path`` is an omission this
+    reader cannot hand back, and it carries the route that can -- re-reading at
+    full resolution, or by line range. No handle is invented for spans this
+    path never registered; a handle that cannot be redeemed is worse than an
+    honest refusal, because the caller stops looking for the text.
+    """
+    counts = resolution_counts if isinstance(resolution_counts, dict) else {}
+    try:
+        total = max(0, int(total_blocks or 0))
+    except (TypeError, ValueError):
+        total = 0
+    try:
+        delivered = max(0, int(counts.get("full", 0) or 0))
+    except (TypeError, ValueError):
+        delivered = 0
+    reduced = max(0, total - delivered)
+
+    report: dict[str, Any] = {
+        "blocks_total": total,
+        "blocks_delivered_full": delivered,
+        "blocks_reduced": reduced,
+    }
+    if reduced == 0:
+        report["content_recovery"] = "not_required"
+        report["reason"] = None
+        report["obtain_full_text"] = None
+        return report
+    report["content_recovery"] = "unavailable_on_this_path"
+    report["reason"] = (
+        "this reader does not register recovery handles for reduced blocks, "
+        "so no content handle is issued for them"
+    )
+    report["obtain_full_text"] = (
+        'call again with resolution="full" for the whole file, or with '
+        "line_start/line_end for one span"
+    )
+    return report
+
+
 def _slim_recall_results(
     results: list[dict[str, Any]], *, max_snippet: int = 200
 ) -> list[dict[str, Any]]:
@@ -4520,7 +4578,15 @@ def create_mcp_server(
                 "output_sha256": cache_decision.output_sha256,
                 "cache_tokens_saved": cache_decision.tokens_saved,
                 "cache_scope": "mcp-session",
-                "recovery": "call again with fresh=true" if cache_decision.cache_hit else None,
+                # A cache hit returns above, so the former "recovery" key here
+                # could only ever be null -- and it named the content-recovery
+                # concept while meaning "re-read past the cache". Both the dead
+                # field and the collision are gone; what the reader dropped is
+                # now stated outright.
+                "cache_recovery": None,
+                "elision": _smart_read_elision(
+                    result.total_blocks, result.resolution_counts
+                ),
             }, indent=2)
         except FileNotFoundError:
             return json.dumps({"error": f"File not found: {file_path}"})
