@@ -63,11 +63,14 @@
     "hermes-agent",
     "opencode",
     "local-models",
-    "webassembly"
+    "webassembly",
+    "bun",
+    "bunx"
   ],
   "author": "entroly",
   "license": "Apache-2.0",
   "engines": {
-    "node": ">=16.0.0"
+    "node": ">=16.0.0",
+    "bun": ">=1.0.0"
   }
 }

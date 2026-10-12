@@ -68,7 +68,7 @@ provider-bound path is explicitly observed.
 
 ## MCP setup
 
-For MCP clients that accept JSON config:
+For MCP clients that accept JSON config (Node.js via `npx` or Bun via `bunx`):
 
 ```json
 {
@@ -76,6 +76,19 @@ For MCP clients that accept JSON config:
     "entroly": {
       "command": "npx",
       "args": ["-y", "entroly-wasm", "serve"]
+    }
+  }
+}
+```
+
+Or for Bun-first agents (sub-millisecond cold start):
+
+```json
+{
+  "mcpServers": {
+    "entroly": {
+      "command": "bunx",
+      "args": ["entroly-wasm", "serve"]
     }
   }
 }
