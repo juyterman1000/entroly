@@ -7,7 +7,9 @@ on:
       - "smithery.yaml"
       - "server.json"
       - "entroly/server.py"
+      - "scripts/check_public_mcp_tdqs.py"
       - "tests/test_lobehub_score_audit.py"
+      - "tests/test_public_mcp_tdqs_gate.py"
       - "tests/test_agent_integration_packages.py"
       - ".github/workflows/public-mcp-quality.yml"
   push:
@@ -17,7 +19,9 @@ on:
       - "smithery.yaml"
       - "server.json"
       - "entroly/server.py"
+      - "scripts/check_public_mcp_tdqs.py"
       - "tests/test_lobehub_score_audit.py"
+      - "tests/test_public_mcp_tdqs_gate.py"
       - "tests/test_agent_integration_packages.py"
       - ".github/workflows/public-mcp-quality.yml"
   workflow_dispatch:
@@ -45,8 +49,8 @@ jobs:
       - name: Install exact-head Entroly
         run: python scripts/ci_install_exact_head.py
       - name: Reject public tool-schema regressions
-        run: >-
-          npx -y mcp-tdqs@0.2.0 lint
-          --command "env ENTROLY_MCP_PROFILE=public ENTROLY_MCP_PASSIVE=1 ENTROLY_NO_DOCKER=1 python -m entroly.server"
-          --fail-on warning
-          --format text
+        run: |
+          npx -y mcp-tdqs@0.2.0 lint \
+            --command "env ENTROLY_MCP_PROFILE=public ENTROLY_MCP_PASSIVE=1 ENTROLY_NO_DOCKER=1 python -m entroly.server" \
+            --format json > tdqs-lint.json
+          python scripts/check_public_mcp_tdqs.py tdqs-lint.json

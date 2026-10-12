@@ -21,7 +21,8 @@
     ".mcp.json",
     "hooks/hooks.json",
     "scripts/entroly-plugin-launch.mjs",
-    "skills/entroly-evidence-operations"
+    "skills/entroly-evidence-operations",
+    "skills/entroly-agent-review"
   ],
   "dependencies": {
     "entroly-wasm": "1.0.86"

@@ -4,6 +4,7 @@
 // Repository observation and persistence happen here; all work-state meaning
 // remains in shared Rust.
 const { enrichWorktreeContentDigests } = require('./work_graph_content_digest');
+const crypto = require('crypto');
 const { discoverRepositoryObservation } = require('./work_graph_repo');
 const { WorkGraphStateError, WorkGraphStore } = require('./work_graph_store');
 
@@ -47,6 +48,47 @@ function passiveObservation(repoPath, repositoryOptions) {
   return enrichWorktreeContentDigests(repoPath, observation);
 }
 
+function canonical(value) {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function workspaceCommitment(observation) {
+  const stable = {
+    repo_id: observation.repo_id ?? null,
+    branch: observation.branch ?? null,
+    changes: observation.changes ?? null,
+    path_disclosure: observation.path_disclosure ?? null,
+  };
+  return `workspace:${crypto.createHash('sha256').update(canonical(stable), 'utf8').digest('hex')}`;
+}
+
+function currentWorkspaceCommitment(repoPath) {
+  return workspaceCommitment(passiveObservation(repoPath, {}));
+}
+
+function resumableWorkstreamId(store) {
+  const unfinished = store.load().unfinished();
+  const content = ['remaining_work', 'decision_ids', 'verification_ids', 'failure_ids', 'agent_ids'];
+  const selected = unfinished.find((item) => content.some((field) => Array.isArray(item[field]) && item[field].length))
+    || unfinished[0];
+  return selected ? selected.node_id : null;
+}
+
+function attachCurrentWorktreeChanges(view, observation, maxPaths) {
+  const paths = [...new Set((observation.changes || []).map((item) => item.path).filter(Boolean))].sort();
+  return {
+    ...view,
+    current_worktree_changed_paths: paths.slice(0, maxPaths),
+    current_worktree_change_count: paths.length,
+    current_worktree_changes_truncated: paths.length > maxPaths,
+    current_workspace_commitment: workspaceCommitment(observation),
+  };
+}
+
 function resumeRepository(repoPath = '.', options = {}) {
   // Validate before constructing the store or observing Git. Invalid recovery
   // requests must not mutate shared state.
@@ -56,8 +98,10 @@ function resumeRepository(repoPath = '.', options = {}) {
   const repositoryOptions = options.repositoryOptions || {};
 
   const store = WorkGraphStore.forRepository(repoPath, storeOptions);
-  store.submitObservation(passiveObservation(repoPath, repositoryOptions));
-  return store.resume(workstreamId, maxEvidence);
+  const observation = passiveObservation(repoPath, repositoryOptions);
+  store.submitObservation(observation);
+  const selected = workstreamId || resumableWorkstreamId(store);
+  return attachCurrentWorktreeChanges(store.resume(selected, maxEvidence), observation, maxEvidence);
 }
 
 function handoffRepository(repoPath = '.', options = {}) {
@@ -85,6 +129,8 @@ function continuationOutstandingRefs(view) {
     ? safeView.selected_workstream
     : {};
   const values = [
+    ...(Array.isArray(safeView.outstanding_work) ? safeView.outstanding_work : []),
+    ...(Array.isArray(safeView.current_worktree_changed_paths) ? safeView.current_worktree_changed_paths : []),
     ...(Array.isArray(safeView.changed_paths) ? safeView.changed_paths : []),
     ...(Array.isArray(safeView.failures) ? safeView.failures : []),
     ...(Array.isArray(selected.task_ids) ? selected.task_ids : []),
@@ -125,4 +171,6 @@ module.exports = {
   handoffRepository,
   handoffRepositoryWithProof,
   resumeRepository,
+  currentWorkspaceCommitment,
+  continuationOutstandingRefs,
 };

@@ -154,6 +154,15 @@ _PUBLIC_MCP_TOOLS = frozenset(
         "resume_state",
         "retrieve_context",
         "verify_response",
+        "work_acknowledge_recovery",
+        "work_capabilities",
+        "work_claim",
+        "work_handoff",
+        "work_pending_handoffs",
+        "work_record_review",
+        "work_resume",
+        "work_reviews",
+        "work_state",
     }
 )
 
@@ -187,6 +196,9 @@ _PUBLIC_MCP_INSTRUCTIONS = (
     "a CCR handle. Use checkpoint_state and resume_state across interruptions. "
     "verify_response estimates grounding against supplied evidence; it is not an "
     "external fact-check. record_test_result records a test that already ran. "
+    "For cross-agent code review, confirm work_capabilities, then use work_claim, "
+    "work_handoff, work_pending_handoffs, work_resume, work_record_review, and "
+    "work_reviews. Review verdicts are agent statements, not correctness proofs. "
     "get_session_stats reports local counters and estimates."
 )
 
@@ -371,8 +383,9 @@ def _prepare_public_mcp_surface(mcp: Any) -> None:
                 "Read one current workspace file at an exact or relevance-based "
                 "resolution. Use this for a known path; use recall_relevant to search "
                 "stored fragments and retrieve_context for a CCR handle. resolution=full "
-                "or a line range returns exact source text. It reads only within the "
-                "configured project root and makes no network call."
+                "or a line range returns exact source text. This is a read-only "
+                "inspection tool: it cannot submit findings or a review verdict. "
+                "It reads only within the configured project root and makes no network call."
             ),
             "annotations": (True, False, True, True),
             "parameters": {
@@ -408,6 +421,84 @@ def _prepare_public_mcp_surface(mcp: Any) -> None:
                 "calibration_id": "External calibration artifact identity for the score floor, if one exists.",
                 "passage_mode": "Source segmentation: auto, paragraph, or line.",
             },
+        },
+        "work_capabilities": {
+            "description": "Check the active repository identity and local Work Graph review support. No model or network call.",
+            "annotations": (True, False, True, False),
+            "parameters": {"project": "Optional path within the configured repository root."},
+        },
+        "work_state": {
+            "description": "Inspect shared Work Graph state. First use may start local takeover and append repository evidence.",
+            "annotations": (False, False, False, False),
+            "parameters": {"project": "Optional path within the configured repository root.", "now_ms": "Optional time for lease status; zero uses the current time."},
+        },
+        "work_claim": {
+            "description": "Record an explicit agent task and advisory scope lease in the local Work Graph.",
+            "annotations": (False, False, False, False),
+            "parameters": {
+                "agent_id": "Caller-supplied agent identifier; not an identity attestation.",
+                "task_title": "Short title of the task being claimed.",
+                "project": "Optional path within the configured repository root.",
+                "task_id": "Stable task identifier supplied by the caller.",
+                "session_id": "Optional caller session identifier.",
+                "scope_paths": "Advisory repository-relative paths in scope.",
+                "scope_symbols": "Advisory code symbols in scope.",
+                "ttl_seconds": "Lease duration in seconds.",
+            },
+        },
+        "work_resume": {
+            "description": "Recover durable work evidence, refresh the local graph, and arm an acknowledgement gate.",
+            "annotations": (False, False, False, False),
+            "parameters": {
+                "project": "Optional path within the configured repository root.",
+                "workstream_id": "Workstream to recover; empty chooses resumable work.",
+                "max_evidence": "Maximum evidence references returned.",
+                "to_agent": "Optional receiving agent for a no-handoff proof.",
+            },
+        },
+        "work_acknowledge_recovery": {
+            "description": "Acknowledge the exact recovered state before claiming follow-up work.",
+            "annotations": (False, False, False, False),
+            "parameters": {"token": "Token returned by work_resume.", "project": "Optional path within the configured repository root."},
+        },
+        "work_handoff": {
+            "description": "Seal a graph-bound handoff and save a compact local inbox receipt for another agent.",
+            "annotations": (False, False, False, False),
+            "parameters": {
+                "from_agent": "Caller-supplied writer identifier.",
+                "to_agent": "Caller-supplied reviewer identifier.",
+                "workstream_id": "Existing workstream identifier from work_state.",
+                "project": "Optional path within the configured repository root.",
+            },
+        },
+        "work_pending_handoffs": {
+            "description": "List local handoffs for an agent and verify each against current repository state.",
+            "annotations": (False, False, False, False),
+            "parameters": {"to_agent": "Reviewer identifier used by the writer.", "project": "Optional path within the configured repository root."},
+        },
+        "work_record_review": {
+            "description": (
+                "Submit a caller-authored review verdict, findings, and observed checks "
+                "against a verified handoff receipt. This writes a local review record "
+                "after reading bounded files to bind their digests; it does not return "
+                "source text or perform the review for the caller. "
+                "The verdict is an agent statement, not a correctness proof."
+            ),
+            "annotations": (False, False, False, False),
+            "parameters": {
+                "handoff": "Exact receipt returned by work_handoff or work_pending_handoffs.",
+                "reviewer_id": "Reviewer identifier matching the handoff target; self asserted.",
+                "verdict": "approve, changes_requested, or comment.",
+                "findings": "Caller-supplied path, line, severity, and message records.",
+                "summary": "Short reviewer conclusion.",
+                "checks": "Optional observed check names and exit codes; caller statements only.",
+                "project": "Optional path within the configured repository root.",
+            },
+        },
+        "work_reviews": {
+            "description": "Read recorded review statements and whether their source state is current.",
+            "annotations": (True, False, True, False),
+            "parameters": {"project": "Optional path within the configured repository root.", "workstream_id": "Optional workstream filter."},
         },
     }
 
