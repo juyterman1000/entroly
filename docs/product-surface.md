@@ -12,7 +12,7 @@ observability, governance, and decision layer for AI context.
 5. **Gateway control plane** — normalize provider requests, control cost, cache prefixes, and account for usage.
 6. **Learning/memory layer** — adapt from outcomes, cache useful selections, and preserve agent memory locally.
 7. **Security layer** — scan code, detect prompt injection, apply redaction policy, and keep file reads contained.
-8. **Multi-runtime packaging** — Python, Rust native, Node/WASM, Docker, CLI, SDK, MCP, and proxy.
+8. **Multi-runtime packaging** — Python, Rust native, Node/Bun/WASM, Docker, CLI, SDK, MCP, and proxy.
 9. **Self-improvement layer** — convert real outcomes into safer policies, skills, and weight profiles.
 10. **Memory/session/value layer** — retain useful working memory, session continuity, checkpoint relevance, and evidence-classified value.
 11. **Multimodal intake layer** — convert diagrams, images, voice, diffs, and structured artifacts into budgetable context.
@@ -25,9 +25,9 @@ observability, governance, and decision layer for AI context.
 |---|---|---|
 | `entroly` | PyPI | Python CLI, SDK, MCP server, pure-Python engine, optional proxy/native extras |
 | `entroly-core` | PyPI | Rust native engine for Python via PyO3 |
-| `entroly` | npm | Node compatibility alias that delegates to the WASM runtime |
-| `entroly-mcp` | npm | NPX bridge for MCP users |
-| `entroly-wasm` | npm | WASM runtime for Node users without a Python-first setup |
+| `entroly` | npm | Node and Bun package (npx / bunx --bun) that delegates to the WASM runtime |
+| `entroly-mcp` | npm | npm launcher for the Python MCP server |
+| `entroly-wasm` | npm | WASM runtime for Node and Bun environments without Python |
 | `ghcr.io/juyterman1000/entroly` | GHCR | Docker image |
 
 Recommended first impression:
@@ -38,9 +38,9 @@ entroly verify-claims
 entroly simulate
 ```
 
-Then choose one integration path. Python is the fullest CLI/SDK path. npm/WASM
-is the no-Python Node path. The MCP bridge exists for MCP clients that prefer
-`npx`, and proxy mode is for users who control provider API keys.
+Then choose one integration path. Python is the fullest CLI/SDK path. npm/Bun/WASM
+is the no-Python path. Launch its MCP server with `npx` or `bunx --bun`.
+The `entroly-mcp` bridge launches the Python server. Proxy mode is for users who control provider API keys.
 
 ## CLI surface
 

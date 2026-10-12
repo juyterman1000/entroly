@@ -250,6 +250,19 @@ jobs:
           npm run build
           node test_context_receipt_parity.js
 
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.4.0"
+
+      - name: Bun runtime parity and CLI smoke
+        working-directory: entroly-wasm
+        run: |
+          bun test_context_receipt_parity.js
+          bun test_bun_compat.js
+          bun js/cli.js --help
+          bun js/cli.js status
+
       - name: Set up Python for shared-state convergence
         uses: actions/setup-python@v7
         with:

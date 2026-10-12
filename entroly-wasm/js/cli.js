@@ -46,6 +46,16 @@ function banner() {
   return `${C.CYAN}${C.BOLD}  Entroly${C.RESET} v${VERSION} — information-theoretic context optimization`;
 }
 
+function detectRunner() {
+  const isBun = Boolean(process.versions && process.versions.bun);
+  return {
+    isBun,
+    runner: isBun ? 'bunx' : 'npx',
+    runnerPrefix: isBun ? 'bunx --bun' : 'npx',
+    runnerArgs: isBun ? ['--bun', 'entroly-wasm', '--serve'] : ['-y', 'entroly-wasm', '--serve'],
+  };
+}
+
 // ── Commands ──
 
 function cmdServe() {
@@ -151,18 +161,20 @@ function cmdInit() {
   console.log(banner());
   console.log();
 
+  const { isBun, runner, runnerPrefix, runnerArgs } = detectRunner();
+
   // Detect IDE
   const cwd = process.cwd();
   const cursorDir = path.join(cwd, '.cursor');
   const vscodeDir = path.join(cwd, '.vscode');
 
   if (fs.existsSync(cursorDir) || fs.existsSync(path.join(os.homedir(), '.cursor'))) {
-    console.log(`${C.GREEN}✓${C.RESET} Detected: ${C.BOLD}Cursor${C.RESET}`);
+    console.log(`${C.GREEN}✓${C.RESET} Detected: ${C.BOLD}Cursor${C.RESET}${isBun ? ` ${C.CYAN}(using bunx)${C.RESET}` : ''}`);
     const mcpConfig = {
       mcpServers: {
         entroly: {
-          command: 'npx',
-          args: ['-y', 'entroly-wasm', '--serve'],
+          command: runner,
+          args: runnerArgs,
         },
       },
     };
@@ -186,19 +198,19 @@ function cmdInit() {
     }
     console.log(`${C.GREEN}✓${C.RESET} Written MCP config to ${C.CYAN}${configPath}${C.RESET}`);
   } else if (fs.existsSync(vscodeDir)) {
-    console.log(`${C.GREEN}✓${C.RESET} Detected: ${C.BOLD}VS Code${C.RESET}`);
+    console.log(`${C.GREEN}✓${C.RESET} Detected: ${C.BOLD}VS Code${C.RESET}${isBun ? ` ${C.CYAN}(using bunx)${C.RESET}` : ''}`);
     console.log(`  Add to your MCP settings:`);
-    console.log(`  ${C.CYAN}"entroly": { "command": "npx", "args": ["-y", "entroly-wasm", "--serve"] }${C.RESET}`);
+    console.log(`  ${C.CYAN}"entroly": { "command": "${runner}", "args": ${JSON.stringify(runnerArgs)} }${C.RESET}`);
   } else {
     console.log(`  No IDE detected. To use Entroly as an MCP server, run:`);
-    console.log(`  ${C.CYAN}npx entroly-wasm --serve${C.RESET}`);
+    console.log(`  ${C.CYAN}${runner} ${runnerArgs.join(' ')}${C.RESET}`);
   }
 
   console.log();
   console.log(`  ${C.BOLD}Quick start:${C.RESET}`);
-  console.log(`    ${C.CYAN}npx entroly-wasm optimize 8000 "fix the auth bug"${C.RESET}`);
-  console.log(`    ${C.CYAN}npx entroly-wasm health${C.RESET}`);
-  console.log(`    ${C.CYAN}npx entroly-wasm demo${C.RESET}`);
+  console.log(`    ${C.CYAN}${runnerPrefix} entroly-wasm optimize 8000 "fix the auth bug"${C.RESET}`);
+  console.log(`    ${C.CYAN}${runnerPrefix} entroly-wasm health${C.RESET}`);
+  console.log(`    ${C.CYAN}${runnerPrefix} entroly-wasm demo${C.RESET}`);
 }
 
 function cmdDemo() {
@@ -288,8 +300,12 @@ function cmdStatus() {
   const config = new EntrolyConfig();
   const indexPath = path.join(config.checkpointDir, 'index.json.gz');
   const hasIndex = fs.existsSync(indexPath);
+  const runtime = (process.versions && process.versions.bun)
+    ? `Bun v${process.versions.bun}`
+    : `Node.js ${process.version}`;
   console.log(`${C.BOLD}Entroly Status${C.RESET}`);
   console.log(`  Version:    ${VERSION}`);
+  console.log(`  Runtime:    ${runtime}`);
   console.log(`  Engine:     Wasm (standalone)`);
   console.log(`  Index:      ${hasIndex ? C.GREEN + '✓ persistent index found' + C.RESET : C.YELLOW + '⚠ no index (run optimize first)' + C.RESET}`);
   console.log(`  Checkpoint: ${config.checkpointDir}`);
@@ -354,6 +370,7 @@ function cmdActivation(args) {
 }
 
 function cmdHelp() {
+  const { runnerPrefix } = detectRunner();
   console.log(banner());
   console.log();
   console.log(`  ${C.BOLD}Usage:${C.RESET} entroly-wasm [command] [options]`);
@@ -374,10 +391,10 @@ function cmdHelp() {
   console.log(`    ${C.CYAN}clean${C.RESET}      Clear cached state`);
   console.log();
   console.log(`  ${C.BOLD}Examples:${C.RESET}`);
-  console.log(`    ${C.GRAY}npx entroly-wasm${C.RESET}                              ${C.GRAY}# auto-detect + start${C.RESET}`);
-  console.log(`    ${C.GRAY}npx entroly-wasm optimize 8000 "fix the auth bug"${C.RESET}`);
-  console.log(`    ${C.GRAY}npx entroly-wasm health${C.RESET}`);
-  console.log(`    ${C.GRAY}npx entroly-wasm gateways${C.RESET}`);
+  console.log(`    ${C.GRAY}${runnerPrefix} entroly-wasm${C.RESET}                              ${C.GRAY}# auto-detect + start${C.RESET}`);
+  console.log(`    ${C.GRAY}${runnerPrefix} entroly-wasm optimize 8000 "fix the auth bug"${C.RESET}`);
+  console.log(`    ${C.GRAY}${runnerPrefix} entroly-wasm health${C.RESET}`);
+  console.log(`    ${C.GRAY}${runnerPrefix} entroly-wasm gateways${C.RESET}`);
 }
 
 // ── Main ──

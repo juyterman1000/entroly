@@ -373,6 +373,7 @@ def _detect_project_type() -> dict:
         "rust": ["Cargo.toml"],
         "javascript": ["package.json"],
         "typescript": ["tsconfig.json"],
+        "bun": ["bunfig.toml", "bun.lockb", "bun.lock"],
         "go": ["go.mod"],
         "java": ["pom.xml", "build.gradle"],
         "ruby": ["Gemfile"],
@@ -423,6 +424,10 @@ def _detect_project_type() -> dict:
                 frameworks.append("Fastify")
             if "nest" in all_deps or "@nestjs/core" in all_deps:
                 frameworks.append("NestJS")
+            if "elysia" in all_deps:
+                frameworks.append("Elysia")
+            if "hono" in all_deps:
+                frameworks.append("Hono")
         except (json.JSONDecodeError, OSError, KeyError):
             pass
 
