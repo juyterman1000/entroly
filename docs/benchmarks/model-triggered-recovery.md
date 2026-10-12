@@ -71,7 +71,34 @@ no-oracle rule correctly withheld retrieval.
 The full artifact, including fixtures, contexts, model outputs, hashes, token
 counts, errors, and provenance, is
 [`model_recovery_v7_holdout.json`](../../benchmarks/results/model_recovery_v7_holdout.json)
-(`payload_sha256 = c8a41f070ff71d4a730df213bcb464fea779f793ae66f31f5a929b982046071c`).
+(`payload_sha256 = 46c5d9b60268daed78d063626885e12989d834444c16dc86744cd2b39bd46648`).
+
+### Provenance of that digest
+
+The artifact was relabelled after it was published. A repository-wide pass that
+neutralised named external products rewrote the baseline's system key inside the
+artifact and re-sorted its object keys, which changed the bytes and therefore the
+canonical digest. The embedded `payload_sha256` was recomputed at that time; this
+page's quoted digest was not, so for several releases the published hash matched
+nothing.
+
+Nothing measured changed. Across that commit every result value is identical —
+trials 24/24, final exact 24 and 18, retrieval triggers 24 and 0, mean active
+token ratios 0.183115 and 0.429722, `mcnemar_exact_p` 0.03125, 48 rows, zero
+errors, and byte-identical `quality_gates`. Only the system key's name and the
+key ordering differ.
+
+The original bytes and the digest
+`c8a41f070ff71d4a730df213bcb464fea779f793ae66f31f5a929b982046071c` remain
+retrievable from the revision before that pass. Recovering the published digest
+requires that revision, because restoring the bytes here would reintroduce the
+product name the name policy removes.
+
+Because an evidence file commits to its own bytes, a lexical rewrite over one is
+not a cosmetic edit. `tests/test_benchmark_evidence_integrity.py` now recomputes
+this artifact's canonical digest independently and asserts this page quotes it,
+so the next such pass fails a test instead of silently invalidating the
+published hash.
 
 ## Integrity and verifier contract
 
@@ -119,19 +146,31 @@ counts do not override answer reliability or metadata correctness.
 
 ## Reproduce and verify
 
-Install `External Baseline A-ai==0.31.0` in an isolated Python 3.10 environment and run a
-local Ollama server with the exact model recorded by the protocol.
+Verification needs only this checkout. It recomputes the canonical digest and
+re-derives every hash, score, and aggregate in the artifact:
+
+```powershell
+python -m benchmarks.model_recovery verify `
+  --input benchmarks\results\model_recovery_v7_holdout.json
+```
+
+A full rerun needs more. Fetch `model_recovery_protocol_v7.json` from the pinned
+revision linked above — the protocol in this checkout is a different, later one,
+so the rerun is not reproducible against it. Then install the external baseline
+wheel at the version the protocol records, in an isolated Python 3.10
+environment, and run a local Ollama server with the exact model it names:
 
 ```powershell
 python -m benchmarks.model_recovery run `
   --phase holdout `
-  --protocol benchmarks/model_recovery_protocol_v7.json `
-  --External Baseline A-python C:\path\to\External Baseline A-0.31.0\Scripts\python.exe `
+  --protocol path\to\model_recovery_protocol_v7.json `
+  --external_adapter-python C:\path\to\baseline-venv\Scripts\python.exe `
   --output benchmarks\results\model_recovery_v7_holdout.json
-
-python -m benchmarks.model_recovery verify `
-  --input benchmarks\results\model_recovery_v7_holdout.json
 ```
+
+The flag is `--external_adapter-python`; the same naming pass that changed the
+digest also rewrote it in this page's command, so the published command could not
+run as printed.
 
 Development artifacts and failed variants are evidence for engineering
 decisions only. The protocol forbids using them for a public win claim.
