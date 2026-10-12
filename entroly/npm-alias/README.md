@@ -81,7 +81,7 @@ For MCP clients that accept JSON config (Node.js via `npx` or Bun via `bunx`):
 }
 ```
 
-Or for Bun-first agents (sub-millisecond cold start):
+Or for agents running with Bun:
 
 ```json
 {

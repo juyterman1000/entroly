@@ -4,6 +4,7 @@
 const assert = require('assert');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const { spawnSync } = require('child_process');
 
 console.log('Running Entroly Bun & Multi-runtime Compatibility Tests...\n');
@@ -20,13 +21,21 @@ assert(entroly.renderContextReceipt, 'missing renderContextReceipt export');
 assert(entroly.explainReceiptOmission, 'missing explainReceiptOmission export');
 console.log('✓ Package root exports match specification');
 
-// 2. Verify auto_index skip patterns and binary extensions for Bun
+// 2. Verify Bun lockfiles are excluded by actual indexing
 const { autoIndex } = require('./js/auto_index');
-const autoIndexSrc = fs.readFileSync(path.join(__dirname, 'js', 'auto_index.js'), 'utf8');
-assert(autoIndexSrc.includes("'bun.lock'"), 'bun.lock missing from SKIP_PATTERNS');
-assert(autoIndexSrc.includes("'bun.lockb'"), 'bun.lockb missing from SKIP_PATTERNS');
-assert(autoIndexSrc.includes("'.lockb'"), '.lockb missing from BINARY_EXTENSIONS');
-console.log('✓ Auto-indexer correctly skips Bun lockfiles (bun.lock, bun.lockb, .lockb)');
+const lockfileIndexDir = fs.mkdtempSync(path.join(os.tmpdir(), 'entroly-bun-index-'));
+try {
+  fs.writeFileSync(path.join(lockfileIndexDir, 'source.ts'), 'const ready = true;');
+  fs.writeFileSync(path.join(lockfileIndexDir, 'bun.lock'), 'lockfile');
+  fs.writeFileSync(path.join(lockfileIndexDir, 'bun.lockb'), Buffer.from([0, 1, 2]));
+  fs.writeFileSync(path.join(lockfileIndexDir, 'other.lockb'), Buffer.from([0, 1, 2]));
+  const indexedEngine = new entroly.WasmEntrolyEngine();
+  const summary = autoIndex(indexedEngine, lockfileIndexDir, true);
+  assert.strictEqual(summary.files_indexed, 1, 'only source.ts should be indexed');
+} finally {
+  fs.rmSync(lockfileIndexDir, { recursive: true, force: true });
+}
+console.log('✓ Auto-indexer excludes Bun lockfiles during ingestion');
 
 // 3. Verify CLI runner detection and status output
 const cliPath = path.join(__dirname, 'js', 'cli.js');
@@ -43,6 +52,21 @@ if (isBun) {
 }
 console.log(`✓ CLI status correctly reports runtime: ${isBun ? 'Bun v' + process.versions.bun : 'Node.js ' + process.version}`);
 
+const lockfileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'entroly-runner-'));
+try {
+  fs.writeFileSync(path.join(lockfileDir, 'bun.lock'), '');
+  const helpRes = spawnSync(process.execPath, [cliPath, '--help'], {
+    cwd: lockfileDir,
+    encoding: 'utf8',
+    env: { ...process.env, NO_COLOR: '1' },
+  });
+  assert.strictEqual(helpRes.status, 0, `cli help failed: ${helpRes.stderr}`);
+  const expectedRunner = isBun ? 'bunx' : 'npx';
+  assert(helpRes.stdout.includes(`${expectedRunner} entroly-wasm`), 'runner must follow the active runtime, not the project lockfile');
+} finally {
+  fs.rmSync(lockfileDir, { recursive: true, force: true });
+}
+
 // 4. Verify Wasm engine optimization and stats run cleanly
 const engine = new entroly.WasmEntrolyEngine();
 const r1 = engine.ingest('function auth() { return true; }', 'src/auth.ts', 10, true);
@@ -57,9 +81,9 @@ const stats = engine.stats();
 assert(stats, 'missing stats');
 console.log('✓ Wasm engine core execution (ingest, turn, optimize, stats) verified');
 
-// 5. Verify MCP Server instant handshake
+// 5. Verify MCP server tool schema construction
 const server = new entroly.EntrolyMCPServer();
 assert.strictEqual(server.tools.length, 37, `expected 37 MCP tools, got ${server.tools.length}`);
-console.log('✓ MCP Server instant handshake and 37-tool schema verified');
+console.log('✓ MCP server tool schema construction verified');
 
 console.log('\nAll Bun & multi-runtime compatibility tests passed!\n');

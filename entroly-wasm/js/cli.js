@@ -47,10 +47,7 @@ function banner() {
 }
 
 function detectRunner() {
-  const isBun = Boolean(process.versions && process.versions.bun) ||
-    fs.existsSync(path.join(process.cwd(), 'bun.lockb')) ||
-    fs.existsSync(path.join(process.cwd(), 'bun.lock')) ||
-    fs.existsSync(path.join(process.cwd(), 'bunfig.toml'));
+  const isBun = Boolean(process.versions && process.versions.bun);
   return {
     isBun,
     runner: isBun ? 'bunx' : 'npx',
