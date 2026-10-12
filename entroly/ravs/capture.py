@@ -156,6 +156,17 @@ def capture_from_stdin(log_path: Optional[str] = None) -> Optional[dict]:
         # Observation must never fail the call it is observing.
         pass
 
+    # The PostToolUse payload already carries what the next session needs:
+    # which file was touched, which command ran, and whether it failed. It was
+    # read for its command string and the rest discarded.
+    try:
+        from ..session_journal import record_from_hook_payload
+
+        record_from_hook_payload(data)
+    except Exception:
+        # Observation must never fail the call it is observing.
+        pass
+
     command = ""
     if isinstance(data.get("tool_input"), dict):
         command = data["tool_input"].get("command", "")
