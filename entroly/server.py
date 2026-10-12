@@ -1962,7 +1962,7 @@ def create_mcp_server(
         produced a real pass/fail outcome.
 
         Args:
-            request_id: the trace_id from the optimize_context call
+            request_id: the "request_id" field from the optimize_context response
             passed: True if all tests passed, False if any failed
             suite: optional name of the test suite (e.g. "pytest", "cargo test")
             details: optional short summary of what was tested
@@ -1987,7 +1987,7 @@ def create_mcp_server(
         Convention: exit_code == 0 → "success", anything else → "failure".
 
         Args:
-            request_id: the trace_id from the optimize_context call
+            request_id: the "request_id" field from the optimize_context response
             exit_code: subprocess exit code; 0 = success
             command: optional short representation of what was run
         """
@@ -2056,7 +2056,7 @@ def create_mcp_server(
         code was successful.
 
         Args:
-            request_id: the trace_id from the optimize_context call
+            request_id: the "request_id" field from the optimize_context response
             outcome: "accepted", "reverted", or "retried"
             files_modified: number of files touched by the edit
         """
