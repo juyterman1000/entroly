@@ -255,7 +255,7 @@ class CompressedContextStore:
         actions. ``None`` means nothing is stored for this key, which for an
         exact handle means that version was evicted. An entry whose bytes do not
         hash to its commitment comes back with ``integrity`` set to
-        ``content_mismatch`` and ``original`` withheld, so a caller that ignores
+        ``commitment_mismatch`` and ``original`` withheld, so a caller that ignores
         the field cannot use unverified bytes by accident -- it gets nothing
         rather than something plausible.
         """
@@ -275,7 +275,7 @@ class CompressedContextStore:
             result["integrity"] = "verified"
             return result
 
-        result["integrity"] = "content_mismatch"
+        result["integrity"] = "commitment_mismatch"
         result["integrity_detail"] = {
             "expected_content_sha256": expected or "",
             "actual_content_sha256": actual or "",

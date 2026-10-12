@@ -12,6 +12,15 @@ on:
       - 'tests/test_context_assurance*'
       - 'tests/test_decision_evaluation.py'
       - 'tests/test_tokens_offline.py'
+      # The Python recovery store and the Rust contract it must agree with.
+      # Without these the conformance gate would not run on a change to either
+      # side of that boundary -- and the divergence it catches lived there.
+      - 'entroly/ccr.py'
+      - 'entroly/integrations/exact_recovery.py'
+      - 'entroly-engine/src/engine_contracts.rs'
+      - 'entroly-core/src/context_receipt_bindings.rs'
+      - 'tests/test_ccr_integrity_boundary.py'
+      - 'tests/test_recovery_cross_runtime_conformance.py'
       - '.github/workflows/context-assurance.yml'
 
 permissions:
@@ -49,6 +58,8 @@ jobs:
             tests/test_context_assurance.py tests/test_tokens_offline.py \
             tests/test_decision_evaluation.py tests/test_context_assurance_benchmark.py \
             tests/test_context_receipts.py tests/test_context_receipt_parity.py \
+            tests/test_ccr_integrity_boundary.py \
+            tests/test_recovery_cross_runtime_conformance.py \
             tests/test_context_commit.py tests/test_recoverable_receipts.py \
             tests/test_sdk_optimize_engine_parity.py tests/test_sdk_optimize_isolation.py \
             tests/test_mcp_wire_budget.py
