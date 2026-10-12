@@ -104,6 +104,7 @@ SKIP_FILENAMES = frozenset({
     "Cargo.lock",
     "Gemfile.lock",
     "Pipfile.lock",
+    "bun.lock",
     "bun.lockb",
     "composer.lock",
     "package-lock.json",

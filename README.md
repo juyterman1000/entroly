@@ -98,10 +98,10 @@ review requirements; the contributor guide explains their boundaries.
 the same published artifacts in an isolated tool cache:
 
 ```bash
-# Node / WASM runtime
+# Node or Bun / WASM runtime
 npx -y entroly@latest --help
 pnpm dlx entroly@latest --help
-bunx entroly@latest --help
+bunx --bun entroly@latest --help
 
 # Complete Python runtime
 uvx --from entroly entroly --help

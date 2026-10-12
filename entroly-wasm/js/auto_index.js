@@ -47,6 +47,7 @@ const SUPPORTED_EXTENSIONS = new Set([
 const SKIP_PATTERNS = new Set([
   'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'Cargo.lock',
   'poetry.lock', 'Pipfile.lock', 'composer.lock', 'Gemfile.lock',
+  'bun.lock', 'bun.lockb',
   '.DS_Store', 'thumbs.db',
 ]);
 
@@ -59,7 +60,7 @@ const BINARY_EXTENSIONS = new Set([
   '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
   '.ttf', '.otf', '.woff', '.woff2', '.eot',
   '.db', '.sqlite', '.sqlite3',
-  '.dat', '.pak', '.map',
+  '.dat', '.pak', '.map', '.lockb',
 ]);
 
 const MAX_FILE_BYTES = 50 * 1024;
