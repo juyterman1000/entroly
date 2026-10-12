@@ -25,8 +25,8 @@ observability, governance, and decision layer for AI context.
 |---|---|---|
 | `entroly` | PyPI | Python CLI, SDK, MCP server, pure-Python engine, optional proxy/native extras |
 | `entroly-core` | PyPI | Rust native engine for Python via PyO3 |
-| `entroly` | npm | Node and Bun package (npx / bunx) that delegates to the WASM runtime |
-| `entroly-mcp` | npm | NPX/bunx bridge for MCP users |
+| `entroly` | npm | Node and Bun package (npx / bunx --bun) that delegates to the WASM runtime |
+| `entroly-mcp` | npm | npm launcher for the Python MCP server |
 | `entroly-wasm` | npm | WASM runtime for Node and Bun environments without Python |
 | `ghcr.io/juyterman1000/entroly` | GHCR | Docker image |
 
@@ -39,8 +39,8 @@ entroly simulate
 ```
 
 Then choose one integration path. Python is the fullest CLI/SDK path. npm/Bun/WASM
-is the no-Python path. The MCP bridge exists for MCP clients that prefer
-`npx` or `bunx`, and proxy mode is for users who control provider API keys.
+is the no-Python path. Launch its MCP server with `npx` or `bunx --bun`.
+The `entroly-mcp` bridge launches the Python server. Proxy mode is for users who control provider API keys.
 
 ## CLI surface
 

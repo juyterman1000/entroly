@@ -51,7 +51,8 @@ function detectRunner() {
   return {
     isBun,
     runner: isBun ? 'bunx' : 'npx',
-    runnerArgs: isBun ? ['entroly-wasm', '--serve'] : ['-y', 'entroly-wasm', '--serve'],
+    runnerPrefix: isBun ? 'bunx --bun' : 'npx',
+    runnerArgs: isBun ? ['--bun', 'entroly-wasm', '--serve'] : ['-y', 'entroly-wasm', '--serve'],
   };
 }
 
@@ -160,7 +161,7 @@ function cmdInit() {
   console.log(banner());
   console.log();
 
-  const { isBun, runner, runnerArgs } = detectRunner();
+  const { isBun, runner, runnerPrefix, runnerArgs } = detectRunner();
 
   // Detect IDE
   const cwd = process.cwd();
@@ -207,9 +208,9 @@ function cmdInit() {
 
   console.log();
   console.log(`  ${C.BOLD}Quick start:${C.RESET}`);
-  console.log(`    ${C.CYAN}${runner} entroly-wasm optimize 8000 "fix the auth bug"${C.RESET}`);
-  console.log(`    ${C.CYAN}${runner} entroly-wasm health${C.RESET}`);
-  console.log(`    ${C.CYAN}${runner} entroly-wasm demo${C.RESET}`);
+  console.log(`    ${C.CYAN}${runnerPrefix} entroly-wasm optimize 8000 "fix the auth bug"${C.RESET}`);
+  console.log(`    ${C.CYAN}${runnerPrefix} entroly-wasm health${C.RESET}`);
+  console.log(`    ${C.CYAN}${runnerPrefix} entroly-wasm demo${C.RESET}`);
 }
 
 function cmdDemo() {
@@ -369,7 +370,7 @@ function cmdActivation(args) {
 }
 
 function cmdHelp() {
-  const { runner } = detectRunner();
+  const { runnerPrefix } = detectRunner();
   console.log(banner());
   console.log();
   console.log(`  ${C.BOLD}Usage:${C.RESET} entroly-wasm [command] [options]`);
@@ -390,10 +391,10 @@ function cmdHelp() {
   console.log(`    ${C.CYAN}clean${C.RESET}      Clear cached state`);
   console.log();
   console.log(`  ${C.BOLD}Examples:${C.RESET}`);
-  console.log(`    ${C.GRAY}${runner} entroly-wasm${C.RESET}                              ${C.GRAY}# auto-detect + start${C.RESET}`);
-  console.log(`    ${C.GRAY}${runner} entroly-wasm optimize 8000 "fix the auth bug"${C.RESET}`);
-  console.log(`    ${C.GRAY}${runner} entroly-wasm health${C.RESET}`);
-  console.log(`    ${C.GRAY}${runner} entroly-wasm gateways${C.RESET}`);
+  console.log(`    ${C.GRAY}${runnerPrefix} entroly-wasm${C.RESET}                              ${C.GRAY}# auto-detect + start${C.RESET}`);
+  console.log(`    ${C.GRAY}${runnerPrefix} entroly-wasm optimize 8000 "fix the auth bug"${C.RESET}`);
+  console.log(`    ${C.GRAY}${runnerPrefix} entroly-wasm health${C.RESET}`);
+  console.log(`    ${C.GRAY}${runnerPrefix} entroly-wasm gateways${C.RESET}`);
 }
 
 // ── Main ──

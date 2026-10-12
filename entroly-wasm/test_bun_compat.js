@@ -61,8 +61,20 @@ try {
     env: { ...process.env, NO_COLOR: '1' },
   });
   assert.strictEqual(helpRes.status, 0, `cli help failed: ${helpRes.stderr}`);
-  const expectedRunner = isBun ? 'bunx' : 'npx';
+  const expectedRunner = isBun ? 'bunx --bun' : 'npx';
   assert(helpRes.stdout.includes(`${expectedRunner} entroly-wasm`), 'runner must follow the active runtime, not the project lockfile');
+  fs.mkdirSync(path.join(lockfileDir, '.cursor'));
+  const initRes = spawnSync(process.execPath, [cliPath, 'init'], {
+    cwd: lockfileDir,
+    encoding: 'utf8',
+    env: { ...process.env, NO_COLOR: '1' },
+  });
+  assert.strictEqual(initRes.status, 0, `cli init failed: ${initRes.stderr}`);
+  const mcpConfig = JSON.parse(fs.readFileSync(path.join(lockfileDir, '.cursor', 'mcp.json'), 'utf8'));
+  assert.deepStrictEqual(mcpConfig.mcpServers.entroly, {
+    command: isBun ? 'bunx' : 'npx',
+    args: isBun ? ['--bun', 'entroly-wasm', '--serve'] : ['-y', 'entroly-wasm', '--serve'],
+  });
 } finally {
   fs.rmSync(lockfileDir, { recursive: true, force: true });
 }

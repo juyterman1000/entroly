@@ -31,7 +31,7 @@ Or run the same published package without a global install:
 ```bash
 npx -y entroly@latest --help
 pnpm dlx entroly@latest --help
-bunx entroly@latest --help
+bunx --bun entroly@latest --help
 ```
 
 Package runners download Entroly into their own tool cache. Pin
@@ -68,7 +68,7 @@ provider-bound path is explicitly observed.
 
 ## MCP setup
 
-For MCP clients that accept JSON config (Node.js via `npx` or Bun via `bunx`):
+For Node.js MCP clients that accept JSON config:
 
 ```json
 {
@@ -81,14 +81,14 @@ For MCP clients that accept JSON config (Node.js via `npx` or Bun via `bunx`):
 }
 ```
 
-Or for agents running with Bun:
+For Bun MCP clients:
 
 ```json
 {
   "mcpServers": {
     "entroly": {
       "command": "bunx",
-      "args": ["entroly-wasm", "serve"]
+      "args": ["--bun", "entroly-wasm", "serve"]
     }
   }
 }
