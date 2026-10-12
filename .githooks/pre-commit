@@ -40,6 +40,32 @@ if echo "$CHANGED" | grep -qE '\.py$'; then
     fi
 fi
 
+# ── Hash-committed evidence ───────────────────────────────────────────
+# An artifact carrying a digest of its own contents cannot be edited in
+# passing: the bytes, the commitment and every published citation have to move
+# together. A repository-wide rename pass moved the first two and left the
+# third, and two artifacts shipped broken for several releases because the
+# existing checks are citation-scoped and neither covered them.
+#
+# Local because this damage is cheapest to see before the commit that causes
+# it. CI remains the real gate.
+if echo "$CHANGED" | grep -qE '^benchmarks/results/|^docs/benchmarks/|^docs/investigations/'; then
+    if command -v python >/dev/null 2>&1; then
+        echo "pre-commit: running check_committed_evidence.py ..."
+        if ! python scripts/check_committed_evidence.py 2>&1; then
+            echo ""
+            echo "pre-commit: a hash-committed artifact disagrees with its"
+            echo "            published digest or sidecar. Move the bytes, the"
+            echo "            commitment and the citation together, and record"
+            echo "            why on the page that cites it. To re-seal, re-run"
+            echo "            the benchmark -- never write a digest by hand."
+            exit 1
+        fi
+    else
+        echo "pre-commit: python not found, skipping evidence-integrity check."
+    fi
+fi
+
 # ── Rust: fmt + clippy ────────────────────────────────────────────────
 if echo "$CHANGED" | grep -qE '^entroly-core/.*\.rs$|^entroly-core/Cargo\.(toml|lock)$'; then
     if command -v cargo >/dev/null 2>&1; then

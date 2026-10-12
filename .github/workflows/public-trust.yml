@@ -34,6 +34,19 @@ on:
       - docs/evidence-provenance-debt.json
       - tests/test_verify_readme_claims.py
       - tests/test_evidence_provenance_ratchet.py
+      # The entries above name individual artifacts, which is the wrong shape
+      # for check_committed_evidence.py: it *discovers* every self-committing
+      # artifact and sidecar rather than reading a list, so an allowlist would
+      # leave each new artifact ungated until someone remembered to add it.
+      # These globs cover the evidence tree and the pages that publish its
+      # digests, so a break fires the gate on the pull request that caused it
+      # rather than at the next weekly run.
+      - benchmarks/results/**
+      - docs/benchmarks/**
+      - docs/investigations/**
+      - scripts/check_committed_evidence.py
+      - tests/test_committed_evidence_guard.py
+      - tests/test_benchmark_evidence_integrity.py
       - .github/workflows/public-trust.yml
   schedule:
     - cron: "23 9 * * 1"
@@ -79,12 +92,22 @@ jobs:
           # This covers every artifact cited as evidence anywhere in README or
           # docs/, and fails when a newly cited one arrives unsealed.
           python scripts/verify_evidence_provenance.py 2>&1 | tee evidence-provenance.log
+          # Both checks above are citation-scoped: they inspect artifacts named
+          # in the README first screen or in their own document set. A rewrite
+          # pass broke two artifacts that neither covered -- one whose published
+          # digest went stale, one whose sidecar did -- because an artifact
+          # cited only under docs/investigations/ was in nobody's scope. This
+          # discovers the artifacts instead, so coverage does not depend on
+          # where an artifact happens to be cited.
+          python scripts/check_committed_evidence.py 2>&1 | tee committed-evidence.log
       - name: Run public trust regressions
         run: >-
           python -m pytest -q tests/test_verify_readme_claims.py
           tests/test_evidence_provenance_ratchet.py
           tests/test_dependency_closure_integrity_benchmark.py
           tests/test_closed_set_selection_frontier_benchmark.py
+          tests/test_committed_evidence_guard.py
+          tests/test_benchmark_evidence_integrity.py
           --junitxml=public-trust-tests.xml
       - name: Upload public trust diagnostics
         if: always()
