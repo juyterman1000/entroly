@@ -318,7 +318,7 @@ def test_release_workflow_sanitizes_version_once_and_probes_live_artifacts() -> 
     assert "probe-python-runners:" in text
     assert 'npx -y "entroly@${RELEASE_VERSION}" --help' in text
     assert 'pnpm dlx "entroly@${RELEASE_VERSION}" --help' in text
-    assert 'bunx "entroly@${RELEASE_VERSION}" --help' in text
+    assert 'bunx --bun "entroly@${RELEASE_VERSION}" --help' in text
     assert "probe_runner npx" in text
     assert "probe_runner pnpm" in text
     assert "probe_runner bunx" in text
@@ -337,7 +337,7 @@ def test_release_workflow_sanitizes_version_once_and_probes_live_artifacts() -> 
     )[0]
     _assert_probe_retries_and_is_bounded(python_runner_probe, "probe-python-runners")
     assert "pypi.org/pypi/" not in python_runner_probe
-    assert "oven-sh/setup-bun@v2" in text
+    assert "oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6" in text
     assert "pipx==1.16.7 uv==0.12.7" in text
     assert "needs: [release-metadata, probe-npm-openclaw]" in text
     assert '"openclaw@2026.9.8" "entroly-openclaw@${RELEASE_VERSION}"' in text
@@ -419,7 +419,7 @@ def test_readme_documents_only_release_probed_package_runners() -> None:
     for command in (
         "npx -y entroly@latest --help",
         "pnpm dlx entroly@latest --help",
-        "bunx entroly@latest --help",
+        "bunx --bun entroly@latest --help",
     ):
         assert command in readme
         assert command in npm_readme
