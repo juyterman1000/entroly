@@ -179,9 +179,11 @@ _FULL_MCP_INSTRUCTIONS = (
 
 _PUBLIC_MCP_INSTRUCTIONS = (
     "Local context control for coding agents. Start a task with recall_relevant. "
-    "Use read_source_file for a known workspace path, locate_evidence for exact "
-    "source spans answering a natural-language query, remember_fragment for "
-    "caller-supplied text, and optimize_context for a token-bounded bundle. "
+    "Use read_source_file for a known workspace path, then locate_evidence to pin "
+    "exact spans inside text you pass to it -- locate_evidence never reads the "
+    "workspace itself, so obtain the text first. remember_fragment stores "
+    "caller-supplied text, and optimize_context returns a token-bounded bundle "
+    "from the indexed corpus. "
     "Use create_context_receipt when selection needs an audit trail, then "
     "recover_receipt_omission for omitted receipt chunks or retrieve_context for "
     "a CCR handle. Use checkpoint_state and resume_state across interruptions. "
@@ -4270,11 +4272,23 @@ def create_mcp_server(
         calibration_id: str = "",
         passage_mode: str = "auto",
     ) -> str:
-        """Locate exact source spans without generating an answer.
+        """Locate exact spans inside ``text`` without generating an answer.
 
-        The ranker can select only passage and sentence identifiers created
-        from ``text``. Entroly derives returned text, offsets, and hashes from
-        the original source. Invalid ranker output abstains.
+        ``text`` is the corpus. This tool does not read the workspace and has no
+        index behind it: pass it content you already hold, typically from
+        ``read_source_file``. A natural-language ``query`` ranks spans *within*
+        that text; it does not search for the text.
+
+        That boundary is worth stating twice because the obvious reading is the
+        wrong one. Nothing here falls back to repository search, so calling it
+        without ``text`` is an error rather than a whole-repository query, and a
+        caller expecting otherwise receives nothing and cannot tell whether the
+        evidence was absent or merely never searched for.
+
+        The ranker can select only passage and sentence identifiers created from
+        ``text``. Entroly derives returned text, offsets, and hashes from the
+        original source, so a span is checkable against what was supplied.
+        Invalid ranker output abstains rather than guessing.
         """
         try:
             if len(text.encode("utf-8", "surrogatepass")) > 16 * 1024 * 1024:
