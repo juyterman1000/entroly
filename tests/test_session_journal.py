@@ -278,3 +278,80 @@ def test_the_reserved_slot_does_not_displace_an_error_already_present(home) -> N
 
     assert len([e for e in result.events if e.kind == "error"]) == 1
     assert result.notes == (), "nothing was promoted, so nothing to disclose"
+
+
+# ── retention has to actually run ─────────────────────────────────────
+
+
+def test_retention_is_applied_from_the_write_path(home, monkeypatch) -> None:
+    """A retention window nothing invokes is not a retention window.
+
+    ``prune_journal`` existed with no caller, while the change claimed the
+    journal was subject to ``ENTROLY_RETENTION_DAYS``. That claim was false
+    until the append path enforced it.
+    """
+    import time
+
+    import entroly.session_journal as journal
+
+    monkeypatch.setenv("ENTROLY_RETENTION_DAYS", "7")
+    aged = time.time() - 30 * 86400
+
+    path = journal_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rows = [
+        json.dumps(
+            {
+                "schema": journal.SCHEMA,
+                "ts": aged,
+                "kind": "edit",
+                "tool": "Edit",
+                "target": f"src/aged_{index}.py",
+                "status": "ok",
+                "detail": "",
+                "session": "",
+            }
+        )
+        for index in range(4000)
+    ]
+    rows.append(
+        json.dumps(
+            {
+                "schema": journal.SCHEMA,
+                "ts": time.time(),
+                "kind": "edit",
+                "tool": "Edit",
+                "target": "src/fresh.py",
+                "status": "ok",
+                "detail": "",
+                "session": "",
+            }
+        )
+    )
+    path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    assert path.stat().st_size >= journal.PRUNE_EVERY_BYTES
+
+    record_event(tool="Edit", target="src/triggers_prune.py")
+
+    targets = {event.target for event in recall("", limit=50).events}
+    assert not any(target.startswith("src/aged_") for target in targets), (
+        "events older than the retention window must be gone from disk"
+    )
+    assert "src/fresh.py" in targets, "and anything inside the window must stay"
+    assert "src/triggers_prune.py" in targets, "including the event that triggered it"
+
+
+def test_pruning_does_not_run_on_every_append(home) -> None:
+    """The rewrite is amortised; the per-append cost must stay a stat."""
+    import entroly.session_journal as journal
+
+    calls = []
+    original = journal.prune_journal
+    journal.prune_journal = lambda *a, **k: calls.append(1) or {"status": "stub"}
+    try:
+        for index in range(50):
+            record_event(tool="Edit", target=f"src/module_{index}.py")
+    finally:
+        journal.prune_journal = original
+
+    assert calls == [], "a small journal must not be rewritten on every append"

@@ -62,6 +62,10 @@ MAX_DETAIL_CHARS = 280
 # limit as a session runs long.
 MAX_EVENTS_SCANNED = 20_000
 
+# Apply retention from the write path once the file reaches this size. A
+# retention window nothing invokes is not a retention window.
+PRUNE_EVERY_BYTES = 256 * 1024
+
 _KINDS = frozenset({"edit", "command", "error", "decision", "read", "search", "other"})
 
 # Paths and commands carry their meaning in their parts. See JournalEvent.searchable.
@@ -268,6 +272,18 @@ def record_event(
             stream.write(line + "\n")
     except (OSError, ValueError):
         return False
+
+    # Apply retention from the write path, because nothing else runs.
+    #
+    # A retention window that no caller invokes is not a retention window, and
+    # a durable record of the user's work is the wrong place to leave that
+    # unenforced. The check is a stat; the rewrite is amortised across roughly
+    # PRUNE_EVERY_BYTES of appends, so the per-call cost stays flat.
+    try:
+        if path.stat().st_size >= PRUNE_EVERY_BYTES:
+            prune_journal(entroly_dir)
+    except OSError:
+        pass
     return True
 
 
