@@ -103,4 +103,43 @@ for (const name of ['remember_fragment', 'optimize_context', 'work_record_review
 }
 console.log('✓ MCP server tool schema construction verified');
 
+// 6. Verify the actual stdio MCP handshake in the active runtime
+const handshakeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'entroly-bun-mcp-'));
+try {
+  const requests = [
+    { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'compat-test', version: '1' } } },
+    { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} },
+  ];
+  const handshake = spawnSync(process.execPath, [cliPath, '--serve'], {
+    cwd: handshakeDir,
+    input: `${requests.map((request) => JSON.stringify(request)).join('\n')}\n`,
+    timeout: 10000,
+    maxBuffer: 1024 * 1024,
+    env: { ...process.env, ENTROLY_DIR: path.join(handshakeDir, '.entroly'), ENTROLY_SOURCE: handshakeDir },
+  });
+  assert.strictEqual(handshake.status, 0, `MCP handshake failed: ${handshake.error?.message || handshake.stderr}`);
+  const responses = [];
+  const frameSeparator = Buffer.from('\r\n\r\n');
+  let offset = 0;
+  while (offset < handshake.stdout.length) {
+    const headerEnd = handshake.stdout.indexOf(frameSeparator, offset);
+    assert(headerEnd >= 0, 'MCP response missing frame separator');
+    const header = handshake.stdout.subarray(offset, headerEnd).toString('ascii');
+    const contentLength = Number(header.match(/^Content-Length:\s*(\d+)$/i)?.[1]);
+    assert(Number.isInteger(contentLength), 'MCP response missing Content-Length');
+    const bodyStart = headerEnd + frameSeparator.length;
+    const bodyEnd = bodyStart + contentLength;
+    assert(bodyEnd <= handshake.stdout.length, 'MCP response body truncated');
+    responses.push(JSON.parse(handshake.stdout.subarray(bodyStart, bodyEnd).toString('utf8')));
+    offset = bodyEnd;
+  }
+  assert(responses.find((response) => response.id === 1)?.result?.serverInfo, 'initialize response missing');
+  const listedTools = responses.find((response) => response.id === 2)?.result?.tools;
+  assert(Array.isArray(listedTools), 'tools/list response missing');
+  assert.deepStrictEqual(listedTools.map(({ name }) => name), toolNames, 'stdio tool list differs from server schema');
+} finally {
+  fs.rmSync(handshakeDir, { recursive: true, force: true });
+}
+console.log('MCP stdio initialize and tools/list verified');
+
 console.log('\nAll Bun & multi-runtime compatibility tests passed!\n');
