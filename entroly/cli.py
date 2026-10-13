@@ -6488,6 +6488,17 @@ def cmd_ravs(args):
             print(f"  {C.GRAY}Restart Claude Code to activate. Every Bash tool use now feeds RAVS.{C.RESET}")
         elif action == "already_present":
             print(f"  {C.GRAY}\u00b7 Hook already present in {path}{C.RESET}")
+        elif action == "already_present_in_project":
+            project_path = result.get("project_path", "")
+            print(
+                f"  {C.GRAY}\u00b7 This project already registers the hook in "
+                f"{project_path}{C.RESET}"
+            )
+            print(
+                f"  {C.GRAY}  Nothing installed: the host runs every matching "
+                f"hook, so a second one would record each tool call twice."
+                f"{C.RESET}"
+            )
         elif action == "dry_run":
             import json as _json
             print(f"  {C.CYAN}Dry-run \u2014 would write to {path}:{C.RESET}")

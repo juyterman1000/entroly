@@ -15,9 +15,12 @@ registration itself has to stay single.
 from __future__ import annotations
 
 import json
+import pathlib
 
 import pytest
 
+import entroly.cli as cli_module
+import entroly.ravs.hooks as hooks_module
 from entroly.ravs.hooks import install_claude_code
 
 
@@ -132,6 +135,41 @@ def test_unreadable_project_settings_do_not_break_installation(scopes) -> None:
     (project / ".claude" / "settings.json").write_text("{not json", encoding="utf-8")
 
     assert install_claude_code()["action"] == "installed"
+
+
+def test_every_action_the_installer_returns_has_a_cli_branch() -> None:
+    """A new action must not reach the user as "Unknown action".
+
+    Adding ``already_present_in_project`` without updating its only consumer
+    broke three CI jobs: the CLI fell through to its error branch, so
+    ``entroly ravs hook install --claude-code --dry-run`` reported an internal
+    action name instead of saying what happened. The installer's contract and
+    the CLI's handling of it are in different files, so this pins them
+    together.
+    """
+    import inspect
+    import re
+
+    # Only this function's own actions. uninstall_claude_code returns its own
+    # set ("uninstalled", "not_found", "parse_error") to a different command.
+    installer_source = inspect.getsource(hooks_module.install_claude_code)
+    returned = set(re.findall(r'"action":\s*"([a-z_]+)"', installer_source))
+    assert returned >= {"installed", "already_present"}, (
+        "the installer's known actions must be discoverable from its source"
+    )
+
+    cli_source = (
+        pathlib.Path(cli_module.__file__).read_text(encoding="utf-8")
+    )
+    # The hook-install branch, not the whole 7000-line CLI.
+    start = cli_source.index("install_claude_code(dry_run=")
+    branch = cli_source[start : start + 1800]
+    handled = set(re.findall(r'action == "([a-z_]+)"', branch))
+
+    assert returned <= handled, (
+        f"actions with no CLI branch: {sorted(returned - handled)}; each would "
+        "print 'Unknown action' to the user"
+    )
 
 
 def test_a_user_scope_hook_is_still_detected_first(scopes) -> None:
