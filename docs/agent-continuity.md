@@ -38,6 +38,40 @@ An incorrect token or a worktree change after recovery leaves the gate armed.
 Run `resume` again to review the new state. The MCP `work_resume` and
 `work_acknowledge_recovery` tools use the same gate.
 
+## Hand off to an independent reviewer from the CLI
+
+The installed `entroly-work` command can complete the local review loop without
+an MCP client. Both agents must use the same repository and `ENTROLY_DIR` state.
+This is a local workflow; it does not synchronize state between machines or
+attest which model produced an agent ID.
+
+```text
+entroly-work --project . --json claim --agent writer --task "Fix auth" --path app.py
+entroly-work --project . --json state
+entroly-work --project . --json handoff --workstream <state.unfinished node_id> --from-agent writer --to-agent reviewer
+entroly-work --project . --json handoffs --to-agent reviewer
+```
+
+`handoff` persists the compact receipt to the same bounded inbox used by MCP
+and returns `handoff_ref`. The reviewer confirms that the inbox entry has
+`current=true`, checks the source and tests independently, then runs:
+
+```text
+entroly-work --project . --json resume --workstream <workstream_id> --to-agent reviewer
+entroly-work --project . --json acknowledge --token <acknowledgement.token>
+entroly-work --project . --json review --handoff-ref <handoff_ref> --reviewer reviewer --verdict changes_requested --summary "Check auth fallback" --finding app.py 42 high "Fallback bypasses validation" --check "focused tests" 0
+entroly-work --project . --json reviews --workstream <workstream_id>
+```
+
+Use `--verdict approve --summary "..."` with no `--finding` for a clean review.
+`--finding PATH LINE SEVERITY MESSAGE` and `--check NAME EXIT_CODE` can be
+repeated. Check results and verdicts are **reviewer statements**, not verified
+command logs or correctness proofs. Each finding is bound to the current file
+digest. A changed repository makes the inbox receipt stale and prevents a new
+review against it; prior `reviews` entries then show `current=false`. For a
+budget-exhausted writer with no explicit handoff, use the earlier `resume` flow
+and report findings to the user without inventing a writer receipt.
+
 ## Measure the user outcome
 
 The useful outcome is **less rediscovery without lowering correctness**. For a

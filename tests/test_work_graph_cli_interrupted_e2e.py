@@ -77,3 +77,70 @@ def test_new_process_recovers_claim_and_requires_acknowledgement(tmp_path: Path)
     assert acknowledged["acknowledged"] is True
     code, successor = _cli(repo, env, "claim", "--agent", "codex", "--task", "Finish auth")
     assert code == 0, successor
+
+
+def test_new_process_exposes_handoff_and_source_bound_review(tmp_path: Path) -> None:
+    try:
+        WorkGraph("native-probe")
+    except WorkGraphUnavailableError as exc:
+        pytest.skip(str(exc))
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-b", "main")
+    _git(repo, "config", "user.email", "test@example.com")
+    _git(repo, "config", "user.name", "Test")
+    source = repo / "app.py"
+    source.write_text("VALUE = 1\n", encoding="utf-8")
+    _git(repo, "add", "app.py")
+    _git(repo, "commit", "-m", "initial")
+    _git(repo, "checkout", "-b", "feature/review")
+    env = dict(os.environ, ENTROLY_DIR=str(tmp_path / "state"))
+
+    code, claimed = _cli(repo, env, "claim", "--agent", "claude", "--task", "Update value")
+    assert code == 0, claimed
+    code, state = _cli(repo, env, "state")
+    assert code == 0, state
+    workstream = state["unfinished"][0]["node_id"]
+    source.write_text("VALUE = 2\n", encoding="utf-8")
+
+    code, sent = _cli(
+        repo, env, "handoff", "--workstream", workstream,
+        "--from-agent", "claude", "--to-agent", "codex",
+    )
+    assert code == 0, sent
+    ref = sent["handoff_ref"]
+    assert ref.startswith("handoff:")
+    code, inbox = _cli(repo, env, "handoffs", "--to-agent", "codex")
+    assert code == 0, inbox
+    assert inbox["handoffs"][0]["ref"] == ref
+    assert inbox["handoffs"][0]["current"] is True
+
+    code, recovered = _cli(repo, env, "resume", "--workstream", workstream, "--to-agent", "codex")
+    assert code == 0, recovered
+    code, accepted = _cli(repo, env, "acknowledge", "--token", recovered["acknowledgement"]["token"])
+    assert code == 0, accepted
+
+    code, recorded = _cli(
+        repo, env, "review", "--handoff-ref", ref, "--reviewer", "codex",
+        "--verdict", "changes_requested", "--summary", "Check the value",
+        "--finding", "app.py", "1", "high", "Value changed",
+        "--check", "focused test", "0",
+    )
+    assert code == 0, recorded
+    assert recorded["review"]["trust_boundary"].startswith("agent_statement")
+    assert recorded["review"]["findings"][0]["source_digest"].startswith("sha256:")
+    code, listed = _cli(repo, env, "reviews", "--workstream", workstream)
+    assert code == 0, listed
+    assert listed["reviews"][0]["current"] is True
+
+    source.write_text("VALUE = 3\n", encoding="utf-8")
+    code, stale = _cli(repo, env, "reviews", "--workstream", workstream)
+    assert code == 0, stale
+    assert stale["reviews"][0]["current"] is False
+    code, rejected = _cli(
+        repo, env, "review", "--handoff-ref", ref, "--reviewer", "codex",
+        "--verdict", "approve", "--summary", "Looks good",
+    )
+    assert code == 1
+    assert "stale" in rejected["detail"]

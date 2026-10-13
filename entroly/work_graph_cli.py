@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import sys
 import time
 import uuid
@@ -119,8 +120,33 @@ def _summary_lines(summary: object) -> list[str]:
 def _human_lines(payload: dict[str, Any]) -> list[str]:
     lines = ["Entroly Work Graph"]
 
-    if "repo_id" in payload:
+    if payload.get("kind") == "work_pending_handoffs":
         _add_field(lines, "Repository", payload.get("repo_id"))
+        _add_field(lines, "Project", payload.get("project_root"))
+        _add_field(lines, "Recipient", payload.get("to_agent"))
+        handoffs = payload.get("handoffs", [])
+        lines.append(f"  Handoffs     {len(handoffs)}")
+        for item in handoffs:
+            label = "current" if item.get("current") else "stale"
+            lines.append(f"  {label:<12} {item.get('ref', '')}")
+
+    elif payload.get("kind") == "work_record_review":
+        review = _mapping(payload.get("review"))
+        lines.append("  Status       Review recorded as an agent statement.")
+        _add_field(lines, "Review", review.get("review_id"))
+        _add_field(lines, "Verdict", review.get("verdict"))
+        _add_field(lines, "Findings", review.get("findings"))
+
+    elif payload.get("kind") == "work_reviews":
+        reviews = payload.get("reviews", [])
+        lines.append(f"  Reviews      {len(reviews)}")
+        for item in reviews:
+            label = "current" if item.get("current") else "stale"
+            lines.append(f"  {label:<12} {item.get('review_id', '')}")
+
+    elif "repo_id" in payload:
+        _add_field(lines, "Repository", payload.get("repo_id"))
+        _add_field(lines, "Project", payload.get("project_root"))
         lines.extend(_summary_lines(payload.get("summary")))
         unfinished = _count(payload.get("unfinished"))
         if unfinished is not None:
@@ -168,6 +194,7 @@ def _human_lines(payload: dict[str, Any]) -> list[str]:
         _add_field(lines, "From", _first(receipt, "source_agent", "from_agent"))
         _add_field(lines, "To", _first(receipt, "target_agent", "to_agent"))
         _add_field(lines, "Receipt", _first(receipt, "receipt_id", "handoff_id", "id"))
+        _add_field(lines, "Inbox ref", payload.get("handoff_ref"))
         _add_field(lines, "Commitment", _first(receipt, "graph_commitment", "commitment"))
         if len(lines) == 2:
             lines.append("  State        Handoff created; use --json for the complete receipt.")
@@ -279,6 +306,7 @@ def run(args: Any) -> int:
             graph = store.load()
             payload = {
                 "status": "ok",
+                "project_root": str(project),
                 "repo_id": graph.repo_id,
                 "summary": graph.summary(),
                 "unfinished": graph.unfinished(),
@@ -367,11 +395,59 @@ def run(args: Any) -> int:
                     created_at_ms=int(time.time() * 1000),
                 ),
             }
+            from .work_graph_inbox import save_handoff
+
+            payload["handoff_ref"] = save_handoff(
+                store, payload["handoff"], payload["continuation_proof"]
+            )
+        elif action == "handoffs":
+            target_agent = _required_id(args.to_agent, "--to-agent")
+            store = _store_for_path(project)
+            from .work_graph_inbox import pending_handoffs
+
+            payload = pending_handoffs(root=project, store=store, to_agent=target_agent)
+            payload["project_root"] = str(project)
+            payload["repo_id"] = store.repo_id
+        elif action == "review":
+            reviewer = _required_id(args.reviewer, "--reviewer")
+            handoff_ref = _required_id(args.handoff_ref, "--handoff-ref")
+            if re.fullmatch(r"handoff:[0-9a-f]{64}", handoff_ref) is None:
+                raise ValueError("--handoff-ref must be a handoff: SHA-256 reference")
+            findings = [
+                {"path": path, "line": int(line), "severity": severity, "message": message}
+                for path, line, severity, message in args.finding
+            ]
+            checks = [
+                {"name": name, "exit_code": int(exit_code)}
+                for name, exit_code in args.check
+            ]
+            from .work_graph_inbox import pending_handoffs
+            from .work_graph_review import record_review
+
+            store = _store_for_path(project)
+            entries = pending_handoffs(root=project, store=store, to_agent=reviewer)["handoffs"]
+            selected = next((item for item in entries if item["ref"] == handoff_ref), None)
+            if selected is None:
+                raise ValueError("handoff reference is not in this repository's bounded inbox")
+            if not selected["current"]:
+                raise ValueError("handoff is stale against current repository source")
+            payload = record_review(
+                handoff=selected["handoff"], reviewer_id=reviewer,
+                verdict=args.verdict, findings=findings, summary=args.summary,
+                checks=checks, _root=project,
+            )
+        elif action == "reviews":
+            workstream = str(args.workstream or "").strip()
+            if len(workstream) > _MAX_ID_CHARS or "\x00" in workstream:
+                raise ValueError(f"--workstream may not exceed {_MAX_ID_CHARS} characters or contain NUL")
+            from .work_graph_review import reviews
+
+            payload = reviews(workstream_id=workstream, _root=project)
         else:
             payload = {
                 "status": "error",
                 "error": "missing_work_action",
-                "detail": "choose state, claim, resume, acknowledge, or handoff",
+                "detail": "choose state, claim, resume, acknowledge, handoff, handoffs, review, or reviews",
             }
     except Exception as exc:
         payload = _error(exc)
@@ -417,6 +493,25 @@ def build_parser() -> argparse.ArgumentParser:
     handoff.add_argument("--workstream", required=True)
     handoff.add_argument("--from-agent", required=True)
     handoff.add_argument("--to-agent", required=True)
+    handoffs = actions.add_parser("handoffs", help="List current and stale handoffs for one agent")
+    handoffs.add_argument("--to-agent", required=True)
+    review = actions.add_parser("review", help="Record an independent review of an inbox handoff")
+    review.add_argument("--handoff-ref", required=True)
+    review.add_argument("--reviewer", required=True)
+    review.add_argument("--verdict", required=True, choices=("approve", "changes_requested", "comment"))
+    review.add_argument("--summary", required=True)
+    review.add_argument(
+        "--finding", action="append", nargs=4, default=[],
+        metavar=("PATH", "LINE", "SEVERITY", "MESSAGE"),
+        help="Repeat for each source-bound finding",
+    )
+    review.add_argument(
+        "--check", action="append", nargs=2, default=[],
+        metavar=("NAME", "EXIT_CODE"),
+        help="Repeat for each check actually run; the value remains a caller statement",
+    )
+    reviews = actions.add_parser("reviews", help="List recorded reviews and source freshness")
+    reviews.add_argument("--workstream", default="")
     return parser
 
 

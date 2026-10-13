@@ -143,6 +143,7 @@ def record_review(
     *, handoff: dict[str, Any], reviewer_id: str, verdict: str,
     findings: list[dict[str, Any]], summary: str, project: str = "",
     checks: list[dict[str, Any]] | None = None,
+    _root: Path | None = None,
 ) -> dict[str, Any]:
     """Record one independent agent statement after verifying exact source state."""
     reviewer = _bounded(reviewer_id, "reviewer_id", 512)
@@ -153,7 +154,9 @@ def record_review(
         raise ValueError("handoff must target the reviewer")
     if handoff.get("from_agent") == reviewer:
         raise ValueError("writer and reviewer must differ")
-    root = _project_path(project)
+    # MCP callers remain confined to ENTROLY_SOURCE. The standalone CLI has
+    # already resolved its explicit --project path and passes it directly.
+    root = _project_path(project) if _root is None else _root.resolve()
     store = _store_for_path(root)
     summary_text = _bounded(summary, "summary")
     checked_checks = _checks(checks)
@@ -226,9 +229,11 @@ def record_review(
     return {"status": "ok", "kind": "work_record_review", "review": record}
 
 
-def reviews(*, project: str = "", workstream_id: str = "") -> dict[str, Any]:
+def reviews(
+    *, project: str = "", workstream_id: str = "", _root: Path | None = None,
+) -> dict[str, Any]:
     """Read compact review records and report source staleness without mutation."""
-    root = _project_path(project)
+    root = _project_path(project) if _root is None else _root.resolve()
     store = _store_for_path(root)
     current = _source_state(store.repo_id, _observation(root))
     records = []

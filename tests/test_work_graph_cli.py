@@ -102,13 +102,20 @@ def test_cli_claim_uses_user_statement(monkeypatch, capsys, tmp_path):
 def test_standalone_parser_exposes_all_work_actions():
     parser = c.build_parser()
     assert parser.prog == "entroly-work"
-    for action in ("state", "claim", "resume", "acknowledge", "handoff"):
+    for action in ("state", "claim", "resume", "acknowledge", "handoff", "handoffs", "review", "reviews"):
         if action == "claim":
             args = parser.parse_args([action, "--agent", "codex", "--task", "Fix auth"])
         elif action == "handoff":
             args = parser.parse_args([action, "--workstream", "w", "--from-agent", "claude", "--to-agent", "codex"])
         elif action == "acknowledge":
             args = parser.parse_args([action, "--token", "recovery:abc"])
+        elif action == "handoffs":
+            args = parser.parse_args([action, "--to-agent", "codex"])
+        elif action == "review":
+            args = parser.parse_args([
+                action, "--handoff-ref", "handoff:" + "a" * 64,
+                "--reviewer", "codex", "--verdict", "approve", "--summary", "Reviewed",
+            ])
         else:
             args = parser.parse_args([action])
         assert args.work_action == action
@@ -376,6 +383,12 @@ def test_cli_handoff_fingerprints_repo_before_receipt(monkeypatch, tmp_path):
         lambda handoff, **manifest: calls.append("proof")
         or original_proof(handoff, **manifest)
     )
+    from entroly import work_graph_inbox
+
+    monkeypatch.setattr(
+        work_graph_inbox, "save_handoff",
+        lambda store, handoff, proof: calls.append("save") or "handoff:" + "a" * 64,
+    )
     args = SimpleNamespace(
         work_action="handoff",
         json_output=True,
@@ -385,7 +398,7 @@ def test_cli_handoff_fingerprints_repo_before_receipt(monkeypatch, tmp_path):
         to_agent="codex",
     )
     assert c.run(args) == 0
-    assert calls == ["store", "observe", "fingerprint", "persist", "handoff", "resume", "proof"]
+    assert calls == ["store", "observe", "fingerprint", "persist", "handoff", "resume", "proof", "save"]
     assert fake.observation["changes"][0]["content_digest"] == "git-blob:def"
 
 
