@@ -189,9 +189,11 @@ _FULL_MCP_INSTRUCTIONS = (
 
 _PUBLIC_MCP_INSTRUCTIONS = (
     "Local context control for coding agents. Start a task with recall_relevant. "
-    "Use read_source_file for a known workspace path, locate_evidence for exact "
-    "source spans answering a natural-language query, remember_fragment for "
-    "caller-supplied text, and optimize_context for a token-bounded bundle. "
+    "Use read_source_file for a known workspace path, then locate_evidence to pin "
+    "exact spans inside text you pass to it -- locate_evidence never reads the "
+    "workspace itself, so obtain the text first. remember_fragment stores "
+    "caller-supplied text, and optimize_context returns a token-bounded bundle "
+    "from the indexed corpus. "
     "Use create_context_receipt when selection needs an audit trail, then "
     "recover_receipt_omission for omitted receipt chunks or retrieve_context for "
     "a CCR handle. Use checkpoint_state and resume_state across interruptions. "
@@ -546,6 +548,64 @@ def _mcp_profile_allowed_tools(profile: str) -> set[str] | None:
 # ══════════════════════════════════════════════════════════════════════
 # MCP Server Definition
 # ══════════════════════════════════════════════════════════════════════
+
+def _smart_read_elision(
+    total_blocks: Any, resolution_counts: Any
+) -> dict[str, Any]:
+    """State what the reader left out, and whether it can be got back.
+
+    This reader reduces blocks it judges less relevant to a signature, or omits
+    them entirely. That is the feature. What was missing is any statement of it
+    in the response: a caller saw ``resolution_counts`` and had to infer both
+    that content was dropped and whether anything could restore it.
+
+    Inference went the wrong way in practice. The response carried a field named
+    ``recovery``, so a reduced read looked like a read whose content was
+    confirmed unrecoverable. Two separate problems: ``recovery`` here meant
+    "re-read past the session cache", unrelated to the content recovery the same
+    word denotes everywhere else in Entroly (``receipt_id``/``span_id``,
+    ``retrieval_handles``), and the cache-hit branch returns before that
+    dictionary is built, so the field could only ever be null.
+
+    So the four states are named rather than implied. ``not_required`` is a read
+    that dropped nothing. ``unavailable_on_this_path`` is an omission this
+    reader cannot hand back, and it carries the route that can -- re-reading at
+    full resolution, or by line range. No handle is invented for spans this
+    path never registered; a handle that cannot be redeemed is worse than an
+    honest refusal, because the caller stops looking for the text.
+    """
+    counts = resolution_counts if isinstance(resolution_counts, dict) else {}
+    try:
+        total = max(0, int(total_blocks or 0))
+    except (TypeError, ValueError):
+        total = 0
+    try:
+        delivered = max(0, int(counts.get("full", 0) or 0))
+    except (TypeError, ValueError):
+        delivered = 0
+    reduced = max(0, total - delivered)
+
+    report: dict[str, Any] = {
+        "blocks_total": total,
+        "blocks_delivered_full": delivered,
+        "blocks_reduced": reduced,
+    }
+    if reduced == 0:
+        report["content_recovery"] = "not_required"
+        report["reason"] = None
+        report["obtain_full_text"] = None
+        return report
+    report["content_recovery"] = "unavailable_on_this_path"
+    report["reason"] = (
+        "this reader does not register recovery handles for reduced blocks, "
+        "so no content handle is issued for them"
+    )
+    report["obtain_full_text"] = (
+        'call again with resolution="full" for the whole file, or with '
+        "line_start/line_end for one span"
+    )
+    return report
+
 
 def _slim_recall_results(
     results: list[dict[str, Any]], *, max_snippet: int = 200
@@ -1962,7 +2022,7 @@ def create_mcp_server(
         produced a real pass/fail outcome.
 
         Args:
-            request_id: the trace_id from the optimize_context call
+            request_id: the "request_id" field from the optimize_context response
             passed: True if all tests passed, False if any failed
             suite: optional name of the test suite (e.g. "pytest", "cargo test")
             details: optional short summary of what was tested
@@ -1987,7 +2047,7 @@ def create_mcp_server(
         Convention: exit_code == 0 → "success", anything else → "failure".
 
         Args:
-            request_id: the trace_id from the optimize_context call
+            request_id: the "request_id" field from the optimize_context response
             exit_code: subprocess exit code; 0 = success
             command: optional short representation of what was run
         """
@@ -2056,7 +2116,7 @@ def create_mcp_server(
         code was successful.
 
         Args:
-            request_id: the trace_id from the optimize_context call
+            request_id: the "request_id" field from the optimize_context response
             outcome: "accepted", "reverted", or "retried"
             files_modified: number of files touched by the edit
         """
@@ -4314,11 +4374,23 @@ def create_mcp_server(
         calibration_id: str = "",
         passage_mode: str = "auto",
     ) -> str:
-        """Locate exact source spans without generating an answer.
+        """Locate exact spans inside ``text`` without generating an answer.
 
-        The ranker can select only passage and sentence identifiers created
-        from ``text``. Entroly derives returned text, offsets, and hashes from
-        the original source. Invalid ranker output abstains.
+        ``text`` is the corpus. This tool does not read the workspace and has no
+        index behind it: pass it content you already hold, typically from
+        ``read_source_file``. A natural-language ``query`` ranks spans *within*
+        that text; it does not search for the text.
+
+        That boundary is worth stating twice because the obvious reading is the
+        wrong one. Nothing here falls back to repository search, so calling it
+        without ``text`` is an error rather than a whole-repository query, and a
+        caller expecting otherwise receives nothing and cannot tell whether the
+        evidence was absent or merely never searched for.
+
+        The ranker can select only passage and sentence identifiers created from
+        ``text``. Entroly derives returned text, offsets, and hashes from the
+        original source, so a span is checkable against what was supplied.
+        Invalid ranker output abstains rather than guessing.
         """
         try:
             if len(text.encode("utf-8", "surrogatepass")) > 16 * 1024 * 1024:
@@ -4520,7 +4592,15 @@ def create_mcp_server(
                 "output_sha256": cache_decision.output_sha256,
                 "cache_tokens_saved": cache_decision.tokens_saved,
                 "cache_scope": "mcp-session",
-                "recovery": "call again with fresh=true" if cache_decision.cache_hit else None,
+                # A cache hit returns above, so the former "recovery" key here
+                # could only ever be null -- and it named the content-recovery
+                # concept while meaning "re-read past the cache". Both the dead
+                # field and the collision are gone; what the reader dropped is
+                # now stated outright.
+                "cache_recovery": None,
+                "elision": _smart_read_elision(
+                    result.total_blocks, result.resolution_counts
+                ),
             }, indent=2)
         except FileNotFoundError:
             return json.dumps({"error": f"File not found: {file_path}"})
