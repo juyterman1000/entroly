@@ -66,10 +66,34 @@ MAX_EVENTS_SCANNED = 20_000
 # retention window nothing invokes is not a retention window.
 PRUNE_EVERY_BYTES = 256 * 1024
 
+# How close in time two identical adjacent events must be to be treated as one
+# call recorded twice rather than the same work done twice. See
+# _collapse_redelivered for why this cannot be an equality test on ts.
+DEDUP_WINDOW_SECONDS = 2.0
+
+# Longest run of identical adjacent events that redelivery can explain. A host
+# fans a call out once per matching hook registration, and that count is small:
+# the measured case was two, reaching four only because the call was retried.
+# A longer run is not fan-out, so it is left alone -- an agent that really did
+# touch one file twenty times in a burst keeps all twenty. The bound errs
+# toward keeping data, because collapsing real work is the worse failure.
+MAX_REDELIVERY_RUN = 8
+
 _KINDS = frozenset({"edit", "command", "error", "decision", "read", "search", "other"})
 
 # Paths and commands carry their meaning in their parts. See JournalEvent.searchable.
 _IDENTIFIER_SPLIT = re.compile(r"[^A-Za-z0-9]+")
+
+# Shell setup is not what the call did. A multi-line invocation flattens into
+# one target string, so a leading `cd <repo>` and a few `export`s push the
+# actual command past MAX_TARGET_CHARS: measured on a real session, 83% of
+# targets hit the cap and 61 of 69 began with the same `cd` prefix, leaving the
+# ranker scoring boilerplate that every event shares. See _salient_command.
+_SEGMENT_SPLIT = re.compile(r"\n|&&|\|\||;")
+_PREAMBLE_VERBS = frozenset(
+    {"cd", "export", "set", "unset", "source", ".", "pushd", "popd"}
+)
+_ENV_ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 
 
 @dataclass(frozen=True)
@@ -130,6 +154,7 @@ class Recall:
     truncated_scan: bool = False
     reason: str = ""
     notes: tuple[str, ...] = field(default_factory=tuple)
+    redelivered_collapsed: int = 0
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -140,6 +165,7 @@ class Recall:
             "truncated_scan": self.truncated_scan,
             "reason": self.reason,
             "notes": list(self.notes),
+            "redelivered_collapsed": self.redelivered_collapsed,
         }
 
 
@@ -167,6 +193,38 @@ def _expand_identifiers(text: str) -> str:
         if len(piece) > 2:
             parts.append(piece)
     return " ".join(parts)
+
+
+def _salient_command(raw: object) -> str:
+    """Return the part of a shell invocation that says what it did.
+
+    ``cd``, ``export`` and bare ``VAR=value`` segments position a command; they
+    are not the command. Dropping them is not cosmetic: the target is bounded
+    to MAX_TARGET_CHARS, so a long preamble truncates away the verb that
+    retrieval needs, and every event in the session then shares a long common
+    prefix that BM25 scores as if it were signal.
+
+    If a call is *only* setup -- ``cd somewhere`` on its own -- the original is
+    kept, because an empty target is worse than a boilerplate one.
+    """
+    text = str(raw or "")
+    if not text.strip():
+        return ""
+    segments = [segment.strip() for segment in _SEGMENT_SPLIT.split(text)]
+    segments = [segment for segment in segments if segment]
+    salient = []
+    for segment in segments:
+        words = segment.split()
+        # `VAR=value cmd args` runs cmd. Strip the assignments, keep the
+        # command -- dropping the whole segment would lose the verb.
+        while words and _ENV_ASSIGNMENT.match(words[0]):
+            words = words[1:]
+        if not words:
+            continue
+        if words[0] in _PREAMBLE_VERBS:
+            continue
+        salient.append(" ".join(words))
+    return " ".join(salient or segments)
 
 
 def _safe_target(raw: object) -> str:
@@ -287,15 +345,63 @@ def record_event(
     return True
 
 
-def _read_events(entroly_dir: str | Path | None) -> tuple[list[JournalEvent], bool]:
-    """Load events newest-last. Returns (events, scan_was_truncated)."""
+def _collapse_redelivered(
+    rows: list[JournalEvent],
+) -> tuple[list[JournalEvent], int]:
+    """Collapse one tool call that was recorded more than once.
+
+    A host fans a single tool call out to every matching hook registration, and
+    those registrations can overlap across scopes. Measured on a real session:
+    Entroly's own onboarding writes a user-scope hook matching ``Bash`` while a
+    repository that ships its own matches ``Bash|Read|Edit|...``, so both fire
+    and every Bash call was appended twice -- 12 byte-identical lines out of 84,
+    one call recorded four times after a retry. Eight of the eight slots a
+    caller asked for held three distinct commands.
+
+    The journal stays faithful to what it received; retrieval reports distinct
+    work. Identity is content plus adjacency plus a short window, deliberately
+    *not* ``ts``: ``time.time()`` returned 8 distinct values across 200,000
+    calls on the measured host, so a timestamp cannot tell two deliveries of
+    one call from two calls. Requiring adjacency and a 2-second window keeps a
+    command deliberately re-run later as two events, which it is.
+    """
+    def identity(event: JournalEvent) -> tuple[str, ...]:
+        return (event.kind, event.tool, event.target, event.status, event.detail)
+
+    kept: list[JournalEvent] = []
+    collapsed = 0
+    index = 0
+    while index < len(rows):
+        head = rows[index]
+        run = index + 1
+        while (
+            run < len(rows)
+            and identity(rows[run]) == identity(head)
+            and abs(rows[run].ts - rows[run - 1].ts) <= DEDUP_WINDOW_SECONDS
+        ):
+            run += 1
+        length = run - index
+        if 1 < length <= MAX_REDELIVERY_RUN:
+            kept.append(head)
+            collapsed += length - 1
+        else:
+            # Either a single event, or a run too long for fan-out to explain.
+            kept.extend(rows[index:run])
+        index = run
+    return kept, collapsed
+
+
+def _read_events(
+    entroly_dir: str | Path | None,
+) -> tuple[list[JournalEvent], bool, int]:
+    """Load events newest-last. Returns (events, scan_was_truncated, collapsed)."""
     path = journal_path(entroly_dir)
     rows: list[JournalEvent] = []
     try:
         with path.open(encoding="utf-8", errors="replace") as stream:
             lines = stream.readlines()
     except OSError:
-        return [], False
+        return [], False, 0
 
     truncated = len(lines) > MAX_EVENTS_SCANNED
     for line in lines[-MAX_EVENTS_SCANNED:]:
@@ -322,7 +428,8 @@ def _read_events(entroly_dir: str | Path | None) -> tuple[list[JournalEvent], bo
             )
         except (TypeError, ValueError):
             continue
-    return rows, truncated
+    rows, collapsed = _collapse_redelivered(rows)
+    return rows, truncated, collapsed
 
 
 def recall(
@@ -340,7 +447,7 @@ def recall(
     scorer the evidence locator already uses rather than adding a second
     definition of relevance.
     """
-    events, truncated = _read_events(entroly_dir)
+    events, truncated, collapsed = _read_events(entroly_dir)
     if not events:
         return Recall(reason="journal_empty", scanned=0)
 
@@ -351,6 +458,7 @@ def recall(
             reason="no_events_of_requested_kind",
             scanned=len(events),
             truncated_scan=truncated,
+            redelivered_collapsed=collapsed,
         )
 
     bound = max(1, int(limit))
@@ -363,6 +471,7 @@ def recall(
             withheld=max(0, len(pool) - len(chosen)),
             scanned=len(events),
             truncated_scan=truncated,
+            redelivered_collapsed=collapsed,
             reason="most_recent",
             notes=("no query supplied, so events were ranked by recency",),
         )
@@ -386,6 +495,7 @@ def recall(
             withheld=max(0, len(pool) - len(chosen)),
             scanned=len(events),
             truncated_scan=truncated,
+            redelivered_collapsed=collapsed,
             reason="ranker_unavailable_fell_back_to_recency",
         )
 
@@ -401,6 +511,7 @@ def recall(
             withheld=max(0, len(pool) - len(chosen)),
             scanned=len(events),
             truncated_scan=truncated,
+            redelivered_collapsed=collapsed,
             reason="no_lexical_match",
             notes=(
                 "nothing matched the query, so the most recent events were "
@@ -441,6 +552,7 @@ def recall(
         withheld=max(0, len(hits) - len(chosen)),
         scanned=len(events),
         truncated_scan=truncated,
+        redelivered_collapsed=collapsed,
         reason="lexical_rank",
         notes=tuple(notes),
     )
@@ -494,13 +606,15 @@ def record_from_hook_payload(
     raw_input: Any = data.get("tool_input")
     target: Any = ""
     if isinstance(raw_input, Mapping):
-        target = (
-            raw_input.get("file_path")
-            or raw_input.get("path")
-            or raw_input.get("command")
-            or raw_input.get("pattern")
-            or ""
-        )
+        target = raw_input.get("file_path") or raw_input.get("path") or ""
+        if not target:
+            # Only a command is rewritten. A path is already the unit retrieval
+            # ranks on, and stripping segments out of one would corrupt it.
+            command = raw_input.get("command")
+            if command:
+                target = _salient_command(command)
+            else:
+                target = raw_input.get("pattern") or ""
     elif isinstance(raw_input, str):
         target = raw_input
 
