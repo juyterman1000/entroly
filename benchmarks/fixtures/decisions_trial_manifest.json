@@ -1,0 +1,27 @@
+{
+  "schema": "entroly.decisions-trial-manifest.v1",
+  "task_family": "synthetic-issue-routing",
+  "context_policy": "manual-selected-fixture-v1",
+  "tokenizer": "synthetic-counts-not-measured",
+  "budget": 100,
+  "trials": [
+    {
+      "trial_id": "synthetic-1",
+      "task_id": "synthetic-issue-1",
+      "question": "Which team should handle this issue?",
+      "full_context": "The customer reports a duplicate charge and requests a refund.",
+      "selected_context": "The customer reports an account issue.",
+      "full_context_tokens": 12,
+      "selected_tokens": 8,
+      "decision": {
+        "name": "team",
+        "instructions": "Choose the team responsible for the issue.",
+        "choices": [
+          {"value": "billing", "description": "Payments and refunds"},
+          {"value": "support", "description": "General account assistance"}
+        ]
+      },
+      "truth_choice": "billing"
+    }
+  ]
+}

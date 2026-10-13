@@ -27,6 +27,77 @@ loss stays unavailable. Finite observations do not supply a population risk
 bound: `risk_bound` remains null. No calibration from WITNESS, RAVS or another
 task family is reused.
 
+## Opt-in Decisions API choice trials
+
+`python -m entroly.decisions_trial` collects fixed-choice decisions for the
+same task under full context, Entroly-selected context, and a fresh full-context
+repeat. The first two expose a choice flip and a Jensen-Shannon divergence
+between returned option-probability vectors. The full repeat exposes model
+self-variation on the same input. These quantities stay separate; neither a
+choice flip nor a probability shift proves that selected context caused an
+error. An independently supplied `truth_choice` enables a separate 0/1 task
+loss comparison. Without truth, task regret remains null.
+
+The manifest schema is `entroly.decisions-trial-manifest.v1`. Each trial has a
+unique `trial_id`, `task_id`, `question`, `full_context`, `selected_context`,
+caller-measured `full_context_tokens` and `selected_tokens`, and a `decision`
+object with `name`, `instructions`, and at least two distinct `{value,
+description}` choices. Top-level fields are `task_family`, `context_policy`,
+`tokenizer`, `budget`, and `trials`. Use a frozen selector and workload; the
+collector does not perform context selection itself. The token counts are
+recorded as caller-supplied and unverified, so this report alone cannot prove
+token savings. The provider model is `gpt-6-luna`, currently an alias rather
+than a pinned model revision.
+
+To inspect the shape without a provider call, run the synthetic fixture:
+
+```bash
+python -m entroly.decisions_trial \
+  --manifest benchmarks/fixtures/decisions_trial_manifest.json \
+  --responses benchmarks/fixtures/decisions_trial_replay.json \
+  --output decisions-trial-report.json
+```
+
+An offline replay has schema `entroly.decisions-trial-replay.v1` and exactly
+one row per manifest trial, keyed by `trial_id`, with `full`, `selected`, and
+`full_repeat` provider-shaped responses. The fixture is synthetic, not
+observed OpenAI behavior. Replays may also use captured responses supplied by
+the operator; no network call occurs in replay mode.
+
+Live collection requires both an explicit egress flag and a credential:
+
+```bash
+OPENAI_API_KEY=... python -m entroly.decisions_trial \
+  --manifest private-manifest.json \
+  --send-content \
+  --output decisions-trial-report.json
+```
+
+This sends the full and selected text contexts to OpenAI in three requests per
+trial. Review your data and account policy before using it. There are no
+automatic retries. A refusal, missing condition, unexpected model/name/choice,
+incomplete probability vector, or invalid usage stops the run without writing
+a success report. Use a new output path for each run; the command refuses to
+overwrite an existing report. The report contains digests and aggregate measures, not raw
+contexts or provider answers; small or predictable inputs can still be guessed
+from digests. It records provider-observed input tokens when available, with no
+price or savings claim. Offline replay latency is unavailable, and live
+latency is client wall-clock time.
+Per-condition request commitments bind each context, question and rubric. The
+`report_id` binds the probability-shift metrics and other report fields; it is
+an integrity check, not a provider signature or proof of correct execution.
+
+The report sets `production_authority` to false and does not create a WITNESS
+or RAVS certificate. The Decisions API probabilities and confidence are model
+outputs, not calibrated correctness probabilities. Production thresholds need
+representative labeled data and a frozen evaluation protocol. See the
+[OpenAI Decisions guide](https://developers.openai.com/api/docs/guides/decisions)
+for the current beta endpoint and response contract.
+Each collection gets its own scope ID: a replay is identified by its content
+digest, and a live run gets a new random ID. This prevents observations from
+separate runs of a mutable model alias from being silently pooled. The report
+labels caller-supplied truth and token counts as unverified.
+
 ## Offline fixed-policy divergence calibration
 
 `entroly.decision_evaluation.calibrate_fixed_policy_divergence` can now examine
