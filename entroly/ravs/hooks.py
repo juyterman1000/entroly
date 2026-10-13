@@ -67,6 +67,32 @@ def _claude_code_settings_path() -> Path:
     return home / ".claude" / "settings.json"
 
 
+def _project_capture_scope() -> Path | None:
+    """Return the project settings file already registering capture, if any.
+
+    Only the current working directory is consulted. Walking upwards would let
+    an unrelated ancestor checkout suppress a hook the user asked for, and the
+    host resolves project settings from the workspace root it was started in.
+    """
+    for name in ("settings.json", "settings.local.json"):
+        candidate = Path.cwd() / ".claude" / name
+        try:
+            if not candidate.is_file():
+                continue
+            payload = json.loads(candidate.read_text(encoding="utf-8-sig"))
+        except (OSError, json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        hooks = payload.get("hooks")
+        if not isinstance(hooks, dict):
+            continue
+        for entry in hooks.get("PostToolUse") or []:
+            if "ravs capture" in str(entry):
+                return candidate
+    return None
+
+
 def install_claude_code(dry_run: bool = False) -> dict:
     """Install the RAVS PostToolUse hook into Claude Code settings.
 
@@ -101,6 +127,23 @@ def install_claude_code(dry_run: bool = False) -> dict:
         return {
             "path": str(settings_path),
             "action": "already_present",
+            "settings": existing,
+        }
+
+    # A project that ships its own capture hook already covers these calls, and
+    # the host fans one tool call out to *every* matching registration. Adding a
+    # second one here is not harmless duplication: measured on a real session,
+    # a user-scope hook matching "Bash" alongside a project hook matching
+    # "Bash|Read|Edit|..." recorded every Bash call twice -- 12 byte-identical
+    # journal lines out of 84 -- and double-counted Bash in the tool-use
+    # counters that justify a schema allowlist. Checking only the scope being
+    # written is what let that happen.
+    project_scope = _project_capture_scope()
+    if project_scope is not None:
+        return {
+            "path": str(settings_path),
+            "action": "already_present_in_project",
+            "project_path": str(project_scope),
             "settings": existing,
         }
 
