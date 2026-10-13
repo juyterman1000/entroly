@@ -1,0 +1,55 @@
+{
+  "protocol": "session-journal retrieval vs recency, recall@k",
+  "events": 400,
+  "k": 8,
+  "trials_per_age": 40,
+  "arm": "distinctive",
+  "query": "identity rotation digest drift",
+  "rows": [
+    {
+      "needle_age": 0,
+      "recency_recall": 1.0,
+      "ranked_recall": 1.0
+    },
+    {
+      "needle_age": 2,
+      "recency_recall": 1.0,
+      "ranked_recall": 1.0
+    },
+    {
+      "needle_age": 5,
+      "recency_recall": 1.0,
+      "ranked_recall": 1.0
+    },
+    {
+      "needle_age": 10,
+      "recency_recall": 0.0,
+      "ranked_recall": 1.0
+    },
+    {
+      "needle_age": 25,
+      "recency_recall": 0.0,
+      "ranked_recall": 1.0
+    },
+    {
+      "needle_age": 50,
+      "recency_recall": 0.0,
+      "ranked_recall": 1.0
+    },
+    {
+      "needle_age": 100,
+      "recency_recall": 0.0,
+      "ranked_recall": 1.0
+    },
+    {
+      "needle_age": 200,
+      "recency_recall": 0.0,
+      "ranked_recall": 1.0
+    },
+    {
+      "needle_age": 350,
+      "recency_recall": 0.0,
+      "ranked_recall": 1.0
+    }
+  ]
+}

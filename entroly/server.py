@@ -2446,6 +2446,18 @@ def create_mcp_server(
             project: Optional project scope for relevance matching.
         """
         result = engine.resume(query=query, project=project)
+
+        # A checkpoint carries what the previous agent chose to write down.
+        # This carries what it actually did -- files touched, commands run,
+        # what failed -- ranked against the same query. It rides on
+        # resume_state rather than arriving as a new tool, because a capability
+        # behind a flag or an unfamiliar name has no users.
+        try:
+            from .session_journal import recall as _recall_work
+
+            result["recent_work"] = _recall_work(query, limit=8).as_dict()
+        except Exception:
+            result["recent_work"] = {"reason": "journal_unavailable"}
         return json.dumps(result, indent=2)
 
     @mcp.tool()
