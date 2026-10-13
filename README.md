@@ -426,6 +426,10 @@ still current. Start with `work_capabilities` in each host to check the actual
 repository root; MCP registration by itself does not establish that the right
 checkout is selected.
 
+For a source checkout without an MCP client, the
+[agent continuity guide](docs/agent-continuity.md#hand-off-to-an-independent-reviewer-from-the-cli)
+shows the equivalent `entroly-work` handoff, inbox, and review commands.
+
 If the writer's model budget ends before it calls `work_handoff`, the reviewer
 can call `work_resume(to_agent=...)` to obtain a reconstructed no-handoff proof
 and current changed-file evidence. It must treat previous-agent intent as
