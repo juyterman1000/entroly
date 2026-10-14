@@ -1,0 +1,23 @@
+{
+  "schema": "entroly.decisions-trial-replay.v1",
+  "trials": [
+    {
+      "trial_id": "synthetic-1",
+      "full": {
+        "model": "gpt-6-luna",
+        "answers": [{"type": "choice", "name": "team", "choice": "billing", "confidence": 0.8, "probabilities": [{"value": "billing", "probability": 0.8}, {"value": "support", "probability": 0.2}]}],
+        "usage": {"input_tokens": 31}
+      },
+      "selected": {
+        "model": "gpt-6-luna",
+        "answers": [{"type": "choice", "name": "team", "choice": "support", "confidence": 0.7, "probabilities": [{"value": "billing", "probability": 0.3}, {"value": "support", "probability": 0.7}]}],
+        "usage": {"input_tokens": 27}
+      },
+      "full_repeat": {
+        "model": "gpt-6-luna",
+        "answers": [{"type": "choice", "name": "team", "choice": "billing", "confidence": 0.75, "probabilities": [{"value": "billing", "probability": 0.75}, {"value": "support", "probability": 0.25}]}],
+        "usage": {"input_tokens": 31}
+      }
+    }
+  ]
+}
