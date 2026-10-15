@@ -181,6 +181,21 @@ def _select_with_engine(
         engine = EntrolyEngine(EntrolyConfig(checkpoint_dir=checkpoint_dir))
 
         if not bool(getattr(engine, "_use_rust", False)):
+            # Name *why* the engine is unusable. "unavailable" alone is true for
+            # an absent, a stale and an incomplete core alike, so a reader of
+            # this line cannot tell which one they have, and the three have
+            # different fixes: install, rebuild, reinstall. This is the most
+            # frequently read native-fallback line in the product -- it prints
+            # ahead of every prompt -- and it was the only one offering no cause
+            # at all, which turned a one-line diagnosis into a manual hunt.
+            #
+            # Derived, never asserted: `fallback_reason` reads the same
+            # `native_status` that `usable_core` gated on, so this cannot claim
+            # an absence it has not checked. See
+            # tests/test_native_cause_claims_are_derived.py for why that
+            # distinction is enforced rather than trusted.
+            from .native_status import CORE_SYMBOLS, fallback_reason, native_status
+
             return ActivationSelection(
                 status="degraded",
                 sources=(),
@@ -188,8 +203,9 @@ def _select_with_engine(
                 selected_tokens=0,
                 native_engine=False,
                 detail=(
-                    "native query-conditioned selection is unavailable; no context "
-                    "was injected"
+                    "native query-conditioned selection is unavailable "
+                    f"({fallback_reason(native_status(CORE_SYMBOLS))}); "
+                    "no context was injected"
                 ),
             )
 
