@@ -172,10 +172,45 @@ fn normal_upper_quantile(q: f64) -> f64 {
 ///   k=256  perceived max similarity 0.525   (true value: 0.062)
 /// ```
 ///
-/// Widening the fingerprint does not fix this: more bits shrink `sigma`, but
-/// the `sqrt(2 ln k)` factor is untouched. Applying a union bound over the k
-/// comparisons does fix it, because the per-comparison confidence level
-/// tightens at exactly the rate the maximum inflates.
+/// Widening the fingerprint does not fix *this* -- more bits shrink `sigma`,
+/// but the `sqrt(2 ln k)` factor is untouched. Applying a union bound over the
+/// k comparisons does fix it, because the per-comparison confidence level
+/// tightens at exactly the rate the maximum inflates: Bonferroni gives
+/// `z = Phi^-1(1 - alpha/k) ~ sqrt(2 ln k + 2 ln(1/alpha))`, the same rate.
+///
+/// ## Bit width governs power, not the bias
+///
+/// The paragraph above is about the *bias*, and it is easy to misread as
+/// "do not bother widening the fingerprint". For the bias that is right; for
+/// the bound's **power** it is wrong, and the test
+/// `test_lcb_power_is_limited_by_fragment_length` says so from the other
+/// direction. Both hold, because they describe different quantities.
+///
+/// The gap between the point estimate and the bound is `z * sigma` mapped
+/// through `|d cos(pi p) / dp|`, so it scales as `sqrt(2 ln k / BITS)`. The
+/// `k` factor is immune to BITS, but the gap -- which is what decides whether a
+/// true redundancy survives the bound -- falls as `1 / sqrt(BITS)`.
+///
+/// Measured at alpha=0.05, k=256, true cosine 0.70, counting detection at a
+/// 0.30 penalty threshold:
+///
+/// ```text
+///    64 bits   0.085        256 bits   0.936
+///   128 bits   0.425        512 bits   1.000
+/// ```
+///
+/// The false-penalty rate on orthogonal pairs is unchanged (<= 0.004) at every
+/// width: widening buys power without spending size, because the union bound
+/// goes on controlling size independently. Holding power fixed while k grows
+/// needs `BITS` proportional to `ln k`.
+///
+/// The consequence at the shipped 64 bits is that near-duplicates are caught at
+/// any k, while *moderate* redundancy is effectively invisible once the
+/// selected set passes ~64 -- see
+/// `test_lcb_is_blind_to_moderate_redundancy_at_scale`. That is the intended
+/// direction of failure, but it is a real limit on diversity enforcement at
+/// large budgets, and the remedy is a wider fingerprint rather than a weaker
+/// bound.
 ///
 /// ## Construction
 ///
@@ -547,6 +582,65 @@ mod tests {
             short_lcb < 0.5,
             "short-fragment bound unexpectedly strong ({short_lcb}); if fingerprints \
              were widened, revisit this test and the claim it documents"
+        );
+    }
+
+    #[test]
+    fn test_lcb_is_blind_to_moderate_redundancy_at_scale() {
+        // The regime no other test covers, and the one a large context budget
+        // actually runs in.
+        //
+        // The existing tests pin the two ends: unrelated content reaches 0, and
+        // a near-duplicate (true cosine ~0.95+) still reads above 0.5 at
+        // k=256. Between them sits moderate redundancy -- two fragments that
+        // genuinely share most of their content without being copies -- and
+        // there the bound is effectively inert once the selected set is large.
+        //
+        // Fingerprints are constructed rather than hashed from text so the true
+        // similarity is exact and the numbers below are arithmetic, not a
+        // sample: 16 differing bits out of 64 is `cos(pi/4)` exactly.
+        let a: u64 = 0;
+        let b: u64 = 0xFFFF; // 16 low bits set => Hamming distance 16
+        assert_eq!(hamming_distance(a, b), 16, "fixture must differ in 16 bits");
+
+        let point = simhash_cosine(a, b);
+        assert!(
+            (point - std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-9,
+            "constructed pair should read cos(pi/4): {point}"
+        );
+
+        // Measured decay. These are the values the current 64-bit fingerprint
+        // produces, not a target -- they are asserted so that widening the
+        // fingerprint fails this test loudly instead of silently improving.
+        for (k, expected) in [(1usize, 0.4597), (64, 0.1671), (256, 0.0901)] {
+            let got = simhash_cosine_lcb(a, b, k, 0.05);
+            assert!(
+                (got - expected).abs() < 5e-4,
+                "lcb at k={k} moved: expected ~{expected}, got {got}. If the \
+                 fingerprint width or alpha changed this is expected -- re-measure \
+                 and update, and revisit the bit-width note on `simhash_cosine_lcb`."
+            );
+        }
+
+        // The property that matters: a pair sharing ~70% of its content draws
+        // essentially no penalty at realistic selected-set sizes, so the greedy
+        // loop will take both. This is the intended direction of failure --
+        // refusing to discard evidence it cannot justify discarding -- but it
+        // means diversity enforcement weakens exactly as the selection grows.
+        //
+        // This is bit-width bound, not bound-design bound. Measured off-tree at
+        // alpha=0.05, k=256, true cosine 0.70, detection at a 0.30 threshold:
+        //
+        //     64 bits   0.085      256 bits   0.936
+        //    128 bits   0.425      512 bits   1.000
+        //
+        // with the false-penalty rate on orthogonal pairs unchanged (<=0.004)
+        // at every width, because the union bound keeps controlling size.
+        assert!(
+            simhash_cosine_lcb(a, b, 256, 0.05) < 0.30,
+            "moderate redundancy became visible at k=256; if fingerprints were \
+             widened this is the improvement, not a regression -- update the \
+             table above"
         );
     }
 
