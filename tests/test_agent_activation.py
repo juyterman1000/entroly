@@ -370,3 +370,97 @@ def test_hook_input_requires_bounded_json_object() -> None:
         parse_hook_input("[]")
     with pytest.raises(ValueError, match="1 MiB"):
         parse_hook_input(json.dumps({"prompt": "x" * 1_048_576}))
+
+
+def _degraded_selection(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Drive `_select_with_engine` down its no-native-engine branch.
+
+    The branch returns before `auto_index`, so a stub engine carrying
+    ``_use_rust = False`` is the whole fixture; nothing has to be indexed.
+    """
+    import entroly.engine as engine_module
+
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.setattr(
+        activation_module, "_default_state_dir", lambda: tmp_path / "state" / "inner"
+    )
+
+    class _PythonOnlyEngine:
+        _use_rust = False
+
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+    monkeypatch.setattr(engine_module, "EntrolyEngine", _PythonOnlyEngine)
+    return activation_module._select_with_engine("why is selection empty", project, 800, 10)
+
+
+def test_degraded_detail_names_the_derived_native_cause(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A stale core must say it is stale, not merely that something is wrong.
+
+    This line prints ahead of every prompt, and when it carried no cause the
+    three states it collapses -- absent, stale, incomplete -- were
+    indistinguishable to the reader, who then has to go and ask
+    `native_status` by hand. Each has a different fix, so the cost of omitting
+    the cause is a wrong repair attempt, which is the same reasoning behind
+    `fallback_reason` existing at all.
+    """
+    import entroly.native_status as native_status_module
+
+    stale = native_status_module.NativeStatus(
+        available=True,
+        module=object(),  # type: ignore[arg-type]
+        version="1.0.86",
+        path="/stub/entroly_core.pyd",
+        missing_symbols=(),
+        version_ok=False,
+    )
+    monkeypatch.setattr(native_status_module, "native_status", lambda *_: stale)
+
+    selection = _degraded_selection(tmp_path, monkeypatch)
+
+    assert selection.status == "degraded"
+    assert selection.native_engine is False
+    # The specific, actionable content: which version is loaded and what is
+    # required. Asserting on the rendered reason rather than a fixed sentence
+    # keeps this test honest if `fallback_reason` rewords.
+    assert "1.0.86" in selection.detail
+    assert native_status_module.MIN_ENTROLY_CORE_VERSION in selection.detail
+    assert native_status_module.fallback_reason(stale) in selection.detail
+    # The cause-agnostic word stays: it is what makes the sentence true for
+    # every cause, and tests/test_native_cause_claims_are_derived.py whitelists
+    # it precisely because it asserts nothing the module has not checked.
+    assert "unavailable" in selection.detail
+    assert "no context was injected" in selection.detail
+
+
+def test_degraded_detail_claims_no_cause_it_did_not_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A present-but-unusable core must not be reported as missing.
+
+    The failure this guards is specific: reaching for "not installed" in this
+    branch is the natural phrasing and is false for every cause except one.
+    Here the core is importable and complete, so the only honest reading is
+    that it is present and still unusable.
+    """
+    import entroly.native_status as native_status_module
+
+    healthy = native_status_module.NativeStatus(
+        available=True,
+        module=object(),  # type: ignore[arg-type]
+        version="1.0.87",
+        path="/stub/entroly_core.pyd",
+        missing_symbols=(),
+        version_ok=True,
+    )
+    monkeypatch.setattr(native_status_module, "native_status", lambda *_: healthy)
+
+    detail = _degraded_selection(tmp_path, monkeypatch).detail
+
+    assert "present but not usable" in detail
+    assert "not installed" not in detail
+    assert "below the required" not in detail
