@@ -1537,6 +1537,78 @@ class PromptCompilerProxy:
             ),
         }
 
+    def _apply_pac_kv_alignment(
+        self,
+        *,
+        conversation_id: str,
+        provider: str,
+        body: dict[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, str]]:
+        """PAC-KV Prompt Alignment and Economic Break-Even Gate."""
+        if not self._cache_aligner or not conversation_id:
+            return body, {}
+
+        messages = body.get("messages")
+        if not isinstance(messages, list) or len(messages) < 2:
+            return body, {}
+
+        prefix_msgs = messages[:-1]
+        tail_msg = messages[-1]
+
+        prefix_str = json.dumps(prefix_msgs, ensure_ascii=False)
+        tail_str = json.dumps(tail_msg, ensure_ascii=False)
+
+        model_name = (extract_model(body) or "").lower()
+        effective_provider = provider
+        if "deepseek" in model_name:
+            effective_provider = "deepseek"
+        elif "claude" in model_name or "anthropic" in model_name:
+            effective_provider = "anthropic"
+        elif "gpt" in model_name or "o1" in model_name or "o3" in model_name:
+            effective_provider = "openai"
+        elif "gemini" in model_name:
+            effective_provider = "gemini"
+
+        try:
+            pac_result = self._cache_aligner.align_prompt(
+                client_key=conversation_id,
+                prefix=prefix_str,
+                dynamic_tail=tail_str,
+                provider=effective_provider,
+            )
+            pac_headers = {
+                "X-Entroly-PAC-Strategy": pac_result.strategy,
+                "X-Entroly-PAC-Page-Size": str(pac_result.receipt.provider_page_size),
+                "X-Entroly-PAC-Prefix-Tokens": str(pac_result.receipt.prefix_tokens),
+                "X-Entroly-PAC-Tail-Tokens": str(pac_result.receipt.dynamic_tail_tokens),
+                "X-Entroly-PAC-Warm": str(pac_result.receipt.warm_cache_detected).lower(),
+            }
+            if pac_result.receipt.economic_decision:
+                pac_headers["X-Entroly-PAC-Decision"] = pac_result.receipt.economic_decision
+
+            if self._optimization_ledger is not None and pac_result.receipt.tail_compressed:
+                self._optimization_ledger.record(
+                    OptimizationEvent(
+                        event_id=f"pac_kv:{conversation_id}:{int(time.time())}",
+                        feature="pac_kv_alignment",
+                        tier=SavingsTier.VERIFIED,
+                        gross_tokens_saved=max(
+                            0,
+                            pac_result.receipt.dynamic_tail_tokens
+                            - len(pac_result.dynamic_tail.split()),
+                        ),
+                        conversation_id=conversation_id,
+                        provider=provider,
+                        model=extract_model(body),
+                        metadata=pac_result.receipt.as_dict(),
+                    )
+                )
+
+            return body, pac_headers
+        except Exception as exc:
+            logger.debug("PAC-KV alignment skipped: %s", exc)
+            return body, {"X-Entroly-PAC-Status": "error"}
+
     def _observe_prefix_continuity(
         self,
         *,
@@ -2877,6 +2949,13 @@ class PromptCompilerProxy:
             candidate_body=body,
         )
         control_headers.update(prefix_guard_headers)
+
+        body, pac_headers = self._apply_pac_kv_alignment(
+            conversation_id=conversation_id or client_key,
+            provider=provider,
+            body=body,
+        )
+        control_headers.update(pac_headers)
 
         # Await warmup (usually completes during pipeline, essentially free)
         await warmup_task

@@ -34,19 +34,23 @@ except Exception:
     pass
 
 
+from .pac_kv import PACKVEngine, PACReceipt, PACResult, get_provider_grid
+
+
 class CacheAligner:
     """Stabilize context prefixes for LLM provider KV cache optimization.
 
-    Tracks per-client context injections and returns the previous object only
-    for an exact SHA-256 match.  ``similarity_threshold`` remains accepted for
-    API compatibility, but approximate reuse is intentionally disabled:
-    correctness and fresh evidence take precedence over a speculative cache hit.
+    Powered by PAC-KV (Provable Attention & Cache-Aligned Compression Engine).
+    Quantizes prefix boundaries to provider hardware page grids (Anthropic 1024,
+    OpenAI 128, DeepSeek 64), guarantees zero economic inversion, and tracks
+    per-client context injections with Merkle continuity proofs.
     """
 
     def __init__(
         self,
         similarity_threshold: float = 0.90,
         max_clients: int = 100,
+        default_provider: str = "generic",
     ):
         if not 0.0 <= similarity_threshold <= 1.0:
             raise ValueError("similarity_threshold must be between zero and one")
@@ -54,10 +58,13 @@ class CacheAligner:
             raise ValueError("max_clients must be at least one")
         self._threshold = similarity_threshold
         self._max_clients = max_clients
+        self._default_provider = default_provider
+        self._engine = PACKVEngine(default_provider=default_provider)
         self._cache: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self._lock = threading.Lock()
         self._hits = 0
         self._misses = 0
+        self._total_dollar_savings = 0.0
 
     def align(self, client_key: str, context: str) -> tuple[str, bool]:
         """Align context for cache stability.
@@ -89,6 +96,7 @@ class CacheAligner:
             self._cache[client_key] = {
                 "context": context,
                 "digest": digest,
+                "merkle_root": digest,
             }
             self._cache.move_to_end(client_key)
             self._misses += 1
@@ -98,6 +106,64 @@ class CacheAligner:
                 self._cache.popitem(last=False)
 
             return context, False
+
+    def align_prompt(
+        self,
+        client_key: str,
+        prefix: str,
+        dynamic_tail: str = "",
+        *,
+        provider: str | None = None,
+        target_budget: int | None = None,
+        base_price_per_million: float = 3.0,
+        cached_read_price_per_million: float | None = None,
+    ) -> PACResult:
+        """Align a bipartite prompt (prefix + tail) with full PAC-KV proofs.
+
+        Evaluates the Economic Break-Even Gate, quantizes prefix boundaries
+        to the provider's hardware page grid, and returns an auditable PACResult.
+        """
+        if not client_key:
+            raise ValueError("client_key is required")
+
+        prov = provider or self._default_provider
+        prefix_digest = hashlib.sha256(prefix.encode("utf-8")).hexdigest()
+
+        with self._lock:
+            prev = self._cache.get(client_key)
+            is_warm = prev is not None and prev.get("prefix_digest") == prefix_digest
+
+            result = self._engine.process(
+                prefix,
+                dynamic_tail,
+                provider=prov,
+                target_budget=target_budget,
+                is_warm=is_warm,
+                base_price_per_million=base_price_per_million,
+                cached_read_price_per_million=cached_read_price_per_million,
+            )
+
+            if result.is_cache_hit:
+                self._hits += 1
+            else:
+                self._misses += 1
+
+            self._total_dollar_savings += result.receipt.projected_dollar_savings
+
+            # Update cache entry
+            self._cache[client_key] = {
+                "context": result.full_prompt,
+                "digest": hashlib.sha256(result.full_prompt.encode("utf-8")).hexdigest(),
+                "prefix_digest": prefix_digest,
+                "merkle_root": result.merkle_tree.root_hash,
+                "receipt": result.receipt,
+            }
+            self._cache.move_to_end(client_key)
+
+            while len(self._cache) > self._max_clients:
+                self._cache.popitem(last=False)
+
+            return result
 
     def invalidate(self, client_key: str) -> None:
         """Force-invalidate a client's cached context."""
@@ -113,5 +179,17 @@ class CacheAligner:
                 "cache_misses": self._misses,
                 "hit_rate": round(self._hits / max(total, 1), 4),
                 "active_clients": len(self._cache),
-                "match_policy": "exact_sha256",
+                "match_policy": "pac_kv_paged_merkle",
+                "default_provider": self._default_provider,
+                "total_dollar_savings": round(self._total_dollar_savings, 6),
             }
+
+
+__all__ = [
+    "CacheAligner",
+    "PACKVEngine",
+    "PACReceipt",
+    "PACResult",
+    "get_provider_grid",
+]
+

@@ -33,8 +33,16 @@ from typing import Iterable, Literal
 
 MemoryTier = Literal["working", "episodic", "semantic"]
 SafetyPolicy = Literal["block", "redact", "allow"]
+TemporalClass = Literal[
+    "current_state",   # Ongoing truth (e.g. "user lives in SF")
+    "past_event",      # Completed occurrence (e.g. "deployed v2 yesterday")
+    "future_plan",     # Intended future action (e.g. "will migrate to Rust")
+    "preference",      # Durable preference (e.g. "prefers dark mode")
+    "relationship",    # Entity link (e.g. "Alice manages the backend team")
+    "unclassified",    # Default: no temporal signal detected
+]
 
-_SCHEMA_VERSION = "memory-os.v2"
+_SCHEMA_VERSION = "memory-os.v3"
 _TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{1,}")
 
 _SECRET_PATTERNS: list[tuple[str, re.Pattern[str], str]] = [
@@ -53,6 +61,92 @@ _INJECTION_PATTERNS: list[tuple[str, re.Pattern[str], str]] = [
     ("system_prompt_exfil", re.compile(r"(?:reveal|print|dump|show).{0,40}(?:system prompt|developer message|hidden instructions)", re.I), "critical"),
     ("tool_abuse", re.compile(r"(?:run|execute).{0,40}(?:rm -rf|curl .+\|\s*sh|powershell .+iex)", re.I), "critical"),
 ]
+
+
+# ── Temporal query intent classifier ──────────────────────────────────
+
+_TEMPORAL_CURRENT = re.compile(
+    r"\b(current(?:ly)?|now|right now|today|at the moment|presently|active|latest|recent)"
+    r"\b", re.I,
+)
+_TEMPORAL_PAST = re.compile(
+    r"\b(before|previously|earlier|yesterday|last (?:week|month|year|time)|used to"
+    r"|formerly|was|were|did|had|ago)\b", re.I,
+)
+_TEMPORAL_FUTURE = re.compile(
+    r"\b(will|going to|plan(?:ning)?|intend|next (?:week|month|year)|soon"
+    r"|upcoming|schedule[d]?|future)\b", re.I,
+)
+
+
+def _detect_temporal_intent(query: str) -> TemporalClass | None:
+    """Classify the temporal intent of a query, or None if ambiguous."""
+    text = query.strip()
+    if not text:
+        return None
+    c = bool(_TEMPORAL_CURRENT.search(text))
+    p = bool(_TEMPORAL_PAST.search(text))
+    f = bool(_TEMPORAL_FUTURE.search(text))
+    # Only classify if exactly one signal fires — ambiguity returns None.
+    signals = sum([c, p, f])
+    if signals != 1:
+        return None
+    if c:
+        return "current_state"
+    if p:
+        return "past_event"
+    return "future_plan"
+
+
+def _classify_temporal(content: str) -> TemporalClass:
+    """Heuristic classifier for the temporal class of memory content."""
+    text = content.lower()
+    # Preferences are durable
+    if re.search(r"\b(prefer\w*|like\w*|dislike\w*|always|never|favorite\w*|default\w*)\b", text):
+        return "preference"
+    # Relationship patterns
+    if re.search(r"\b(manages?|reports? to|works? (?:with|at|for)|leads?|owns?)\b", text):
+        return "relationship"
+    # Future plans
+    if _TEMPORAL_FUTURE.search(text):
+        return "future_plan"
+    # Past events
+    if _TEMPORAL_PAST.search(text):
+        return "past_event"
+    # Current state if present-tense assertions
+    if re.search(r"\b(is|are|has|have|uses?|runs?)\b", text) and not _TEMPORAL_PAST.search(text):
+        return "current_state"
+    return "unclassified"
+
+
+def _extract_entities(content: str) -> list[str]:
+    """Lightweight entity extraction — proper nouns and CamelCase identifiers.
+
+    This is intentionally simple. A future version may use spaCy NER or
+    Rust-side extraction. The goal is to get *something* into the entity
+    field so graph memory can start linking memories.
+    """
+    entities: set[str] = set()
+    # CamelCase identifiers (e.g. UserService, PaymentGateway)
+    for m in re.finditer(r"\b([A-Z][a-z]+(?:[A-Z][a-z]+)+)\b", content):
+        entities.add(m.group(1))
+    # Capitalized multi-word names (e.g. "Alice Smith", "AWS Lambda")
+    for m in re.finditer(r"\b([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})+)\b", content):
+        entities.add(m.group(1))
+    # Capitalized words (filtered by common stop words)
+    for m in re.finditer(r"\b([A-Z][a-z]{2,})\b", content):
+        word = m.group(1)
+        # Filter common non-entity words
+        if word.lower() not in {
+            "the", "this", "that", "then", "they", "them", "their",
+            "when", "where", "what", "which", "while", "would",
+            "also", "just", "more", "most", "much", "many", "some",
+            "each", "every", "both", "either", "neither", "other",
+            "however", "because", "since", "although", "after", "before",
+            "true", "false", "none", "null",
+        }:
+            entities.add(word)
+    return sorted(entities)
 
 
 def _tokens(text: str) -> set[str]:
@@ -150,6 +244,13 @@ class MemoryEntry:
     salience: float = 25.0
     token_cost: int = 1
     consolidated: bool = False
+    # ── Temporal reasoning ─────────────────────────────────────────────
+    temporal_class: TemporalClass = "unclassified"
+    valid_from: float | None = None    # epoch when this became true
+    valid_until: float | None = None   # epoch when this stopped being true
+    supersedes: str | None = None      # ID of the memory this supersedes
+    superseded_by: str | None = None   # ID of the memory that superseded this
+    entities: list[str] = field(default_factory=list)  # extracted entity names
 
     def retention(self, now_tick: float) -> float:
         """Ebbinghaus-style retention R(t)=exp(-age/salience)."""
@@ -292,6 +393,8 @@ class MemoryOS:
         source: str = "manual",
         tags: Iterable[str] | None = None,
         safety_policy: SafetyPolicy | None = None,
+        temporal_class: TemporalClass | None = None,
+        supersedes: str | None = None,
     ) -> str:
         """Store a memory and return its ID.
 
@@ -346,7 +449,11 @@ class MemoryOS:
             if safe_tier == "semantic":
                 salience = 10_000.0
 
-            self._entries[mem_id] = MemoryEntry(
+            # Temporal reasoning: auto-classify if not provided.
+            effective_temporal = temporal_class or _classify_temporal(safe_content)
+            extracted_entities = _extract_entities(safe_content)
+
+            entry = MemoryEntry(
                 id=mem_id,
                 agent_id=safe_agent,
                 content=safe_content,
@@ -358,7 +465,19 @@ class MemoryOS:
                 last_recalled_at=self._tick,
                 salience=salience,
                 token_cost=_estimate_tokens(safe_content),
+                temporal_class=effective_temporal,
+                valid_from=time.time(),
+                entities=extracted_entities,
             )
+
+            # Supersession tracking: mark the old memory as superseded.
+            if supersedes and supersedes in self._entries:
+                old = self._entries[supersedes]
+                old.superseded_by = mem_id
+                old.valid_until = time.time()
+                entry.supersedes = supersedes
+
+            self._entries[mem_id] = entry
             self._prune_to_capacity_locked()
             return mem_id
 
@@ -370,12 +489,21 @@ class MemoryOS:
         budget: int | None = None,
         tier: MemoryTier | None = None,
         include_shared: bool = True,
+        temporal_filter: TemporalClass | None = None,
     ) -> MemoryContext:
-        """Recall memories for an agent under a token budget."""
+        """Recall memories for an agent under a token budget.
+
+        Temporal reasoning:
+        - If *temporal_filter* is given, only memories of that class are returned.
+        - Otherwise, the query text is analysed for temporal intent. Memories
+          matching the intent receive a score boost; superseded memories that
+          conflict with the intent are penalised.
+        """
         safe_budget = max(1, int(budget or self.default_budget))
         safe_agent = str(agent_id or "default")
         query_terms = _tokens(query)
         tier_filter = _safe_tier(str(tier)) if tier is not None else None
+        temporal_intent = temporal_filter or _detect_temporal_intent(query)
 
         with self._lock:
             candidates: list[tuple[MemoryEntry, float, float, str]] = []
@@ -390,10 +518,21 @@ class MemoryOS:
                     candidates.append((entry, 0.0, retention, "below_retention_threshold"))
                     continue
 
+                # ── Temporal filtering ──────────────────────────────────
+                # Skip superseded memories when query asks for current state.
+                if temporal_intent == "current_state" and entry.superseded_by:
+                    candidates.append((entry, 0.0, retention, "superseded"))
+                    continue
+                # Hard filter if explicit temporal_filter was passed.
+                if temporal_filter and entry.temporal_class != temporal_filter:
+                    candidates.append((entry, 0.0, retention, "temporal_filter_miss"))
+                    continue
+
                 content_terms = _tokens(entry.content)
                 source_terms = _tokens(entry.source.replace("/", " ").replace("\\", " "))
                 tag_terms = {t.lower() for t in entry.tags}
-                searchable = content_terms | source_terms | tag_terms
+                entity_terms = {e.lower() for e in entry.entities}
+                searchable = content_terms | source_terms | tag_terms | entity_terms
                 if query_terms:
                     overlap = len(query_terms & searchable) / max(1, len(query_terms))
                     lexical = 0.20 + 0.80 * overlap
@@ -404,7 +543,15 @@ class MemoryOS:
 
                 frequency = 1.0 + min(2.0, math.log1p(entry.recall_count))
                 tier_bonus = {"working": 1.0, "episodic": 1.1, "semantic": 1.25}[entry.tier]
-                score = retention * frequency * lexical * tier_bonus * (0.5 + entry.importance)
+
+                # Temporal boost: reward memories matching the query's temporal intent.
+                temporal_boost = 1.0
+                if temporal_intent and entry.temporal_class == temporal_intent:
+                    temporal_boost = 1.3
+                elif temporal_intent and entry.temporal_class != "unclassified" and entry.temporal_class != temporal_intent:
+                    temporal_boost = 0.7
+
+                score = retention * frequency * lexical * tier_bonus * temporal_boost * (0.5 + entry.importance)
                 candidates.append((entry, score, retention, reason))
 
             candidates.sort(key=lambda x: (x[1] / max(1, x[0].token_cost), x[1]), reverse=True)
@@ -457,6 +604,9 @@ class MemoryOS:
                 "budget_utilization": round(used / safe_budget, 4),
                 "stale_omitted": sum(1 for m in omitted if m.reason == "below_retention_threshold"),
                 "over_budget_omitted": sum(1 for m in omitted if m.reason == "over_budget"),
+                "superseded_omitted": sum(1 for m in omitted if m.reason == "superseded"),
+                "temporal_filter_omitted": sum(1 for m in omitted if m.reason == "temporal_filter_miss"),
+                "temporal_intent": temporal_intent,
                 "query_terms": sorted(query_terms)[:12],
             }
             return MemoryContext(selected=selected, omitted=omitted, budget=safe_budget, used_tokens=used, risk=risk)
@@ -575,6 +725,12 @@ class MemoryOS:
         if not content:
             raise ValueError("memory entry content cannot be empty")
         token_cost = int(raw.get("token_cost", _estimate_tokens(content)))
+        # Temporal fields: graceful migration from v2 snapshots.
+        raw_temporal = str(raw.get("temporal_class", "unclassified"))
+        if raw_temporal not in ("current_state", "past_event", "future_plan", "preference", "relationship", "unclassified"):
+            raw_temporal = "unclassified"
+        raw_entities = raw.get("entities", [])
+        entities = [str(e) for e in raw_entities] if isinstance(raw_entities, list) else []
         return MemoryEntry(
             id=str(raw.get("id", f"mem_{self._next_id:06d}")),
             agent_id=str(raw.get("agent_id", "default")),
@@ -589,6 +745,12 @@ class MemoryOS:
             salience=max(0.001, float(raw.get("salience", 25.0))),
             token_cost=max(1, token_cost),
             consolidated=bool(raw.get("consolidated", False)),
+            temporal_class=raw_temporal,  # type: ignore[arg-type]
+            valid_from=float(raw["valid_from"]) if raw.get("valid_from") is not None else None,
+            valid_until=float(raw["valid_until"]) if raw.get("valid_until") is not None else None,
+            supersedes=str(raw["supersedes"]) if raw.get("supersedes") else None,
+            superseded_by=str(raw["superseded_by"]) if raw.get("superseded_by") else None,
+            entities=entities,
         )
 
     def _consolidate_locked(self) -> int:
@@ -647,4 +809,5 @@ __all__ = [
     "MemorySafetyResult",
     "SelectedMemory",
     "OmittedMemory",
+    "TemporalClass",
 ]
