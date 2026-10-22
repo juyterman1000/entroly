@@ -124,7 +124,7 @@ class MemoryGraph:
 
     def __init__(self, root: str | Path | None = None):
         if root is None:
-            root = Path(os.environ.get("ENTROLY_DIR", ".entroly"))
+            root = Path(os.environ.get("ENTROLY_DIR", str(Path.home() / ".entroly")))
         self._root = Path(root) / "memory_graph"
         self._root.mkdir(parents=True, exist_ok=True)
         self._nodes_path = self._root / "nodes.json"

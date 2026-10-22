@@ -4763,8 +4763,9 @@ def create_mcp_server(
         Implements associative recall (HippoRAG 2). Returns reachable memory IDs,
         entity paths, and Merkle traversal receipts.
         """
-        from .memory_graph import MemoryGraph
-        graph = MemoryGraph()
+        # Use the server's already-populated graph (written by TaskDreamer /
+        # MemoryFabric.remember) instead of constructing a fresh empty one.
+        graph = _task_memory.graph
         result = graph.traverse(seeds, max_hops=max_hops, include_superseded=include_superseded)
         return json.dumps({
             "query_entities": result.query_entities,
@@ -4800,9 +4801,9 @@ def create_mcp_server(
         Optional temporal_filter: 'current_state', 'past_event', 'future_plan', 'preference', 'relationship'.
         """
         from dataclasses import asdict
-        from .memory_fabric import MemoryFabric
-        fabric = MemoryFabric()
-        res = fabric.recall(
+        # Use the server's shared MemoryFabric (_task_memory) so that memories
+        # written by TaskDreamer and other server operations are visible here.
+        res = _task_memory.recall(
             query,
             temporal_filter=temporal_filter or None,  # type: ignore[arg-type]
             use_hybrid=use_hybrid,
@@ -4831,6 +4832,8 @@ def create_mcp_server(
         OpenAI 128, DeepSeek 64, vLLM 16, SGLang 32) and evaluates whether freezing warm
         prefix is cheaper than re-compression. Returns aligned text and PACReceipt.
         """
+        # Build a request-scoped aligner — client_key tracks per-client prefix
+        # warmth within the call, which is appropriate for a one-shot MCP tool.
         from .cache_aligner import CacheAligner
         aligner = CacheAligner()
         budget = target_budget if target_budget > 0 else None
@@ -4841,9 +4844,11 @@ def create_mcp_server(
             provider=provider,
             target_budget=budget,
         )
+        # PACResult fields: aligned_prefix, aligned_tail, full_prompt,
+        #                   is_cache_hit, receipt (PACReceipt), merkle_tree
         return json.dumps({
-            "strategy": pac_res.strategy,
-            "aligned_prompt": pac_res.aligned_prompt,
+            "strategy": pac_res.receipt.economic_decision,
+            "aligned_prompt": pac_res.full_prompt,
             "receipt": pac_res.receipt.as_dict(),
         }, indent=2)
 

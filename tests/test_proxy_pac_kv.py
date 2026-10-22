@@ -13,20 +13,20 @@ def test_proxy_pac_kv_alignment_multi_turn():
     proxy = PromptCompilerProxy(engine, config=config)
     proxy._cache_aligner = MagicMock()
 
-    # Mock pac_result
+    # Mock pac_result using real PACResult / PACReceipt field names.
     mock_receipt = MagicMock()
-    mock_receipt.provider_page_size = 1024
-    mock_receipt.prefix_tokens = 1024
+    mock_receipt.page_size = 1024
+    mock_receipt.cached_prefix_tokens = 1024
     mock_receipt.dynamic_tail_tokens = 50
-    mock_receipt.warm_cache_detected = True
     mock_receipt.economic_decision = "cache_locked_tail_compressed"
-    mock_receipt.tail_compressed = True
-    mock_receipt.as_dict.return_value = {"warm": True}
+    mock_receipt.raw_tokens_total = 2000
+    mock_receipt.aligned_tokens_total = 1050
+    mock_receipt.as_dict.return_value = {"economic_decision": "cache_locked_tail_compressed"}
 
     mock_pac_result = MagicMock()
-    mock_pac_result.strategy = "cache_locked_tail_compressed"
+    mock_pac_result.is_cache_hit = True
     mock_pac_result.receipt = mock_receipt
-    mock_pac_result.dynamic_tail = "compressed user query"
+    mock_pac_result.aligned_tail = "compressed user query"
 
     proxy._cache_aligner.align_prompt.return_value = mock_pac_result
 
@@ -48,6 +48,7 @@ def test_proxy_pac_kv_alignment_multi_turn():
 
     assert headers["X-Entroly-PAC-Strategy"] == "cache_locked_tail_compressed"
     assert headers["X-Entroly-PAC-Page-Size"] == "1024"
+    assert headers["X-Entroly-PAC-Prefix-Tokens"] == "1024"
     assert headers["X-Entroly-PAC-Warm"] == "true"
     assert headers["X-Entroly-PAC-Decision"] == "cache_locked_tail_compressed"
 

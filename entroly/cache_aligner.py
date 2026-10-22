@@ -145,10 +145,13 @@ class CacheAligner:
 
             if result.is_cache_hit:
                 self._hits += 1
+                # Only accumulate savings that are real: cache_locked_tail_compressed
+                # decisions reflect provider-discounted cache reads.  Cold turns
+                # (passthrough_cold, page_quantized_*) do not represent a billing
+                # reduction that has occurred yet, so we exclude them.
+                self._total_dollar_savings += result.receipt.projected_dollar_savings
             else:
                 self._misses += 1
-
-            self._total_dollar_savings += result.receipt.projected_dollar_savings
 
             # Update cache entry
             self._cache[client_key] = {

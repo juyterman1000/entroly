@@ -1576,17 +1576,28 @@ class PromptCompilerProxy:
                 dynamic_tail=tail_str,
                 provider=effective_provider,
             )
-            pac_headers = {
-                "X-Entroly-PAC-Strategy": pac_result.strategy,
-                "X-Entroly-PAC-Page-Size": str(pac_result.receipt.provider_page_size),
-                "X-Entroly-PAC-Prefix-Tokens": str(pac_result.receipt.prefix_tokens),
+            # Map PACResult / PACReceipt attributes to response headers.
+            # PACResult fields: aligned_prefix, aligned_tail, full_prompt,
+            #                   is_cache_hit, receipt (PACReceipt), merkle_tree
+            # PACReceipt fields: economic_decision, dynamic_tail_tokens,
+            #                    cached_prefix_tokens, page_size, …
+            pac_headers: dict[str, str] = {
+                "X-Entroly-PAC-Strategy": pac_result.receipt.economic_decision,
+                "X-Entroly-PAC-Page-Size": str(pac_result.receipt.page_size),
+                "X-Entroly-PAC-Prefix-Tokens": str(pac_result.receipt.cached_prefix_tokens),
                 "X-Entroly-PAC-Tail-Tokens": str(pac_result.receipt.dynamic_tail_tokens),
-                "X-Entroly-PAC-Warm": str(pac_result.receipt.warm_cache_detected).lower(),
+                "X-Entroly-PAC-Warm": str(pac_result.is_cache_hit).lower(),
             }
             if pac_result.receipt.economic_decision:
                 pac_headers["X-Entroly-PAC-Decision"] = pac_result.receipt.economic_decision
 
-            if self._optimization_ledger is not None and pac_result.receipt.tail_compressed:
+            # Only book a VERIFIED saving when the tail was actually truncated
+            # (raw > aligned) and the provider-reported receipt confirms it.
+            tail_was_compressed = (
+                pac_result.receipt.raw_tokens_total > pac_result.receipt.aligned_tokens_total
+                and pac_result.is_cache_hit
+            )
+            if self._optimization_ledger is not None and tail_was_compressed:
                 self._optimization_ledger.record(
                     OptimizationEvent(
                         event_id=f"pac_kv:{conversation_id}:{int(time.time())}",
@@ -1594,8 +1605,8 @@ class PromptCompilerProxy:
                         tier=SavingsTier.VERIFIED,
                         gross_tokens_saved=max(
                             0,
-                            pac_result.receipt.dynamic_tail_tokens
-                            - len(pac_result.dynamic_tail.split()),
+                            pac_result.receipt.raw_tokens_total
+                            - pac_result.receipt.aligned_tokens_total,
                         ),
                         conversation_id=conversation_id,
                         provider=provider,
