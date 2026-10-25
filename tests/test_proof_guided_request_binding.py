@@ -143,6 +143,7 @@ def test_advance_rejects_either_missing_binding_field(tmp_path, missing):
     fields = _binding(issued)
     fields.pop(missing)
     _assert_rejected(runtime, issued, fields, error=ValueError)
+    assert runtime.inspect(issued["session_id"]) == issued
 
 
 @pytest.mark.parametrize(
@@ -156,6 +157,7 @@ def test_revision_is_strict_nonnegative_integer(tmp_path, revision):
     issued = _prepare(runtime)
     fields = {**_binding(issued), "expected_revision": revision}
     _assert_rejected(runtime, issued, fields, error=ValueError)
+    assert runtime.inspect(issued["session_id"]) == issued
 
 
 @pytest.mark.parametrize(
@@ -170,6 +172,7 @@ def test_digest_is_lowercase_64_hex_characters(tmp_path, digest):
     issued = _prepare(runtime)
     fields = {**_binding(issued), "request_sha256": digest}
     _assert_rejected(runtime, issued, fields, error=ValueError)
+    assert runtime.inspect(issued["session_id"]) == issued
 
 
 def test_new_session_issues_v2_binding_and_prepare_replays_without_writes(tmp_path):
@@ -308,25 +311,28 @@ def test_same_key_rejects_changed_output_or_binding(tmp_path, changed):
     _assert_rejected(
         _runtime(tmp_path), issued, fields, key="accepted-key", output=output
     )
+    assert runtime.inspect(issued["session_id"]) == current
 
 
 def test_same_key_rejects_newline_only_change_in_output_bytes(tmp_path):
     runtime = _runtime(tmp_path)
     issued = _prepare(runtime)
     output = MODEL_OUTPUT + "\n"
-    _deliver(runtime, issued, key="newline-key", output=output)
+    current = _deliver(runtime, issued, key="newline-key", output=output)
     _assert_rejected(
         _runtime(tmp_path), issued, _binding(issued), key="newline-key",
         output=output.replace("\n", "\r\n"),
     )
+    assert runtime.inspect(issued["session_id"]) == current
 
 
 def test_boolean_revision_cannot_bypass_validation_through_exact_key_replay(tmp_path):
     runtime = _runtime(tmp_path)
     issued = _prepare(runtime)
-    _deliver(runtime, issued, key="accepted-key")
+    current = _deliver(runtime, issued, key="accepted-key")
     fields = {**_binding(issued), "expected_revision": False}
     _assert_rejected(runtime, issued, fields, error=ValueError, key="accepted-key")
+    assert runtime.inspect(issued["session_id"]) == current
 
 
 def _write_v1_snapshot(runtime, issued):
