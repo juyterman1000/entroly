@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import socket
 from pathlib import Path
@@ -43,7 +44,9 @@ def test_proof_manifest_matches_live_mcp_catalog(tmp_path, monkeypatch):
     advertised = {tool["name"]: tool for tool in manifest["tools"]}
     for name in PROOF_TOOLS:
         assert advertised[name]["inputSchema"] == live_tools[name].inputSchema
-        assert advertised[name]["description"].strip() == live_tools[name].description.strip()
+        # Python 3.13+ strips common docstring indentation at compilation.
+        # Compare identical text/paragraphs after that same normalization.
+        assert inspect.cleandoc(advertised[name]["description"]) == inspect.cleandoc(live_tools[name].description)
     advance = advertised["advance_proof_guided_context"]
     assert "expected_revision" in advance["inputSchema"]["properties"]
     assert "request_sha256" in advance["inputSchema"]["properties"]
@@ -58,3 +61,11 @@ def test_advance_manifest_preserves_strict_binding_types(field):
     assert advance["inputSchema"]["properties"][field]["anyOf"] == [
         {"type": expected}, {"type": "null"},
     ]
+
+
+def test_description_normalization_preserves_wording_and_paragraphs():
+    indented = "Verify one model round.\n\n        Missing bindings are rejected.\n        Keep the issued revision.\n        "
+    compiled = "Verify one model round.\n\nMissing bindings are rejected.\nKeep the issued revision."
+    assert inspect.cleandoc(indented) == inspect.cleandoc(compiled)
+    assert inspect.cleandoc(indented) != inspect.cleandoc(compiled.replace("rejected", "accepted"))
+    assert inspect.cleandoc(indented) != inspect.cleandoc(compiled.replace("\n\n", "\n"))
