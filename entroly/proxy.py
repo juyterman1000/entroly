@@ -6045,19 +6045,23 @@ async def _proof_prepare_route(request: Request) -> JSONResponse:
             raise ValueError("path must remain within the project root") from exc
         from .context_receipts.ingest import read_documents_from_path
 
-        documents = read_documents_from_path(candidate)
-        result = request.app.state.proxy.proof_runtime().prepare(
-            documents,
-            query=query,
-            token_budget=body.get("token_budget", 8000),
-            max_rounds=body.get("max_rounds", 3),
-            recovery_token_budget=body.get("recovery_token_budget", 1200),
-            max_chunks_per_round=body.get("max_chunks_per_round", 3),
-            profile=body.get("profile", "rag"),
-            chunk_tokens=body.get("chunk_tokens", 360),
-            overlap_tokens=body.get("overlap_tokens", 32),
-            idempotency_key=body.get("idempotency_key"),
-        )
+        def prepare():
+            documents = read_documents_from_path(candidate)
+            return request.app.state.proxy.proof_runtime().prepare(
+                documents,
+                query=query,
+                token_budget=body.get("token_budget", 8000),
+                max_rounds=body.get("max_rounds", 3),
+                recovery_token_budget=body.get("recovery_token_budget", 1200),
+                max_chunks_per_round=body.get("max_chunks_per_round", 3),
+                profile=body.get("profile", "rag"),
+                chunk_tokens=body.get("chunk_tokens", 360),
+                overlap_tokens=body.get("overlap_tokens", 32),
+                idempotency_key=body.get("idempotency_key"),
+            )
+
+        # Lazy key initialization and local lock waits must also leave the loop.
+        result = await asyncio.to_thread(prepare)
         return JSONResponse(result)
     except Exception as exc:  # noqa: BLE001 - converted to bounded local error
         return _proof_sidecar_error(exc)
@@ -6069,11 +6073,16 @@ async def _proof_advance_route(request: Request) -> JSONResponse:
         body = await request.json()
         if not isinstance(body, dict):
             raise ValueError("request body must be a JSON object")
-        result = request.app.state.proxy.proof_runtime().advance(
-            str(body.get("session_id", "")),
-            model_output=body.get("model_output"),
-            idempotency_key=body.get("idempotency_key"),
-        )
+        def advance():
+            return request.app.state.proxy.proof_runtime().advance(
+                str(body.get("session_id", "")),
+                model_output=body.get("model_output"),
+                idempotency_key=body.get("idempotency_key"),
+                expected_revision=body.get("expected_revision"),
+                request_sha256=body.get("request_sha256"),
+            )
+
+        result = await asyncio.to_thread(advance)
         return JSONResponse(result)
     except Exception as exc:  # noqa: BLE001 - converted to bounded local error
         return _proof_sidecar_error(exc)
@@ -6082,7 +6091,10 @@ async def _proof_advance_route(request: Request) -> JSONResponse:
 async def _proof_inspect_route(request: Request) -> JSONResponse:
     try:
         session_id = request.query_params.get("session_id", "")
-        result = request.app.state.proxy.proof_runtime().inspect(session_id)
+        def inspect():
+            return request.app.state.proxy.proof_runtime().inspect(session_id)
+
+        result = await asyncio.to_thread(inspect)
         return JSONResponse(result)
     except Exception as exc:  # noqa: BLE001 - converted to bounded local error
         return _proof_sidecar_error(exc)

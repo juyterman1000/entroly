@@ -5305,24 +5305,32 @@ def cmd_proof(args):
             args.session_id,
             model_output=_proof_model_output(args),
             idempotency_key=args.idempotency_key,
+            expected_revision=args.expected_revision,
+            request_sha256=args.request_sha256,
         )
     elif args.proof_action == "inspect":
         result = runtime.inspect(args.session_id)
     elif args.proof_action == "run":
         result = _proof_prepare(runtime, args)
         while result["status"] == "awaiting_model":
+            # Retain the issued binding beside this invocation, even if another
+            # writer advances the durable session while the command is running.
+            session_id = result["session_id"]
+            expected_revision = result["revision"]
+            request_sha256 = result["request_sha256"]
             model_output = _run_explicit_model_command(
                 args.model_command,
                 result["request"],
                 args.model_timeout,
             )
             result = runtime.advance(
-                result["session_id"],
+                session_id,
                 model_output=model_output,
                 idempotency_key=(
-                    f"cli-round-{result['revision']}-"
-                    f"{result['session_id']}"
+                    f"cli-round-{expected_revision}-{session_id}"
                 ),
+                expected_revision=expected_revision,
+                request_sha256=request_sha256,
             )
     else:  # pragma: no cover - argparse enforces the action
         raise ValueError(f"unknown proof action: {args.proof_action}")
