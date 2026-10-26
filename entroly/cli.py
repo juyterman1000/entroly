@@ -3395,7 +3395,7 @@ def _print_local_simulation(report: dict, *, title: str, include_perf: bool) -> 
         print(
             f"  {C.GRAY}Nothing needed dropping, so there is nothing to save yet. "
             f"Entroly starts paying off once a codebase outgrows the context "
-            f"window — on a 680k-token repo it cut context 87.6%.{C.RESET}"
+            f"window.{C.RESET}"
         )
         print(
             f"  {C.GRAY}Try it on a larger repo, or force selection here with "

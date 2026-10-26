@@ -242,3 +242,47 @@ def test_results_are_ordered_by_relevance_not_by_density(tmp_path: Path, monkeyp
             f"relevance; density is for packing a budget, not for display. "
             f"got={[f['source'].rsplit('/', 1)[-1] for f in selected]}"
         )
+
+
+def test_fits_in_one_request_message_quotes_no_unsourced_saving(capsys):
+    """The small-project message must not cite a saving nothing measured.
+
+    It used to end "on a 680k-token repo it cut context 87.6%". No artifact in
+    the repository records that run, and the figure is what the fixed 32,000
+    token baseline yields at the default 4,096 budget for any repository larger
+    than 32K tokens: measured here, 87.27% on a 249,545-token checkout of click
+    and 87.42% on the 5,560,862-token Entroly repository. It said nothing about
+    a 680k-token repository, yet read as a cut from 680k tokens.
+    """
+    from entroly.cli import _print_local_simulation
+
+    report = {
+        "files_indexed": 2,
+        "repo_tokens_indexed": 47,
+        "baseline_tokens_per_query": 47,
+        "budget": 4096,
+        "budget_narrowed_to_demonstrate": True,
+        "query_conditioned_selection": True,
+        "queries": [
+            {
+                "query": "How does login work?",
+                "selected_fragments": 2,
+                "selected_tokens": 47,
+                "tokens_saved": 0,
+                "reduction_pct": 0.0,
+                "latency_ms": 1.0,
+                "top_sources": ["file:src/auth.py"],
+            }
+        ],
+        "average_reduction_pct": 0.0,
+        "average_budget_difference_pct": 0.0,
+        "latency_ms": {"min": 1.0, "p95": 1.0, "max": 1.0},
+        "limitations": ["No LLM call was made; quality is not judged here."],
+    }
+
+    _print_local_simulation(report, title="Entroly Simulate", include_perf=False)
+
+    out = capsys.readouterr().out
+    assert "already fits in one request" in out
+    fits_message = out[out.index("already fits in one request"):out.index("Try it on")]
+    assert "%" not in fits_message, fits_message
