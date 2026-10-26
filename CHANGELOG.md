@@ -5,6 +5,12 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
 
 ## Unreleased
 
+- Proof-guided runtime v2 rejects replies that do not carry the issued request's
+  `revision` and `request_sha256`, and serializes cooperating local writers.
+  CLI, MCP and HTTP clients must retain that binding beside each model call.
+  Existing v1 sessions are inspect-only: re-prepare with a new idempotency key
+  and upgrade all writers together. See the
+  [protocol and rollback limits](docs/proof-guided-context-fixed-point.md#durable-host-driven-protocol).
 - Runtime native-engine repair now requires explicit consent. Install
   `entroly-core` yourself, call `entroly.repair()`, or opt in to startup repair
   with `ENTROLY_ENABLE_SELF_HEAL=1`. `ENTROLY_NO_SELF_HEAL=1` and

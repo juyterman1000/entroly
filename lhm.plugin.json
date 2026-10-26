@@ -424,7 +424,7 @@
     },
     {
       "name": "prepare_proof_guided_context",
-      "description": "Prepare a durable proof-guided model request from local documents.\n\n        This tool performs only local selection, security checks, exact-recovery\n        commitments, and signed auditing. It does not call a model. Send the\n        returned ``request`` through the host's configured model route, then\n        pass the model text to ``advance_proof_guided_context``. The path must\n        remain inside the attached project root.\n        ",
+      "description": "Prepare a durable proof-guided model request from local documents.\n\n        This tool performs only local selection, security checks, exact-recovery\n        commitments, and signed auditing. It does not call a model. Send the\n        returned ``request`` through the host's configured model route, then\n        pass the model text and this response's ``revision``/``request_sha256``\n        to ``advance_proof_guided_context``. Retain that binding beside the model\n        call; do not substitute a newer binding. The path must remain inside\n        the attached project root.\n        ",
       "inputSchema": {
         "properties": {
           "path": {
@@ -471,7 +471,7 @@
     },
     {
       "name": "advance_proof_guided_context",
-      "description": "Verify one model round and return exact evidence or a final answer.\n\n        The operation is durable and idempotent. A continuation response has\n        ``status=awaiting_model`` and a new request whose committed prefix is\n        byte-identical. A terminal response returns a locally verified output.\n        No provider call is performed by Entroly.\n        ",
+      "description": "Verify one model round and return exact evidence or a final answer.\n\n        The operation is durable and idempotent. A continuation response has\n        ``status=awaiting_model`` and a new request whose committed prefix is\n        byte-identical. A terminal response returns a locally verified output.\n        Echo the revision and request digest issued for the actual model call.\n        Missing or invalid bindings are rejected. No provider call is performed\n        by Entroly.\n        ",
       "inputSchema": {
         "properties": {
           "session_id": {
@@ -485,6 +485,30 @@
           "idempotency_key": {
             "title": "Idempotency Key",
             "type": "string"
+          },
+          "expected_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expected Revision"
+          },
+          "request_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Request Sha256"
           }
         },
         "required": [

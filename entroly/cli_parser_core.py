@@ -333,6 +333,14 @@ def _add_core_commands(subparsers) -> None:
     proof_advance.add_argument("--output", default=None)
     proof_advance.add_argument("--output-file", default=None)
     proof_advance.add_argument("--idempotency-key", required=True)
+    proof_advance.add_argument(
+        "--expected-revision", type=int, required=True,
+        help="Revision issued with the request that produced this model output",
+    )
+    proof_advance.add_argument(
+        "--request-sha256", required=True,
+        help="Request digest issued with that same model request",
+    )
     proof_advance.add_argument("--state-dir", default=None, help=argparse.SUPPRESS)
     proof_advance.add_argument("--python", action="store_true", help=argparse.SUPPRESS)
     proof_advance.add_argument("--allow-high-risk", action="store_true", help=argparse.SUPPRESS)

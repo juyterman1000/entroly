@@ -1544,6 +1544,69 @@ class PromptCompilerProxy:
             ),
         }
 
+    def _apply_pac_kv_alignment(
+        self,
+        *,
+        conversation_id: str,
+        provider: str,
+        body: dict[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, str]]:
+        """PAC-KV Prompt Alignment and Economic Break-Even Gate."""
+        if not self._cache_aligner or not conversation_id:
+            return body, {}
+
+        messages = body.get("messages")
+        if not isinstance(messages, list) or len(messages) < 2:
+            return body, {}
+
+        prefix_msgs = messages[:-1]
+        tail_msg = messages[-1]
+
+        prefix_str = json.dumps(prefix_msgs, ensure_ascii=False)
+        tail_str = json.dumps(tail_msg, ensure_ascii=False)
+
+        model_name = (extract_model(body) or "").lower()
+        effective_provider = provider
+        if "deepseek" in model_name:
+            effective_provider = "deepseek"
+        elif "claude" in model_name or "anthropic" in model_name:
+            effective_provider = "anthropic"
+        elif "gpt" in model_name or "o1" in model_name or "o3" in model_name:
+            effective_provider = "openai"
+        elif "gemini" in model_name:
+            effective_provider = "gemini"
+
+        try:
+            pac_result = self._cache_aligner.align_prompt(
+                client_key=conversation_id,
+                prefix=prefix_str,
+                dynamic_tail=tail_str,
+                provider=effective_provider,
+            )
+            # Map PACResult / PACReceipt attributes to response headers.
+            # PACResult fields: aligned_prefix, aligned_tail, full_prompt,
+            #                   is_cache_hit, receipt (PACReceipt), merkle_tree
+            # PACReceipt fields: economic_decision, dynamic_tail_tokens,
+            #                    cached_prefix_tokens, page_size, …
+            pac_headers: dict[str, str] = {
+                "X-Entroly-PAC-Strategy": pac_result.receipt.economic_decision,
+                "X-Entroly-PAC-Page-Size": str(pac_result.receipt.page_size),
+                "X-Entroly-PAC-Prefix-Tokens": str(pac_result.receipt.cached_prefix_tokens),
+                "X-Entroly-PAC-Tail-Tokens": str(pac_result.receipt.dynamic_tail_tokens),
+                "X-Entroly-PAC-Warm": str(pac_result.is_cache_hit).lower(),
+            }
+            if pac_result.receipt.economic_decision:
+                pac_headers["X-Entroly-PAC-Decision"] = pac_result.receipt.economic_decision
+
+            # No ledger event: this hook observes and labels, it does not
+            # rewrite the request (the body is returned unchanged), so no
+            # tokens were removed from what left the machine. Booking
+            # raw - aligned here would be a VERIFIED saving nobody received.
+            return body, pac_headers
+        except Exception as exc:
+            logger.debug("PAC-KV alignment skipped: %s", exc)
+            return body, {"X-Entroly-PAC-Status": "error"}
+
     def _observe_prefix_continuity(
         self,
         *,
@@ -2896,6 +2959,13 @@ class PromptCompilerProxy:
             candidate_body=body,
         )
         control_headers.update(prefix_guard_headers)
+
+        body, pac_headers = self._apply_pac_kv_alignment(
+            conversation_id=conversation_id or client_key,
+            provider=provider,
+            body=body,
+        )
+        control_headers.update(pac_headers)
 
         # Await warmup (usually completes during pipeline, essentially free)
         await warmup_task
@@ -6063,19 +6133,23 @@ async def _proof_prepare_route(request: Request) -> JSONResponse:
             raise ValueError("path must remain within the project root") from exc
         from .context_receipts.ingest import read_documents_from_path
 
-        documents = read_documents_from_path(candidate)
-        result = request.app.state.proxy.proof_runtime().prepare(
-            documents,
-            query=query,
-            token_budget=body.get("token_budget", 8000),
-            max_rounds=body.get("max_rounds", 3),
-            recovery_token_budget=body.get("recovery_token_budget", 1200),
-            max_chunks_per_round=body.get("max_chunks_per_round", 3),
-            profile=body.get("profile", "rag"),
-            chunk_tokens=body.get("chunk_tokens", 360),
-            overlap_tokens=body.get("overlap_tokens", 32),
-            idempotency_key=body.get("idempotency_key"),
-        )
+        def prepare():
+            documents = read_documents_from_path(candidate)
+            return request.app.state.proxy.proof_runtime().prepare(
+                documents,
+                query=query,
+                token_budget=body.get("token_budget", 8000),
+                max_rounds=body.get("max_rounds", 3),
+                recovery_token_budget=body.get("recovery_token_budget", 1200),
+                max_chunks_per_round=body.get("max_chunks_per_round", 3),
+                profile=body.get("profile", "rag"),
+                chunk_tokens=body.get("chunk_tokens", 360),
+                overlap_tokens=body.get("overlap_tokens", 32),
+                idempotency_key=body.get("idempotency_key"),
+            )
+
+        # Lazy key initialization and local lock waits must also leave the loop.
+        result = await asyncio.to_thread(prepare)
         return JSONResponse(result)
     except Exception as exc:  # noqa: BLE001 - converted to bounded local error
         return _proof_sidecar_error(exc)
@@ -6087,11 +6161,16 @@ async def _proof_advance_route(request: Request) -> JSONResponse:
         body = await request.json()
         if not isinstance(body, dict):
             raise ValueError("request body must be a JSON object")
-        result = request.app.state.proxy.proof_runtime().advance(
-            str(body.get("session_id", "")),
-            model_output=body.get("model_output"),
-            idempotency_key=body.get("idempotency_key"),
-        )
+        def advance():
+            return request.app.state.proxy.proof_runtime().advance(
+                str(body.get("session_id", "")),
+                model_output=body.get("model_output"),
+                idempotency_key=body.get("idempotency_key"),
+                expected_revision=body.get("expected_revision"),
+                request_sha256=body.get("request_sha256"),
+            )
+
+        result = await asyncio.to_thread(advance)
         return JSONResponse(result)
     except Exception as exc:  # noqa: BLE001 - converted to bounded local error
         return _proof_sidecar_error(exc)
@@ -6100,7 +6179,10 @@ async def _proof_advance_route(request: Request) -> JSONResponse:
 async def _proof_inspect_route(request: Request) -> JSONResponse:
     try:
         session_id = request.query_params.get("session_id", "")
-        result = request.app.state.proxy.proof_runtime().inspect(session_id)
+        def inspect():
+            return request.app.state.proxy.proof_runtime().inspect(session_id)
+
+        result = await asyncio.to_thread(inspect)
         return JSONResponse(result)
     except Exception as exc:  # noqa: BLE001 - converted to bounded local error
         return _proof_sidecar_error(exc)

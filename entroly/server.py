@@ -23,7 +23,7 @@ from functools import wraps
 from pathlib import Path
 from typing import Annotated, Any, Callable
 
-from pydantic import Field
+from pydantic import Field, StrictInt, StrictStr
 
 try:
     from mcp.server.fastmcp import Context as MCPContext
@@ -2328,8 +2328,10 @@ def create_mcp_server(
         This tool performs only local selection, security checks, exact-recovery
         commitments, and signed auditing. It does not call a model. Send the
         returned ``request`` through the host's configured model route, then
-        pass the model text to ``advance_proof_guided_context``. The path must
-        remain inside the attached project root.
+        pass the model text and this response's ``revision``/``request_sha256``
+        to ``advance_proof_guided_context``. Retain that binding beside the model
+        call; do not substitute a newer binding. The path must remain inside
+        the attached project root.
         """
         try:
             from .context_receipts.ingest import read_documents_from_path
@@ -2368,19 +2370,25 @@ def create_mcp_server(
         session_id: str,
         model_output: str,
         idempotency_key: str,
+        expected_revision: StrictInt | None = None,
+        request_sha256: StrictStr | None = None,
     ) -> str:
         """Verify one model round and return exact evidence or a final answer.
 
         The operation is durable and idempotent. A continuation response has
         ``status=awaiting_model`` and a new request whose committed prefix is
         byte-identical. A terminal response returns a locally verified output.
-        No provider call is performed by Entroly.
+        Echo the revision and request digest issued for the actual model call.
+        Missing or invalid bindings are rejected. No provider call is performed
+        by Entroly.
         """
         try:
             result = _proof_runtime().advance(
                 session_id,
                 model_output=model_output,
                 idempotency_key=idempotency_key,
+                expected_revision=expected_revision,
+                request_sha256=request_sha256,
             )
             return json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False)
         except Exception as exc:  # noqa: BLE001 - MCP tools return JSON errors
@@ -4755,6 +4763,108 @@ def create_mcp_server(
         from .shared_memory import SharedMemoryStore
         store = SharedMemoryStore()
         return json.dumps(store.stats(), indent=2)
+
+    # ── Memory Graph, Recall & KV Cache Tools ───────────────────────
+
+    @mcp.tool()
+    async def memory_graph_query(
+        seeds: list[str],
+        max_hops: int = 2,
+        include_superseded: bool = False,
+    ) -> str:
+        """Traverse the deterministic entity-relationship memory graph.
+
+        Implements associative recall (HippoRAG 2). Returns reachable memory IDs,
+        entity paths, and Merkle traversal receipts.
+        """
+        # Use the server's already-populated graph (written by TaskDreamer /
+        # MemoryFabric.remember) instead of constructing a fresh empty one.
+        graph = _task_memory.graph
+        result = graph.traverse(seeds, max_hops=max_hops, include_superseded=include_superseded)
+        return json.dumps({
+            "query_entities": result.query_entities,
+            "reached_entities": result.reached_entities,
+            "memory_ids": result.memory_ids,
+            "hops": result.hops,
+            "receipt": result.receipt,
+            "edges": [
+                {
+                    "edge_id": e.edge_id,
+                    "source": e.source_entity,
+                    "target": e.target_entity,
+                    "relationship": e.relationship,
+                    "memory_id": e.memory_id,
+                    "weight": e.weight,
+                    "superseded": e.superseded,
+                }
+                for e in result.edges_traversed
+            ],
+        }, indent=2)
+
+    @mcp.tool()
+    async def memory_recall(
+        query: str,
+        temporal_filter: str = "",
+        use_hybrid: bool = True,
+        top_k: int = 5,
+        traverse_graph: bool = False,
+    ) -> str:
+        """Recall agent memories with temporal reasoning, hybrid ranking, and graph traversal.
+
+        Filters superseded historical facts and boosts current state.
+        Optional temporal_filter: 'current_state', 'past_event', 'future_plan', 'preference', 'relationship'.
+        """
+        from dataclasses import asdict
+        # Use the server's shared MemoryFabric (_task_memory) so that memories
+        # written by TaskDreamer and other server operations are visible here.
+        res = _task_memory.recall(
+            query,
+            temporal_filter=temporal_filter or None,  # type: ignore[arg-type]
+            use_hybrid=use_hybrid,
+            hybrid_top_k=top_k,
+            traverse_graph=traverse_graph,
+        )
+        return json.dumps({
+            "text": res.as_text(),
+            "selected": [asdict(m) for m in res.context.selected],
+            "graph_memories": res.graph_memories,
+            "hybrid_scored": res.hybrid_scored,
+            "receipt": res.receipt(),
+        }, indent=2)
+
+    @mcp.tool()
+    async def cache_align_prompt(
+        client_key: str,
+        prefix: str,
+        dynamic_tail: str,
+        provider: str = "generic",
+        target_budget: int = 0,
+    ) -> str:
+        """PAC-KV prompt alignment and economic break-even gating.
+
+        Quantizes prompt boundary to provider KV cache page grid (Anthropic 1024,
+        OpenAI 128, DeepSeek 64, vLLM 16, SGLang 32) and evaluates whether freezing warm
+        prefix is cheaper than re-compression. Returns aligned text and PACReceipt.
+        """
+        # Build a request-scoped aligner — client_key tracks per-client prefix
+        # warmth within the call, which is appropriate for a one-shot MCP tool.
+        from .cache_aligner import CacheAligner
+        aligner = CacheAligner()
+        budget = target_budget if target_budget > 0 else None
+        pac_res = aligner.align_prompt(
+            client_key=client_key,
+            prefix=prefix,
+            dynamic_tail=dynamic_tail,
+            provider=provider,
+            target_budget=budget,
+        )
+        # PACResult fields: aligned_prefix, aligned_tail, full_prompt,
+        #                   is_cache_hit, receipt (PACReceipt), merkle_tree
+        return json.dumps({
+            "strategy": pac_res.receipt.economic_decision,
+            "aligned_prompt": pac_res.full_prompt,
+            "receipt": pac_res.receipt.as_dict(),
+        }, indent=2)
 
     # ── Output Token Reduction ───────────────────────────────────────
 

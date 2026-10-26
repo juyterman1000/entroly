@@ -25,10 +25,12 @@ from .context_fixed_point import (
     FixedPointModelRequest,
     FixedPointRound,
     FixedPointSession,
+    _request_for_session,
     advance_proof_guided_fixed_point,
     start_proof_guided_fixed_point,
 )
-from .context_receipts.models import stable_hash, stable_json, text_fingerprint
+from .context_receipts.models import byte_digest, stable_hash, stable_json
+from .local_file_lock import exclusive_file_lock
 from .verified_efficiency import (
     AuditArtifact,
     PreparedContext,
@@ -36,7 +38,9 @@ from .verified_efficiency import (
     VerifiedOutput,
 )
 
-RUNTIME_SCHEMA = "entroly.proof-guided-runtime.v1"
+RUNTIME_SCHEMA = "entroly.proof-guided-runtime.v2"
+_LEGACY_RUNTIME_SCHEMA = "entroly.proof-guided-runtime.v1"
+_REQUEST_BINDING_DOMAIN = "entroly.proof-guided-request.v1"
 _SESSION_RE = re.compile(r"pgs_[0-9a-f]{24}")
 _TERMINAL_STATES = frozenset(
     {
@@ -256,6 +260,40 @@ def _request_payload(request: FixedPointModelRequest) -> dict[str, Any]:
     return _json_value(asdict(request))
 
 
+def _request_digest(
+    response: Mapping[str, Any], *, prepare_request_hash: str, commit_id: str
+) -> str | None:
+    """Bind host bookkeeping to the exact issued request, not live source state."""
+    if response.get("request") is None:
+        return None
+    return stable_hash(
+        {
+            "domain": _REQUEST_BINDING_DOMAIN,
+            "session_id": response["session_id"],
+            "revision": response["revision"],
+            "prepare_request_hash": prepare_request_hash,
+            "commit_id": commit_id,
+            "request": response["request"],
+        }
+    )
+
+
+def _validate_binding(expected_revision: Any, request_sha256: Any) -> None:
+    if type(expected_revision) is not int or expected_revision < 0:
+        raise ValueError("expected_revision must be a nonnegative integer")
+    if not isinstance(request_sha256, str) or re.fullmatch(
+        r"[0-9a-f]{64}", request_sha256
+    ) is None:
+        raise ValueError("request_sha256 must be a lowercase SHA-256 digest")
+
+
+def _require_bound_session(payload: Mapping[str, Any]) -> None:
+    if payload.get("schema_version") != RUNTIME_SCHEMA:
+        raise ProofGuidedSessionConflict(
+            "legacy session has no request binding; re-prepare with a new idempotency key"
+        )
+
+
 def _round_payload(round_result: FixedPointRound) -> dict[str, Any]:
     plan = round_result.recovery_plan
     return _json_value({
@@ -329,12 +367,15 @@ class ProofGuidedRuntime:
     ) -> None:
         self.state_dir = Path(state_dir).expanduser().resolve()
         self.sessions_dir = self.state_dir / "sessions"
-        self.layer = VerifiedEfficiencyLayer(
-            self.state_dir / "verified-efficiency",
-            security_mode=security_mode,
-            context_risk_mode=context_risk_mode,
-            prefer_rust=prefer_rust,
-        )
+        # Independent hosts must not initialize different attestation keys for
+        # the same store. Session locks below then cover load/check/save.
+        with exclusive_file_lock(self.state_dir / ".runtime-init.lock"):
+            self.layer = VerifiedEfficiencyLayer(
+                self.state_dir / "verified-efficiency",
+                security_mode=security_mode,
+                context_risk_mode=context_risk_mode,
+                prefer_rust=prefer_rust,
+            )
         self._lock = threading.RLock()
 
     @staticmethod
@@ -373,7 +414,9 @@ class ProofGuidedRuntime:
             raise ProofGuidedSessionConflict(
                 f"proof-guided session {session_id!r} cannot be read: {exc}"
             ) from exc
-        if not isinstance(payload, dict) or payload.get("schema_version") != RUNTIME_SCHEMA:
+        if not isinstance(payload, dict) or payload.get("schema_version") not in {
+            RUNTIME_SCHEMA, _LEGACY_RUNTIME_SCHEMA
+        }:
             raise ProofGuidedSessionConflict("proof-guided session schema is unsupported")
         expected = self._sealed(payload).get("state_sha256")
         if payload.get("state_sha256") != expected:
@@ -422,10 +465,11 @@ class ProofGuidedRuntime:
             if key is not None
             else "pgs_" + uuid.uuid4().hex[:24]
         )
-        with self._lock:
+        with self._lock, exclusive_file_lock(self._path(session_id).with_suffix(".lock")):
             path = self._path(session_id)
             if path.exists():
                 existing = self._load(session_id)
+                _require_bound_session(existing)
                 if existing.get("prepare_request_hash") != request_hash:
                     raise ProofGuidedSessionConflict(
                         "prepare idempotency key was already used for a different request"
@@ -460,6 +504,11 @@ class ProofGuidedRuntime:
                 "local_only": True,
                 "provider_call_performed": False,
             })
+            response["request_sha256"] = _request_digest(
+                response,
+                prepare_request_hash=request_hash,
+                commit_id=prepared.commit_id,
+            )
             payload = {
                 "schema_version": RUNTIME_SCHEMA,
                 "session_id": session_id,
@@ -478,13 +527,25 @@ class ProofGuidedRuntime:
         *,
         model_output: str,
         idempotency_key: str,
+        expected_revision: int | None = None,
+        request_sha256: str | None = None,
     ) -> dict[str, Any]:
+        """Accept only an issued request binding, or replay its exact prior tuple.
+
+        The host must retain the binding beside its actual invocation. This
+        does not prove provider consumption, source freshness or answer truth.
+        All writers of this local store must use this version of the protocol.
+        """
         key = self._idempotency_key(idempotency_key, required=True)
         if not isinstance(model_output, str):
             raise ValueError("model_output must be a string")
-        output_hash = text_fingerprint(model_output)
-        with self._lock:
+        # Retry identity is byte-exact; source fingerprints normalize newlines
+        # and would otherwise alias distinct model outputs under the same key.
+        output_hash = byte_digest(model_output)
+        with self._lock, exclusive_file_lock(self._path(session_id).with_suffix(".lock")):
             payload = self._load(session_id)
+            _require_bound_session(payload)
+            _validate_binding(expected_revision, request_sha256)
             history = _mapping(
                 payload.get("advance_idempotency", {}),
                 "advance idempotency history",
@@ -496,13 +557,47 @@ class ProofGuidedRuntime:
                     raise ProofGuidedSessionConflict(
                         "advance idempotency key was replayed with different model output"
                     )
+                if (
+                    replay_item.get("expected_revision") != expected_revision
+                    or replay_item.get("request_sha256") != request_sha256
+                ):
+                    raise ProofGuidedSessionConflict(
+                        "advance idempotency key was replayed with a different request binding"
+                    )
                 return _mapping(replay_item.get("response"), "idempotent response")
             previous_response = _mapping(payload.get("last_response"), "last response")
+            if payload.get("revision") != expected_revision:
+                raise ProofGuidedSessionConflict(
+                    "stale expected_revision; the issued request is no longer current"
+                )
             if previous_response.get("status") in _TERMINAL_STATES:
                 raise ProofGuidedSessionConflict(
                     f"proof-guided session is already terminal: {previous_response['status']}"
                 )
             session = _session(payload.get("session"))
+            if (
+                previous_response.get("session_id") != session_id
+                or previous_response.get("revision") != expected_revision
+                or session.round_index != expected_revision
+                or previous_response.get("request")
+                != _request_payload(_request_for_session(session))
+            ):
+                raise ProofGuidedSessionConflict(
+                    "persisted issued request does not match the session state"
+                )
+            issued_digest = _request_digest(
+                previous_response,
+                prepare_request_hash=str(payload["prepare_request_hash"]),
+                commit_id=session.prepared.commit_id,
+            )
+            if (
+                issued_digest is None
+                or previous_response.get("request_sha256") != issued_digest
+                or request_sha256 != issued_digest
+            ):
+                raise ProofGuidedSessionConflict(
+                    "request_sha256 does not match the issued request binding"
+                )
             step = advance_proof_guided_fixed_point(
                 self.layer,
                 session,
@@ -532,6 +627,11 @@ class ProofGuidedRuntime:
                 "local_only": True,
                 "provider_call_performed": False,
             })
+            response["request_sha256"] = _request_digest(
+                response,
+                prepare_request_hash=str(payload["prepare_request_hash"]),
+                commit_id=session.prepared.commit_id,
+            )
             payload.update(
                 {
                     "revision": revision,
@@ -541,6 +641,8 @@ class ProofGuidedRuntime:
             )
             history[key] = {
                 "output_sha256": output_hash,
+                "expected_revision": expected_revision,
+                "request_sha256": request_sha256,
                 "revision": revision,
                 "response": response,
             }
@@ -554,7 +656,7 @@ class ProofGuidedRuntime:
 
     def inspect(self, session_id: str) -> dict[str, Any]:
         """Return the last durable response without advancing the session."""
-        with self._lock:
+        with self._lock, exclusive_file_lock(self._path(session_id).with_suffix(".lock")):
             return dict(self._load(session_id)["last_response"])
 
 

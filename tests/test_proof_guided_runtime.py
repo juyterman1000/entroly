@@ -60,6 +60,8 @@ def test_runtime_resumes_after_restart_and_recovers_exact_evidence(tmp_path):
         prepared["session_id"],
         model_output="Restart recovery replays durable events in their original order.",
         idempotency_key="model-round-0",
+        expected_revision=prepared["revision"],
+        request_sha256=prepared["request_sha256"],
     )
     assert first["status"] == "awaiting_model"
     assert first["round"]["decision"] == "recover_and_retry"
@@ -75,6 +77,8 @@ def test_runtime_resumes_after_restart_and_recovers_exact_evidence(tmp_path):
         prepared["session_id"],
         model_output="Restart recovery replays durable events in their original order.",
         idempotency_key="model-round-1",
+        expected_revision=first["revision"],
+        request_sha256=first["request_sha256"],
     )
 
     assert second["status"] == "supported"
@@ -94,6 +98,8 @@ def test_prepare_and_advance_are_idempotent(tmp_path):
     kwargs = {
         "model_output": "Restart recovery replays durable events in their original order.",
         "idempotency_key": "round-0",
+        "expected_revision": first_prepare["revision"],
+        "request_sha256": first_prepare["request_sha256"],
     }
     first_advance = runtime.advance(first_prepare["session_id"], **kwargs)
     second_advance = runtime.advance(first_prepare["session_id"], **kwargs)
@@ -104,6 +110,8 @@ def test_prepare_and_advance_are_idempotent(tmp_path):
             first_prepare["session_id"],
             model_output="different output",
             idempotency_key="round-0",
+            expected_revision=first_prepare["revision"],
+            request_sha256=first_prepare["request_sha256"],
         )
 
 
@@ -114,17 +122,23 @@ def test_older_advance_idempotency_key_replays_original_response(tmp_path):
         prepared["session_id"],
         model_output="Restart recovery replays durable events in their original order.",
         idempotency_key="round-0",
+        expected_revision=prepared["revision"],
+        request_sha256=prepared["request_sha256"],
     )
     runtime.advance(
         prepared["session_id"],
         model_output="Restart recovery replays durable events in their original order.",
         idempotency_key="round-1",
+        expected_revision=first["revision"],
+        request_sha256=first["request_sha256"],
     )
 
     replayed = runtime.advance(
         prepared["session_id"],
         model_output="Restart recovery replays durable events in their original order.",
         idempotency_key="round-0",
+        expected_revision=prepared["revision"],
+        request_sha256=prepared["request_sha256"],
     )
 
     assert replayed == first
@@ -152,3 +166,36 @@ def test_session_state_corruption_fails_closed(tmp_path):
 
     with pytest.raises(ProofGuidedSessionConflict, match="state hash mismatch"):
         runtime.inspect(prepared["session_id"])
+
+
+def test_issued_request_must_match_the_request_the_controller_verifies(tmp_path):
+    """Even a resealed inconsistent snapshot must not bind the wrong request.
+
+    This consistency check does not make the unkeyed local state seal an
+    authentication boundary against a writer who controls the entire store.
+    """
+    from entroly.proof_guided_runtime import _request_digest
+
+    runtime = _runtime(tmp_path)
+    prepared = _prepare(runtime)
+    path = runtime.sessions_dir / f"{prepared['session_id']}.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    response = payload["last_response"]
+    response["request"]["query"] = "A different issued question"
+    response["request_sha256"] = _request_digest(
+        response,
+        prepare_request_hash=payload["prepare_request_hash"],
+        commit_id=payload["session"]["prepared"]["commit_id"],
+    )
+    runtime._save(payload)
+    before = path.read_bytes()
+
+    with pytest.raises(ProofGuidedSessionConflict, match="does not match the session"):
+        runtime.advance(
+            prepared["session_id"],
+            model_output="Restart recovery replays durable events in their original order.",
+            idempotency_key="inconsistent-request",
+            expected_revision=response["revision"],
+            request_sha256=response["request_sha256"],
+        )
+    assert path.read_bytes() == before
