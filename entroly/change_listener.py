@@ -115,10 +115,14 @@ class WorkspaceChangeListener:
 
         deleted = [rel_path for rel_path in previous.keys() if rel_path not in current]
 
+        # ``max_files <= 0`` means unlimited, as `entroly sync --max-files`
+        # documents and BeliefCompiler already treats it. Slicing with 0
+        # processed nothing while the scan still reported "synced".
+        limit = max_files if max_files and max_files > 0 else None
         result = WorkspaceSyncResult(
             status="no_changes",
             project_dir=str(self._project_dir),
-            changed_files=changed[:max_files],
+            changed_files=changed[:limit],
             deleted_files=deleted,
             scanned_files=len(current),
         )
