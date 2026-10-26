@@ -3260,9 +3260,35 @@ def _query_conditioned_selection_active(engine) -> bool:
     return bool(_HAS_RUST)
 
 
+def _index_coverage(engine, files_indexed: int, max_files: int) -> dict:
+    """How much of the repository the simulation actually indexed, and why.
+
+    ``simulate`` indexes at most ``--max-files`` files (default 100). On a
+    2,018-file clone of this repository it indexed 100 and still headlined
+    "88.6% fewer" for a function that lives in a file it never read, with no
+    sign that a cap applied.
+    """
+    from entroly import auto_index as auto_index_module
+
+    try:
+        indexable = auto_index_module.count_indexable_files(engine)
+    except Exception:  # noqa: BLE001 - coverage is reported, never required
+        indexable = None
+    cap = max_files if max_files > 0 else auto_index_module.MAX_FILES
+    return {
+        "files_indexable": indexable,
+        "file_cap": cap,
+        "file_cap_source": "--max-files" if max_files > 0 else "ENTROLY_MAX_FILES",
+        "coverage_capped": bool(
+            indexable is not None and files_indexed < indexable and indexable > cap
+        ),
+    }
+
+
 def _run_local_simulation(args) -> dict:
     max_files = int(getattr(args, "max_files", 100) or 0)
     engine, files_indexed, total_tokens, index_status = _load_local_simulation_engine(max_files)
+    coverage = _index_coverage(engine, files_indexed, max_files)
     query_conditioned = _query_conditioned_selection_active(engine)
     budget = int(getattr(args, "budget", 4096) or 4096)
     queries = _simulation_queries(args)
@@ -3320,6 +3346,7 @@ def _run_local_simulation(args) -> dict:
         "budget": budget,
         "budget_narrowed_to_demonstrate": fits_entirely,
         "max_files": max_files,
+        **coverage,
         "baseline_tokens_per_query": baseline,
         "queries": rows,
         "total_tokens_saved": total_saved if query_conditioned else None,
@@ -3354,7 +3381,12 @@ def _run_local_simulation(args) -> dict:
             "The native engine is unavailable, so selection did not read the query: "
             "these figures are budget arithmetic and are NOT a measured saving. "
             'Install it with: pip install -U "entroly[native]"',
-        ]),
+        ]) + ([
+            f"Only {files_indexed:,} of {coverage['files_indexable']:,} indexable files "
+            f"were indexed (capped by {coverage['file_cap_source']} "
+            f"{coverage['file_cap']:,}); every figure covers that subset, and a "
+            "task whose files were not indexed is not measured."
+        ] if coverage["coverage_capped"] else []),
     }
 
 
@@ -3363,10 +3395,18 @@ def _print_local_simulation(report: dict, *, title: str, include_perf: bool) -> 
     if report["files_indexed"] == 0:
         print(f"  {C.YELLOW}No files found to index. Run this inside a project directory.{C.RESET}\n")
         return
+    indexable = report.get("files_indexable")
+    scope = f" of {indexable:,} indexable" if indexable else ""
     print(
-        f"  {C.GREEN}Indexed {report['files_indexed']} files "
+        f"  {C.GREEN}Indexed {report['files_indexed']}{scope} files "
         f"({report['repo_tokens_indexed']:,} estimated tokens){C.RESET}"
     )
+    if report.get("coverage_capped"):
+        print(
+            f"  {C.YELLOW}Capped by {report['file_cap_source']} "
+            f"{report['file_cap']:,}: the figures below cover only the indexed "
+            f"files. Use --max-files 0 to index up to ENTROLY_MAX_FILES.{C.RESET}"
+        )
     print(
         f"  {C.BOLD}Baseline:{C.RESET} {report['baseline_tokens_per_query']:,} "
         f"tokens/query  {C.BOLD}Budget:{C.RESET} {report['budget']:,} tokens"
@@ -3457,6 +3497,11 @@ def _print_local_simulation(report: dict, *, title: str, include_perf: bool) -> 
         print(
             f"  {C.GREEN}{C.BOLD}Average reduction: {avg:.1f}%{C.RESET} "
             f"vs a fixed {report['baseline_tokens_per_query']:,}-token baseline"
+            + (
+                f", over {report['files_indexed']:,} of "
+                f"{report['files_indexable']:,} files"
+                if report.get("coverage_capped") else ""
+            )
         )
         print(
             f"  {C.GRAY}The baseline is the same for every query, so a smaller "

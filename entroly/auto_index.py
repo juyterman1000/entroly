@@ -1394,6 +1394,28 @@ def _reconcile_index(
     }
 
 
+def count_indexable_files(engine: EntrolyEngine, project_dir: str | None = None) -> int:
+    """How many files ``auto_index`` would consider before any file cap.
+
+    Reporting only: lets a caller say "100 of 2,018 files" instead of presenting
+    a capped index as the repository. Mirrors the discovery and filter in
+    ``_auto_index`` exactly.
+    """
+    project_dir = os.path.abspath(project_dir or os.getcwd())
+    ignore_patterns = _load_entrolyignore(project_dir)
+    state_dir_prefix = _resolve_state_dir_prefix(engine, project_dir)
+    files, _ = discover_project_files(project_dir)
+    return sum(
+        1
+        for file_path in files
+        if _should_index(
+            file_path,
+            ignore_patterns=ignore_patterns,
+            state_dir_prefix=state_dir_prefix,
+        )
+    )
+
+
 def auto_index(
     engine: EntrolyEngine,
     project_dir: str | None = None,
