@@ -995,6 +995,26 @@ def naive_context_baseline(total_available_tokens: int) -> int:
                _NAIVE_CONTEXT_BASELINE_TOKENS)
 
 
+def qccr_can_condition(query: str) -> bool:
+    """True when QCCR has at least one searchable term in ``query``.
+
+    ``qccr.select`` returns its input unchanged -- every candidate, no budget
+    applied -- when the query expands to no terms: only stopwords ("What is
+    this?", "what does this do"), only words under three letters, or a script
+    its tokenizer does not read (a Russian question). Its callers treat that
+    output as a budgeted selection, so a 4,000-token request returned the whole
+    repository: measured on a copy of click, 173 fragments / 379,372 tokens from
+    ``entroly optimize`` and 87 fragments / 250,906 tokens from the SDK.
+    Such a query must take the budgeted query-agnostic path instead.
+    """
+    try:
+        from .qccr import _rust_expand_query
+
+        return bool(_rust_expand_query(query))
+    except Exception:  # noqa: BLE001 - no native QCCR means it cannot condition
+        return False
+
+
 def _honest_tokens_saved(selected: list, tokens_saved: int) -> int:
     """Savings only count when the selection is actually evidence-backed.
 
@@ -1563,7 +1583,11 @@ class EntrolyEngine:
 
         # Keep optimization inside Entroly's own allocation discipline;
         # never mutate the embedding process's GC policy.
-        if self._use_rust and refined_query.strip():
+        if (
+            self._use_rust
+            and refined_query.strip()
+            and qccr_can_condition(refined_query)
+        ):
             # ── Query-conditioned selection via QCCR ──────────────────
             # qccr.select (sentence-level BM25 + MMR + entity boost +
             # anchor fallback) is the compressor validated by EVERY

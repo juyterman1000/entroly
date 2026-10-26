@@ -4879,6 +4879,20 @@ def cmd_optimize(args):
         # run with ENTROLY_NO_SELF_HEAL=1. Keep the knapsack fallback for those,
         # because it is the selector with a real pure-Python path.
         selector = "qccr" if task and getattr(engine, "_use_rust", False) else "knapsack"
+    if selector == "qccr" and getattr(engine, "_use_rust", False):
+        # QCCR returns every candidate, unbudgeted, for a task with no
+        # searchable term ("What is this?", a non-Latin question), so the
+        # snapshot was the whole repository. Select without the query instead.
+        from entroly.engine import qccr_can_condition
+
+        if not qccr_can_condition(task):
+            if not quiet:
+                print(
+                    f"  {C.YELLOW}The task has no searchable terms; selecting "
+                    f"without query conditioning.{C.RESET}",
+                    file=sys.stderr,
+                )
+            selector = "knapsack"
     if selector in ("dopt", "qccr"):
         if not getattr(engine, "_use_rust", False):
             print(
