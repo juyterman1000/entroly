@@ -91,6 +91,13 @@ def run(output: str | None = None, max_files: int = 120) -> int:
     print(f"  {files} files, {tokens:,} tokens, {index_s:.2f}s")
     check("IDX-1", "Files indexed > 0", files > 0, f"{files} files")
     check("IDX-2", "Indexing completed", index_s >= 0, f"{index_s:.3f}s")
+    if files == 0:
+        # Without this the only signal was a bare FAIL that reads as a broken
+        # install; `entroly simulate` already says the same thing here.
+        print(
+            "  No indexable files here. Run `entroly verify-claims` inside a "
+            "project directory."
+        )
 
     print("\n[3] Context optimization")
     print("-" * 40)
