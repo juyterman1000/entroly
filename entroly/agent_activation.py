@@ -803,6 +803,52 @@ def _additional_context(receipt: Mapping[str, Any], selection: ActivationSelecti
     )
 
 
+TURN_CLAIM_SECONDS = 30.0
+
+
+def _claim_turn(
+    payload: Mapping[str, Any], event: str, query: str, project_dir: Path, root: Path
+) -> bool:
+    """False when another registration of this hook already claimed this turn.
+
+    A host runs every matching registration of a prompt hook, in parallel, with
+    the same payload. The turn is identified by session, event, prompt and the
+    transcript's size and mtime: identical for parallel registrations, changed
+    once the previous turn is written, so a repeated prompt still runs. Without
+    a session id or a readable transcript a turn cannot be told apart from a
+    repeated prompt, so the hook always runs; any failure to coordinate runs it
+    too.
+    """
+    session = payload.get("session_id")
+    transcript = payload.get("transcript_path")
+    if not (isinstance(session, str) and session and isinstance(transcript, str) and transcript):
+        return True
+    try:
+        info = os.stat(transcript)
+    except OSError:
+        return True
+    marker = f"{info.st_size}:{info.st_mtime_ns}"
+    key = hashlib.sha256(
+        "\0".join((session, event, query, marker)).encode("utf-8")
+    ).hexdigest()[:32]
+    turns = root / _project_fingerprint(project_dir) / "turns"
+    try:
+        turns.mkdir(parents=True, exist_ok=True)
+        now = time.time()
+        for old in turns.glob("*.claim"):
+            try:
+                if now - old.stat().st_mtime > TURN_CLAIM_SECONDS:
+                    old.unlink()
+            except OSError:
+                pass
+        os.close(os.open(turns / f"{key}.claim", os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600))
+        return True
+    except FileExistsError:
+        return False
+    except OSError:
+        return True
+
+
 def run_hook(
     payload: Mapping[str, Any],
     *,
@@ -818,6 +864,15 @@ def run_hook(
     query = _prompt(payload)
     project_dir = _project_dir(payload)
     resolved_host = _infer_host(payload, host)
+    root = state_dir or _default_state_dir()
+    if query and not _claim_turn(payload, event, query, project_dir, root):
+        # Another registration of this hook (for example the Cursor project
+        # hook beside the Claude Code plugin hook, both loaded by Claude Code)
+        # already handles this prompt; a second run would inject it twice.
+        return {
+            "hookSpecificOutput": {"hookEventName": event, "additionalContext": ""},
+            "suppressOutput": True,
+        }
     activation_id = uuid.uuid4().hex
     started = time.perf_counter()
 
@@ -880,7 +935,7 @@ def run_hook(
     }
     if selection.detail:
         receipt["detail"] = selection.detail
-    receipt_path = _write_receipt(receipt, state_dir or _default_state_dir())
+    receipt_path = _write_receipt(receipt, root)
     receipt["receipt_path"] = str(receipt_path)
 
     return {
