@@ -94,15 +94,26 @@ def cmd_remember(args: argparse.Namespace) -> int:
     path = Path(args.file).expanduser() if args.file else default_memory_path()
     with _memory_file_lock(path):
         mem = load_or_new(path)
-        mem.remember(
-            args.content,
-            agent_id=args.agent,
-            importance=args.importance,
-            tier=args.tier,
-            source=args.source,
-            tags=args.tag or [],
-            safety_policy=args.safety_policy,
-        )
+        try:
+            mem.remember(
+                args.content,
+                agent_id=args.agent,
+                importance=args.importance,
+                tier=args.tier,
+                source=args.source,
+                tags=args.tag or [],
+                safety_policy=args.safety_policy,
+            )
+        except ValueError as exc:
+            # A refusal (secret/PII/injection, empty content) is an expected
+            # outcome, not a crash: one line, nothing written, exit 2 like
+            # `scan` when it blocks.
+            print(
+                f"entroly memory: not stored: {exc} "
+                "(inspect with `entroly memory scan`, or pass --safety-policy redact)",
+                file=sys.stderr,
+            )
+            return 2
         mem.save(path)
     if args.json:
         print(json.dumps({"status": "stored", "path": str(path), "stats": mem.stats()}, indent=2))

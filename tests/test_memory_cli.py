@@ -47,3 +47,18 @@ def test_memory_cli_scan_blocks_secret(capsys) -> None:
     assert rc == 2
     assert payload["allowed"] is False
     assert payload["findings"][0]["kind"] == "openai_key"
+
+
+def test_memory_cli_remember_refuses_secret_with_one_line(tmp_path, capsys) -> None:
+    path = tmp_path / "memory.json"
+
+    rc = main(["remember", "deploy key AKIAABCDEFGHIJKLMNOP", "--file", str(path)])
+
+    captured = capsys.readouterr()
+    assert rc == 2
+    assert captured.out == ""
+    lines = captured.err.strip().splitlines()
+    assert len(lines) == 1
+    assert "failed safety policy: aws_access_key" in lines[0]
+    assert "Traceback" not in captured.err
+    assert not path.exists()
