@@ -90,10 +90,15 @@ def test_doctor_still_flags_a_launcher_that_imports_another_copy(
 
 def test_pip_trampoline_shebang_is_understood(tmp_path, monkeypatch, capsys):
     # pip writes a /bin/sh trampoline when the interpreter path has spaces.
+    # Give the whole environment a spaced path, the way a user's venv has one.
+    # Symlinking only the interpreter would strand it outside its venv: with no
+    # pyvenv.cfg beside it, Python resolves the link to the base interpreter,
+    # which cannot import an editable install (CI's `.venv`), so the check
+    # would be judging a different Python than the one the launcher names.
+    executable = Path(sys.executable)
     spaced = tmp_path / "with space"
-    spaced.mkdir()
-    python = spaced / "python"
-    os.symlink(sys.executable, python)
+    os.symlink(executable.parent.parent, spaced, target_is_directory=True)
+    python = spaced / executable.parent.name / executable.name
     launcher = _write_exec(
         tmp_path / "venv" / "bin" / "entroly",
         "#!/bin/sh\n"
