@@ -3160,6 +3160,37 @@ def _simulation_queries(args) -> list[str]:
     ]
 
 
+def _indexed_content_tokens(engine, fallback: int) -> int:
+    """Estimated tokens of the content the index holds, without selection weights.
+
+    auto_index stores config and doc fragments with an inflated ``token_count``
+    (x3 for .yaml/.yml/.json/.toml, x2 for .md/.rst; see
+    ``auto_index._source_type_token_weight``) so the knapsack prefers source
+    code. That is a selection penalty, not content. Summing it reported a
+    10-file project holding 20,426 estimated tokens as 33,675, which also lifted
+    the savings baseline to the 32,000 cap; click read 249,545 for 182,799.
+    """
+    from entroly.auto_index import _estimate_tokens
+
+    try:
+        if hasattr(engine, "_ensure_index_loaded"):
+            engine._ensure_index_loaded()
+        if getattr(engine, "_use_rust", False):
+            contents = [
+                str(f.get("content") or "") for f in engine._rust.export_fragments()
+            ]
+        else:
+            contents = [
+                str(getattr(f, "content", "") or "")
+                for f in getattr(engine, "_fragments", {}).values()
+            ]
+    except Exception:  # noqa: BLE001 - keep the engine's own figure
+        return fallback
+    if not contents:
+        return fallback
+    return sum(_estimate_tokens(content) for content in contents)
+
+
 def _load_local_simulation_engine(max_files: int | None = None):
     from entroly import auto_index as auto_index_module
     from entroly.server import EntrolyEngine
@@ -3171,7 +3202,12 @@ def _load_local_simulation_engine(max_files: int | None = None):
     try:
         index = auto_index_module.auto_index(engine)
         if index["status"] == "indexed":
-            return engine, index["files_indexed"], index["total_tokens"], index["status"]
+            return (
+                engine,
+                index["files_indexed"],
+                _indexed_content_tokens(engine, int(index["total_tokens"] or 0)),
+                index["status"],
+            )
         if index["status"] == "skipped":
             # `auto_index` already returns a real file count on the warm path.
             # Substituting `existing_fragments` here discarded it for a
@@ -3190,7 +3226,12 @@ def _load_local_simulation_engine(max_files: int | None = None):
                 # cold and warm paths. _total_token_count is a lexical retrieval
                 # statistic in the pure-Python engine, not context-budget tokens.
                 total_tokens = index.get("total_tokens", total_tokens)
-            return engine, files_indexed, int(total_tokens or 0), index["status"]
+            return (
+                engine,
+                files_indexed,
+                _indexed_content_tokens(engine, int(total_tokens or 0)),
+                index["status"],
+            )
         return engine, 0, 0, index["status"]
     finally:
         auto_index_module.MAX_FILES = old_max_files
