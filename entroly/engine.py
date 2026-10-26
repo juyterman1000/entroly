@@ -1031,6 +1031,39 @@ def _honest_tokens_saved(selected: list, tokens_saved: int) -> int:
     return max(0, int(tokens_saved or 0)) if _evidence_backed(selected) else 0
 
 
+def _cap_native_tokens_saved(result: dict) -> None:
+    """Hold the native optimizer's per-call saving to the 32K baseline.
+
+    The native optimizer reports ``tokens_saved = corpus - selected``
+    (entroly-core ``optimize``), the counterfactual :data:`_NAIVE_CONTEXT_BASELINE_TOKENS`
+    exists to rule out. Only the QCCR path applied that cap, so every call that
+    reaches the native optimizer -- an empty query, or one QCCR cannot condition
+    on -- still billed the whole repository. Measured on this repository: one MCP
+    ``optimize_context`` call with an empty query delivered 1,338 tokens and
+    reported ``tokens_saved: 5,558,864``, which ``entroly value`` then showed as
+    "Tokens reduced: 5,558,864" and "$16.6766" of value.
+
+    Recomputed with the same standard as the QCCR path, against what the
+    selection actually carries: whichever is larger of the optimizer's charged
+    total and the delivered fragments' own token counts.
+    """
+    raw = result.get("tokens_saved")
+    if not isinstance(raw, (int, float)):
+        return
+    charged = int(result.get("total_tokens", result.get("tokens_used", 0)) or 0)
+    selected = result.get("selected_fragments") or result.get("selected") or []
+    delivered = sum(
+        int(f.get("token_count", 0) or 0) for f in selected if isinstance(f, dict)
+    )
+    corpus = max(0, int(raw)) + charged  # native: saved = corpus - charged
+    saved = _honest_tokens_saved(
+        selected, naive_context_baseline(corpus) - max(charged, delivered)
+    )
+    result["tokens_saved"] = saved
+    if "tokens_saved_this_call" in result:
+        result["tokens_saved_this_call"] = saved
+
+
 class EntrolyEngine:
     """
     Orchestrates all subsystems. Delegates math to Rust when available.
@@ -1709,6 +1742,7 @@ class EntrolyEngine:
                 result = dict(self._rust.optimize(token_budget, refined_query))
                 if "selected" in result and "selected_fragments" not in result:
                     result["selected_fragments"] = result["selected"]
+                _cap_native_tokens_saved(result)
             if refinement_info:
                 result["query_refinement"] = refinement_info
             if query_analysis:
@@ -1719,6 +1753,7 @@ class EntrolyEngine:
             # Normalize key: Rust returns "selected", Python uses "selected_fragments"
             if "selected" in result and "selected_fragments" not in result:
                 result["selected_fragments"] = result["selected"]
+            _cap_native_tokens_saved(result)
             if refinement_info:
                 result["query_refinement"] = refinement_info
             if query_analysis:
