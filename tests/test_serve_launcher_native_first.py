@@ -94,9 +94,11 @@ def test_serve_without_docker_daemon_starts_native_instead_of_exiting(
 def _engine_missing(monkeypatch) -> None:
     import entroly.native_status as native_status_module
 
-    monkeypatch.setattr(
-        native_status_module, "native_status", lambda *_a, **_k: SimpleNamespace(ok=False)
+    stale = native_status_module.NativeStatus(
+        available=True, module=None, version="1.0.1", path=None,
+        missing_symbols=(), version_ok=False,
     )
+    monkeypatch.setattr(native_status_module, "native_status", lambda *_a, **_k: stale)
 
 
 def test_docker_fallback_mounts_the_users_project_read_only(serve_argv, monkeypatch):
@@ -153,6 +155,9 @@ def test_no_engine_and_no_docker_names_real_remedies(serve_argv, monkeypatch, ca
     assert "native" not in observed
     err = capsys.readouterr().err
     assert "python -m pip install -U entroly-core" in err
+    # The cause is derived (here: a stale core), never a hardcoded "not installed".
+    assert "1.0.1 is below the required" in err
+    assert "not installed" not in err
     assert "ENTROLY_NO_DOCKER=1 entroly serve" in err
     # The same command must not be offered twice as two different options.
     assert err.count("ENTROLY_NO_DOCKER=1 entroly serve") == 1

@@ -352,11 +352,11 @@ def launch() -> None:
             )
         else:
             print(
-                "[entroly] Cannot start the MCP server: the native engine is not "
-                "installed and Docker is not available.\n"
+                "[entroly] Cannot start the MCP server: the native engine is "
+                f"unusable ({_native_engine_reason()}) and Docker is not available.\n"
                 "\n"
                 "Options:\n"
-                "  1. Install the native engine, then run `entroly serve` again:\n"
+                "  1. Install or upgrade the native engine, then run `entroly serve`:\n"
                 "       python -m pip install -U entroly-core\n"
                 "  2. Start Docker Desktop (or the Docker daemon) to run the\n"
                 "     version-pinned image\n"
@@ -442,6 +442,16 @@ def _env_passthrough(exclude: tuple[str, ...] = ()) -> list[str]:
         if key.startswith("ENTROLY_") and key not in exclude:
             args += ["-e", key]
     return args
+
+
+def _native_engine_reason() -> str:
+    """Why the native engine cannot be used, derived rather than assumed."""
+    try:
+        from entroly.native_status import QCCR_SYMBOLS, fallback_reason, native_status  # noqa: PLC0415
+
+        return fallback_reason(native_status(QCCR_SYMBOLS))
+    except Exception as exc:  # the probe itself failed
+        return f"native status probe failed: {exc}"
 
 
 def _native_engine_ready() -> bool:
