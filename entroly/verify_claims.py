@@ -293,6 +293,17 @@ def run(output: str | None = None, max_files: int = 120) -> int:
             out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
         print(f"\nReport saved: {out_path}")
+        # Both files land in the user's working tree; say so (data stays put).
+        from entroly.project_footprint import project_footprint_notice
+
+        names = [".entroly"]
+        try:
+            names.append(str((cwd / out_path).resolve().relative_to(cwd.resolve())))
+        except ValueError:
+            pass  # report written outside the project
+        notice = project_footprint_notice(cwd, tuple(names))
+        if notice:
+            print(notice)
     except OSError as exc:
         print(f"\nWarning: failed to write report: {exc}", file=sys.stderr)
 

@@ -3546,6 +3546,10 @@ def _print_local_simulation(report: dict, *, title: str, include_perf: bool) -> 
             f"min {lat['min']:.2f} ms, p95 {lat['p95']:.2f} ms, max {lat['max']:.2f} ms"
         )
     print(f"  {C.GRAY}{'; '.join(report['limitations'])}{C.RESET}\n")
+    from .project_footprint import project_footprint_notice  # onb: footprint notice
+
+    if footprint := project_footprint_notice(Path.cwd()):
+        print(f"  {C.GRAY}{footprint}{C.RESET}\n")
 
 
 # `compress` and `recover` live in their own module: they are the only
