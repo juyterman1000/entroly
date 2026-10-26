@@ -23,7 +23,7 @@ from functools import wraps
 from pathlib import Path
 from typing import Annotated, Any, Callable
 
-from pydantic import Field
+from pydantic import Field, StrictInt, StrictStr
 
 try:
     from mcp.server.fastmcp import Context as MCPContext
@@ -2322,8 +2322,10 @@ def create_mcp_server(
         This tool performs only local selection, security checks, exact-recovery
         commitments, and signed auditing. It does not call a model. Send the
         returned ``request`` through the host's configured model route, then
-        pass the model text to ``advance_proof_guided_context``. The path must
-        remain inside the attached project root.
+        pass the model text and this response's ``revision``/``request_sha256``
+        to ``advance_proof_guided_context``. Retain that binding beside the model
+        call; do not substitute a newer binding. The path must remain inside
+        the attached project root.
         """
         try:
             from .context_receipts.ingest import read_documents_from_path
@@ -2362,19 +2364,25 @@ def create_mcp_server(
         session_id: str,
         model_output: str,
         idempotency_key: str,
+        expected_revision: StrictInt | None = None,
+        request_sha256: StrictStr | None = None,
     ) -> str:
         """Verify one model round and return exact evidence or a final answer.
 
         The operation is durable and idempotent. A continuation response has
         ``status=awaiting_model`` and a new request whose committed prefix is
         byte-identical. A terminal response returns a locally verified output.
-        No provider call is performed by Entroly.
+        Echo the revision and request digest issued for the actual model call.
+        Missing or invalid bindings are rejected. No provider call is performed
+        by Entroly.
         """
         try:
             result = _proof_runtime().advance(
                 session_id,
                 model_output=model_output,
                 idempotency_key=idempotency_key,
+                expected_revision=expected_revision,
+                request_sha256=request_sha256,
             )
             return json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False)
         except Exception as exc:  # noqa: BLE001 - MCP tools return JSON errors
