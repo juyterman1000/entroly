@@ -224,6 +224,7 @@ def test_cursor_hook_merge_preserves_settings_and_is_reversible(tmp_path: Path) 
         json.dumps({"permissions": {"allow": ["Read"]}, "hooks": {"Stop": []}}),
         encoding="utf-8",
     )
+    original = target.read_bytes()
 
     installed = configure_cursor_hook(project)
     assert installed["status"] == "installed"
@@ -238,7 +239,10 @@ def test_cursor_hook_merge_preserves_settings_and_is_reversible(tmp_path: Path) 
     assert disabled["status"] == "disabled"
     after = json.loads(target.read_text(encoding="utf-8"))
     assert after["permissions"] == {"allow": ["Read"]}
-    assert after["hooks"]["UserPromptSubmit"] == []
+    # Uninstall gives back the original file: no empty UserPromptSubmit list
+    # (which this test used to pin) and no reformatting left behind.
+    assert "UserPromptSubmit" not in after["hooks"]
+    assert target.read_bytes() == original
     assert Path(disabled["recoverable_at"]).is_file()
 
 
