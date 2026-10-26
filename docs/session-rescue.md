@@ -59,23 +59,28 @@ A compressed block contains a marker such as:
 [entroly-recovery:<receipt-id>:<span-id>]
 ```
 
-The span is the complete original textual tool block. Retrieve it
-programmatically:
+The span is the complete original textual tool block. `entroly recover` does
+not read this store (it resolves `entroly compress` digests). Retrieve a span
+programmatically, from the same working directory and with the same
+`ENTROLY_WORKSPACE`, `ENTROLY_SESSION_ID` and `ENTROLY_CONVERSATION_ID` values
+as the process that rescued it -- the store is scoped to them, and
+`get_span` returns `None` from any other scope:
 
 ```python
+from pathlib import Path
 from entroly import CompressionRetrievalStore
 
 store = CompressionRetrievalStore(
-    ".entroly/session_rescue_recovery.json"
+    Path.home() / ".entroly" / "session_rescue_recovery.json"
 )
 span = store.get_span(receipt_id, span_id)
 print(span.content)
 ```
 
-Or expose the focused local MCP server:
+Or expose the focused local MCP server (same scoping rules):
 
 ```bash
-export ENTROLY_COMPRESSION_STORE=.entroly/session_rescue_recovery.json
+export ENTROLY_COMPRESSION_STORE="${ENTROLY_DIR:-$HOME/.entroly}/session_rescue_recovery.json"
 entroly-compression-mcp
 ```
 

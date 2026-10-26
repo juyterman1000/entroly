@@ -253,3 +253,27 @@ def test_recover_with_a_truncated_digest_says_what_a_digest_looks_like(workspace
     missed = _run(["recover", "sha256:0ec354cbc96f"], work, store)
     assert missed.returncode == 1
     assert "sha256:<64 hex" in missed.stdout
+
+
+def test_recovery_docs_and_help_name_the_real_flag_and_default(workspace):
+    # docs/recovery-data-security.md named a `--store-path` flag that does not
+    # exist, and `--help` gave a default that only holds with ENTROLY_DIR set.
+    root = Path(__file__).resolve().parents[1]
+    doc = (root / "docs" / "recovery-data-security.md").read_text(encoding="utf-8")
+    assert "--store-path" not in doc
+    work, store = workspace
+    for command in ("compress", "recover"):
+        helped = _run([command, "--help"], work, store)
+        assert "--store" in helped.stdout
+        assert "checkpoints" in helped.stdout, f"{command} --help hides the default store"
+
+
+def test_session_rescue_docs_point_at_the_store_rescue_writes():
+    # The rescue store defaults to ~/.entroly/session_rescue_recovery.json and
+    # is not readable by `entroly recover`; the docs said otherwise.
+    root = Path(__file__).resolve().parents[1]
+    doc = (root / "docs" / "session-rescue.md").read_text(encoding="utf-8")
+    assert '".entroly/session_rescue_recovery.json"' not in doc
+    assert "ENTROLY_COMPRESSION_STORE=.entroly/" not in doc
+    source = (root / "entroly" / "session_rescue.py").read_text(encoding="utf-8")
+    assert "`entroly recover` finds spans" not in source

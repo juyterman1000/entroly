@@ -131,7 +131,8 @@ def _add_lifecycle_and_measurement_commands(
     )
     compress_parser.add_argument(
         "--store", dest="store_path", default=None,
-        help="Recovery store path (default: <ENTROLY_DIR>/recovery.json)",
+        help="Recovery store path (default: $ENTROLY_DIR/recovery.json, else "
+             "~/.entroly/checkpoints/<hash of this directory>/recovery.json)",
     )
     compress_parser.add_argument(
         "--query", default="", help="Query to condition document selection on",
@@ -156,7 +157,8 @@ def _add_lifecycle_and_measurement_commands(
     )
     recover_parser.add_argument(
         "--store", dest="store_path", default=None,
-        help="Recovery store path (default: <ENTROLY_DIR>/recovery.json)",
+        help="Recovery store path (default: $ENTROLY_DIR/recovery.json, else "
+             "~/.entroly/checkpoints/<hash of this directory>/recovery.json)",
     )
     recover_parser.add_argument(
         "--out", dest="out_path", default=None,

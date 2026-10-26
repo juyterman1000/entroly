@@ -585,8 +585,10 @@ def default_controller() -> SessionRescueController:
     a cache-preserving rescue into a cache-destroying one.
 
     Honours the same `ENTROLY_DIR` / `ENTROLY_SESSION_RESCUE_STORE` settings as
-    the proxy, so a machine running both writes recovery records to one store
-    and `entroly recover` finds spans from either surface.
+    the proxy, so a machine running both writes recovery records to one store.
+    Spans are read back with `CompressionRetrievalStore(path).get_span(...)` or
+    `entroly-compression-mcp` from the same scope (working directory and
+    `ENTROLY_*` scope variables); `entroly recover` does not read this store.
     """
     global _DEFAULT_CONTROLLER
     if _DEFAULT_CONTROLLER is not None:
