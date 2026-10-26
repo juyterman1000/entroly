@@ -767,7 +767,17 @@ def activation_status(
     events_dir = root / _project_fingerprint(project) / "events"
     receipts: list[dict[str, Any]] = []
     if events_dir.is_dir():
-        for path in sorted(events_dir.glob("*.json"), reverse=True)[:500]:
+        # Receipt names are random activation ids, so sorting by name kept an
+        # arbitrary 500 once a project had more: the newest run could be
+        # dropped and `state` derived from older ones. Keep the newest written.
+        def _written_at(path: Path) -> float:
+            try:
+                return path.stat().st_mtime
+            except OSError:
+                return 0.0
+
+        newest_first = sorted(events_dir.glob("*.json"), key=_written_at, reverse=True)
+        for path in newest_first[:500]:
             try:
                 item = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, UnicodeDecodeError, json.JSONDecodeError):
