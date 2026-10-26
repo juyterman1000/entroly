@@ -3121,7 +3121,8 @@ def cmd_demo(args):
         )
         print(
             f"  {C.BOLD}Modeled per-query input cost difference{C.RESET} "
-            f"({per_query_saved:,} locally estimated tokens/query):"
+            f"({per_query_saved:,} tokens/query below the fixed "
+            f"{report['baseline_tokens_per_query']:,}-token baseline):"
         )
         for model in ("gpt-4o", "claude-sonnet-4", "gemini-2.5-pro"):
             cost = estimate_cost(per_query_saved, model)
@@ -3302,7 +3303,11 @@ def _run_local_simulation(args) -> dict:
         "selection_engine": "qccr-native" if query_conditioned else "python-fallback-unranked",
         "limitations": [
             "No LLM call was made; quality is not judged here.",
-            "Token differences are estimated against the stated local baseline, not your provider bill.",
+            f"Token differences are measured against a fixed baseline of {baseline:,} "
+            "tokens per query (the smaller of the indexed tokens and 32,000 unless "
+            "--baseline is set), not against a request that was actually sent or "
+            "your provider bill; the baseline does not depend on the query, so a "
+            "smaller selection scores higher whether or not it answers it.",
             "Provider cache discounts, output tokens, and retries are excluded.",
         ] + ([] if query_conditioned else [
             "The native engine is unavailable, so selection did not read the query: "
@@ -3357,7 +3362,8 @@ def _print_local_simulation(report: dict, *, title: str, include_perf: bool) -> 
                           f"[unearned]")
         else:
             difference = (f"{row['reduction_pct']:.1f}% fewer; "
-                          f"{row['tokens_saved']:,} tokens saved")
+                          f"{row['tokens_saved']:,} tokens saved vs the "
+                          f"{report['baseline_tokens_per_query']:,}-token baseline")
         print(
             f"       {row['selected_fragments']} fragments, "
             f"{row['selected_tokens']:,} tokens ({difference})"
@@ -3403,7 +3409,19 @@ def _print_local_simulation(report: dict, *, title: str, include_perf: bool) -> 
             f"{C.GRAY}.{C.RESET}"
         )
     else:
-        print(f"  {C.GREEN}{C.BOLD}Average reduction: {avg:.1f}%{C.RESET}")
+        # The baseline is fixed per run, so this percentage rises as the
+        # selection shrinks: an off-topic question that matched one common word
+        # scored 97.6% on click while the relevant one scored 87.3%. Name the
+        # baseline and say what the number cannot tell apart.
+        print(
+            f"  {C.GREEN}{C.BOLD}Average reduction: {avg:.1f}%{C.RESET} "
+            f"vs a fixed {report['baseline_tokens_per_query']:,}-token baseline"
+        )
+        print(
+            f"  {C.GRAY}The baseline is the same for every query, so a smaller "
+            f"selection scores higher whether or not it answers the question; "
+            f"check the files listed under each query.{C.RESET}"
+        )
     if include_perf:
         lat = report["latency_ms"]
         print(
@@ -3588,6 +3606,11 @@ def cmd_value(args):
     print(
         f"    Operations: {local['operations']:,}  |  "
         f"Tokens reduced: {local['tokens_reduced']:,}"
+    )
+    print(
+        f"    {C.GRAY}Compression is measured against its own input; context "
+        f"selection against a fixed baseline of at most 32,000 tokens per "
+        f"call, not a request that was actually sent.{C.RESET}"
     )
     # Previously printed a hardcoded $0.0000. The token count beside it was
     # measured, so showing nothing for its value understated real work: input
