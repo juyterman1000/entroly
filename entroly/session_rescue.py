@@ -80,7 +80,10 @@ def _message_digest(message: dict[str, Any]) -> str:
         sort_keys=True,
         separators=(",", ":"),
         default=str,
-    ).encode("utf-8")
+        # surrogatepass: tool output decoded with surrogateescape carries lone
+        # surrogates; a strict encode raised and crashed the whole rescue.
+        # Identical bytes to a strict encode for any well-formed text.
+    ).encode("utf-8", "surrogatepass")
     return hashlib.sha256(encoded).hexdigest()
 
 

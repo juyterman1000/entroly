@@ -146,6 +146,36 @@ def test_recovery_span_is_complete_original_with_non_newline_breaks(
     assert stored.spans[0].content == tool["content"]
 
 
+def test_rescue_handles_undecodable_bytes_in_tool_output(tmp_path: Path) -> None:
+    # Tool output decoded with errors="surrogateescape" carries lone
+    # surrogates for bytes that were not UTF-8. Rescue must not crash on them,
+    # and the recovery span must hand back exactly what it was given.
+    controller, store = _controller(
+        tmp_path,
+        soft_watermark=0.20,
+        hard_watermark=0.30,
+        target_watermark=0.10,
+        failure_watermark=0.95,
+        loop_min_watermark=0.05,
+        tail_messages=2,
+    )
+    tool = _noisy_tool_message("cat")
+    tool["content"] += "\nraw bytes from the tool: \udcff\udcfe end\n"
+    messages = [
+        {"role": "system", "content": "You are a coding agent."},
+        tool,
+        {"role": "assistant", "content": "I will inspect the failure."},
+        {"role": "user", "content": "continue"},
+    ]
+
+    result = controller.rescue("conv", messages, context_window=4_000)
+
+    assert result.action == "emergency-rescue"
+    stored = store.get_receipt(result.recovery_receipts[0])
+    assert stored is not None and len(stored.spans) == 1
+    assert stored.spans[0].content == tool["content"]
+
+
 def test_frozen_history_remains_byte_identical_when_turns_append(
     tmp_path: Path,
 ) -> None:
