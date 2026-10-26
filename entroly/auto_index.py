@@ -1714,7 +1714,23 @@ def _auto_index(
             # as the headline in the CI dogfood evidence artifact, so it
             # overstated coverage everywhere at once.
             fragments_ingested = int(r.get("ingested", 0))
-            indexed = len({_logical_rel_path(source) for _, source, _ in batch})
+            batch_files = {_logical_rel_path(source) for _, source, _ in batch}
+            indexed = len(batch_files)
+            if int(r.get("duplicates", 0) or 0):
+                # A near-duplicate is processed but not kept, so it is not in
+                # the live index (the per-file paths below already exclude
+                # it, and `total_tokens` here already does). Counting it made
+                # a cold run say "Indexed 2 files" beside one file's tokens,
+                # and the next, warm run -- which counts the files the loaded
+                # index holds -- say 1. Count what the index kept instead.
+                kept_files = {
+                    _logical_rel_path(fragment["source"])
+                    for fragment in (
+                        dict(item) for item in engine._rust.export_fragments()
+                    )
+                    if fragment.get("source")
+                }
+                indexed = len(batch_files & kept_files)
             total_tokens = int(r.get("total_tokens", 0))
             p1 = r.get('phase1_ms', '?')
             p2 = r.get('phase2_ms', '?')
