@@ -1128,11 +1128,14 @@ def compress_messages(
         and m.get("role") in ("tool", "function")
     )
     # Tool results get more aggressive compression, scaled so the window's
-    # share of the budget is spent (with a margin for rounding and markers).
+    # share of the budget is spent. The 10% margin pays for omission markers,
+    # which only tool output gets; a conversation-only window keeps the exact
+    # relative ratio the caller asked for.
+    spend = max(remaining_budget - instruction_tokens, 1)
     ratio, tool_ratio = _role_weighted_ratios(
         older_tokens - older_tool_tokens,
         older_tool_tokens,
-        0.9 * max(remaining_budget - instruction_tokens, 1),
+        0.9 * spend if older_tool_tokens else spend,
         0.5,
     )
 
@@ -1300,7 +1303,10 @@ def _compress_all_messages(
         and m.get("role") in ("tool", "function")
     )
     ratio, tool_ratio = _role_weighted_ratios(
-        compressible_tokens - tool_tokens, tool_tokens, 0.9 * remaining_budget, 0.3
+        compressible_tokens - tool_tokens,
+        tool_tokens,
+        0.9 * remaining_budget if tool_tokens else remaining_budget,
+        0.3,
     )
 
     result = []
