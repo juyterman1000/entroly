@@ -205,3 +205,51 @@ def test_out_is_written_even_when_nothing_was_compressed(workspace, label, raw):
     assert result.returncode == 0, result.stderr[-800:]
     assert (work / "out.dat").exists(), f"{label}: --out file was not written"
     assert (work / "out.dat").read_bytes() == raw
+
+
+def _run_home(args: list[str], cwd: Path, home: Path) -> subprocess.CompletedProcess:
+    # Default store resolution: no ENTROLY_DIR, private HOME.
+    env = {k: v for k, v in os.environ.items() if k != "ENTROLY_DIR"}
+    env.update(HOME=str(home), ENTROLY_DISABLE_UPDATE_CHECK="1")
+    return subprocess.run(
+        [sys.executable, "-m", "entroly", *args],
+        cwd=cwd, env=env, capture_output=True, text=True, timeout=300,
+    )
+
+
+def test_recover_from_a_subdirectory_says_where_to_run_it(tmp_path):
+    # Recovery is bound to the directory `entroly compress` ran in (by design:
+    # tests/test_recovery_store_trust.py pins scope isolation). A bare
+    # "No recovery entry" made a present record look lost.
+    project, home = tmp_path / "project", tmp_path / "home"
+    (project / "src").mkdir(parents=True)
+    home.mkdir()
+    (project / "resp.json").write_text(_payload(), encoding="utf-8")
+    done = _run_home(["compress", "resp.json", "--json"], project, home)
+    assert done.returncode == 0, done.stderr[-800:]
+    digest = json.loads(done.stdout[done.stdout.find("{"):])["recovery_digest"]
+
+    missed = _run_home(["recover", digest], project / "src", home)
+
+    assert missed.returncode == 1
+    assert f"cd {project}" in missed.stdout
+
+
+def test_recover_with_store_from_another_directory_explains_the_scope(workspace, tmp_path):
+    work, store = workspace
+    (work / "resp.json").write_text(_payload(), encoding="utf-8")
+    digest = _compress_json(work, store, "resp.json")["recovery_digest"]
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+
+    missed = _run(["recover", digest, "--store", str(store / "recovery.json")], elsewhere, store)
+
+    assert missed.returncode == 1
+    assert "different working directory" in missed.stdout
+
+
+def test_recover_with_a_truncated_digest_says_what_a_digest_looks_like(workspace):
+    work, store = workspace
+    missed = _run(["recover", "sha256:0ec354cbc96f"], work, store)
+    assert missed.returncode == 1
+    assert "sha256:<64 hex" in missed.stdout

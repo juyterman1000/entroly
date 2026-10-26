@@ -31,6 +31,52 @@ def default_recovery_store_path() -> str:
     return str(_project_checkpoint_dir() / "recovery.json")
 
 
+def _recovery_miss_hint(digest: str, store_path: str, explicit_store: bool) -> str:
+    """Say what to do when a digest is not found in this directory's scope.
+
+    Recovery records are bound to the directory `entroly compress` ran in: the
+    default store is keyed by that directory, and the store's scope includes
+    it (scope isolation is deliberate and pinned by the store's tests). A bare
+    "No recovery entry" made a record that is still on disk look lost. Read
+    only; never recovers across scopes.
+    """
+    import hashlib
+    import os
+    import re
+
+    if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+        return (
+            "A recovery digest is the full sha256:<64 hex characters> value "
+            "printed by `entroly compress`, in lower case."
+        )
+
+    def holds(path: Path) -> bool:
+        try:
+            return path.is_file() and digest in path.read_text(
+                encoding="utf-8", errors="ignore"
+            )
+        except OSError:
+            return False
+
+    rerun = (
+        "Recovery is bound to the directory where `entroly compress` ran; run "
+        "`entroly recover` from there (after a move or rename, from the "
+        "original path)."
+    )
+    if not explicit_store and not os.environ.get("ENTROLY_DIR"):
+        checkpoints = Path.home() / ".entroly" / "checkpoints"
+        for parent in Path(os.getcwd()).parents:
+            key = hashlib.sha256(str(parent).encode()).hexdigest()[:12]
+            if holds(checkpoints / key / "recovery.json"):
+                return (
+                    f"It was recorded from {parent}: "
+                    f"cd {parent} && entroly recover {digest}"
+                )
+    if holds(Path(store_path)):
+        return f"It is in this store but was recorded from a different working directory. {rerun}"
+    return ""
+
+
 def _colours() -> Any:
     from .cli import C
 
@@ -163,6 +209,9 @@ def cmd_recover(args) -> int:
     if reference is None:
         print(f"{C.RED}  No recovery entry for {args.digest}{C.RESET}")
         print(f"  {C.GRAY}store: {store_path}{C.RESET}")
+        hint = _recovery_miss_hint(args.digest, store_path, bool(args.store_path))
+        if hint:
+            print(f"  {C.YELLOW}{hint}{C.RESET}")
         return 1
 
     try:
