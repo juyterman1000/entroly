@@ -4750,6 +4750,108 @@ def create_mcp_server(
         store = SharedMemoryStore()
         return json.dumps(store.stats(), indent=2)
 
+    # ── Memory Graph, Recall & KV Cache Tools ───────────────────────
+
+    @mcp.tool()
+    async def memory_graph_query(
+        seeds: list[str],
+        max_hops: int = 2,
+        include_superseded: bool = False,
+    ) -> str:
+        """Traverse the deterministic entity-relationship memory graph.
+
+        Implements associative recall (HippoRAG 2). Returns reachable memory IDs,
+        entity paths, and Merkle traversal receipts.
+        """
+        # Use the server's already-populated graph (written by TaskDreamer /
+        # MemoryFabric.remember) instead of constructing a fresh empty one.
+        graph = _task_memory.graph
+        result = graph.traverse(seeds, max_hops=max_hops, include_superseded=include_superseded)
+        return json.dumps({
+            "query_entities": result.query_entities,
+            "reached_entities": result.reached_entities,
+            "memory_ids": result.memory_ids,
+            "hops": result.hops,
+            "receipt": result.receipt,
+            "edges": [
+                {
+                    "edge_id": e.edge_id,
+                    "source": e.source_entity,
+                    "target": e.target_entity,
+                    "relationship": e.relationship,
+                    "memory_id": e.memory_id,
+                    "weight": e.weight,
+                    "superseded": e.superseded,
+                }
+                for e in result.edges_traversed
+            ],
+        }, indent=2)
+
+    @mcp.tool()
+    async def memory_recall(
+        query: str,
+        temporal_filter: str = "",
+        use_hybrid: bool = True,
+        top_k: int = 5,
+        traverse_graph: bool = False,
+    ) -> str:
+        """Recall agent memories with temporal reasoning, hybrid ranking, and graph traversal.
+
+        Filters superseded historical facts and boosts current state.
+        Optional temporal_filter: 'current_state', 'past_event', 'future_plan', 'preference', 'relationship'.
+        """
+        from dataclasses import asdict
+        # Use the server's shared MemoryFabric (_task_memory) so that memories
+        # written by TaskDreamer and other server operations are visible here.
+        res = _task_memory.recall(
+            query,
+            temporal_filter=temporal_filter or None,  # type: ignore[arg-type]
+            use_hybrid=use_hybrid,
+            hybrid_top_k=top_k,
+            traverse_graph=traverse_graph,
+        )
+        return json.dumps({
+            "text": res.as_text(),
+            "selected": [asdict(m) for m in res.context.selected],
+            "graph_memories": res.graph_memories,
+            "hybrid_scored": res.hybrid_scored,
+            "receipt": res.receipt(),
+        }, indent=2)
+
+    @mcp.tool()
+    async def cache_align_prompt(
+        client_key: str,
+        prefix: str,
+        dynamic_tail: str,
+        provider: str = "generic",
+        target_budget: int = 0,
+    ) -> str:
+        """PAC-KV prompt alignment and economic break-even gating.
+
+        Quantizes prompt boundary to provider KV cache page grid (Anthropic 1024,
+        OpenAI 128, DeepSeek 64, vLLM 16, SGLang 32) and evaluates whether freezing warm
+        prefix is cheaper than re-compression. Returns aligned text and PACReceipt.
+        """
+        # Build a request-scoped aligner — client_key tracks per-client prefix
+        # warmth within the call, which is appropriate for a one-shot MCP tool.
+        from .cache_aligner import CacheAligner
+        aligner = CacheAligner()
+        budget = target_budget if target_budget > 0 else None
+        pac_res = aligner.align_prompt(
+            client_key=client_key,
+            prefix=prefix,
+            dynamic_tail=dynamic_tail,
+            provider=provider,
+            target_budget=budget,
+        )
+        # PACResult fields: aligned_prefix, aligned_tail, full_prompt,
+        #                   is_cache_hit, receipt (PACReceipt), merkle_tree
+        return json.dumps({
+            "strategy": pac_res.receipt.economic_decision,
+            "aligned_prompt": pac_res.full_prompt,
+            "receipt": pac_res.receipt.as_dict(),
+        }, indent=2)
+
     # ── Output Token Reduction ───────────────────────────────────────
 
     @mcp.tool()

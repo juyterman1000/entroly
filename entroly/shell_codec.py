@@ -594,6 +594,7 @@ def esc_compress(
 
     # ── Phase 2 + 3 + 4: Score, classify, hash each line ──
     profile = detect_shell_profile(cleaned, tool_name)
+
     scored_lines: list[ScoredLine] = []
     class_counts: dict[str, int] = Counter()
     mandatory_indices: set[int] = set()
@@ -725,3 +726,306 @@ def esc_compress_with_header(
     header += "]"
 
     return f"{header}\n{result.compressed}"
+
+
+# ── Specialized Deep Codecs ──────────────────────────────────────────
+
+def compress_test_output(text: str, budget: int = DEFAULT_BUDGET) -> str:
+    """AST-aware test runner output compression.
+
+    Suppresses passing test lines while preserving all failure details,
+    tracebacks, assertion diffs, and summary lines. Supports Pytest, Jest,
+    Vitest, Cargo Test, and Go Test.
+    """
+    clean = strip_ansi(text)
+    lines = clean.splitlines()
+    if not lines:
+        return ""
+
+    result: list[str] = []
+    in_failure = False
+    passed_count = 0
+    failure_indent = 0
+    summary_lines: list[str] = []
+
+    pass_re = re.compile(
+        r"(?:\bPASSED\b|\bPASS\b|\u2714|\u2713|\.\.\.\s+ok\b)",
+        re.IGNORECASE,
+    )
+    fail_re = re.compile(
+        r"(?:\bFAILED\b|\bFAIL\b|\u2718|\u2717|\.\.\.\s+FAILED\b|___+\s+\S+\s+___+)",
+        re.IGNORECASE,
+    )
+    summary_re = re.compile(
+        r"(?:=+\s*)?\b(?:\d+\s+(?:passed|failed|errors?|skipped)|test result:|\bTests:|\bTest Suites:|\bSnapshots:)",
+        re.IGNORECASE,
+    )
+    error_re = re.compile(
+        r"^(?:E\s+|>\s+|AssertionError|assert\s+|thread '[^']+' panicked|error\[E\d+\])",
+    )
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            if in_failure:
+                result.append("")
+            continue
+
+        if summary_re.search(line):
+            summary_lines.append(line)
+            in_failure = False
+            continue
+
+        if pass_re.search(line) and not in_failure:
+            passed_count += 1
+            continue
+
+        if fail_re.search(line):
+            in_failure = True
+            failure_indent = len(line) - len(line.lstrip())
+            result.append(line)
+            continue
+
+        if in_failure:
+            current_indent = len(line) - len(line.lstrip())
+            if current_indent > failure_indent or error_re.search(stripped) or stripped.startswith("---"):
+                result.append(line)
+            elif stripped.startswith("=") or stripped.startswith("-"):
+                result.append(line)
+            else:
+                in_failure = False
+                if error_re.search(stripped):
+                    result.append(line)
+
+    out_parts: list[str] = []
+    if passed_count > 0:
+        out_parts.append(f"[entroly: {passed_count} passing tests suppressed]")
+    out_parts.extend(result)
+    out_parts.extend(summary_lines)
+
+    res = "\n".join(out_parts)
+    max_chars = int(budget * _CHARS_PER_TOKEN)
+    if len(res) > max_chars:
+        # Fall back to knapsack line selection if still over budget
+        raw_lines = res.splitlines()
+        scored = [
+            ScoredLine(
+                index=i,
+                text=ln,
+                raw=ln,
+                entropy=line_entropy(ln),
+                line_class=classify_line(ln, line_entropy(ln)),
+                token_estimate=max(1, int(len(ln) / _CHARS_PER_TOKEN) + 1),
+                value=line_entropy(ln) * 2.0,
+                simhash=_simhash_64(ln),
+            )
+            for i, ln in enumerate(raw_lines)
+        ]
+        selected = _knapsack_select(scored, budget)
+        res = "\n".join(ln.text for ln in selected)
+    return res
+
+
+def compress_compiler_diagnostics(text: str, budget: int = DEFAULT_BUDGET) -> str:
+    """Deduplicates compiler warnings and isolates error locations.
+
+    Supports Rustc/Cargo, GCC/Clang, TSC (TypeScript), and Webpack/Vite.
+    Collapses repeated warning categories across files into concise tallies
+    while preserving exact error spans with file:line pointers.
+    """
+    clean = strip_ansi(text)
+    lines = clean.splitlines()
+    if not lines:
+        return ""
+
+    errors: list[str] = []
+    warning_counts: Counter[str] = Counter()
+    other_lines: list[str] = []
+    in_error = False
+
+    warn_pattern = re.compile(
+        r"warning:\s*(?:unused\s+\w+|field\s+is\s+never\s+read|variable\s+does\s+not\s+need|\S+)",
+        re.IGNORECASE,
+    )
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            if in_error:
+                errors.append("")
+            continue
+
+        if re.search(r"^(?:error(?:\[E\d+\])?:|.*:\d+:\d+:\s+error:|\bTS\d{4}:)", stripped, re.IGNORECASE):
+            in_error = True
+            errors.append(line)
+            continue
+
+        if stripped.lower().startswith("warning:"):
+            in_error = False
+            m = warn_pattern.search(stripped)
+            category = m.group(0) if m else "warning: other"
+            warning_counts[category] += 1
+            continue
+
+        if in_error:
+            if stripped.startswith("-->") or stripped.startswith("|") or stripped.startswith("="):
+                errors.append(line)
+            elif stripped.startswith("error:") or stripped.startswith("help:"):
+                errors.append(line)
+            elif not stripped.startswith("warning"):
+                errors.append(line)
+            else:
+                in_error = False
+        elif (
+            stripped.startswith("error: aborting due to")
+            or stripped.startswith("Finished ")
+            or stripped.startswith("Build ")
+        ):
+            other_lines.append(line)
+
+    out_parts: list[str] = []
+    if warning_counts:
+        total_warns = sum(warning_counts.values())
+        top_warns = ", ".join(f"{cnt} '{cat}'" for cat, cnt in warning_counts.most_common(3))
+        out_parts.append(f"[entroly: {total_warns} warnings deduplicated ({top_warns})]")
+
+    out_parts.extend(errors)
+    out_parts.extend(other_lines)
+
+    res = "\n".join(out_parts)
+    max_chars = int(budget * _CHARS_PER_TOKEN)
+    if len(res) > max_chars:
+        raw_lines = res.splitlines()
+        scored = [
+            ScoredLine(
+                index=i,
+                text=ln,
+                raw=ln,
+                entropy=line_entropy(ln),
+                line_class=classify_line(ln, line_entropy(ln)),
+                token_estimate=max(1, int(len(ln) / _CHARS_PER_TOKEN) + 1),
+                value=line_entropy(ln) * 2.0,
+                simhash=_simhash_64(ln),
+            )
+            for i, ln in enumerate(raw_lines)
+        ]
+        selected = _knapsack_select(scored, budget)
+        res = "\n".join(ln.text for ln in selected)
+    return res
+
+
+def compress_git_output(text: str, budget: int = DEFAULT_BUDGET) -> str:
+    """Semantic packing for git diff, status, and log outputs.
+
+    Diff: packs changes with minimal 1-line context, drops whitespace noise.
+    Status: strips verbose instructions, compacts staged/modified files.
+    Log: condenses multi-line commits to single-line hash+author+subject format.
+    """
+    clean = strip_ansi(text)
+    if not clean.strip():
+        return ""
+
+    if "diff --git" in clean or (clean.startswith("@@") and ("+" in clean or "-" in clean)):
+        return _compress_git_diff_deep(clean, budget)
+    if "On branch" in clean or "Changes to be committed" in clean or "Untracked files" in clean:
+        return _compress_git_status_deep(clean)
+    if "commit " in clean and ("Author:" in clean or "Date:" in clean):
+        return _compress_git_log_deep(clean)
+
+    return esc_compress(clean, budget=budget).compressed
+
+
+def _compress_git_diff_deep(clean: str, budget: int) -> str:
+    lines = clean.splitlines()
+    result: list[str] = []
+    in_hunk = False
+    context_left = 0
+    files_touched: list[str] = []
+
+    for line in lines:
+        if line.startswith("diff --git"):
+            parts = line.split()
+            if len(parts) >= 4:
+                files_touched.append(parts[3].removeprefix("b/"))
+            result.append(line)
+            in_hunk = False
+        elif line.startswith("+++") or line.startswith("---"):
+            result.append(line)
+        elif line.startswith("@@"):
+            result.append(line)
+            in_hunk = True
+            context_left = 1
+        elif line.startswith("+") or line.startswith("-"):
+            result.append(line)
+            context_left = 1
+        elif in_hunk:
+            if context_left > 0:
+                result.append(line)
+                context_left -= 1
+
+    summary = f"[entroly: {len(files_touched)} files modified ({', '.join(files_touched[:4])})]"
+    res = summary + "\n" + "\n".join(result)
+    max_chars = int(budget * _CHARS_PER_TOKEN)
+    if len(res) > max_chars:
+        raw_lines = res.splitlines()
+        scored = [
+            ScoredLine(
+                index=i,
+                text=ln,
+                raw=ln,
+                entropy=line_entropy(ln),
+                line_class=classify_line(ln, line_entropy(ln)),
+                token_estimate=max(1, int(len(ln) / _CHARS_PER_TOKEN) + 1),
+                value=line_entropy(ln) * 2.0,
+                simhash=_simhash_64(ln),
+            )
+            for i, ln in enumerate(raw_lines)
+        ]
+        selected = _knapsack_select(scored, budget)
+        res = "\n".join(ln.text for ln in selected)
+    return res
+
+
+def _compress_git_status_deep(clean: str) -> str:
+    lines = clean.splitlines()
+    result: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("On branch ") or stripped.startswith("Your branch "):
+            result.append(stripped)
+        elif stripped.startswith("Changes ") or stripped.startswith("Untracked "):
+            result.append(stripped)
+        elif any(stripped.startswith(prefix) for prefix in ("modified:", "new file:", "deleted:", "renamed:")):
+            result.append(f"  {stripped}")
+        elif not any(kw in stripped for kw in ("(use ", "git add", "git restore", "git commit", "no changes")):
+            result.append(f"  {stripped}")
+    return "\n".join(result)
+
+
+def _compress_git_log_deep(clean: str) -> str:
+    lines = clean.splitlines()
+    result: list[str] = []
+    cur_hash = ""
+    cur_author = ""
+    cur_msg = ""
+
+    for line in lines:
+        if line.startswith("commit "):
+            if cur_hash and cur_msg:
+                auth = f" ({cur_author})" if cur_author else ""
+                result.append(f"{cur_hash[:7]}{auth}: {cur_msg}")
+            cur_hash = line.split()[1] if len(line.split()) > 1 else ""
+            cur_author = ""
+            cur_msg = ""
+        elif line.startswith("Author:"):
+            cur_author = line.removeprefix("Author:").split("<")[0].strip()
+        elif line.startswith("    ") and not cur_msg:
+            cur_msg = line.strip()
+
+    if cur_hash and cur_msg:
+        auth = f" ({cur_author})" if cur_author else ""
+        result.append(f"{cur_hash[:7]}{auth}: {cur_msg}")
+
+    return "\n".join(result)
