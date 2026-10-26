@@ -18,7 +18,9 @@
         "entroly",
         "serve"
       ],
-      "env": {}
+      "env": {
+        "ENTROLY_NO_DOCKER": "1"
+      }
     }
   },
   "repository": {
