@@ -11,7 +11,7 @@ check, not encryption, identity verification, or proof of answer correctness.
 | --- | --- |
 | Context Receipts | `.entroly/receipts/` at the repository root discovered by upward search, bounded by `.git`; explicit output paths may differ. |
 | Context Commits | `.entroly/context-commits/` under the selected workspace; inspect the path reported by the command. |
-| `entroly compress` / `recover` | Explicit `--store-path`, otherwise `ENTROLY_DIR/recovery.json`, otherwise `~/.entroly/checkpoints/<cwd-hash>/recovery.json`. If the home checkpoint directory is unwritable, the checkpoint resolver can fall back under the OS temporary directory. |
+| `entroly compress` / `recover` | Explicit `--store`, otherwise `ENTROLY_DIR/recovery.json`, otherwise `~/.entroly/checkpoints/<cwd-hash>/recovery.json`. If the home checkpoint directory is unwritable, the checkpoint resolver can fall back under the OS temporary directory. Records are bound to the directory `entroly compress` ran in: run `entroly recover` from that directory (its original path after a move or rename). |
 | SDK / proxy recovery | The caller's configured store and scope. In-memory stores do not survive process exit. |
 | Other local state | Vaults, checkpoints, ledgers, logs, telemetry queues, and backups have separate paths and policies. Deleting a project's `.entroly/` does not erase all of these. |
 
@@ -36,7 +36,10 @@ Final-component symlink destinations are rejected; parent paths must still be
 trusted. This is not a sandbox against malicious filesystem changes by another
 process with write access to the parent directory.
 
-The compression-retrieval API separately validates scope and content integrity.
+The compression-retrieval store (`entroly compress`, proxy and session rescue)
+writes its file with mode `0600` and creates a missing store directory with
+`0700`; if the home checkpoint directory is unwritable, the temporary-directory
+fallback is announced with a warning. The compression-retrieval API separately validates scope and content integrity.
 Scope filtering prevents accidental cross-workspace API retrieval; a scope string
 is not an OS identity or a secret capability. Anyone who can read the backing
 files can read their contents. Use separate service identities and private stores

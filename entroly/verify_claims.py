@@ -32,8 +32,55 @@ def _print_status(ok: bool, name: str, detail: str = "") -> None:
         print(f"         {detail}")
 
 
+def _outbound_recorder() -> tuple[list[str], Any]:
+    """Record non-loopback socket connections made while the checks run.
+
+    LOCAL-1 used to be the constant True; it now reports what was observed.
+    Recording only -- connections are not blocked.
+    """
+    import ipaddress
+    import socket
+
+    attempts: list[str] = []
+    originals = (socket.socket.connect, socket.socket.connect_ex)
+
+    def _note(address: Any) -> None:
+        if not isinstance(address, tuple) or not address:
+            return  # AF_UNIX path: local by definition
+        host = str(address[0])
+        try:
+            local = ipaddress.ip_address(host.split("%", 1)[0]).is_loopback
+        except ValueError:
+            local = host.lower() == "localhost"
+        if not local:
+            attempts.append(f"{host}:{address[1]}" if len(address) > 1 else host)
+
+    def connect(sock, address, *args, **kwargs):
+        _note(address)
+        return originals[0](sock, address, *args, **kwargs)
+
+    def connect_ex(sock, address, *args, **kwargs):
+        _note(address)
+        return originals[1](sock, address, *args, **kwargs)
+
+    socket.socket.connect, socket.socket.connect_ex = connect, connect_ex
+
+    def restore() -> None:
+        socket.socket.connect, socket.socket.connect_ex = originals
+
+    return attempts, restore
+
+
 def run(output: str | None = None, max_files: int = 120) -> int:
     """Run a packaged, source-tree-independent verification pass."""
+    outbound, restore = _outbound_recorder()
+    try:
+        return _run(output, max_files, outbound)
+    finally:
+        restore()
+
+
+def _run(output: str | None, max_files: int, outbound: list[str]) -> int:
     cwd = Path.cwd()
     results: list[dict[str, Any]] = []
 
@@ -57,8 +104,19 @@ def run(output: str | None = None, max_files: int = 120) -> int:
 
     print("\n[1] SDK import path")
     print("-" * 40)
-    compressed = compress("alpha beta gamma delta", budget=3)
-    messages = compress_messages([{"role": "user", "content": "hello"}], budget=10)
+    # The probe exercises the public SDK, which books every reduction in the
+    # user's value ledger. A verifier's synthetic string is not user value:
+    # it made the next `entroly value` report one local operation the user
+    # never ran. Suppress only the bookkeeping, only for the probe.
+    import entroly.sdk as _sdk
+
+    _track_savings = _sdk._track_savings
+    _sdk._track_savings = lambda *_args, **_kwargs: None
+    try:
+        compressed = compress("alpha beta gamma delta", budget=3)
+        messages = compress_messages([{"role": "user", "content": "hello"}], budget=10)
+    finally:
+        _sdk._track_savings = _track_savings
     check("SDK-1", "compress() returns text", isinstance(compressed, str), type(compressed).__name__)
     check("SDK-2", "compress_messages() returns messages", isinstance(messages, list), type(messages).__name__)
 
@@ -79,7 +137,20 @@ def run(output: str | None = None, max_files: int = 120) -> int:
     tokens = int(index_result.get("total_tokens", 0) or 0)
     print(f"  {files} files, {tokens:,} tokens, {index_s:.2f}s")
     check("IDX-1", "Files indexed > 0", files > 0, f"{files} files")
-    check("IDX-2", "Indexing completed", index_s >= 0, f"{index_s:.3f}s")
+    index_status = str(index_result.get("status", ""))
+    check(
+        "IDX-2",
+        "Indexing completed",
+        index_status in {"indexed", "skipped"},
+        f"{index_s:.3f}s ({index_status or 'no status'})",
+    )
+    if files == 0:
+        # Without this the only signal was a bare FAIL that reads as a broken
+        # install; `entroly simulate` already says the same thing here.
+        print(
+            "  No indexable files here. Run `entroly verify-claims` inside a "
+            "project directory."
+        )
 
     print("\n[3] Context optimization")
     print("-" * 40)
@@ -229,17 +300,24 @@ def run(output: str | None = None, max_files: int = 120) -> int:
     print("\n[5] Engine mode")
     print("-" * 40)
     native = bool(getattr(engine, "_use_rust", False))
-    check(
-        "ENG-1",
-        "Engine initialized",
-        True,
-        "native Rust engine" if native else "Python fallback engine",
-    )
+    # Reported, not counted: it was a check that could not fail.
+    if native:
+        print("  [INFO] Engine: native Rust engine")
+    else:
+        from entroly.native_status import QCCR_SYMBOLS, fallback_reason, native_status
+
+        print(
+            "  [INFO] Engine: Python fallback "
+            f"({fallback_reason(native_status(QCCR_SYMBOLS))}); relevance ranking "
+            "is OFF, so the savings figure above is budget arithmetic"
+        )
     check(
         "LOCAL-1",
-        "No API key required for this verification",
-        True,
-        "all operations ran locally",
+        "No network calls (no API key needed)",
+        not outbound,
+        "0 outbound connections"
+        if not outbound
+        else f"{len(outbound)} outbound connection(s): {', '.join(sorted(set(outbound))[:5])}",
     )
 
     passed = sum(1 for r in results if r["status"] == "PASS")
@@ -275,6 +353,17 @@ def run(output: str | None = None, max_files: int = 120) -> int:
             out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
         print(f"\nReport saved: {out_path}")
+        # Both files land in the user's working tree; say so (data stays put).
+        from entroly.project_footprint import project_footprint_notice
+
+        names = [".entroly"]
+        try:
+            names.append(str((cwd / out_path).resolve().relative_to(cwd.resolve())))
+        except ValueError:
+            pass  # report written outside the project
+        notice = project_footprint_notice(cwd, tuple(names))
+        if notice:
+            print(notice)
     except OSError as exc:
         print(f"\nWarning: failed to write report: {exc}", file=sys.stderr)
 

@@ -257,6 +257,56 @@ def test_compress_messages_reconstructs_answer_split_across_receipt_overlap():
     assert sum(len(message["content"]) // 4 for message in out) <= int(before * 0.90)
 
 
+_BILLING_RULES = (
+    "You are the billing agent for ACME. Rules: 1) Never issue refunds above $500 "
+    "without approval. 2) Never run destructive database commands. 3) Always answer "
+    "in English. 4) Escalate legal threats to a human. 5) Do not reveal internal "
+    "discount codes. 6) Log every refund with the ticket id."
+)
+
+
+@pytest.mark.parametrize("preserve_last_n", [2, 4])
+@pytest.mark.parametrize("budget", [4_000, 1_500, 600])
+def test_compress_messages_keeps_system_instructions_when_history_absorbs_cut(
+    budget, preserve_last_n
+):
+    # A short instruction prompt next to bulky tool output: the cut must come
+    # out of the history. Uniform compression truncated the prompt to
+    # "You are the billing\n...[truncated]" and dropped every rule.
+    log = "\n".join(
+        f"2026-10-21T10:00:{i % 60:02d}Z INFO api GET /orders/{i} 200 12ms"
+        for i in range(300)
+    ) + "\nERROR db timeout on orders-7\n"
+    messages = [
+        {"role": "system", "content": _BILLING_RULES},
+        {"role": "user", "content": "Check the API logs for failing orders."},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "logs", "arguments": "{}"},
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": "call_1", "content": log},
+        {"role": "assistant", "content": "Many 200s and one database timeout. " * 10},
+        {"role": "user", "content": "Customer wants a $900 refund for orders-7, go ahead?"},
+    ]
+
+    out = sdk.compress_messages(
+        messages, budget=budget, preserve_last_n=preserve_last_n
+    )
+
+    assert out[0] == messages[0], "system instructions were rewritten"
+    assert out[-1] == messages[-1]
+    assert sum(
+        count_tokens(m["content"]) for m in out if isinstance(m.get("content"), str)
+    ) <= budget
+
+
 @pytest.mark.parametrize("target_ratio", [0, -0.1, 1.01])
 def test_compress_messages_rejects_invalid_target_ratio(target_ratio):
     with pytest.raises(ValueError, match="target_ratio"):
@@ -370,3 +420,94 @@ def test_punctuation_light_prose_does_not_noop():
     assert out.strip()
     assert len(out) < len(content) * 0.5
     assert out != content
+
+
+def test_compress_messages_warns_when_content_blocks_exceed_budget():
+    # Only string content is compressed and counted. A block-shaped
+    # (Anthropic) conversation came back unchanged and far over budget with
+    # no signal at all.
+    big = "2026-10-21T10:00:00Z INFO api GET /orders 200 12ms\n" * 400
+    messages = [
+        {"role": "user", "content": [{"type": "text", "text": "read the log"}]},
+        {"role": "assistant", "content": [{"type": "tool_use", "id": "t1", "name": "logs", "input": {}}]},
+        {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": big}]},
+        {"role": "user", "content": [{"type": "text", "text": "summarise it"}]},
+    ]
+
+    with pytest.warns(UserWarning, match="content-block"):
+        out = sdk.compress_messages(messages, budget=100)
+
+    assert out == messages
+
+
+def test_compress_messages_does_not_warn_for_string_content():
+    import warnings
+
+    messages = [
+        {"role": "assistant", "content": "analysis of unrelated files\n" * 300},
+        {"role": "user", "content": "What next?"},
+    ]
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        sdk.compress_messages(messages, budget=100)
+    assert not [w for w in caught if "content-block" in str(w.message)]
+
+
+def test_optimize_does_not_configure_the_host_apps_logging(tmp_path):
+    # optimize() imports entroly.server, whose module body ran
+    # logging.basicConfig(INFO, stderr): the host application's root logger
+    # was reconfigured and engine INFO lines appeared on its stderr.
+    import subprocess
+    import sys
+
+    script = (
+        "import logging, entroly\n"
+        "entroly.optimize([{'content': 'def login(user):\\n    return check(user)\\n',"
+        " 'source': 'auth.py'}], budget=200, query='fix the login bug')\n"
+        "print('root handlers:', len(logging.getLogger().handlers))\n"
+        "print('root level:', logging.getLogger().level)\n"
+    )
+    done = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True, text=True, timeout=300, cwd=tmp_path,
+        env={**__import__("os").environ, "HOME": str(tmp_path)},
+    )
+    assert done.returncode == 0, done.stderr[-800:]
+    assert "root handlers: 0" in done.stdout
+    assert "[entroly]" not in done.stderr
+
+
+@pytest.mark.parametrize(
+    "budget, error",
+    [
+        (float("nan"), ValueError),
+        (-1, ValueError),
+        (-0.5, ValueError),
+        ("200", TypeError),
+        (True, TypeError),
+    ],
+    ids=["nan", "negative-int", "negative-float", "string", "bool"],
+)
+def test_sdk_rejects_unusable_budgets_with_clear_errors(budget, error):
+    # NaN and negative budgets were silently accepted (negative returned "",
+    # NaN an arbitrary 5-token slice); "200" died inside a comparison.
+    text = "2026-10-21T10:00:00Z INFO api GET /orders 200 12ms\n" * 200
+    with pytest.raises(error, match="budget"):
+        sdk.compress(text, budget=budget)
+    with pytest.raises(error, match="budget"):
+        sdk.compress_messages([{"role": "user", "content": text}], budget=budget)
+    with pytest.raises(error, match="budget"):
+        sdk.optimize([{"content": text, "source": "a.log"}], budget=budget, query="orders")
+
+
+def test_sdk_accepts_fractional_and_infinite_budgets():
+    text = "2026-10-21T10:00:00Z INFO api GET /orders 200 12ms\n" * 200
+    assert count_tokens(sdk.compress(text, budget=100.7)) <= 100
+    assert sdk.compress(text, budget=0.5) == ""
+    assert sdk.compress(text, budget=float("inf")) == text
+
+
+@pytest.mark.parametrize("value", [b"raw bytes " * 50, bytearray(b"x" * 300), 12345, ["a"]])
+def test_compress_names_the_type_it_needs(value):
+    with pytest.raises(TypeError, match="str"):
+        sdk.compress(value, budget=50)

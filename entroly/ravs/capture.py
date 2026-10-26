@@ -175,7 +175,18 @@ def capture_from_stdin(log_path: Optional[str] = None) -> Optional[dict]:
     elif "command" in data:
         command = data["command"]
 
-    exit_code = data.get("exit_code", 0)
+    # RAVS is fail-closed: a payload that does not state an exit code says
+    # nothing about success. Defaulting it to 0 recorded every such command --
+    # failing test runs included -- as a strong "pass" (confidence 0.85).
+    raw_exit = data.get("exit_code")
+    try:
+        exit_code = (
+            None if raw_exit is None or isinstance(raw_exit, bool) else int(raw_exit)
+        )
+    except (TypeError, ValueError):
+        exit_code = None
+    if exit_code is None:
+        return None
     stdout_tail = data.get("tool_output", data.get("stdout", ""))
     # Truncate stdout to last 1KB to keep events lean
     if len(stdout_tail) > 1024:

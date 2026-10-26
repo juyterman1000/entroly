@@ -88,6 +88,10 @@ def _exceeds_nesting_limit(text: str, limit: int = _JSON_MAX_NESTING) -> bool:
     return False
 
 
+# A JSON string literal (kept verbatim) or a run of insignificant whitespace.
+_JSON_TOKEN_OR_SPACE = re.compile(r'"(?:[^"\\]|\\.)*"|[ \t\r\n]+')
+
+
 class JsonCodec:
     name = "json"
     version = "4"
@@ -227,14 +231,14 @@ class JsonCodec:
             ensure_ascii=True,
         )
         if len(elided) >= len(text):
-            return reps
+            return self._with_minified(reps, text, data, source_id)
 
         try:
             protected = _protected_json_values(data, _protects)
         except _ProtectionOverflow:
-            return reps
+            return self._with_minified(reps, text, data, source_id)
         if any(value not in elided for value in protected):
-            return reps
+            return self._with_minified(reps, text, data, source_id)
 
         omitted_count = _count_elided_json_records(data)
         recovery = self.store.put(
@@ -256,6 +260,56 @@ class JsonCodec:
                 protected_evidence=protected,
                 distortion_risk=1.0 - (len(elided) / max(len(text), 1)),
                 recovery=recovery,
+            )
+        )
+        return self._with_minified(reps, text, data, source_id)
+
+    def _with_minified(
+        self, reps: list[Representation], text: str, data: Any, source_id: str
+    ) -> list[Representation]:
+        """Add the whitespace-free form: every token verbatim, nothing dropped.
+
+        Pretty-printed API responses with nested arrays and per-record ids are
+        what the columnar and schema forms decline, so a 170 KB response was
+        "left unchanged" although a third of it was indentation. Recovery
+        still holds the exact original, whitespace included. Called after the
+        lossy forms so their recovery metadata stays the one on record.
+        """
+        if len(reps) > 1:
+            # A structural form already exists and is smaller; the minified
+            # form is the fallback for payloads that get none.
+            return reps
+        minified = _JSON_TOKEN_OR_SPACE.sub(
+            lambda match: match.group(0) if match.group(0)[0] == '"' else "", text
+        )
+        if len(minified) >= len(text):
+            return reps
+        try:
+            same = json.dumps(json.loads(minified), sort_keys=True) == json.dumps(
+                data, sort_keys=True
+            )
+        except (ValueError, RecursionError):
+            same = False
+        if not same:
+            return reps
+        reps.append(
+            Representation(
+                representation_id=f"{source_id}#json.minified",
+                source_id=source_id,
+                content_type="json",
+                text=minified,
+                token_cost=estimate_tokens(minified),
+                codec=self.name,
+                codec_version=self.version,
+                source_sha256=content_digest(text),
+                distortion_risk=1.0 - (len(minified) / max(len(text), 1)),
+                recovery=self.store.put(
+                    text,
+                    note=(
+                        f"complete original JSON for {source_id or 'payload'} "
+                        "(minified form dropped only insignificant whitespace)"
+                    ),
+                ),
             )
         )
         return reps

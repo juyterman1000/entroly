@@ -35,7 +35,12 @@ from .codec import (
 
 _DEF_RE = re.compile(
     r"^\s*(?:@|def |class |async def |fn |pub fn |impl |struct |enum |"
-    r"function |const |export |interface |type )",
+    r"function |const |export |interface |type )"
+    # A function assigned to an object, prototype or exports is how Express
+    # and most CommonJS code declare their API: `res.send = function send(b)`,
+    # `exports.render = function (...)`, `app.handle = async (req) => {`.
+    r"|^\s*[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+\s*=\s*(?:async\s+)?"
+    r"(?:function\b|\([^()]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)",
 )
 _IMPORT_RE = re.compile(r"^\s*(?:import |from .+ import|use |require\(|#include)")
 _ERROR_STRING_RE = re.compile(r"""["'][^"']*(?:error|fail|invalid|denied|expired)[^"']*["']""", re.I)

@@ -182,6 +182,13 @@ _SECRET_PATTERNS = re.compile(
 )
 
 
+def _query_can_rank_context(user_message: str) -> bool:
+    """True when the message has a term that can rank repository context."""
+    from .engine import _query_terms, qccr_can_condition
+
+    return bool(_query_terms(user_message)) or qccr_can_condition(user_message)
+
+
 def _sanitize_query(query: str, max_len: int = 200) -> str:
     """Sanitize a user query for safe storage/display.
 
@@ -1821,21 +1828,19 @@ class PromptCompilerProxy:
         there. Against a local o200k encoding, characters-over-four was 34%
         low on minified JSON, 57% low on emoji and 67% low on CJK in tested
         examples. Provider billing can differ.
+
+        Content is read exactly as ``_estimate_message_tokens`` reads it, and
+        the system prompt in any shape is included, so the inbound and outbound
+        counts measure the same thing. Reading only ``text`` keys here counted
+        a tool_result, tool_use or list-form system block as nothing on the
+        way out, and the whole tool output was booked as tokens reduced.
         """
         try:
-            parts: list[str] = []
-            for message in body.get("messages") or []:
-                content = message.get("content")
-                if isinstance(content, str):
-                    parts.append(content)
-                elif isinstance(content, list):
-                    for part in content:
-                        if isinstance(part, dict):
-                            parts.append(str(part.get("text", "")))
+            tokens = _estimate_message_tokens(body.get("messages") or [])
             system = body.get("system")
-            if isinstance(system, str):
-                parts.append(system)
-            return sum(count_tokens(part) for part in parts)
+            if system:
+                tokens += count_tokens(_content_to_text(system))
+            return tokens
         except Exception:  # noqa: BLE001
             return 0
 
@@ -2584,7 +2589,13 @@ class PromptCompilerProxy:
         try:
             user_message = extract_user_message(body, provider)
             witness_context = user_message
-            if user_message:
+            control_headers["X-Entroly-Context-Tokens-Added"] = "0"
+            if user_message and not _query_can_rank_context(user_message):
+                # "?" or "What is this?" has nothing to rank by, yet the
+                # engine still fills the budget: ~37k tokens of repository
+                # context rode along with a one-word question. Forward as sent.
+                logger.info("No searchable term in the query; adding no context")
+            elif user_message:
                 pipeline_result = await asyncio.to_thread(
                     self._run_pipeline, user_message, body, path, request_id
                 )
@@ -2650,9 +2661,8 @@ class PromptCompilerProxy:
                         _instr_text = body.get("instructions", "")
                         original_tokens = (len(_inp_text.split()) + len(_instr_text.split())) * 4 // 3
                     else:
-                        original_tokens = _estimate_message_tokens(
-                            body.get("messages", [])
-                        )
+                        # Same measure as the outbound count below.
+                        original_tokens = self._estimate_body_tokens(body)
                     # Savings are NOT scored here. ``context_text`` is the snippet
                     # about to be injected, and injection adds to the body; scoring
                     # it against the whole inbound conversation compares two
@@ -2690,6 +2700,7 @@ class PromptCompilerProxy:
                                 _sanitize_report.matches,
                             )
 
+                    _tokens_before_context = self._estimate_body_tokens(body)
                     cache_stable_injection = (
                         os.environ.get(
                             "ENTROLY_CACHE_STABLE_INJECTION",
@@ -2774,6 +2785,9 @@ class PromptCompilerProxy:
                         body = inject_context_responses(body, context_text)
                     else:
                         body = inject_context_openai(body, context_text)
+                    control_headers["X-Entroly-Context-Tokens-Added"] = str(
+                        max(0, self._estimate_body_tokens(body) - _tokens_before_context)
+                    )
 
                     # Entropic Conversation Pruning
                     if (
@@ -2810,6 +2824,11 @@ class PromptCompilerProxy:
                     # tokenizer: the conversation as received, against the body
                     # actually being sent upstream after injection and pruning.
                     optimized_tokens = self._estimate_body_tokens(body)
+                    if original_tokens > 0:
+                        control_headers["X-Entroly-Tokens-Saved-Pct"] = str(
+                            max(0, original_tokens - optimized_tokens)
+                            * 100 // original_tokens
+                        )
                     with self._stats_lock:
                         self._requests_optimized += 1
                         opt_count = self._requests_optimized
@@ -4358,10 +4377,9 @@ class PromptCompilerProxy:
             if self._witness_enabled:
                 resp_headers["X-Entroly-Witness"] = "streaming-audit"
                 resp_headers["X-Entroly-Witness-Mode"] = self._witness_mode
-            # Gap #27: Value signal headers
-            if self._total_original_tokens > 0:
-                saved_pct = max(0, (self._total_original_tokens - self._total_optimized_tokens)) * 100 // self._total_original_tokens
-                resp_headers["X-Entroly-Tokens-Saved-Pct"] = str(saved_pct)
+            # Gap #27: X-Entroly-Tokens-Saved-Pct arrives per request through
+            # extra_headers. It used to be recomputed here from the lifetime
+            # counters, so a request that saved nothing could report 65%.
             resp_headers["X-Entroly-Pipeline-Ms"] = f"{self._last_pipeline_ms:.1f}"
             resp_headers["X-Entroly-Fragments"] = str(len(self._last_context_fragments))
             # Confidence + coverage from value tracker
@@ -6577,8 +6595,15 @@ def create_proxy_app(
     if start_dashboard:
         try:
             from .dashboard import start_dashboard as _start_dash
-            _start_dash(engine=engine, port=9378, daemon=True, proxy_runtime=proxy)
-            logger.info("Value dashboard live at http://localhost:9378")
+            # `entroly proxy/go --dashboard-port` set this; 9378 stays default.
+            try:
+                dashboard_port = int(os.environ.get("ENTROLY_DASHBOARD_PORT") or 9378)
+            except ValueError:
+                dashboard_port = 9378
+            _start_dash(
+                engine=engine, port=dashboard_port, daemon=True, proxy_runtime=proxy
+            )
+            logger.info(f"Value dashboard live at http://localhost:{dashboard_port}")
         except Exception as e:
             logger.warning(f"Dashboard failed to start: {e}")
 

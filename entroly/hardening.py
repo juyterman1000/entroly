@@ -74,13 +74,58 @@ def _first_line_summary(text: str, limit: int = 90) -> str:
     return ""
 
 
+# Lines that carry a test or run failure, in the shapes pytest, unittest, Go,
+# Jest and Python/JS tracebacks print them. Ordered by what an agent needs
+# first when not everything fits: the verdict, then the assertion detail, then
+# the traceback frames. Matched per line, so source code rarely triggers them;
+# a test log that only passes matches nothing.
+_FAILURE_LINE_TIERS = (
+    re.compile(
+        r"^(?:FAILED|ERROR)\s+\S"                      # pytest short summary
+        r"|^\S+::\S+.*\s(?:FAILED|ERROR)\b"            # pytest -v result line
+        r"|^\s*(?:FAIL:|--- FAIL:|✕|●)\s*\S"  # unittest, go test, jest
+        r"|^\s*test \S+ \.\.\. FAILED"                 # cargo test
+        r"|^=+ .*\b\d+ (?:failed|errors?)\b"           # pytest run summary
+        r"|^(?:FAILED|ERRORS?) \("                     # unittest run summary
+        r"|^[\w.]*(?:Error|Exception)(?::|$)"          # exception line
+        r"|^\S+:\d+: [\w.]*(?:Error|Exception)\b"      # pytest failure location
+    ),
+    re.compile(r"^E\s{2,}\S|^>\s"),                    # pytest assertion detail
+    re.compile(r"^Traceback \(most recent call last\):|^\s+File \".+\", line \d+"),
+)
+_FAILURE_LINE_CAP = 200
+
+
+def failure_evidence_lines(text: str) -> list[tuple[int, int, int]]:
+    """Return ``(tier, start, end)`` character spans of failure lines.
+
+    Empty unless at least one verdict line (tier 0) is present, so ordinary
+    output and source code are left to the normal compressors. Spans cover
+    whole lines without their newline.
+    """
+    found: list[tuple[int, int, int]] = []
+    offset = 0
+    for line in text.splitlines(keepends=True):
+        body = line.rstrip("\r\n")
+        for tier, pattern in enumerate(_FAILURE_LINE_TIERS):
+            if body.strip() and pattern.search(body):
+                found.append((tier, offset, offset + len(body)))
+                break
+        offset += len(line)
+    if not any(tier == 0 for tier, _, _ in found):
+        return []
+    return found
+
+
 def _digest_for_tool_result(content: str, tool_name: str = "") -> str:
     """Build a one-line digest for an aged tool result.
 
     Schema: ``[tool] <name> → <bytes>, <lines> lines | <first-line>``
     Designed so that downstream LLMs can still see *that* a tool ran,
     *what kind*, and a single semantic anchor (first line) without
-    paying for the full payload.
+    paying for the full payload. When the output records a failing test or
+    an exception, its verdict and assertion lines follow: a digest that kept
+    only the first line of a test log reported a red run as a green one.
     """
     n_lines = content.count("\n") + 1
     n_bytes = len(content)
@@ -92,7 +137,19 @@ def _digest_for_tool_result(content: str, tool_name: str = "") -> str:
     bits.append(f"{n_lines}L")
     if head:
         bits.append(head)
-    return " · ".join(bits)
+    digest = " · ".join(bits)
+    verdicts = [
+        content[start:end].strip()[:_FAILURE_LINE_CAP]
+        for tier, start, end in failure_evidence_lines(content)
+        if tier <= 1
+    ]
+    if verdicts:
+        shown = verdicts[:12]
+        more = len(verdicts) - len(shown)
+        digest += "\n" + "\n".join(shown)
+        if more:
+            digest += f"\n[... {more} more failure lines omitted ...]"
+    return digest
 
 
 def _truncate_tool_arg_json(arg_json: str, cap: int = TOOL_ARG_JSON_CAP) -> str:

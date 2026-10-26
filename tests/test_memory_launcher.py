@@ -89,6 +89,9 @@ def test_docker_launcher_keeps_serve_as_the_only_docker_command(monkeypatch) -> 
     monkeypatch.delenv("ENTROLY_NO_DOCKER", raising=False)
     monkeypatch.setattr(_docker_launcher.os.path, "exists", lambda _path: False)
     monkeypatch.setattr(_docker_launcher, "_docker_available", lambda: False)
+    # With the native engine installed, serve runs natively; the exit-1 path
+    # under test is the one where neither the engine nor Docker is available.
+    monkeypatch.setattr(_docker_launcher, "_native_engine_ready", lambda: False)
     monkeypatch.setattr(sys, "argv", ["entroly", "serve"])
 
     with pytest.raises(SystemExit) as exc:
@@ -136,6 +139,8 @@ def test_docker_timeout_falls_back_when_env_is_invalid(monkeypatch) -> None:
     monkeypatch.delenv("ENTROLY_NO_DOCKER", raising=False)
     monkeypatch.setattr(_docker_launcher.os.path, "exists", lambda _path: False)
     monkeypatch.setattr(_docker_launcher, "_docker_available", lambda: True)
+    # The container path is taken only when the native engine is missing.
+    monkeypatch.setattr(_docker_launcher, "_native_engine_ready", lambda: False)
     monkeypatch.setattr(_docker_launcher, "_pull_image", lambda: None)
     monkeypatch.setattr(_docker_launcher.subprocess, "run", fake_run)
     monkeypatch.setattr(sys, "argv", ["entroly", "serve"])

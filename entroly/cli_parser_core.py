@@ -133,6 +133,10 @@ def _add_core_commands(subparsers) -> None:
         help="Proxy port (default: 9377)",
     )
     go_parser.add_argument(
+        "--dashboard-port", type=int, default=None,
+        help="Dashboard port (default: 9378, or ENTROLY_DASHBOARD_PORT)",
+    )
+    go_parser.add_argument(
         "--quality", type=str, default=None,
         help="Override auto-detected quality (speed|fast|balanced|quality|max)",
     )
@@ -149,6 +153,10 @@ def _add_core_commands(subparsers) -> None:
     proxy_parser.add_argument(
         "--port", type=int, default=None,
         help="Proxy port (default: 9377, or ENTROLY_PROXY_PORT)",
+    )
+    proxy_parser.add_argument(
+        "--dashboard-port", type=int, default=None,
+        help="Dashboard port (default: 9378, or ENTROLY_DASHBOARD_PORT)",
     )
     proxy_parser.add_argument(
         "--host", type=str, default=None,

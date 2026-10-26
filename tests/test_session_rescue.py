@@ -107,6 +107,75 @@ def test_hard_pressure_overrides_cache_and_persists_recovery(
     )
 
 
+@pytest.mark.parametrize(
+    "separator",
+    ["\r", "\u2028", "\x85", "\x0c"],
+    ids=["bare-cr", "line-separator", "next-line", "form-feed"],
+)
+def test_recovery_span_is_complete_original_with_non_newline_breaks(
+    tmp_path: Path,
+    separator: str,
+) -> None:
+    # Progress bars redraw with a bare "\r", and str.splitlines() also breaks
+    # on U+2028, NEL and form feed. The recovery span is promised to be the
+    # complete original block, so none of the tail may be dropped.
+    controller, store = _controller(
+        tmp_path,
+        soft_watermark=0.20,
+        hard_watermark=0.30,
+        target_watermark=0.10,
+        failure_watermark=0.95,
+        loop_min_watermark=0.05,
+        tail_messages=2,
+    )
+    tool = _noisy_tool_message("pip")
+    progress = "".join(f"Downloading wheel {pct}%{separator}" for pct in range(20))
+    tool["content"] = f"{progress}\n{tool['content']}\nTAIL: last line of output\n"
+    messages = [
+        {"role": "system", "content": "You are a coding agent."},
+        tool,
+        {"role": "assistant", "content": "I will inspect the failure."},
+        {"role": "user", "content": "continue"},
+    ]
+
+    result = controller.rescue("conv", messages, context_window=4_000)
+
+    assert result.recovery_receipts
+    stored = store.get_receipt(result.recovery_receipts[0])
+    assert stored is not None and len(stored.spans) == 1
+    assert stored.spans[0].content == tool["content"]
+
+
+def test_rescue_handles_undecodable_bytes_in_tool_output(tmp_path: Path) -> None:
+    # Tool output decoded with errors="surrogateescape" carries lone
+    # surrogates for bytes that were not UTF-8. Rescue must not crash on them,
+    # and the recovery span must hand back exactly what it was given.
+    controller, store = _controller(
+        tmp_path,
+        soft_watermark=0.20,
+        hard_watermark=0.30,
+        target_watermark=0.10,
+        failure_watermark=0.95,
+        loop_min_watermark=0.05,
+        tail_messages=2,
+    )
+    tool = _noisy_tool_message("cat")
+    tool["content"] += "\nraw bytes from the tool: \udcff\udcfe end\n"
+    messages = [
+        {"role": "system", "content": "You are a coding agent."},
+        tool,
+        {"role": "assistant", "content": "I will inspect the failure."},
+        {"role": "user", "content": "continue"},
+    ]
+
+    result = controller.rescue("conv", messages, context_window=4_000)
+
+    assert result.action == "emergency-rescue"
+    stored = store.get_receipt(result.recovery_receipts[0])
+    assert stored is not None and len(stored.spans) == 1
+    assert stored.spans[0].content == tool["content"]
+
+
 def test_frozen_history_remains_byte_identical_when_turns_append(
     tmp_path: Path,
 ) -> None:
@@ -390,3 +459,50 @@ def test_estimator_counts_structured_tool_content() -> None:
         ]
     )
     assert structured > plain
+
+
+def _pytest_log(passed: int = 700) -> str:
+    log = "".join(
+        f"tests/test_basic.py::test_case_{i} PASSED [{i % 100:3d}%]\n"
+        for i in range(passed)
+    )
+    return log + (
+        "tests/test_options.py::test_flag_default FAILED\n"
+        "E       AssertionError: assert 'False\\n' == 'True\\n'\n"
+        f"==== 1 failed, {passed} passed in 3.21s ====\n"
+    )
+
+
+def _agent_turn(first_tool: str, second_tool: str) -> list[dict]:
+    return [
+        {"role": "system", "content": "You are a coding agent."},
+        {"role": "user", "content": "CI is red; find and fix the failing test."},
+        {"role": "assistant", "content": None, "tool_calls": [
+            {"id": "c1", "type": "function", "function": {"name": "run_tests", "arguments": "{}"}}]},
+        {"role": "tool", "tool_call_id": "c1", "content": first_tool},
+        {"role": "assistant", "content": None, "tool_calls": [
+            {"id": "c2", "type": "function", "function": {"name": "run_tests", "arguments": "{}"}}]},
+        {"role": "tool", "tool_call_id": "c2", "content": second_tool},
+        {"role": "assistant", "content": "test_flag_default still fails."},
+        {"role": "user", "content": "Patch it and rerun."},
+    ]
+
+
+def test_request_that_would_be_refused_compacts_older_tool_output_in_the_tail(
+    tmp_path: Path,
+) -> None:
+    # A realistic turn keeps its bulky tool output inside the protected tail
+    # (8 messages by default), so rescue found no candidate and refused the
+    # request ("blocked") with nothing compacted.
+    controller, store = _controller(tmp_path)
+    newest = _pytest_log(120)
+    messages = _agent_turn(_pytest_log(700), newest)
+
+    result = controller.rescue("conv", messages, context_window=8_500)
+
+    assert result.action == "emergency-rescue", result.error
+    assert result.tokens_saved > 0
+    assert result.messages[5]["content"] == newest, "newest tool result must stay verbatim"
+    assert result.messages[-2:] == messages[-2:]
+    stored = store.get_receipt(result.recovery_receipts[0])
+    assert stored is not None and stored.spans[0].content == messages[3]["content"]

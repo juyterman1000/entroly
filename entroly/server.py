@@ -113,12 +113,18 @@ from .engine import (  # noqa: E402,F401
 # compatible.
 
 
-# Configure logging to stderr (MCP requires stdout for JSON-RPC)
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [entroly] %(message)s",
-    stream=sys.stderr,
-)
+def _configure_server_logging() -> None:
+    """Send server logs to stderr (MCP requires stdout for JSON-RPC).
+
+    Called from main(), not at import: optimize() imports this module, and a
+    module-level basicConfig reconfigured the host application's root logger
+    and printed engine INFO lines on its stderr.
+    """
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [entroly] %(message)s",
+        stream=sys.stderr,
+    )
 
 
 def _mcp_passive_mode() -> bool:
@@ -5294,6 +5300,7 @@ def main():
     Hooking only the subcommand would have left the primary surface unrepaired.
     The session-protection notice rides the same convergence point.
     """
+    _configure_server_logging()
     _repair_native_engine_at_startup()
     _announce_session_protection_mode()
 

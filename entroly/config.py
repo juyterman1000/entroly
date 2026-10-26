@@ -29,16 +29,27 @@ def _project_checkpoint_dir() -> Path:
     project_hash = hashlib.sha256(cwd.encode()).hexdigest()[:12]
     default_dir = Path(os.path.expanduser(f"~/.entroly/checkpoints/{project_hash}"))
     try:
-        default_dir.mkdir(parents=True, exist_ok=True)
+        default_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         probe = default_dir / ".entroly_write_probe"
         probe.write_text("ok", encoding="utf-8")
         probe.unlink(missing_ok=True)
         return default_dir
-    except OSError:
+    except OSError as exc:
         fallback_dir = (
             Path(tempfile.gettempdir()) / "entroly" / "checkpoints" / project_hash
         )
-        fallback_dir.mkdir(parents=True, exist_ok=True)
+        fallback_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        # Recovery stores and other checkpoint data land here; a shared temp
+        # directory must never be chosen silently.
+        import warnings
+
+        warnings.warn(
+            f"Entroly cannot write {default_dir} ({exc}); using {fallback_dir} "
+            "under the system temporary directory instead. Set ENTROLY_DIR to "
+            "a private directory to choose where this data is kept.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
         return fallback_dir
 
 

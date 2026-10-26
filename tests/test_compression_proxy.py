@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from entroly.compression_proxy import compress_proxy_payload
 
 
@@ -138,3 +140,46 @@ def test_compression_proxy_preserves_gemini_function_metadata(tmp_path) -> None:
     assert "[entroly-recovery:" in (
         block["functionResponse"]["response"]["output"]
     )
+
+
+@pytest.mark.parametrize(
+    "separator",
+    ["\r", " ", "\x85", "\x0c"],
+    ids=["bare-cr", "line-separator", "next-line", "form-feed"],
+)
+def test_recovery_span_is_complete_original_with_non_newline_breaks(
+    tmp_path, separator
+):
+    import re
+
+    from entroly.compression_retrieval_store import CompressionRetrievalStore
+
+    # Progress output redraws with a bare "\r"; str.splitlines() also breaks
+    # on U+2028, NEL and form feed. The recovery span stored for a compacted
+    # block is promised to be the complete original, tail included.
+    progress = "".join(f"step {index}{separator}" for index in range(20))
+    heavy = (
+        progress
+        + "\n"
+        + "\n".join(f"pytest worker {index} complete" for index in range(400))
+        + "\nFATAL payment-service E_CONNRESET\nTAIL: last line of output\n"
+    )
+    store = CompressionRetrievalStore(tmp_path / "store.json")
+    body = {
+        "messages": [
+            {"role": "user", "content": "why did payment-service fail?"},
+            {"role": "tool", "tool_call_id": "call-1", "content": heavy},
+        ]
+    }
+
+    result = compress_proxy_payload(
+        body, provider="openai", budget_tokens=160, retrieval_store=store
+    )
+
+    content = result.body["messages"][1]["content"]
+    assert result.changed
+    marker = re.search(r"\[entroly-recovery:([0-9a-f]+):([0-9a-f]+)\]", content)
+    assert marker is not None
+    span = store.get_span(marker.group(1), marker.group(2))
+    assert span is not None
+    assert span.content == heavy

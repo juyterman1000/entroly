@@ -1349,8 +1349,12 @@ class ValueTracker:
                 ),
                 "pricing_basis": "default_catalog_input_rate",
                 "evidence": (
-                    "SDK, MCP, npm, and other local reductions. The token counts "
-                    "are measured. The dollar figure applies the default catalog "
+                    "SDK, MCP, npm, and other local reductions. Compression is "
+                    "measured against its own input; context selection is "
+                    "measured against a "
+                    "fixed baseline of at most 32,000 tokens per call "
+                    "(engine.naive_context_baseline), not a request that was "
+                    "actually sent. The dollar figure applies the default catalog "
                     "input rate to them and is a replacement-cost model, not an "
                     "invoice: Entroly cannot prove this output reached a paid "
                     "provider, so it is reported apart from provider-bound "

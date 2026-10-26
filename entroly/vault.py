@@ -26,6 +26,7 @@ Every belief artifact carries machine-auditable frontmatter:
 from __future__ import annotations
 
 import logging
+import math
 import os
 import re
 import random
@@ -450,6 +451,27 @@ def derive_belief_source_class(
 # The Vault Manager
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
+_WRITABLE_BELIEF_STATUSES = frozenset({
+    "hypothesis", "unsupported", "stale", "inferred", "observed", "verified", "ungrounded",
+})
+
+
+def _belief_write_problem(artifact: BeliefArtifact) -> str | None:
+    """Why ``artifact`` cannot be written as a belief, or None if it can."""
+    if not str(artifact.entity or "").strip():
+        return "entity is required"
+    try:
+        confidence = float(artifact.confidence)
+    except (TypeError, ValueError):
+        confidence = math.nan
+    if not math.isfinite(confidence) or not 0.0 <= confidence <= 1.0:
+        return f"confidence must be a number from 0.0 to 1.0, got {artifact.confidence!r}"
+    if artifact.status not in _WRITABLE_BELIEF_STATUSES:
+        allowed = ", ".join(sorted(_WRITABLE_BELIEF_STATUSES))
+        return f"status must be one of {allowed}, got {artifact.status!r}"
+    return None
+
+
 class VaultManager:
     """
     Manages the Obsidian vault directory structure and artifact I/O.
@@ -627,6 +649,21 @@ class VaultManager:
         unsourced ``verified`` belief was written as verified, never retracted,
         and counted as verified.
         """
+        # An out-of-range or NaN confidence, an unknown status or a missing
+        # entity is refused like a weaker claim is: "not_written" with the
+        # reason, so the caller can correct it. Writing it made
+        # coverage_index() report NaN and let a 7.0 outrank every real claim.
+        problem = _belief_write_problem(artifact)
+        if problem is not None:
+            logger.warning("Vault: refused belief %r: %s", artifact.entity, problem)
+            return {
+                "status": "not_written",
+                "directory": "beliefs",
+                "entity": artifact.entity,
+                "claim_id": artifact.claim_id,
+                "reason": f"invalid belief: {problem}",
+            }
+
         self.ensure_structure()
 
         if self.config.trusted_source_root is not None:
@@ -881,8 +918,13 @@ class VaultManager:
         total = len(beliefs)
         verified = sum(1 for b in beliefs if b["status"] == "verified")
         stale = sum(1 for b in beliefs if b["status"] == "stale")
+        # A legacy or hand-edited file can still hold NaN or an out-of-range
+        # value; count it as 0 / clamp it so the average stays a real number.
         avg_confidence = (
-            sum(b["confidence"] for b in beliefs) / total if total else 0.0
+            sum(
+                min(1.0, max(0.0, b["confidence"])) if math.isfinite(b["confidence"]) else 0.0
+                for b in beliefs
+            ) / total if total else 0.0
         )
 
         return {
@@ -1108,7 +1150,14 @@ class VaultManager:
 
         def _grounded(source: str, source_root: str) -> bool:
             nonlocal suffix_index
-            raw = source.split(":", 1)[0].replace("\\", "/").strip().lstrip("./")
+            path_text = source.split(":", 1)[0].replace("\\", "/").strip()
+            if path_text.startswith("/"):
+                # The architecture belief cites the absolute directory it was
+                # compiled from. Stripping "./" below would turn it into a
+                # relative path that no file suffix can match, retracting a
+                # live belief, so an absolute source is checked as written.
+                return Path(path_text).exists()
+            raw = path_text.lstrip("./")
             if not _is_path_like(raw):
                 # `write_belief` substitutes the sentinel `unknown` when a
                 # belief carries no provenance, and callers pass bare labels

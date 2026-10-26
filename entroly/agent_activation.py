@@ -14,6 +14,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
+import stat
 import sys
 import tempfile
 import time
@@ -427,15 +429,38 @@ def configure_kiro_hook(
             f"{uuid.uuid4().hex[:8]}"
         )
         target.replace(disabled)
-        return {
+        result = {
             "status": "disabled",
             "host": "kiro",
             "path": str(target),
             "recoverable_at": str(disabled),
         }
+        # A `--force` install moved the user's own file at this path to a
+        # backup; give it back now that the slot is free.
+        for backup in sorted(
+            target.parent.glob(f"{target.name}.entroly-backup-*"), reverse=True
+        ):
+            try:
+                previous = json.loads(backup.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                previous = None
+            if not _is_managed_kiro_hook(previous):
+                backup.replace(target)
+                result["restored"] = str(target)
+                break
+        return result
 
     if existing == desired:
         return {"status": "already_installed", "host": "kiro", "path": str(target)}
+    if _is_managed_kiro_hook(existing) and not force:
+        # Entroly's own hook with the user's edits (say, a longer timeout) is
+        # installed, not a conflict; keep the edits.
+        return {
+            "status": "already_installed",
+            "host": "kiro",
+            "path": str(target),
+            "detail": "installed with local changes, left as is; --force resets it",
+        }
 
     if target.exists():
         if not force:
@@ -513,6 +538,165 @@ def _replace_json_with_backup(
     return backup
 
 
+def _skip_ws(text: str, index: int) -> int:
+    while index < len(text) and text[index] in " \t\r\n":
+        index += 1
+    return index
+
+
+def _json_spans(text: str, start: int) -> tuple[int, list[tuple[str | None, int, int]]]:
+    """Closing index and (key, value_start, value_end) items of a JSON container."""
+    if start >= len(text) or text[start] not in "{[":
+        raise ValueError("not a JSON container")
+    closing = "}" if text[start] == "{" else "]"
+    decoder = json.JSONDecoder()
+    items: list[tuple[str | None, int, int]] = []
+    index = _skip_ws(text, start + 1)
+    if text[index] == closing:
+        return index, items
+    while True:
+        key = None
+        if closing == "}":
+            key, index = json.decoder.scanstring(text, index + 1)
+            index = _skip_ws(text, _skip_ws(text, index) + 1)
+        _, end = decoder.raw_decode(text, index)
+        items.append((key, index, end))
+        index = _skip_ws(text, end)
+        if text[index] != ",":
+            return index, items
+        index = _skip_ws(text, index + 1)
+
+
+def _splice_cursor_entry(text: str) -> tuple[str, str]:
+    """Insert the managed entry into settings text; return (new_text, inserted)."""
+    entry = json.dumps(_cursor_hook_entry(), ensure_ascii=False)
+    top = _skip_ws(text, 0)
+    _, members = _json_spans(text, top)
+    hooks = [item for item in members if item[0] == "hooks"]
+    if not hooks:
+        container, items = top, members
+        snippet = '"hooks": {"UserPromptSubmit": [' + entry + "]}"
+    else:
+        _, hook_items = _json_spans(text, hooks[-1][1])
+        prompt = [item for item in hook_items if item[0] == "UserPromptSubmit"]
+        if not prompt:
+            container, items = hooks[-1][1], hook_items
+            snippet = '"UserPromptSubmit": [' + entry + "]"
+        else:
+            container = prompt[-1][1]
+            items = _json_spans(text, container)[1]
+            snippet = entry
+    at = items[-1][2] if items else container + 1
+    inserted = (", " if items else "") + snippet
+    return text[:at] + inserted + text[at:], inserted
+
+
+def _pruned_settings(document: Mapping[str, Any]) -> dict[str, Any]:
+    pruned = json.loads(json.dumps(document))
+    hooks = pruned.get("hooks")
+    if isinstance(hooks, dict) and hooks.get("UserPromptSubmit") == []:
+        del hooks["UserPromptSubmit"]
+        if not hooks:
+            del pruned["hooks"]
+    return pruned
+
+
+def _has_managed_cursor_entry(document: object) -> bool:
+    hooks = document.get("hooks") if isinstance(document, Mapping) else None
+    entries = hooks.get("UserPromptSubmit") if isinstance(hooks, Mapping) else None
+    return isinstance(entries, list) and any(_is_managed_cursor_entry(e) for e in entries)
+
+
+def _restore_cursor_settings(
+    target: Path, text: str, acceptable: list[dict[str, Any]]
+) -> tuple[str | None, str]:
+    """Settings text without the managed entry (None: delete) and how it was made.
+
+    Prefer the exact pre-install bytes, kept as an install backup; then remove
+    exactly what install inserted, keeping later user edits byte for byte; only
+    as a last resort re-serialize, keeping the file's newline and indent style.
+    """
+    entry = json.dumps(_cursor_hook_entry(), ensure_ascii=False)
+    created = json.dumps({"hooks": {"UserPromptSubmit": [_cursor_hook_entry()]}}, indent=2)
+    if text == created + "\n":
+        return None, "removed_created_file"
+    inserted_candidates: list[str] = []
+    for backup in sorted(target.parent.glob(f"{target.name}.entroly-backup-*"), reverse=True):
+        try:
+            original = backup.read_bytes().decode("utf-8")
+            if _has_managed_cursor_entry(json.loads(original)):
+                continue
+            spliced, inserted = _splice_cursor_entry(original)
+        except (OSError, UnicodeDecodeError, ValueError, IndexError):
+            continue
+        if spliced == text:
+            return original, "original_bytes"
+        inserted_candidates.append(inserted)
+    inserted_candidates = inserted_candidates[:1] + [
+        prefix + wrapped
+        for wrapped in (
+            '"hooks": {"UserPromptSubmit": [' + entry + "]}",
+            '"UserPromptSubmit": [' + entry + "]",
+            entry,
+        )
+        for prefix in (", ", "")
+    ]
+    for fragment in inserted_candidates:
+        start = text.find(fragment)
+        while start != -1:
+            candidate = text[:start] + text[start + len(fragment):]
+            try:
+                if json.loads(candidate) in acceptable:
+                    return candidate, "removed_entry"
+            except ValueError:
+                pass
+            start = text.find(fragment, start + 1)
+    newline = "\r\n" if "\r\n" in text else "\n"
+    indent: str | int = 2
+    for line in text.splitlines()[1:]:
+        body = line.lstrip(" \t")
+        if body and len(body) < len(line):
+            indent = line[: len(line) - len(body)]
+            break
+    rendered = json.dumps(acceptable[0], indent=indent, ensure_ascii=False)
+    rendered = rendered.replace("\n", newline)
+    return rendered + (newline if text.endswith("\n") else ""), "reformatted"
+
+
+def _write_settings_text(target: Path, text: str | None) -> Path | None:
+    """Write (or, for None, delete) settings, keeping a copy of the old bytes.
+
+    Writes through a symlinked target instead of replacing the link, keeps the
+    file mode, and never translates newlines.
+    """
+    real = Path(os.path.realpath(target))
+    backup: Path | None = None
+    if real.exists():
+        backup = target.with_name(
+            f"{target.name}.entroly-backup-"
+            f"{time.strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+        )
+        shutil.copy2(real, backup)
+    if text is None:
+        real.unlink()
+        return backup
+    real.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(
+        prefix=".entroly-config-", suffix=".json", dir=str(real.parent)
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as stream:
+            stream.write(text)
+            stream.flush()
+            os.fsync(stream.fileno())
+        if real.exists():
+            os.chmod(temp_name, stat.S_IMODE(real.stat().st_mode))
+        os.replace(temp_name, real)
+    finally:
+        Path(temp_name).unlink(missing_ok=True)
+    return backup
+
+
 def configure_cursor_hook(
     project_dir: Path,
     *,
@@ -524,9 +708,12 @@ def configure_cursor_hook(
     if not project.is_dir():
         raise ValueError(f"project directory does not exist: {project}")
     target = project / CURSOR_HOOK_RELATIVE_PATH
+    text: str | None = None
     if target.exists():
         try:
-            document = json.loads(target.read_text(encoding="utf-8"))
+            # Bytes, not read_text(): universal newlines would turn CRLF into LF.
+            text = target.read_bytes().decode("utf-8")
+            document = json.loads(text)
         except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             return {
                 "status": "conflict",
@@ -568,12 +755,16 @@ def configure_cursor_hook(
         hooks["UserPromptSubmit"] = [
             item for index, item in enumerate(entries) if index not in managed
         ]
-        backup = _replace_json_with_backup(target, document)
+        restored, how = _restore_cursor_settings(
+            target, text or "", [_pruned_settings(document), document]
+        )
+        backup = _write_settings_text(target, restored)
         return {
             "status": "disabled",
             "host": "cursor",
             "path": str(target),
             "recoverable_at": str(backup) if backup is not None else None,
+            "restored": how,
         }
 
     if managed:
@@ -584,7 +775,24 @@ def configure_cursor_hook(
             "manual_requirement": "enable Cursor third-party skills and configurations",
         }
     entries.append(_cursor_hook_entry())
-    backup = _replace_json_with_backup(target, document)
+    if text is None:
+        new_text = json.dumps(document, indent=2) + "\n"
+    else:
+        # Insert only Entroly's entry and leave every other byte as it was, so
+        # uninstall can give back the original file byte for byte.
+        try:
+            new_text = _splice_cursor_entry(text)[0]
+            merged = json.loads(new_text) == document
+        except ValueError:
+            merged = False
+        if not merged:
+            return {
+                "status": "conflict",
+                "host": "cursor",
+                "path": str(target),
+                "detail": "could not add the hook without rewriting the rest of the file",
+            }
+    backup = _write_settings_text(target, new_text)
     result: dict[str, Any] = {
         "status": "installed",
         "host": "cursor",
@@ -618,6 +826,52 @@ def _additional_context(receipt: Mapping[str, Any], selection: ActivationSelecti
     )
 
 
+TURN_CLAIM_SECONDS = 30.0
+
+
+def _claim_turn(
+    payload: Mapping[str, Any], event: str, query: str, project_dir: Path, root: Path
+) -> bool:
+    """False when another registration of this hook already claimed this turn.
+
+    A host runs every matching registration of a prompt hook, in parallel, with
+    the same payload. The turn is identified by session, event, prompt and the
+    transcript's size and mtime: identical for parallel registrations, changed
+    once the previous turn is written, so a repeated prompt still runs. Without
+    a session id or a readable transcript a turn cannot be told apart from a
+    repeated prompt, so the hook always runs; any failure to coordinate runs it
+    too.
+    """
+    session = payload.get("session_id")
+    transcript = payload.get("transcript_path")
+    if not (isinstance(session, str) and session and isinstance(transcript, str) and transcript):
+        return True
+    try:
+        info = os.stat(transcript)
+    except OSError:
+        return True
+    marker = f"{info.st_size}:{info.st_mtime_ns}"
+    key = hashlib.sha256(
+        "\0".join((session, event, query, marker)).encode("utf-8")
+    ).hexdigest()[:32]
+    turns = root / _project_fingerprint(project_dir) / "turns"
+    try:
+        turns.mkdir(parents=True, exist_ok=True)
+        now = time.time()
+        for old in turns.glob("*.claim"):
+            try:
+                if now - old.stat().st_mtime > TURN_CLAIM_SECONDS:
+                    old.unlink()
+            except OSError:
+                pass
+        os.close(os.open(turns / f"{key}.claim", os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600))
+        return True
+    except FileExistsError:
+        return False
+    except OSError:
+        return True
+
+
 def run_hook(
     payload: Mapping[str, Any],
     *,
@@ -633,6 +887,15 @@ def run_hook(
     query = _prompt(payload)
     project_dir = _project_dir(payload)
     resolved_host = _infer_host(payload, host)
+    root = state_dir or _default_state_dir()
+    if query and not _claim_turn(payload, event, query, project_dir, root):
+        # Another registration of this hook (for example the Cursor project
+        # hook beside the Claude Code plugin hook, both loaded by Claude Code)
+        # already handles this prompt; a second run would inject it twice.
+        return {
+            "hookSpecificOutput": {"hookEventName": event, "additionalContext": ""},
+            "suppressOutput": True,
+        }
     activation_id = uuid.uuid4().hex
     started = time.perf_counter()
 
@@ -682,6 +945,12 @@ def run_hook(
         "selected_sources": list(selection.sources),
         "selected_context_tokens_estimate": selection.selected_tokens,
         "elapsed_ms": round((time.perf_counter() - started) * 1_000, 3),
+        # What executed the hook, so status can tell when it no longer exists
+        # (moved or deleted venv, uninstalled package).
+        "runtime": {
+            "python": sys.executable,
+            "package": str(Path(__file__).resolve().parent),
+        },
         "claim_boundary": (
             "The hook selected local context. Without a matched baseline this "
             "receipt does not prove provider token or cost savings."
@@ -689,7 +958,7 @@ def run_hook(
     }
     if selection.detail:
         receipt["detail"] = selection.detail
-    receipt_path = _write_receipt(receipt, state_dir or _default_state_dir())
+    receipt_path = _write_receipt(receipt, root)
     receipt["receipt_path"] = str(receipt_path)
 
     return {
@@ -767,7 +1036,17 @@ def activation_status(
     events_dir = root / _project_fingerprint(project) / "events"
     receipts: list[dict[str, Any]] = []
     if events_dir.is_dir():
-        for path in sorted(events_dir.glob("*.json"), reverse=True)[:500]:
+        # Receipt names are random activation ids, so sorting by name kept an
+        # arbitrary 500 once a project had more: the newest run could be
+        # dropped and `state` derived from older ones. Keep the newest written.
+        def _written_at(path: Path) -> float:
+            try:
+                return path.stat().st_mtime
+            except OSError:
+                return 0.0
+
+        newest_first = sorted(events_dir.glob("*.json"), key=_written_at, reverse=True)
+        for path in newest_first[:500]:
             try:
                 item = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, UnicodeDecodeError, json.JSONDecodeError):
@@ -783,14 +1062,19 @@ def activation_status(
         by_status[status] = by_status.get(status, 0) + 1
         by_host[host_name] = by_host.get(host_name, 0) + 1
 
+    # A run whose event named no host (a manual `entroly activation hook`
+    # test) is not evidence that any agent host runs the hook; judge by host
+    # runs whenever there are any.
+    host_receipts = [item for item in receipts if item.get("host") != "unknown"]
+    considered = host_receipts or receipts
     latest = max(
-        receipts,
+        considered,
         key=lambda item: float(item.get("recorded_at_unix", 0) or 0),
         default=None,
     )
     effective_receipts = [
         item
-        for item in receipts
+        for item in considered
         if item.get("status") in {"activated", "no_match"}
         and item.get("native_engine") is True
     ]
@@ -813,11 +1097,20 @@ def activation_status(
     else:
         state = "unobserved"
 
+    inactive_reason = None
+    if state == "active":
+        inactive_reason = _inactive_reason(
+            latest, _lifecycle_events(root, project), bool(host_receipts)
+        )
+        if inactive_reason is not None:
+            state = "inactive"
+
     return {
         "schema_version": SCHEMA_VERSION,
         "project_fingerprint": _project_fingerprint(project),
         "source_root": str(project),
         "state": state,
+        "inactive_reason": inactive_reason,
         "activation_events": len(receipts),
         "effective_activation_events": len(effective_receipts),
         "by_status": by_status,
@@ -831,11 +1124,103 @@ def activation_status(
         "latest_age_seconds": latest_age_seconds,
         "active_freshness_seconds": ACTIVE_FRESHNESS_SECONDS,
         "claim_boundary": (
-            "Active requires a recent native hook run that selected context or "
-            "reached a valid no-match decision. Unobserved does not prove "
-            "installation."
+            "Active requires a recent native hook run from an agent host that "
+            "selected context or reached a valid no-match decision, with no later "
+            "`entroly activation uninstall` for that host and the runtime that "
+            "ran it still present. Unobserved does not prove installation."
         ),
     }
+
+
+def record_lifecycle_event(
+    project_dir: Path,
+    host: str,
+    event: str,
+    *,
+    state_dir: Path | None = None,
+) -> Path:
+    """Record that `entroly activation install|uninstall` changed a host hook.
+
+    Receipts only prove that a hook ran. Without this record, a hook removed
+    with `activation uninstall` stayed "active" for the whole freshness
+    window on the strength of receipts written before it was removed.
+    """
+    project = project_dir.expanduser().resolve()
+    root = state_dir or _default_state_dir()
+    destination = (
+        root / _project_fingerprint(project) / "lifecycle" / f"{uuid.uuid4().hex}.json"
+    )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(
+        json.dumps(
+            {
+                "schema_version": SCHEMA_VERSION,
+                "event": event,
+                "host": host,
+                "recorded_at_unix": round(time.time(), 6),
+                "source_root": str(project),
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return destination
+
+
+def _lifecycle_events(root: Path, project: Path) -> list[dict[str, Any]]:
+    directory = root / _project_fingerprint(project) / "lifecycle"
+    events: list[dict[str, Any]] = []
+    if directory.is_dir():
+        for path in directory.glob("*.json"):
+            try:
+                item = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                continue
+            if isinstance(item, dict):
+                events.append(item)
+    return events
+
+
+def _inactive_reason(
+    latest: Mapping[str, Any],
+    lifecycle: list[dict[str, Any]],
+    host_driven: bool,
+) -> str | None:
+    """Why a fresh effective receipt does not mean the hook still runs, if so."""
+
+    if not host_driven:
+        return (
+            "only runs without an agent host were observed (no hook event name, "
+            "e.g. a manual `entroly activation hook` test); submit one prompt in "
+            "the host to observe it"
+        )
+    host = latest.get("host")
+    ran_at = float(latest.get("recorded_at_unix", 0) or 0)
+    newest = max(
+        (item for item in lifecycle if item.get("host") == host),
+        key=lambda item: float(item.get("recorded_at_unix", 0) or 0),
+        default=None,
+    )
+    if (
+        newest is not None
+        and newest.get("event") == "uninstalled"
+        and float(newest.get("recorded_at_unix", 0) or 0) >= ran_at
+    ):
+        return (
+            f"the {host} hook was removed with `entroly activation uninstall` "
+            "after its last observed run"
+        )
+    runtime = latest.get("runtime")
+    if isinstance(runtime, Mapping):
+        for label in ("python", "package"):
+            value = runtime.get(label)
+            if isinstance(value, str) and value and not Path(value).exists():
+                return (
+                    f"the {label} that ran the hook ({value}) no longer exists, so "
+                    "the installed hook cannot run it"
+                )
+    return None
 
 
 __all__ = [
@@ -846,5 +1231,6 @@ __all__ = [
     "hook_context",
     "parse_hook_input",
     "read_protocol_stdin",
+    "record_lifecycle_event",
     "run_hook",
 ]

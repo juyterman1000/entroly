@@ -26,6 +26,17 @@ def test_privacy_checks_disclose_telemetry_and_do_not_certify_no_egress(
     assert "other configured stores" in output or "configured stores may still contain data" in output
 
 
+@pytest.fixture(autouse=True)
+def _empty_entroly_home(monkeypatch, tmp_path_factory):
+    """Doctor reads ~/.entroly (index freshness); keep the developer's out.
+
+    These tests assert exact check counts. Once doctor could see per-project
+    indexes, a >24h-old index in the real HOME turned "8/8" into "7/8".
+    """
+    monkeypatch.setenv("HOME", str(tmp_path_factory.mktemp("home")))
+    monkeypatch.delenv("ENTROLY_DIR", raising=False)
+
+
 @pytest.fixture
 def tuning_config(monkeypatch, tmp_path: Path):
     """Point doctor's weights file at a temp path and write arbitrary content."""
@@ -41,10 +52,17 @@ def tuning_config(monkeypatch, tmp_path: Path):
     return _write
 
 
-def test_doctor_treats_absent_optional_native_engine_as_healthy(
+def test_doctor_warns_that_relevance_ranking_is_off_without_native_engine(
     monkeypatch,
     capsys,
 ) -> None:
+    """README sends users to doctor when simulate says "Relevance ranking is
+    OFF". Without the native engine doctor called it "Optional Rust
+    acceleration" and counted a pass ("8/8 checks passed"), so the one
+    diagnostic for that state reported all-clear. It is a counted warning,
+    matching `doctor --json` (native_engine: warning, pure_python_fallback):
+    the pure-Python fallback still works, so the exit code stays 0.
+    """
     status = NativeStatus(
         available=False,
         module=None,
@@ -56,12 +74,16 @@ def test_doctor_treats_absent_optional_native_engine_as_healthy(
     )
     monkeypatch.setattr("entroly.native_status.native_status", lambda _: status)
 
-    cli.cmd_doctor(Namespace(port=9377, privacy=False))
+    rc = cli.cmd_doctor(Namespace(port=9377, privacy=False))
 
     output = capsys.readouterr().out
-    assert "Optional Rust acceleration not installed" in output
-    assert "pure-Python engine is active" in output
-    assert "8/8 checks passed" in output
+    assert "Relevance ranking is OFF" in output
+    assert "python -m pip install -U entroly-core" in output
+    assert "Optional Rust acceleration" not in output
+    assert "8/8 checks passed" not in output
+    assert "7/8 checks passed" in output
+    assert "warning(s)" in output
+    assert rc in (None, 0)
 
 
 def test_doctor_flags_an_installed_but_incomplete_native_engine(

@@ -112,6 +112,11 @@ def test_the_live_reason_agrees_with_the_live_status():
             f"core is importable from {status.path} but the reason claims it is "
             f"absent: {reason!r}"
         )
+    elif status.import_failed:
+        # Present but unloadable is not "not installed": that sends the user
+        # to install a package they already have.
+        assert "failed to load" in reason
+        assert "not installed" not in reason.lower()
     else:
         assert "not installed" in reason.lower()
 

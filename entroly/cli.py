@@ -133,6 +133,26 @@ def _free_port(port: int) -> bool:
         return s.connect_ex(("127.0.0.1", port)) != 0
 
 
+def _resolve_dashboard_port(args) -> int:
+    """Dashboard port: --dashboard-port, then ENTROLY_DASHBOARD_PORT, then 9378."""
+    explicit = getattr(args, "dashboard_port", None)
+    try:
+        port = int(explicit or os.environ.get("ENTROLY_DASHBOARD_PORT") or 9378)
+    except ValueError:
+        port = 9378
+    # create_proxy_app (and its security/gateway wrappers) read it from here.
+    os.environ["ENTROLY_DASHBOARD_PORT"] = str(port)
+    return port
+
+
+def _report_busy_dashboard_port(port: int, command: str) -> None:
+    print(f"  {C.RED}Dashboard port {port} is already in use.{C.RESET}")
+    print(
+        f"  {C.GRAY}Choose another: entroly {command} --dashboard-port <port> "
+        f"(or set ENTROLY_DASHBOARD_PORT), or stop the service on {port}.{C.RESET}"
+    )
+
+
 def _is_entroly_service_running(url: str, expected_service: str) -> bool:
     """Return whether *url* exposes the expected Entroly health identity."""
     try:
@@ -245,6 +265,18 @@ def cmd_activation(args):
                 Path(args.project),
                 uninstall=args.activation_action == "uninstall",
             )
+        if report["status"] in {"installed", "already_installed", "disabled"}:
+            # `activation status` must stop calling a removed hook active.
+            from .agent_activation import record_lifecycle_event
+
+            try:
+                record_lifecycle_event(
+                    Path(args.project),
+                    args.host,
+                    "uninstalled" if report["status"] == "disabled" else "installed",
+                )
+            except OSError:
+                pass
         print(json.dumps(report, indent=2, sort_keys=True))
         return 2 if report["status"] == "conflict" else 0
 
@@ -453,12 +485,13 @@ def _detect_ai_tool() -> dict:
             "config_key": "mcpServers",
         })
 
-    # VS Code MCP-compatible assistants (Cline, Roo, Continue, etc.)
+    # VS Code reads workspace MCP servers from .vscode/mcp.json under
+    # "servers" (not the Claude/Cursor "mcpServers" key).
     if os.path.exists(os.path.join(cwd, ".vscode")):
         tools.append({
             "name": "VS Code",
             "config_path": os.path.join(cwd, ".vscode", "mcp.json"),
-            "config_key": "mcpServers",
+            "config_key": "servers",
         })
 
     # Windsurf
@@ -620,7 +653,11 @@ def _write_config(tool: dict, dry_run: bool = False) -> str:
         existing[config_key] = servers
     if not isinstance(servers, dict):
         raise ValueError(f"{config_key!r} must be a JSON object in {config_path}")
-    servers.update(_generate_mcp_config())
+    entry = _generate_mcp_config()
+    if config_key == "servers":
+        # VS Code's mcp.json schema names the transport on every server.
+        entry = {name: {"type": "stdio", **spec} for name, spec in entry.items()}
+    servers.update(entry)
 
     if dry_run:
         # Never echo unrelated editor preferences, account identifiers, or
@@ -629,7 +666,7 @@ def _write_config(tool: dict, dry_run: bool = False) -> str:
             {
                 "operation": "merge",
                 "config_key": config_key,
-                "entry": _generate_mcp_config(),
+                "entry": entry,
                 "preserves_unrelated_configuration": True,
             },
             indent=2,
@@ -964,7 +1001,14 @@ def cmd_health(args):
             print(f"\n  {C.RED}{total_findings} security findings ({sec.get('critical_total', 0)} critical, {sec.get('high_total', 0)} high){C.RESET}")
             print(f"    {C.GRAY}{taint} taint-flow (high-confidence) + {pat} pattern-only (review for FPs){C.RESET}")
             if sec.get("most_vulnerable_fragment"):
-                print(f"    {C.GRAY}Most vulnerable: {sec['most_vulnerable_fragment']}{C.RESET}")
+                # The fragment id is internal; name the file it came from.
+                worst = sec["most_vulnerable_fragment"]
+                for frag in sec.get("vulnerable_fragments") or []:
+                    source = frag.get("source") or ""
+                    if frag.get("fragment_id") == worst and source:
+                        worst = source.removeprefix("file:")
+                        break
+                print(f"    {C.GRAY}Most vulnerable: {worst}{C.RESET}")
         else:
             print(f"\n  {C.GREEN}No security vulnerabilities detected{C.RESET}")
 
@@ -1149,9 +1193,9 @@ def cmd_proxy(args):
         print(f"  {C.RED}Port {config.port} is already in use.{C.RESET}")
         print(f"  {C.GRAY}Try: entroly proxy --port <other-port>{C.RESET}")
         return
-    if not _free_port(9378):
-        print(f"  {C.RED}Dashboard port 9378 is already in use.{C.RESET}")
-        print(f"  {C.GRAY}Stop the existing service before starting `entroly proxy`.{C.RESET}")
+    dashboard_port = _resolve_dashboard_port(args)
+    if not _free_port(dashboard_port):
+        _report_busy_dashboard_port(dashboard_port, "proxy")
         return
 
     # Opt-in connectivity probe — useful for diagnosing DNS/firewall/VPN
@@ -1159,7 +1203,7 @@ def cmd_proxy(args):
     if _should_check_upstream():
         _check_upstream(config)
 
-    # Create the ASGI app (this also starts the dashboard on :9378)
+    # Create the ASGI app (this also starts the dashboard)
     app = create_proxy_app(
         engine,
         config,
@@ -1168,13 +1212,13 @@ def cmd_proxy(args):
 
     print(f"""
   {C.GREEN}{C.BOLD}Proxy live at http://{config.host}:{config.port}{C.RESET}
-  {C.GREEN}{C.BOLD}Dashboard at http://localhost:9378{C.RESET}
+  {C.GREEN}{C.BOLD}Dashboard at http://localhost:{dashboard_port}{C.RESET}
 
   {C.BOLD}To use:{C.RESET} Set your AI tool's API base URL to:
     {C.CYAN}http://localhost:{config.port}/v1{C.RESET}
 
   {C.GRAY}Every LLM request is intercepted -> optimized -> forwarded.{C.RESET}
-  {C.GRAY}Live pipeline latency: http://localhost:9378 — or `entroly status`.{C.RESET}
+  {C.GRAY}Live pipeline latency: http://localhost:{dashboard_port} — or `entroly status`.{C.RESET}
   {C.GRAY}File watcher active — new/modified files auto-indexed every 120s.{C.RESET}
   {C.GRAY}Press Ctrl+C to stop.{C.RESET}
 """)
@@ -1960,6 +2004,7 @@ _WRAP_AGENTS = {
     "vscode": {
         "kind": "mcp", "name": "VS Code MCP clients",
         "config_path": "{cwd}/.vscode/mcp.json",
+        "config_key": "servers",
         "post_hint": "Reload VS Code. MCP-compatible clients will pick this up.",
     },
     "claude-desktop": {
@@ -3037,9 +3082,9 @@ def cmd_go(args):
         print(f"  {C.RED}Port {config.port} is already in use.{C.RESET}")
         print(f"  {C.GRAY}Try: entroly go --port <other-port>{C.RESET}")
         return
-    if not _free_port(9378):
-        print(f"  {C.RED}Dashboard port 9378 is already in use.{C.RESET}")
-        print(f"  {C.GRAY}Stop the existing service before starting `entroly go`.{C.RESET}")
+    dashboard_port = _resolve_dashboard_port(args)
+    if not _free_port(dashboard_port):
+        _report_busy_dashboard_port(dashboard_port, "go")
         return
 
     # Start proxy + dashboard
@@ -3049,7 +3094,7 @@ def cmd_go(args):
   {C.GREEN}{C.BOLD}Local services ready!{C.RESET}
 
   {C.GREEN}Proxy:{C.RESET}      http://localhost:{config.port}/v1
-  {C.GREEN}Dashboard:{C.RESET}  http://localhost:9378
+  {C.GREEN}Dashboard:{C.RESET}  http://localhost:{dashboard_port}
 
   {C.BOLD}Point your AI tool's API base URL to the proxy URL above.{C.RESET}
   {C.GRAY}Only traffic sent to this URL can be optimized; MCP registration alone does not route requests.{C.RESET}
@@ -3060,7 +3105,7 @@ def cmd_go(args):
     # Auto-open dashboard
     try:
         import webbrowser
-        webbrowser.open("http://localhost:9378")
+        webbrowser.open(f"http://localhost:{dashboard_port}")
     except Exception:
         pass
 
@@ -3109,7 +3154,8 @@ def cmd_demo(args):
         )
         print(
             f"  {C.BOLD}Modeled per-query input cost difference{C.RESET} "
-            f"({per_query_saved:,} locally estimated tokens/query):"
+            f"({per_query_saved:,} tokens/query below the fixed "
+            f"{report['baseline_tokens_per_query']:,}-token baseline):"
         )
         for model in ("gpt-4o", "claude-sonnet-4", "gemini-2.5-pro"):
             cost = estimate_cost(per_query_saved, model)
@@ -3147,6 +3193,37 @@ def _simulation_queries(args) -> list[str]:
     ]
 
 
+def _indexed_content_tokens(engine, fallback: int) -> int:
+    """Estimated tokens of the content the index holds, without selection weights.
+
+    auto_index stores config and doc fragments with an inflated ``token_count``
+    (x3 for .yaml/.yml/.json/.toml, x2 for .md/.rst; see
+    ``auto_index._source_type_token_weight``) so the knapsack prefers source
+    code. That is a selection penalty, not content. Summing it reported a
+    10-file project holding 20,426 estimated tokens as 33,675, which also lifted
+    the savings baseline to the 32,000 cap; click read 249,545 for 182,799.
+    """
+    from entroly.auto_index import _estimate_tokens
+
+    try:
+        if hasattr(engine, "_ensure_index_loaded"):
+            engine._ensure_index_loaded()
+        if getattr(engine, "_use_rust", False):
+            contents = [
+                str(f.get("content") or "") for f in engine._rust.export_fragments()
+            ]
+        else:
+            contents = [
+                str(getattr(f, "content", "") or "")
+                for f in getattr(engine, "_fragments", {}).values()
+            ]
+    except Exception:  # noqa: BLE001 - keep the engine's own figure
+        return fallback
+    if not contents:
+        return fallback
+    return sum(_estimate_tokens(content) for content in contents)
+
+
 def _load_local_simulation_engine(max_files: int | None = None):
     from entroly import auto_index as auto_index_module
     from entroly.server import EntrolyEngine
@@ -3158,7 +3235,12 @@ def _load_local_simulation_engine(max_files: int | None = None):
     try:
         index = auto_index_module.auto_index(engine)
         if index["status"] == "indexed":
-            return engine, index["files_indexed"], index["total_tokens"], index["status"]
+            return (
+                engine,
+                index["files_indexed"],
+                _indexed_content_tokens(engine, int(index["total_tokens"] or 0)),
+                index["status"],
+            )
         if index["status"] == "skipped":
             # `auto_index` already returns a real file count on the warm path.
             # Substituting `existing_fragments` here discarded it for a
@@ -3177,7 +3259,12 @@ def _load_local_simulation_engine(max_files: int | None = None):
                 # cold and warm paths. _total_token_count is a lexical retrieval
                 # statistic in the pure-Python engine, not context-budget tokens.
                 total_tokens = index.get("total_tokens", total_tokens)
-            return engine, files_indexed, int(total_tokens or 0), index["status"]
+            return (
+                engine,
+                files_indexed,
+                _indexed_content_tokens(engine, int(total_tokens or 0)),
+                index["status"],
+            )
         return engine, 0, 0, index["status"]
     finally:
         auto_index_module.MAX_FILES = old_max_files
@@ -3206,12 +3293,45 @@ def _query_conditioned_selection_active(engine) -> bool:
     return bool(_HAS_RUST)
 
 
+def _index_coverage(engine, files_indexed: int, max_files: int) -> dict:
+    """How much of the repository the simulation actually indexed, and why.
+
+    ``simulate`` indexes at most ``--max-files`` files (default 100). On a
+    2,018-file clone of this repository it indexed 100 and still headlined
+    "88.6% fewer" for a function that lives in a file it never read, with no
+    sign that a cap applied.
+    """
+    from entroly import auto_index as auto_index_module
+
+    try:
+        indexable = auto_index_module.count_indexable_files(engine)
+    except Exception:  # noqa: BLE001 - coverage is reported, never required
+        indexable = None
+    cap = max_files if max_files > 0 else auto_index_module.MAX_FILES
+    return {
+        "files_indexable": indexable,
+        "file_cap": cap,
+        "file_cap_source": "--max-files" if max_files > 0 else "ENTROLY_MAX_FILES",
+        "coverage_capped": bool(
+            indexable is not None and files_indexed < indexable and indexable > cap
+        ),
+    }
+
+
 def _run_local_simulation(args) -> dict:
     max_files = int(getattr(args, "max_files", 100) or 0)
     engine, files_indexed, total_tokens, index_status = _load_local_simulation_engine(max_files)
+    coverage = _index_coverage(engine, files_indexed, max_files)
     query_conditioned = _query_conditioned_selection_active(engine)
     budget = int(getattr(args, "budget", 4096) or 4096)
     queries = _simulation_queries(args)
+    # Without --query the run measures built-in sample questions (auth, SQL
+    # injection, module structure) that may not exist in this repository: on a
+    # click-derived project they headlined 98.3% with nothing saying so.
+    supplied = getattr(args, "query", None) or []
+    if isinstance(supplied, str):
+        supplied = [supplied]
+    sample_queries = not any(q and q.strip() for q in supplied)
     baseline = int(getattr(args, "baseline", 0) or 0)
     explicit_baseline = baseline > 0
     if baseline <= 0:
@@ -3266,8 +3386,10 @@ def _run_local_simulation(args) -> dict:
         "budget": budget,
         "budget_narrowed_to_demonstrate": fits_entirely,
         "max_files": max_files,
+        **coverage,
         "baseline_tokens_per_query": baseline,
         "queries": rows,
+        "sample_queries": sample_queries,
         "total_tokens_saved": total_saved if query_conditioned else None,
         "average_reduction_pct": (
             round(total_saved * 100 / max(baseline * len(rows), 1), 2)
@@ -3290,13 +3412,26 @@ def _run_local_simulation(args) -> dict:
         "selection_engine": "qccr-native" if query_conditioned else "python-fallback-unranked",
         "limitations": [
             "No LLM call was made; quality is not judged here.",
-            "Token differences are estimated against the stated local baseline, not your provider bill.",
+            f"Token differences are measured against a fixed baseline of {baseline:,} "
+            "tokens per query (the smaller of the indexed tokens and 32,000 unless "
+            "--baseline is set), not against a request that was actually sent or "
+            "your provider bill; the baseline does not depend on the query, so a "
+            "smaller selection scores higher whether or not it answers it.",
             "Provider cache discounts, output tokens, and retries are excluded.",
         ] + ([] if query_conditioned else [
             "The native engine is unavailable, so selection did not read the query: "
             "these figures are budget arithmetic and are NOT a measured saving. "
             'Install it with: pip install -U "entroly[native]"',
-        ]),
+        ]) + ([
+            f"Only {files_indexed:,} of {coverage['files_indexable']:,} indexable files "
+            f"were indexed (capped by {coverage['file_cap_source']} "
+            f"{coverage['file_cap']:,}); every figure covers that subset, and a "
+            "task whose files were not indexed is not measured."
+        ] if coverage["coverage_capped"] else []) + ([
+            "No --query was given, so built-in sample questions were measured; "
+            "they may not match this repository. Pass --query \"<your task>\" "
+            "to measure your own."
+        ] if sample_queries else []),
     }
 
 
@@ -3305,14 +3440,28 @@ def _print_local_simulation(report: dict, *, title: str, include_perf: bool) -> 
     if report["files_indexed"] == 0:
         print(f"  {C.YELLOW}No files found to index. Run this inside a project directory.{C.RESET}\n")
         return
+    indexable = report.get("files_indexable")
+    scope = f" of {indexable:,} indexable" if indexable else ""
     print(
-        f"  {C.GREEN}Indexed {report['files_indexed']} files "
+        f"  {C.GREEN}Indexed {report['files_indexed']}{scope} files "
         f"({report['repo_tokens_indexed']:,} estimated tokens){C.RESET}"
     )
+    if report.get("coverage_capped"):
+        print(
+            f"  {C.YELLOW}Capped by {report['file_cap_source']} "
+            f"{report['file_cap']:,}: the figures below cover only the indexed "
+            f"files. Use --max-files 0 to index up to ENTROLY_MAX_FILES.{C.RESET}"
+        )
     print(
         f"  {C.BOLD}Baseline:{C.RESET} {report['baseline_tokens_per_query']:,} "
         f"tokens/query  {C.BOLD}Budget:{C.RESET} {report['budget']:,} tokens"
     )
+    if report.get("sample_queries"):
+        print(
+            f"  {C.YELLOW}Sample questions (no --query given); they may not match "
+            f"this repository. Measure your own task with "
+            f'--query "<your task>".{C.RESET}'
+        )
     # Without the native engine the optimizer never reads the query, so every
     # question returns the same fragments and the same percentage. Automatic
     # repair (self_heal) normally prevents anyone seeing this at all; it is
@@ -3345,7 +3494,8 @@ def _print_local_simulation(report: dict, *, title: str, include_perf: bool) -> 
                           f"[unearned]")
         else:
             difference = (f"{row['reduction_pct']:.1f}% fewer; "
-                          f"{row['tokens_saved']:,} tokens saved")
+                          f"{row['tokens_saved']:,} tokens saved vs the "
+                          f"{report['baseline_tokens_per_query']:,}-token baseline")
         print(
             f"       {row['selected_fragments']} fragments, "
             f"{row['selected_tokens']:,} tokens ({difference})"
@@ -3383,7 +3533,7 @@ def _print_local_simulation(report: dict, *, title: str, include_perf: bool) -> 
         print(
             f"  {C.GRAY}Nothing needed dropping, so there is nothing to save yet. "
             f"Entroly starts paying off once a codebase outgrows the context "
-            f"window — on a 680k-token repo it cut context 87.6%.{C.RESET}"
+            f"window.{C.RESET}"
         )
         print(
             f"  {C.GRAY}Try it on a larger repo, or force selection here with "
@@ -3391,7 +3541,24 @@ def _print_local_simulation(report: dict, *, title: str, include_perf: bool) -> 
             f"{C.GRAY}.{C.RESET}"
         )
     else:
-        print(f"  {C.GREEN}{C.BOLD}Average reduction: {avg:.1f}%{C.RESET}")
+        # The baseline is fixed per run, so this percentage rises as the
+        # selection shrinks: an off-topic question that matched one common word
+        # scored 97.6% on click while the relevant one scored 87.3%. Name the
+        # baseline and say what the number cannot tell apart.
+        print(
+            f"  {C.GREEN}{C.BOLD}Average reduction: {avg:.1f}%{C.RESET} "
+            f"vs a fixed {report['baseline_tokens_per_query']:,}-token baseline"
+            + (
+                f", over {report['files_indexed']:,} of "
+                f"{report['files_indexable']:,} files"
+                if report.get("coverage_capped") else ""
+            )
+        )
+        print(
+            f"  {C.GRAY}The baseline is the same for every query, so a smaller "
+            f"selection scores higher whether or not it answers the question; "
+            f"check the files listed under each query.{C.RESET}"
+        )
     if include_perf:
         lat = report["latency_ms"]
         print(
@@ -3399,6 +3566,10 @@ def _print_local_simulation(report: dict, *, title: str, include_perf: bool) -> 
             f"min {lat['min']:.2f} ms, p95 {lat['p95']:.2f} ms, max {lat['max']:.2f} ms"
         )
     print(f"  {C.GRAY}{'; '.join(report['limitations'])}{C.RESET}\n")
+    from .project_footprint import project_footprint_notice  # onb: footprint notice
+
+    if footprint := project_footprint_notice(Path.cwd()):
+        print(f"  {C.GRAY}{footprint}{C.RESET}\n")
 
 
 # `compress` and `recover` live in their own module: they are the only
@@ -3576,6 +3747,11 @@ def cmd_value(args):
     print(
         f"    Operations: {local['operations']:,}  |  "
         f"Tokens reduced: {local['tokens_reduced']:,}"
+    )
+    print(
+        f"    {C.GRAY}Compression is measured against its own input; context "
+        f"selection against a fixed baseline of at most 32,000 tokens per "
+        f"call, not a request that was actually sent.{C.RESET}"
     )
     # Previously printed a hardcoded $0.0000. The token count beside it was
     # measured, so showing nothing for its value understated real work: input
@@ -4100,6 +4276,16 @@ body{{background:#09090b;color:#fafafa;font-family:'Inter',system-ui,sans-serif;
 </html>"""
 
 
+def cmd_memory(args):
+    """entroly memory — delegate to the Memory OS CLI (it owns its parser)."""
+    from entroly.memory_cli import main as memory_main
+
+    try:
+        return int(memory_main(list(getattr(args, "memory_args", []) or [])) or 0)
+    except SystemExit as exc:  # argparse --help / usage errors
+        return exc.code if isinstance(exc.code, int) else 0
+
+
 def cmd_capabilities(args):
     """entroly capabilities — report installed surfaces without network access."""
     from .runtime_capabilities import render_capabilities_text, runtime_capabilities
@@ -4110,6 +4296,56 @@ def cmd_capabilities(args):
     else:
         print("\n" + render_capabilities_text(report) + "\n")
     return 0
+
+
+def _launcher_package_dir(launcher: str) -> Path | None:
+    """Return the ``entroly`` package directory a PATH console script imports.
+
+    The script's own interpreter answers, so a standard venv, ``--user``,
+    pipx/uv tool, or editable install matches the running package. Returns
+    None when the interpreter cannot be read (for example a Windows ``.exe``
+    shim) or the probe fails.
+    """
+    import re
+
+    try:
+        with open(launcher, "rb") as handle:
+            lines = handle.read(4096).decode("utf-8", "replace").splitlines()
+    except OSError:
+        return None
+    if not lines or not lines[0].startswith("#!"):
+        return None
+    parts = lines[0][2:].split()
+    if not parts:
+        return None
+    interpreter = parts[0]
+    if Path(interpreter).name == "env" and len(parts) > 1:
+        interpreter = shutil.which(parts[1]) or ""
+    elif Path(interpreter).name == "sh" and len(lines) > 1:
+        # pip's /bin/sh trampoline for interpreter paths with spaces.
+        match = re.match(r"^'''exec' \"(.+)\" \"\$0\" \"\$@\"", lines[1])
+        interpreter = match.group(1) if match else ""
+    if not interpreter:
+        return None
+    probe = (
+        "import importlib.util, os; s = importlib.util.find_spec('entroly'); "
+        "print(os.path.dirname(os.path.realpath(s.origin)) if s and s.origin else '')"
+    )
+    try:
+        result = subprocess.run(
+            [interpreter, "-c", probe],
+            cwd=os.path.dirname(launcher) or None,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    location = result.stdout.strip()
+    if result.returncode != 0 or not location:
+        return None
+    return Path(location).resolve()
 
 
 def cmd_doctor(args):
@@ -4159,8 +4395,21 @@ def cmd_doctor(args):
     if _launcher:
         try:
             _running = Path(__file__).resolve().parent
-            _launcher_root = Path(_launcher).resolve().parent.parent
-            if _running.parent not in (_launcher_root, *_launcher_root.parents):
+            # Ask the launcher's own interpreter which package it imports.
+            # Comparing directory ancestry fired on every venv, --user, system
+            # and editable install (site-packages is never an ancestor of the
+            # script directory) and told those users to `pip install -e .`.
+            _launched = _launcher_package_dir(_launcher)
+            if _launched is None:
+                # Interpreter not readable (e.g. a Windows .exe shim): keep the
+                # original layout heuristic rather than guess.
+                _launcher_root = Path(_launcher).resolve().parent.parent
+                _shadowed = _running.parent not in (
+                    _launcher_root, *_launcher_root.parents
+                )
+            else:
+                _shadowed = _launched != _running
+            if _shadowed:
                 print(
                     f"  {C.YELLOW}!{C.RESET} `entroly` on PATH is a different "
                     f"installation than the imported package"
@@ -4185,22 +4434,27 @@ def cmd_doctor(args):
 
     # 2. Check Rust engine
     checks_total += 1
-    from .native_status import QCCR_SYMBOLS, native_status
+    from .native_status import QCCR_SYMBOLS, fallback_reason, native_status
     native = native_status(QCCR_SYMBOLS)
     if native.ok:
         version = f" {native.version}" if native.version else ""
         print(f"  {C.GREEN}+{C.RESET} Rust engine (entroly-core{version}) loaded")
         checks_passed += 1
     elif not native.available:
+        # README sends users here when simulate reports "Relevance ranking is
+        # OFF". The engine is a required dependency; without it selection
+        # ignores the query. A counted warning (as `doctor --json` reports it),
+        # not a failure: the pure-Python fallback still works. The cause is
+        # derived, not asserted: an installed core that fails to import lands
+        # here too, and fallback_reason carries its import error.
         print(
-            f"  {C.GRAY}-{C.RESET} Optional Rust acceleration not installed "
-            f"{C.GRAY}— pure-Python engine is active{C.RESET}"
+            f"  {C.YELLOW}!{C.RESET} Native engine unavailable: "
+            f"{fallback_reason(native)} "
+            f"{C.GRAY}— Relevance ranking is OFF: selection ignores the query "
+            f"and reduction figures are unearned{C.RESET}"
         )
-        print(
-            f"    {C.GRAY}Enable when wanted: python -m pip install "
-            f"\"entroly[native]\"{C.RESET}"
-        )
-        checks_passed += 1
+        print(f"    {C.GRAY}Fix: python -m pip install -U entroly-core{C.RESET}")
+        checks_warned += 1
     else:
         print(f"  {C.RED}x{C.RESET} Installed Rust engine is stale or incomplete "
               f"{C.GRAY}— pure-Python fallback remains available{C.RESET}")
@@ -4268,7 +4522,12 @@ def cmd_doctor(args):
     entroly_dir = _resolve_entroly_dir()
     checkpoint_dir = entroly_dir / "checkpoints"
     if checkpoint_dir.exists():
-        checkpoint_files = list(checkpoint_dir.glob("*.json*"))
+        # The engine persists each project's index under its own
+        # checkpoints/<project-hash>/ (config._project_checkpoint_dir); a
+        # top-level-only glob reported "No index found" right after a run.
+        checkpoint_files = list(checkpoint_dir.glob("*.json*")) + list(
+            checkpoint_dir.glob("*/index.json*")
+        )
         if checkpoint_files:
             newest = max(f.stat().st_mtime for f in checkpoint_files)
             import time as _time
@@ -4867,6 +5126,20 @@ def cmd_optimize(args):
         # run with ENTROLY_NO_SELF_HEAL=1. Keep the knapsack fallback for those,
         # because it is the selector with a real pure-Python path.
         selector = "qccr" if task and getattr(engine, "_use_rust", False) else "knapsack"
+    if selector == "qccr" and getattr(engine, "_use_rust", False):
+        # QCCR returns every candidate, unbudgeted, for a task with no
+        # searchable term ("What is this?", a non-Latin question), so the
+        # snapshot was the whole repository. Select without the query instead.
+        from entroly.engine import qccr_can_condition
+
+        if not qccr_can_condition(task):
+            if not quiet:
+                print(
+                    f"  {C.YELLOW}The task has no searchable terms; selecting "
+                    f"without query conditioning.{C.RESET}",
+                    file=sys.stderr,
+                )
+            selector = "knapsack"
     if selector in ("dopt", "qccr"):
         if not getattr(engine, "_use_rust", False):
             print(
@@ -5999,6 +6272,17 @@ def cmd_compile(args):
             )
             print(f"    {C.GRAY}{shown}{more}{C.RESET}")
 
+    # Without a baseline the first `entroly sync` of this directory reported
+    # every file compiled here as changed and staled its belief. Only a
+    # complete, error-free compile may vouch for every file.
+    if max_files <= 0 and not result.errors:
+        try:
+            from entroly.change_listener import WorkspaceChangeListener
+
+            WorkspaceChangeListener(vault, compiler, None, None, target).record_baseline()
+        except Exception as exc:  # noqa: BLE001 - the compile itself succeeded
+            print(f"  {C.YELLOW}! Could not record the sync baseline: {exc}{C.RESET}")
+
     coverage = vault.coverage_index()
     print(f"\n  {C.CYAN}Vault coverage:{C.RESET} {coverage['total_beliefs']} beliefs")
     print(f"  {C.CYAN}Avg confidence:{C.RESET} {coverage['average_confidence']:.2f}")
@@ -6481,8 +6765,24 @@ def cmd_ravs(args):
 
     if ravs_action == "hook":
         hook_action = getattr(args, "hook_action", None)
+        if hook_action == "uninstall":
+            if not getattr(args, "claude_code", False):
+                print(f"  {C.YELLOW}Specify a target: --claude-code{C.RESET}")
+                return
+            from entroly.ravs.hooks import uninstall_claude_code
+            result = uninstall_claude_code()
+            path = result.get("path", "")
+            if result.get("action") == "uninstalled":
+                print(f"  {C.GREEN}✓ Removed RAVS PostToolUse hook from {path}{C.RESET}")
+                print(f"  {C.GRAY}Restart Claude Code to apply.{C.RESET}")
+                return 0
+            if result.get("action") == "not_found":
+                print(f"  {C.GRAY}· No RAVS hook found in {path}{C.RESET}")
+                return 0
+            print(f"  {C.RED}✗ Not changed: {path} could not be read as JSON settings.{C.RESET}")
+            return 1
         if hook_action != "install":
-            print(f"  {C.YELLOW}Usage: entroly ravs hook install --claude-code [--dry-run]{C.RESET}")
+            print(f"  {C.YELLOW}Usage: entroly ravs hook install|uninstall --claude-code [--dry-run]{C.RESET}")
             return
         if not getattr(args, "claude_code", False):
             print(f"  {C.YELLOW}Specify a target: --claude-code{C.RESET}")
@@ -6494,6 +6794,17 @@ def cmd_ravs(args):
         if action == "installed":
             print(f"  {C.GREEN}\u2713 Installed RAVS PostToolUse hook \u2192 {path}{C.RESET}")
             print(f"  {C.GRAY}Restart Claude Code to activate. Every Bash tool use now feeds RAVS.{C.RESET}")
+        elif action == "unreadable":
+            print(
+                f"  {C.RED}✗ Not installed: {path} is "
+                f"{result.get('detail', 'unreadable')}.{C.RESET}"
+            )
+            print(
+                f"  {C.GRAY}  Nothing was written: rewriting it would drop every "
+                f"other setting it holds. Fix or move the file, then re-run."
+                f"{C.RESET}"
+            )
+            return 1
         elif action == "already_present":
             print(f"  {C.GRAY}\u00b7 Hook already present in {path}{C.RESET}")
         elif action == "already_present_in_project":
@@ -6600,6 +6911,9 @@ def main():
         or getattr(args, "csv_output", False)
         or getattr(args, "format", None) == "json"
         or args.command == "activation"
+        # The PostToolUse capture hook runs on every tool call; its stderr is
+        # host-facing, not a terminal, so no welcome banner there.
+        or (args.command == "ravs" and getattr(args, "ravs_action", None) == "capture")
         or (args.command == "trial" and getattr(args, "report", None))
         or args.command == "shrink"
         or args.command == "proof"
@@ -6694,6 +7008,7 @@ def main():
         "cache": cmd_cache,
         "daemon": cmd_daemon,
         "usage": cmd_usage,
+        "memory": cmd_memory,
     }
 
     handler = _dispatch.get(args.command)

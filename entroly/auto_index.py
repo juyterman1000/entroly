@@ -1394,6 +1394,28 @@ def _reconcile_index(
     }
 
 
+def count_indexable_files(engine: EntrolyEngine, project_dir: str | None = None) -> int:
+    """How many files ``auto_index`` would consider before any file cap.
+
+    Reporting only: lets a caller say "100 of 2,018 files" instead of presenting
+    a capped index as the repository. Mirrors the discovery and filter in
+    ``_auto_index`` exactly.
+    """
+    project_dir = os.path.abspath(project_dir or os.getcwd())
+    ignore_patterns = _load_entrolyignore(project_dir)
+    state_dir_prefix = _resolve_state_dir_prefix(engine, project_dir)
+    files, _ = discover_project_files(project_dir)
+    return sum(
+        1
+        for file_path in files
+        if _should_index(
+            file_path,
+            ignore_patterns=ignore_patterns,
+            state_dir_prefix=state_dir_prefix,
+        )
+    )
+
+
 def auto_index(
     engine: EntrolyEngine,
     project_dir: str | None = None,
@@ -1692,7 +1714,23 @@ def _auto_index(
             # as the headline in the CI dogfood evidence artifact, so it
             # overstated coverage everywhere at once.
             fragments_ingested = int(r.get("ingested", 0))
-            indexed = len({_logical_rel_path(source) for _, source, _ in batch})
+            batch_files = {_logical_rel_path(source) for _, source, _ in batch}
+            indexed = len(batch_files)
+            if int(r.get("duplicates", 0) or 0):
+                # A near-duplicate is processed but not kept, so it is not in
+                # the live index (the per-file paths below already exclude
+                # it, and `total_tokens` here already does). Counting it made
+                # a cold run say "Indexed 2 files" beside one file's tokens,
+                # and the next, warm run -- which counts the files the loaded
+                # index holds -- say 1. Count what the index kept instead.
+                kept_files = {
+                    _logical_rel_path(fragment["source"])
+                    for fragment in (
+                        dict(item) for item in engine._rust.export_fragments()
+                    )
+                    if fragment.get("source")
+                }
+                indexed = len(batch_files & kept_files)
             total_tokens = int(r.get("total_tokens", 0))
             p1 = r.get('phase1_ms', '?')
             p2 = r.get('phase2_ms', '?')

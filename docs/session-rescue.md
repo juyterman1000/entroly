@@ -14,7 +14,9 @@ For each supported request, the proxy:
 4. defers optional reshaping at the soft watermark when provider usage has
    reported a warm cache;
 5. overrides that deferral for a detected loop or the hard watermark;
-6. preserves the configured recent tail and all ordinary user messages;
+6. preserves the configured recent tail and all ordinary user messages; when
+   the request would otherwise be refused (step 7), older tool output inside
+   the tail is compacted too, never the newest tool result or a user message;
 7. returns `413 session_context_rescue_required` when the request remains above
    the failure watermark instead of forwarding a likely provider rejection.
 
@@ -59,23 +61,28 @@ A compressed block contains a marker such as:
 [entroly-recovery:<receipt-id>:<span-id>]
 ```
 
-The span is the complete original textual tool block. Retrieve it
-programmatically:
+The span is the complete original textual tool block. `entroly recover` does
+not read this store (it resolves `entroly compress` digests). Retrieve a span
+programmatically, from the same working directory and with the same
+`ENTROLY_WORKSPACE`, `ENTROLY_SESSION_ID` and `ENTROLY_CONVERSATION_ID` values
+as the process that rescued it -- the store is scoped to them, and
+`get_span` returns `None` from any other scope:
 
 ```python
+from pathlib import Path
 from entroly import CompressionRetrievalStore
 
 store = CompressionRetrievalStore(
-    ".entroly/session_rescue_recovery.json"
+    Path.home() / ".entroly" / "session_rescue_recovery.json"
 )
 span = store.get_span(receipt_id, span_id)
 print(span.content)
 ```
 
-Or expose the focused local MCP server:
+Or expose the focused local MCP server (same scoping rules):
 
 ```bash
-export ENTROLY_COMPRESSION_STORE=.entroly/session_rescue_recovery.json
+export ENTROLY_COMPRESSION_STORE="${ENTROLY_DIR:-$HOME/.entroly}/session_rescue_recovery.json"
 entroly-compression-mcp
 ```
 

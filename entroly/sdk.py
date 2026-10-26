@@ -24,6 +24,7 @@ Usage::
 
 from __future__ import annotations
 
+import math
 import re
 from typing import Any, TYPE_CHECKING, Sequence
 from .profiles import get_profile
@@ -459,6 +460,14 @@ def compress(
         # Compress code with type hint
         compressed = compress(source_code, budget=2000, content_type="code")
     """
+    if content is not None and not isinstance(content, str):
+        if isinstance(content, (bytes, bytearray)):
+            raise TypeError(
+                "compress() takes str, not bytes; decode first, "
+                "e.g. data.decode('utf-8')"
+            )
+        raise TypeError(f"compress() takes str, not {type(content).__name__}")
+    budget = _checked_budget(budget)
     if not content:
         return content
     _track_product_surface("sdk_compress")
@@ -542,6 +551,74 @@ def _message_tokens(messages: list[dict[str, Any]]) -> int:
         for message in messages
         if isinstance(message.get("content"), str)
     )
+
+
+def _checked_budget(budget: Any) -> Any:
+    """Validate a token budget: zero or more tokens, or +inf for no limit.
+
+    NaN and negative budgets were silently accepted (a negative budget
+    returned "", NaN an arbitrary slice) and a string or fractional budget
+    failed deep inside with an unrelated TypeError.
+    """
+    if budget is None:
+        return None
+    if isinstance(budget, bool) or not isinstance(budget, (int, float)):
+        raise TypeError(
+            f"budget must be a number of tokens, not {type(budget).__name__}"
+        )
+    if isinstance(budget, float):
+        if math.isnan(budget):
+            raise ValueError("budget must be a number of tokens, not NaN")
+        if budget == math.inf:
+            return budget
+    if budget < 0:
+        raise ValueError(f"budget must be zero or more tokens, got {budget}")
+    return int(budget)
+
+
+def _block_text(blocks: list[Any]) -> str:
+    parts: list[str] = []
+    for block in blocks:
+        if isinstance(block, str):
+            parts.append(block)
+        elif isinstance(block, dict):
+            if isinstance(block.get("text"), str):
+                parts.append(block["text"])
+            inner = block.get("content")
+            if isinstance(inner, str):
+                parts.append(inner)
+            elif isinstance(inner, list):
+                parts.append(_block_text(inner))
+    return "\n".join(part for part in parts if part)
+
+
+def _content_block_tokens(messages: list[dict[str, Any]]) -> int:
+    """Local token estimate of text held in content-block (list) messages."""
+    return sum(
+        count_tokens(_block_text(message["content"]))
+        for message in messages
+        if isinstance(message.get("content"), list)
+    )
+
+
+# Instructions are cut last. A system prompt is usually a few hundred tokens
+# of rules beside thousands of tokens of history; a uniform per-message ratio
+# truncated those rules mid-sentence ("You are the billing\n...[truncated]")
+# while the bulky tool output that caused the pressure was still available.
+_INSTRUCTION_ROLES = frozenset({"system", "developer"})
+
+
+def _prefer_non_instruction(
+    candidates: list[tuple[int, int]],
+    messages: list[dict[str, Any]],
+) -> list[tuple[int, int]]:
+    """Return tightening candidates, instruction messages only as a last resort."""
+    preferred = [
+        candidate
+        for candidate in candidates
+        if messages[candidate[1]].get("role") not in _INSTRUCTION_ROLES
+    ]
+    return preferred or candidates
 
 
 def _infer_compression_query(messages: list[dict[str, Any]]) -> str:
@@ -635,11 +712,96 @@ def _merge_source_spans(spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
     return merged
 
 
+def _omission_marker(gap: bytes) -> str:
+    lines = max(1, sum(1 for line in gap.splitlines() if line.strip()))
+    return f"[... {lines} line{'s' if lines != 1 else ''} omitted ...]"
+
+
 def _render_source_spans(source: bytes, spans: list[tuple[int, int]]) -> str:
-    """Reconstruct selected receipt spans from the original source."""
-    return "\n\n".join(
-        source[start:end].decode("utf-8") for start, end in spans
-    ).strip()
+    """Reconstruct selected receipt spans from the original source.
+
+    Source left out before, between or after the spans is replaced by a
+    visible marker. Joining the spans with blank lines alone made a cut
+    message read as complete: a pytest log reduced to its PASSED lines looked
+    like a green run.
+    """
+    parts: list[str] = []
+    cursor = 0
+    for start, end in spans:
+        if source[cursor:start].strip():
+            parts.append(_omission_marker(source[cursor:start]))
+        parts.append(source[start:end].decode("utf-8"))
+        cursor = max(cursor, end)
+    if spans and source[cursor:].strip():
+        parts.append(_omission_marker(source[cursor:]))
+    return "\n\n".join(parts).strip()
+
+
+_OMISSION_MARK_RE = re.compile(
+    r"\[\.\.\. [^\]\n]*(?:omitted|condensed)[^\]\n]* \.\.\.\]|\[truncated\]|aged-pruned"
+)
+
+
+def _compressed_and_marked(content: str, budget: int, profile: str | None = None) -> str:
+    """compress() for one conversation message, saying when it cut.
+
+    compress() does not mark what a code skeleton, condensed log or summary
+    left out, and inside a conversation that read as the complete tool
+    output. The marker is paid for out of the same budget.
+    """
+    out = compress(content, budget=budget, profile=profile)
+    if out == content or len(out) >= len(content) or _OMISSION_MARK_RE.search(out):
+        return out
+    reserve = 24  # tokens for the marker line
+    if count_tokens(out) + reserve > budget:
+        if budget <= reserve + 20:
+            return _budget_bounded_head(content, budget)
+        out = compress(content, budget=budget - reserve, profile=profile)
+        if out == content or _OMISSION_MARK_RE.search(out):
+            return out
+    total = content.count("\n") + 1
+    shown = out.count("\n") + 1
+    return f"[... {max(1, total - shown)} of {total} lines omitted or condensed ...]\n{out}"
+
+
+def _failure_line_spans(content: str) -> list[tuple[int, int, int]]:
+    """``(tier, byte_start, byte_end)`` of failing-test and traceback lines."""
+    from .hardening import failure_evidence_lines
+
+    found = failure_evidence_lines(content)
+    spans: list[tuple[int, int, int]] = []
+    char_cursor = byte_cursor = 0
+    for tier, char_start, char_end in sorted(found, key=lambda item: item[1]):
+        byte_cursor += len(content[char_cursor:char_start].encode("utf-8"))
+        char_cursor = char_start
+        spans.append(
+            (tier, byte_cursor, byte_cursor + len(content[char_start:char_end].encode("utf-8")))
+        )
+    return sorted(spans)
+
+
+def _role_weighted_ratios(
+    other_tokens: int,
+    tool_tokens: int,
+    spend: float,
+    tool_weight: float,
+) -> tuple[float, float]:
+    """Keep ratios ``(other, tool)`` that spend ``spend`` tokens.
+
+    Tool output is still cut harder than conversation text, by
+    ``tool_weight``, but the shares are scaled so the budget is used. A fixed
+    multiplier on top of the even ratio left most of the budget unspent and
+    cut evidence there was room for (9,039 tokens kept of a 30,000 budget).
+    """
+    weighted = other_tokens + tool_weight * tool_tokens
+    if weighted <= 0:
+        return 1.0, 1.0
+    ratio = spend / weighted
+    if ratio >= 1.0:
+        tool = (spend - other_tokens) / tool_tokens if tool_tokens else 1.0
+        return 1.0, max(0.05 * tool_weight, min(1.0, tool))
+    ratio = max(0.05, ratio)
+    return ratio, ratio * tool_weight
 
 
 def _compress_message_content(
@@ -662,7 +824,7 @@ def _compress_message_content(
         or len(content) < 200
         or count_tokens(content) <= budget
     ):
-        return compress(content, budget=budget, profile=profile)
+        return _compressed_and_marked(content, budget, profile)
 
     try:
         from .context_receipts.embedding_scorer import default_scorer
@@ -685,7 +847,7 @@ def _compress_message_content(
             overlap_tokens=overlap_tokens,
         )
         if len(index.chunks) < 2:
-            return compress(content, budget=budget, profile=profile)
+            return _compressed_and_marked(content, budget, profile)
 
         ranked = rank_chunks(index, query, semantic_scorer=default_scorer())
         selection = select_context(
@@ -695,7 +857,7 @@ def _compress_message_content(
             token_budget=max(1, budget),
         )
         if not selection.selected:
-            return compress(content, budget=budget, profile=profile)
+            return _compressed_and_marked(content, budget, profile)
 
         source = content.encode("utf-8")
         chosen_spans: list[tuple[int, int]] = []
@@ -714,6 +876,16 @@ def _compress_message_content(
                 chosen_spans = trial
                 return True
             return False
+
+        # A failing test, its assertion and its traceback are admitted before
+        # relevance: they rank poorly against a task phrased in other words
+        # ("flag defaults" against test_flag_default) and were cut, leaving a
+        # red test log that read as green. Verdict lines first, then the
+        # assertion detail, then traceback frames.
+        for _tier, byte_start, byte_end in _failure_line_spans(content):
+            trial = _merge_source_spans([*chosen_spans, (byte_start, byte_end)])
+            if count_tokens(_render_source_spans(source, trial)) <= budget:
+                chosen_spans = trial
 
         # Relevance order controls admission under pressure, but accepted
         # receipt coordinates are reconstructed from the original source. This
@@ -773,7 +945,7 @@ def _compress_message_content(
         # The public SDK remains fail-open if optional receipt machinery is not
         # importable in a minimal package. The established structural path is
         # still bounded and deterministic.
-        return compress(content, budget=budget, profile=profile)
+        return _compressed_and_marked(content, budget, profile)
 
 
 def compress_messages(
@@ -792,7 +964,11 @@ def compress_messages(
     compresses older messages using content-aware compression.
 
     Args:
-        messages: List of message dicts with 'role' and 'content' keys
+        messages: List of message dicts with 'role' and 'content' keys.
+            Only string ``content`` is counted and compressed; content-block
+            lists (Anthropic text/tool_result/image blocks) pass through
+            unchanged, with a ``UserWarning`` when they push the request over
+            ``budget``. Use ``compress_proxy_payload`` for block-shaped requests.
         budget: Target total token count for all messages
         preserve_last_n: Number of most recent messages to keep verbatim
         model: Optional provider model name used to cap the context budget
@@ -819,6 +995,9 @@ def compress_messages(
         ]
         compressed = compress_messages(messages, budget=30000)
     """
+    budget = _checked_budget(budget)
+    if budget is None:
+        raise TypeError("budget must be a number of tokens, not None")
     if not messages:
         return messages
     _track_product_surface("sdk_messages")
@@ -844,6 +1023,23 @@ def compress_messages(
                 budget = min(budget, int(window * 0.8))
         except Exception:
             pass  # Unknown model — keep the caller's budget.
+
+    # Only string content is counted and compressed. Content-block lists
+    # (Anthropic text/tool_result blocks) pass through, so say so instead of
+    # silently returning a request that is still over budget.
+    block_tokens = _content_block_tokens(messages)
+    if block_tokens and source_tokens + block_tokens > budget:
+        import warnings
+
+        warnings.warn(
+            f"compress_messages compresses string message content only: about "
+            f"{block_tokens:,} tokens in content-block (list) messages are left "
+            f"as they are and not counted against budget={budget:,}. Use "
+            "compress_proxy_payload(body, provider='anthropic') for "
+            "block-shaped requests.",
+            UserWarning,
+            stacklevel=2,
+        )
 
     # Identity is the safest and cheapest compression decision. Once caller
     # controls and the provider-adjusted budget are known, return the original
@@ -911,17 +1107,46 @@ def compress_messages(
         _track_savings(source_tokens, _message_tokens(compressed_all), "messages")
         return compressed_all
 
-    # Compute per-message compression ratio
+    # Compute per-message compression ratio. Instruction messages are kept
+    # verbatim in this pass, so the rest of the older window carries the cut.
     older_tokens = sum(
         len(m.get("content", "")) // 4
-        for m in older if isinstance(m.get("content"), str)
+        for m in older
+        if isinstance(m.get("content"), str)
+        and m.get("role") not in _INSTRUCTION_ROLES
     )
-    ratio = max(0.05, remaining_budget / max(older_tokens, 1))
+    instruction_tokens = sum(
+        count_tokens(m["content"])
+        for m in older
+        if isinstance(m.get("content"), str)
+        and m.get("role") in _INSTRUCTION_ROLES
+    )
+    older_tool_tokens = sum(
+        len(m.get("content", "")) // 4
+        for m in older
+        if isinstance(m.get("content"), str)
+        and m.get("role") in ("tool", "function")
+    )
+    # Tool results get more aggressive compression, scaled so the window's
+    # share of the budget is spent. The 10% margin pays for omission markers,
+    # which only tool output gets; a conversation-only window keeps the exact
+    # relative ratio the caller asked for.
+    spend = max(remaining_budget - instruction_tokens, 1)
+    ratio, tool_ratio = _role_weighted_ratios(
+        older_tokens - older_tool_tokens,
+        older_tool_tokens,
+        0.9 * spend if older_tool_tokens else spend,
+        0.5,
+    )
 
     result = []
     for msg in older:
         content = msg.get("content", "")
-        if not isinstance(content, str) or len(content) < 200:
+        if (
+            not isinstance(content, str)
+            or len(content) < 200
+            or msg.get("role") in _INSTRUCTION_ROLES
+        ):
             result.append(msg)
             continue
 
@@ -936,8 +1161,7 @@ def compress_messages(
             except Exception:
                 pass
 
-        # Tool results get more aggressive compression.
-        msg_ratio = ratio * 0.5 if role in ("tool", "function") else ratio
+        msg_ratio = tool_ratio if role in ("tool", "function") else ratio
 
         msg_budget = max(1, int(count_tokens(content) * msg_ratio))
         compressed_content = _compress_message_content(
@@ -974,7 +1198,7 @@ def compress_messages(
         ]
         if not candidates:
             break
-        current_tokens, index = max(candidates)
+        current_tokens, index = max(_prefer_non_instruction(candidates, result))
         excess = current_total - remaining_budget
         target_tokens = max(0, current_tokens - excess)
         message = dict(result[index])
@@ -1059,9 +1283,31 @@ def _compress_all_messages(
         if last_user_idx >= 0 and isinstance(messages[last_user_idx].get("content"), str)
         else 0
     )
-    compressible_tokens = max(1, total_tokens - preserved_tokens)
-    remaining_budget = max(1, budget - preserved_tokens)
-    ratio = max(0.05, remaining_budget / compressible_tokens)
+    # Instruction messages stay verbatim in the proportional pass; the final
+    # guard below cuts them only once nothing else is left to give.
+    instruction_tokens = sum(
+        count_tokens(m["content"])
+        for i, m in enumerate(messages)
+        if i != last_user_idx
+        and isinstance(m.get("content"), str)
+        and m.get("role") in _INSTRUCTION_ROLES
+    )
+    compressible_tokens = max(1, total_tokens - preserved_tokens - instruction_tokens)
+    remaining_budget = max(1, budget - preserved_tokens - instruction_tokens)
+    tool_tokens = sum(
+        count_tokens(m["content"])
+        for i, m in enumerate(messages)
+        if i != last_user_idx
+        and isinstance(m.get("content"), str)
+        and len(m["content"]) >= 200
+        and m.get("role") in ("tool", "function")
+    )
+    ratio, tool_ratio = _role_weighted_ratios(
+        compressible_tokens - tool_tokens,
+        tool_tokens,
+        0.9 * remaining_budget if tool_tokens else remaining_budget,
+        0.3,
+    )
 
     result = []
     for i, msg in enumerate(messages):
@@ -1070,12 +1316,16 @@ def _compress_all_messages(
             continue
 
         content = msg.get("content", "")
-        if not isinstance(content, str) or len(content) < 200:
+        if (
+            not isinstance(content, str)
+            or len(content) < 200
+            or msg.get("role") in _INSTRUCTION_ROLES
+        ):
             result.append(msg)
             continue
 
         role = msg.get("role", "")
-        msg_ratio = ratio * 0.3 if role in ("tool", "function") else ratio
+        msg_ratio = tool_ratio if role in ("tool", "function") else ratio
 
         msg_budget = max(1, int(count_tokens(content) * msg_ratio))
         compressed_content = _compress_message_content(
@@ -1111,12 +1361,12 @@ def _compress_all_messages(
         ]
         if not candidates:
             break
-        _, idx = max(candidates)
+        _, idx = max(_prefer_non_instruction(candidates, result))
         msg = dict(result[idx])
         content = msg.get("content", "")
         current_tokens = max(1, count_tokens(content))
         target_tokens = max(1, int(current_tokens * 0.8))
-        msg["content"] = compress(content, budget=target_tokens)
+        msg["content"] = _compressed_and_marked(content, target_tokens)
         if msg["content"] == content:
             msg["content"] = _budget_bounded_head(content, target_tokens)
         result[idx] = msg
@@ -1463,6 +1713,11 @@ def optimize(
         print(f"Selected {result['fragments_selected']}/{result['fragments_total']}")
         # Use result["context_text"] as your LLM system prompt context
     """
+    budget = _checked_budget(budget)
+    if budget is None:
+        raise TypeError("budget must be a number of tokens, not None")
+    if budget == math.inf:
+        budget = 2**31 - 1  # "no limit" in the engine's integer budget
     from .config import EntrolyConfig
     from .server import EntrolyEngine
 

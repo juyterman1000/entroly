@@ -2,9 +2,10 @@
 entroly Docker launcher — cross-platform entry point.
 
 When installed via `pip install entroly`, this is what runs.
-CLI commands run in the installed Python environment. Only ``entroly serve``
-uses the Docker image by default so ordinary commands never trigger a remote
-image pull or require a Docker daemon.
+CLI commands run in the installed Python environment. ``entroly serve`` also
+runs there whenever the native engine is installed; it uses the Docker image
+only when the engine is missing or ``ENTROLY_DOCKER_IMAGE`` asks for it, so
+ordinary use never triggers a remote image pull or requires a Docker daemon.
 
 The Docker image is built from Dockerfile.entroly and pushed to versioned tags
 under ``ghcr.io/juyterman1000/entroly``. The launcher defaults to the tag that
@@ -203,12 +204,26 @@ def _pull_image() -> None:
     if not _should_pull(image):
         return
 
+    # Say what is happening and show docker's own progress on stderr: the pull
+    # used to run silently for up to ~2 minutes. Never stdout -- in serve mode
+    # it carries the MCP protocol.
+    print(
+        f"[entroly] Pulling {image} for `entroly serve` "
+        "(the first pull can take a few minutes)...",
+        file=sys.stderr,
+        flush=True,
+    )
+    try:
+        sys.stderr.fileno()
+        progress = sys.stderr
+    except (AttributeError, OSError, ValueError):
+        progress = subprocess.DEVNULL
     errors: list[str] = []
     for attempt in range(2):
         try:
             result = subprocess.run(
                 ["docker", "pull", image],
-                stdout=subprocess.DEVNULL,
+                stdout=progress,
                 stderr=subprocess.PIPE,
                 check=False,
                 timeout=60,
@@ -285,16 +300,18 @@ def launch() -> None:
         _run_native()
         return
 
+    # `memory` owns its own parser, including `memory [<sub>] --help`; checking
+    # help flags first sent those to the main CLI ("invalid choice: 'memory'").
+    if len(sys.argv) > 1 and sys.argv[1] == "memory":
+        _run_memory_cli()
+        return
+
     # --help/--version → show help without Docker
     _help_flags = {"--help", "-h", "--version", "-V"}
     if _help_flags & set(sys.argv[1:]):
         from entroly.cli import main as cli_main
 
         cli_main()
-        return
-
-    if len(sys.argv) > 1 and sys.argv[1] == "memory":
-        _run_memory_cli()
         return
 
     # The canonical CLI owns command discovery and validation. Routing every
@@ -311,21 +328,43 @@ def launch() -> None:
         _run_native()
         return
 
+    # The installed package is the complete runtime when its native engine is
+    # present: the same version as the image, the user's own HOME state, and
+    # no daemon, pull, or project mount to get wrong. Only an explicit image
+    # override asks for the container anyway. Without this, a user with
+    # Docker Desktop installed but stopped got "Docker is not running" and an
+    # exit 1 from a command that needed no Docker at all.
+    explicit_image = bool(os.environ.get("ENTROLY_DOCKER_IMAGE", "").strip())
+    native_ready = _native_engine_ready()
+    if native_ready and not explicit_image:
+        _run_native()
+        return
+
     # Check Docker is installed and running
     if not _docker_available():
-        print(
-            "[entroly] Docker is not running.\n"
-            "\n"
-            "Options:\n"
-            "  1. Start Docker Desktop (or the Docker daemon) and try again\n"
-            "  2. Install the native Rust engine:\n"
-            "       pip install entroly[native]\n"
-            "     Then run with:\n"
-            "       ENTROLY_NO_DOCKER=1 entroly serve\n"
-            "  3. Use the Python fallback engine (slower):\n"
-            "       ENTROLY_NO_DOCKER=1 entroly serve\n",
-            file=sys.stderr,
-        )
+        if native_ready:
+            print(
+                "[entroly] Docker is not available, and ENTROLY_DOCKER_IMAGE "
+                "requests the container.\n"
+                "  Start Docker, or unset ENTROLY_DOCKER_IMAGE to run the "
+                "installed native engine.\n",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                "[entroly] Cannot start the MCP server: the native engine is "
+                f"unusable ({_native_engine_reason()}) and Docker is not available.\n"
+                "\n"
+                "Options:\n"
+                "  1. Install or upgrade the native engine, then run `entroly serve`:\n"
+                "       python -m pip install -U entroly-core\n"
+                "  2. Start Docker Desktop (or the Docker daemon) to run the\n"
+                "     version-pinned image\n"
+                "  3. Start now on the pure-Python fallback (selection will not\n"
+                "     read the query):\n"
+                "       ENTROLY_NO_DOCKER=1 entroly serve\n",
+                file=sys.stderr,
+            )
         sys.exit(1)
 
     # Pull the image matching the installed package (with TTL caching + retry)
@@ -351,9 +390,22 @@ def launch() -> None:
     else:
         # MCP mode: keep stdin open for stdio protocol
         cmd.append("-i")
+        # The server indexes its working directory. Without a mount that was
+        # the image's /app -- Entroly's own source -- so every answer came
+        # from the wrong repository. Mount the project read-only (the server
+        # tolerates an unwritable project) and make it the working directory.
+        # PYTHONSAFEPATH keeps `python -m` from importing the project's own
+        # modules (an `entroly/` package or a `json.py`) ahead of the runtime.
+        project = os.path.abspath(os.environ.get("ENTROLY_SOURCE") or os.getcwd())
+        cmd += [
+            "-v", f"{project}:/workspace:ro",
+            "-w", "/workspace",
+            "-e", "ENTROLY_SOURCE=/workspace",
+            "-e", "PYTHONSAFEPATH=1",
+        ]
 
     # Pass through ENTROLY_* env vars
-    cmd += _env_passthrough()
+    cmd += _env_passthrough(exclude=() if proxy_mode else ("ENTROLY_SOURCE",))
     cmd.append(_docker_image())
 
     # Pass any remaining CLI args to the server
@@ -376,19 +428,40 @@ def launch() -> None:
         sys.exit(0)
 
 
-def _env_passthrough() -> list[str]:
+def _env_passthrough(exclude: tuple[str, ...] = ()) -> list[str]:
     """Forward ENTROLY_* names without exposing their values in process argv.
 
     Docker's ``-e NAME`` form copies the value from the inherited host
     environment. Keeping ``NAME=value`` out of the command line prevents API
     keys and tokens from appearing in process listings, CI diagnostics, or
     crash reports. Sorting also makes the generated command deterministic.
+    Names in *exclude* are set explicitly by the caller instead.
     """
     args: list[str] = []
     for key in sorted(os.environ):
-        if key.startswith("ENTROLY_"):
+        if key.startswith("ENTROLY_") and key not in exclude:
             args += ["-e", key]
     return args
+
+
+def _native_engine_reason() -> str:
+    """Why the native engine cannot be used, derived rather than assumed."""
+    try:
+        from entroly.native_status import QCCR_SYMBOLS, fallback_reason, native_status  # noqa: PLC0415
+
+        return fallback_reason(native_status(QCCR_SYMBOLS))
+    except Exception as exc:  # the probe itself failed
+        return f"native status probe failed: {exc}"
+
+
+def _native_engine_ready() -> bool:
+    """Whether this installation can serve with query-conditioned selection."""
+    try:
+        from entroly.native_status import QCCR_SYMBOLS, native_status  # noqa: PLC0415
+
+        return bool(native_status(QCCR_SYMBOLS).ok)
+    except Exception:
+        return False
 
 
 if __name__ == "__main__":

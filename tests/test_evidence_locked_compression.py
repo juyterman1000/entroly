@@ -205,3 +205,31 @@ def test_elc_source_matches_natural_language_to_identifier_components() -> None:
     assert result.changed
     assert "compression_proxy_full_recovery" in result.compressed
     assert "if estimate_tokens(rendered) >= estimate_tokens(text):" in result.compressed
+
+
+def _pytest_verbose_log(passed: int = 700) -> str:
+    log = "".join(
+        f"tests/test_basic.py::test_case_{i} PASSED [{i % 100:3d}%]\n"
+        for i in range(passed)
+    )
+    return log + (
+        "tests/test_options.py::test_flag_default FAILED\n"
+        "    def test_flag_default():\n"
+        ">       assert result.output == 'True\\n'\n"
+        "E       AssertionError: assert 'False\\n' == 'True\\n'\n"
+        "tests/test_options.py:412: AssertionError\n"
+        f"==== 1 failed, {passed} passed in 3.21s ====\n"
+    )
+
+
+def test_pytest_verbose_log_compresses_and_keeps_the_failure():
+    # Every `pytest -v` line names a file, and a path on every line was a
+    # hard lock on every line: 0% saved on the most common CI output.
+    log = _pytest_verbose_log()
+
+    result = compress_evidence_locked(log, query="", budget_tokens=1200)
+
+    assert result.changed
+    assert result.receipt.savings_ratio >= 0.5
+    assert "AssertionError: assert 'False\\n' == 'True\\n'" in result.compressed
+    assert "test_flag_default FAILED" in result.compressed

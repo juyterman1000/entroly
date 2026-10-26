@@ -18,16 +18,70 @@ Module form is also supported:
 from __future__ import annotations
 
 import argparse
+import contextlib
+import errno
 import json
 import os
 import sys
+import time
+from collections.abc import Iterator
 from pathlib import Path
 
 from .memory import MemoryOS
 
+_LOCK_TIMEOUT_S = 30.0
+
 
 def default_memory_path() -> Path:
     return Path(os.environ.get("ENTROLY_MEMORY", ".entroly/memory.json")).expanduser()
+
+
+@contextlib.contextmanager
+def _memory_file_lock(path: Path) -> Iterator[None]:
+    """Serialize one command's load-modify-save of ``path`` across processes.
+
+    Each command rewrites the whole file, so without this lock a concurrent
+    command's write is silently replaced by a stale snapshot. The lock lives
+    in a sidecar file because the memory file itself is replaced atomically.
+    """
+    lock_path = path.with_name(path.name + ".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+b") as handle:
+        deadline = time.monotonic() + _LOCK_TIMEOUT_S
+        delay = 0.001
+        while True:
+            try:
+                handle.seek(0)
+                if os.name == "nt":
+                    import msvcrt
+
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError as exc:
+                if exc.errno not in {errno.EACCES, errno.EAGAIN}:
+                    raise
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(
+                        f"timed out after {_LOCK_TIMEOUT_S:.0f}s waiting for memory lock {lock_path}"
+                    ) from exc
+                time.sleep(delay)
+                delay = min(0.05, delay * 2)
+        try:
+            yield
+        finally:
+            handle.seek(0)
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def load_or_new(path: Path) -> MemoryOS:
@@ -38,17 +92,29 @@ def load_or_new(path: Path) -> MemoryOS:
 
 def cmd_remember(args: argparse.Namespace) -> int:
     path = Path(args.file).expanduser() if args.file else default_memory_path()
-    mem = load_or_new(path)
-    mem.remember(
-        args.content,
-        agent_id=args.agent,
-        importance=args.importance,
-        tier=args.tier,
-        source=args.source,
-        tags=args.tag or [],
-        safety_policy=args.safety_policy,
-    )
-    mem.save(path)
+    with _memory_file_lock(path):
+        mem = load_or_new(path)
+        try:
+            mem.remember(
+                args.content,
+                agent_id=args.agent,
+                importance=args.importance,
+                tier=args.tier,
+                source=args.source,
+                tags=args.tag or [],
+                safety_policy=args.safety_policy,
+            )
+        except ValueError as exc:
+            # A refusal (secret/PII/injection, empty content) is an expected
+            # outcome, not a crash: one line, nothing written, exit 2 like
+            # `scan` when it blocks.
+            print(
+                f"entroly memory: not stored: {exc} "
+                "(inspect with `entroly memory scan`, or pass --safety-policy redact)",
+                file=sys.stderr,
+            )
+            return 2
+        mem.save(path)
     if args.json:
         print(json.dumps({"status": "stored", "path": str(path), "stats": mem.stats()}, indent=2))
     else:
@@ -61,9 +127,10 @@ def cmd_recall(args: argparse.Namespace) -> int:
     if not path.exists():
         print(f"no memory file found at {path}", file=sys.stderr)
         return 1
-    mem = MemoryOS.load(path)
-    ctx = mem.recall(args.query, agent_id=args.agent, budget=args.budget, tier=args.tier)
-    mem.save(path)  # persist recall reinforcement
+    with _memory_file_lock(path):
+        mem = MemoryOS.load(path)
+        ctx = mem.recall(args.query, agent_id=args.agent, budget=args.budget, tier=args.tier)
+        mem.save(path)  # persist recall reinforcement
     if args.json:
         print(json.dumps(ctx.receipt(), indent=2, ensure_ascii=False))
     else:
@@ -88,10 +155,11 @@ def cmd_forget(args: argparse.Namespace) -> int:
     if not path.exists():
         print(f"no memory file found at {path}", file=sys.stderr)
         return 1
-    mem = MemoryOS.load(path)
-    mem.tick(args.tick)
-    forgotten = mem.forget(args.threshold)
-    mem.save(path)
+    with _memory_file_lock(path):
+        mem = MemoryOS.load(path)
+        mem.tick(args.tick)
+        forgotten = mem.forget(args.threshold)
+        mem.save(path)
     print(json.dumps({"forgotten": forgotten, "stats": mem.stats()}, indent=2))
     return 0
 

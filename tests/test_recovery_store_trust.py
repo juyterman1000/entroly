@@ -266,3 +266,30 @@ def test_override_symlink_cannot_escape_allowed_root(monkeypatch, tmp_path: Path
 
     with pytest.raises(ValueError, match="escapes"):
         _safe_store_path(str(link / "store.json"), str(root / "configured.json"))
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+def test_store_file_is_private_and_a_new_store_directory_is_0700(tmp_path: Path) -> None:
+    # The store holds exact originals (source, prompts, secrets). It was
+    # written with the process umask (0644 in a 0755 directory).
+    path = tmp_path / "fresh-dir" / "recovery.json"
+    _put(CompressionRetrievalStore(path, scope_id="alpha"))
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert path.parent.stat().st_mode & 0o777 == 0o700
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+def test_checkpoint_fallback_to_the_temp_dir_is_loud_and_private(tmp_path: Path, monkeypatch) -> None:
+    from entroly import config
+
+    bad_home = tmp_path / "home-is-a-file"
+    bad_home.write_text("not a directory", encoding="utf-8")
+    monkeypatch.delenv("ENTROLY_DIR", raising=False)
+    monkeypatch.setenv("HOME", str(bad_home))
+    monkeypatch.setattr(config.tempfile, "gettempdir", lambda: str(tmp_path / "tmp"))
+
+    with pytest.warns(RuntimeWarning, match="temporary directory"):
+        chosen = config._project_checkpoint_dir()
+
+    assert chosen.is_relative_to(tmp_path / "tmp")
+    assert chosen.stat().st_mode & 0o777 == 0o700

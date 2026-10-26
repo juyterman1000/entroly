@@ -103,6 +103,23 @@ class WorkspaceChangeListener:
         with self._scan_lock:
             return self._scan_once(force=force, max_files=max_files)
 
+    def record_baseline(self) -> int:
+        """Mark the current files as processed when no sync state exists yet.
+
+        `entroly compile` calls this after compiling the directory itself, so
+        the first sync reports real edits instead of every file it just
+        compiled. An existing state is left alone: it belongs to an earlier
+        sync, possibly of another directory, and merging relative paths from a
+        different root would report live files as deleted. Returns the number
+        of files recorded.
+        """
+        with self._scan_lock:
+            if self._load_state():
+                return 0
+            current = self._snapshot()
+            self._save_state(current)
+            return len(current)
+
     def _scan_once(self, force: bool = False, max_files: int = 100) -> WorkspaceSyncResult:
         current = self._snapshot()
         previous = {} if force else self._load_state()
@@ -115,10 +132,14 @@ class WorkspaceChangeListener:
 
         deleted = [rel_path for rel_path in previous.keys() if rel_path not in current]
 
+        # ``max_files <= 0`` means unlimited, as `entroly sync --max-files`
+        # documents and BeliefCompiler already treats it. Slicing with 0
+        # processed nothing while the scan still reported "synced".
+        limit = max_files if max_files and max_files > 0 else None
         result = WorkspaceSyncResult(
             status="no_changes",
             project_dir=str(self._project_dir),
-            changed_files=changed[:max_files],
+            changed_files=changed[:limit],
             deleted_files=deleted,
             scanned_files=len(current),
         )
