@@ -1758,21 +1758,19 @@ class PromptCompilerProxy:
         there. Against a local o200k encoding, characters-over-four was 34%
         low on minified JSON, 57% low on emoji and 67% low on CJK in tested
         examples. Provider billing can differ.
+
+        Content is read exactly as ``_estimate_message_tokens`` reads it, and
+        the system prompt in any shape is included, so the inbound and outbound
+        counts measure the same thing. Reading only ``text`` keys here counted
+        a tool_result, tool_use or list-form system block as nothing on the
+        way out, and the whole tool output was booked as tokens reduced.
         """
         try:
-            parts: list[str] = []
-            for message in body.get("messages") or []:
-                content = message.get("content")
-                if isinstance(content, str):
-                    parts.append(content)
-                elif isinstance(content, list):
-                    for part in content:
-                        if isinstance(part, dict):
-                            parts.append(str(part.get("text", "")))
+            tokens = _estimate_message_tokens(body.get("messages") or [])
             system = body.get("system")
-            if isinstance(system, str):
-                parts.append(system)
-            return sum(count_tokens(part) for part in parts)
+            if system:
+                tokens += count_tokens(_content_to_text(system))
+            return tokens
         except Exception:  # noqa: BLE001
             return 0
 
@@ -2587,9 +2585,8 @@ class PromptCompilerProxy:
                         _instr_text = body.get("instructions", "")
                         original_tokens = (len(_inp_text.split()) + len(_instr_text.split())) * 4 // 3
                     else:
-                        original_tokens = _estimate_message_tokens(
-                            body.get("messages", [])
-                        )
+                        # Same measure as the outbound count below.
+                        original_tokens = self._estimate_body_tokens(body)
                     # Savings are NOT scored here. ``context_text`` is the snippet
                     # about to be injected, and injection adds to the body; scoring
                     # it against the whole inbound conversation compares two
