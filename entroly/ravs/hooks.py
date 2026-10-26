@@ -67,6 +67,19 @@ def _claude_code_settings_path() -> Path:
     return home / ".claude" / "settings.json"
 
 
+def _is_capture_registration(entry: object) -> bool:
+    """True for a PostToolUse entry that runs ``ravs capture``.
+
+    Must recognise every command this module writes. Matching the literal
+    ``entroly ravs capture`` missed the ``<python> -m entroly.cli ravs capture``
+    fallback that `_find_entroly_bin` returns when no ``entroly`` executable is
+    on PATH, so each re-run appended another registration and the host
+    recorded every Bash call once per copy. Same test as
+    `_project_capture_scope` uses for a project registration.
+    """
+    return "ravs capture" in str(entry)
+
+
 def _project_capture_scope() -> Path | None:
     """Return the project settings file already registering capture, if any.
 
@@ -142,10 +155,7 @@ def install_claude_code(dry_run: bool = False) -> dict:
             "settings": None,
         }
 
-    already_present = any(
-        "entroly ravs capture" in str(h.get("hooks", [{}]))
-        for h in existing_post
-    )
+    already_present = any(_is_capture_registration(h) for h in existing_post)
 
     if already_present:
         return {
@@ -224,10 +234,7 @@ def uninstall_claude_code() -> dict:
         return {"path": str(settings_path), "action": "parse_error"}
 
     post_hooks = settings.get("hooks", {}).get("PostToolUse", [])
-    filtered = [
-        h for h in post_hooks
-        if "entroly ravs capture" not in str(h.get("hooks", [{}]))
-    ]
+    filtered = [h for h in post_hooks if not _is_capture_registration(h)]
 
     if len(filtered) == len(post_hooks):
         return {"path": str(settings_path), "action": "not_found"}

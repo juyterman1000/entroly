@@ -197,3 +197,50 @@ def test_a_user_scope_hook_is_still_detected_first(scopes) -> None:
     )
 
     assert install_claude_code()["action"] == "already_present"
+
+
+def _registered_commands(home) -> list[str]:
+    settings = json.loads(
+        (home / ".claude" / "settings.json").read_text(encoding="utf-8")
+    )
+    return [
+        hook["command"]
+        for entry in settings.get("hooks", {}).get("PostToolUse", [])
+        for hook in entry["hooks"]
+    ]
+
+
+def test_reinstalling_without_entroly_on_path_keeps_one_registration(
+    scopes, monkeypatch
+) -> None:
+    """The ``python -m entroly.cli`` fallback must count as already installed.
+
+    With no ``entroly`` executable on PATH the installer writes
+    ``<python> -m entroly.cli ravs capture``. The presence check looked for the
+    literal ``entroly ravs capture``, so every re-run appended another copy and
+    the host recorded each Bash call once per copy.
+    """
+    home, _ = scopes
+    empty_bin = home / "empty-bin"
+    empty_bin.mkdir()
+    monkeypatch.setenv("PATH", str(empty_bin))
+
+    first = install_claude_code()
+    second = install_claude_code()
+
+    commands = _registered_commands(home)
+    assert first["action"] == "installed"
+    assert "-m entroly.cli ravs capture" in commands[0]
+    assert second["action"] == "already_present"
+    assert len(commands) == 1
+
+
+def test_uninstall_removes_the_fallback_registration(scopes, monkeypatch) -> None:
+    home, _ = scopes
+    empty_bin = home / "empty-bin"
+    empty_bin.mkdir()
+    monkeypatch.setenv("PATH", str(empty_bin))
+    install_claude_code()
+
+    assert hooks_module.uninstall_claude_code()["action"] == "uninstalled"
+    assert _registered_commands(home) == []
