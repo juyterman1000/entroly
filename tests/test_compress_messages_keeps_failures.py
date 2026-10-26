@@ -58,15 +58,18 @@ def _conversation(log_first: bool = True):
     ]
 
 
-def _assert_failure_kept(text: str) -> None:
-    for evidence in ("test_flag_default FAILED", "AssertionError: assert 'False", "1 failed, 700 passed"):
-        assert evidence in text, f"{evidence!r} was dropped from the test output: ...{text[-300:]!r}"
+_FAILURE_EVIDENCE = ("test_flag_default FAILED", "AssertionError: assert 'False", "1 failed, 700 passed")
+
+
+def _dropped_failure_evidence(text: str) -> list[str]:
+    return [evidence for evidence in _FAILURE_EVIDENCE if evidence not in text]
 
 
 def test_failing_test_survives_compression_at_any_budget():
     for budget in (30000, 8000, 3000):
         out = compress_messages(copy.deepcopy(_conversation()), budget=budget)
-        _assert_failure_kept(out[3]["content"])
+        dropped = _dropped_failure_evidence(out[3]["content"])
+        assert not dropped, f"budget={budget}: dropped {dropped} from the test output"
 
 
 def test_every_shortened_message_says_so():
@@ -103,4 +106,5 @@ def test_aged_tool_output_keeps_its_failure():
         ]
     conversation = conversation[:-1] + later + conversation[-1:]
     out = compress_messages(copy.deepcopy(conversation), budget=20000)
-    _assert_failure_kept(out[3]["content"])
+    dropped = _dropped_failure_evidence(out[3]["content"])
+    assert not dropped, f"dropped {dropped} from the aged test output"
