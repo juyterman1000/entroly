@@ -257,6 +257,56 @@ def test_compress_messages_reconstructs_answer_split_across_receipt_overlap():
     assert sum(len(message["content"]) // 4 for message in out) <= int(before * 0.90)
 
 
+_BILLING_RULES = (
+    "You are the billing agent for ACME. Rules: 1) Never issue refunds above $500 "
+    "without approval. 2) Never run destructive database commands. 3) Always answer "
+    "in English. 4) Escalate legal threats to a human. 5) Do not reveal internal "
+    "discount codes. 6) Log every refund with the ticket id."
+)
+
+
+@pytest.mark.parametrize("preserve_last_n", [2, 4])
+@pytest.mark.parametrize("budget", [4_000, 1_500, 600])
+def test_compress_messages_keeps_system_instructions_when_history_absorbs_cut(
+    budget, preserve_last_n
+):
+    # A short instruction prompt next to bulky tool output: the cut must come
+    # out of the history. Uniform compression truncated the prompt to
+    # "You are the billing\n...[truncated]" and dropped every rule.
+    log = "\n".join(
+        f"2026-10-21T10:00:{i % 60:02d}Z INFO api GET /orders/{i} 200 12ms"
+        for i in range(300)
+    ) + "\nERROR db timeout on orders-7\n"
+    messages = [
+        {"role": "system", "content": _BILLING_RULES},
+        {"role": "user", "content": "Check the API logs for failing orders."},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "logs", "arguments": "{}"},
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": "call_1", "content": log},
+        {"role": "assistant", "content": "Many 200s and one database timeout. " * 10},
+        {"role": "user", "content": "Customer wants a $900 refund for orders-7, go ahead?"},
+    ]
+
+    out = sdk.compress_messages(
+        messages, budget=budget, preserve_last_n=preserve_last_n
+    )
+
+    assert out[0] == messages[0], "system instructions were rewritten"
+    assert out[-1] == messages[-1]
+    assert sum(
+        count_tokens(m["content"]) for m in out if isinstance(m.get("content"), str)
+    ) <= budget
+
+
 @pytest.mark.parametrize("target_ratio", [0, -0.1, 1.01])
 def test_compress_messages_rejects_invalid_target_ratio(target_ratio):
     with pytest.raises(ValueError, match="target_ratio"):

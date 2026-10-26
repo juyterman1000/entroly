@@ -544,6 +544,26 @@ def _message_tokens(messages: list[dict[str, Any]]) -> int:
     )
 
 
+# Instructions are cut last. A system prompt is usually a few hundred tokens
+# of rules beside thousands of tokens of history; a uniform per-message ratio
+# truncated those rules mid-sentence ("You are the billing\n...[truncated]")
+# while the bulky tool output that caused the pressure was still available.
+_INSTRUCTION_ROLES = frozenset({"system", "developer"})
+
+
+def _prefer_non_instruction(
+    candidates: list[tuple[int, int]],
+    messages: list[dict[str, Any]],
+) -> list[tuple[int, int]]:
+    """Return tightening candidates, instruction messages only as a last resort."""
+    preferred = [
+        candidate
+        for candidate in candidates
+        if messages[candidate[1]].get("role") not in _INSTRUCTION_ROLES
+    ]
+    return preferred or candidates
+
+
 def _infer_compression_query(messages: list[dict[str, Any]]) -> str:
     """Use the last user turn as the evidence-selection query.
 
@@ -911,17 +931,32 @@ def compress_messages(
         _track_savings(source_tokens, _message_tokens(compressed_all), "messages")
         return compressed_all
 
-    # Compute per-message compression ratio
+    # Compute per-message compression ratio. Instruction messages are kept
+    # verbatim in this pass, so the rest of the older window carries the cut.
     older_tokens = sum(
         len(m.get("content", "")) // 4
-        for m in older if isinstance(m.get("content"), str)
+        for m in older
+        if isinstance(m.get("content"), str)
+        and m.get("role") not in _INSTRUCTION_ROLES
     )
-    ratio = max(0.05, remaining_budget / max(older_tokens, 1))
+    instruction_tokens = sum(
+        count_tokens(m["content"])
+        for m in older
+        if isinstance(m.get("content"), str)
+        and m.get("role") in _INSTRUCTION_ROLES
+    )
+    ratio = max(
+        0.05, max(remaining_budget - instruction_tokens, 1) / max(older_tokens, 1)
+    )
 
     result = []
     for msg in older:
         content = msg.get("content", "")
-        if not isinstance(content, str) or len(content) < 200:
+        if (
+            not isinstance(content, str)
+            or len(content) < 200
+            or msg.get("role") in _INSTRUCTION_ROLES
+        ):
             result.append(msg)
             continue
 
@@ -974,7 +1009,7 @@ def compress_messages(
         ]
         if not candidates:
             break
-        current_tokens, index = max(candidates)
+        current_tokens, index = max(_prefer_non_instruction(candidates, result))
         excess = current_total - remaining_budget
         target_tokens = max(0, current_tokens - excess)
         message = dict(result[index])
@@ -1059,8 +1094,17 @@ def _compress_all_messages(
         if last_user_idx >= 0 and isinstance(messages[last_user_idx].get("content"), str)
         else 0
     )
-    compressible_tokens = max(1, total_tokens - preserved_tokens)
-    remaining_budget = max(1, budget - preserved_tokens)
+    # Instruction messages stay verbatim in the proportional pass; the final
+    # guard below cuts them only once nothing else is left to give.
+    instruction_tokens = sum(
+        count_tokens(m["content"])
+        for i, m in enumerate(messages)
+        if i != last_user_idx
+        and isinstance(m.get("content"), str)
+        and m.get("role") in _INSTRUCTION_ROLES
+    )
+    compressible_tokens = max(1, total_tokens - preserved_tokens - instruction_tokens)
+    remaining_budget = max(1, budget - preserved_tokens - instruction_tokens)
     ratio = max(0.05, remaining_budget / compressible_tokens)
 
     result = []
@@ -1070,7 +1114,11 @@ def _compress_all_messages(
             continue
 
         content = msg.get("content", "")
-        if not isinstance(content, str) or len(content) < 200:
+        if (
+            not isinstance(content, str)
+            or len(content) < 200
+            or msg.get("role") in _INSTRUCTION_ROLES
+        ):
             result.append(msg)
             continue
 
@@ -1111,7 +1159,7 @@ def _compress_all_messages(
         ]
         if not candidates:
             break
-        _, idx = max(candidates)
+        _, idx = max(_prefer_non_instruction(candidates, result))
         msg = dict(result[idx])
         content = msg.get("content", "")
         current_tokens = max(1, count_tokens(content))
