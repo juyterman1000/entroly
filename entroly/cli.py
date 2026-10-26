@@ -465,12 +465,13 @@ def _detect_ai_tool() -> dict:
             "config_key": "mcpServers",
         })
 
-    # VS Code MCP-compatible assistants (Cline, Roo, Continue, etc.)
+    # VS Code reads workspace MCP servers from .vscode/mcp.json under
+    # "servers" (not the Claude/Cursor "mcpServers" key).
     if os.path.exists(os.path.join(cwd, ".vscode")):
         tools.append({
             "name": "VS Code",
             "config_path": os.path.join(cwd, ".vscode", "mcp.json"),
-            "config_key": "mcpServers",
+            "config_key": "servers",
         })
 
     # Windsurf
@@ -632,7 +633,11 @@ def _write_config(tool: dict, dry_run: bool = False) -> str:
         existing[config_key] = servers
     if not isinstance(servers, dict):
         raise ValueError(f"{config_key!r} must be a JSON object in {config_path}")
-    servers.update(_generate_mcp_config())
+    entry = _generate_mcp_config()
+    if config_key == "servers":
+        # VS Code's mcp.json schema names the transport on every server.
+        entry = {name: {"type": "stdio", **spec} for name, spec in entry.items()}
+    servers.update(entry)
 
     if dry_run:
         # Never echo unrelated editor preferences, account identifiers, or
@@ -641,7 +646,7 @@ def _write_config(tool: dict, dry_run: bool = False) -> str:
             {
                 "operation": "merge",
                 "config_key": config_key,
-                "entry": _generate_mcp_config(),
+                "entry": entry,
                 "preserves_unrelated_configuration": True,
             },
             indent=2,
@@ -1972,6 +1977,7 @@ _WRAP_AGENTS = {
     "vscode": {
         "kind": "mcp", "name": "VS Code MCP clients",
         "config_path": "{cwd}/.vscode/mcp.json",
+        "config_key": "servers",
         "post_hint": "Reload VS Code. MCP-compatible clients will pick this up.",
     },
     "claude-desktop": {
