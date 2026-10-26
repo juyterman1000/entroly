@@ -106,17 +106,41 @@ def install_claude_code(dry_run: bool = False) -> dict:
     settings_path = _claude_code_settings_path()
     hook_config = _claude_code_hook_config()
 
-    # Load existing settings
-    existing = {}
+    # Load existing settings. A file that cannot be parsed used to be treated
+    # as empty and then overwritten with only this hook, silently deleting
+    # every permission, deny rule, hook and env entry it held -- with no
+    # backup, while the CLI printed "Installed". A UTF-8 BOM (written by
+    # Windows PowerShell 5.1 and Notepad), a trailing comma or a comment was
+    # enough. Read the BOM as encoding, and refuse anything else unparseable.
+    existing: dict = {}
+    problem = None
     if settings_path.exists():
         try:
-            existing = json.loads(settings_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, IOError):
-            existing = {}
+            loaded = json.loads(settings_path.read_text(encoding="utf-8-sig"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            problem = f"not valid JSON ({type(exc).__name__}: {exc})"
+        else:
+            if isinstance(loaded, dict):
+                existing = loaded
+            else:
+                problem = "not a JSON object"
 
     # Check if our hook is already installed
     existing_hooks = existing.get("hooks", {})
-    existing_post = existing_hooks.get("PostToolUse", [])
+    existing_post = (
+        existing_hooks.get("PostToolUse", [])
+        if isinstance(existing_hooks, dict)
+        else None
+    )
+    if problem is None and not isinstance(existing_post, list):
+        problem = 'not mergeable ("hooks.PostToolUse" is not a list)'
+    if problem is not None:
+        return {
+            "path": str(settings_path),
+            "action": "unreadable",
+            "detail": problem,
+            "settings": None,
+        }
 
     already_present = any(
         "entroly ravs capture" in str(h.get("hooks", [{}]))

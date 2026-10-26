@@ -6486,6 +6486,17 @@ def cmd_ravs(args):
         if action == "installed":
             print(f"  {C.GREEN}\u2713 Installed RAVS PostToolUse hook \u2192 {path}{C.RESET}")
             print(f"  {C.GRAY}Restart Claude Code to activate. Every Bash tool use now feeds RAVS.{C.RESET}")
+        elif action == "unreadable":
+            print(
+                f"  {C.RED}✗ Not installed: {path} is "
+                f"{result.get('detail', 'unreadable')}.{C.RESET}"
+            )
+            print(
+                f"  {C.GRAY}  Nothing was written: rewriting it would drop every "
+                f"other setting it holds. Fix or move the file, then re-run."
+                f"{C.RESET}"
+            )
+            return 1
         elif action == "already_present":
             print(f"  {C.GRAY}\u00b7 Hook already present in {path}{C.RESET}")
         elif action == "already_present_in_project":
