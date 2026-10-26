@@ -177,3 +177,47 @@ def test_source_root_is_omitted_when_absent(tmp_path):
     record = vault.read_belief("legacy")
     assert record is not None
     assert "source_root" not in record["frontmatter"]
+
+
+def test_compile_does_not_retract_its_own_architecture_belief(tmp_path):
+    """`entroly compile src` retracted the architecture belief it had just written.
+
+    The architecture overview cites the compiled directory as an absolute
+    path. Stripping "./" from it removed the leading "/", and the suffix index
+    holds files only, so the live directory was reported as "source is gone".
+    """
+    from entroly.belief_compiler import BeliefCompiler
+
+    project, vault = _vault(tmp_path)
+    src = project / "src"
+    src.mkdir()
+    (src / "auth.py").write_text("class AuthService:\n    pass\n", encoding="utf-8")
+    (src / "store.py").write_text("import auth\n\nclass Store:\n    pass\n", encoding="utf-8")
+
+    # The same sequence `entroly compile src` runs.
+    BeliefCompiler(vault).compile_directory(str(src), 500)
+    vault.backfill_source_roots([str(src)])
+    result = vault.mark_beliefs_ungrounded([str(src)])
+
+    assert result["retracted_entities"] == []
+    status, confidence = _status_and_confidence(vault, "architecture::src")
+    assert status != "ungrounded"
+    assert confidence > 0.0
+
+
+def test_architecture_belief_is_retracted_when_its_directory_is_gone(tmp_path):
+    import shutil
+
+    from entroly.belief_compiler import BeliefCompiler
+
+    project, vault = _vault(tmp_path)
+    src = project / "src"
+    src.mkdir()
+    (src / "auth.py").write_text("class AuthService:\n    pass\n", encoding="utf-8")
+    (src / "store.py").write_text("import auth\n\nclass Store:\n    pass\n", encoding="utf-8")
+    BeliefCompiler(vault).compile_directory(str(src), 500)
+
+    shutil.rmtree(src)
+    result = vault.mark_beliefs_ungrounded([str(project)])
+
+    assert "architecture::src" in result["retracted_entities"]

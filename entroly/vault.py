@@ -1108,7 +1108,14 @@ class VaultManager:
 
         def _grounded(source: str, source_root: str) -> bool:
             nonlocal suffix_index
-            raw = source.split(":", 1)[0].replace("\\", "/").strip().lstrip("./")
+            path_text = source.split(":", 1)[0].replace("\\", "/").strip()
+            if path_text.startswith("/"):
+                # The architecture belief cites the absolute directory it was
+                # compiled from. Stripping "./" below would turn it into a
+                # relative path that no file suffix can match, retracting a
+                # live belief, so an absolute source is checked as written.
+                return Path(path_text).exists()
+            raw = path_text.lstrip("./")
             if not _is_path_like(raw):
                 # `write_belief` substitutes the sentinel `unknown` when a
                 # belief carries no provenance, and callers pass bare labels
