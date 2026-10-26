@@ -3292,6 +3292,13 @@ def _run_local_simulation(args) -> dict:
     query_conditioned = _query_conditioned_selection_active(engine)
     budget = int(getattr(args, "budget", 4096) or 4096)
     queries = _simulation_queries(args)
+    # Without --query the run measures built-in sample questions (auth, SQL
+    # injection, module structure) that may not exist in this repository: on a
+    # click-derived project they headlined 98.3% with nothing saying so.
+    supplied = getattr(args, "query", None) or []
+    if isinstance(supplied, str):
+        supplied = [supplied]
+    sample_queries = not any(q and q.strip() for q in supplied)
     baseline = int(getattr(args, "baseline", 0) or 0)
     explicit_baseline = baseline > 0
     if baseline <= 0:
@@ -3349,6 +3356,7 @@ def _run_local_simulation(args) -> dict:
         **coverage,
         "baseline_tokens_per_query": baseline,
         "queries": rows,
+        "sample_queries": sample_queries,
         "total_tokens_saved": total_saved if query_conditioned else None,
         "average_reduction_pct": (
             round(total_saved * 100 / max(baseline * len(rows), 1), 2)
@@ -3386,7 +3394,11 @@ def _run_local_simulation(args) -> dict:
             f"were indexed (capped by {coverage['file_cap_source']} "
             f"{coverage['file_cap']:,}); every figure covers that subset, and a "
             "task whose files were not indexed is not measured."
-        ] if coverage["coverage_capped"] else []),
+        ] if coverage["coverage_capped"] else []) + ([
+            "No --query was given, so built-in sample questions were measured; "
+            "they may not match this repository. Pass --query \"<your task>\" "
+            "to measure your own."
+        ] if sample_queries else []),
     }
 
 
@@ -3411,6 +3423,12 @@ def _print_local_simulation(report: dict, *, title: str, include_perf: bool) -> 
         f"  {C.BOLD}Baseline:{C.RESET} {report['baseline_tokens_per_query']:,} "
         f"tokens/query  {C.BOLD}Budget:{C.RESET} {report['budget']:,} tokens"
     )
+    if report.get("sample_queries"):
+        print(
+            f"  {C.YELLOW}Sample questions (no --query given); they may not match "
+            f"this repository. Measure your own task with "
+            f'--query "<your task>".{C.RESET}'
+        )
     # Without the native engine the optimizer never reads the query, so every
     # question returns the same fragments and the same percentage. Automatic
     # repair (self_heal) normally prevents anyone seeing this at all; it is
