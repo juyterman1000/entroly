@@ -114,3 +114,20 @@ def test_a_query_with_terms_still_gets_context_and_reports_its_size():
     assert response.status_code == 200
     assert FRAGMENT_MARKER in json.dumps(forwarded)
     assert int(response.headers.get("x-entroly-context-tokens-added", "0")) > 0
+
+
+def test_streaming_saved_pct_describes_this_request_not_the_process():
+    proxy = _proxy()
+    # Earlier traffic through the same process saved 90%.
+    proxy._total_original_tokens = 10_000
+    proxy._total_optimized_tokens = 1_000
+
+    response, forwarded = _send(
+        proxy, "How does reconcile_shelf_3_5 filter rows by bin?", stream=True
+    )
+
+    assert response.status_code == 200
+    assert FRAGMENT_MARKER in json.dumps(forwarded)  # context was added: nothing saved
+    assert response.headers.get("x-entroly-tokens-saved-pct") == "0", (
+        response.headers.get("x-entroly-tokens-saved-pct")
+    )

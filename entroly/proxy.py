@@ -2761,6 +2761,11 @@ class PromptCompilerProxy:
                     # tokenizer: the conversation as received, against the body
                     # actually being sent upstream after injection and pruning.
                     optimized_tokens = self._estimate_body_tokens(body)
+                    if original_tokens > 0:
+                        control_headers["X-Entroly-Tokens-Saved-Pct"] = str(
+                            max(0, original_tokens - optimized_tokens)
+                            * 100 // original_tokens
+                        )
                     with self._stats_lock:
                         self._requests_optimized += 1
                         opt_count = self._requests_optimized
@@ -4302,10 +4307,9 @@ class PromptCompilerProxy:
             if self._witness_enabled:
                 resp_headers["X-Entroly-Witness"] = "streaming-audit"
                 resp_headers["X-Entroly-Witness-Mode"] = self._witness_mode
-            # Gap #27: Value signal headers
-            if self._total_original_tokens > 0:
-                saved_pct = max(0, (self._total_original_tokens - self._total_optimized_tokens)) * 100 // self._total_original_tokens
-                resp_headers["X-Entroly-Tokens-Saved-Pct"] = str(saved_pct)
+            # Gap #27: X-Entroly-Tokens-Saved-Pct arrives per request through
+            # extra_headers. It used to be recomputed here from the lifetime
+            # counters, so a request that saved nothing could report 65%.
             resp_headers["X-Entroly-Pipeline-Ms"] = f"{self._last_pipeline_ms:.1f}"
             resp_headers["X-Entroly-Fragments"] = str(len(self._last_context_fragments))
             # Confidence + coverage from value tracker
