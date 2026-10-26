@@ -277,3 +277,50 @@ def test_session_rescue_docs_point_at_the_store_rescue_writes():
     assert "ENTROLY_COMPRESSION_STORE=.entroly/" not in doc
     source = (root / "entroly" / "session_rescue.py").read_text(encoding="utf-8")
     assert "`entroly recover` finds spans" not in source
+
+
+def _nested_api_response() -> str:
+    # GitHub-issues-shaped: nested label arrays, multi-line bodies and
+    # per-record ids, which the columnar and schema forms both decline.
+    return json.dumps(
+        {
+            "total_count": 400,
+            "items": [
+                {
+                    "id": i,
+                    "login": f"user{i}",
+                    "state": "closed" if i % 3 else "open",
+                    "title": f"Fix flaky test in module_{i}  (two spaces kept)",
+                    "labels": [
+                        {"name": "bug" if i % 2 else "ci", "color": "ededed"},
+                        {"name": f"p{i % 3}", "color": "ededed"},
+                    ],
+                    "created_at": f"2026-10-02T10:{i % 60:02d}:00Z",
+                    "body": f"Steps to reproduce:\n1. run pytest\n2. observe failure in test_{i}",
+                }
+                for i in range(400)
+            ],
+        },
+        indent=2,
+    )
+
+
+def test_readme_compress_example_shrinks_a_nested_api_response(workspace):
+    # README: `entroly compress response.json --out small.json`. A realistic
+    # nested response came back "left unchanged" (42,529 -> 42,530 tokens).
+    work, store = workspace
+    original = _nested_api_response()
+    (work / "response.json").write_text(original, encoding="utf-8")
+
+    receipt = _compress_json(work, store, "response.json", "--out", "small.json")
+
+    assert receipt["codec"] == "json"
+    assert receipt["tokens_after"] < receipt["tokens_before"]
+    small = (work / "small.json").read_text(encoding="utf-8")
+    assert json.loads(small) == json.loads(original)
+    assert "(two spaces kept)" in small, "string contents must stay verbatim"
+    restored = _run(
+        ["recover", receipt["recovery_digest"], "--out", "restored.json"], work, store
+    )
+    assert restored.returncode == 0, restored.stdout[-800:]
+    assert (work / "restored.json").read_bytes() == original.encode("utf-8")

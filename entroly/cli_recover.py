@@ -161,7 +161,20 @@ def cmd_compress(args) -> int:
 
     if chosen is None or chosen.text == text:
         print()
-        print(f"{C.YELLOW}  No codec claimed {source.name}, or it was already minimal.{C.RESET}")
+        # Say which of the reasons applies instead of offering both.
+        if chosen is None:
+            why = f"No codec claimed {source.name}."
+        elif chosen.codec == "document" and not getattr(args, "query", ""):
+            why = (
+                f"{source.name} reads as prose; the document codec only selects "
+                "sentences for a --query."
+            )
+        else:
+            why = (
+                f"The {chosen.codec} codec found no smaller form of {source.name} "
+                "that keeps everything it protects."
+            )
+        print(f"{C.YELLOW}  {why}{C.RESET}")
         print(f"  {C.GRAY}Left unchanged -- {before:,} tokens.{C.RESET}")
         print()
         return 0
