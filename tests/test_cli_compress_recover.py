@@ -354,3 +354,30 @@ def test_recover_still_reads_a_store_above_the_write_cap(workspace, monkeypatch)
 
     assert result.returncode == 0, result.stdout[-800:]
     assert (work / "restored.json").read_bytes() == (work / "resp.json").read_bytes()
+
+
+def test_invalid_utf8_recovery_reports_the_files_real_bytes(workspace):
+    # The recovery digest is defined over the text with undecodable bytes
+    # encoded as surrogatepass (pinned by test_recovery_fidelity_fuzz), so it
+    # cannot equal `sha256sum file`; the receipt must still give the file's
+    # own sha256, and `recover` must report the bytes it actually wrote
+    # (it said 91,141 for a 91,133-byte file).
+    import hashlib
+
+    work, store = workspace
+    log = "\n".join(
+        f"2026-10-21T10:00:{i % 60:02d}Z INFO api GET /orders/{i} 200 12ms"
+        for i in range(400)
+    ).encode("utf-8")
+    raw = log + b"\n\xff\xfe raw \xc3\x28 bytes \x80\n" + log + b"\n"
+    (work / "app.log").write_bytes(raw)
+
+    receipt = _compress_json(work, store, "app.log")
+    assert receipt["file_sha256"] == "sha256:" + hashlib.sha256(raw).hexdigest()
+
+    result = _run(
+        ["recover", receipt["recovery_digest"], "--out", "restored.log"], work, store
+    )
+    assert result.returncode == 0, result.stdout[-800:]
+    assert (work / "restored.log").read_bytes() == raw
+    assert f"Recovered {len(raw):,} bytes" in result.stdout

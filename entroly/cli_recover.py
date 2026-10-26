@@ -13,6 +13,7 @@ back content that merely looks plausible.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -174,6 +175,11 @@ def cmd_compress(args) -> int:
         "recovery_returns": recovery_returns,
         "recovery_store": store_path,
         "source_sha256": chosen.source_sha256 if chosen else None,
+        # The digests above hash the text with undecodable bytes encoded as
+        # surrogatepass, so for a file that is not valid UTF-8 they differ from
+        # `sha256sum`; this is the hash of the bytes on disk.
+        "file_sha256": "sha256:"
+        + hashlib.sha256(text.encode("utf-8", "surrogateescape")).hexdigest(),
     }
 
     if getattr(args, "out_path", None):
@@ -264,14 +270,14 @@ def cmd_recover(args) -> int:
         print(f"{C.RED}  Recovery failed: {exc}{C.RESET}")
         return 1
 
+    # surrogateescape mirrors the read: bytes that were not valid UTF-8 go
+    # back out as the same bytes. Report what is written, not the digest's
+    # byte_length (which counts undecodable bytes as 3-byte surrogatepass).
+    data = original.encode("utf-8", "surrogateescape")
     if getattr(args, "out_path", None):
-        # surrogateescape mirrors the read: bytes that were not valid UTF-8
-        # go back out as the same bytes.
-        Path(args.out_path).write_bytes(
-            original.encode("utf-8", "surrogateescape")
-        )
+        Path(args.out_path).write_bytes(data)
         print(
-            f"{C.GREEN}  Recovered {reference.byte_length:,} bytes -> "
+            f"{C.GREEN}  Recovered {len(data):,} bytes -> "
             f"{args.out_path}{C.RESET}"
         )
         # The store already records what it holds, and that is not the same
@@ -295,7 +301,7 @@ def cmd_recover(args) -> int:
                 detail += f" ({reference.item_count:,} {reference.item_label})"
             print(f"  {C.GRAY}{detail}{C.RESET}")
     else:
-        sys.stdout.buffer.write(original.encode("utf-8", "surrogateescape"))
+        sys.stdout.buffer.write(data)
         # stdout carries the bytes and has to stay pipeable, so the note goes
         # to stderr rather than corrupting a redirect.
         if reference.note:
