@@ -90,21 +90,3 @@ def _verify_package_origin() -> None:
 
 
 _verify_package_origin()
-
-
-def pytest_runtest_logreport(report):
-    """Under GitHub Actions, surface each failure as a check-run annotation.
-
-    Diagnostic: raw job logs need a signed-in browser, annotations are readable
-    through the REST API. No effect outside GITHUB_ACTIONS.
-    """
-    if os.environ.get("GITHUB_ACTIONS") != "true" or not report.failed:
-        return
-    text = getattr(report, "longreprtext", "") or ""
-    lines = [line for line in text.splitlines() if line.strip()]
-    tail = "\n".join(lines[-40:])[-3500:]
-    message = f"{report.nodeid} [{report.when}]\n{tail}"
-    for raw, escaped in (("%", "%25"), ("\r", "%0D"), ("\n", "%0A")):
-        message = message.replace(raw, escaped)
-    sys.stdout.write(f"\n::error title=pytest failure::{message}\n")
-    sys.stdout.flush()
