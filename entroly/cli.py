@@ -4251,6 +4251,56 @@ def cmd_capabilities(args):
     return 0
 
 
+def _launcher_package_dir(launcher: str) -> Path | None:
+    """Return the ``entroly`` package directory a PATH console script imports.
+
+    The script's own interpreter answers, so a standard venv, ``--user``,
+    pipx/uv tool, or editable install matches the running package. Returns
+    None when the interpreter cannot be read (for example a Windows ``.exe``
+    shim) or the probe fails.
+    """
+    import re
+
+    try:
+        with open(launcher, "rb") as handle:
+            lines = handle.read(4096).decode("utf-8", "replace").splitlines()
+    except OSError:
+        return None
+    if not lines or not lines[0].startswith("#!"):
+        return None
+    parts = lines[0][2:].split()
+    if not parts:
+        return None
+    interpreter = parts[0]
+    if Path(interpreter).name == "env" and len(parts) > 1:
+        interpreter = shutil.which(parts[1]) or ""
+    elif Path(interpreter).name == "sh" and len(lines) > 1:
+        # pip's /bin/sh trampoline for interpreter paths with spaces.
+        match = re.match(r"^'''exec' \"(.+)\" \"\$0\" \"\$@\"", lines[1])
+        interpreter = match.group(1) if match else ""
+    if not interpreter:
+        return None
+    probe = (
+        "import importlib.util, os; s = importlib.util.find_spec('entroly'); "
+        "print(os.path.dirname(os.path.realpath(s.origin)) if s and s.origin else '')"
+    )
+    try:
+        result = subprocess.run(
+            [interpreter, "-c", probe],
+            cwd=os.path.dirname(launcher) or None,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    location = result.stdout.strip()
+    if result.returncode != 0 or not location:
+        return None
+    return Path(location).resolve()
+
+
 def cmd_doctor(args):
     """entroly doctor — diagnose common issues (Gap #52)."""
     if getattr(args, "json_output", False):
@@ -4298,8 +4348,21 @@ def cmd_doctor(args):
     if _launcher:
         try:
             _running = Path(__file__).resolve().parent
-            _launcher_root = Path(_launcher).resolve().parent.parent
-            if _running.parent not in (_launcher_root, *_launcher_root.parents):
+            # Ask the launcher's own interpreter which package it imports.
+            # Comparing directory ancestry fired on every venv, --user, system
+            # and editable install (site-packages is never an ancestor of the
+            # script directory) and told those users to `pip install -e .`.
+            _launched = _launcher_package_dir(_launcher)
+            if _launched is None:
+                # Interpreter not readable (e.g. a Windows .exe shim): keep the
+                # original layout heuristic rather than guess.
+                _launcher_root = Path(_launcher).resolve().parent.parent
+                _shadowed = _running.parent not in (
+                    _launcher_root, *_launcher_root.parents
+                )
+            else:
+                _shadowed = _launched != _running
+            if _shadowed:
                 print(
                     f"  {C.YELLOW}!{C.RESET} `entroly` on PATH is a different "
                     f"installation than the imported package"
