@@ -4414,7 +4414,7 @@ def cmd_doctor(args):
 
     # 2. Check Rust engine
     checks_total += 1
-    from .native_status import QCCR_SYMBOLS, native_status
+    from .native_status import QCCR_SYMBOLS, fallback_reason, native_status
     native = native_status(QCCR_SYMBOLS)
     if native.ok:
         version = f" {native.version}" if native.version else ""
@@ -4424,9 +4424,12 @@ def cmd_doctor(args):
         # README sends users here when simulate reports "Relevance ranking is
         # OFF". The engine is a required dependency; without it selection
         # ignores the query. A counted warning (as `doctor --json` reports it),
-        # not a failure: the pure-Python fallback still works.
+        # not a failure: the pure-Python fallback still works. The cause is
+        # derived, not asserted: an installed core that fails to import lands
+        # here too, and fallback_reason carries its import error.
         print(
-            f"  {C.YELLOW}!{C.RESET} Native engine not installed "
+            f"  {C.YELLOW}!{C.RESET} Native engine unavailable: "
+            f"{fallback_reason(native)} "
             f"{C.GRAY}— Relevance ranking is OFF: selection ignores the query "
             f"and reduction figures are unearned{C.RESET}"
         )
