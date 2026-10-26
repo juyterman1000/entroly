@@ -1591,30 +1591,10 @@ class PromptCompilerProxy:
             if pac_result.receipt.economic_decision:
                 pac_headers["X-Entroly-PAC-Decision"] = pac_result.receipt.economic_decision
 
-            # Only book a VERIFIED saving when the tail was actually truncated
-            # (raw > aligned) and the provider-reported receipt confirms it.
-            tail_was_compressed = (
-                pac_result.receipt.raw_tokens_total > pac_result.receipt.aligned_tokens_total
-                and pac_result.is_cache_hit
-            )
-            if self._optimization_ledger is not None and tail_was_compressed:
-                self._optimization_ledger.record(
-                    OptimizationEvent(
-                        event_id=f"pac_kv:{conversation_id}:{int(time.time())}",
-                        feature="pac_kv_alignment",
-                        tier=SavingsTier.VERIFIED,
-                        gross_tokens_saved=max(
-                            0,
-                            pac_result.receipt.raw_tokens_total
-                            - pac_result.receipt.aligned_tokens_total,
-                        ),
-                        conversation_id=conversation_id,
-                        provider=provider,
-                        model=extract_model(body),
-                        metadata=pac_result.receipt.as_dict(),
-                    )
-                )
-
+            # No ledger event: this hook observes and labels, it does not
+            # rewrite the request (the body is returned unchanged), so no
+            # tokens were removed from what left the machine. Booking
+            # raw - aligned here would be a VERIFIED saving nobody received.
             return body, pac_headers
         except Exception as exc:
             logger.debug("PAC-KV alignment skipped: %s", exc)

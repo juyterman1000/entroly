@@ -126,7 +126,8 @@ class MemoryGraph:
         if root is None:
             root = Path(os.environ.get("ENTROLY_DIR", str(Path.home() / ".entroly")))
         self._root = Path(root) / "memory_graph"
-        self._root.mkdir(parents=True, exist_ok=True)
+        # Created on first save(), never at construction: the MCP server builds
+        # a graph at startup, and a read-only or unusable HOME must not crash it.
         self._nodes_path = self._root / "nodes.json"
         self._edges_path = self._root / "edges.jsonl"
 
@@ -327,6 +328,7 @@ class MemoryGraph:
 
     def save(self) -> None:
         """Persist graph to disk."""
+        self._root.mkdir(parents=True, exist_ok=True)
         # Nodes
         nodes_data = {
             "version": _SCHEMA_VERSION,

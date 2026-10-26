@@ -182,9 +182,13 @@ class CacheAligner:
                 "cache_misses": self._misses,
                 "hit_rate": round(self._hits / max(total, 1), 4),
                 "active_clients": len(self._cache),
-                "match_policy": "pac_kv_paged_merkle",
+                # Both align() and align_prompt() reuse state only on an exact
+                # SHA-256 match; page and Merkle data are receipts, not matching.
+                "match_policy": "exact_sha256",
                 "default_provider": self._default_provider,
-                "total_dollar_savings": round(self._total_dollar_savings, 6),
+                # Priced at assumed list rates for the provider's own prompt-cache
+                # discount; a projection, not a measured billing reduction.
+                "projected_dollar_savings": round(self._total_dollar_savings, 6),
             }
 
 

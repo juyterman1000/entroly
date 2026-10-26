@@ -106,8 +106,10 @@ class TestPACKVEngine:
     def test_economic_break_even_gate_locks_warm_cache(self):
         """When a prefix is warm, PAC-KV must freeze it to preserve 90% cache discount."""
         engine = PACKVEngine()
-        # Large prefix that exceeds Anthropic's 1024-token minimum
-        prefix = "SYSTEM_INSTRUCTIONS_MODULE: Define all tool specifications and architecture rules.\n" * 60
+        # Large prefix that exceeds Anthropic's 1024-token minimum under the
+        # real o200k tokenizer too (x60 was 780 tokens; it passed only on the
+        # chars/4 fallback estimate).
+        prefix = "SYSTEM_INSTRUCTIONS_MODULE: Define all tool specifications and architecture rules.\n" * 160
         tail = "USER: Please review the latest PR."
 
         # Warm turn with an active cache lease
@@ -176,7 +178,8 @@ class TestCacheAlignerIntegration:
 
     def test_align_prompt_flow(self):
         aligner = CacheAligner(default_provider="anthropic")
-        prefix = "System: Core guidelines and tool schemas.\n" * 120
+        # x120 was 960 o200k tokens, under the 1024 minimum; x300 clears it.
+        prefix = "System: Core guidelines and tool schemas.\n" * 300
         tail = "User: Execute step 1."
 
         # Turn 1: Cold start
@@ -193,7 +196,7 @@ class TestCacheAlignerIntegration:
 
         stats = aligner.stats()
         assert stats["cache_hits"] == 1
-        assert stats["total_dollar_savings"] > 0.0
+        assert stats["projected_dollar_savings"] > 0.0
 
     def test_invalidate(self):
         aligner = CacheAligner()
