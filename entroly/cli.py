@@ -981,7 +981,14 @@ def cmd_health(args):
             print(f"\n  {C.RED}{total_findings} security findings ({sec.get('critical_total', 0)} critical, {sec.get('high_total', 0)} high){C.RESET}")
             print(f"    {C.GRAY}{taint} taint-flow (high-confidence) + {pat} pattern-only (review for FPs){C.RESET}")
             if sec.get("most_vulnerable_fragment"):
-                print(f"    {C.GRAY}Most vulnerable: {sec['most_vulnerable_fragment']}{C.RESET}")
+                # The fragment id is internal; name the file it came from.
+                worst = sec["most_vulnerable_fragment"]
+                for frag in sec.get("vulnerable_fragments") or []:
+                    source = frag.get("source") or ""
+                    if frag.get("fragment_id") == worst and source:
+                        worst = source.removeprefix("file:")
+                        break
+                print(f"    {C.GRAY}Most vulnerable: {worst}{C.RESET}")
         else:
             print(f"\n  {C.GREEN}No security vulnerabilities detected{C.RESET}")
 
