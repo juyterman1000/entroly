@@ -182,6 +182,13 @@ _SECRET_PATTERNS = re.compile(
 )
 
 
+def _query_can_rank_context(user_message: str) -> bool:
+    """True when the message has a term that can rank repository context."""
+    from .engine import _query_terms, qccr_can_condition
+
+    return bool(_query_terms(user_message)) or qccr_can_condition(user_message)
+
+
 def _sanitize_query(query: str, max_len: int = 200) -> str:
     """Sanitize a user query for safe storage/display.
 
@@ -2519,7 +2526,13 @@ class PromptCompilerProxy:
         try:
             user_message = extract_user_message(body, provider)
             witness_context = user_message
-            if user_message:
+            control_headers["X-Entroly-Context-Tokens-Added"] = "0"
+            if user_message and not _query_can_rank_context(user_message):
+                # "?" or "What is this?" has nothing to rank by, yet the
+                # engine still fills the budget: ~37k tokens of repository
+                # context rode along with a one-word question. Forward as sent.
+                logger.info("No searchable term in the query; adding no context")
+            elif user_message:
                 pipeline_result = await asyncio.to_thread(
                     self._run_pipeline, user_message, body, path, request_id
                 )
@@ -2624,6 +2637,7 @@ class PromptCompilerProxy:
                                 _sanitize_report.matches,
                             )
 
+                    _tokens_before_context = self._estimate_body_tokens(body)
                     cache_stable_injection = (
                         os.environ.get(
                             "ENTROLY_CACHE_STABLE_INJECTION",
@@ -2708,6 +2722,9 @@ class PromptCompilerProxy:
                         body = inject_context_responses(body, context_text)
                     else:
                         body = inject_context_openai(body, context_text)
+                    control_headers["X-Entroly-Context-Tokens-Added"] = str(
+                        max(0, self._estimate_body_tokens(body) - _tokens_before_context)
+                    )
 
                     # Entropic Conversation Pruning
                     if (
