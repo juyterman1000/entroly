@@ -324,3 +324,33 @@ def test_readme_compress_example_shrinks_a_nested_api_response(workspace):
     )
     assert restored.returncode == 0, restored.stdout[-800:]
     assert (work / "restored.json").read_bytes() == original.encode("utf-8")
+
+
+def test_recover_reports_a_corrupt_store_plainly(workspace):
+    # A truncated store surfaced as a bare JSON parser error ("Unterminated
+    # string ...") with no file name and no hint that the store was damaged.
+    work, store = workspace
+    (work / "resp.json").write_text(_payload(), encoding="utf-8")
+    digest = _compress_json(work, store, "resp.json")["recovery_digest"]
+    path = store / "recovery.json"
+    path.write_bytes(path.read_bytes()[:300])
+
+    missed = _run(["recover", digest], work, store)
+
+    assert missed.returncode == 1
+    assert "could not be read" in missed.stdout
+    assert str(path) in missed.stdout
+
+
+def test_recover_still_reads_a_store_above_the_write_cap(workspace, monkeypatch):
+    # The byte cap bounds writes. Lowering it must not lock a user out of
+    # records that are already stored.
+    work, store = workspace
+    (work / "resp.json").write_bytes(_payload().encode("utf-8"))
+    digest = _compress_json(work, store, "resp.json")["recovery_digest"]
+    monkeypatch.setenv("ENTROLY_RECOVERY_STORE_MAX_BYTES", "1024")
+
+    result = _run(["recover", digest, "--out", "restored.json"], work, store)
+
+    assert result.returncode == 0, result.stdout[-800:]
+    assert (work / "restored.json").read_bytes() == (work / "resp.json").read_bytes()

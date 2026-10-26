@@ -31,6 +31,36 @@ def default_recovery_store_path() -> str:
     return str(_project_checkpoint_dir() / "recovery.json")
 
 
+def _open_store(store_path: str, C: Any, *, read_only: bool) -> Any:
+    """Open the recovery store, or explain plainly why it cannot be read.
+
+    A truncated store used to surface as a bare JSON parser error ("Error:
+    Unterminated string ...") with no file name, and a store already larger
+    than ENTROLY_RECOVERY_STORE_MAX_BYTES refused every `recover`, although
+    the cap exists to bound writes.
+    """
+    from .codec import RecoveryStore
+
+    max_bytes = None
+    if read_only:
+        # Recovery never writes, so a store above the current write cap is
+        # still readable.
+        try:
+            max_bytes = max(1024, Path(store_path).stat().st_size)
+        except OSError:
+            max_bytes = None
+    try:
+        return RecoveryStore(store_path, max_bytes=max_bytes)
+    except (OSError, ValueError) as exc:
+        action = "recovered" if read_only else "compressed"
+        print(f"{C.RED}  Recovery store {store_path} could not be read: {exc}{C.RESET}")
+        print(
+            f"  {C.GRAY}Nothing was {action}. If the file is truncated or corrupt, "
+            f"restore it from a backup, or pass --store to use another store.{C.RESET}"
+        )
+        return None
+
+
 def _recovery_miss_hint(digest: str, store_path: str, explicit_store: bool) -> str:
     """Say what to do when a digest is not found in this directory's scope.
 
@@ -85,7 +115,6 @@ def _colours() -> Any:
 
 def cmd_compress(args) -> int:
     """Compress a file with the content codecs and print an auditable receipt."""
-    from .codec import RecoveryStore
     from .codecs_builtin import default_registry
 
     C = _colours()
@@ -102,7 +131,9 @@ def cmd_compress(args) -> int:
         text = fh.read()
 
     store_path = args.store_path or default_recovery_store_path()
-    store = RecoveryStore(store_path)
+    store = _open_store(store_path, C, read_only=False)
+    if store is None:
+        return 1
     reps = default_registry(store).representations(
         text, source_id=str(source), query=getattr(args, "query", "") or ""
     )
@@ -212,11 +243,11 @@ def cmd_compress(args) -> int:
 
 def cmd_recover(args) -> int:
     """Return the exact original bytes for a recovery digest."""
-    from .codec import RecoveryStore
-
     C = _colours()
     store_path = args.store_path or default_recovery_store_path()
-    store = RecoveryStore(store_path)
+    store = _open_store(store_path, C, read_only=True)
+    if store is None:
+        return 1
 
     reference = store.reference_for(args.digest)
     if reference is None:
