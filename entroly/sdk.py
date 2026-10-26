@@ -24,6 +24,7 @@ Usage::
 
 from __future__ import annotations
 
+import math
 import re
 from typing import Any, TYPE_CHECKING, Sequence
 from .profiles import get_profile
@@ -459,6 +460,14 @@ def compress(
         # Compress code with type hint
         compressed = compress(source_code, budget=2000, content_type="code")
     """
+    if content is not None and not isinstance(content, str):
+        if isinstance(content, (bytes, bytearray)):
+            raise TypeError(
+                "compress() takes str, not bytes; decode first, "
+                "e.g. data.decode('utf-8')"
+            )
+        raise TypeError(f"compress() takes str, not {type(content).__name__}")
+    budget = _checked_budget(budget)
     if not content:
         return content
     _track_product_surface("sdk_compress")
@@ -542,6 +551,29 @@ def _message_tokens(messages: list[dict[str, Any]]) -> int:
         for message in messages
         if isinstance(message.get("content"), str)
     )
+
+
+def _checked_budget(budget: Any) -> Any:
+    """Validate a token budget: zero or more tokens, or +inf for no limit.
+
+    NaN and negative budgets were silently accepted (a negative budget
+    returned "", NaN an arbitrary slice) and a string or fractional budget
+    failed deep inside with an unrelated TypeError.
+    """
+    if budget is None:
+        return None
+    if isinstance(budget, bool) or not isinstance(budget, (int, float)):
+        raise TypeError(
+            f"budget must be a number of tokens, not {type(budget).__name__}"
+        )
+    if isinstance(budget, float):
+        if math.isnan(budget):
+            raise ValueError("budget must be a number of tokens, not NaN")
+        if budget == math.inf:
+            return budget
+    if budget < 0:
+        raise ValueError(f"budget must be zero or more tokens, got {budget}")
+    return int(budget)
 
 
 def _block_text(blocks: list[Any]) -> str:
@@ -963,6 +995,9 @@ def compress_messages(
         ]
         compressed = compress_messages(messages, budget=30000)
     """
+    budget = _checked_budget(budget)
+    if budget is None:
+        raise TypeError("budget must be a number of tokens, not None")
     if not messages:
         return messages
     _track_product_surface("sdk_messages")
@@ -1672,6 +1707,11 @@ def optimize(
         print(f"Selected {result['fragments_selected']}/{result['fragments_total']}")
         # Use result["context_text"] as your LLM system prompt context
     """
+    budget = _checked_budget(budget)
+    if budget is None:
+        raise TypeError("budget must be a number of tokens, not None")
+    if budget == math.inf:
+        budget = 2**31 - 1  # "no limit" in the engine's integer budget
     from .config import EntrolyConfig
     from .server import EntrolyEngine
 

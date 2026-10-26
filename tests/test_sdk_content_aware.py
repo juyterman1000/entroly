@@ -475,3 +475,39 @@ def test_optimize_does_not_configure_the_host_apps_logging(tmp_path):
     assert done.returncode == 0, done.stderr[-800:]
     assert "root handlers: 0" in done.stdout
     assert "[entroly]" not in done.stderr
+
+
+@pytest.mark.parametrize(
+    "budget, error",
+    [
+        (float("nan"), ValueError),
+        (-1, ValueError),
+        (-0.5, ValueError),
+        ("200", TypeError),
+        (True, TypeError),
+    ],
+    ids=["nan", "negative-int", "negative-float", "string", "bool"],
+)
+def test_sdk_rejects_unusable_budgets_with_clear_errors(budget, error):
+    # NaN and negative budgets were silently accepted (negative returned "",
+    # NaN an arbitrary 5-token slice); "200" died inside a comparison.
+    text = "2026-10-21T10:00:00Z INFO api GET /orders 200 12ms\n" * 200
+    with pytest.raises(error, match="budget"):
+        sdk.compress(text, budget=budget)
+    with pytest.raises(error, match="budget"):
+        sdk.compress_messages([{"role": "user", "content": text}], budget=budget)
+    with pytest.raises(error, match="budget"):
+        sdk.optimize([{"content": text, "source": "a.log"}], budget=budget, query="orders")
+
+
+def test_sdk_accepts_fractional_and_infinite_budgets():
+    text = "2026-10-21T10:00:00Z INFO api GET /orders 200 12ms\n" * 200
+    assert count_tokens(sdk.compress(text, budget=100.7)) <= 100
+    assert sdk.compress(text, budget=0.5) == ""
+    assert sdk.compress(text, budget=float("inf")) == text
+
+
+@pytest.mark.parametrize("value", [b"raw bytes " * 50, bytearray(b"x" * 300), 12345, ["a"]])
+def test_compress_names_the_type_it_needs(value):
+    with pytest.raises(TypeError, match="str"):
+        sdk.compress(value, budget=50)
