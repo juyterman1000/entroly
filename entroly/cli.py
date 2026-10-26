@@ -4407,15 +4407,17 @@ def cmd_doctor(args):
         print(f"  {C.GREEN}+{C.RESET} Rust engine (entroly-core{version}) loaded")
         checks_passed += 1
     elif not native.available:
+        # README sends users here when simulate reports "Relevance ranking is
+        # OFF". The engine is a required dependency; without it selection
+        # ignores the query. A counted warning (as `doctor --json` reports it),
+        # not a failure: the pure-Python fallback still works.
         print(
-            f"  {C.GRAY}-{C.RESET} Optional Rust acceleration not installed "
-            f"{C.GRAY}— pure-Python engine is active{C.RESET}"
+            f"  {C.YELLOW}!{C.RESET} Native engine not installed "
+            f"{C.GRAY}— Relevance ranking is OFF: selection ignores the query "
+            f"and reduction figures are unearned{C.RESET}"
         )
-        print(
-            f"    {C.GRAY}Enable when wanted: python -m pip install "
-            f"\"entroly[native]\"{C.RESET}"
-        )
-        checks_passed += 1
+        print(f"    {C.GRAY}Fix: python -m pip install -U entroly-core{C.RESET}")
+        checks_warned += 1
     else:
         print(f"  {C.RED}x{C.RESET} Installed Rust engine is stale or incomplete "
               f"{C.GRAY}— pure-Python fallback remains available{C.RESET}")
