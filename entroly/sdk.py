@@ -544,6 +544,31 @@ def _message_tokens(messages: list[dict[str, Any]]) -> int:
     )
 
 
+def _block_text(blocks: list[Any]) -> str:
+    parts: list[str] = []
+    for block in blocks:
+        if isinstance(block, str):
+            parts.append(block)
+        elif isinstance(block, dict):
+            if isinstance(block.get("text"), str):
+                parts.append(block["text"])
+            inner = block.get("content")
+            if isinstance(inner, str):
+                parts.append(inner)
+            elif isinstance(inner, list):
+                parts.append(_block_text(inner))
+    return "\n".join(part for part in parts if part)
+
+
+def _content_block_tokens(messages: list[dict[str, Any]]) -> int:
+    """Local token estimate of text held in content-block (list) messages."""
+    return sum(
+        count_tokens(_block_text(message["content"]))
+        for message in messages
+        if isinstance(message.get("content"), list)
+    )
+
+
 # Instructions are cut last. A system prompt is usually a few hundred tokens
 # of rules beside thousands of tokens of history; a uniform per-message ratio
 # truncated those rules mid-sentence ("You are the billing\n...[truncated]")
@@ -812,7 +837,11 @@ def compress_messages(
     compresses older messages using content-aware compression.
 
     Args:
-        messages: List of message dicts with 'role' and 'content' keys
+        messages: List of message dicts with 'role' and 'content' keys.
+            Only string ``content`` is counted and compressed; content-block
+            lists (Anthropic text/tool_result/image blocks) pass through
+            unchanged, with a ``UserWarning`` when they push the request over
+            ``budget``. Use ``compress_proxy_payload`` for block-shaped requests.
         budget: Target total token count for all messages
         preserve_last_n: Number of most recent messages to keep verbatim
         model: Optional provider model name used to cap the context budget
@@ -864,6 +893,23 @@ def compress_messages(
                 budget = min(budget, int(window * 0.8))
         except Exception:
             pass  # Unknown model — keep the caller's budget.
+
+    # Only string content is counted and compressed. Content-block lists
+    # (Anthropic text/tool_result blocks) pass through, so say so instead of
+    # silently returning a request that is still over budget.
+    block_tokens = _content_block_tokens(messages)
+    if block_tokens and source_tokens + block_tokens > budget:
+        import warnings
+
+        warnings.warn(
+            f"compress_messages compresses string message content only: about "
+            f"{block_tokens:,} tokens in content-block (list) messages are left "
+            f"as they are and not counted against budget={budget:,}. Use "
+            "compress_proxy_payload(body, provider='anthropic') for "
+            "block-shaped requests.",
+            UserWarning,
+            stacklevel=2,
+        )
 
     # Identity is the safest and cheapest compression decision. Once caller
     # controls and the provider-adjusted budget are known, return the original

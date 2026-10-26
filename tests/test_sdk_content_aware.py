@@ -420,3 +420,34 @@ def test_punctuation_light_prose_does_not_noop():
     assert out.strip()
     assert len(out) < len(content) * 0.5
     assert out != content
+
+
+def test_compress_messages_warns_when_content_blocks_exceed_budget():
+    # Only string content is compressed and counted. A block-shaped
+    # (Anthropic) conversation came back unchanged and far over budget with
+    # no signal at all.
+    big = "2026-10-21T10:00:00Z INFO api GET /orders 200 12ms\n" * 400
+    messages = [
+        {"role": "user", "content": [{"type": "text", "text": "read the log"}]},
+        {"role": "assistant", "content": [{"type": "tool_use", "id": "t1", "name": "logs", "input": {}}]},
+        {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": big}]},
+        {"role": "user", "content": [{"type": "text", "text": "summarise it"}]},
+    ]
+
+    with pytest.warns(UserWarning, match="content-block"):
+        out = sdk.compress_messages(messages, budget=100)
+
+    assert out == messages
+
+
+def test_compress_messages_does_not_warn_for_string_content():
+    import warnings
+
+    messages = [
+        {"role": "assistant", "content": "analysis of unrelated files\n" * 300},
+        {"role": "user", "content": "What next?"},
+    ]
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        sdk.compress_messages(messages, budget=100)
+    assert not [w for w in caught if "content-block" in str(w.message)]

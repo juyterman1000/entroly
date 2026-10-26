@@ -84,6 +84,11 @@ trimmed = compress_messages(messages, budget=30000)
 
 `compress` accepts any text and a token budget. `compress_messages` accepts a
 list of `{"role": ..., "content": ...}` dicts and preserves role boundaries.
+It counts and compresses string `content` only: content-block lists (Anthropic
+`text`/`tool_result`/image blocks) pass through unchanged, with a `UserWarning`
+when they push the request over budget. For block-shaped requests use
+`compress_proxy_payload(body, provider="anthropic")`. Neither function keeps a
+recovery copy of what it drops.
 Both are deterministic — same input + same budget → bit-identical output (run
 `python bench/trust_bench.py` to verify the SHA-256 check yourself).
 
