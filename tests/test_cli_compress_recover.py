@@ -182,3 +182,26 @@ def test_compress_promises_the_original_only_when_recovery_is_complete(workspace
 
     receipt = _compress_json(work, store, "resp.json")
     assert receipt["recovery_returns"] == "complete_original"
+
+
+@pytest.mark.parametrize(
+    "label, raw",
+    [
+        ("empty", b""),
+        ("one-byte", b"x"),
+        ("bom-json", b'\xef\xbb\xbf{"a": [1, 2, 3]}\n'),
+        ("deep-json", b"[" * 5000 + b"1" + b"]" * 5000),
+    ],
+    ids=["empty", "one-byte", "bom-json", "deep-json"],
+)
+def test_out_is_written_even_when_nothing_was_compressed(workspace, label, raw):
+    # A script running `entroly compress in --out out` and then reading `out`
+    # must find the (unchanged) content, not a missing file.
+    work, store = workspace
+    (work / "in.dat").write_bytes(raw)
+
+    result = _run(["compress", "in.dat", "--out", "out.dat"], work, store)
+
+    assert result.returncode == 0, result.stderr[-800:]
+    assert (work / "out.dat").exists(), f"{label}: --out file was not written"
+    assert (work / "out.dat").read_bytes() == raw

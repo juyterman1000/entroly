@@ -99,11 +99,14 @@ def cmd_compress(args) -> int:
         "source_sha256": chosen.source_sha256 if chosen else None,
     }
 
-    if getattr(args, "out_path", None) and chosen:
+    if getattr(args, "out_path", None):
+        # Always honour --out. When no codec claimed the file (empty, tiny,
+        # BOM-prefixed or too deeply nested input) the "compressed" form is
+        # the unchanged file, and a script reading --out must still find it.
         with Path(args.out_path).open(
             "w", encoding="utf-8", errors="surrogateescape", newline=""
         ) as fh:
-            fh.write(chosen.text)
+            fh.write(chosen.text if chosen else text)
         receipt["written_to"] = args.out_path
 
     if getattr(args, "json_output", False):
