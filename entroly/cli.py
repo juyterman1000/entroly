@@ -6872,6 +6872,9 @@ def main():
         or getattr(args, "csv_output", False)
         or getattr(args, "format", None) == "json"
         or args.command == "activation"
+        # The PostToolUse capture hook runs on every tool call; its stderr is
+        # host-facing, not a terminal, so no welcome banner there.
+        or (args.command == "ravs" and getattr(args, "ravs_action", None) == "capture")
         or (args.command == "trial" and getattr(args, "report", None))
         or args.command == "shrink"
         or args.command == "proof"
