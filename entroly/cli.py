@@ -4470,7 +4470,12 @@ def cmd_doctor(args):
     entroly_dir = _resolve_entroly_dir()
     checkpoint_dir = entroly_dir / "checkpoints"
     if checkpoint_dir.exists():
-        checkpoint_files = list(checkpoint_dir.glob("*.json*"))
+        # The engine persists each project's index under its own
+        # checkpoints/<project-hash>/ (config._project_checkpoint_dir); a
+        # top-level-only glob reported "No index found" right after a run.
+        checkpoint_files = list(checkpoint_dir.glob("*.json*")) + list(
+            checkpoint_dir.glob("*/index.json*")
+        )
         if checkpoint_files:
             newest = max(f.stat().st_mtime for f in checkpoint_files)
             import time as _time

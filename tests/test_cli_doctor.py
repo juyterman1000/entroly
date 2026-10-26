@@ -26,6 +26,17 @@ def test_privacy_checks_disclose_telemetry_and_do_not_certify_no_egress(
     assert "other configured stores" in output or "configured stores may still contain data" in output
 
 
+@pytest.fixture(autouse=True)
+def _empty_entroly_home(monkeypatch, tmp_path_factory):
+    """Doctor reads ~/.entroly (index freshness); keep the developer's out.
+
+    These tests assert exact check counts. Once doctor could see per-project
+    indexes, a >24h-old index in the real HOME turned "8/8" into "7/8".
+    """
+    monkeypatch.setenv("HOME", str(tmp_path_factory.mktemp("home")))
+    monkeypatch.delenv("ENTROLY_DIR", raising=False)
+
+
 @pytest.fixture
 def tuning_config(monkeypatch, tmp_path: Path):
     """Point doctor's weights file at a temp path and write arbitrary content."""
