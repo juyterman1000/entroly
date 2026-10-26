@@ -286,16 +286,18 @@ def launch() -> None:
         _run_native()
         return
 
+    # `memory` owns its own parser, including `memory [<sub>] --help`; checking
+    # help flags first sent those to the main CLI ("invalid choice: 'memory'").
+    if len(sys.argv) > 1 and sys.argv[1] == "memory":
+        _run_memory_cli()
+        return
+
     # --help/--version → show help without Docker
     _help_flags = {"--help", "-h", "--version", "-V"}
     if _help_flags & set(sys.argv[1:]):
         from entroly.cli import main as cli_main
 
         cli_main()
-        return
-
-    if len(sys.argv) > 1 and sys.argv[1] == "memory":
-        _run_memory_cli()
         return
 
     # The canonical CLI owns command discovery and validation. Routing every

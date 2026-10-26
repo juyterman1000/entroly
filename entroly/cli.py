@@ -4256,6 +4256,16 @@ body{{background:#09090b;color:#fafafa;font-family:'Inter',system-ui,sans-serif;
 </html>"""
 
 
+def cmd_memory(args):
+    """entroly memory — delegate to the Memory OS CLI (it owns its parser)."""
+    from entroly.memory_cli import main as memory_main
+
+    try:
+        return int(memory_main(list(getattr(args, "memory_args", []) or [])) or 0)
+    except SystemExit as exc:  # argparse --help / usage errors
+        return exc.code if isinstance(exc.code, int) else 0
+
+
 def cmd_capabilities(args):
     """entroly capabilities — report installed surfaces without network access."""
     from .runtime_capabilities import render_capabilities_text, runtime_capabilities
@@ -6937,6 +6947,7 @@ def main():
         "cache": cmd_cache,
         "daemon": cmd_daemon,
         "usage": cmd_usage,
+        "memory": cmd_memory,
     }
 
     handler = _dispatch.get(args.command)

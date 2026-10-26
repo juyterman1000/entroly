@@ -314,6 +314,15 @@ def _add_tools_and_runtime_commands(subparsers) -> None:
     cache_subparsers = cache_parser.add_subparsers(dest="cache_action")
     cache_subparsers.add_parser("stats", help="Show persistent cache statistics")
 
+    # Listed here so `entroly --help` shows it; `entroly memory ...` is parsed
+    # by entroly.memory_cli (the launcher routes it before this parser).
+    memory_parser = subparsers.add_parser(
+        "memory",
+        help="Remember, recall and forget durable project memory (Memory OS)",
+        add_help=False,
+    )
+    memory_parser.add_argument("memory_args", nargs=argparse.REMAINDER)
+
     daemon_parser = subparsers.add_parser(
         "daemon",
         help="Start unified supervisor (proxy + dashboard + MCP + learning)",
