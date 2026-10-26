@@ -6244,6 +6244,17 @@ def cmd_compile(args):
             )
             print(f"    {C.GRAY}{shown}{more}{C.RESET}")
 
+    # Without a baseline the first `entroly sync` of this directory reported
+    # every file compiled here as changed and staled its belief. Only a
+    # complete, error-free compile may vouch for every file.
+    if max_files <= 0 and not result.errors:
+        try:
+            from entroly.change_listener import WorkspaceChangeListener
+
+            WorkspaceChangeListener(vault, compiler, None, None, target).record_baseline()
+        except Exception as exc:  # noqa: BLE001 - the compile itself succeeded
+            print(f"  {C.YELLOW}! Could not record the sync baseline: {exc}{C.RESET}")
+
     coverage = vault.coverage_index()
     print(f"\n  {C.CYAN}Vault coverage:{C.RESET} {coverage['total_beliefs']} beliefs")
     print(f"  {C.CYAN}Avg confidence:{C.RESET} {coverage['average_confidence']:.2f}")

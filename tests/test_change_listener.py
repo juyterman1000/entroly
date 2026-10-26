@@ -170,3 +170,57 @@ def test_entroly_sync_cli_default_processes_changed_files(tmp_path):
     src.write_text("class AuthService:\n    def rotate(self):\n        pass\n", encoding="utf-8")
     second = sync()
     assert "Files changed:    1" in second, second
+
+
+def test_record_baseline_seeds_only_an_empty_state(tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "auth.py").write_text("class AuthService:\n    pass\n", encoding="utf-8")
+    vault = VaultManager(VaultConfig(base_path=str(tmp_path / "vault")))
+    compiler = BeliefCompiler(vault)
+    verifier = VerificationEngine(vault)
+    listener = WorkspaceChangeListener(
+        vault, compiler, verifier, ChangePipeline(vault, verifier), str(project)
+    )
+
+    assert listener.record_baseline() == 1
+    assert listener.scan_once(max_files=0).changed_files == []
+    # An existing state belongs to an earlier sync; it is never overwritten.
+    (project / "auth.py").write_text("class AuthService:\n    x = 1\n", encoding="utf-8")
+    assert listener.record_baseline() == 0
+    assert listener.scan_once(max_files=0).changed_files == ["auth.py"]
+
+
+def test_first_sync_after_compile_reports_only_real_edits(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "auth.py").write_text("class AuthService:\n    pass\n", encoding="utf-8")
+    (project / "store.py").write_text("class Store:\n    pass\n", encoding="utf-8")
+    env = {
+        **os.environ,
+        "HOME": str(tmp_path / "home"),
+        "ENTROLY_DIR": str(tmp_path / "state"),
+        "ENTROLY_DISABLE_UPDATE_CHECK": "1",
+        "ENTROLY_NO_DOCKER": "1",
+        "NO_COLOR": "1",
+    }
+
+    def run(*args: str) -> str:
+        proc = subprocess.run(
+            [sys.executable, "-m", "entroly", *args],
+            cwd=tmp_path, env=env, capture_output=True, text=True, timeout=300,
+        )
+        assert proc.returncode == 0, proc.stderr
+        return proc.stdout
+
+    run("compile", str(project))
+    first = run("sync", str(project))
+    assert "Files changed:    0" in first, first
+
+    (project / "auth.py").write_text("class AuthService:\n    def rotate(self):\n        pass\n", encoding="utf-8")
+    second = run("sync", str(project))
+    assert "Files changed:    1" in second, second
