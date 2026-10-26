@@ -69,6 +69,17 @@ def cmd_compress(args) -> int:
 
     before = max(1, len(text) // 4)
     after = chosen.token_cost if chosen else before
+    # What the digest hands back differs by codec: json/log/table/shell keep
+    # the complete original, while code/schema/document/conversation keep only
+    # the parts they dropped, without their positions. The receipt must say
+    # which, instead of calling every digest "the original".
+    recovery_returns = None
+    if chosen is not None and chosen.recovery is not None:
+        recovery_returns = (
+            "complete_original"
+            if chosen.recovery.digest == chosen.source_sha256
+            else "omitted_parts"
+        )
     receipt = {
         "source": str(source),
         "codec": chosen.codec if chosen else "none",
@@ -83,6 +94,7 @@ def cmd_compress(args) -> int:
         "recovery_digest": (
             chosen.recovery.digest if chosen and chosen.recovery else None
         ),
+        "recovery_returns": recovery_returns,
         "recovery_store": store_path,
         "source_sha256": chosen.source_sha256 if chosen else None,
     }
@@ -120,9 +132,16 @@ def cmd_compress(args) -> int:
     if receipt["unverified_protected"]:
         print(f"  {C.RED}Claimed but absent: {receipt['unverified_protected']}{C.RESET}")
     print()
-    if receipt["recovery_digest"]:
+    if receipt["recovery_digest"] and recovery_returns == "complete_original":
         print(f"  {C.BOLD}Recover the original:{C.RESET}")
         print(f"    {C.CYAN}entroly recover {receipt['recovery_digest']}{C.RESET}")
+    elif receipt["recovery_digest"]:
+        print(f"  {C.BOLD}Recover the omitted parts (not the whole file):{C.RESET}")
+        print(f"    {C.CYAN}entroly recover {receipt['recovery_digest']}{C.RESET}")
+        print(
+            f"  {C.GRAY}{chosen.recovery.note}, returned without their positions;"
+            f" keep {source.name} if you need the whole file back.{C.RESET}"
+        )
     else:
         print(f"  {C.YELLOW}No recovery reference -- nothing was dropped.{C.RESET}")
     print()

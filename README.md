@@ -176,10 +176,10 @@ protections apply to how you are running. See
 [session rescue](docs/session-rescue.md).</sub>
 
 **Why bother:** less unnecessary context reaches the model (lower bill, less
-distraction for the model), nothing is silently lost (every drop is
-recoverable and receipted), and you can prove it — `entroly verify-claims`
-and `entroly simulate` show real numbers on your own repo before you connect
-a paid key.
+distraction for the model), drops come with receipts and, where a recovery
+handle is issued, an exact way back (see what each path keeps below), and you
+can prove it — `entroly verify-claims` and `entroly simulate` show real
+numbers on your own repo before you connect a paid key.
 
 ```python
 from entroly import compress, compress_messages, optimize
@@ -192,6 +192,15 @@ context    = optimize(fragments, budget=8000, query="fix the login bug")
 entroly compress response.json --out small.json
 entroly recover sha256:0b957c79... --out restored.json
 ```
+
+What is recoverable: `entroly recover` returns the complete original for
+JSON, logs, tables/CSV and shell output. For source code, prose documents,
+API schemas and chat transcripts it returns only the omitted parts (function
+bodies, sentences, turns), without their positions, so keep the original file
+if you need it back whole; the compress receipt says which one you got.
+`compress()` and `compress_messages()` return text only and keep no recovery
+copy; proxy and `rescue_session` compaction store the complete original of
+every block they shorten.
 
 Full setup paths for every agent, IDE, and CI use case: [Get started in depth](docs/first-run-trust.md) · [Command reference](docs/DETAILS.md#command-reference).
 

@@ -143,3 +143,42 @@ def test_content_no_codec_claims_is_left_unchanged(workspace):
     receipt = _compress_json(work, store, "note.txt")
     assert receipt["codec"] in {"none", "passthrough"}
     assert receipt["tokens_after"] == receipt["tokens_before"]
+
+
+_PY_SOURCE = "import os\n\n" + "".join(
+    f"def handler_{i}(event):\n"
+    f"    value = event.get('k{i}')\n"
+    "    if value is None:\n"
+    "        return 404\n"
+    "    return value\n\n"
+    for i in range(30)
+)
+
+
+def test_compress_does_not_promise_the_original_for_partial_recovery(workspace):
+    # Code recovery holds only the elided bodies, without their positions
+    # (pinned by test_recover_states_what_it_returned). The receipt must not
+    # tell the user that the digest brings the original file back.
+    work, store = workspace
+    (work / "app.py").write_text(_PY_SOURCE, encoding="utf-8")
+
+    human = _run(["compress", "app.py"], work, store)
+    assert human.returncode == 0, human.stderr[-800:]
+    assert "Recover the original" not in human.stdout
+    assert "omitted parts" in human.stdout
+
+    receipt = _compress_json(work, store, "app.py")
+    assert receipt["codec"] == "code"
+    assert receipt["recovery_returns"] == "omitted_parts"
+
+
+def test_compress_promises_the_original_only_when_recovery_is_complete(workspace):
+    work, store = workspace
+    (work / "resp.json").write_text(_payload(), encoding="utf-8")
+
+    human = _run(["compress", "resp.json"], work, store)
+    assert human.returncode == 0, human.stderr[-800:]
+    assert "Recover the original" in human.stdout
+
+    receipt = _compress_json(work, store, "resp.json")
+    assert receipt["recovery_returns"] == "complete_original"
