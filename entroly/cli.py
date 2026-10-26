@@ -245,6 +245,18 @@ def cmd_activation(args):
                 Path(args.project),
                 uninstall=args.activation_action == "uninstall",
             )
+        if report["status"] in {"installed", "already_installed", "disabled"}:
+            # `activation status` must stop calling a removed hook active.
+            from .agent_activation import record_lifecycle_event
+
+            try:
+                record_lifecycle_event(
+                    Path(args.project),
+                    args.host,
+                    "uninstalled" if report["status"] == "disabled" else "installed",
+                )
+            except OSError:
+                pass
         print(json.dumps(report, indent=2, sort_keys=True))
         return 2 if report["status"] == "conflict" else 0
 

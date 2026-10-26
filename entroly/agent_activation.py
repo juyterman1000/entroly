@@ -682,6 +682,12 @@ def run_hook(
         "selected_sources": list(selection.sources),
         "selected_context_tokens_estimate": selection.selected_tokens,
         "elapsed_ms": round((time.perf_counter() - started) * 1_000, 3),
+        # What executed the hook, so status can tell when it no longer exists
+        # (moved or deleted venv, uninstalled package).
+        "runtime": {
+            "python": sys.executable,
+            "package": str(Path(__file__).resolve().parent),
+        },
         "claim_boundary": (
             "The hook selected local context. Without a matched baseline this "
             "receipt does not prove provider token or cost savings."
@@ -793,14 +799,19 @@ def activation_status(
         by_status[status] = by_status.get(status, 0) + 1
         by_host[host_name] = by_host.get(host_name, 0) + 1
 
+    # A run whose event named no host (a manual `entroly activation hook`
+    # test) is not evidence that any agent host runs the hook; judge by host
+    # runs whenever there are any.
+    host_receipts = [item for item in receipts if item.get("host") != "unknown"]
+    considered = host_receipts or receipts
     latest = max(
-        receipts,
+        considered,
         key=lambda item: float(item.get("recorded_at_unix", 0) or 0),
         default=None,
     )
     effective_receipts = [
         item
-        for item in receipts
+        for item in considered
         if item.get("status") in {"activated", "no_match"}
         and item.get("native_engine") is True
     ]
@@ -823,11 +834,20 @@ def activation_status(
     else:
         state = "unobserved"
 
+    inactive_reason = None
+    if state == "active":
+        inactive_reason = _inactive_reason(
+            latest, _lifecycle_events(root, project), bool(host_receipts)
+        )
+        if inactive_reason is not None:
+            state = "inactive"
+
     return {
         "schema_version": SCHEMA_VERSION,
         "project_fingerprint": _project_fingerprint(project),
         "source_root": str(project),
         "state": state,
+        "inactive_reason": inactive_reason,
         "activation_events": len(receipts),
         "effective_activation_events": len(effective_receipts),
         "by_status": by_status,
@@ -841,11 +861,103 @@ def activation_status(
         "latest_age_seconds": latest_age_seconds,
         "active_freshness_seconds": ACTIVE_FRESHNESS_SECONDS,
         "claim_boundary": (
-            "Active requires a recent native hook run that selected context or "
-            "reached a valid no-match decision. Unobserved does not prove "
-            "installation."
+            "Active requires a recent native hook run from an agent host that "
+            "selected context or reached a valid no-match decision, with no later "
+            "`entroly activation uninstall` for that host and the runtime that "
+            "ran it still present. Unobserved does not prove installation."
         ),
     }
+
+
+def record_lifecycle_event(
+    project_dir: Path,
+    host: str,
+    event: str,
+    *,
+    state_dir: Path | None = None,
+) -> Path:
+    """Record that `entroly activation install|uninstall` changed a host hook.
+
+    Receipts only prove that a hook ran. Without this record, a hook removed
+    with `activation uninstall` stayed "active" for the whole freshness
+    window on the strength of receipts written before it was removed.
+    """
+    project = project_dir.expanduser().resolve()
+    root = state_dir or _default_state_dir()
+    destination = (
+        root / _project_fingerprint(project) / "lifecycle" / f"{uuid.uuid4().hex}.json"
+    )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(
+        json.dumps(
+            {
+                "schema_version": SCHEMA_VERSION,
+                "event": event,
+                "host": host,
+                "recorded_at_unix": round(time.time(), 6),
+                "source_root": str(project),
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return destination
+
+
+def _lifecycle_events(root: Path, project: Path) -> list[dict[str, Any]]:
+    directory = root / _project_fingerprint(project) / "lifecycle"
+    events: list[dict[str, Any]] = []
+    if directory.is_dir():
+        for path in directory.glob("*.json"):
+            try:
+                item = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                continue
+            if isinstance(item, dict):
+                events.append(item)
+    return events
+
+
+def _inactive_reason(
+    latest: Mapping[str, Any],
+    lifecycle: list[dict[str, Any]],
+    host_driven: bool,
+) -> str | None:
+    """Why a fresh effective receipt does not mean the hook still runs, if so."""
+
+    if not host_driven:
+        return (
+            "only runs without an agent host were observed (no hook event name, "
+            "e.g. a manual `entroly activation hook` test); submit one prompt in "
+            "the host to observe it"
+        )
+    host = latest.get("host")
+    ran_at = float(latest.get("recorded_at_unix", 0) or 0)
+    newest = max(
+        (item for item in lifecycle if item.get("host") == host),
+        key=lambda item: float(item.get("recorded_at_unix", 0) or 0),
+        default=None,
+    )
+    if (
+        newest is not None
+        and newest.get("event") == "uninstalled"
+        and float(newest.get("recorded_at_unix", 0) or 0) >= ran_at
+    ):
+        return (
+            f"the {host} hook was removed with `entroly activation uninstall` "
+            "after its last observed run"
+        )
+    runtime = latest.get("runtime")
+    if isinstance(runtime, Mapping):
+        for label in ("python", "package"):
+            value = runtime.get(label)
+            if isinstance(value, str) and value and not Path(value).exists():
+                return (
+                    f"the {label} that ran the hook ({value}) no longer exists, so "
+                    "the installed hook cannot run it"
+                )
+    return None
 
 
 __all__ = [
@@ -856,5 +968,6 @@ __all__ = [
     "hook_context",
     "parse_hook_input",
     "read_protocol_stdin",
+    "record_lifecycle_event",
     "run_hook",
 ]
