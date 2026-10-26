@@ -57,8 +57,19 @@ def run(output: str | None = None, max_files: int = 120) -> int:
 
     print("\n[1] SDK import path")
     print("-" * 40)
-    compressed = compress("alpha beta gamma delta", budget=3)
-    messages = compress_messages([{"role": "user", "content": "hello"}], budget=10)
+    # The probe exercises the public SDK, which books every reduction in the
+    # user's value ledger. A verifier's synthetic string is not user value:
+    # it made the next `entroly value` report one local operation the user
+    # never ran. Suppress only the bookkeeping, only for the probe.
+    import entroly.sdk as _sdk
+
+    _track_savings = _sdk._track_savings
+    _sdk._track_savings = lambda *_args, **_kwargs: None
+    try:
+        compressed = compress("alpha beta gamma delta", budget=3)
+        messages = compress_messages([{"role": "user", "content": "hello"}], budget=10)
+    finally:
+        _sdk._track_savings = _track_savings
     check("SDK-1", "compress() returns text", isinstance(compressed, str), type(compressed).__name__)
     check("SDK-2", "compress_messages() returns messages", isinstance(messages, list), type(messages).__name__)
 
