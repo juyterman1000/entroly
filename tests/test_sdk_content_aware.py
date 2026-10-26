@@ -451,3 +451,27 @@ def test_compress_messages_does_not_warn_for_string_content():
         warnings.simplefilter("always")
         sdk.compress_messages(messages, budget=100)
     assert not [w for w in caught if "content-block" in str(w.message)]
+
+
+def test_optimize_does_not_configure_the_host_apps_logging(tmp_path):
+    # optimize() imports entroly.server, whose module body ran
+    # logging.basicConfig(INFO, stderr): the host application's root logger
+    # was reconfigured and engine INFO lines appeared on its stderr.
+    import subprocess
+    import sys
+
+    script = (
+        "import logging, entroly\n"
+        "entroly.optimize([{'content': 'def login(user):\\n    return check(user)\\n',"
+        " 'source': 'auth.py'}], budget=200, query='fix the login bug')\n"
+        "print('root handlers:', len(logging.getLogger().handlers))\n"
+        "print('root level:', logging.getLogger().level)\n"
+    )
+    done = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True, text=True, timeout=300, cwd=tmp_path,
+        env={**__import__("os").environ, "HOME": str(tmp_path)},
+    )
+    assert done.returncode == 0, done.stderr[-800:]
+    assert "root handlers: 0" in done.stdout
+    assert "[entroly]" not in done.stderr
