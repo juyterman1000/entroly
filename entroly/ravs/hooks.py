@@ -2,7 +2,8 @@
 Hook installer for Claude Code and other IDE integrations.
 
 `entroly ravs hook install --claude-code` writes a PostToolUse hook
-into Claude Code's settings that auto-feeds every Bash exit into RAVS.
+into Claude Code's settings that auto-feeds every Bash exit into RAVS;
+`entroly ravs hook uninstall --claude-code` removes it again.
 Deterministic, no model compliance needed — the hook fires on every
 tool use regardless of what the LLM decides to do.
 
@@ -229,8 +230,11 @@ def uninstall_claude_code() -> dict:
         return {"path": str(settings_path), "action": "not_found"}
 
     try:
-        settings = json.loads(settings_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, IOError):
+        settings = json.loads(settings_path.read_text(encoding="utf-8-sig"))
+    except (json.JSONDecodeError, UnicodeDecodeError, IOError):
+        return {"path": str(settings_path), "action": "parse_error"}
+    hooks = settings.get("hooks", {}) if isinstance(settings, dict) else None
+    if not isinstance(hooks, dict) or not isinstance(hooks.get("PostToolUse", []), list):
         return {"path": str(settings_path), "action": "parse_error"}
 
     post_hooks = settings.get("hooks", {}).get("PostToolUse", [])

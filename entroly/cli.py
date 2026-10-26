@@ -6726,8 +6726,24 @@ def cmd_ravs(args):
 
     if ravs_action == "hook":
         hook_action = getattr(args, "hook_action", None)
+        if hook_action == "uninstall":
+            if not getattr(args, "claude_code", False):
+                print(f"  {C.YELLOW}Specify a target: --claude-code{C.RESET}")
+                return
+            from entroly.ravs.hooks import uninstall_claude_code
+            result = uninstall_claude_code()
+            path = result.get("path", "")
+            if result.get("action") == "uninstalled":
+                print(f"  {C.GREEN}✓ Removed RAVS PostToolUse hook from {path}{C.RESET}")
+                print(f"  {C.GRAY}Restart Claude Code to apply.{C.RESET}")
+                return 0
+            if result.get("action") == "not_found":
+                print(f"  {C.GRAY}· No RAVS hook found in {path}{C.RESET}")
+                return 0
+            print(f"  {C.RED}✗ Not changed: {path} could not be read as JSON settings.{C.RESET}")
+            return 1
         if hook_action != "install":
-            print(f"  {C.YELLOW}Usage: entroly ravs hook install --claude-code [--dry-run]{C.RESET}")
+            print(f"  {C.YELLOW}Usage: entroly ravs hook install|uninstall --claude-code [--dry-run]{C.RESET}")
             return
         if not getattr(args, "claude_code", False):
             print(f"  {C.YELLOW}Specify a target: --claude-code{C.RESET}")

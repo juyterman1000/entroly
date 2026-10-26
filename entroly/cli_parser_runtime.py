@@ -305,6 +305,14 @@ def _add_tools_and_runtime_commands(subparsers) -> None:
         "--dry-run", action="store_true",
         help="Print the merged settings without writing",
     )
+    ravs_hook_uninstall = ravs_hook_subparsers.add_parser(
+        "uninstall",
+        help="Remove the PostToolUse hook that `install` added",
+    )
+    ravs_hook_uninstall.add_argument(
+        "--claude-code", action="store_true",
+        help="Remove from Claude Code (~/.claude/settings.json)",
+    )
 
     # ── daemon command ─────────────────────────────────────────────
     cache_parser = subparsers.add_parser(
