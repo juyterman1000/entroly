@@ -175,6 +175,9 @@ def test_launch_never_places_entrolly_secret_in_docker_command(monkeypatch) -> N
 
     monkeypatch.setenv("ENTROLY_PROVIDER_TOKEN", secret)
     monkeypatch.delenv("ENTROLY_NO_DOCKER", raising=False)
+    # `serve` runs the installed native engine when it is present; the
+    # container path under test is the one taken when the engine is missing.
+    monkeypatch.setattr(launcher, "_native_engine_ready", lambda: False)
     monkeypatch.setattr(sys, "argv", ["entroly", "serve"])
     monkeypatch.setattr(launcher, "_docker_available", lambda: True)
     monkeypatch.setattr(launcher, "_pull_image", lambda: None)

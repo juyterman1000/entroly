@@ -129,8 +129,12 @@ The npm runtime is a separate integration surface.
 
 For installed-Python MCP setup, register the argument-free `entroly` stdio
 command. `uvx` and `entroly-mcp` registrations also use no `serve` argument.
-`entroly serve` selects the explicit Docker-first deployment path;
-`ENTROLY_NO_DOCKER=1 entroly serve` selects installed Python.
+`entroly serve` runs the installed Python package whenever its native engine is
+present. It falls back to the version-pinned Docker image only when the engine
+is missing (or `ENTROLY_DOCKER_IMAGE` names an image explicitly), and then
+mounts the current project read-only so the server indexes the user's
+repository, not the image. `ENTROLY_NO_DOCKER=1 entroly serve` always selects
+installed Python.
 
 ## Reading the evidence
 
