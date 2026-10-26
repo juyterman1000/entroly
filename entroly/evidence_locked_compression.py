@@ -245,12 +245,22 @@ def _compress_lines(
 
     keep: set[int] = set()
     anchor_counts: Counter[str] = Counter()
+    # A path or id on most lines singles nothing out: every `pytest -v` line
+    # names a file, so locking paths kept every line and saved nothing on the
+    # most common CI output. Such lines still score; anchors and query terms
+    # always lock.
+    reason_counts = Counter(reason for line in scored for reason in line.reasons)
+    hard_locks = _HARD_LOCK_REASONS - {
+        reason
+        for reason in ("path", "id")
+        if len(scored) >= 50 and reason_counts[reason] > len(scored) // 2
+    }
     for line in scored:
         # Hard locks are strict evidence anchors. High-entropy outliers are
         # useful candidates, but not hard locks: timestamped heartbeats and CI
         # progress lines are high entropy too, and hard-locking all of them
         # defeats compression on SRE/build logs.
-        if line.reasons.intersection(_HARD_LOCK_REASONS):
+        if line.reasons.intersection(hard_locks):
             for idx in range(max(0, line.index - context_radius), min(len(scored), line.index + context_radius + 1)):
                 keep.add(idx)
             for reason in line.reasons:

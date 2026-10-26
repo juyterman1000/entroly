@@ -254,6 +254,24 @@ class SessionRescueController:
                     target_tokens=target_tokens,
                     include_assistant=emergency or loop_detected,
                 )
+                if (
+                    estimate_message_tokens(working) / context_window
+                    >= self.policy.failure_watermark
+                ):
+                    # Refusing the request is the worse outcome. A realistic
+                    # turn keeps its bulky tool output inside the protected
+                    # tail, so compact older tool output there too; the newest
+                    # tool result, user messages and everything after it stay
+                    # verbatim, and every compaction keeps its full original.
+                    working, tail_receipts = self._compact_candidates(
+                        state,
+                        working,
+                        query=query,
+                        target_tokens=target_tokens,
+                        include_assistant=False,
+                        indices=self._older_tail_tool_indices(working),
+                    )
+                    receipt_ids.extend(tail_receipts)
             except Exception as exc:
                 self._failures += 1
                 stable = self._stable_prefix_count(state, source)
@@ -321,6 +339,7 @@ class SessionRescueController:
         query: str,
         target_tokens: int,
         include_assistant: bool,
+        indices: list[int] | None = None,
     ) -> tuple[list[dict[str, Any]], list[str]]:
         cutoff = max(0, len(messages) - self.policy.tail_messages)
         tool_indices = [
@@ -336,6 +355,8 @@ class SessionRescueController:
             and index not in tool_indices
         ]
         candidates = tool_indices + (assistant_indices if include_assistant else [])
+        if indices is not None:
+            candidates = indices
         receipts: list[str] = []
         for index in candidates:
             if estimate_message_tokens(messages) <= target_tokens:
@@ -508,6 +529,17 @@ class SessionRescueController:
             return text, None
         return rendered, stored.receipt_id
 
+    def _older_tail_tool_indices(self, messages: list[dict[str, Any]]) -> list[int]:
+        """Tool messages inside the protected tail, newest one excluded."""
+        cutoff = max(0, len(messages) - self.policy.tail_messages)
+        tools = [
+            index
+            for index in range(cutoff, len(messages))
+            if str(messages[index].get("role", "")).lower() in {"tool", "function"}
+            or self._has_tool_result(messages[index].get("content"))
+        ]
+        return tools[:-1]
+
     @staticmethod
     def _has_tool_result(content: Any) -> bool:
         return isinstance(content, list) and any(
@@ -649,7 +681,9 @@ def rescue_session(
 
     **What actually gets compacted, and what does not.** Candidates are tool and
     function messages (and, once past the hard watermark or on a detected loop,
-    older assistant turns) outside the protected tail. Within those, only
+    older assistant turns) outside the protected tail. If the request would
+    still be refused at the failure watermark, older tool output inside the
+    tail is compacted too -- never the newest tool result or a user message. Within those, only
     content the evidence-locked compressor recognises as compressible is
     touched -- bulky structured output: logs, JSON, tables, build chatter. Plain
     prose reasoning is left alone rather than paraphrased, which is the point:

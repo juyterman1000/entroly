@@ -14,7 +14,9 @@ For each supported request, the proxy:
 4. defers optional reshaping at the soft watermark when provider usage has
    reported a warm cache;
 5. overrides that deferral for a detected loop or the hard watermark;
-6. preserves the configured recent tail and all ordinary user messages;
+6. preserves the configured recent tail and all ordinary user messages; when
+   the request would otherwise be refused (step 7), older tool output inside
+   the tail is compacted too, never the newest tool result or a user message;
 7. returns `413 session_context_rescue_required` when the request remains above
    the failure watermark instead of forwarding a likely provider rejection.
 
