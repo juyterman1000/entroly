@@ -76,6 +76,9 @@ class NativeStatus:
     missing_symbols: tuple[str, ...]
     version_ok: bool | None
     error: str | None = None
+    # True when entroly_core is present but importing it raised (bad or
+    # mismatched binary, missing shared library); False when it is absent.
+    import_failed: bool = False
 
     @property
     def ok(self) -> bool:
@@ -129,6 +132,9 @@ def native_status(required_symbols: tuple[str, ...] = ()) -> NativeStatus:
             missing_symbols=required_symbols,
             version_ok=None,
             error=str(exc),
+            import_failed=not (
+                isinstance(exc, ModuleNotFoundError) and exc.name == "entroly_core"
+            ),
         )
 
     try:
@@ -202,6 +208,10 @@ def fallback_reason(status: NativeStatus) -> str:
     correct, failing closed with a false reason is not.
     """
     if not status.available:
+        if status.import_failed:
+            # Present but unloadable: the fix is a reinstall or rebuild, and
+            # "not installed" would send the user to install what they have.
+            return f"entroly_core is installed but failed to load ({status.error})"
         if status.error:
             return f"entroly_core is not installed ({status.error})"
         return "entroly_core is not installed"
