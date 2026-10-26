@@ -429,15 +429,38 @@ def configure_kiro_hook(
             f"{uuid.uuid4().hex[:8]}"
         )
         target.replace(disabled)
-        return {
+        result = {
             "status": "disabled",
             "host": "kiro",
             "path": str(target),
             "recoverable_at": str(disabled),
         }
+        # A `--force` install moved the user's own file at this path to a
+        # backup; give it back now that the slot is free.
+        for backup in sorted(
+            target.parent.glob(f"{target.name}.entroly-backup-*"), reverse=True
+        ):
+            try:
+                previous = json.loads(backup.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                previous = None
+            if not _is_managed_kiro_hook(previous):
+                backup.replace(target)
+                result["restored"] = str(target)
+                break
+        return result
 
     if existing == desired:
         return {"status": "already_installed", "host": "kiro", "path": str(target)}
+    if _is_managed_kiro_hook(existing) and not force:
+        # Entroly's own hook with the user's edits (say, a longer timeout) is
+        # installed, not a conflict; keep the edits.
+        return {
+            "status": "already_installed",
+            "host": "kiro",
+            "path": str(target),
+            "detail": "installed with local changes, left as is; --force resets it",
+        }
 
     if target.exists():
         if not force:
