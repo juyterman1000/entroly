@@ -78,12 +78,12 @@ def test_user_edits_made_while_installed_survive_uninstall_byte_for_byte(tmp_pat
 def test_file_mode_is_kept(tmp_path) -> None:
     project, target = _settings(tmp_path)
     target.write_text('{"model": "opus"}\n', encoding="utf-8")
-    os.chmod(target, 0o644)
+    os.chmod(target, 0o640)
 
     configure_cursor_hook(project)
-    assert stat.S_IMODE(target.stat().st_mode) == 0o644
+    assert stat.S_IMODE(target.stat().st_mode) == 0o640
     configure_cursor_hook(project, uninstall=True)
-    assert stat.S_IMODE(target.stat().st_mode) == 0o644
+    assert stat.S_IMODE(target.stat().st_mode) == 0o640
 
 
 def test_a_symlinked_settings_file_stays_linked(tmp_path) -> None:

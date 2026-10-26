@@ -89,7 +89,7 @@ def _exceeds_nesting_limit(text: str, limit: int = _JSON_MAX_NESTING) -> bool:
 
 
 # A JSON string literal (kept verbatim) or a run of insignificant whitespace.
-_JSON_TOKEN_OR_SPACE = re.compile(r'"(?:[^"\\]+|\\.)*"|[ \t\r\n]+')
+_JSON_TOKEN_OR_SPACE = re.compile(r'"(?:[^"\\]|\\.)*"|[ \t\r\n]+')
 
 
 class JsonCodec:
