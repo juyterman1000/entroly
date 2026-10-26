@@ -204,12 +204,26 @@ def _pull_image() -> None:
     if not _should_pull(image):
         return
 
+    # Say what is happening and show docker's own progress on stderr: the pull
+    # used to run silently for up to ~2 minutes. Never stdout -- in serve mode
+    # it carries the MCP protocol.
+    print(
+        f"[entroly] Pulling {image} for `entroly serve` "
+        "(the first pull can take a few minutes)...",
+        file=sys.stderr,
+        flush=True,
+    )
+    try:
+        sys.stderr.fileno()
+        progress = sys.stderr
+    except (AttributeError, OSError, ValueError):
+        progress = subprocess.DEVNULL
     errors: list[str] = []
     for attempt in range(2):
         try:
             result = subprocess.run(
                 ["docker", "pull", image],
-                stdout=subprocess.DEVNULL,
+                stdout=progress,
                 stderr=subprocess.PIPE,
                 check=False,
                 timeout=60,
