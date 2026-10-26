@@ -36,7 +36,10 @@ Final-component symlink destinations are rejected; parent paths must still be
 trusted. This is not a sandbox against malicious filesystem changes by another
 process with write access to the parent directory.
 
-The compression-retrieval API separately validates scope and content integrity.
+The compression-retrieval store (`entroly compress`, proxy and session rescue)
+writes its file with mode `0600` and creates a missing store directory with
+`0700`; if the home checkpoint directory is unwritable, the temporary-directory
+fallback is announced with a warning. The compression-retrieval API separately validates scope and content integrity.
 Scope filtering prevents accidental cross-workspace API retrieval; a scope string
 is not an OS identity or a secret capability. Anyone who can read the backing
 files can read their contents. Use separate service identities and private stores

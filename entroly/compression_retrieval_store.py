@@ -202,7 +202,8 @@ class CompressionRetrievalStore:
         if lock_path is None:
             yield
             return
-        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        # First writer usually creates the store directory here; keep it private.
+        lock_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         with lock_path.open("a+b") as handle:
             # Locking a byte past EOF is supported by both msvcrt and flock.
             # Do not initialize a sentinel byte before acquiring the lock: on
@@ -923,7 +924,10 @@ class CompressionRetrievalStore:
     def _persist(self) -> None:
         if self.path is None:
             return
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        # The store holds exact originals (source, prompts, secrets): a
+        # directory it creates is 0700 and the file itself 0600, instead of
+        # whatever the process umask allows (typically 0755 / 0644).
+        self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         payload = {
             "schema_version": 3,
             "items": [
@@ -946,7 +950,8 @@ class CompressionRetrievalStore:
             f"{time.time_ns()}.tmp"
         )
         try:
-            with tmp.open("x", encoding="utf-8", newline="\n") as handle:
+            descriptor = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
                 handle.write(serialized)
                 handle.flush()
                 os.fsync(handle.fileno())
