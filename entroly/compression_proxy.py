@@ -479,7 +479,10 @@ def _compress_text_block(
         # A recovery handle must have a stronger contract: one exact span for
         # the complete original block, regardless of that diagnostic cap.
         recovery_receipt = dict(receipt)
-        line_count = max(1, text.count("\n") + 1)
+        # Count lines the way the store slices them (str.splitlines), which
+        # also breaks on "\r", U+2028, NEL and form feed. Counting only "\n"
+        # made the stored "complete original" stop short of the real end.
+        line_count = max(1, len(text.splitlines(keepends=True)))
         recovery_receipt["omitted_spans"] = [
             {
                 "start_line": 1,
@@ -494,6 +497,10 @@ def _compress_text_block(
             receipt=recovery_receipt,
             metadata={"query": query, "cleaned_query": cleaned_query, "component": "compression_proxy"},
         )
+        if len(stored.spans) != 1 or stored.spans[0].content != text:
+            # Fail closed: never forward a compacted block whose recovery
+            # handle would hand back anything but the exact original.
+            return text, False, receipt
         receipt["retrieval"] = {
             "receipt_id": stored.receipt_id,
             "span_count": len(stored.spans),

@@ -107,6 +107,45 @@ def test_hard_pressure_overrides_cache_and_persists_recovery(
     )
 
 
+@pytest.mark.parametrize(
+    "separator",
+    ["\r", "\u2028", "\x85", "\x0c"],
+    ids=["bare-cr", "line-separator", "next-line", "form-feed"],
+)
+def test_recovery_span_is_complete_original_with_non_newline_breaks(
+    tmp_path: Path,
+    separator: str,
+) -> None:
+    # Progress bars redraw with a bare "\r", and str.splitlines() also breaks
+    # on U+2028, NEL and form feed. The recovery span is promised to be the
+    # complete original block, so none of the tail may be dropped.
+    controller, store = _controller(
+        tmp_path,
+        soft_watermark=0.20,
+        hard_watermark=0.30,
+        target_watermark=0.10,
+        failure_watermark=0.95,
+        loop_min_watermark=0.05,
+        tail_messages=2,
+    )
+    tool = _noisy_tool_message("pip")
+    progress = "".join(f"Downloading wheel {pct}%{separator}" for pct in range(20))
+    tool["content"] = f"{progress}\n{tool['content']}\nTAIL: last line of output\n"
+    messages = [
+        {"role": "system", "content": "You are a coding agent."},
+        tool,
+        {"role": "assistant", "content": "I will inspect the failure."},
+        {"role": "user", "content": "continue"},
+    ]
+
+    result = controller.rescue("conv", messages, context_window=4_000)
+
+    assert result.recovery_receipts
+    stored = store.get_receipt(result.recovery_receipts[0])
+    assert stored is not None and len(stored.spans) == 1
+    assert stored.spans[0].content == tool["content"]
+
+
 def test_frozen_history_remains_byte_identical_when_turns_append(
     tmp_path: Path,
 ) -> None:

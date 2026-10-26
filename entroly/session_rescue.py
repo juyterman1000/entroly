@@ -471,7 +471,10 @@ class SessionRescueController:
         # recovery never depends on a compressor's omission bookkeeping being
         # exhaustive. The compacted request still carries the exact retained
         # evidence and the receipt's content hash.
-        line_count = max(1, text.count("\n") + 1)
+        # Count lines the way the store slices them (str.splitlines), which
+        # also breaks on "\r", U+2028, NEL and form feed. Counting only "\n"
+        # made the stored "complete original" stop short of the real end.
+        line_count = max(1, len(text.splitlines(keepends=True)))
         receipt["omitted_spans"] = [
             {
                 "start_line": 1,
@@ -491,7 +494,7 @@ class SessionRescueController:
                 ).hexdigest(),
             },
         )
-        if len(stored.spans) != 1:
+        if len(stored.spans) != 1 or stored.spans[0].content != text:
             raise RuntimeError(
                 "session rescue requires one exact full-original recovery span"
             )
