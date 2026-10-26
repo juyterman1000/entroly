@@ -22,8 +22,11 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Literal
 
-from .memory import MemoryContext, MemoryOS, MemoryTier, SafetyPolicy
+from .memory import MemoryContext, MemoryOS, MemoryTier, SafetyPolicy, TemporalClass, _extract_entities
 from .memory_kernels import ComplianceKernel, PollinationKernel, SchipcBus
+from .memory_graph import MemoryGraph
+from .write_gate import WriteGate
+from .hybrid_retriever import HybridRetriever
 
 MemoryLayerStatus = Literal[
     "active",
@@ -55,8 +58,11 @@ class FabricRecall:
     context: MemoryContext
     long_term: list[dict[str, object]] = field(default_factory=list)
     layers: list[MemoryLayer] = field(default_factory=list)
+    graph_memories: list[str] = field(default_factory=list)
+    hybrid_scored: list[dict[str, object]] = field(default_factory=list)
 
     def as_text(self) -> str:
+
         blocks: list[str] = []
         if self.context.as_text():
             blocks.append(self.context.as_text())
@@ -74,11 +80,16 @@ class FabricRecall:
         return "\n\n".join(blocks)
 
     def receipt(self) -> dict[str, object]:
-        return {
+        rcpt = {
             "memory_os": self.context.receipt(),
             "long_term": self.long_term,
             "layers": [layer.as_dict() for layer in self.layers],
         }
+        if self.graph_memories:
+            rcpt["graph_memories"] = self.graph_memories
+        if self.hybrid_scored:
+            rcpt["hybrid_scored"] = self.hybrid_scored
+        return rcpt
 
 
 class MemoryFabric:
@@ -99,6 +110,7 @@ class MemoryFabric:
         enable_long_term: bool = True,
         enable_native: bool = True,
         enable_builtin_kernels: bool = True,
+        enable_write_gate: bool = False,
     ) -> None:
         self.memory_os = MemoryOS(
             default_budget=default_budget,
@@ -106,6 +118,10 @@ class MemoryFabric:
             max_tokens=max_tokens,
             safety_policy=safety_policy,
         )
+        self.graph = MemoryGraph()
+        self.write_gate = WriteGate(self.memory_os)
+        self.hybrid_retriever = HybridRetriever(self.memory_os, graph=self.graph)
+        self.enable_write_gate = enable_write_gate
         self._long_term = None
         self._native_memory_cls = None
         self._native_memory = None
@@ -146,9 +162,20 @@ class MemoryFabric:
         source: str = "manual",
         tags: Iterable[str] | None = None,
         safety_policy: SafetyPolicy | None = None,
+        temporal_class: TemporalClass | None = None,
+        supersedes: str | None = None,
+        enforce_gate: bool | None = None,
     ) -> str:
-        """Store memory in the stable local MemoryOS layer."""
-        return self.memory_os.remember(
+        """Store memory in the stable local MemoryOS layer and auto-index into graph."""
+        should_gate = self.enable_write_gate if enforce_gate is None else enforce_gate
+        if should_gate:
+            decision = self.write_gate.should_commit(content, agent_id=agent_id)
+            if not decision.commit:
+                if decision.nearest_memory_id:
+                    return decision.nearest_memory_id
+                raise ValueError(f"memory rejected by write gate: {decision.reason}")
+
+        mem_id = self.memory_os.remember(
             content,
             agent_id=agent_id,
             importance=importance,
@@ -156,7 +183,19 @@ class MemoryFabric:
             source=source,
             tags=tags,
             safety_policy=safety_policy,
+            temporal_class=temporal_class,
+            supersedes=supersedes,
         )
+
+        entry = self.memory_os._entries.get(mem_id)
+        if entry is not None and entry.entities:
+            if supersedes:
+                self.graph.supersede_memory(supersedes, mem_id)
+            self.graph.index_memory(mem_id, list(entry.entities), content=content)
+
+        self.write_gate.register_committed(mem_id, content)
+
+        return mem_id
 
     def remember_long_term(
         self,
@@ -222,14 +261,21 @@ class MemoryFabric:
         tier: MemoryTier | None = None,
         include_shared: bool = True,
         long_term_top_k: int = 5,
+        temporal_filter: TemporalClass | None = None,
+        use_hybrid: bool = False,
+        hybrid_top_k: int = 10,
+        traverse_graph: bool = False,
+        graph_seeds: list[str] | None = None,
+        graph_hops: int = 2,
     ) -> FabricRecall:
-        """Recall from MemoryOS and, when available, optional long-term memory."""
+        """Recall from MemoryOS, graph traversal, hybrid ranking, and optional LTM."""
         context = self.memory_os.recall(
             query,
             agent_id=agent_id,
             budget=budget,
             tier=tier,
             include_shared=include_shared,
+            temporal_filter=temporal_filter,
         )
         long_term: list[dict[str, object]] = []
         if self._long_term is not None and getattr(self._long_term, "active", False) and query:
@@ -240,7 +286,32 @@ class MemoryFabric:
             except Exception as exc:  # pragma: no cover
                 self._long_term_error = str(exc)
                 long_term = []
-        return FabricRecall(context=context, long_term=long_term, layers=self.capabilities())
+
+        graph_mems: list[str] = []
+        if traverse_graph or (graph_seeds and len(graph_seeds) > 0):
+            seeds = graph_seeds if graph_seeds else _extract_entities(query)
+            if seeds:
+                traversal = self.graph.traverse(seeds, max_hops=graph_hops)
+                graph_mems = traversal.memory_ids
+
+        hybrid_results: list[dict[str, object]] = []
+        if use_hybrid and query:
+            scored = self.hybrid_retriever.recall(
+                query,
+                agent_id=agent_id,
+                top_k=hybrid_top_k,
+                include_shared=include_shared,
+                graph_hops=graph_hops,
+            )
+            hybrid_results = [s.to_dict() for s in scored]
+
+        return FabricRecall(
+            context=context,
+            long_term=long_term,
+            layers=self.capabilities(),
+            graph_memories=graph_mems,
+            hybrid_scored=hybrid_results,
+        )
 
     def send_agent_message(
         self,
@@ -372,6 +443,12 @@ class MemoryFabric:
             kernels["compliance"] = _pyobject_to_dict(self._compliance_kernel.stats())
         if self._pollination_kernel is not None:
             kernels["pollination"] = _pyobject_to_dict(self._pollination_kernel.stats())
+        stats["memory_graph"] = {
+            "node_count": len(self.graph._nodes),
+            "edge_count": len(self.graph._edges),
+        }
+        stats["write_gate"] = self.write_gate.receipt.summary()
+        stats["hybrid_retriever"] = {"rrf_k": self.hybrid_retriever.rrf_k}
         if kernels:
             stats["kernels"] = kernels
         return stats
@@ -383,7 +460,25 @@ class MemoryFabric:
                 "active",
                 "public runtime memory",
                 "Local safety, budget-aware recall, decay, persistence, and receipts.",
-            )
+            ),
+            MemoryLayer(
+                "memory_graph",
+                "active",
+                "receipt-backed entity graph",
+                "Deterministic entity graph with verifiable edge-level Merkle provenance and supersession.",
+            ),
+            MemoryLayer(
+                "write_gate",
+                "active",
+                "gated memory admission",
+                "SimHash redundancy filter, Shannon entropy density, and novelty gates.",
+            ),
+            MemoryLayer(
+                "hybrid_retriever",
+                "active",
+                "multi-signal recall",
+                "Reciprocal Rank Fusion (RRF k=60) over BM25 and entity graph proximity.",
+            ),
         ]
 
         if self._long_term is not None and getattr(self._long_term, "active", False):
