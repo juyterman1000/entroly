@@ -133,6 +133,26 @@ def _free_port(port: int) -> bool:
         return s.connect_ex(("127.0.0.1", port)) != 0
 
 
+def _resolve_dashboard_port(args) -> int:
+    """Dashboard port: --dashboard-port, then ENTROLY_DASHBOARD_PORT, then 9378."""
+    explicit = getattr(args, "dashboard_port", None)
+    try:
+        port = int(explicit or os.environ.get("ENTROLY_DASHBOARD_PORT") or 9378)
+    except ValueError:
+        port = 9378
+    # create_proxy_app (and its security/gateway wrappers) read it from here.
+    os.environ["ENTROLY_DASHBOARD_PORT"] = str(port)
+    return port
+
+
+def _report_busy_dashboard_port(port: int, command: str) -> None:
+    print(f"  {C.RED}Dashboard port {port} is already in use.{C.RESET}")
+    print(
+        f"  {C.GRAY}Choose another: entroly {command} --dashboard-port <port> "
+        f"(or set ENTROLY_DASHBOARD_PORT), or stop the service on {port}.{C.RESET}"
+    )
+
+
 def _is_entroly_service_running(url: str, expected_service: str) -> bool:
     """Return whether *url* exposes the expected Entroly health identity."""
     try:
@@ -1173,9 +1193,9 @@ def cmd_proxy(args):
         print(f"  {C.RED}Port {config.port} is already in use.{C.RESET}")
         print(f"  {C.GRAY}Try: entroly proxy --port <other-port>{C.RESET}")
         return
-    if not _free_port(9378):
-        print(f"  {C.RED}Dashboard port 9378 is already in use.{C.RESET}")
-        print(f"  {C.GRAY}Stop the existing service before starting `entroly proxy`.{C.RESET}")
+    dashboard_port = _resolve_dashboard_port(args)
+    if not _free_port(dashboard_port):
+        _report_busy_dashboard_port(dashboard_port, "proxy")
         return
 
     # Opt-in connectivity probe — useful for diagnosing DNS/firewall/VPN
@@ -1183,7 +1203,7 @@ def cmd_proxy(args):
     if _should_check_upstream():
         _check_upstream(config)
 
-    # Create the ASGI app (this also starts the dashboard on :9378)
+    # Create the ASGI app (this also starts the dashboard)
     app = create_proxy_app(
         engine,
         config,
@@ -1192,13 +1212,13 @@ def cmd_proxy(args):
 
     print(f"""
   {C.GREEN}{C.BOLD}Proxy live at http://{config.host}:{config.port}{C.RESET}
-  {C.GREEN}{C.BOLD}Dashboard at http://localhost:9378{C.RESET}
+  {C.GREEN}{C.BOLD}Dashboard at http://localhost:{dashboard_port}{C.RESET}
 
   {C.BOLD}To use:{C.RESET} Set your AI tool's API base URL to:
     {C.CYAN}http://localhost:{config.port}/v1{C.RESET}
 
   {C.GRAY}Every LLM request is intercepted -> optimized -> forwarded.{C.RESET}
-  {C.GRAY}Live pipeline latency: http://localhost:9378 — or `entroly status`.{C.RESET}
+  {C.GRAY}Live pipeline latency: http://localhost:{dashboard_port} — or `entroly status`.{C.RESET}
   {C.GRAY}File watcher active — new/modified files auto-indexed every 120s.{C.RESET}
   {C.GRAY}Press Ctrl+C to stop.{C.RESET}
 """)
@@ -3062,9 +3082,9 @@ def cmd_go(args):
         print(f"  {C.RED}Port {config.port} is already in use.{C.RESET}")
         print(f"  {C.GRAY}Try: entroly go --port <other-port>{C.RESET}")
         return
-    if not _free_port(9378):
-        print(f"  {C.RED}Dashboard port 9378 is already in use.{C.RESET}")
-        print(f"  {C.GRAY}Stop the existing service before starting `entroly go`.{C.RESET}")
+    dashboard_port = _resolve_dashboard_port(args)
+    if not _free_port(dashboard_port):
+        _report_busy_dashboard_port(dashboard_port, "go")
         return
 
     # Start proxy + dashboard
@@ -3074,7 +3094,7 @@ def cmd_go(args):
   {C.GREEN}{C.BOLD}Local services ready!{C.RESET}
 
   {C.GREEN}Proxy:{C.RESET}      http://localhost:{config.port}/v1
-  {C.GREEN}Dashboard:{C.RESET}  http://localhost:9378
+  {C.GREEN}Dashboard:{C.RESET}  http://localhost:{dashboard_port}
 
   {C.BOLD}Point your AI tool's API base URL to the proxy URL above.{C.RESET}
   {C.GRAY}Only traffic sent to this URL can be optimized; MCP registration alone does not route requests.{C.RESET}
@@ -3085,7 +3105,7 @@ def cmd_go(args):
     # Auto-open dashboard
     try:
         import webbrowser
-        webbrowser.open("http://localhost:9378")
+        webbrowser.open(f"http://localhost:{dashboard_port}")
     except Exception:
         pass
 

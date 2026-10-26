@@ -6513,8 +6513,15 @@ def create_proxy_app(
     if start_dashboard:
         try:
             from .dashboard import start_dashboard as _start_dash
-            _start_dash(engine=engine, port=9378, daemon=True, proxy_runtime=proxy)
-            logger.info("Value dashboard live at http://localhost:9378")
+            # `entroly proxy/go --dashboard-port` set this; 9378 stays default.
+            try:
+                dashboard_port = int(os.environ.get("ENTROLY_DASHBOARD_PORT") or 9378)
+            except ValueError:
+                dashboard_port = 9378
+            _start_dash(
+                engine=engine, port=dashboard_port, daemon=True, proxy_runtime=proxy
+            )
+            logger.info(f"Value dashboard live at http://localhost:{dashboard_port}")
         except Exception as e:
             logger.warning(f"Dashboard failed to start: {e}")
 
