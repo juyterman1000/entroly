@@ -5,6 +5,11 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
 
 ## Unreleased
 
+- Corrected optional WITNESS calibration's lower-tail rank and empty-evidence
+  handling. Legacy or invalid stored profiles now return all-SUPPRESS thresholds
+  rather than reactivating permissive learned values; recalibrate explicitly.
+  Missing profiles retain uncalibrated defaults. See the
+  [assumptions, scope and compatibility notes](docs/witness-calibration.md).
 - Proof-guided runtime v2 rejects replies that do not carry the issued request's
   `revision` and `request_sha256`, and serializes cooperating local writers.
   CLI, MCP and HTTP clients must retain that binding beside each model call.
