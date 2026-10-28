@@ -745,14 +745,20 @@ class WitnessAnalyzer:
     ) -> tuple[WitnessResult, WitnessRewrite]:
         """Analyze output and apply policy in one call.
 
-        The deterministic path delegates both analysis and policy execution to
-        Rust. The Python path remains for optional OpenAI NLI.
+        The opt-in native path may delegate analysis and default policy to
+        Rust. Explicit thresholds always use the shared Python policy over the
+        resulting certificates; the native policy API cannot accept overrides.
         """
         evidence_context = context
         if retrieved:
             evidence_context = context + "\n\n" + "\n\n".join(retrieved)
 
-        if not self.use_nli and not self.force_python and _rust_witness_analyze is not None:
+        if (
+            self.thresholds is None
+            and not self.use_nli
+            and not self.force_python
+            and _rust_witness_analyze is not None
+        ):
             try:
                 payload = json.loads(_rust_witness_analyze(
                     evidence_context,
