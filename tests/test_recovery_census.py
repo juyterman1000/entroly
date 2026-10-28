@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 import entroly.context_commit as context_commit
+import entroly.tokens as tokens
 import entroly.verified_efficiency as efficiency
 from entroly.context_assurance import AssuranceScope, recover_context_evidence
 from entroly.context_fixed_point import (
@@ -59,7 +60,7 @@ def _documents(noise_count=24):
     ] + [("target.md", CLAIM + "\n")]
 
 
-def _prepare(tmp_path, noise_count=24):
+def _prepare(tmp_path, noise_count=24, *, token_budget=40):
     layer = VerifiedEfficiencyLayer(
         tmp_path / "state",
         prefer_rust=False,
@@ -69,7 +70,7 @@ def _prepare(tmp_path, noise_count=24):
     prepared = layer.prepare(
         _documents(noise_count),
         query=QUERY,
-        token_budget=40,
+        token_budget=token_budget,
         chunk_tokens=128,
         overlap_tokens=0,
     )
@@ -109,9 +110,25 @@ def _signed_preparation(layer, prepared, **updates):
 
 
 @pytest.mark.parametrize("noise_count,true_omitted", [(22, 20), (23, 21), (24, 22)])
-def test_actual_api_preview_boundary(noise_count, true_omitted, tmp_path):
-    _, prepared, commit, target_id = _prepare(tmp_path, noise_count)
+@pytest.mark.parametrize("tokenizer_mode", ["fallback", "local_o200k"])
+def test_actual_api_preview_boundary(
+    noise_count, true_omitted, tokenizer_mode, tmp_path, monkeypatch,
+):
+    if tokenizer_mode == "fallback":
+        monkeypatch.setattr(tokens, "_encoding", lambda: None)
+    elif tokens._encoding() is None:
+        pytest.skip("verified local o200k asset is unavailable; no download permitted")
+
+    # This is an omission-list boundary test, not a tokenizer snapshot. The
+    # base install's fallback counter costs these chunks differently from
+    # o200k. Fund exactly three equal-cost noise chunks in either mode instead
+    # of assuming a fixed 40-token budget always selects three.
+    costs = {tokens.count_tokens(text.strip()) for _, text in _documents(noise_count)[:-1]}
+    assert len(costs) == 1, "boundary fixture requires equal-cost noise chunks"
+    budget = 3 * costs.pop()
+    _, prepared, commit, target_id = _prepare(tmp_path, noise_count, token_budget=budget)
     selected = {item["chunk_id"] for item in prepared.selected_context}
+    assert len(selected) == 3
     omitted = set(commit["recovery_bundle"]["chunks"]) - selected
     listed = {item["chunk_id"] for item in prepared.receipt["omitted_context"]}
     assert len(omitted) == true_omitted
