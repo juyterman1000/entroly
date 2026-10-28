@@ -170,8 +170,12 @@ evidence. The EICV verifier also has non-zero false positives and false
 negatives. Those limitations are why the controller exposes every obligation,
 candidate score, decision, and stop reason instead of claiming certainty.
 
-Planner work is bounded to the 128 highest-utility candidates. The public loop
-also enforces:
+The planner enumerates the full committed recovery bundle, excluding selected
+and already recovered chunks, rather than the receipt's 20-item omission
+preview. Enumeration and lexical scoring scan all remaining evidence; sorting
+candidate IDs costs O(N log N) and scoring depends on total text size. Only the
+fitting optimization is bounded to the 128 highest-utility candidates. The
+public loop also enforces:
 
 - 1–8 model rounds;
 - 0–100,000 recovered evidence tokens total; and
@@ -194,9 +198,12 @@ never summarized, rewritten, or removed during the loop. Applications using a
 provider with prefix caching should send `stable_context_prefix` before
 `appended_evidence`.
 
-Each recovered chunk is verified against both the fingerprint recorded in the
-context receipt and the content hash in the recovery bundle. The round receipt
-commits:
+For new preparations, each recovered chunk is verified against the signed
+whole-commit anchor and the exact-byte metadata in the committed recovery
+bundle, even when it is absent from the receipt preview. Older preparations
+without an issued anchor remain listed-only; see
+[compatibility and rollback](verified-efficiency-layer.md#recovery-compatibility-and-rollback).
+The round receipt commits:
 
 - the exact grounding-context hash;
 - unsupported claim hashes and verifier scores;

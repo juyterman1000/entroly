@@ -338,8 +338,28 @@ def _select_knapsack(
     )
 
 
+def _remaining_omitted_ids(
+    commit: Mapping[str, Any], excluded_chunk_ids: Iterable[str] = (),
+) -> set[str]:
+    """Enumerate a validated commit's census, not its bounded display preview."""
+    receipt = commit.get("receipt", {})
+    selected = receipt.get("selected_context", []) if isinstance(receipt, Mapping) else []
+    selected = selected if isinstance(selected, list) else []
+    excluded = {str(item) for item in excluded_chunk_ids}
+    excluded.update(str(item.get("chunk_id", "")) for item in selected if isinstance(item, Mapping))
+    recovery = commit.get("recovery_bundle", {})
+    chunks = recovery.get("chunks", {}) if isinstance(recovery, Mapping) else {}
+    if not isinstance(chunks, Mapping):
+        return set()
+    return {str(cid) for cid in chunks if str(cid) and str(cid) not in excluded}
+
+
 class ProofGuidedRecoveryPlanner:
-    """Turn unsupported claims into an auditable value-of-evidence plan."""
+    """Plan over committed omissions; authenticated recovery is separate.
+
+    The caller supplies a validated commit. Enumeration/scoring scan its full
+    bundle; the 128-candidate cap bounds fitting optimization, not total work.
+    """
 
     def plan(
         self,
@@ -358,7 +378,6 @@ class ProofGuidedRecoveryPlanner:
         if not obligations:
             return EvidencePlan((), (), (), 0, False, token_budget, 0, 0.0)
 
-        excluded = {str(item) for item in excluded_chunk_ids}
         receipt = commit.get("receipt", {})
         omitted = (
             receipt.get("omitted_context", []) if isinstance(receipt, Mapping) else []
@@ -371,15 +390,22 @@ class ProofGuidedRecoveryPlanner:
             else frozenset()
         )
         candidates: list[EvidenceCandidate] = []
+        remaining_ids = _remaining_omitted_ids(commit, excluded_chunk_ids)
+        listed = {
+            str(item.get("chunk_id", "")): item
+            for item in omitted if isinstance(item, Mapping)
+        } if isinstance(omitted, list) else {}
 
-        for item in omitted if isinstance(omitted, list) else []:
-            if not isinstance(item, Mapping):
-                continue
-            chunk_id = str(item.get("chunk_id", ""))
-            if not chunk_id or chunk_id in excluded:
-                continue
+        for chunk_id in sorted(remaining_ids):
             entry = chunks.get(chunk_id) if isinstance(chunks, Mapping) else None
             if not isinstance(entry, Mapping):
+                continue
+            # Older listed records can carry metadata absent from v1 bundles.
+            # New unlisted candidates must have their own committed cost.
+            item = {**entry, **listed.get(chunk_id, {})}
+            if chunk_id not in listed and (
+                type(item.get("token_count")) is not int or item["token_count"] <= 0
+            ):
                 continue
             text = str(entry.get("text", ""))
             if text_fingerprint(text) != str(entry.get("content_sha", "")):
@@ -714,13 +740,7 @@ def advance_proof_guided_fixed_point(
             max_chunks=session.max_chunks_per_round,
         )
         if not plan.candidates:
-            omitted = session.prepared.receipt.get("omitted_context", [])
-            unseen_omitted = [
-                item
-                for item in omitted
-                if isinstance(item, Mapping)
-                and str(item.get("chunk_id", "")) not in recovered_ids
-            ]
+            unseen_omitted = _remaining_omitted_ids(commit, recovered_ids)
             status = (
                 "no_supporting_omitted_evidence"
                 if unseen_omitted

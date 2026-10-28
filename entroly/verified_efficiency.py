@@ -18,7 +18,9 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
 from .context_commit import (
+    context_commit_anchor,
     create_context_commit,
+    recover_committed_chunks,
     replay_context,
     verify_context_commit,
 )
@@ -424,13 +426,18 @@ class VerifiedEfficiencyLayer:
 
     def _verified_audit_receipt(self, artifact: AuditArtifact) -> dict[str, Any]:
         payload = _read_json(Path(artifact.path))
-        verification = self.verify_audit_artifact(artifact)
+        # Authenticate exactly the bytes whose receipt is consumed. Rereading
+        # the path during verification could validate a different payload.
+        verification = self.verify_audit_artifact(payload)
         if not verification.valid:
             raise VerificationFailureError(
                 "audit artifact failed closed: " + ", ".join(verification.errors)
             )
         entry = AttestedReceipt.from_dict(dict(payload["attestation"]))
-        if artifact.artifact_id != entry.receipt.get("artifact_id"):
+        if (
+            artifact.artifact_id != entry.receipt.get("artifact_id")
+            or stable_hash(artifact.attestation) != stable_hash(payload["attestation"])
+        ):
             raise VerificationFailureError("audit artifact identity mismatch")
         return dict(entry.receipt)
 
@@ -557,6 +564,7 @@ class VerifiedEfficiencyLayer:
                 {
                     "artifact_type": "prepared_context",
                     "commit_id": commit["commit_id"],
+                    "context_commit_anchor": context_commit_anchor(commit),
                     "receipt_id": receipt.get("receipt_id"),
                     "receipt_hash": receipt.get("reproducibility_hash"),
                     "query_hash": text_fingerprint(normalized_query),
@@ -623,6 +631,11 @@ class VerifiedEfficiencyLayer:
                 "prepared warnings do not match their signed receipt"
             )
         audit_receipt = self._verified_audit_receipt(prepared.audit)
+        if (
+            "context_commit_anchor" in audit_receipt
+            and audit_receipt["context_commit_anchor"] != context_commit_anchor(commit)
+        ):
+            raise VerificationFailureError("prepared context full commit anchor mismatch")
         if (
             audit_receipt.get("artifact_type") != "prepared_context"
             or audit_receipt.get("commit_id") != prepared.commit_id
@@ -765,14 +778,40 @@ class VerifiedEfficiencyLayer:
     def recover(
         self, prepared: PreparedContext, chunk_id: str | None = None
     ) -> RecoveredContext:
-        """Recover exact omitted evidence and sign the recovery decision."""
+        """Recover exact unselected evidence, using issued anchor authority.
+
+        New preparations support the complete committed omission census; None
+        materializes all of it. Legacy audits without an anchor remain limited
+        to listed omissions and must be re-prepared for broader recovery.
+        """
         commit = self._load_prepared_commit(prepared)
         receipt = dict(commit.get("receipt", {}))
-        recovered = recover_omitted(
-            receipt,
-            chunk_id,
-            bundle=dict(commit.get("recovery_bundle", {})),
-        )
+        audit_receipt = self._verified_audit_receipt(prepared.audit)
+        if "context_commit_anchor" in audit_receipt:
+            selected_ids = {item["chunk_id"] for item in receipt["selected_context"]}
+            if (
+                chunk_id is not None and isinstance(chunk_id, str)
+                and (
+                    chunk_id in selected_ids
+                    or chunk_id not in commit["recovery_bundle"]["chunks"]
+                )
+            ):
+                raise RecoveryIntegrityError(
+                    f"chunk {chunk_id!r} is not listed as omitted by {prepared.commit_id}"
+                )
+            try:
+                recovered = recover_committed_chunks(
+                    commit, chunk_id, trusted_anchor=audit_receipt["context_commit_anchor"]
+                )
+            except ValueError as exc:
+                raise RecoveryIntegrityError(f"committed evidence recovery failed: {exc}") from exc
+            recovery_scope = "committed_unselected_chunks"
+        else:
+            # Do not manufacture a full anchor while loading old state.
+            recovered = recover_omitted(
+                receipt, chunk_id, bundle=dict(commit.get("recovery_bundle", {})),
+            )
+            recovery_scope = "legacy_listed_omissions"
         if chunk_id is not None and not recovered:
             raise RecoveryIntegrityError(
                 f"chunk {chunk_id!r} is not listed as omitted by {prepared.commit_id}"
@@ -790,6 +829,7 @@ class VerifiedEfficiencyLayer:
                 "parent_artifact_id": prepared.audit.artifact_id,
                 "commit_id": prepared.commit_id,
                 "requested_chunk_id": chunk_id,
+                "recovery_scope": recovery_scope,
                 "recovered_chunks": [
                     {
                         "chunk_id": item.get("chunk_id"),
