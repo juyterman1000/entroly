@@ -10,6 +10,11 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
   rather than reactivating permissive learned values; recalibrate explicitly.
   Missing profiles retain uncalibrated defaults. See the
   [assumptions, scope and compatibility notes](docs/witness-calibration.md).
+- Newly prepared contexts sign a full Context Commit anchor so exact recovery
+  and proof-guided planning can reach committed omissions beyond the 20-item
+  receipt preview. Older preparations remain listed-only; re-prepare to opt in.
+  Audit loading now verifies the exact payload it consumes. See
+  [recovery compatibility and rollback](docs/verified-efficiency-layer.md#recovery-compatibility-and-rollback).
 - Proof-guided runtime v2 rejects replies that do not carry the issued request's
   `revision` and `request_sha256`, and serializes cooperating local writers.
   CLI, MCP and HTTP clients must retain that binding beside each model call.

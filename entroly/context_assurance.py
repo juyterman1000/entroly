@@ -387,31 +387,13 @@ def recover_context_evidence(
     Declared scope binding is not principal authorization. No source path is
     opened: recovery uses only the supplied committed local snapshot.
     """
-    from .context_commit import verify_context_commit
-    from .context_receipts.recover import recover_omitted
+    from .context_commit import recover_committed_chunks
 
     if commit.get("assurance_scope") != asdict(scope):
         raise ValueError("context recovery scope mismatch")
-    if not isinstance(trusted_anchor, str) or not re.fullmatch(
-        r"sha256:[0-9a-f]{64}", trusted_anchor
-    ):
-        raise ValueError("context recovery requires an independently trusted anchor")
-    verification = verify_context_commit(commit, trusted_anchor=trusted_anchor)
-    if not verification.checks.get("trusted_anchor"):
-        raise ValueError("trusted context commit anchor mismatch")
-    if not verification.valid:
-        raise ValueError("context commit integrity verification failed")
-    receipt = commit["receipt"]
-    if chunk_id in {item["chunk_id"] for item in receipt["selected_context"]}:
-        raise ValueError("requested evidence was not omitted")
-    entry = commit["recovery_bundle"]["chunks"].get(chunk_id)
-    if not entry:
-        raise ValueError("requested evidence is not in the committed snapshot")
-    # This descriptor is bound to the pinned whole-commit anchor, rather than
-    # to the bounded receipt preview. Reuse exact-byte recovery validation.
-    descriptor = {**entry, "chunk_id": chunk_id, "omission_reason": "not_selected"}
-    expanded = {**receipt, "omitted_context": [descriptor]}
-    recovered = recover_omitted(expanded, chunk_id, bundle=commit["recovery_bundle"])
-    if len(recovered) != 1 or recovered[0]["verification_level"] != "exact_utf8_bytes":
+    if not isinstance(chunk_id, str) or not chunk_id:
+        raise ValueError("chunk_id must be a nonempty string")
+    recovered = recover_committed_chunks(commit, chunk_id, trusted_anchor=trusted_anchor)
+    if len(recovered) != 1:
         raise ValueError("exact committed evidence recovery failed")
     return recovered[0]
