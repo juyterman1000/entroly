@@ -99,6 +99,41 @@ checks the recovered text against both its chunk fingerprint and content hash.
 A signed recovery artifact records which evidence was revealed without copying
 the raw text into the audit receipt.
 
+The receipt's `omitted_context` is a display preview capped at 20 entries, not
+the complete omission census. New preparations sign a full
+`context_commit_anchor` in their preparation audit. Recovery authenticates that
+audit with the layer's existing local key and checks the pinned whole commit
+before recovering any committed, unselected chunk by ID. It never invents an
+anchor from untrusted loaded state or persists an expanded receipt.
+
+`layer.recover(prepared)` (no chunk ID) returns **all** committed unselected
+chunks for new preparations, not just the preview. This can materialize
+substantial local text; request a specific ID when possible. This direct API
+has no fixed-point token budget or 128-candidate limit. Recovery audits expose
+`recovery_scope="committed_unselected_chunks"` or
+`recovery_scope="legacy_listed_omissions"` as applicable.
+
+This proves exact snapshot-byte recovery, not current source-file freshness,
+principal authorization, answer correctness, task utility, or token savings.
+Standalone receipt recovery (`recover_omitted`) remains preview-only. The
+scoped `recover_context_evidence` API still requires its issued scope and an
+independently trusted whole-commit anchor.
+
+### Recovery compatibility and rollback
+
+Preparations with no signed anchor retain listed-only recovery; no records are
+rewritten or silently upgraded. A present but invalid or mismatched anchor
+fails closed. Full-census planning may identify an unlisted chunk in an older
+preparation; recovery then raises an audited failure instead of guessing
+authority. Re-prepare to enable broader recovery; for durable sessions use a
+new idempotency key and retain the new request binding beside each model call.
+
+Rolling back code does not remove an issued anchor. Older binaries do not
+enforce this stronger contract: keep anchored preparations and their sessions
+inspect-only during rollback, or use a separate state directory and freshly
+prepare there. Preserve the original store and signing key for audit; do not
+strip anchors, rewrite receipts, or mix old and new session writers.
+
 ## Proof-guided fixed-point recovery
 
 For workflows that can make a bounded second model call, Entroly can derive

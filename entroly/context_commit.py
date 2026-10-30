@@ -9,6 +9,7 @@ from __future__ import annotations
 import copy
 import hmac
 import importlib
+import re
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass
 from importlib import metadata
@@ -260,11 +261,62 @@ def verify_context_commit(
     )
 
 
+def recover_committed_chunks(
+    commit: Mapping[str, Any], chunk_id: str | None = None, *,
+    trusted_anchor: str | None = None,
+) -> list[dict[str, Any]]:
+    """Recover exact unselected snapshot bytes against an issued full anchor.
+
+    The anchor must come from independent trusted issuance state, not from the
+    supplied commit at recovery time. It binds this snapshot, not source-file
+    freshness, semantic correctness or principal authorization. ``None`` returns
+    every unselected chunk and may materialize substantial local evidence.
+    """
+    if not isinstance(trusted_anchor, str) or not re.fullmatch(
+        r"sha256:[0-9a-f]{64}", trusted_anchor
+    ):
+        raise ValueError("context recovery requires an independently trusted anchor")
+    verification = verify_context_commit(commit, trusted_anchor=trusted_anchor)
+    if not verification.checks.get("trusted_anchor"):
+        raise ValueError("trusted context commit anchor mismatch")
+    if not verification.valid:
+        raise ValueError("context commit integrity verification failed")
+    if chunk_id is not None and (not isinstance(chunk_id, str) or not chunk_id):
+        raise ValueError("chunk_id must be a nonempty string")
+    receipt = commit["receipt"]
+    selected = {item["chunk_id"] for item in receipt["selected_context"]}
+    chunks = commit["recovery_bundle"]["chunks"]
+    if chunk_id is not None:
+        if chunk_id in selected:
+            raise ValueError("requested evidence was not omitted")
+        if chunk_id not in chunks:
+            raise ValueError("requested evidence is not in the committed snapshot")
+        ids = [chunk_id]
+    else:
+        ids = sorted(set(chunks) - selected)
+    # These descriptors are authenticated by the independently pinned whole
+    # commit, not invented as a replacement receipt. Nothing is persisted.
+    descriptors = [
+        {**chunks[cid], "chunk_id": cid, "omission_reason": "not_selected"}
+        for cid in ids
+    ]
+    expanded = {**receipt, "omitted_context": descriptors}
+    recovered = recover_omitted(expanded, bundle=commit["recovery_bundle"])
+    if len(recovered) != len(ids) or any(
+        item.get("verified") is not True
+        or item.get("verification_level") != "exact_utf8_bytes"
+        for item in recovered
+    ):
+        raise ValueError("exact committed evidence recovery failed")
+    return recovered
+
+
 __all__ = [
     "CONTEXT_COMMIT_SCHEMA",
     "ContextCommitVerification",
     "context_commit_anchor",
     "create_context_commit",
+    "recover_committed_chunks",
     "replay_context",
     "verify_context_commit",
 ]
