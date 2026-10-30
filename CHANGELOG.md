@@ -5,6 +5,11 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
 
 ## Unreleased
 
+- Corrected optional WITNESS calibration's lower-tail rank and empty-evidence
+  handling. Legacy or invalid stored profiles now return all-SUPPRESS thresholds
+  rather than reactivating permissive learned values; recalibrate explicitly.
+  Missing profiles retain uncalibrated defaults. See the
+  [assumptions, scope and compatibility notes](docs/witness-calibration.md).
 - Newly prepared contexts sign a full Context Commit anchor so exact recovery
   and proof-guided planning can reach committed omissions beyond the 20-item
   receipt preview. Older preparations remain listed-only; re-prepare to opt in.

@@ -1,60 +1,17 @@
-"""
-WITNESS Conformal Risk-Controlled Calibration
-==============================================
+"""Optional WITNESS calibration with class-conditional *marginal* scope.
 
-The witness analyzer assigns each claim a continuous risk score
-ρ ∈ [0,1] decomposed from support, contradiction, and adequacy signals.
-This module turns ρ into a 4-action policy decision
+For a fixed scorer/workload and exchangeable hallucination-labelled scores,
+rank floor((n+1)*(1-alpha)) bounds the strict lower-tail escape probability by
+1-alpha, averaging over calibration and future data. Alpha is an escalation
+target, not confidence or a direct false-pass budget. Ties are conservative.
+No positive-class evidence yields unavailable, all-SUPPRESS thresholds.
 
-    π(ρ) ∈ {PASS, HEDGE, WARN, SUPPRESS}
-
-with thresholds τ₁ < τ₂ < τ₃ chosen so that, on the test distribution,
-the exposure rate of unsupported claims is bounded above by a
-user-chosen α with high probability — using split-conformal calibration.
-
-The benefit over the current binary {pass, suppress} policy is that the
-operator can dial α (acceptable false-pass rate) and get the *highest*
-retention rate compatible with that bound. The current per-profile hand
-tuning is replaced by a single procedure that works for any benchmark.
-
-Math sketch
------------
-Given labeled calibration data {(ρᵢ, yᵢ)}ⁿ₁ where yᵢ ∈ {0=safe, 1=halu}:
-
-  1. Compute conformity scores sᵢ = ρᵢ for hallucinations (yᵢ=1)
-  2. Choose τ = the ⌈(n+1)(1-α)⌉ / n quantile of these scores
-  3. Then by exchangeability:
-        Pr[ρ_{n+1} ≤ τ ∣ y_{n+1} = 1] ≥ 1 - α
-     i.e. the suppression threshold catches at least (1-α) of true
-     hallucinations on average, with finite-sample guarantees.
-
-We compute three thresholds (τ₁ < τ₂ < τ₃) by picking three quantile
-levels (α_PASS > α_HEDGE > α_WARN), creating a four-action policy.
-
-When no calibration data is available we fall back to risk-graduated
-defaults that are still safer than the current binary "suppress on
-unsupported" policy.
-
-Design notes for production
----------------------------
-- Calibration data is small (≤ 1000 examples). Persists as JSON.
-- Recomputation is cheap (O(n log n)). Run nightly or on operator command.
-- Per-profile thresholds: one set per (workload_profile × analyzer_mode).
-- Each threshold update is logged for audit (timestamp, dataset hash,
-  resulting τ, observed exposure on calibration).
-- Production callers should treat the absence of calibration as a
-  hard signal to use conservative defaults — fail-closed, not "no policy".
-
-What the operator gets: a single dial. Choose an acceptable false-pass rate
-alpha, and the thresholds derived here deliver the *highest retention
-compatible with that bound* -- with a finite-sample guarantee, not a tuned
-heuristic. Hand-set per-profile thresholds cannot make that promise.
-
-That guarantee rests on settled theory, reused deliberately: split-conformal
-prediction for finite-sample coverage, distribution-free risk-controlling
-prediction sets (which conformal risk control generalises from coverage to any
-monotone loss), and noise-free selective classification for the theory of
-abstaining rather than answering.
+The upper-coverage helper conformal_quantile has the opposite inequality and
+is deliberately not used to choose PASS thresholds. Neither procedure proves
+label correctness, exchangeability, optimal retention, per-request safety,
+semantic correctness or a high-confidence conditional population-risk bound.
+See docs/witness-calibration.md for assumptions, action events and compatibility.
+Heuristic defaults for genuinely missing profiles are unchanged and uncalibrated.
 """
 
 from __future__ import annotations
@@ -63,12 +20,54 @@ import hashlib
 import json
 import logging
 import math
+import os
+import tempfile
 import time
 import zlib
 from dataclasses import asdict, dataclass, field
+from fractions import Fraction
 from pathlib import Path
 
+from .local_file_lock import exclusive_file_lock
+
 logger = logging.getLogger("entroly.witness_calibration")
+
+CALIBRATION_METHOD = "exchangeable-hallucination-lower-tail-v2"
+
+
+def _unit_value(value: float, name: str, *, probability: bool = False) -> None:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not 0 <= value <= 1
+        or not math.isfinite(value)
+        or (probability and value in (0, 1))
+    ):
+        interval = "(0,1)" if probability else "[0,1]"
+        raise ValueError(f"{name} must be a finite number in {interval}")
+
+
+def _profile_key(profile: str) -> str:
+    if not isinstance(profile, str) or not profile.strip():
+        raise ValueError("profile must be a nonempty string")
+    key = profile.strip().lower().replace("-", "_")
+    return "summary" if key == "summarization" else key
+
+
+def _quantile_rank(n: int, alpha: float, *, upper: bool) -> int:
+    # Treat the public probability's decimal representation exactly. Float
+    # subtraction can otherwise move a boundary by an entire order statistic.
+    rank = (n + 1) * (1 - Fraction(str(alpha)))
+    return math.ceil(rank) if upper else math.floor(rank)
+
+
+def _unique_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    decoded: dict[str, object] = {}
+    for key, value in pairs:
+        if key in decoded:
+            raise ValueError("duplicate calibration JSON key")
+        decoded[key] = value
+    return decoded
 
 
 # ── Action enum ──────────────────────────────────────────────────────
@@ -110,14 +109,14 @@ class ThresholdSet:
     tau_warn: float
 
     def __post_init__(self) -> None:
+        for name in ("tau_pass", "tau_hedge", "tau_warn"):
+            _unit_value(getattr(self, name), name)
         # Auto-sort if caller passed them out of order.
         ts = sorted([self.tau_pass, self.tau_hedge, self.tau_warn])
         self.tau_pass, self.tau_hedge, self.tau_warn = ts
-        for t in ts:
-            if not 0.0 <= t <= 1.0:
-                raise ValueError(f"threshold {t} outside [0,1]")
 
     def action(self, rho: float) -> str:
+        _unit_value(rho, "rho")
         if rho < self.tau_pass:
             return Action.PASS
         if rho < self.tau_hedge:
@@ -172,10 +171,16 @@ class CalibrationSample:
     y: int                     # ground truth: 1 if claim was hallucinated, 0 if safe
     profile: str = "auto"      # workload profile context (for stratification)
 
+    def __post_init__(self) -> None:
+        _unit_value(self.rho, "rho")
+        if type(self.y) is not int or self.y not in (0, 1):
+            raise ValueError("y must be the integer 0 or 1")
+        self.profile = _profile_key(self.profile)
+
 
 @dataclass
 class CalibrationResult:
-    """Outcome of running split-conformal calibration on labeled data."""
+    """Caller-attested cohort summary, not an authenticated risk certificate."""
     profile: str
     n_samples: int
     n_hallucinated: int
@@ -186,13 +191,77 @@ class CalibrationResult:
     tau_pass: float
     tau_hedge: float
     tau_warn: float
-    empirical_exposure_at_warn: float   # FN rate above τ_warn
-    empirical_retention_at_pass: float  # TN rate below τ_pass
+    empirical_exposure_at_warn: float | None   # hallucination rate below τ_warn
+    empirical_retention_at_pass: float | None  # safe-class rate below τ_pass
     dataset_hash: str
     dataset_crc32: str = ""
     timestamp: float = field(default_factory=time.time)
+    calibration_method: str = "legacy_unverified"
+    calibration_status: str = "unavailable_legacy"
+
+    def __post_init__(self) -> None:
+        self.profile = _profile_key(self.profile)
+        for name in ("n_samples", "n_hallucinated", "n_safe"):
+            if type(getattr(self, name)) is not int or getattr(self, name) < 0:
+                raise ValueError(f"{name} must be a nonnegative integer")
+        if self.n_samples != self.n_hallucinated + self.n_safe:
+            raise ValueError("sample class counts must sum to n_samples")
+        for name in ("alpha_pass", "alpha_hedge", "alpha_warn"):
+            _unit_value(getattr(self, name), name, probability=True)
+        if not self.alpha_warn < self.alpha_hedge < self.alpha_pass:
+            raise ValueError("alpha ordering must be alpha_warn < alpha_hedge < alpha_pass")
+        for name in ("tau_pass", "tau_hedge", "tau_warn"):
+            _unit_value(getattr(self, name), name)
+        if not self.tau_pass <= self.tau_hedge <= self.tau_warn:
+            raise ValueError("calibration thresholds must be ordered")
+        for name in ("empirical_exposure_at_warn", "empirical_retention_at_pass"):
+            value = getattr(self, name)
+            if value is not None:
+                _unit_value(value, name)
+        if not isinstance(self.dataset_hash, str) or not self.dataset_hash:
+            raise ValueError("dataset_hash must be a nonempty string")
+        if not isinstance(self.dataset_crc32, str):
+            raise ValueError("dataset_crc32 must be a string")
+        try:
+            finite_timestamp = math.isfinite(self.timestamp)
+        except (TypeError, OverflowError):
+            finite_timestamp = False
+        if (isinstance(self.timestamp, bool) or not isinstance(self.timestamp, (int, float))
+                or not finite_timestamp or self.timestamp < 0):
+            raise ValueError("timestamp must be finite and nonnegative")
+        if not isinstance(self.calibration_method, str) or not isinstance(self.calibration_status, str):
+            raise ValueError("calibration method and status must be strings")
+        if self.calibration_method == CALIBRATION_METHOD:
+            by_rank: dict[int, float] = {}
+            for tau, alpha in ((self.tau_pass, self.alpha_pass),
+                               (self.tau_hedge, self.alpha_hedge),
+                               (self.tau_warn, self.alpha_warn)):
+                rank = _quantile_rank(self.n_hallucinated, alpha, upper=False)
+                if rank == 0 and tau != 0:
+                    raise ValueError("rank-zero calibration threshold must be zero")
+                if rank in by_rank and by_rank[rank] != tau:
+                    raise ValueError("equal calibration ranks must have equal thresholds")
+                by_rank[rank] = tau
+            if not self.n_hallucinated:
+                if (self.calibration_status != "unavailable_no_hallucinations"
+                        or any((self.tau_pass, self.tau_hedge, self.tau_warn))
+                        or self.empirical_exposure_at_warn is not None):
+                    raise ValueError("no positive-class evidence requires unavailable suppression")
+            elif (self.calibration_status != "calibrated_marginal"
+                  or self.empirical_exposure_at_warn is None):
+                raise ValueError("positive-class calibration requires marginal status and measured rate")
+            if not self.n_safe and self.empirical_retention_at_pass is not None:
+                raise ValueError("no safe-class evidence requires an unavailable retention rate")
 
     def as_threshold_set(self) -> ThresholdSet:
+        try:
+            self.__post_init__()
+        except (TypeError, ValueError):
+            return ThresholdSet(0.0, 0.0, 0.0)
+        if (self.calibration_method != CALIBRATION_METHOD
+                or self.calibration_status != "calibrated_marginal"
+                or not self.n_hallucinated):
+            return ThresholdSet(0.0, 0.0, 0.0)
         return ThresholdSet(
             tau_pass=self.tau_pass,
             tau_hedge=self.tau_hedge,
@@ -203,7 +272,7 @@ class CalibrationResult:
 def conformal_quantile(values: list[float], alpha: float) -> float:
     """Compute the split-conformal quantile.
 
-    For n iid scores and level α, the conformal quantile is the
+    For n exchangeable bounded scores and level α, the conformal quantile is the
         ⌈(n+1)(1−α)⌉ / n
     empirical quantile of the sample. This adjustment ensures the
     finite-sample coverage guarantee
@@ -212,16 +281,27 @@ def conformal_quantile(values: list[float], alpha: float) -> float:
 
     holds by exchangeability of (calibration + future) scores.
 
-    Returns 1.0 if `values` is empty (no data → fail-closed).
+    Rank n+1 (or empty data) returns the known upper bound 1.0. This is
+    trivial coverage, NOT evidence that a policy should PASS a claim.
+    Alpha's decimal representation determines the exact rank.
     """
+    _unit_value(alpha, "alpha", probability=True)
+    for value in values:
+        _unit_value(value, "score")
     if not values:
         return 1.0
     n = len(values)
     sorted_v = sorted(values)
-    rank = math.ceil((n + 1) * (1.0 - alpha))
-    # Clamp into valid index range
-    rank = max(1, min(rank, n))
+    rank = _quantile_rank(n, alpha, upper=True)
+    if rank > n:
+        return 1.0
     return sorted_v[rank - 1]
+
+
+def _exposure_threshold(sorted_scores: list[float], alpha: float) -> float:
+    """Bound the strict lower-tail event, not upper-coverage miscoverage."""
+    rank = _quantile_rank(len(sorted_scores), alpha, upper=False)
+    return sorted_scores[rank - 1] if rank else 0.0
 
 
 def calibrate(
@@ -231,19 +311,19 @@ def calibrate(
     alpha_hedge: float = 0.50,
     alpha_warn: float = 0.20,
 ) -> CalibrationResult:
-    """Run split-conformal calibration on labeled samples.
+    """Choose conservative lower-tail thresholds for marginal escalation.
 
     Args:
         samples: Labeled (ρ, y) observations from a held-out set.
         profile: The workload profile these samples represent.
-        alpha_pass, alpha_hedge, alpha_warn: Allowed mis-coverage rates,
+        alpha_pass, alpha_hedge, alpha_warn: Marginal escalation targets,
             in decreasing order. Examples:
                 alpha_pass=0.80 → only the bottom 20% of hallucination
                                   scores escape to "pass" — i.e. 80% of
                                   true hallucinations are caught at the
                                   HEDGE or stricter level.
-                alpha_warn=0.20 → 80% of true hallucinations are blocked
-                                  at WARN or SUPPRESS.
+                alpha_hedge=0.50 → at least 50% reach WARN or SUPPRESS.
+                alpha_warn=0.20 → at least 20% reach SUPPRESS.
 
         Constraints:
             alpha_warn < alpha_hedge < alpha_pass
@@ -253,47 +333,54 @@ def calibrate(
         validation metrics.
 
     Raises:
-        ValueError if α ordering is wrong.
+        ValueError for invalid scores, labels, profiles, probabilities or order.
+
+    Assumes a fixed scorer, policy and caller-attested workload, with conditional
+    exchangeability within the hallucinated class. This is marginal over data,
+    not conditional on the observed calibration set or an individual request.
+    No hallucination samples means unavailable, all-SUPPRESS thresholds.
     """
+    profile = _profile_key(profile)
+    for name, value in (("alpha_pass", alpha_pass), ("alpha_hedge", alpha_hedge), ("alpha_warn", alpha_warn)):
+        _unit_value(value, name, probability=True)
     if not (alpha_warn < alpha_hedge < alpha_pass):
         raise ValueError(
             f"α ordering must be α_warn < α_hedge < α_pass, "
             f"got {alpha_warn} < {alpha_hedge} < {alpha_pass}"
         )
 
-    # Score set for conformal quantile: ρ values where y=1 (hallucinations).
-    halu_scores = [s.rho for s in samples if s.y == 1]
+    for sample in samples:
+        if not isinstance(sample, CalibrationSample):
+            raise ValueError("samples must contain CalibrationSample observations")
+        sample.__post_init__()
+        if sample.profile not in ("auto", profile):
+            raise ValueError("sample profile differs from the declared calibration cohort")
+
+    halu_scores = sorted(s.rho for s in samples if s.y == 1)
     safe_scores = [s.rho for s in samples if s.y == 0]
 
-    # Three quantiles → three thresholds.
-    # Note: quantile(scores, α) yields a τ such that
-    # Pr[ρ ≤ τ | halu] ≥ 1 − α. So:
-    #   τ_pass    = quantile(halu, α_pass)  — small α_pass means many halus
-    #                                          slip below this → low τ_pass
-    # In our model we want τ_pass to be small (let only the safest through)
-    # and τ_warn to be large (only block the worst). So we use 1−α_*.
-    tau_pass = conformal_quantile(halu_scores, alpha_pass)
-    tau_hedge = conformal_quantile(halu_scores, alpha_hedge)
-    tau_warn = conformal_quantile(halu_scores, alpha_warn)
-
-    # Sanity ordering (calibration data sometimes makes them equal).
-    tau_pass, tau_hedge, tau_warn = sorted([tau_pass, tau_hedge, tau_warn])
+    tau_pass = _exposure_threshold(halu_scores, alpha_pass)
+    tau_hedge = _exposure_threshold(halu_scores, alpha_hedge)
+    tau_warn = _exposure_threshold(halu_scores, alpha_warn)
 
     # Empirical validation on calibration set.
-    n_above_warn_halu = sum(1 for s in samples if s.y == 1 and s.rho < tau_warn)
+    n_below_warn_halu = sum(1 for s in samples if s.y == 1 and s.rho < tau_warn)
     emp_exposure_at_warn = (
-        n_above_warn_halu / max(len(halu_scores), 1)
+        round(n_below_warn_halu / len(halu_scores), 4) if halu_scores else None
     )
     n_below_pass_safe = sum(1 for s in samples if s.y == 0 and s.rho < tau_pass)
     emp_retention_at_pass = (
-        n_below_pass_safe / max(len(safe_scores), 1)
+        round(n_below_pass_safe / len(safe_scores), 4) if safe_scores else None
     )
 
     # Hash for audit log.
     h = hashlib.sha256()
     crc = 0
     for s in samples:
-        line = f"{s.rho:.6f}|{s.y}|{s.profile}\n".encode()
+        line = json.dumps(
+            {"rho": s.rho, "y": s.y, "profile": s.profile},
+            sort_keys=True, separators=(",", ":"), allow_nan=False,
+        ).encode() + b"\n"
         h.update(line)
         crc = zlib.crc32(line, crc)
     dataset_hash = h.hexdigest()[:16]
@@ -310,10 +397,12 @@ def calibrate(
         tau_pass=tau_pass,
         tau_hedge=tau_hedge,
         tau_warn=tau_warn,
-        empirical_exposure_at_warn=round(emp_exposure_at_warn, 4),
-        empirical_retention_at_pass=round(emp_retention_at_pass, 4),
+        empirical_exposure_at_warn=emp_exposure_at_warn,
+        empirical_retention_at_pass=emp_retention_at_pass,
         dataset_hash=dataset_hash,
         dataset_crc32=dataset_crc32,
+        calibration_method=CALIBRATION_METHOD,
+        calibration_status="calibrated_marginal" if halu_scores else "unavailable_no_hallucinations",
     )
 
 
@@ -324,33 +413,64 @@ class CalibrationStore:
     """Per-profile threshold store with JSON persistence and audit log."""
 
     def __init__(self, path: str | Path):
-        self._path = Path(path)
+        self._path = Path(path).resolve()
         self._audit_path = self._path.with_suffix(self._path.suffix + ".audit.jsonl")
         self._results: dict[str, CalibrationResult] = {}
+        self._invalid_profiles: set[str] = set()
+        self._load_failed = False
         self._load()
 
     def _load(self) -> None:
-        if not self._path.exists():
-            return
+        # Refresh from authoritative disk state. Writers replace complete files;
+        # a noncooperating partial/corrupt write is unavailable, not missing.
+        self._results = {}
+        self._invalid_profiles = set()
+        self._load_failed = False
         try:
-            blob = json.loads(self._path.read_text(encoding="utf-8"))
-        except (OSError, ValueError) as e:
+            blob = json.loads(self._path.read_text(encoding="utf-8"), object_pairs_hook=_unique_json_object)
+        except FileNotFoundError:
+            return
+        except (OSError, UnicodeError, ValueError) as e:
             logger.warning("witness calibration load failed: %s", e)
+            self._load_failed = True
+            return
+        if not isinstance(blob, dict):
+            self._load_failed = True
             return
         for profile, d in blob.items():
             try:
-                self._results[profile] = CalibrationResult(**d)
-            except TypeError:
+                key = _profile_key(profile)
+            except ValueError:
+                self._load_failed = True
+                continue
+            try:
+                result = CalibrationResult(**d)
+                if (result.profile != key or key in self._results
+                        or key in self._invalid_profiles):
+                    raise ValueError("stored profile identity is ambiguous")
+                self._results[key] = result
+            except (TypeError, ValueError):
+                self._invalid_profiles.add(key)
+                self._results.pop(key, None)
                 continue
 
     def _save(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self._path.with_suffix(self._path.suffix + ".tmp")
-        tmp.write_text(
-            json.dumps({p: asdict(r) for p, r in self._results.items()}, indent=2),
-            encoding="utf-8",
-        )
-        tmp.replace(self._path)
+        temporary: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=self._path.parent,
+                prefix=f".{self._path.name}.", suffix=".tmp", delete=False,
+            ) as stream:
+                temporary = Path(stream.name)
+                json.dump({p: asdict(r) for p, r in self._results.items()}, stream,
+                          indent=2, allow_nan=False)
+                stream.flush()
+                os.fsync(stream.fileno())
+            temporary.replace(self._path)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
     def _audit(self, event: dict) -> None:
         self._audit_path.parent.mkdir(parents=True, exist_ok=True)
@@ -358,30 +478,46 @@ class CalibrationStore:
             f.write(json.dumps(event) + "\n")
 
     def get_thresholds(self, profile: str) -> ThresholdSet:
-        """Calibrated thresholds if available, else risk-graduated defaults."""
-        key = (profile or "auto").lower().replace("-", "_")
-        if key == "summarization":
-            key = "summary"
+        """Missing profiles use heuristics; explicit unusable data fails closed."""
+        key = _profile_key(profile or "auto")
+        self._load()
+        if self._load_failed or key in self._invalid_profiles:
+            return ThresholdSet(0.0, 0.0, 0.0)
         result = self._results.get(key)
         if result is None:
             return default_thresholds(key)
         return result.as_threshold_set()
 
     def update(self, result: CalibrationResult) -> None:
-        self._results[result.profile] = result
-        self._save()
-        self._audit({
-            "ts": result.timestamp,
-            "profile": result.profile,
-            "n_samples": result.n_samples,
-            "tau_pass": result.tau_pass,
-            "tau_hedge": result.tau_hedge,
-            "tau_warn": result.tau_warn,
-            "empirical_exposure": result.empirical_exposure_at_warn,
-            "empirical_retention": result.empirical_retention_at_pass,
-            "dataset_hash": result.dataset_hash,
-            "dataset_crc32": result.dataset_crc32,
-        })
+        result.__post_init__()
+        self._load()
+        if self._load_failed or self._invalid_profiles:
+            raise ValueError("refusing to overwrite an unreadable or corrupt calibration store")
+        lock = self._path.with_suffix(self._path.suffix + ".lock")
+        with exclusive_file_lock(lock):
+            self._load()
+            if self._load_failed or self._invalid_profiles:
+                raise ValueError("refusing to overwrite an unreadable or corrupt calibration store")
+            self._results[result.profile] = result
+            self._save()
+            self._audit({
+                "ts": result.timestamp,
+                "profile": result.profile,
+                "n_samples": result.n_samples,
+                "tau_pass": result.tau_pass,
+                "tau_hedge": result.tau_hedge,
+                "tau_warn": result.tau_warn,
+                "empirical_exposure": result.empirical_exposure_at_warn,
+                "empirical_retention": result.empirical_retention_at_pass,
+                "dataset_hash": result.dataset_hash,
+                "dataset_crc32": result.dataset_crc32,
+                "calibration_method": result.calibration_method,
+                "calibration_status": result.calibration_status,
+            })
 
     def all_profiles(self) -> dict[str, CalibrationResult]:
-        return dict(self._results)
+        self._load()
+        if self._load_failed:
+            return {}
+        return {key: result for key, result in self._results.items()
+                if key not in self._invalid_profiles}
