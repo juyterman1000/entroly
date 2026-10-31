@@ -5,7 +5,6 @@ from __future__ import annotations
 import inspect
 import json
 import re
-import ssl
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 from urllib.parse import urlunsplit
@@ -190,11 +189,13 @@ async def _bounded_stream_response(self, *args, **kwargs):
 def _safe_http_client_kwargs() -> dict[str, Any]:
     """Return safe HTTPX kwargs with independent CA and proxy trust controls.
 
-    An explicitly configured CA bundle is passed through ``verify`` and never
-    changes whether HTTPX inherits ambient proxy variables. Operators must set
+    Certificate trust comes from :mod:`entroly.tls_trust` (the OS store plus
+    certifi, or an explicitly configured bundle) and never changes whether
+    HTTPX inherits ambient proxy variables. Operators must set
     ``ENTROLY_TRUST_PROXY_ENV=1`` to opt into HTTP(S)_PROXY routing.
     """
-    ca_bundle = _proxy._resolve_ca_bundle_from_env()
+    from .tls_trust import apply_upstream_verify
+
     trust_proxy_env = _safe._env_flag("ENTROLY_TRUST_PROXY_ENV")
     kwargs: dict[str, Any] = {
         "timeout": httpx.Timeout(connect=10.0, read=120.0, write=10.0, pool=10.0),
@@ -206,9 +207,7 @@ def _safe_http_client_kwargs() -> dict[str, Any]:
             keepalive_expiry=30.0,
         ),
     }
-    if ca_bundle:
-        kwargs["verify"] = ssl.create_default_context(cafile=ca_bundle)
-    return kwargs
+    return apply_upstream_verify(kwargs)
 
 
 def _safe_target_url(base_url: str, path: str, query: str = "") -> str:
