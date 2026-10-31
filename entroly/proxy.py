@@ -1529,9 +1529,26 @@ class PromptCompilerProxy:
         baseline_body: dict[str, Any],
         candidate_body: dict[str, Any],
     ) -> tuple[dict[str, Any], dict[str, str]]:
-        """Protect a provider-observed warm prefix from optional rewrites."""
+        """Protect a provider-observed warm prefix from optional rewrites.
+
+        The net-saving governor goes first: in a conversation where Entroly's
+        conservative net saving has gone below its floor, the client's own
+        request (the baseline) is forwarded instead of optional rewrites.
+        """
         if not conversation_id:
             return candidate_body, {}
+        governor_headers: dict[str, str] = {}
+        try:
+            from .net_savings import GOVERNOR, GOVERNOR_HEADER
+
+            standing = GOVERNOR.standing(conversation_id)
+        except Exception as exc:
+            logger.debug("Net-saving governor skipped: %s", exc)
+            standing = None
+        if standing is not None:
+            governor_headers[GOVERNOR_HEADER] = standing.action
+            if standing.action == "hold":
+                candidate_body = baseline_body
         try:
             guarded, decision = self._prefix_continuity.choose(
                 conversation_id,
@@ -1542,12 +1559,16 @@ class PromptCompilerProxy:
             )
         except Exception as exc:
             logger.debug("Prefix-continuity guard skipped: %s", exc)
-            return candidate_body, {"X-Entroly-Prefix-Guard": "unavailable"}
+            return candidate_body, {
+                "X-Entroly-Prefix-Guard": "unavailable",
+                **governor_headers,
+            }
         return guarded, {
             "X-Entroly-Prefix-Guard": decision.action,
             "X-Entroly-Prefix-Tokens-At-Risk": str(
                 decision.estimated_tokens_at_risk
             ),
+            **governor_headers,
         }
 
     def _apply_pac_kv_alignment(

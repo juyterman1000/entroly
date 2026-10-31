@@ -30,6 +30,8 @@ def app(tmp_path, monkeypatch):
     monkeypatch.delenv("ENTROLY_USAGE_LEDGER", raising=False)
     net_savings._reset_catalog_cache_for_tests()
     net_savings.SEEN.clear()
+    net_savings.GOVERNOR.clear()
+    monkeypatch.delenv("ENTROLY_NET_SAVING_GOVERNOR", raising=False)
     from entroly.proxy import create_proxy_app
     from entroly.proxy_config import ProxyConfig
 
@@ -170,3 +172,123 @@ def test_receipt_correlates_with_the_request_id_the_client_sees(app, stream) -> 
     response, receipt, _ = _run(app, _body(stream=stream), stream=stream)
     client_id = response.headers["X-Entroly-Request-Id"]
     assert receipt["request_correlation"] == _correlation_digest(client_id)
+
+
+# ── the governor: a conversation that stops paying stops being optimized ──
+
+
+def _live_app(monkeypatch):
+    monkeypatch.setenv("ENTROLY_SESSION_RESCUE", "0")
+    from entroly.proxy import create_proxy_app
+    from entroly.proxy_config import ProxyConfig
+
+    return create_proxy_app(SimpleNamespace(stats=lambda: {}), ProxyConfig(),
+                            start_dashboard=False, start_autotune=False)
+
+
+def _seed_losses(app, body: dict, *, requests: int = 3, micro_usd: int = -10_000) -> None:
+    conversation = app.state.proxy._routing_conversation_id(body, "anthropic")
+    assert conversation
+    for _ in range(requests):
+        net_savings.GOVERNOR.record(conversation, micro_usd)
+
+
+def _rows(receipt: dict, source: str) -> list[dict]:
+    return [r for r in receipt.get("value_contributions", []) if r["source"] == source]
+
+
+@pytest.mark.parametrize("stream", [False, True], ids=["buffered", "streamed"])
+def test_losing_conversation_forwards_the_clients_own_request(app, monkeypatch, stream) -> None:
+    live = _live_app(monkeypatch)
+    body = _body(tool_output=LOG, stream=stream)
+    _seed_losses(live, body)
+
+    response, receipt, upstream = _run(live, body, stream=stream, input_tokens=9_000)
+
+    assert upstream["body"]["messages"] == body["messages"]  # nothing optional applied
+    assert response.headers["X-Entroly-Net-Saving-Governor"] == "hold"
+    assert receipt["net_saving_conservative_micro_usd"] == 0
+    governor = receipt["net_saving_governor"]
+    assert governor["applied"] == "hold"
+    assert governor["priced_requests"] == 4
+    assert governor["cumulative_micro_usd"] == -30_000
+    (row,) = _rows(receipt, "net_saving_governor_hold")
+    assert row["role"] == "protected"
+    assert row["headline_included"] is False
+
+
+def test_governor_observes_a_conversation_that_is_paying(app, monkeypatch) -> None:
+    live = _live_app(monkeypatch)
+    body = _body(tool_output=LOG)
+    _seed_losses(live, body, micro_usd=+10_000)
+
+    response, receipt, upstream = _run(live, body, input_tokens=900)
+
+    forwarded = upstream["body"]["messages"][-1]["content"][0]["content"]
+    assert len(json.dumps(forwarded)) < len(LOG)
+    assert response.headers["X-Entroly-Net-Saving-Governor"] == "observe"
+    assert receipt["net_saving_governor"]["applied"] == "observe"
+    assert receipt["net_saving_governor"]["action"] == "observe"
+    assert not _rows(receipt, "net_saving_governor_hold")
+
+
+def test_governor_hold_does_not_leak_into_another_conversation(app, monkeypatch) -> None:
+    live = _live_app(monkeypatch)
+    losing = _body(tool_output=LOG)
+    _seed_losses(live, losing)
+    other = _body(tool_output=LOG)
+    other["messages"][0] = {"role": "user", "content": "lint the package"}
+
+    response, _, upstream = _run(live, other, input_tokens=900)
+
+    forwarded = upstream["body"]["messages"][-1]["content"][0]["content"]
+    assert len(json.dumps(forwarded)) < len(LOG)
+    assert response.headers["X-Entroly-Net-Saving-Governor"] == "observe"
+
+
+def test_governor_can_be_switched_off(app, monkeypatch) -> None:
+    live = _live_app(monkeypatch)
+    body = _body(tool_output=LOG)
+    _seed_losses(live, body)
+    monkeypatch.setenv("ENTROLY_NET_SAVING_GOVERNOR", "0")
+
+    response, receipt, upstream = _run(live, body, input_tokens=900)
+
+    forwarded = upstream["body"]["messages"][-1]["content"][0]["content"]
+    assert len(json.dumps(forwarded)) < len(LOG)
+    assert "X-Entroly-Net-Saving-Governor" not in response.headers
+    assert receipt["net_saving_governor"] is None
+
+
+def test_governor_decisions_replay_from_the_receipts(app, monkeypatch) -> None:
+    """Each receipt's standing is the previous one plus its own sealed estimate."""
+    live = _live_app(monkeypatch)
+    body = _body(tool_output=LOG)
+    _seed_losses(live, body, requests=1, micro_usd=-10_000)
+
+    receipts = [_run(live, body, input_tokens=900)[1] for _ in range(3)]
+
+    previous_count, previous_total = 1, -10_000
+    for receipt in receipts:
+        governor = receipt["net_saving_governor"]
+        net = receipt["net_saving_conservative_micro_usd"]
+        assert net is not None
+        assert governor["priced_requests"] == previous_count + 1
+        assert governor["cumulative_micro_usd"] == previous_total + net
+        previous_count, previous_total = governor["priced_requests"], governor["cumulative_micro_usd"]
+        assert governor["action"] == ("hold" if (
+            previous_count >= governor["min_requests"]
+            and governor["losing_requests"] >= 2
+            and previous_total < -governor["floor_micro_usd"]
+        ) else "observe")
+
+
+def test_unpriced_conversation_is_never_held(app, monkeypatch) -> None:
+    live = _live_app(monkeypatch)
+    body = _body(model="claude-unreleased-9", tool_output=LOG)
+
+    for _ in range(4):
+        response, receipt, _ = _run(live, body, input_tokens=900)
+
+    assert response.headers["X-Entroly-Net-Saving-Governor"] == "observe"
+    assert receipt["net_saving_governor"]["priced_requests"] == 0
