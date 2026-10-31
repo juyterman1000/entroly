@@ -73,6 +73,25 @@ Traffic Receipts intentionally distinguish measurement from modeling:
 - **Net measured saving** is deliberately unavailable until Entroly has a
   request-correlated measured counterfactual. Modeled token reduction is not
   relabeled as realized invoice savings.
+- **Net saving (conservative)** (`net_saving_conservative_micro_usd`, with
+  `net_saving_basis`) is a provider-calibrated *estimate*, not a measured
+  counterfactual, and is never added to the headline. It prices only what
+  Entroly changed, with every unknown resolved against Entroly:
+  - removed content at the cache-read rate if any recent request carried it,
+    otherwise at the uncached input rate;
+  - added content (injected context, rewritten blocks) and any cached prefix
+    Entroly's edits broke at the 1-hour cache-write rate, but only up to the
+    tokens the provider did not serve from cache;
+  - bytes converted to tokens with the provider's own count of the forwarded
+    request, using the ratio that under-counts removals and over-counts
+    additions.
+  An unchanged request is exactly zero, the provider's own cache discount is
+  never credited, and the value can be negative. It needs provider usage, a
+  prefix-continuity observation and a priced model; otherwise it is absent,
+  not zero. Prices come from `ENTROLY_PRICING_CATALOG` when set, else a
+  bundled, dated Anthropic table (`entroly/data/anthropic_pricing.json`,
+  disable with `ENTROLY_BUNDLED_PRICING=0`). The bundled table is used for
+  this estimate only and never satisfies routing's explicit-catalog rule.
 - **Verification** comes from WITNESS/EICV response evidence when reported.
 - **Receipt integrity** is a SHA-256 canonical-payload consistency check. It is
   not presented as a cryptographic signature.

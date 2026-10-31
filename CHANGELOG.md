@@ -12,6 +12,20 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
   lines now stay verbatim. New tests check that every compressed form keeps
   paired facts -- test and outcome, file:line and error code, row id and
   value -- together.
+- Traffic Receipts now carry a conservative net saving
+  (`net_saving_conservative_micro_usd`) for priced Claude models, on by
+  default. It prices only what Entroly changed: removals at the cheapest
+  possible rate, additions and any cache prefix Entroly broke at the most
+  expensive, scaled by the provider's own token count. Unchanged requests are
+  zero, the provider's cache discount is never credited, values can be
+  negative, and it is never added to the headline. Uses a bundled, dated
+  Anthropic price table unless `ENTROLY_PRICING_CATALOG` is set
+  (`ENTROLY_BUNDLED_PRICING=0` disables it). Receipts now share the
+  `X-Entroly-Request-Id` the client sees when the client sends no request id.
+- A tool result cut to a partial codec view (for example a code skeleton)
+  now opens with a one-line notice naming the view and how to get the exact
+  content; bodies were previously dropped with no marker on the
+  `ENTROLY_SESSION_RESCUE=0` and OpenClaw paths.
 - Provider TLS now trusts the operating-system certificate store plus the
   bundled roots, in the Python proxy and `entroly-rs`, so Entroly works behind
   TLS-inspecting corporate gateways. `NODE_EXTRA_CA_CERTS` adds roots instead

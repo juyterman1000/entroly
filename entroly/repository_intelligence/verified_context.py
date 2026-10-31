@@ -121,6 +121,13 @@ def _rank_candidates(
     max_candidates: int,
     proposal_scores: Mapping[str, float] | None = None,
 ) -> tuple[list[tuple[float, str, tuple[str, ...]]], set[str]]:
+    """Rank a bounded hop-layered graph, retaining each symbol's best score.
+
+    Expansion is keyed by (symbol, depth), not symbol alone: a better-scoring
+    longer path cannot dominate a shorter path's remaining hop allowance.
+    Edge factors are below one, so the first heap visit to each layered state
+    has its best score. Candidate limits still make this a partial graph.
+    """
     query_tokens = _tokens(query)
     proposals = proposal_scores or {}
     scored = [
@@ -165,14 +172,18 @@ def _rank_candidates(
             reasons.append("verified-external-proposal-identity")
         heapq.heappush(heap, (-score, 0, symbol_id, tuple(reasons)))
     best: dict[str, tuple[float, tuple[str, ...]]] = {}
+    expanded: set[tuple[str, int]] = set()
     seed_ids = {symbol_id for _, symbol_id in seeds}
     while heap and len(best) < max_candidates:
         negative, depth, symbol_id, reasons = heapq.heappop(heap)
         score = -negative
-        previous = best.get(symbol_id)
-        if previous is not None and previous[0] >= score:
+        state = (symbol_id, depth)
+        if state in expanded:
             continue
-        best[symbol_id] = (score, reasons)
+        expanded.add(state)
+        previous = best.get(symbol_id)
+        if previous is None or score > previous[0]:
+            best[symbol_id] = (score, reasons)
         if depth >= max_hops:
             continue
         for neighbor, relation, _evidence in graph.get(symbol_id, ()):
