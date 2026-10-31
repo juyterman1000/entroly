@@ -5,6 +5,21 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
 
 ## Unreleased
 
+- Provider TLS now trusts the operating-system certificate store plus the
+  bundled roots, in the Python proxy and `entroly-rs`, so Entroly works behind
+  TLS-inspecting corporate gateways. `NODE_EXTRA_CA_CERTS` adds roots instead
+  of replacing the store; `REQUESTS_CA_BUNDLE`/`SSL_CERT_FILE` still name the
+  whole trust set. `ENTROLY_TLS_TRUST=bundled` restores bundled roots. Adds the
+  `truststore` dependency. See
+  [Troubleshooting](docs/TROUBLESHOOTING.md#certificate_verify_failed-or-unknownissuer-behind-a-corporate-network).
+- Claude Fable 5.1, Opus 5.5, Opus 5, Sonnet 5.5, Sonnet 5 and Haiku 5.5 now
+  resolve to their verified 1M-token window and published prices, and Opus 4.6
+  to its 1M window; they had fallen back to 128K, so session rescue compacted
+  history at ~113K tokens. Savings are priced at Opus 4.5-4.8's $5/$25 and
+  Haiku 4.5's $1/$5, with Bedrock and router model names recognised.
+  Injected repository context is budgeted against at most a 200K window
+  (`ENTROLY_INJECTION_REFERENCE_WINDOW`, 0 disables), which lowers GPT-5.6
+  and Gemini 3.6 injection ceilings from 256K to 60K.
 - Conversation compression (`ENTROLY_SESSION_RESCUE=0`) no longer rewrites
   Anthropic `thinking`/`redacted_thinking` blocks, which the API rejects when
   modified, and measures utilisation against the request model's window
