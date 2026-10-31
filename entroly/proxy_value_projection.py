@@ -26,6 +26,7 @@ _METRIC_SOURCES = frozenset(
         "recovery_evidence",
         "recovery_adjustment",
         "extra_provider_call",
+        "net_saving_conservative",
     }
 )
 
@@ -292,6 +293,14 @@ def install_value_projection() -> None:
             truth["extra_provider_cost"] = (
                 "Additional provider work observed under the outer request is a "
                 "cost debit only when provider usage and auditable pricing exist."
+            )
+            truth["net_saving_conservative"] = (
+                "Net saving (conservative) prices only what Entroly changed: removed "
+                "content at the cheapest rate it could have been billed, added content "
+                "and any cache prefix Entroly broke at the most expensive, scaled by "
+                "the provider's own token count. It can be negative, is never added to "
+                "the headline, and excludes the provider's cache discount. Requires "
+                "provider usage and a priced model; otherwise it is absent, not zero."
             )
             return out
         snapshot.__entroly_value_projection_original__ = original_snapshot

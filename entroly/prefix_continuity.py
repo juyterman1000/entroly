@@ -145,6 +145,11 @@ class PrefixContinuityObservation:
     raw_reusable_prefix_tokens: int | None
     outbound_reusable_prefix_tokens: int | None
     estimated_optimizer_interference_tokens: int
+    # Unthresholded bytes of the previously forwarded prefix that this request
+    # no longer reuses beyond what the client itself changed. Net-saving
+    # accounting charges every one of them; the token field above stays the
+    # thresholded signal the warm-prefix guard acts on.
+    optimizer_interference_bytes: int = 0
 
 
 @dataclass(slots=True)
@@ -283,6 +288,11 @@ class PrefixContinuityGuard:
                     previous.outbound.total_bytes - outbound_common_bytes,
                 ) // 4
                 interference = max(0, outbound_disrupted - raw_disrupted)
+                interference_bytes = max(
+                    0,
+                    (previous.outbound.total_bytes - outbound_common_bytes)
+                    - (previous.raw.total_bytes - raw_common_bytes),
+                )
                 material = interference >= self.material_loss_tokens
                 if material:
                     status = "prefix_degraded"
@@ -301,6 +311,7 @@ class PrefixContinuityGuard:
                     estimated_optimizer_interference_tokens=(
                         interference if material else 0
                     ),
+                    optimizer_interference_bytes=interference_bytes,
                 )
             self._states[state_key] = _PrefixState(raw=raw, outbound=outbound)
             self._states.move_to_end(state_key)

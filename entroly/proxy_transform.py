@@ -1153,6 +1153,21 @@ def _with_call_names(candidates: set[str], call_names: dict[str, str] | None) ->
     return candidates | {call_names[c] for c in candidates if c in call_names}
 
 
+def _partial_view_notice(best: Any, reps: list[Any]) -> str:
+    """One deterministic line saying a tool result was cut and how to get it.
+
+    Deterministic in the input, so the bytes forwarded for the same tool
+    result never change between turns and the provider prefix cache holds.
+    """
+    form = str(best.representation_id).rsplit("#", 1)[-1] or str(best.codec)
+    full_cost = max(r.token_cost for r in reps)
+    return (
+        f"[entroly: partial {form} view, {full_cost:,} -> {best.token_cost:,} "
+        "tokens; the omitted original is not kept on this path. Re-read the "
+        "file or re-run the command for the exact content.]\n"
+    )
+
+
 def _codec_tool_output(content: str) -> tuple[str, str, float] | None:
     """Best specialized-codec rendering of a tool result, or None to fall back.
 
@@ -1190,14 +1205,21 @@ def _codec_tool_output(content: str) -> tuple[str, str, float] | None:
     if not reps:
         return None
 
-    # A form that dropped content and cannot return it is worse than the
-    # pattern path here, because this surface exposes no recovery handle.
-    usable = [r for r in reps if r.recovery is not None or r.text == content]
-    best = min(usable or reps, key=lambda r: r.token_cost)
+    # Every form other than the codec's ``*.full`` rendering drops content.
+    # Their recovery references point into the RecoveryStore created above,
+    # which is discarded when this call returns -- so on this surface nothing
+    # is recoverable, and a recovery reference is no reason to prefer a form.
+    # Choosing the cheapest form is still right (the codecs keep the evidence
+    # the pattern path deletes, see tests/test_proxy_codec_parity.py), but the
+    # omission must be visible: a code skeleton used to reach the agent as a
+    # bare list of signatures with every body gone and nothing saying so.
+    best = min(reps, key=lambda r: r.token_cost)
 
     text = best.text
     if not text or not text.strip():
         return None
+    if text != content:
+        text = _partial_view_notice(best, reps) + text
     if len(text) >= len(content):
         return None  # never let "specialized" mean "larger"
 

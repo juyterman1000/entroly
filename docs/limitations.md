@@ -22,7 +22,8 @@ terms.
   engineering checklist, not legal advice.
 - No perfect hallucination detection. WITNESS/STAVE/EICV are local verifiers
   with measured false positives and false negatives. Use strict mode only when
-  conservative suppression is acceptable.
+  conservative suppression is acceptable. EICV lexical support is not a proof
+  of code execution semantics; see [evidence roles](eicv-evidence-roles.md).
 - No exact provider image token guarantee for every model. Entroly estimates
   image tokens from published provider formulas where available; provider usage
   metadata or token-count APIs remain the source of truth.
