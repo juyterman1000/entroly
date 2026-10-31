@@ -9,6 +9,10 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
   now opens with a one-line notice naming the view and how to get the exact
   content; bodies were previously dropped with no marker on the
   `ENTROLY_SESSION_RESCUE=0` and OpenClaw paths.
+- Conversation compression (`ENTROLY_SESSION_RESCUE=0`) no longer rewrites
+  Anthropic `thinking`/`redacted_thinking` blocks, which the API rejects when
+  modified, and measures utilisation against the request model's window
+  instead of a fixed 128K.
 - Corrected optional WITNESS calibration's lower-tail rank and empty-evidence
   handling. Legacy or invalid stored profiles now return all-SUPPRESS thresholds
   rather than reactivating permissive learned values; recalibrate explicitly.
