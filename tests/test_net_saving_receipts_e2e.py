@@ -258,3 +258,37 @@ def test_governor_can_be_switched_off(app, monkeypatch) -> None:
     assert len(json.dumps(forwarded)) < len(LOG)
     assert "X-Entroly-Net-Saving-Governor" not in response.headers
     assert receipt["net_saving_governor"] is None
+
+
+def test_governor_decisions_replay_from_the_receipts(app, monkeypatch) -> None:
+    """Each receipt's standing is the previous one plus its own sealed estimate."""
+    live = _live_app(monkeypatch)
+    body = _body(tool_output=LOG)
+    _seed_losses(live, body, requests=1, micro_usd=-10_000)
+
+    receipts = [_run(live, body, input_tokens=900)[1] for _ in range(3)]
+
+    previous_count, previous_total = 1, -10_000
+    for receipt in receipts:
+        governor = receipt["net_saving_governor"]
+        net = receipt["net_saving_conservative_micro_usd"]
+        assert net is not None
+        assert governor["priced_requests"] == previous_count + 1
+        assert governor["cumulative_micro_usd"] == previous_total + net
+        previous_count, previous_total = governor["priced_requests"], governor["cumulative_micro_usd"]
+        assert governor["action"] == ("hold" if (
+            previous_count >= governor["min_requests"]
+            and governor["losing_requests"] >= 2
+            and previous_total < -governor["floor_micro_usd"]
+        ) else "observe")
+
+
+def test_unpriced_conversation_is_never_held(app, monkeypatch) -> None:
+    live = _live_app(monkeypatch)
+    body = _body(model="claude-unreleased-9", tool_output=LOG)
+
+    for _ in range(4):
+        response, receipt, _ = _run(live, body, input_tokens=900)
+
+    assert response.headers["X-Entroly-Net-Saving-Governor"] == "observe"
+    assert receipt["net_saving_governor"]["priced_requests"] == 0

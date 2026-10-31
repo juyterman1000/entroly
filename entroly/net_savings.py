@@ -480,6 +480,11 @@ GOVERNOR_HEADER = "X-Entroly-Net-Saving-Governor"
 _GOVERNOR_CAPACITY = 4_096
 _DEFAULT_FLOOR_MICRO_USD = 20_000  # $0.02
 _DEFAULT_MIN_REQUESTS = 3
+#: A hold needs losses on at least this many requests. One request can be
+#: expensive by design -- a history rewrite is charged in full on the turn it
+#: happens and earns its saving back on later turns -- so a single loss, however
+#: large, is never enough on its own.
+_MIN_LOSING_REQUESTS = 2
 
 
 def _env_flag_off(name: str) -> bool:
@@ -532,11 +537,13 @@ class GovernorStanding:
     cumulative_micro_usd: int
     floor_micro_usd: int
     min_requests: int
+    losing_requests: int = 0
 
     def details(self) -> dict[str, Any]:
         return {
             "action": self.action,
             "priced_requests": self.priced_requests,
+            "losing_requests": self.losing_requests,
             "cumulative_micro_usd": self.cumulative_micro_usd,
             "floor_micro_usd": self.floor_micro_usd,
             "min_requests": self.min_requests,
@@ -550,9 +557,11 @@ class NetSavingGovernor:
     receipts report. Once a conversation has at least ``min_requests`` priced
     requests and its cumulative saving is below ``-floor``, it *holds*: the
     proxy forwards the client's own request instead of Entroly's optional
-    rewrites for the rest of that conversation. The hold latches, so the
-    decision depends only on receipts already sealed, never on one that is
-    still in flight.
+    rewrites for the rest of that conversation. It also needs losses on at
+    least two of those requests: a history rewrite is charged in full on the
+    turn it happens and recovers on later turns, so one expensive request is
+    never enough. The hold latches, so the decision depends only on receipts
+    already sealed, never on one that is still in flight.
 
     Requests without priced evidence add nothing, so conversations Entroly
     cannot price are never held. Emergency session rescue and required
@@ -573,13 +582,14 @@ class NetSavingGovernor:
         return hashlib.sha256(conversation_id.encode("utf-8")).hexdigest()[:_DIGEST_HEX]
 
     def _standing(self, entry: list[int], policy: GovernorPolicy) -> GovernorStanding:
-        count, total, held = entry
+        count, total, held, losses = entry
         return GovernorStanding(
             action="hold" if held else "observe",
             priced_requests=count,
             cumulative_micro_usd=total,
             floor_micro_usd=policy.floor_micro_usd,
             min_requests=policy.min_requests,
+            losing_requests=losses,
         )
 
     def record(
@@ -597,12 +607,17 @@ class NetSavingGovernor:
         with self._lock:
             entry = self._entries.get(key)
             if entry is None:
-                entry = [0, 0, 0]
+                entry = [0, 0, 0, 0]
                 self._entries[key] = entry
             self._entries.move_to_end(key)
             entry[0] += 1
             entry[1] += int(micro_usd)
-            if entry[0] >= policy.min_requests and entry[1] < -policy.floor_micro_usd:
+            entry[3] += 1 if micro_usd < 0 else 0
+            if (
+                entry[0] >= policy.min_requests
+                and entry[3] >= _MIN_LOSING_REQUESTS
+                and entry[1] < -policy.floor_micro_usd
+            ):
                 entry[2] = 1
             while len(self._entries) > self._capacity:
                 self._entries.popitem(last=False)
@@ -619,7 +634,7 @@ class NetSavingGovernor:
             entry = self._entries.get(self._key(conversation_id))
             if entry is None:
                 return GovernorStanding("observe", 0, 0, policy.floor_micro_usd,
-                                        policy.min_requests)
+                                        policy.min_requests, 0)
             self._entries.move_to_end(self._key(conversation_id))
             return self._standing(entry, policy)
 

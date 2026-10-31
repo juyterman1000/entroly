@@ -16,7 +16,8 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
   (`ENTROLY_BUNDLED_PRICING=0` disables it). Receipts now share the
   `X-Entroly-Request-Id` the client sees when the client sends no request id.
 - Net-saving governor, on by default: when a conversation's conservative net
-  saving falls below -$0.02 over at least 3 priced requests, the proxy stops
+  saving falls below -$0.02 over at least 3 priced requests, with losses on
+  at least 2 of them, the proxy stops
   applying optional optimizations to that conversation and forwards the
   client's own request. Visible as `X-Entroly-Net-Saving-Governor: hold` and
   in the receipt; `ENTROLY_NET_SAVING_GOVERNOR=0` disables it

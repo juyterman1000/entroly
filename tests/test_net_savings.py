@@ -371,9 +371,20 @@ def _policy(**kw) -> ns.GovernorPolicy:
 
 def test_governor_needs_enough_priced_requests_before_holding() -> None:
     gov, policy = ns.NetSavingGovernor(), _policy()
-    assert gov.record("c", -500_000, policy=policy).action == "observe"  # one bad turn
-    assert gov.record("c", 0, policy=policy).action == "observe"
+    assert gov.record("c", -15_000, policy=policy).action == "observe"
+    assert gov.record("c", -15_000, policy=policy).action == "observe"  # only 2 priced
     assert gov.record("c", 0, policy=policy).action == "hold"
+
+
+def test_one_expensive_rewrite_turn_never_trips_the_governor() -> None:
+    """A history rewrite is charged in full on its own turn, by design."""
+    gov, policy = ns.NetSavingGovernor(), _policy()
+    gov.record("c", -500_000, policy=policy)
+    for _ in range(20):
+        standing = gov.record("c", 0, policy=policy)
+    assert standing.action == "observe"
+    assert standing.losing_requests == 1
+    assert gov.record("c", -1, policy=policy).action == "hold"  # a second loss does
 
 
 def test_governor_holds_only_below_the_floor() -> None:
@@ -387,7 +398,8 @@ def test_governor_holds_only_below_the_floor() -> None:
 
 def test_governor_hold_latches_for_the_conversation() -> None:
     gov, policy = ns.NetSavingGovernor(), _policy(min_requests=1)
-    assert gov.record("c", -30_000, policy=policy).action == "hold"
+    assert gov.record("c", -15_000, policy=policy).action == "observe"
+    assert gov.record("c", -15_000, policy=policy).action == "hold"
     assert gov.record("c", +100_000, policy=policy).action == "hold"
     assert gov.standing("c", policy=policy).action == "hold"
 
@@ -403,6 +415,8 @@ def test_unpriced_requests_never_count() -> None:
 def test_conversations_are_independent_and_bounded() -> None:
     gov, policy = ns.NetSavingGovernor(capacity=2), _policy(min_requests=1)
     gov.record("a", -30_000, policy=policy)
+    gov.record("a", -30_000, policy=policy)
+    assert gov.standing("a", policy=policy).action == "hold"
     assert gov.standing("b", policy=policy).action == "observe"
     gov.record("b", 1, policy=policy)
     gov.record("c", 1, policy=policy)
