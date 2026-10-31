@@ -248,7 +248,9 @@ def _has_negation_before(text: str, word: str) -> bool:
 # ── Atom decomposition ────────────────────────────────────────────────
 
 
-def _split_atoms(text: str, *, min_words: int = 3) -> list[str]:
+def _split_atoms(
+    text: str, *, min_words: int = 3, exclude_questions: bool = False,
+) -> list[str]:
     """Decompose text into atomic propositions.
 
     Strategy (no dependency parser required):
@@ -257,10 +259,40 @@ def _split_atoms(text: str, *, min_words: int = 3) -> list[str]:
          that join clauses (signalled by preceding comma or semicolon).
       3. Keep only atoms with >= min_words words.
 
+    Evidence excludes interrogatives using WITNESS's existing recognizer.
+    This is an eligibility rule, not a semantic parser or code verifier.
+
     This produces 1–20 atoms from typical claim/evidence text.
     """
     # Step 1: sentence splitting
     sentences = re.split(r"(?<=[.!?])\s+", text.strip())
+    excluded = False
+    if exclude_questions:
+        from .witness import _is_question_like
+
+        # An unpunctuated question on its own line must not consume the source
+        # on the next line. Preserve multi-line source blocks otherwise. Flush
+        # at each omitted line rather than joining noncontiguous source text.
+        blocks: list[str] = []
+        pending: list[str] = []
+        for line in text.splitlines(keepends=True):
+            parts = re.split(r"(?<=[.!?])\s+", line.strip())
+            if len(parts) == 1 and _is_question_like(line):
+                if pending:
+                    blocks.append("".join(pending))
+                    pending = []
+                excluded = True
+            else:
+                pending.append(line)
+        if pending:
+            blocks.append("".join(pending))
+        sentences = []
+        for block in blocks:
+            for sentence in re.split(r"(?<=[.!?])\s+", block.strip()):
+                if _is_question_like(sentence):
+                    excluded = True
+                elif sentence.strip():
+                    sentences.append(sentence)
     atoms: list[str] = []
     for sent in sentences:
         sent = sent.strip()
@@ -277,7 +309,9 @@ def _split_atoms(text: str, *, min_words: int = 3) -> list[str]:
                 atoms.append(p)
     # Fallback: if nothing survived, treat whole text as one atom
     if not atoms and text.strip():
-        atoms = [text.strip()]
+        # Never resurrect a discarded question through the short-text
+        # fallback, or synthesize an atom across an omitted question.
+        atoms = [s.strip() for s in sentences] if excluded else [text.strip()]
     return atoms
 
 
@@ -498,7 +532,9 @@ class ESGAnalyzer:
             ESGResult with `tension` as the primary signal ∈ [0, 1].
             Higher tension → more hallucination evidence.
         """
-        ev_atoms = _split_atoms(evidence, min_words=self.min_atom_words)
+        ev_atoms = _split_atoms(
+            evidence, min_words=self.min_atom_words, exclude_questions=True,
+        )
         claim_atoms = _split_atoms(claim, min_words=2)  # shorter claim fragments OK
 
         n_ev = len(ev_atoms)
