@@ -423,6 +423,66 @@
       "verified_at": "2026-10-31"
     },
     {
+      "id": "anthropic/claude-opus-4.8",
+      "provider": "anthropic",
+      "aliases": [
+        "anthropic/claude-opus-4-8",
+        "claude-opus-4-8",
+        "claude-opus-4.8",
+        "anthropic.claude-opus-4-8"
+      ],
+      "context_window": 1000000,
+      "max_output_tokens": 128000,
+      "supports_tools": true,
+      "supports_vision": true,
+      "supports_reasoning": true,
+      "input_price_per_million": 5.0,
+      "output_price_per_million": 25.0,
+      "trust": "verified",
+      "source": "https://platform.claude.com/docs/en/build-with-claude/context-windows",
+      "verified_at": "2026-10-31"
+    },
+    {
+      "id": "anthropic/claude-opus-4.7",
+      "provider": "anthropic",
+      "aliases": [
+        "anthropic/claude-opus-4-7",
+        "claude-opus-4-7",
+        "claude-opus-4.7",
+        "anthropic.claude-opus-4-7"
+      ],
+      "context_window": 1000000,
+      "max_output_tokens": 128000,
+      "supports_tools": true,
+      "supports_vision": true,
+      "supports_reasoning": true,
+      "input_price_per_million": 5.0,
+      "output_price_per_million": 25.0,
+      "trust": "verified",
+      "source": "https://platform.claude.com/docs/en/build-with-claude/context-windows",
+      "verified_at": "2026-10-31"
+    },
+    {
+      "id": "anthropic/claude-sonnet-4.6",
+      "provider": "anthropic",
+      "aliases": [
+        "anthropic/claude-sonnet-4-6",
+        "claude-sonnet-4-6",
+        "claude-sonnet-4.6",
+        "anthropic.claude-sonnet-4-6"
+      ],
+      "context_window": 1000000,
+      "max_output_tokens": 128000,
+      "supports_tools": true,
+      "supports_vision": true,
+      "supports_reasoning": true,
+      "input_price_per_million": 3.0,
+      "output_price_per_million": 15.0,
+      "trust": "verified",
+      "source": "https://platform.claude.com/docs/en/build-with-claude/context-windows",
+      "verified_at": "2026-10-31"
+    },
+    {
       "id": "anthropic/claude-opus-4.6",
       "provider": "anthropic",
       "aliases": [
