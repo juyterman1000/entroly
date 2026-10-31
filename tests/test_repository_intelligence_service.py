@@ -532,3 +532,20 @@ def test_mcp_lsp_preview_fails_visibly_when_operator_did_not_configure_command(
     ))
     assert payload["error"] == "verified_refactor_failed"
     assert "operator must set" in payload["detail"]
+
+
+def test_mcp_rename_binding_conflict_is_visible_and_never_written(tmp_path: Path, monkeypatch) -> None:
+    _write(tmp_path, "payments.py", "def charge(amount):\n    return amount + 2\n")
+    _write(tmp_path, "consumer.py", "from payments import charge\ndef process(authorize):\n    return charge(authorize)\n")
+    monkeypatch.setenv("ENTROLY_REPOSITORY_WRITES", "1")
+    _install_fake_mcp(monkeypatch)
+    mcp = create_repository_mcp_server(tmp_path)
+    plan = json.loads(mcp.tools["repository_rename_preview"]("charge", "authorize"))
+    assert plan["binding_review"]["status"] == "conflict"
+    before = {path.name: path.read_bytes() for path in tmp_path.glob("*.py")}
+    result = json.loads(mcp.tools["repository_rename_apply"](
+        plan, plan["receipt"]["plan_sha256"], True,
+    ))
+    assert result["error"] == "verified_refactor_failed"
+    assert "binding conflict" in result["detail"]
+    assert {path.name: path.read_bytes() for path in tmp_path.glob("*.py")} == before
