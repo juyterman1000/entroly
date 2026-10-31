@@ -475,6 +475,30 @@ def test_mcp_refactor_apply_requires_ack_and_refreshes_index(tmp_path: Path, mon
     assert summary["index_digest"] == applied["refresh"]["index_digest"]
 
 
+def test_mcp_refactor_rejects_a_late_importer_before_writing(tmp_path: Path, monkeypatch) -> None:
+    _project(tmp_path)
+    monkeypatch.setenv("ENTROLY_REPOSITORY_WRITES", "1")
+    _install_fake_mcp(monkeypatch)
+    mcp = create_repository_mcp_server(tmp_path)
+    plan = json.loads(mcp.tools["repository_rename_preview"]("execute", "perform"))
+    _write(tmp_path, "late.py", "from pkg.source import execute\n")
+    before = {
+        path.relative_to(tmp_path).as_posix(): path.read_bytes()
+        for path in tmp_path.rglob("*.py")
+    }
+
+    rejected = json.loads(mcp.tools["repository_rename_apply"](
+        plan, plan["receipt"]["plan_sha256"], True,
+    ))
+
+    assert rejected["error"] == "verified_refactor_failed"
+    assert "repository changed" in rejected["detail"]
+    assert {
+        path.relative_to(tmp_path).as_posix(): path.read_bytes()
+        for path in tmp_path.rglob("*.py")
+    } == before
+
+
 def test_mcp_lsp_command_is_operator_configured_not_caller_controlled(
     tmp_path: Path,
     monkeypatch,
