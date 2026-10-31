@@ -5,6 +5,13 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
 
 ## Unreleased
 
+- The templated log form no longer factors out values that contain its `|`
+  column separator. A value like `tags=a|b` split into two column entries,
+  shifting every later entry so each line's values sat beside another line's
+  (which user had which tags was wrong, though every value was present). Those
+  lines now stay verbatim. New tests check that every compressed form keeps
+  paired facts -- test and outcome, file:line and error code, row id and
+  value -- together.
 - Claude Fable 5.1, Opus 5.5, Opus 5, Sonnet 5.5, Sonnet 5 and Haiku 5.5 now
   resolve to their verified 1M-token window and published prices, and Opus 4.6
   to its 1M window; they had fallen back to 128K, so session rescue compacted

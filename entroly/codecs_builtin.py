@@ -608,6 +608,10 @@ def _log_slots(line: str) -> tuple[str, tuple[str, ...]]:
     return _LOG_SLOT.sub(take, line), tuple(values)
 
 
+#: Joins the values of one template slot. Never allowed inside a value.
+_COLUMN_SEPARATOR = "|"
+
+
 def _template_factored_log(
     text: str,
     is_critical: Callable[[str], bool],
@@ -672,6 +676,22 @@ def _template_factored_log(
             verbatim.pop(index, None)
             claimed.add(index)
 
+    # A value that contains the column separator cannot be split back into the
+    # line it came from: `tags=a|b` turns one entry into two, every later
+    # entry in that column shifts by one, and each value lands beside another
+    # line's values. The form would still contain every value -- so the value
+    # check below passes -- while telling the reader which user had which tags
+    # wrongly. Such groups stay verbatim.
+    for template in [
+        template
+        for template, entries in collapsible.items()
+        if any(_COLUMN_SEPARATOR in value for _, values in entries for value in values)
+    ]:
+        for index, _ in collapsible.pop(template):
+            verbatim[index] = lines[index]
+            claimed.discard(index)
+        groups.pop(template, None)
+
     if not collapsible:
         return None
 
@@ -715,7 +735,7 @@ def _template_factored_log(
             # European locales, so the timestamp pattern swallowed the
             # delimiter and the values became unfindable to the preservation
             # check that gates this representation.
-            columns.append(f"    {{{slot}}}: {'|'.join(column)}")
+            columns.append(f"    {{{slot}}}: {_COLUMN_SEPARATOR.join(column)}")
 
     rendered = "\n".join(critical + templates + other + columns)
     return rendered if len(rendered) < len(text) else None
