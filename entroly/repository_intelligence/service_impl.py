@@ -1036,6 +1036,31 @@ class RepositoryIntelligenceService:
         payload["generation"] = generation
         return payload
 
+    def _revalidate_refactor_snapshot(self, expected_digest: str) -> None:
+        """Recheck the configured repository scope with the build lock held.
+
+        Planned-file preimages cannot detect a newly added importer, or an
+        edit to a formerly unrelated file. A cached index object therefore
+        is not a sufficient filesystem precondition for destructive apply.
+        This check is not an atomic snapshot against external writers; the
+        transaction must still verify every touched-file preimage.
+        """
+        try:
+            current_index = self._build()
+            current_digest = self._digest_index(current_index)
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            with self._lock:
+                self._index = None
+                self._digest = ""
+            raise VerifiedRefactorError(
+                "cannot verify current repository snapshot: " + type(exc).__name__
+            ) from None
+        if current_digest != expected_digest:
+            self._install(current_index)
+            raise VerifiedRefactorError(
+                "repository changed after refactor preview; create a new plan"
+            )
+
     def rename_apply(
         self,
         plan: Mapping[str, object],
@@ -1051,6 +1076,7 @@ class RepositoryIntelligenceService:
                     raise VerifiedRefactorError(
                         "repository index changed after refactor preview"
                     )
+            self._revalidate_refactor_snapshot(digest)
             try:
                 applied = apply_verified_rename_plan(
                     self.root,
@@ -1164,6 +1190,7 @@ class RepositoryIntelligenceService:
                     raise VerifiedRefactorError(
                         "repository index changed after refactor preview"
                     )
+            self._revalidate_refactor_snapshot(digest)
             try:
                 applied = apply_verified_file_move_plan(
                     self.root,

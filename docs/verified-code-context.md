@@ -429,6 +429,21 @@ targets. If a replacement fails, Entroly attempts to restore every completed
 file from a same-directory backup and reports the failed transaction. A
 successful service/MCP apply immediately rebuilds the repository snapshot.
 
+Service/MCP apply also rebuilds the configured repository scope **before** any
+write and compares its canonical digest with the preview snapshot. A newly
+added importer, a changed previously unrelated file, or a removed indexed file
+invalidates the old plan even when every planned edit preimage still matches.
+Entroly refreshes its cached index and requires a new preview. If the preflight
+cannot establish a current snapshot, apply fails without changing project
+files. This extra repository scan prioritizes freshness over write latency.
+
+The check covers only the configured index limits and ignore rules; external
+or unindexed consumers remain outside its scope. It is not a filesystem-wide
+atomic snapshot against concurrent external writers, a name-binding proof or a
+behavioral guarantee. Exact touched-file transaction/preimage checks remain
+necessary. Direct low-level apply helpers retain their caller-supplied index
+contract; the repository service adds the fresh-scope precondition.
+
 This is not equivalent to compiler-complete refactoring. Dynamic lookup,
 reflection, strings, generated code, macro expansion, non-call references, and
 external consumers may remain. The mandatory acknowledgement exists because a
