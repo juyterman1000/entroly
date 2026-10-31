@@ -464,6 +464,12 @@ def _compress_content_blocks(content: list, compress: Callable[[str], str]) -> l
     argument object the provider parses, and rewriting it would corrupt the
     call rather than shorten it. Identity fields such as ``tool_use_id`` and
     ``type`` are carried through unchanged for the same reason.
+
+    ``thinking`` and ``redacted_thinking`` blocks are untouched too. Anthropic
+    signs them and requires them back exactly as generated -- they cannot be
+    edited or partly dropped, and a rebuilt one is rejected with a 400 -- so
+    compressing their text turned a long-context request into a failed one.
+    They fall through to the pass-through branch below.
     """
     out: list = []
     for block in content:
@@ -474,10 +480,6 @@ def _compress_content_blocks(content: list, compress: Callable[[str], str]) -> l
         if kind == "text" and isinstance(block.get("text"), str):
             rewritten = dict(block)
             rewritten["text"] = compress(block["text"])
-            out.append(rewritten)
-        elif kind == "thinking" and isinstance(block.get("thinking"), str):
-            rewritten = dict(block)
-            rewritten["thinking"] = compress(block["thinking"])
             out.append(rewritten)
         elif kind == "tool_result":
             inner = block.get("content")
@@ -2155,6 +2157,18 @@ class PromptCompilerProxy:
                 self._usage_failures += 1
             logger.warning("Streaming usage accounting failed", exc_info=True)
 
+    def _conversation_context_window(self, body: dict, path: str) -> int:
+        """Window that conversation-compression utilisation is measured against.
+
+        The model this request goes to, not the configured default: a fixed
+        128K made a 1M-window model look 95% full at ~120K tokens and compress
+        history it had ample room for.
+        """
+        model = extract_model(body, path) or str(body.get("model", ""))
+        if model:
+            return context_window_for_model(model)
+        return int(getattr(self.config, "context_window", 128_000))
+
     async def handle_proxy(self, request: Request) -> StreamingResponse | JSONResponse:
         """Main proxy handler — intercept, optimize, forward.
 
@@ -2519,7 +2533,7 @@ class PromptCompilerProxy:
         ):
             body["messages"] = compress_conversation_messages(
                 body["messages"],
-                context_window=getattr(self.config, "context_window", 128_000),
+                context_window=self._conversation_context_window(body, path),
             )
 
         # Detect if this is a Responses API request (uses `input` instead of `messages`)

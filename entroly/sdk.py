@@ -963,6 +963,12 @@ def compress_messages(
     Preserves the most recent messages verbatim and progressively
     compresses older messages using content-aware compression.
 
+    When a final user turn supplies an evidence query, ``safe`` and
+    ``balanced`` rank full older tool-result bodies before cutting them;
+    age alone does not replace them with digests. This cannot recover code
+    absent from the supplied history or guarantee retention for future queries.
+    ``max`` and queryless requests retain the structural age-pruning pre-pass.
+
     Args:
         messages: List of message dicts with 'role' and 'content' keys.
             Only string ``content`` is counted and compressed; content-block
@@ -1050,25 +1056,27 @@ def compress_messages(
         _track_savings(source_tokens, source_tokens, "messages")
         return messages
 
-    # Pre-pass: collapse aged tool outputs to one-line digests. This is
-    # near-free and orthogonal to the budget-driven compression below
-    # (which operates on text length, not message semantics). Same path
-    # used by the proxy — keeps proxy and SDK behavior aligned.
-    try:
-        from .hardening import prune_aged_tool_outputs
-        messages, _ = prune_aged_tool_outputs(
-            messages, tail_window=preserve_last_n
-        )
-    except Exception:
-        pass  # Never block compress_messages on the pre-pass.
+    query = _infer_compression_query(messages)
+
+    # Age alone cannot tell us that an earlier file read is no longer needed.
+    # A one-line digest destroys its body before task-conditioned selection
+    # can rank it. Keep the full source available to safe/balanced selection;
+    # the budget-driven passes below still bound the delivered history.
+    # Retain the established fast pre-pass for max or queryless compression.
+    if profile == "max" or not _has_evidence_query(query):
+        try:
+            from .hardening import prune_aged_tool_outputs
+            messages, _ = prune_aged_tool_outputs(
+                messages, tail_window=preserve_last_n
+            )
+        except Exception:
+            pass  # Never block compress_messages on the pre-pass.
 
     # Estimate total tokens
     total_tokens = _message_tokens(messages)
     if total_tokens <= budget:
         _track_savings(source_tokens, total_tokens, "messages")
         return messages  # Already within budget
-
-    query = _infer_compression_query(messages)
 
     # Adaptive preserve_last_n: shrink if there aren't enough
     # older messages to compress
