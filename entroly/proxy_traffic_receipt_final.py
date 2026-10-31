@@ -214,9 +214,36 @@ def _net_saving_for(context: Any, built: Any, response: Response) -> Any:
         uncached_input_tokens=int(getattr(usage, "uncached_input_tokens", 0) or 0),
         cache_read_tokens=int(getattr(usage, "cache_read_tokens", 0) or 0),
         cache_write_tokens=int(getattr(usage, "cache_write_tokens", 0) or 0),
+        cache_write_1h_tokens=getattr(usage, "cache_write_1h_tokens", None),
         rates=rates,
         pricing_source=source,
     )
+
+
+def _governor_for(context: Any, net: Any) -> dict[str, Any] | None:
+    """Feed this receipt's estimate to the governor; return what it recorded.
+
+    ``applied`` is the decision the proxy acted on for this request (from its
+    own response header); the standing is the conversation after this receipt.
+    Replaying the receipts of a conversation in order reproduces every hold.
+    """
+    try:
+        from . import net_savings
+
+        headers = getattr(context, "outbound_headers", {}) or {}
+        applied = headers.get(net_savings.GOVERNOR_HEADER.lower())
+        conversation_id = str(getattr(context, "conversation_id", "") or "")
+        standing = net_savings.GOVERNOR.record(
+            conversation_id, int(net.micro_usd) if net is not None else None
+        ) or net_savings.GOVERNOR.standing(conversation_id)
+    except Exception:
+        return None
+    if applied is None and standing is None:
+        return None
+    result: dict[str, Any] = {"applied": applied}
+    if standing is not None:
+        result.update(standing.details())
+    return result
 
 
 def _install_value_lifecycle() -> None:
@@ -280,6 +307,16 @@ def _install_value_lifecycle() -> None:
                     details=net.details(),
                     state=state,
                 )
+            governor = _governor_for(context, net)
+            if governor is not None and governor.get("applied") == "hold":
+                _value_state.record_internal(
+                    "net_saving_governor_hold",
+                    tier=_value_state.ValueTier.ESTIMATED,
+                    role=_value_state.AccountingRole.PROTECTED,
+                    evidence_source=_value_state.EvidenceSource.PROVIDER_USAGE,
+                    details=governor,
+                    state=state,
+                )
             rows = _value_state.aggregate_contributions(state.contributions)
             headline = sum(
                 int(row.get("tokens", 0) or 0)
@@ -314,6 +351,7 @@ def _install_value_lifecycle() -> None:
                         if net is not None
                         else None
                     ),
+                    "net_saving_governor": governor,
                 },
             )
             object.__setattr__(
