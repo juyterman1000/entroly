@@ -5,6 +5,9 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
 
 ## Unreleased
 
+- Claude Opus 4.8, Opus 4.7 and Sonnet 4.6 now resolve to their verified
+  1M-token window, 128K output and published prices (Bedrock ids included);
+  they had fallen back to 128K, so session rescue compacted history early.
 - Claude Fable 5.1, Opus 5.5, Opus 5, Sonnet 5.5, Sonnet 5 and Haiku 5.5 now
   resolve to their verified 1M-token window and published prices, and Opus 4.6
   to its 1M window; they had fallen back to 128K, so session rescue compacted
