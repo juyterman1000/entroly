@@ -77,6 +77,13 @@ dependencies = [
     # governance computation, so Python, Node, and WASM cannot disagree about
     # what a policy says -- the same reason identity tokens are computed there.
     "pyyaml>=6.0,<7",
+    # Reads the operating-system trust store (macOS Keychain, Windows
+    # certificate store) for provider-bound TLS. Behind a TLS-inspecting
+    # corporate gateway the company root lives only there, so with certifi
+    # alone every upstream call failed CERTIFICATE_VERIFY_FAILED. Pure Python,
+    # no dependencies; entroly/tls_trust.py falls back to OpenSSL's system
+    # paths when it is absent.
+    "truststore>=0.10,<1",
 ]
 
 [project.urls]
