@@ -13,6 +13,10 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
   Injected repository context is budgeted against at most a 200K window
   (`ENTROLY_INJECTION_REFERENCE_WINDOW`, 0 disables), which lowers GPT-5.6
   and Gemini 3.6 injection ceilings from 256K to 60K.
+- Conversation compression (`ENTROLY_SESSION_RESCUE=0`) no longer rewrites
+  Anthropic `thinking`/`redacted_thinking` blocks, which the API rejects when
+  modified, and measures utilisation against the request model's window
+  instead of a fixed 128K.
 - Corrected optional WITNESS calibration's lower-tail rank and empty-evidence
   handling. Legacy or invalid stored profiles now return all-SUPPRESS thresholds
   rather than reactivating permissive learned values; recalibrate explicitly.
