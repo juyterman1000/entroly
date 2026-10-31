@@ -279,6 +279,112 @@ pub fn compress_request_body(
 #[cfg(feature = "proxy")]
 const MAX_BODY_BYTES: u64 = 64 * 1024 * 1024;
 
+/// Certificate roots for provider-bound TLS, matching `entroly/tls_trust.py`.
+///
+/// ureq's default is its compiled-in Mozilla list, which ignores the
+/// operating-system store. Behind a TLS-inspecting corporate gateway the
+/// company root lives only there, so every upstream call failed.
+///
+/// * `REQUESTS_CA_BUNDLE` / `SSL_CERT_FILE` set: trust exactly that PEM file
+///   (an explicit operator choice; an unreadable or empty file is an error,
+///   not a silent fallback).
+/// * `ENTROLY_TLS_TRUST=bundled`: the compiled-in Mozilla roots (previous
+///   behaviour, kept as the rollback switch).
+/// * Otherwise: the platform verifier, i.e. the operating-system store --
+///   unless this is a Linux-like host with no CA store at all (a minimal
+///   container), where the compiled-in roots are what kept HTTPS working.
+#[cfg(feature = "proxy")]
+fn upstream_root_certs(
+    env: &dyn Fn(&str) -> Option<String>,
+) -> Result<ureq::tls::RootCerts, String> {
+    upstream_root_certs_with(env, &|path| system_ca_location_present(path))
+}
+
+/// Whether `path` is a CA file, or a directory holding at least one entry.
+#[cfg(feature = "proxy")]
+fn system_ca_location_present(path: &std::path::Path) -> bool {
+    if path.is_file() {
+        return true;
+    }
+    std::fs::read_dir(path)
+        .map(|mut entries| entries.next().is_some())
+        .unwrap_or(false)
+}
+
+/// Whether the OS has a CA store the platform verifier can load.
+///
+/// macOS, iOS, Windows and Android always have one. Elsewhere the verifier
+/// reads files (`SSL_CERT_DIR` when set, else the distribution paths), and
+/// with none of them present it fails every handshake with "No CA certificates
+/// were loaded from the system".
+#[cfg(feature = "proxy")]
+fn os_ca_store_present(
+    env: &dyn Fn(&str) -> Option<String>,
+    present: &dyn Fn(&std::path::Path) -> bool,
+) -> bool {
+    if cfg!(any(
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "windows",
+        target_os = "android"
+    )) {
+        return true;
+    }
+    if let Some(dir) = env("SSL_CERT_DIR").filter(|v| !v.trim().is_empty()) {
+        return std::env::split_paths(&dir).any(|p| present(&p));
+    }
+    [
+        "/etc/ssl/certs/ca-certificates.crt",
+        "/etc/pki/tls/certs/ca-bundle.crt",
+        "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
+        "/etc/ssl/ca-bundle.pem",
+        "/etc/ssl/cert.pem",
+        "/etc/pki/tls/cacert.pem",
+        "/usr/local/share/certs/ca-root-nss.crt",
+        "/etc/ssl/certs",
+        "/etc/pki/tls/certs",
+    ]
+    .iter()
+    .any(|p| present(std::path::Path::new(p)))
+}
+
+#[cfg(feature = "proxy")]
+fn upstream_root_certs_with(
+    env: &dyn Fn(&str) -> Option<String>,
+    present: &dyn Fn(&std::path::Path) -> bool,
+) -> Result<ureq::tls::RootCerts, String> {
+    use ureq::tls::{parse_pem, PemItem, RootCerts};
+
+    let set = |name: &str| env(name).map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+    if let Some((name, path)) = ["REQUESTS_CA_BUNDLE", "SSL_CERT_FILE"]
+        .iter()
+        .find_map(|name| set(name).map(|path| (*name, path)))
+    {
+        let pem = std::fs::read(&path).map_err(|e| format!("{name}={path}: {e}"))?;
+        let mut certs = Vec::new();
+        for item in parse_pem(&pem) {
+            if let PemItem::Certificate(cert) = item.map_err(|e| format!("{name}={path}: {e}"))? {
+                certs.push(cert);
+            }
+        }
+        if certs.is_empty() {
+            return Err(format!("{name}={path}: no PEM certificates found"));
+        }
+        return Ok(RootCerts::new_with_certs(&certs));
+    }
+    if set("ENTROLY_TLS_TRUST").map(|v| v.to_ascii_lowercase()).as_deref() == Some("bundled") {
+        return Ok(RootCerts::WebPki);
+    }
+    if !os_ca_store_present(env, present) {
+        eprintln!(
+            "entroly-rs: no system CA store found; using the bundled Mozilla roots \
+             (install ca-certificates or set SSL_CERT_FILE to trust a corporate root)"
+        );
+        return Ok(RootCerts::WebPki);
+    }
+    Ok(RootCerts::PlatformVerifier)
+}
+
 /// Run the proxy: listen on `127.0.0.1:port`, compress provider message context
 /// under `total_budget`, and forward to `upstream`. Concurrent worker pool.
 #[cfg(feature = "proxy")]
@@ -312,10 +418,13 @@ pub fn run(
     // response with it. A proxy must forward the upstream's own 401/429/500
     // body verbatim, so status-as-error is turned off and every response the
     // upstream actually produced arrives as Ok.
+    let roots = upstream_root_certs(&|name| std::env::var(name).ok())
+        .map_err(std::io::Error::other)?;
     let agent = ureq::Agent::new_with_config(
         ureq::Agent::config_builder()
             .timeout_connect(Some(std::time::Duration::from_secs(10)))
             .http_status_as_error(false)
+            .tls_config(ureq::tls::TlsConfig::builder().root_certs(roots).build())
             .build(),
     );
     let mut handles = Vec::new();
@@ -600,5 +709,122 @@ mod tests {
         let (out, before, _) = compress_request_body("not json", 50, Provider::Anthropic, true);
         assert_eq!(before, 0);
         assert_eq!(out, "not json");
+    }
+}
+
+#[cfg(all(test, feature = "proxy"))]
+mod tls_root_tests {
+    use super::{os_ca_store_present, upstream_root_certs_with};
+    use std::collections::HashMap;
+    use ureq::tls::RootCerts;
+
+    const TEST_ROOT: &str = "-----BEGIN CERTIFICATE-----
+MIIBkDCCATWgAwIBAgIUAVPvBymV1HIF8g4EC1Aom6Z0ZGcwCgYIKoZIzj0EAwIw
+HDEaMBgGA1UEAwwRZW50cm9seS10ZXN0LXJvb3QwIBcNMjYxMDMwMjMzNzQxWhgP
+MjEyNjEwMDYyMzM3NDFaMBwxGjAYBgNVBAMMEWVudHJvbHktdGVzdC1yb290MFkw
+EwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEyNTMmw6O1GTanaIAGXYIP5gjAcAYyxaa
+/eMfAkGle+K4rmigzeA0e5InlkymwMY8I9yjpXxhJofkN4zbGYf0dqNTMFEwHQYD
+VR0OBBYEFE2nrAJqBrNOky+UcKhM0HObPYViMB8GA1UdIwQYMBaAFE2nrAJqBrNO
+ky+UcKhM0HObPYViMA8GA1UdEwEB/wQFMAMBAf8wCgYIKoZIzj0EAwIDSQAwRgIh
+AJAzVvexDTiSFJfmwSU546E/8H9sdeYLf+D2xc2E9+JgAiEAse97tmT/0UeY/aJP
+b6mPbLV+CZkq9wBNm53wNE+U6Xc=
+-----END CERTIFICATE-----
+";
+
+    fn roots(vars: &[(&str, &str)]) -> Result<RootCerts, String> {
+        let map: HashMap<String, String> = vars
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        upstream_root_certs_with(&|name| map.get(name).cloned(), &|_| true)
+    }
+
+    fn pem_file(name: &str, body: &str) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "entroly-tls-{}-{}.pem",
+            name,
+            std::process::id()
+        ));
+        std::fs::write(&path, body).unwrap();
+        path
+    }
+
+    #[test]
+    fn default_trusts_the_operating_system_store() {
+        assert!(matches!(roots(&[]), Ok(RootCerts::PlatformVerifier)));
+        // NODE_EXTRA_CA_CERTS names extra roots; it must not narrow trust.
+        assert!(matches!(
+            roots(&[("NODE_EXTRA_CA_CERTS", "/nonexistent.pem")]),
+            Ok(RootCerts::PlatformVerifier)
+        ));
+    }
+
+    #[cfg(not(any(
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "windows",
+        target_os = "android"
+    )))]
+    #[test]
+    fn host_without_a_ca_store_keeps_the_compiled_in_roots() {
+        // A minimal container: the platform verifier would fail every
+        // handshake, which the compiled-in roots used to avoid.
+        let got = upstream_root_certs_with(&|_| None, &|_| false);
+        assert!(matches!(got, Ok(RootCerts::WebPki)));
+    }
+
+    #[cfg(not(any(
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "windows",
+        target_os = "android"
+    )))]
+    #[test]
+    fn ssl_cert_dir_decides_whether_the_store_is_present() {
+        let dir = |v: &'static str| move |name: &str| (name == "SSL_CERT_DIR").then(|| v.to_string());
+        let only_corp = |p: &std::path::Path| p == std::path::Path::new("/corp/certs");
+        assert!(os_ca_store_present(&dir("/corp/certs"), &only_corp));
+        assert!(!os_ca_store_present(&dir("/missing"), &only_corp));
+    }
+
+    #[test]
+    fn bundled_mode_restores_the_compiled_in_roots() {
+        assert!(matches!(
+            roots(&[("ENTROLY_TLS_TRUST", "Bundled")]),
+            Ok(RootCerts::WebPki)
+        ));
+    }
+
+    #[test]
+    fn explicit_bundle_is_the_whole_trust_set() {
+        let path = pem_file("explicit", TEST_ROOT);
+        let got = roots(&[("SSL_CERT_FILE", path.to_str().unwrap())]);
+        std::fs::remove_file(&path).ok();
+        match got {
+            Ok(RootCerts::Specific(certs)) => assert_eq!(certs.len(), 1),
+            other => panic!("expected the named bundle, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn explicit_bundle_wins_over_bundled_mode() {
+        let path = pem_file("precedence", TEST_ROOT);
+        let got = roots(&[
+            ("REQUESTS_CA_BUNDLE", path.to_str().unwrap()),
+            ("ENTROLY_TLS_TRUST", "bundled"),
+        ]);
+        std::fs::remove_file(&path).ok();
+        assert!(matches!(got, Ok(RootCerts::Specific(_))));
+    }
+
+    #[test]
+    fn unusable_explicit_bundle_is_an_error_not_a_silent_fallback() {
+        let missing = roots(&[("SSL_CERT_FILE", "/nonexistent/entroly-ca.pem")]);
+        assert!(missing.unwrap_err().contains("SSL_CERT_FILE"));
+
+        let path = pem_file("empty", "not a certificate\n");
+        let empty = roots(&[("SSL_CERT_FILE", path.to_str().unwrap())]);
+        std::fs::remove_file(&path).ok();
+        assert!(empty.unwrap_err().contains("no PEM certificates"));
     }
 }
