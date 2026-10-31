@@ -1632,6 +1632,9 @@ class PromptCompilerProxy:
             "X-Entroly-Prefix-Interference-Tokens": str(
                 observation.estimated_optimizer_interference_tokens
             ),
+            "X-Entroly-Prefix-Interference-Bytes": str(
+                observation.optimizer_interference_bytes
+            ),
         }
 
     def _usage_dimensions(
