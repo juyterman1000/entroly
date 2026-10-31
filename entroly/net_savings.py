@@ -23,8 +23,9 @@ tokens were billed) and catalog rates for the executed model:
 
 * ``r_read``: cache-read rate, the cheapest an input token can be billed.
 * ``r_in``: uncached input rate.
-* ``r_write``: the most expensive cache-write rate (1-hour TTL), because the
-  usage payload does not say which TTL the client used.
+* ``r_write``: the cache-write rate of the write a charged token came from:
+  1-hour or 5-minute when the provider reports the split, otherwise the
+  1-hour rate, the dearest a write can be.
 
 Units are prompt blocks (system text, each tool, each message or content
 block) identified only by a truncated SHA-256 digest and a byte length. The
@@ -49,7 +50,8 @@ Net saving::
 The two charges are bounded by provider truth: only the forwarded tokens the
 provider did *not* serve from cache (uncached + cache-write) can have cost more
 than a cache read. That pool is assigned to the added tokens first, then to the
-broken prefix, and any added tokens beyond it are charged at ``r_read``. On a
+broken prefix, dearest tokens first (1-hour writes, 5-minute writes, uncached
+input at ``r_in``), and any added tokens beyond it are charged at ``r_read``. On a
 later turn, content Entroly already forwarded is mostly a cache read, and is
 charged as one, instead of turning every follow-up turn into a false loss.
 
@@ -100,7 +102,12 @@ class TierRates:
 
     input: Decimal
     cache_read: Decimal
-    cache_write_max: Decimal
+    cache_write_5m: Decimal
+    cache_write_1h: Decimal
+
+    @property
+    def cache_write_max(self) -> Decimal:
+        return max(self.cache_write_5m, self.cache_write_1h)
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,13 +143,17 @@ def _rate(raw: Mapping[str, Any], key: str) -> Decimal:
 
 
 def _tier(raw: Mapping[str, Any]) -> TierRates:
-    writes = [_rate(raw, "cache_write_per_million")]
-    if raw.get("cache_write_1h_per_million") is not None:
-        writes.append(_rate(raw, "cache_write_1h_per_million"))
+    five = _rate(raw, "cache_write_per_million")
+    one = (
+        _rate(raw, "cache_write_1h_per_million")
+        if raw.get("cache_write_1h_per_million") is not None
+        else five
+    )
     return TierRates(
         input=_rate(raw, "input_per_million"),
         cache_read=_rate(raw, "cache_read_per_million"),
-        cache_write_max=max(writes),
+        cache_write_5m=five,
+        cache_write_1h=one,
     )
 
 
@@ -370,6 +381,30 @@ def _micro(tokens: int, rate_per_million: Decimal) -> Decimal:
     return Decimal(tokens) * rate_per_million
 
 
+def _draw(
+    pool: list[list[Any]], tokens: int, read_rate: Decimal, *, minus_read: bool
+) -> tuple[Decimal, int]:
+    """Charge ``tokens`` against the dearest remaining pool tokens.
+
+    Returns the microdollar charge and how many tokens the pool could not
+    cover (those were cache reads). ``minus_read`` charges only the premium
+    over a cache read -- the cost of a prefix that should have been read.
+    """
+    cost = Decimal(0)
+    remaining = max(0, int(tokens))
+    for slot in pool:
+        if remaining <= 0:
+            break
+        take = min(remaining, int(slot[0]))
+        if take <= 0:
+            continue
+        rate = slot[1] - read_rate if minus_read else slot[1]
+        cost += _micro(take, max(Decimal(0), rate))
+        slot[0] = int(slot[0]) - take
+        remaining -= take
+    return cost, remaining
+
+
 def estimate_net_saving(
     *,
     raw: PromptInventory,
@@ -383,6 +418,7 @@ def estimate_net_saving(
     cache_write_tokens: int,
     rates: ModelRates,
     pricing_source: str,
+    cache_write_1h_tokens: int | None = None,
 ) -> NetSavingEstimate:
     """Price the difference between the client's prompt and the forwarded one."""
     if raw.units == outbound.units and interference_bytes <= 0:
@@ -392,11 +428,22 @@ def estimate_net_saving(
     reads = max(0, int(cache_read_tokens))
     writes = max(0, int(cache_write_tokens))
     total = uncached + reads + writes
-    # Forwarded tokens the provider did NOT serve from cache: the only ones that
-    # can have cost more than a cache read. Charges above the read rate are
-    # drawn from this pool, most expensive charge first.
-    pool = uncached + writes
     tier = rates.tier(total)
+    # Forwarded tokens the provider did NOT serve from cache are the only ones
+    # that can have cost more than a cache read. They form a priced pool, and
+    # Entroly's charges are drawn from its dearest tokens first: 1-hour writes,
+    # then 5-minute writes, then uncached input. Without the provider's TTL
+    # split, every write is assumed to be a 1-hour write.
+    one_hour = writes if cache_write_1h_tokens is None else min(writes, max(0, int(cache_write_1h_tokens)))
+    pool = sorted(
+        [
+            [one_hour, tier.cache_write_1h],
+            [writes - one_hour, tier.cache_write_5m],
+            [uncached, tier.input],
+        ],
+        key=lambda item: item[1],
+        reverse=True,
+    )
     # Smaller tokens-per-byte ratio for what Entroly removed, larger for what
     # it added or broke: any conversion error lands against Entroly.
     seen_tokens = _tokens(removed_seen_bytes, total, outbound.surface_bytes, round_up=False)
@@ -407,14 +454,14 @@ def estimate_net_saving(
     # Removed content priced at the base tier: the counterfactual's own (often
     # higher) long-context tier is not assumed. The actual request's tier sets
     # the cost of what Entroly added.
-    added_expensive = min(added_tokens, pool)
-    broken_expensive = min(broken_tokens, pool - added_expensive)
+    added_cost, added_left = _draw(pool, added_tokens, tier.cache_read, minus_read=False)
+    broken_cost, _ = _draw(pool, broken_tokens, tier.cache_read, minus_read=True)
     saving = (
         _micro(seen_tokens, rates.base.cache_read)
         + _micro(new_tokens, rates.base.input)
-        - _micro(added_expensive, tier.cache_write_max)
-        - _micro(added_tokens - added_expensive, tier.cache_read)
-        - _micro(broken_expensive, tier.cache_write_max - tier.cache_read)
+        - added_cost
+        - _micro(added_left, tier.cache_read)
+        - broken_cost
     )
     return NetSavingEstimate(
         micro_usd=int(saving.to_integral_value(rounding=ROUND_FLOOR)),
@@ -427,11 +474,188 @@ def estimate_net_saving(
     )
 
 
+# ── the governor ────────────────────────────────────────────────────────
+
+GOVERNOR_HEADER = "X-Entroly-Net-Saving-Governor"
+_GOVERNOR_CAPACITY = 4_096
+_DEFAULT_FLOOR_MICRO_USD = 20_000  # $0.02
+_DEFAULT_MIN_REQUESTS = 3
+#: A hold needs losses on at least this many requests. One request can be
+#: expensive by design -- a history rewrite is charged in full on the turn it
+#: happens and earns its saving back on later turns -- so a single loss, however
+#: large, is never enough on its own.
+_MIN_LOSING_REQUESTS = 2
+
+
+def _env_flag_off(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"0", "false", "no", "off"}
+
+
+def _env_int(name: str, default: int, *, minimum: int) -> int:
+    try:
+        return max(minimum, int(os.environ.get(name, "").strip()))
+    except ValueError:
+        return default
+
+
+def _env_floor_micro_usd() -> int:
+    raw = os.environ.get("ENTROLY_NET_SAVING_FLOOR_USD", "").strip()
+    if not raw:
+        return _DEFAULT_FLOOR_MICRO_USD
+    try:
+        value = Decimal(raw)
+    except ArithmeticError:
+        return _DEFAULT_FLOOR_MICRO_USD
+    if not value.is_finite() or value < 0:
+        return _DEFAULT_FLOOR_MICRO_USD
+    return int((value * 1_000_000).to_integral_value(rounding=ROUND_FLOOR))
+
+
+@dataclass(frozen=True)
+class GovernorPolicy:
+    enabled: bool = True
+    floor_micro_usd: int = _DEFAULT_FLOOR_MICRO_USD
+    min_requests: int = _DEFAULT_MIN_REQUESTS
+
+    @classmethod
+    def from_env(cls) -> GovernorPolicy:
+        return cls(
+            enabled=not _env_flag_off("ENTROLY_NET_SAVING_GOVERNOR"),
+            floor_micro_usd=_env_floor_micro_usd(),
+            min_requests=_env_int(
+                "ENTROLY_NET_SAVING_MIN_REQUESTS", _DEFAULT_MIN_REQUESTS, minimum=1
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class GovernorStanding:
+    """What the governor knows about one conversation, for receipts."""
+
+    action: str  # "hold" or "observe"
+    priced_requests: int
+    cumulative_micro_usd: int
+    floor_micro_usd: int
+    min_requests: int
+    losing_requests: int = 0
+
+    def details(self) -> dict[str, Any]:
+        return {
+            "action": self.action,
+            "priced_requests": self.priced_requests,
+            "losing_requests": self.losing_requests,
+            "cumulative_micro_usd": self.cumulative_micro_usd,
+            "floor_micro_usd": self.floor_micro_usd,
+            "min_requests": self.min_requests,
+        }
+
+
+class NetSavingGovernor:
+    """Stops Entroly's optional optimizations where they are not paying.
+
+    Per conversation it adds up the same signed, conservative net saving that
+    receipts report. Once a conversation has at least ``min_requests`` priced
+    requests and its cumulative saving is below ``-floor``, it *holds*: the
+    proxy forwards the client's own request instead of Entroly's optional
+    rewrites for the rest of that conversation. It also needs losses on at
+    least two of those requests: a history rewrite is charged in full on the
+    turn it happens and recovers on later turns, so one expensive request is
+    never enough. The hold latches, so the decision depends only on receipts
+    already sealed, never on one that is still in flight.
+
+    Requests without priced evidence add nothing, so conversations Entroly
+    cannot price are never held. Emergency session rescue and required
+    redaction are outside its reach: rescue is part of the baseline it
+    returns to, and redaction is applied after the choice.
+
+    State is a bounded LRU keyed by a digest of the conversation id, holding
+    two integers and a flag. No prompt content is kept.
+    """
+
+    def __init__(self, capacity: int = _GOVERNOR_CAPACITY) -> None:
+        self._capacity = max(1, int(capacity))
+        self._entries: OrderedDict[str, list[int]] = OrderedDict()
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def _key(conversation_id: str) -> str:
+        return hashlib.sha256(conversation_id.encode("utf-8")).hexdigest()[:_DIGEST_HEX]
+
+    def _standing(self, entry: list[int], policy: GovernorPolicy) -> GovernorStanding:
+        count, total, held, losses = entry
+        return GovernorStanding(
+            action="hold" if held else "observe",
+            priced_requests=count,
+            cumulative_micro_usd=total,
+            floor_micro_usd=policy.floor_micro_usd,
+            min_requests=policy.min_requests,
+            losing_requests=losses,
+        )
+
+    def record(
+        self,
+        conversation_id: str,
+        micro_usd: int | None,
+        *,
+        policy: GovernorPolicy | None = None,
+    ) -> GovernorStanding | None:
+        """Add one sealed receipt's estimate; ``None`` estimates add nothing."""
+        policy = policy or GovernorPolicy.from_env()
+        if not policy.enabled or not conversation_id or micro_usd is None:
+            return None
+        key = self._key(conversation_id)
+        with self._lock:
+            entry = self._entries.get(key)
+            if entry is None:
+                entry = [0, 0, 0, 0]
+                self._entries[key] = entry
+            self._entries.move_to_end(key)
+            entry[0] += 1
+            entry[1] += int(micro_usd)
+            entry[3] += 1 if micro_usd < 0 else 0
+            if (
+                entry[0] >= policy.min_requests
+                and entry[3] >= _MIN_LOSING_REQUESTS
+                and entry[1] < -policy.floor_micro_usd
+            ):
+                entry[2] = 1
+            while len(self._entries) > self._capacity:
+                self._entries.popitem(last=False)
+            return self._standing(entry, policy)
+
+    def standing(
+        self, conversation_id: str, *, policy: GovernorPolicy | None = None
+    ) -> GovernorStanding | None:
+        """The current decision for a conversation; ``None`` when disabled."""
+        policy = policy or GovernorPolicy.from_env()
+        if not policy.enabled or not conversation_id:
+            return None
+        with self._lock:
+            entry = self._entries.get(self._key(conversation_id))
+            if entry is None:
+                return GovernorStanding("observe", 0, 0, policy.floor_micro_usd,
+                                        policy.min_requests, 0)
+            self._entries.move_to_end(self._key(conversation_id))
+            return self._standing(entry, policy)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._entries.clear()
+
+
+GOVERNOR = NetSavingGovernor()
+
+
 __all__ = [
     "BASIS",
+    "GOVERNOR",
+    "GOVERNOR_HEADER",
+    "GovernorPolicy",
+    "GovernorStanding",
     "ModelRates",
     "NetSavingCatalog",
     "NetSavingEstimate",
+    "NetSavingGovernor",
     "PromptInventory",
     "SEEN",
     "SeenUnits",
