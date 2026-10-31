@@ -80,8 +80,11 @@ Traffic Receipts intentionally distinguish measurement from modeling:
   - removed content at the cache-read rate if any recent request carried it,
     otherwise at the uncached input rate;
   - added content (injected context, rewritten blocks) and any cached prefix
-    Entroly's edits broke at the 1-hour cache-write rate, but only up to the
-    tokens the provider did not serve from cache;
+    Entroly's edits broke, drawn from the tokens the provider did not serve
+    from cache, dearest first: reported 1-hour writes, then 5-minute writes,
+    then uncached input. When the provider reports no 5-minute/1-hour split,
+    every write is assumed to be a 1-hour write. Anything beyond that pool is
+    charged at the cache-read rate;
   - bytes converted to tokens with the provider's own count of the forwarded
     request, using the ratio that under-counts removals and over-counts
     additions.
@@ -92,6 +95,25 @@ Traffic Receipts intentionally distinguish measurement from modeling:
   bundled, dated Anthropic table (`entroly/data/anthropic_pricing.json`,
   disable with `ENTROLY_BUNDLED_PRICING=0`). The bundled table is used for
   this estimate only and never satisfies routing's explicit-catalog rule.
+- **Net-saving governor** (`net_saving_governor`) uses the same estimate to
+  restrain Entroly. Per conversation it adds up the conservative net saving of
+  sealed receipts; once a conversation has at least 3 priced requests, losses
+  on at least 2 of them, and is below -$0.02 in total, the proxy forwards the client's own request instead
+  of Entroly's optional rewrites for the rest of that conversation. Emergency
+  session rescue and required redaction still apply. Each response carries
+  `X-Entroly-Net-Saving-Governor: hold|observe`; the receipt records the
+  decision applied (`applied`) and the standing after it (priced and losing
+  requests, cumulative microdollars, floor), and a held request carries a
+  `net_saving_governor_hold` value row (`protected`, never headline).
+  Replaying a conversation's receipts in order reproduces every hold.
+  Requests without a priced estimate do not count, the hold never crosses
+  conversations, and state is a bounded table of conversation-id digests and
+  integers. Tune with `ENTROLY_NET_SAVING_MIN_REQUESTS` and
+  `ENTROLY_NET_SAVING_FLOOR_USD`; `ENTROLY_NET_SAVING_GOVERNOR=0` turns it off.
+  One expensive request never holds a conversation on its own: a history
+  rewrite is charged in full on its turn and earns its saving back later. The
+  governor covers Entroly's changes to the prompt; opt-in model routing
+  (RAVS) is governed by its own confidence gate.
 - **Verification** comes from WITNESS/EICV response evidence when reported.
 - **Receipt integrity** is a SHA-256 canonical-payload consistency check. It is
   not presented as a cryptographic signature.

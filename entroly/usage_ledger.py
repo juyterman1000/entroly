@@ -26,6 +26,10 @@ class TokenUsage:
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
     output_tokens: int = 0
+    # How many of ``cache_write_tokens`` the provider reported as 1-hour TTL
+    # writes, which bill above 5-minute writes. ``None`` when the provider did
+    # not say; accounting then assumes the dearer TTL for every write.
+    cache_write_1h_tokens: int | None = None
 
     def __post_init__(self) -> None:
         if any(
@@ -38,6 +42,10 @@ class TokenUsage:
             )
         ):
             raise ValueError("token usage cannot be negative")
+        if self.cache_write_1h_tokens is not None and not (
+            0 <= self.cache_write_1h_tokens <= self.cache_write_tokens
+        ):
+            raise ValueError("1-hour cache writes must lie within cache writes")
 
     @property
     def total_input_tokens(self) -> int:
@@ -227,11 +235,19 @@ def parse_provider_usage(provider: str, payload: Mapping[str, Any]) -> TokenUsag
         )
 
     if provider_key in {"anthropic", "claude"}:
+        writes = _int(raw.get("cache_creation_input_tokens"))
+        split = raw.get("cache_creation")
+        one_hour: int | None = None
+        if isinstance(split, Mapping) and (
+            "ephemeral_1h_input_tokens" in split or "ephemeral_5m_input_tokens" in split
+        ):
+            one_hour = min(writes, _int(split.get("ephemeral_1h_input_tokens")))
         return TokenUsage(
             uncached_input_tokens=_int(raw.get("input_tokens")),
             cache_read_tokens=_int(raw.get("cache_read_input_tokens")),
-            cache_write_tokens=_int(raw.get("cache_creation_input_tokens")),
+            cache_write_tokens=writes,
             output_tokens=_int(raw.get("output_tokens")),
+            cache_write_1h_tokens=one_hour,
         )
 
     if provider_key in {"google", "gemini", "vertex"}:
@@ -251,6 +267,18 @@ def parse_provider_usage(provider: str, payload: Mapping[str, Any]) -> TokenUsag
         )
 
     raise ValueError(f"unsupported provider usage format: {provider!r}")
+
+
+def _merged_one_hour(aggregate: TokenUsage, usage: TokenUsage) -> int | None:
+    known = [
+        value
+        for value in (aggregate.cache_write_1h_tokens, usage.cache_write_1h_tokens)
+        if value is not None
+    ]
+    if not known:
+        return None
+    writes = max(aggregate.cache_write_tokens, usage.cache_write_tokens)
+    return min(writes, max(known))
 
 
 def parse_stream_usage(
@@ -317,6 +345,7 @@ def parse_stream_usage(
                     aggregate.output_tokens,
                     usage.output_tokens,
                 ),
+                cache_write_1h_tokens=_merged_one_hour(aggregate, usage),
             )
             found = True
 
