@@ -1074,6 +1074,84 @@ def _infer_language(source: str) -> str:
 # Short tool results aren't worth compressing.
 _TOOL_COMPRESS_MIN_CHARS = 500
 
+# Shell output at or below this size reaches the agent exactly as the command
+# printed it. A short `ls -l` or `git status` is read for exact sizes,
+# timestamps, modes and paths; rewriting it saves a few hundred tokens and
+# changes the facts the agent asked for (a 30-file `ls -l` became sizes
+# rounded to "1KB" with modes and times dropped). Override with
+# ENTROLY_SHELL_VERBATIM_CHARS (0 restores the general floor).
+_SHELL_VERBATIM_CHARS = 4_000
+
+# Tool names that run a shell command, across the agents Entroly fronts.
+# ENTROLY_SHELL_TOOLS adds names (comma-separated).
+_SHELL_TOOL_NAMES = frozenset({
+    "bash", "shell", "sh", "zsh", "terminal", "exec", "exec_command",
+    "execute_command", "run_command", "run_shell_command", "run_terminal_cmd",
+    "local_shell", "shell_command", "container.exec",
+})
+
+
+def _shell_verbatim_chars() -> int:
+    raw = _os.environ.get("ENTROLY_SHELL_VERBATIM_CHARS", "").strip()
+    if not raw:
+        return _SHELL_VERBATIM_CHARS
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return _SHELL_VERBATIM_CHARS
+
+
+def _shell_tool_names() -> frozenset[str]:
+    extra = _os.environ.get("ENTROLY_SHELL_TOOLS", "")
+    return _SHELL_TOOL_NAMES | {
+        name.strip().lower() for name in extra.split(",") if name.strip()
+    }
+
+
+def _is_short_shell_output(text: str, tool_names: set[str]) -> bool:
+    return (
+        bool(tool_names & _shell_tool_names())
+        and len(text) <= _shell_verbatim_chars()
+    )
+
+
+def _tool_call_names(messages: list[dict]) -> dict[str, str]:
+    """Map each tool call id to the tool's name.
+
+    A provider tool result names only the call it answers (Anthropic
+    ``tool_use_id``, OpenAI ``tool_call_id``); the tool's name sits on the
+    assistant message that made the call. Without this map, name-based rules
+    (excluded tools, the shell floor) never matched an Anthropic result.
+    """
+    names: dict[str, str] = {}
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        content = msg.get("content")
+        if isinstance(content, list):
+            for block in content:
+                if (
+                    isinstance(block, dict)
+                    and block.get("type") == "tool_use"
+                    and isinstance(block.get("id"), str)
+                    and isinstance(block.get("name"), str)
+                ):
+                    names[block["id"].lower()] = block["name"].lower()
+        calls = msg.get("tool_calls")
+        for call in calls if isinstance(calls, list) else []:
+            if not isinstance(call, dict) or not isinstance(call.get("id"), str):
+                continue
+            fn = call.get("function")
+            if isinstance(fn, dict) and isinstance(fn.get("name"), str):
+                names[call["id"].lower()] = fn["name"].lower()
+    return names
+
+
+def _with_call_names(candidates: set[str], call_names: dict[str, str] | None) -> set[str]:
+    if not call_names:
+        return candidates
+    return candidates | {call_names[c] for c in candidates if c in call_names}
+
 
 def _partial_view_notice(best: Any, reps: list[Any]) -> str:
     """One deterministic line saying a tool result was cut and how to get it.
@@ -1638,6 +1716,8 @@ def _compress_tool_text(
     """Compress one tool-output string and return approximate tokens saved."""
     if len(text) < _TOOL_COMPRESS_MIN_CHARS:
         return text, 0
+    if tool_names and _is_short_shell_output(text, tool_names):
+        return text, 0
     if _should_preserve_tool_text(
         text,
         policy=policy,
@@ -1660,11 +1740,12 @@ def _compress_tool_result_block(
     parent_message: dict[str, Any],
     policy: str,
     excluded_tools: set[str],
+    call_names: dict[str, str] | None = None,
 ) -> tuple[dict[str, Any], int]:
     """Compress an Anthropic-style tool_result content block."""
     inner = block.get("content", "")
     total_saved = 0
-    tool_names = _tool_identity_candidates(parent_message, block)
+    tool_names = _with_call_names(_tool_identity_candidates(parent_message, block), call_names)
 
     if isinstance(inner, str):
         compressed, saved = _compress_tool_text(
@@ -1724,6 +1805,7 @@ def _compress_tool_blocks(
     parent_message: dict[str, Any],
     policy: str,
     excluded_tools: set[str],
+    call_names: dict[str, str] | None = None,
 ) -> tuple[list[Any], int]:
     """Compress provider-native tool_result blocks without changing other blocks."""
     total_saved = 0
@@ -1737,6 +1819,7 @@ def _compress_tool_blocks(
                 parent_message=parent_message,
                 policy=policy,
                 excluded_tools=excluded_tools,
+                call_names=call_names,
             )
             total_saved += saved
             changed = changed or saved > 0
@@ -1774,10 +1857,11 @@ def compress_tool_messages(
         else {str(name).lower() for name in (excluded_tools or set())}
     )
 
+    call_names = _tool_call_names(messages)
     for msg in messages:
         role = msg.get("role", "")
         content = msg.get("content", "")
-        tool_names = _tool_identity_candidates(msg)
+        tool_names = _with_call_names(_tool_identity_candidates(msg), call_names)
 
         # Only compress tool results and function responses
         is_tool = role in ("tool", "function")
@@ -1797,6 +1881,7 @@ def compress_tool_messages(
                 parent_message=msg,
                 policy=policy,
                 excluded_tools=excluded,
+                call_names=call_names,
             )
             if tokens_saved > 0:
                 total_saved += tokens_saved
