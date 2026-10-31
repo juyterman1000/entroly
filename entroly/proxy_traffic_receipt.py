@@ -156,6 +156,16 @@ def _estimate_context_tokens(
             return 0
 
 
+def _prompt_inventory(body: Mapping[str, Any]) -> Any:
+    """Content-blind block inventory, or None when the body cannot be read."""
+    try:
+        from .net_savings import prompt_inventory
+
+        return prompt_inventory(body)
+    except Exception:
+        return None
+
+
 def _response_json(response: Response) -> Mapping[str, Any] | None:
     payload = getattr(response, "body", None)
     if not isinstance(payload, (bytes, bytearray)) or not payload:
@@ -426,6 +436,10 @@ class _TrafficRequestContext:
     streaming: bool = False
     completed: bool = False
     lock: threading.RLock = field(default_factory=threading.RLock)
+    # Block digests and byte counts only (net_savings.PromptInventory); never
+    # prompt content. Used to price what Entroly removed and added.
+    raw_inventory: Any = None
+    outbound_inventory: Any = None
 
 
 def _ledger_for_proxy(proxy: Any) -> TrafficReceiptLedger:
@@ -503,6 +517,7 @@ def _capture_outbound_state(
         path=context.path,
     )
     context.outbound_headers.update(_lower_headers(extra_headers))
+    context.outbound_inventory = _prompt_inventory(body)
     context.streaming = streaming
     (
         context.evidence_retained_pct,
@@ -712,6 +727,7 @@ async def _run_traffic_handle_proxy(
         conversation_id=conversation_id,
         cache_hits_before=cache_hits_before,
         cache_misses_before=cache_misses_before,
+        raw_inventory=_prompt_inventory(body) if body else None,
     )
     _ledger_for_proxy(proxy).register_request()
     token = _CURRENT_CONTEXT.set(context)

@@ -997,6 +997,9 @@ def _bounded_exact_excerpt(
     structured = _query_local_json_object(content, query, budget)
     if structured is not None:
         return structured, True
+    definition = _query_local_python_definition(content, query, budget)
+    if definition is not None:
+        return definition, True
     complete_line = _query_local_complete_line(content, query, budget)
     if complete_line is not None:
         return complete_line, True
@@ -1016,6 +1019,61 @@ _EXCERPT_TERM_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_-]{2,}")
 _EXACT_EXCERPT_GAP = (
     "\n\n[... exact excerpt gap; retrieve full source by handle ...]\n\n"
 )
+_MAX_PYTHON_EXCERPT_SOURCE_CHARS = 262_144
+
+
+def _query_local_python_definition(
+    content: str,
+    query: str,
+    max_tokens: int,
+) -> str | None:
+    """Keep one unambiguous named Python definition whole when it fits.
+
+    This is an exact historical source block, not a dependency closure or a
+    current-code/answer-sufficiency claim. Parse only bounded valid Python;
+    ambiguous names, oversized units and unsupported syntax use the existing
+    excerpt fallbacks. Source is never executed.
+    """
+    if len(content) > _MAX_PYTHON_EXCERPT_SOURCE_CHARS:
+        return None
+    if not re.search(
+        r"(?:\A|[\r\n])[ \t\f]*(?:async[ \t]+def|def|class)[ \t]+", content
+    ):
+        return None
+    if _count_o200k_tokens(content) <= max_tokens:
+        return None
+    terms = {term.casefold() for term in _EXCERPT_TERM_RE.findall(query)}
+    if not terms:
+        return None
+
+    import ast
+
+    try:
+        tree = ast.parse(content)
+    except (SyntaxError, ValueError, UnicodeError, RecursionError):
+        return None
+    matches = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+        and node.name.casefold() in terms
+    ]
+    if len(matches) != 1:
+        return None
+    node = matches[0]
+    first_line = min([node.lineno, *(item.lineno for item in node.decorator_list)])
+    # AST line numbers follow Python's universal newlines, not str.splitlines:
+    # U+2028 inside a string literal must not shift the selected source block.
+    starts = [0, *(match.end() for match in re.finditer(r"\r\n|\r|\n", content))]
+    start = starts[first_line - 1]
+    end = starts[node.end_lineno] if node.end_lineno < len(starts) else len(content)
+    exact = content[start:end]
+    rendered = (
+        (_EXACT_EXCERPT_GAP if start else "")
+        + exact
+        + (_EXACT_EXCERPT_GAP if end < len(content) else "")
+    )
+    return rendered if _count_o200k_tokens(rendered) <= max_tokens else None
 
 
 def _query_local_complete_line(
