@@ -3346,7 +3346,11 @@ class PromptCompilerProxy:
                 if acb_prediction.get("fallback") is None:
                     # Model is confident — use its learned budget
                     ratio = acb_prediction["budget_used"]
-                    token_budget = max(200, int(ctx_window * ratio))
+                    from .proxy_transform import injection_budget_window
+
+                    token_budget = max(
+                        200, int(injection_budget_window(ctx_window) * ratio)
+                    )
                     logger.debug(
                         "ACB: budget_ratio=%.3f → %d tokens (se=%.4f, n=%d)",
                         ratio, token_budget,

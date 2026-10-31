@@ -160,3 +160,57 @@ def test_js_tracker_normalises_provider_prefixes() -> None:
         timeout=30,
     ).stdout
     assert json.loads(out) == pytest.approx([0.1, 4.0, 15.0])
+
+
+# ── injected context is budgeted against at most a 200K window ──────────
+
+
+@pytest.fixture
+def _proxy_config(monkeypatch):
+    from entroly.proxy_config import ProxyConfig
+
+    monkeypatch.delenv("ENTROLY_INJECTION_REFERENCE_WINDOW", raising=False)
+    return ProxyConfig()
+
+
+@pytest.mark.parametrize(
+    "model", ["claude-opus-5-5", "claude-haiku-5-5", "claude-opus-4-6", "gpt-5.6-sol"]
+)
+def test_1m_window_models_get_the_200k_injection_budget(model, _proxy_config) -> None:
+    """A real 1M window must not quintuple the repo context sent per request."""
+    from entroly.proxy_transform import compute_dynamic_budget, compute_token_budget
+
+    reference = "claude-sonnet-4-5-20250929"  # a 200K-window model
+    for vagueness, fragments in ((0.2, 100), (0.5, 1_000), (0.9, 5_000)):
+        assert compute_dynamic_budget(
+            model, _proxy_config, vagueness=vagueness, total_fragments=fragments
+        ) == compute_dynamic_budget(
+            reference, _proxy_config, vagueness=vagueness, total_fragments=fragments
+        )
+    assert compute_token_budget(model, _proxy_config) == compute_token_budget(
+        reference, _proxy_config
+    )
+    # The cap is on the injection budget only; capacity checks see 1M.
+    assert context_window_for_model(model) > 200_000
+
+
+def test_smaller_windows_are_not_affected_by_the_cap(_proxy_config) -> None:
+    from entroly.proxy_transform import compute_token_budget
+
+    assert compute_token_budget("gpt-4o", _proxy_config) == int(
+        context_window_for_model("gpt-4o") * _proxy_config.context_fraction
+    )
+
+
+def test_injection_reference_window_is_configurable(monkeypatch, _proxy_config) -> None:
+    from entroly.proxy_transform import compute_token_budget, injection_budget_window
+
+    monkeypatch.setenv("ENTROLY_INJECTION_REFERENCE_WINDOW", "0")
+    assert injection_budget_window(1_000_000) == 1_000_000
+    assert compute_token_budget("claude-opus-5-5", _proxy_config) == int(
+        1_000_000 * _proxy_config.context_fraction
+    )
+    monkeypatch.setenv("ENTROLY_INJECTION_REFERENCE_WINDOW", "500000")
+    assert injection_budget_window(1_000_000) == 500_000
+    monkeypatch.setenv("ENTROLY_INJECTION_REFERENCE_WINDOW", "not-a-number")
+    assert injection_budget_window(1_000_000) == 200_000
