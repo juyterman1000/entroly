@@ -5,6 +5,10 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
 
 ## Unreleased
 
+- A tool result cut to a partial codec view (for example a code skeleton)
+  now opens with a one-line notice naming the view and how to get the exact
+  content; bodies were previously dropped with no marker on the
+  `ENTROLY_SESSION_RESCUE=0` and OpenClaw paths.
 - Provider TLS now trusts the operating-system certificate store plus the
   bundled roots, in the Python proxy and `entroly-rs`, so Entroly works behind
   TLS-inspecting corporate gateways. `NODE_EXTRA_CA_CERTS` adds roots instead
