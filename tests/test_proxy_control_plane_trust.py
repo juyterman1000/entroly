@@ -25,9 +25,10 @@ def _request(
     body: bytes = b"",
     headers: dict[str, str] | None = None,
     client_host: str = "127.0.0.1",
+    host: str = "127.0.0.1:9377",
     app=None,
 ) -> Request:
-    header_pairs = [(b"host", b"127.0.0.1:9377")]
+    header_pairs = [(b"host", host.encode("latin-1"))]
     for name, value in (headers or {}).items():
         header_pairs.append((name.lower().encode("ascii"), value.encode("latin-1")))
     if body and not any(name.lower() == "content-length" for name in (headers or {})):
@@ -76,6 +77,39 @@ def test_direct_loopback_same_origin_sidecar_request_is_allowed(monkeypatch) -> 
     assert json.loads(response.body) == {"ok": True}
     assert response.headers["cache-control"].startswith("no-store")
     assert response.headers["x-content-type-options"] == "nosniff"
+
+
+@pytest.mark.parametrize(
+    "host", ["rebind.attacker.example:9377", "attacker.example", "192.168.1.20:9377"]
+)
+def test_dns_rebound_page_cannot_read_sidecar(monkeypatch, host) -> None:
+    """A page whose domain was re-pointed at 127.0.0.1 is same-origin to itself.
+
+    Its fetch() to /retrieve or /context arrives from loopback with no Origin
+    and, under `Referrer-Policy: no-referrer`, no Referer. Only the Host header
+    still names the attacker's domain, so it must decide.
+    """
+    monkeypatch.delenv("ENTROLY_SIDECAR_TOKEN", raising=False)
+
+    async def handler(_request: Request):
+        raise AssertionError("rebound request reached sidecar handler")
+
+    response = asyncio.run(_secure_sidecar_guard(handler)(_request(path="/retrieve", host=host)))
+
+    assert response.status_code == 403
+    assert json.loads(response.body)["error"] == "sidecar_forbidden"
+
+
+@pytest.mark.parametrize("host", ["localhost:9377", "127.0.0.1:9377", "[::1]:9377", "localhost"])
+def test_loopback_host_names_still_reach_sidecar(monkeypatch, host) -> None:
+    monkeypatch.delenv("ENTROLY_SIDECAR_TOKEN", raising=False)
+
+    async def handler(_request: Request):
+        return JSONResponse({"ok": True})
+
+    response = asyncio.run(_secure_sidecar_guard(handler)(_request(host=host)))
+
+    assert response.status_code == 200
 
 
 def test_reverse_proxy_headers_are_not_identity(monkeypatch) -> None:

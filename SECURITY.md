@@ -88,6 +88,20 @@ the normal dependency-update flow and do not reach installed users.
 - Fail-open optimization means an internal optimization error should preserve
   the original request. Security, authorization, path-safety, and explicit
   compliance gates remain fail-closed.
+- Loopback is not a trust boundary for browsers. Any web page can send
+  requests to `localhost`, and a DNS-rebinding page can make its own domain
+  resolve to `127.0.0.1`. The proxy's sidecar endpoints (`/retrieve`,
+  `/context`, `/witness`, `/explain` and the others) therefore accept only a
+  direct loopback request whose `Host` header names this machine and whose
+  `Origin`/`Referer`, when present, match it, or a request carrying
+  `ENTROLY_SIDECAR_TOKEN`. The dashboard applies the same Host and Origin checks
+  plus a per-process capability token for state changes.
+- Workspace and repository content is attacker-controlled input wherever it is
+  rendered: file names, file text, model output and tool output are escaped
+  before they reach HTML, and the VS Code views run under a nonce-only
+  Content-Security-Policy. A webview's messages are treated as requests, never
+  as data: the Copy button copies the text the extension rendered, not text the
+  page sends back.
 
 ## Hallucination-detection disclosure
 
