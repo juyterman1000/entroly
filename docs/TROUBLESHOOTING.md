@@ -72,6 +72,23 @@ entroly status
 - If an optimized request is rejected, capture whether exact passthrough was
   attempted and whether the original provider status was preserved.
 
+### `CERTIFICATE_VERIFY_FAILED` or `UnknownIssuer` behind a corporate network
+
+TLS-inspecting gateways (Zscaler, Netskope, Palo Alto, Cisco Secure Access)
+re-sign traffic with a company root that IT installs in the operating-system
+trust store. Provider-bound connections trust, in order:
+
+1. `REQUESTS_CA_BUNDLE` or `SSL_CERT_FILE`, when set: exactly that file.
+2. Otherwise the operating-system store (macOS Keychain, Windows certificate
+   store, the distribution CA directory on Linux) plus the bundled Mozilla
+   roots. The Python proxy and the `entroly-rs` binary use the same order.
+3. `NODE_EXTRA_CA_CERTS` adds roots to (2) in the Python proxy; it never
+   replaces them.
+
+If the company root is installed in the OS store, no configuration is needed.
+Otherwise point `SSL_CERT_FILE` at a bundle that contains it. To restore the
+previous bundled-roots-only behaviour, set `ENTROLY_TLS_TRUST=bundled`.
+
 ## No savings or more tokens than expected
 
 No savings can be correct for small, unique, or already compact input.
