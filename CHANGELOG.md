@@ -11,6 +11,21 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
   and timestamps dropped. Tool results are now matched to their tool's name
   through the call id, so `ENTROLY_TOOL_RESULT_EXCLUDE` also protects
   Anthropic tool results, which it never matched before.
+- Security: closed four paths by which untrusted content or another website
+  could act through Entroly's local surfaces.
+  - The proxy's sidecar endpoints (`/retrieve`, `/context` and others) now
+    require a loopback `Host` header. A DNS-rebinding page could otherwise read
+    recovered context, because its same-origin GET carried no `Origin` or
+    `Referer` for the existing checks to reject.
+  - The VS Code compression view escaped nothing it rendered: a file containing
+    markup ran script in the webview, which could put any text on the
+    clipboard. It now escapes the file name and text, runs under a nonce-only
+    CSP, and copies only the text it rendered.
+  - The public playground wrote GitHub file names into the page as HTML; a
+    repository file named `<img src=x onerror=...>.py` ran script there.
+  - The streaming example accepted WebSockets from any site, listened on every
+    interface, and rendered model output as HTML. It now checks Origin and Host,
+    binds to 127.0.0.1, and escapes output.
 - Claude Opus 4.8, Opus 4.7 and Sonnet 4.6 now resolve to their verified
   1M-token window, 128K output and published prices (Bedrock ids included);
   they had fallen back to 128K, so session rescue compacted history early.

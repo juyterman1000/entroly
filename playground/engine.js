@@ -1,3 +1,13 @@
+// File names come from GitHub repositories and from the user, and are written
+// into the page with innerHTML. Git allows `<`, `>` and quotes in a file name,
+// so `<img src=x onerror=...>.py` in a repository someone is asked to load would
+// otherwise run script on this origin.
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
 // Entroly Browser Playground Engine
 // Client-side 0-1 Knapsack context selection, Merkle receipt generation, and comparative benchmarks.
 
@@ -322,7 +332,7 @@ async function runOptimization() {
 
     fragmentElements.push(`
       <div class="fragment-item">
-        <span class="fragment-path">${f.file}:${f.startLine}-${f.endLine}</span>
+        <span class="fragment-path">${escapeHtml(f.file)}:${f.startLine}-${f.endLine}</span>
         <span class="fragment-hash" title="SHA-256 Digest">${handle} (${f.tokens} tok)</span>
       </div>
     `);
@@ -356,10 +366,10 @@ async function runOptimization() {
     return `
       <div class="omission-item">
         <div class="omission-header">
-          <span>${om.file} (${om.startLine}:${om.endLine})</span>
+          <span>${escapeHtml(om.file)} (${om.startLine}:${om.endLine})</span>
           <span class="omission-density">Cost: ${om.tokens} tokens</span>
         </div>
-        <div class="omission-reason">${reason}</div>
+        <div class="omission-reason">${escapeHtml(reason)}</div>
         <div class="omission-proof">Proof: utility_density=${om.density.toFixed(4)} | recovery_handle=rec_${om.id.replace(/[^a-zA-Z0-9]/g, '_')}</div>
       </div>
     `;
@@ -520,7 +530,7 @@ function renderCustomFileTabs() {
   const container = document.getElementById('customFileTabs');
   container.innerHTML = customFiles.map((f, idx) => `
     <div class="file-tab-item ${idx === activeCustomIndex ? 'active' : ''}" onclick="switchCustomFile(${idx})">
-      <span>${f.path}</span>
+      <span>${escapeHtml(f.path)}</span>
       ${customFiles.length > 1 ? `<span class="file-tab-close" onclick="deleteCustomFile(event, ${idx})">×</span>` : ''}
     </div>
   `).join('');
