@@ -23,8 +23,9 @@ tokens were billed) and catalog rates for the executed model:
 
 * ``r_read``: cache-read rate, the cheapest an input token can be billed.
 * ``r_in``: uncached input rate.
-* ``r_write``: the most expensive cache-write rate (1-hour TTL), because the
-  usage payload does not say which TTL the client used.
+* ``r_write``: the cache-write rate of the write a charged token came from:
+  1-hour or 5-minute when the provider reports the split, otherwise the
+  1-hour rate, the dearest a write can be.
 
 Units are prompt blocks (system text, each tool, each message or content
 block) identified only by a truncated SHA-256 digest and a byte length. The
@@ -49,7 +50,8 @@ Net saving::
 The two charges are bounded by provider truth: only the forwarded tokens the
 provider did *not* serve from cache (uncached + cache-write) can have cost more
 than a cache read. That pool is assigned to the added tokens first, then to the
-broken prefix, and any added tokens beyond it are charged at ``r_read``. On a
+broken prefix, dearest tokens first (1-hour writes, 5-minute writes, uncached
+input at ``r_in``), and any added tokens beyond it are charged at ``r_read``. On a
 later turn, content Entroly already forwarded is mostly a cache read, and is
 charged as one, instead of turning every follow-up turn into a false loss.
 
@@ -472,11 +474,173 @@ def estimate_net_saving(
     )
 
 
+# ── the governor ────────────────────────────────────────────────────────
+
+GOVERNOR_HEADER = "X-Entroly-Net-Saving-Governor"
+_GOVERNOR_CAPACITY = 4_096
+_DEFAULT_FLOOR_MICRO_USD = 20_000  # $0.02
+_DEFAULT_MIN_REQUESTS = 3
+
+
+def _env_flag_off(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"0", "false", "no", "off"}
+
+
+def _env_int(name: str, default: int, *, minimum: int) -> int:
+    try:
+        return max(minimum, int(os.environ.get(name, "").strip()))
+    except ValueError:
+        return default
+
+
+def _env_floor_micro_usd() -> int:
+    raw = os.environ.get("ENTROLY_NET_SAVING_FLOOR_USD", "").strip()
+    if not raw:
+        return _DEFAULT_FLOOR_MICRO_USD
+    try:
+        value = Decimal(raw)
+    except ArithmeticError:
+        return _DEFAULT_FLOOR_MICRO_USD
+    if not value.is_finite() or value < 0:
+        return _DEFAULT_FLOOR_MICRO_USD
+    return int((value * 1_000_000).to_integral_value(rounding=ROUND_FLOOR))
+
+
+@dataclass(frozen=True)
+class GovernorPolicy:
+    enabled: bool = True
+    floor_micro_usd: int = _DEFAULT_FLOOR_MICRO_USD
+    min_requests: int = _DEFAULT_MIN_REQUESTS
+
+    @classmethod
+    def from_env(cls) -> GovernorPolicy:
+        return cls(
+            enabled=not _env_flag_off("ENTROLY_NET_SAVING_GOVERNOR"),
+            floor_micro_usd=_env_floor_micro_usd(),
+            min_requests=_env_int(
+                "ENTROLY_NET_SAVING_MIN_REQUESTS", _DEFAULT_MIN_REQUESTS, minimum=1
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class GovernorStanding:
+    """What the governor knows about one conversation, for receipts."""
+
+    action: str  # "hold" or "observe"
+    priced_requests: int
+    cumulative_micro_usd: int
+    floor_micro_usd: int
+    min_requests: int
+
+    def details(self) -> dict[str, Any]:
+        return {
+            "action": self.action,
+            "priced_requests": self.priced_requests,
+            "cumulative_micro_usd": self.cumulative_micro_usd,
+            "floor_micro_usd": self.floor_micro_usd,
+            "min_requests": self.min_requests,
+        }
+
+
+class NetSavingGovernor:
+    """Stops Entroly's optional optimizations where they are not paying.
+
+    Per conversation it adds up the same signed, conservative net saving that
+    receipts report. Once a conversation has at least ``min_requests`` priced
+    requests and its cumulative saving is below ``-floor``, it *holds*: the
+    proxy forwards the client's own request instead of Entroly's optional
+    rewrites for the rest of that conversation. The hold latches, so the
+    decision depends only on receipts already sealed, never on one that is
+    still in flight.
+
+    Requests without priced evidence add nothing, so conversations Entroly
+    cannot price are never held. Emergency session rescue and required
+    redaction are outside its reach: rescue is part of the baseline it
+    returns to, and redaction is applied after the choice.
+
+    State is a bounded LRU keyed by a digest of the conversation id, holding
+    two integers and a flag. No prompt content is kept.
+    """
+
+    def __init__(self, capacity: int = _GOVERNOR_CAPACITY) -> None:
+        self._capacity = max(1, int(capacity))
+        self._entries: OrderedDict[str, list[int]] = OrderedDict()
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def _key(conversation_id: str) -> str:
+        return hashlib.sha256(conversation_id.encode("utf-8")).hexdigest()[:_DIGEST_HEX]
+
+    def _standing(self, entry: list[int], policy: GovernorPolicy) -> GovernorStanding:
+        count, total, held = entry
+        return GovernorStanding(
+            action="hold" if held else "observe",
+            priced_requests=count,
+            cumulative_micro_usd=total,
+            floor_micro_usd=policy.floor_micro_usd,
+            min_requests=policy.min_requests,
+        )
+
+    def record(
+        self,
+        conversation_id: str,
+        micro_usd: int | None,
+        *,
+        policy: GovernorPolicy | None = None,
+    ) -> GovernorStanding | None:
+        """Add one sealed receipt's estimate; ``None`` estimates add nothing."""
+        policy = policy or GovernorPolicy.from_env()
+        if not policy.enabled or not conversation_id or micro_usd is None:
+            return None
+        key = self._key(conversation_id)
+        with self._lock:
+            entry = self._entries.get(key)
+            if entry is None:
+                entry = [0, 0, 0]
+                self._entries[key] = entry
+            self._entries.move_to_end(key)
+            entry[0] += 1
+            entry[1] += int(micro_usd)
+            if entry[0] >= policy.min_requests and entry[1] < -policy.floor_micro_usd:
+                entry[2] = 1
+            while len(self._entries) > self._capacity:
+                self._entries.popitem(last=False)
+            return self._standing(entry, policy)
+
+    def standing(
+        self, conversation_id: str, *, policy: GovernorPolicy | None = None
+    ) -> GovernorStanding | None:
+        """The current decision for a conversation; ``None`` when disabled."""
+        policy = policy or GovernorPolicy.from_env()
+        if not policy.enabled or not conversation_id:
+            return None
+        with self._lock:
+            entry = self._entries.get(self._key(conversation_id))
+            if entry is None:
+                return GovernorStanding("observe", 0, 0, policy.floor_micro_usd,
+                                        policy.min_requests)
+            self._entries.move_to_end(self._key(conversation_id))
+            return self._standing(entry, policy)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._entries.clear()
+
+
+GOVERNOR = NetSavingGovernor()
+
+
 __all__ = [
     "BASIS",
+    "GOVERNOR",
+    "GOVERNOR_HEADER",
+    "GovernorPolicy",
+    "GovernorStanding",
     "ModelRates",
     "NetSavingCatalog",
     "NetSavingEstimate",
+    "NetSavingGovernor",
     "PromptInventory",
     "SEEN",
     "SeenUnits",

@@ -95,6 +95,23 @@ Traffic Receipts intentionally distinguish measurement from modeling:
   bundled, dated Anthropic table (`entroly/data/anthropic_pricing.json`,
   disable with `ENTROLY_BUNDLED_PRICING=0`). The bundled table is used for
   this estimate only and never satisfies routing's explicit-catalog rule.
+- **Net-saving governor** (`net_saving_governor`) uses the same estimate to
+  restrain Entroly. Per conversation it adds up the conservative net saving of
+  sealed receipts; once a conversation has at least 3 priced requests and is
+  below -$0.02 in total, the proxy forwards the client's own request instead
+  of Entroly's optional rewrites for the rest of that conversation. Emergency
+  session rescue and required redaction still apply. Each response carries
+  `X-Entroly-Net-Saving-Governor: hold|observe`; the receipt records the
+  decision applied (`applied`) and the standing after it (priced requests,
+  cumulative microdollars, floor), and a held request carries a
+  `net_saving_governor_hold` value row (`protected`, never headline).
+  Replaying a conversation's receipts in order reproduces every hold.
+  Requests without a priced estimate do not count, the hold never crosses
+  conversations, and state is a bounded table of conversation-id digests and
+  integers. Tune with `ENTROLY_NET_SAVING_MIN_REQUESTS` and
+  `ENTROLY_NET_SAVING_FLOOR_USD`; `ENTROLY_NET_SAVING_GOVERNOR=0` turns it off.
+  Because the estimate under-credits history rewrites, a conversation can be
+  held conservatively after a large rewrite; that only stops optional work.
 - **Verification** comes from WITNESS/EICV response evidence when reported.
 - **Receipt integrity** is a SHA-256 canonical-payload consistency check. It is
   not presented as a cryptographic signature.

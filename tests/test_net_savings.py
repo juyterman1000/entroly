@@ -360,3 +360,74 @@ def test_usage_parser_reads_the_ttl_split() -> None:
     ).cache_write_1h_tokens is None
     stream = "data: " + json.dumps({"type": "message_start", "message": payload}) + "\n\n"
     assert parse_stream_usage("anthropic", stream).cache_write_1h_tokens == 20
+
+
+# ── the governor ────────────────────────────────────────────────────────
+
+
+def _policy(**kw) -> ns.GovernorPolicy:
+    return ns.GovernorPolicy(**kw)
+
+
+def test_governor_needs_enough_priced_requests_before_holding() -> None:
+    gov, policy = ns.NetSavingGovernor(), _policy()
+    assert gov.record("c", -500_000, policy=policy).action == "observe"  # one bad turn
+    assert gov.record("c", 0, policy=policy).action == "observe"
+    assert gov.record("c", 0, policy=policy).action == "hold"
+
+
+def test_governor_holds_only_below_the_floor() -> None:
+    gov, policy = ns.NetSavingGovernor(), _policy()
+    for _ in range(3):
+        standing = gov.record("c", -6_000, policy=policy)
+    assert standing.cumulative_micro_usd == -18_000
+    assert standing.action == "observe"  # -$0.018 is inside the $0.02 floor
+    assert gov.record("c", -3_000, policy=policy).action == "hold"
+
+
+def test_governor_hold_latches_for_the_conversation() -> None:
+    gov, policy = ns.NetSavingGovernor(), _policy(min_requests=1)
+    assert gov.record("c", -30_000, policy=policy).action == "hold"
+    assert gov.record("c", +100_000, policy=policy).action == "hold"
+    assert gov.standing("c", policy=policy).action == "hold"
+
+
+def test_unpriced_requests_never_count() -> None:
+    gov, policy = ns.NetSavingGovernor(), _policy(min_requests=1)
+    for _ in range(10):
+        assert gov.record("c", None, policy=policy) is None
+    assert gov.standing("c", policy=policy).priced_requests == 0
+    assert gov.standing("c", policy=policy).action == "observe"
+
+
+def test_conversations_are_independent_and_bounded() -> None:
+    gov, policy = ns.NetSavingGovernor(capacity=2), _policy(min_requests=1)
+    gov.record("a", -30_000, policy=policy)
+    assert gov.standing("b", policy=policy).action == "observe"
+    gov.record("b", 1, policy=policy)
+    gov.record("c", 1, policy=policy)
+    assert gov.standing("a", policy=policy).priced_requests == 0  # evicted, fails open
+
+
+def test_governor_keeps_no_conversation_content() -> None:
+    gov, policy = ns.NetSavingGovernor(), _policy()
+    gov.record("secret conversation anchor", -1, policy=policy)
+    assert all("secret" not in key for key in gov._entries)
+
+
+def test_disabled_governor_reports_nothing() -> None:
+    gov, policy = ns.NetSavingGovernor(), _policy(enabled=False)
+    assert gov.record("c", -1_000_000, policy=policy) is None
+    assert gov.standing("c", policy=policy) is None
+
+
+def test_governor_policy_reads_the_environment(monkeypatch) -> None:
+    monkeypatch.setenv("ENTROLY_NET_SAVING_GOVERNOR", "off")
+    monkeypatch.setenv("ENTROLY_NET_SAVING_FLOOR_USD", "0.5")
+    monkeypatch.setenv("ENTROLY_NET_SAVING_MIN_REQUESTS", "7")
+    assert ns.GovernorPolicy.from_env() == ns.GovernorPolicy(False, 500_000, 7)
+    for bad in ("nan", "-1", "lots"):
+        monkeypatch.setenv("ENTROLY_NET_SAVING_FLOOR_USD", bad)
+        assert ns.GovernorPolicy.from_env().floor_micro_usd == 20_000
+    monkeypatch.setenv("ENTROLY_NET_SAVING_MIN_REQUESTS", "0")
+    assert ns.GovernorPolicy.from_env().min_requests == 1
