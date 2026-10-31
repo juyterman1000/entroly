@@ -218,6 +218,28 @@ def strip_anthropic_unsupported_params(
     return cleaned
 
 
+# Injected context is budgeted against at most this much window. Budgets are a
+# fraction of the window, so a 1M-token model would otherwise be offered
+# ~5x the repository context of a 200K one on every request -- up to the 256K
+# Cost Cortex cap, about $1 of extra input per Opus 5.5 call -- with no
+# evidence that more injected context buys a better answer. The window itself
+# (capacity checks, session rescue, overflow handling) is unaffected.
+# ENTROLY_INJECTION_REFERENCE_WINDOW overrides it; 0 removes the cap.
+INJECTION_REFERENCE_WINDOW = 200_000
+
+
+def injection_budget_window(window: int) -> int:
+    """The window an injected-context budget is computed from."""
+    raw = _os.environ.get("ENTROLY_INJECTION_REFERENCE_WINDOW", "").strip()
+    try:
+        reference = int(raw) if raw else INJECTION_REFERENCE_WINDOW
+    except ValueError:
+        reference = INJECTION_REFERENCE_WINDOW
+    if reference <= 0:
+        return window
+    return min(window, reference)
+
+
 def compute_token_budget(model: str, config: ProxyConfig) -> int:
     """Compute the token budget for context injection.
 
@@ -225,7 +247,7 @@ def compute_token_budget(model: str, config: ProxyConfig) -> int:
     static context_fraction.  When enabled, use compute_dynamic_budget()
     instead — this function remains for backwards compatibility.
     """
-    window = context_window_for_model(model)
+    window = injection_budget_window(context_window_for_model(model))
     return int(window * config.context_fraction)
 
 
@@ -292,6 +314,7 @@ def compute_dynamic_budget(
     """
     resolution = model_resolution_for_model(model)
     window = resolution.context_window
+    budget_window = injection_budget_window(window)
     base = config.context_fraction
 
     v = max(0.0, min(1.0, vagueness))
@@ -303,9 +326,9 @@ def compute_dynamic_budget(
         0.5 + max(total_fragments, 1) / config.ecdb_codebase_divisor,
     )
 
-    raw = base * window * query_factor * codebase_factor
+    raw = base * budget_window * query_factor * codebase_factor
 
-    max_budget = int(window * config.ecdb_max_fraction)
+    max_budget = int(budget_window * config.ecdb_max_fraction)
 
     if resolution.capability:
         attn = resolution.capability.attention_profile
