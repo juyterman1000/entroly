@@ -16,6 +16,13 @@ from entroly.tree_sitter_support import validate_structural_syntax
 
 from .models import RepositoryIndex, Symbol
 from .parsers import module_name
+from .rename_binding_review import (
+    MAX_PREVIEW_REVIEW_FILES,
+    reject_rename_binding_conflicts,
+    review_python_rename_bindings,
+    stage_identifier_changes,
+    summarize_binding_reviews,
+)
 from .semantic_overlay import build_verified_semantic_overlay
 
 REFACTOR_PLAN_SCHEMA_VERSION = "entroly.verified-refactor-plan.v1"
@@ -382,6 +389,27 @@ def build_verified_rename_plan(
     base["root_symbol_id"] = symbol.symbol_id
     base["old_name"] = symbol.name
     base["changes"] = ordered
+    review_groups: dict[str, list[dict[str, object]]] = defaultdict(list)
+    for item in ordered:
+        review_groups[str(item["path"])].append(item)
+    reviews = []
+    review_paths = sorted(review_groups)
+    for path in review_paths[:MAX_PREVIEW_REVIEW_FILES]:
+        review_raw, review_status = source(path)
+        if review_raw is None:
+            reviews.append({
+                "path": path, "status": "unknown", "conflicts": [],
+                "conflict_count": 0, "unknown": [review_status],
+                "semantic_status": "not-checked",
+            })
+            continue
+        staged = stage_identifier_changes(review_raw, review_groups[path])
+        reviews.append(review_python_rename_bindings(
+            path, review_raw, staged, review_groups[path],
+        ))
+    base["binding_review"] = summarize_binding_reviews(
+        reviews, omitted_files=max(0, len(review_paths) - MAX_PREVIEW_REVIEW_FILES),
+    )
     base["risk"] = {
         "reference_completeness": "not-proven",
         "requires_incomplete_acknowledgement": True,
@@ -1034,6 +1062,9 @@ def apply_verified_rename_plan(
         if syntax[path].startswith("invalid-"):
             raise ValueError(f"refactor staged syntax failed for {path}")
         updated[path] = result
+
+    if operation == "rename":
+        reject_rename_binding_conflicts(originals, updated, grouped)
 
     staged: dict[str, Path] = {}
     backups: dict[str, Path] = {}

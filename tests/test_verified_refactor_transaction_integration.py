@@ -33,7 +33,10 @@ def test_rename_apply_delegates_exact_preimages_and_replacements(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    source = b"def old():\n    return old()\n"
+    # Exercise transaction delegation with a valid one-range rename. A plan
+    # that renames only a recursive declaration leaves a known dangling call
+    # and is now rejected before reaching the transaction.
+    source = b"def old():\n    return 1\n"
     path = "main.py"
     (tmp_path / path).write_bytes(source)
     index = _index(tmp_path, path, source)
