@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Mapping
 
 from .models import RepositoryIndex
+from .rename_binding_review import reject_rename_binding_conflicts
 from .verified_refactor_impl import (
     REFACTOR_APPLY_SCHEMA_VERSION,
     REFACTOR_PLAN_SCHEMA_VERSION,
@@ -106,6 +107,9 @@ def apply_verified_rename_plan(
         if syntax[path].startswith("invalid-"):
             raise ValueError(f"refactor staged syntax failed for {path}")
         updated[path] = result
+
+    if operation == "rename":
+        reject_rename_binding_conflicts(originals, updated, grouped)
 
     transaction = apply_workspace_transaction(
         root,

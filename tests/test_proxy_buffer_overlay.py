@@ -54,7 +54,7 @@ def _post(app, payload) -> httpx.Response:
     async def _run():
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(
-            transport=transport, base_url="http://proxy"
+            transport=transport, base_url="http://localhost:9377"
         ) as client:
             return await client.post("/overlay", json=payload)
 

@@ -72,6 +72,13 @@ def _has_forwarding_headers(request: Request) -> bool:
 def _direct_local_sidecar_request(request: Request) -> bool:
     if _has_forwarding_headers(request):
         return False
+    # The Host header must name this machine. Origin and Referer checks alone
+    # admit a DNS-rebinding page: its domain is re-pointed at 127.0.0.1, so its
+    # fetch() is same-origin to itself, arrives from loopback, sends no Origin
+    # on a GET and, under `Referrer-Policy: no-referrer`, no Referer either.
+    # Without this check it could read recovered context from /retrieve.
+    if not _proxy._is_loopback_host(request.headers.get("host")):
+        return False
     return _proxy._is_trusted_sidecar_request(request)
 
 
