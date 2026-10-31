@@ -45,4 +45,6 @@ rows cannot inflate the headline through double counting.
 
 `net_value_after_observed_extra_provider_cost_usd` is an executive mixed-evidence arithmetic view: existing Traffic Value minus observed priced additional-provider work. It is not called measured counterfactual savings. `net_measured_saving_micro_usd` remains unavailable until a linked measured counterfactual exists.
 
+`net_saving_conservative` is a separate non-headline row (`tier=estimated`, `role=explanatory`, `evidence_source=provider_usage`) carrying a signed microdollar estimate of what Entroly's changes to a request were worth after charging for what it added and the cache prefix it broke. See the [Traffic Receipts truth contract](traffic-receipts.md#truth-contract) for the pricing rules. It is never summed into the headline or into `net_value_after_observed_extra_provider_cost_usd`.
+
 Observability failures fail open for user traffic; accounting claims fail closed when evidence is missing.

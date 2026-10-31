@@ -8,7 +8,9 @@ routing, compression, retry, provider, or recovery policy.
 from __future__ import annotations
 
 import hashlib
+import threading
 import uuid
+from collections import OrderedDict
 from typing import Any, Awaitable, Callable
 
 from starlette.requests import Request
@@ -28,7 +30,13 @@ def _ensure_request_id(request: Request) -> str:
                 return bytes(value).decode("latin-1")
             except Exception:
                 return ""
-    request_id = uuid.uuid4().hex[:16]
+    # The request-id middleware has already chosen the id the client is told to
+    # correlate with (X-Entroly-Request-Id) and the handler records provider
+    # usage under. Minting a second one here split every receipt from its own
+    # usage and from the id the client sees.
+    state = scope.get("state")
+    chosen = state.get("entroly_request_id") if isinstance(state, dict) else None
+    request_id = str(chosen) if chosen else uuid.uuid4().hex[:16]
     raw_headers.append((b"x-request-id", request_id.encode("ascii")))
     scope["headers"] = raw_headers
     if hasattr(request, "_headers"):
@@ -114,6 +122,103 @@ def _add_receipt_evidence(state: _value_state.AttributionState, built: Any) -> N
         )
 
 
+# Provider usage per request id, captured where the proxy records it. Streamed
+# responses carry usage only in their event stream, which the receipt cannot
+# read; the proxy parses it before the stream completes, so the receipt finds
+# it here. Bounded, content-blind (token counts only).
+_USAGE_LOCK = threading.Lock()
+_USAGE_BY_REQUEST: "OrderedDict[str, Any]" = OrderedDict()
+_USAGE_MEMO_LIMIT = 2048
+
+
+def _remember_usage(request_id: str, usage: Any) -> None:
+    key = str(request_id or "")
+    if not key or ":recovery:" in key:
+        return
+    with _USAGE_LOCK:
+        _USAGE_BY_REQUEST[key] = usage
+        _USAGE_BY_REQUEST.move_to_end(key)
+        while len(_USAGE_BY_REQUEST) > _USAGE_MEMO_LIMIT:
+            _USAGE_BY_REQUEST.popitem(last=False)
+
+
+def _take_usage(request_id: str) -> Any:
+    with _USAGE_LOCK:
+        return _USAGE_BY_REQUEST.pop(str(request_id or ""), None)
+
+
+def _install_usage_memo() -> None:
+    current = _proxy.PromptCompilerProxy._record_provider_usage
+    if hasattr(current, "__entroly_net_saving_original__"):
+        return
+    original = current
+
+    def record_provider_usage(self: Any, *args: Any, **kwargs: Any) -> Any:
+        result = original(self, *args, **kwargs)
+        usage = kwargs.get("usage")
+        if usage is not None:
+            _remember_usage(str(kwargs.get("request_id") or ""), usage)
+        return result
+
+    record_provider_usage.__entroly_net_saving_original__ = original
+    _proxy.PromptCompilerProxy._record_provider_usage = record_provider_usage
+
+
+_KNOWN_CONTINUITY = frozenset(
+    {"first_observation", "prefix_preserved", "prefix_improved", "prefix_degraded"}
+)
+
+
+def _net_saving_for(context: Any, built: Any, response: Response) -> Any:
+    """Conservative net saving for one receipt, or None when unprovable."""
+    from . import net_savings
+
+    raw = getattr(context, "raw_inventory", None)
+    outbound = getattr(context, "outbound_inventory", None)
+    if raw is None or outbound is None:
+        return None
+    removed, added_bytes = net_savings.inventory_delta(raw, outbound)
+    # Every forwarded request updates the seen-set, priced or not.
+    seen_bytes, new_bytes = net_savings.SEEN.classify_and_remember(removed, raw, outbound)
+
+    usage = _receipt._usage_for_context(context, response) or _take_usage(
+        str(getattr(context, "request_id", ""))
+    )
+    if usage is None or int(getattr(response, "status_code", 0) or 0) >= 400:
+        return None
+    headers = getattr(context, "outbound_headers", {}) or {}
+    # Without a continuity observation the cache prefix Entroly may have broken
+    # is unknown, and an unknown charge cannot be resolved against Entroly.
+    if headers.get("x-entroly-prefix-continuity") not in _KNOWN_CONTINUITY:
+        return None
+    try:
+        interference_bytes = max(
+            0, int(headers.get("x-entroly-prefix-interference-bytes", "0") or 0)
+        )
+    except (TypeError, ValueError):
+        return None
+    resolved = net_savings.resolve_rates(
+        str(getattr(built, "provider", "") or ""),
+        str(getattr(built, "executed_model", "") or ""),
+    )
+    if resolved is None:
+        return None
+    rates, source = resolved
+    return net_savings.estimate_net_saving(
+        raw=raw,
+        outbound=outbound,
+        removed_seen_bytes=seen_bytes,
+        removed_new_bytes=new_bytes,
+        added_bytes=added_bytes,
+        interference_bytes=interference_bytes,
+        uncached_input_tokens=int(getattr(usage, "uncached_input_tokens", 0) or 0),
+        cache_read_tokens=int(getattr(usage, "cache_read_tokens", 0) or 0),
+        cache_write_tokens=int(getattr(usage, "cache_write_tokens", 0) or 0),
+        rates=rates,
+        pricing_source=source,
+    )
+
+
 def _install_value_lifecycle() -> None:
     current_payload = _receipt.TrafficReceipt.payload
     if not hasattr(current_payload, "__entroly_value_state_original__"):
@@ -161,6 +266,20 @@ def _install_value_lifecycle() -> None:
                 state, int(getattr(built, "tokens_avoided", 0) or 0)
             )
             _add_receipt_evidence(state, built)
+            try:
+                net = _net_saving_for(context, built, response)
+            except Exception:
+                net = None
+            if net is not None:
+                _value_state.record_internal(
+                    "net_saving_conservative",
+                    tier=_value_state.ValueTier.ESTIMATED,
+                    role=_value_state.AccountingRole.EXPLANATORY,
+                    micro_usd=int(net.micro_usd),
+                    evidence_source=_value_state.EvidenceSource.PROVIDER_USAGE,
+                    details=net.details(),
+                    state=state,
+                )
             rows = _value_state.aggregate_contributions(state.contributions)
             headline = sum(
                 int(row.get("tokens", 0) or 0)
@@ -183,6 +302,18 @@ def _install_value_lifecycle() -> None:
                     "extra_provider_tokens": int(state.extra_provider_tokens),
                     "extra_provider_cost_micro_usd": extra_cost,
                     "lifecycle_outcome": state.lifecycle,
+                    "net_saving_conservative_micro_usd": (
+                        int(net.micro_usd) if net is not None else None
+                    ),
+                    "net_saving_basis": (
+                        {
+                            "evidence": "provider-calibrated estimate",
+                            "pricing_source": net.pricing_source,
+                            **net.details(),
+                        }
+                        if net is not None
+                        else None
+                    ),
                 },
             )
             object.__setattr__(
@@ -297,6 +428,7 @@ def install_receipt_final_guard() -> None:
     _receipt._coverage_snapshot = _request_local_coverage_unavailable
     _tighten_receipt_html()
     _install_value_lifecycle()
+    _install_usage_memo()
 
 
 install_receipt_final_guard()
