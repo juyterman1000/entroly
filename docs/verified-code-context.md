@@ -449,6 +449,39 @@ reflection, strings, generated code, macro expansion, non-call references, and
 external consumers may remain. The mandatory acknowledgement exists because a
 hash can make an incomplete plan tamper-evident but cannot make it complete.
 
+### Compiler binding review
+
+Resolved rename previews include `binding_review`, derived without executing
+the source. For Python files, Entroly compares compiler scope information and
+exact identifier edits. It reports new-name binding merges, changed lexical
+owners, omitted old-name references, and old binding writes left behind. Each
+conflict carries a source hash, identifier byte range and evidence digest so a
+caller can recover the relevant code. Preview itself still performs no writes.
+
+Both rename apply implementations recompute this review from verified preimages
+and exact staged bytes before any file staging/transaction. Removing or forging
+the preview's review metadata cannot bypass it. Known conflicts are refused
+even with `--acknowledge-incomplete`; compiler-invalid staged Python detected
+by this review is also refused. A different name or explicit binding-preserving
+edit may be needed.
+Conservative conflict checks can reject some behavior-preserving aliases;
+rejection does not mean the requested refactor has been completed.
+
+The result is **not a semantic certificate**. Its `semantic_status` remains
+`not-checked`; no detected conflict does not prove behavior preservation or
+reference completeness. Attributes, class/lambda/comprehension regions,
+non-local binding edits, reflection, dynamic runtime effects and external
+consumers are not fully modeled. Unknowns remain explicit and do not remove
+the existing incompleteness acknowledgement or operator write-authority gate.
+WITNESS/RAVS semantic-authority rules are unchanged.
+
+Preview retains up to 64 conflicts per file and reviews up to 128 changed files,
+with omission counts. The original plan still lists the exact changes/source
+identities for omitted review files. Source review is limited to 2 MiB per file;
+larger files yield unknown. Apply recomputes review for every staged file rather
+than trusting a truncated preview. Analysis adds local parsing/compilation work;
+large-repository latency and agent-quality benefits have not been benchmarked.
+
 For an unreferenced top-level declaration, `safe-delete-preview` performs an
 even more conservative check:
 
