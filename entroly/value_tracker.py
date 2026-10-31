@@ -48,7 +48,7 @@ logger = logging.getLogger("entroly.value_tracker")
 #      "default": {"input": 0.003, "output": 0.009},
 #      "models": {"gpt-4o": {"input": 0.0025, "output": 0.01}}}
 # Loading is local-only (no network) and fail-open to these defaults.
-_PRICING_AS_OF = "2026-08"
+_PRICING_AS_OF = "2026-10"
 
 _MODEL_PRICING: dict[str, dict[str, float]] = {
     # OpenAI
@@ -63,10 +63,25 @@ _MODEL_PRICING: dict[str, dict[str, float]] = {
     "o3": {"input": 0.01, "output": 0.04},
     "o3-mini": {"input": 0.0011, "output": 0.0044},
     "o4-mini": {"input": 0.0011, "output": 0.0044},
-    # Anthropic
+    # Anthropic. Longest prefix wins, so the dated Opus 4 / 4.1 ids keep the
+    # $15 card while Opus 4.5 and later -- repriced to $5/$25 -- match their own
+    # rows. Verified against platform.claude.com/docs/en/about-claude/pricing
+    # on 2026-10-31. Haiku 5.5 bills 5x above a 100K-token prompt; savings are
+    # priced at the base rate, the conservative choice when prompt size is not
+    # known at the point a saving is recorded.
     "claude-opus-4": {"input": 0.015, "output": 0.075},
+    "claude-opus-4-5": {"input": 0.005, "output": 0.025},
+    "claude-opus-4-6": {"input": 0.005, "output": 0.025},
+    "claude-opus-4-7": {"input": 0.005, "output": 0.025},
+    "claude-opus-4-8": {"input": 0.005, "output": 0.025},
     "claude-sonnet-4": {"input": 0.003, "output": 0.015},
     "claude-haiku-4": {"input": 0.0008, "output": 0.004},
+    "claude-haiku-4-5": {"input": 0.001, "output": 0.005},
+    "claude-fable-5-1": {"input": 0.01, "output": 0.05},
+    "claude-opus-5": {"input": 0.005, "output": 0.025},
+    "claude-opus-5-5": {"input": 0.004, "output": 0.02},
+    "claude-sonnet-5": {"input": 0.002, "output": 0.01},
+    "claude-haiku-5-5": {"input": 0.0001, "output": 0.0005},
     "claude-3-5-sonnet": {"input": 0.003, "output": 0.015},
     "claude-3-5-haiku": {"input": 0.0008, "output": 0.004},
     # Google
@@ -161,16 +176,35 @@ def pricing_provenance() -> dict[str, str]:
     return {"as_of": str(p.get("as_of", _PRICING_AS_OF)), "source": str(p.get("source", "bundled"))}
 
 
+def _normalise_model(model: str) -> str:
+    """Lower-case ``model`` and map it onto the catalog's naming.
+
+    Gateways name Anthropic models with a provider prefix: Bedrock uses
+    ``anthropic.claude-opus-5-5`` (and region forms such as
+    ``us.anthropic.claude-opus-5-5``), routers use ``anthropic/claude-...``.
+    Those priced at the $3 default, so a saving on Haiku 5.5 read 30x too high.
+    Only a prefix ending in ``anthropic.`` or ``anthropic/`` is stripped, so an
+    unrelated model that merely contains ``claude-`` is not re-priced.
+    """
+    normalized = model.lower()
+    for marker in ("anthropic.", "anthropic/"):
+        cut = normalized.rfind(marker)
+        if cut != -1 and normalized[cut + len(marker):].startswith("claude-"):
+            normalized = normalized[cut + len(marker):]
+            break
+    for alias, canonical in _MODEL_ALIASES.items():
+        if normalized.startswith(alias):
+            normalized = canonical + normalized[len(alias):]
+            break
+    return normalized
+
+
 def _has_priced_model(model: str) -> bool:
     """Return whether the active catalog explicitly prices ``model``."""
     if not model:
         return False
     pricing = _pricing()
-    normalized = model.lower()
-    for alias, canonical in _MODEL_ALIASES.items():
-        if normalized.startswith(alias):
-            normalized = canonical + normalized[len(alias):]
-            break
+    normalized = _normalise_model(model)
     return any(
         normalized.startswith(prefix)
         for prefix in pricing.get("models", {})
@@ -217,11 +251,7 @@ def estimate_cost(tokens_saved: int, model: str = "", kind: str = "input") -> fl
     rates = dict(pricing["default"])
     matched = False
     if model:
-        m = model.lower()
-        for alias, canonical in _MODEL_ALIASES.items():
-            if m.startswith(alias):
-                m = canonical + m[len(alias):]
-                break
+        m = _normalise_model(model)
         # Longest prefix wins.
         for prefix in sorted(pricing["models"].keys(), key=len, reverse=True):
             if m.startswith(prefix):

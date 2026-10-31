@@ -28,7 +28,7 @@ const EVOLUTION_TAX_RATE = 0.05;
 const FILE_NAME = 'value_tracker.json';
 const ACTIVITY_NAME = 'activity.jsonl';
 const SCHEMA_VERSION = 4;
-const PRICING_AS_OF = '2026-05';
+const PRICING_AS_OF = '2026-10';
 const MAX_DAILY = 90, MAX_WEEKLY = 52, MAX_MONTHLY = 24, MAX_ACTIVITY = 200;
 
 // Per-model $/1M tokens — kept in sync with entroly/value_tracker.py (×1000).
@@ -38,6 +38,10 @@ const COST_PER_M = {
   'gpt-3.5-turbo': 0.5, 'o1': 15.0, 'o1-mini': 3.0, 'o3': 10.0,
   'o3-mini': 1.1, 'o4-mini': 1.1,
   'claude-opus-4': 15.0, 'claude-sonnet-4': 3.0, 'claude-haiku-4': 0.8,
+  'claude-opus-4-5': 5.0, 'claude-opus-4-6': 5.0, 'claude-opus-4-7': 5.0,
+  'claude-opus-4-8': 5.0, 'claude-haiku-4-5': 1.0,
+  'claude-fable-5-1': 10.0, 'claude-opus-5': 5.0, 'claude-opus-5-5': 4.0,
+  'claude-sonnet-5': 2.0, 'claude-haiku-5-5': 0.1,
   'claude-3-5-sonnet': 3.0, 'claude-3-5-haiku': 0.8,
   'gemini-2.5-pro': 1.25, 'gemini-2.5-flash': 0.075,
   'gemini-1.5-pro': 1.25, 'gemini-1.5-flash': 0.075,
@@ -51,8 +55,22 @@ const MODEL_ALIASES = {
   'claude-3.5-haiku': 'claude-3-5-haiku',
 };
 
-function estimateCost(tokens, model = '') {
+// Bedrock (`anthropic.claude-…`, `us.anthropic.claude-…`) and router
+// (`anthropic/claude-…`) names map onto the bare catalog id, as in Python.
+function normaliseModel(model) {
   let m = (model || '').toLowerCase();
+  for (const marker of ['anthropic.', 'anthropic/']) {
+    const cut = m.lastIndexOf(marker);
+    if (cut !== -1 && m.slice(cut + marker.length).startsWith('claude-')) {
+      m = m.slice(cut + marker.length);
+      break;
+    }
+  }
+  return m;
+}
+
+function estimateCost(tokens, model = '') {
+  let m = normaliseModel(model);
   for (const [alias, canonical] of Object.entries(MODEL_ALIASES)) {
     if (m.startsWith(alias)) { m = canonical + m.slice(alias.length); break; }
   }

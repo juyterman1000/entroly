@@ -785,6 +785,11 @@ def _sidecar_guard(handler):
 
 
 def _resolve_ca_bundle_from_env() -> str | None:
+    """First CA bundle variable that is set, for diagnostics only.
+
+    Provider clients take their trust from :mod:`entroly.tls_trust`, which
+    treats ``NODE_EXTRA_CA_CERTS`` as additional roots, not the whole store.
+    """
     for name in _CERT_ENV_VARS:
         value = os.environ.get(name)
         if value:
@@ -798,10 +803,9 @@ def _http_client_kwargs() -> dict[str, Any]:
         "follow_redirects": True,
         "trust_env": True,
     }
-    ca_bundle = _resolve_ca_bundle_from_env()
-    if ca_bundle:
-        kwargs["verify"] = ca_bundle
-    return kwargs
+    from .tls_trust import apply_upstream_verify
+
+    return apply_upstream_verify(kwargs)
 
 
 async def _bytes_iter(data: bytes):
@@ -3360,7 +3364,11 @@ class PromptCompilerProxy:
                 if acb_prediction.get("fallback") is None:
                     # Model is confident — use its learned budget
                     ratio = acb_prediction["budget_used"]
-                    token_budget = max(200, int(ctx_window * ratio))
+                    from .proxy_transform import injection_budget_window
+
+                    token_budget = max(
+                        200, int(injection_budget_window(ctx_window) * ratio)
+                    )
                     logger.debug(
                         "ACB: budget_ratio=%.3f → %d tokens (se=%.4f, n=%d)",
                         ratio, token_budget,
