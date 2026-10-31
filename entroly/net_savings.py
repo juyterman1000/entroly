@@ -100,7 +100,12 @@ class TierRates:
 
     input: Decimal
     cache_read: Decimal
-    cache_write_max: Decimal
+    cache_write_5m: Decimal
+    cache_write_1h: Decimal
+
+    @property
+    def cache_write_max(self) -> Decimal:
+        return max(self.cache_write_5m, self.cache_write_1h)
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,13 +141,17 @@ def _rate(raw: Mapping[str, Any], key: str) -> Decimal:
 
 
 def _tier(raw: Mapping[str, Any]) -> TierRates:
-    writes = [_rate(raw, "cache_write_per_million")]
-    if raw.get("cache_write_1h_per_million") is not None:
-        writes.append(_rate(raw, "cache_write_1h_per_million"))
+    five = _rate(raw, "cache_write_per_million")
+    one = (
+        _rate(raw, "cache_write_1h_per_million")
+        if raw.get("cache_write_1h_per_million") is not None
+        else five
+    )
     return TierRates(
         input=_rate(raw, "input_per_million"),
         cache_read=_rate(raw, "cache_read_per_million"),
-        cache_write_max=max(writes),
+        cache_write_5m=five,
+        cache_write_1h=one,
     )
 
 
@@ -370,6 +379,30 @@ def _micro(tokens: int, rate_per_million: Decimal) -> Decimal:
     return Decimal(tokens) * rate_per_million
 
 
+def _draw(
+    pool: list[list[Any]], tokens: int, read_rate: Decimal, *, minus_read: bool
+) -> tuple[Decimal, int]:
+    """Charge ``tokens`` against the dearest remaining pool tokens.
+
+    Returns the microdollar charge and how many tokens the pool could not
+    cover (those were cache reads). ``minus_read`` charges only the premium
+    over a cache read -- the cost of a prefix that should have been read.
+    """
+    cost = Decimal(0)
+    remaining = max(0, int(tokens))
+    for slot in pool:
+        if remaining <= 0:
+            break
+        take = min(remaining, int(slot[0]))
+        if take <= 0:
+            continue
+        rate = slot[1] - read_rate if minus_read else slot[1]
+        cost += _micro(take, max(Decimal(0), rate))
+        slot[0] = int(slot[0]) - take
+        remaining -= take
+    return cost, remaining
+
+
 def estimate_net_saving(
     *,
     raw: PromptInventory,
@@ -383,6 +416,7 @@ def estimate_net_saving(
     cache_write_tokens: int,
     rates: ModelRates,
     pricing_source: str,
+    cache_write_1h_tokens: int | None = None,
 ) -> NetSavingEstimate:
     """Price the difference between the client's prompt and the forwarded one."""
     if raw.units == outbound.units and interference_bytes <= 0:
@@ -392,11 +426,22 @@ def estimate_net_saving(
     reads = max(0, int(cache_read_tokens))
     writes = max(0, int(cache_write_tokens))
     total = uncached + reads + writes
-    # Forwarded tokens the provider did NOT serve from cache: the only ones that
-    # can have cost more than a cache read. Charges above the read rate are
-    # drawn from this pool, most expensive charge first.
-    pool = uncached + writes
     tier = rates.tier(total)
+    # Forwarded tokens the provider did NOT serve from cache are the only ones
+    # that can have cost more than a cache read. They form a priced pool, and
+    # Entroly's charges are drawn from its dearest tokens first: 1-hour writes,
+    # then 5-minute writes, then uncached input. Without the provider's TTL
+    # split, every write is assumed to be a 1-hour write.
+    one_hour = writes if cache_write_1h_tokens is None else min(writes, max(0, int(cache_write_1h_tokens)))
+    pool = sorted(
+        [
+            [one_hour, tier.cache_write_1h],
+            [writes - one_hour, tier.cache_write_5m],
+            [uncached, tier.input],
+        ],
+        key=lambda item: item[1],
+        reverse=True,
+    )
     # Smaller tokens-per-byte ratio for what Entroly removed, larger for what
     # it added or broke: any conversion error lands against Entroly.
     seen_tokens = _tokens(removed_seen_bytes, total, outbound.surface_bytes, round_up=False)
@@ -407,14 +452,14 @@ def estimate_net_saving(
     # Removed content priced at the base tier: the counterfactual's own (often
     # higher) long-context tier is not assumed. The actual request's tier sets
     # the cost of what Entroly added.
-    added_expensive = min(added_tokens, pool)
-    broken_expensive = min(broken_tokens, pool - added_expensive)
+    added_cost, added_left = _draw(pool, added_tokens, tier.cache_read, minus_read=False)
+    broken_cost, _ = _draw(pool, broken_tokens, tier.cache_read, minus_read=True)
     saving = (
         _micro(seen_tokens, rates.base.cache_read)
         + _micro(new_tokens, rates.base.input)
-        - _micro(added_expensive, tier.cache_write_max)
-        - _micro(added_tokens - added_expensive, tier.cache_read)
-        - _micro(broken_expensive, tier.cache_write_max - tier.cache_read)
+        - added_cost
+        - _micro(added_left, tier.cache_read)
+        - broken_cost
     )
     return NetSavingEstimate(
         micro_usd=int(saving.to_integral_value(rounding=ROUND_FLOOR)),

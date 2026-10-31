@@ -214,6 +214,7 @@ def _net_saving_for(context: Any, built: Any, response: Response) -> Any:
         uncached_input_tokens=int(getattr(usage, "uncached_input_tokens", 0) or 0),
         cache_read_tokens=int(getattr(usage, "cache_read_tokens", 0) or 0),
         cache_write_tokens=int(getattr(usage, "cache_write_tokens", 0) or 0),
+        cache_write_1h_tokens=getattr(usage, "cache_write_1h_tokens", None),
         rates=rates,
         pricing_source=source,
     )

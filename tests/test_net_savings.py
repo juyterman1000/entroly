@@ -64,7 +64,8 @@ def _body(*tool_outputs: str, injected: str | None = None) -> dict:
 
 
 def _estimate(raw_body: dict, out_body: dict, *, provider_tokens: int, interference: int = 0,
-              model: str = "claude-opus-4-6", cache_read: int = 0) -> ns.NetSavingEstimate:
+              model: str = "claude-opus-4-6", cache_read: int = 0, cache_write: int = 0,
+              cache_write_1h: int | None = None) -> ns.NetSavingEstimate:
     raw = ns.prompt_inventory(raw_body)
     out = ns.prompt_inventory(out_body)
     removed, added = ns.inventory_delta(raw, out)
@@ -73,8 +74,9 @@ def _estimate(raw_body: dict, out_body: dict, *, provider_tokens: int, interfere
     return ns.estimate_net_saving(
         raw=raw, outbound=out, removed_seen_bytes=seen, removed_new_bytes=new,
         added_bytes=added, interference_bytes=interference,
-        uncached_input_tokens=provider_tokens - cache_read, cache_read_tokens=cache_read,
-        cache_write_tokens=0, rates=rates, pricing_source=source,
+        uncached_input_tokens=provider_tokens - cache_read - cache_write,
+        cache_read_tokens=cache_read, cache_write_tokens=cache_write,
+        cache_write_1h_tokens=cache_write_1h, rates=rates, pricing_source=source,
     )
 
 
@@ -107,7 +109,7 @@ def test_new_content_removed_is_priced_at_the_uncached_rate() -> None:
     assert est.removed_new_tokens > 0 and est.removed_seen_tokens == 0
     expected_floor = (
         Decimal(est.removed_new_tokens) * _rates().base.input
-        - Decimal(est.added_tokens) * _rates().base.cache_write_max
+        - Decimal(est.added_tokens) * _rates().base.input  # pool is uncached input here
     )
     assert est.micro_usd == int(expected_floor.to_integral_value(rounding="ROUND_FLOOR"))
     assert est.micro_usd > 0
@@ -154,7 +156,7 @@ def test_cache_prefix_broken_by_entroly_is_charged() -> None:
     tier = _rates().base
     pool_left = 5_000 - min(broken.added_tokens, 5_000)
     charged = min(broken.interference_tokens, pool_left)
-    charge = Decimal(charged) * (tier.cache_write_max - tier.cache_read)
+    charge = Decimal(charged) * (tier.input - tier.cache_read)
     assert charged > 0
     assert abs((clean.micro_usd - broken.micro_usd) - int(charge)) <= 1
 
@@ -197,7 +199,7 @@ def test_haiku_5_5_long_context_tier_applies_to_the_actual_request_only() -> Non
     assert est.long_context_tier is True
     expected = (
         Decimal(est.removed_new_tokens) * rates.base.input
-        - Decimal(est.added_tokens) * rates.long_context.cache_write_max
+        - Decimal(est.added_tokens) * rates.long_context.input
     )
     assert est.micro_usd == int(expected.to_integral_value(rounding="ROUND_FLOOR"))
 
@@ -296,7 +298,7 @@ def test_content_entroly_already_forwarded_is_charged_as_the_cache_read_it_was()
     tier = _rates().base
     expected = (
         Decimal(turn2.removed_seen_tokens) * tier.cache_read
-        - Decimal(min(turn2.added_tokens, 30)) * tier.cache_write_max
+        - Decimal(min(turn2.added_tokens, 30)) * tier.input
         - Decimal(max(0, turn2.added_tokens - 30)) * tier.cache_read
     )
     assert turn2.micro_usd == int(expected.to_integral_value(rounding="ROUND_FLOOR"))
@@ -309,3 +311,52 @@ def test_charges_never_exceed_what_the_provider_billed_above_read_rate() -> None
     ns.SEEN.clear()
     none_read = _estimate(raw, out, provider_tokens=6_000)
     assert none_read.micro_usd < all_read.micro_usd <= 0
+
+
+# ── exact cache-write pricing ───────────────────────────────────────────
+
+
+def test_charges_draw_from_the_dearest_pool_tokens_first() -> None:
+    """Unknown TTL: every write is assumed 1-hour, the dearest a token can be."""
+    raw, out = _body("ok " * 12_000), _body("ok " * 12_000, injected="i" * 4_000)
+    est = _estimate(raw, out, provider_tokens=10_000, cache_write=9_000)
+    tier = _rates().base
+    assert est.added_tokens < 9_000
+    expected = -(Decimal(est.added_tokens) * tier.cache_write_1h)
+    assert est.micro_usd == int(expected.to_integral_value(rounding="ROUND_FLOOR"))
+
+
+def test_reported_five_minute_writes_are_priced_as_such() -> None:
+    raw, out = _body("ok " * 12_000), _body("ok " * 12_000, injected="i" * 4_000)
+    unknown = _estimate(raw, out, provider_tokens=10_000, cache_write=9_000)
+    ns.SEEN.clear()
+    known = _estimate(raw, out, provider_tokens=10_000, cache_write=9_000, cache_write_1h=0)
+    tier = _rates().base
+    expected = -(Decimal(known.added_tokens) * tier.cache_write_5m)
+    assert known.micro_usd == int(expected.to_integral_value(rounding="ROUND_FLOOR"))
+    assert unknown.micro_usd < known.micro_usd  # the old assumption was pessimistic
+
+
+def test_reported_one_hour_writes_are_charged_first() -> None:
+    raw, out = _body("ok " * 12_000), _body("ok " * 12_000, injected="i" * 4_000)
+    est = _estimate(raw, out, provider_tokens=10_000, cache_write=9_000, cache_write_1h=100)
+    tier = _rates().base
+    expected = -(
+        Decimal(min(est.added_tokens, 100)) * tier.cache_write_1h
+        + Decimal(max(0, est.added_tokens - 100)) * tier.cache_write_5m
+    )
+    assert est.micro_usd == int(expected.to_integral_value(rounding="ROUND_FLOOR"))
+
+
+def test_usage_parser_reads_the_ttl_split() -> None:
+    from entroly.usage_ledger import parse_provider_usage, parse_stream_usage
+
+    payload = {"usage": {"input_tokens": 5, "cache_creation_input_tokens": 120,
+                         "cache_creation": {"ephemeral_5m_input_tokens": 100,
+                                            "ephemeral_1h_input_tokens": 20}}}
+    assert parse_provider_usage("anthropic", payload).cache_write_1h_tokens == 20
+    assert parse_provider_usage(
+        "anthropic", {"usage": {"cache_creation_input_tokens": 120}}
+    ).cache_write_1h_tokens is None
+    stream = "data: " + json.dumps({"type": "message_start", "message": payload}) + "\n\n"
+    assert parse_stream_usage("anthropic", stream).cache_write_1h_tokens == 20

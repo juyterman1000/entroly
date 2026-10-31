@@ -15,6 +15,10 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
   Anthropic price table unless `ENTROLY_PRICING_CATALOG` is set
   (`ENTROLY_BUNDLED_PRICING=0` disables it). Receipts now share the
   `X-Entroly-Request-Id` the client sees when the client sends no request id.
+- The conservative net saving now prices cache writes at the 5-minute/1-hour
+  mix the provider reports (`cache_creation`), instead of assuming every write
+  is a 1-hour write, and charges added content from uncached input at the input
+  rate. Without a reported split it keeps the 1-hour assumption.
 - Conversation compression (`ENTROLY_SESSION_RESCUE=0`) no longer rewrites
   Anthropic `thinking`/`redacted_thinking` blocks, which the API rejects when
   modified, and measures utilisation against the request model's window

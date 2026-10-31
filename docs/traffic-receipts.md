@@ -80,8 +80,11 @@ Traffic Receipts intentionally distinguish measurement from modeling:
   - removed content at the cache-read rate if any recent request carried it,
     otherwise at the uncached input rate;
   - added content (injected context, rewritten blocks) and any cached prefix
-    Entroly's edits broke at the 1-hour cache-write rate, but only up to the
-    tokens the provider did not serve from cache;
+    Entroly's edits broke, drawn from the tokens the provider did not serve
+    from cache, dearest first: reported 1-hour writes, then 5-minute writes,
+    then uncached input. When the provider reports no 5-minute/1-hour split,
+    every write is assumed to be a 1-hour write. Anything beyond that pool is
+    charged at the cache-read rate;
   - bytes converted to tokens with the provider's own count of the forwarded
     request, using the ratio that under-counts removals and over-counts
     additions.
