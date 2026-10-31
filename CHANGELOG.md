@@ -8,6 +8,13 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
 - Claude Opus 4.8, Opus 4.7 and Sonnet 4.6 now resolve to their verified
   1M-token window, 128K output and published prices (Bedrock ids included);
   they had fallen back to 128K, so session rescue compacted history early.
+- The templated log form no longer factors out values that contain its `|`
+  column separator. A value like `tags=a|b` split into two column entries,
+  shifting every later entry so each line's values sat beside another line's
+  (which user had which tags was wrong, though every value was present). Those
+  lines now stay verbatim. New tests check that every compressed form keeps
+  paired facts -- test and outcome, file:line and error code, row id and
+  value -- together.
 - Traffic Receipts now carry a conservative net saving
   (`net_saving_conservative_micro_usd`) for priced Claude models, on by
   default. It prices only what Entroly changed: removals at the cheapest
