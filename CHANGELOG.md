@@ -11,6 +11,13 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
   and timestamps dropped. Tool results are now matched to their tool's name
   through the call id, so `ENTROLY_TOOL_RESULT_EXCLUDE` also protects
   Anthropic tool results, which it never matched before.
+- Provider TLS now trusts the operating-system certificate store plus the
+  bundled roots, in the Python proxy and `entroly-rs`, so Entroly works behind
+  TLS-inspecting corporate gateways. `NODE_EXTRA_CA_CERTS` adds roots instead
+  of replacing the store; `REQUESTS_CA_BUNDLE`/`SSL_CERT_FILE` still name the
+  whole trust set. `ENTROLY_TLS_TRUST=bundled` restores bundled roots. Adds the
+  `truststore` dependency. See
+  [Troubleshooting](docs/TROUBLESHOOTING.md#certificate_verify_failed-or-unknownissuer-behind-a-corporate-network).
 - Claude Fable 5.1, Opus 5.5, Opus 5, Sonnet 5.5, Sonnet 5 and Haiku 5.5 now
   resolve to their verified 1M-token window and published prices, and Opus 4.6
   to its 1M window; they had fallen back to 128K, so session rescue compacted

@@ -241,10 +241,9 @@ def _safe_http_client_kwargs() -> dict[str, Any]:
             keepalive_expiry=30.0,
         ),
     }
-    ca_bundle = _proxy._resolve_ca_bundle_from_env()
-    if ca_bundle:
-        kwargs["verify"] = ca_bundle
-    return kwargs
+    from .tls_trust import apply_upstream_verify
+
+    return apply_upstream_verify(kwargs)
 
 
 def _generic_transport_exception(exc: Exception, request: httpx.Request) -> Exception:
