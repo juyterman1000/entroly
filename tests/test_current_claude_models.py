@@ -65,6 +65,36 @@ def test_claude_5_models_resolve_verified_with_1m_window(
     assert context_window_for_model(form.format(model_id)) == 1_000_000
 
 
+# Opus 4.8, Opus 4.7 and Sonnet 4.6: 1M window and 128K output per the
+# context-windows page; Bedrock ids from model-ids-and-versions (no "-v1"
+# suffix after Opus 4.6).
+CLAUDE_4_CURRENT = [
+    ("claude-opus-4-8", "claude-opus-4.8", 5.0, 25.0),
+    ("claude-opus-4-7", "claude-opus-4.7", 5.0, 25.0),
+    ("claude-sonnet-4-6", "claude-sonnet-4.6", 3.0, 15.0),
+]
+
+
+@pytest.mark.parametrize(("model_id", "dotted", "input_price", "output_price"), CLAUDE_4_CURRENT)
+@pytest.mark.parametrize("form", ["{}", "anthropic/{}", "anthropic.{}", "dotted"])
+def test_current_claude_4_models_resolve_verified_with_1m_window(
+    model_id: str, dotted: str, input_price: float, output_price: float, form: str
+) -> None:
+    name = dotted if form == "dotted" else form.format(model_id)
+    result = get_model_registry().resolve(name)
+
+    assert result.capability is not None
+    assert result.capability.id == f"anthropic/{dotted}"
+    assert result.trust is RegistryTrust.VERIFIED
+    assert result.warning is None
+    assert result.context_window == 1_000_000
+    assert result.capability.max_output_tokens == 128_000
+    assert result.capability.input_price_per_million == input_price
+    assert result.capability.output_price_per_million == output_price
+    assert context_window_for_model(name) == 1_000_000
+    assert vt.estimate_cost(1_000_000, model_id) == pytest.approx(input_price)
+
+
 def test_opus_4_6_has_its_1m_window() -> None:
     # Recorded as 200K, which made session rescue fire at a fifth of the window.
     assert context_window_for_model("claude-opus-4-6") == 1_000_000
