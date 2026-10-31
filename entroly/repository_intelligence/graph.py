@@ -286,18 +286,23 @@ def resolve_calls(
             if len(edges) + len(unresolved) >= limits.max_edges:
                 limit_reached = True
                 break
+    # Distinct same-line calls tie on the old location key. Complete the key
+    # so set iteration/hash randomization cannot change persisted identities.
     resolved = tuple(
         sorted(
             edges,
             key=lambda edge: (
-                edge.caller_id, edge.callee_id, edge.path, edge.line
+                edge.caller_id, edge.callee_id, edge.path, edge.line,
+                edge.start_byte, edge.end_byte, edge.evidence_sha256,
+                edge.confidence, edge.kind, edge.resolution,
             ),
         )
     )
     unknown = tuple(sorted(
         unresolved,
         key=lambda call: (
-            call.path, call.line, call.caller_id, call.target, call.reason
+            call.path, call.line, call.caller_id, call.target, call.reason,
+            call.start_byte, call.end_byte, call.evidence_sha256, call.candidates,
         ),
     ))
     return resolved, unknown
