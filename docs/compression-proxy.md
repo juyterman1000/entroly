@@ -69,6 +69,18 @@ By default Entroly compresses:
 Gemini function-call IDs, part order, thought signatures, and unknown
 structured fields are preserved. Ambiguous structures pass through unchanged.
 
+With session rescue turned off (`ENTROLY_SESSION_RESCUE=0`), the proxy's
+pattern-based tool compression applies two name-based rules. A tool result is
+matched to its tool's name through the call that produced it (Anthropic
+`tool_use_id`, OpenAI `tool_call_id`):
+
+- Shell output (`Bash`, `shell`, `run_terminal_cmd`, `execute_command` and
+  similar; add names with `ENTROLY_SHELL_TOOLS`) of at most 4,000 characters
+  is forwarded exactly as printed, so a short `ls -l` or `git status` keeps
+  its sizes, modes, timestamps and paths. `ENTROLY_SHELL_VERBATIM_CHARS` sets
+  the floor; `0` turns it off.
+- Tools named in `ENTROLY_TOOL_RESULT_EXCLUDE` are never compressed.
+
 Entroly preserves user and assistant text by default because the latest user
 message is usually the semantic target. User-message compression is explicit:
 

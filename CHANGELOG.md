@@ -5,6 +5,12 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
 
 ## Unreleased
 
+- With session rescue off, shell tool output of at most 4,000 characters is
+  forwarded verbatim (`ENTROLY_SHELL_VERBATIM_CHARS`, `ENTROLY_SHELL_TOOLS`);
+  a 30-file `ls -l` had been rewritten with sizes rounded to "1KB" and modes
+  and timestamps dropped. Tool results are now matched to their tool's name
+  through the call id, so `ENTROLY_TOOL_RESULT_EXCLUDE` also protects
+  Anthropic tool results, which it never matched before.
 - Security: closed four paths by which untrusted content or another website
   could act through Entroly's local surfaces.
   - The proxy's sidecar endpoints (`/retrieve`, `/context` and others) now
