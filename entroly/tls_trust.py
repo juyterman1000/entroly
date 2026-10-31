@@ -94,8 +94,16 @@ def _exclusive_context(location: str) -> ssl.SSLContext:
 def upstream_ssl_context() -> tuple[ssl.SSLContext, str]:
     """Return ``(context, policy)`` for provider-bound HTTPS.
 
-    ``policy`` names what was chosen, for diagnostics.
+    ``policy`` names what was chosen, for diagnostics. Every context refuses
+    TLS 1.0 and 1.1 whatever the local OpenSSL configuration allows; every
+    provider endpoint Entroly forwards to speaks TLS 1.2 or later.
     """
+    context, policy = _trust_context()
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    return context, policy
+
+
+def _trust_context() -> tuple[ssl.SSLContext, str]:
     exclusive = exclusive_ca_bundle()
     if exclusive:
         return _exclusive_context(exclusive), "exclusive-bundle"

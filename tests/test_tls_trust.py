@@ -57,6 +57,18 @@ def _certifi_count() -> int:
 # ── policy ───────────────────────────────────────────────────────────────
 
 
+@pytest.mark.parametrize(
+    "env",
+    [{}, {"ENTROLY_TLS_TRUST": "bundled"}, {"SSL_CERT_FILE": "__CERTIFI__"}],
+    ids=["os-store", "bundled", "exclusive"],
+)
+def test_every_policy_refuses_tls_below_1_2(monkeypatch, env) -> None:
+    for name, value in env.items():
+        monkeypatch.setenv(name, certifi.where() if value == "__CERTIFI__" else value)
+    context, _ = tls_trust.upstream_ssl_context()
+    assert context.minimum_version >= ssl.TLSVersion.TLSv1_2
+
+
 def test_default_policy_uses_the_os_store() -> None:
     context, policy = tls_trust.upstream_ssl_context()
     assert isinstance(context, ssl.SSLContext)
@@ -265,6 +277,7 @@ def _serve_tls(ca: _CA, tmp_path: Path):
         )
     )
     server_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    server_context.minimum_version = ssl.TLSVersion.TLSv1_2
     server_context.load_cert_chain(cert_file, key_file)
 
     listener = socket.create_server(("127.0.0.1", 0))
