@@ -5,6 +5,13 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
 
 ## Unreleased
 
+- Provider TLS now trusts the operating-system certificate store plus the
+  bundled roots, in the Python proxy and `entroly-rs`, so Entroly works behind
+  TLS-inspecting corporate gateways. `NODE_EXTRA_CA_CERTS` adds roots instead
+  of replacing the store; `REQUESTS_CA_BUNDLE`/`SSL_CERT_FILE` still name the
+  whole trust set. `ENTROLY_TLS_TRUST=bundled` restores bundled roots. Adds the
+  `truststore` dependency. See
+  [Troubleshooting](docs/TROUBLESHOOTING.md#certificate_verify_failed-or-unknownissuer-behind-a-corporate-network).
 - Corrected optional WITNESS calibration's lower-tail rank and empty-evidence
   handling. Legacy or invalid stored profiles now return all-SUPPRESS thresholds
   rather than reactivating permissive learned values; recalibrate explicitly.
