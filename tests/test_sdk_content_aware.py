@@ -459,16 +459,25 @@ def test_optimize_does_not_configure_the_host_apps_logging(tmp_path):
     # was reconfigured and engine INFO lines appeared on its stderr.
     import subprocess
     import sys
+    from pathlib import Path
 
     script = (
-        "import logging, entroly\n"
+        "import logging, sys\n"
+        "from pathlib import Path\n"
+        "source_root = Path(sys.argv[1]).resolve()\n"
+        "sys.path.insert(0, str(source_root))\n"
+        "import entroly\n"
+        "assert Path(entroly.__file__).resolve() == source_root / 'entroly' / '__init__.py', "
+        "'logging probe imported a different checkout'\n"
         "entroly.optimize([{'content': 'def login(user):\\n    return check(user)\\n',"
         " 'source': 'auth.py'}], budget=200, query='fix the login bug')\n"
         "print('root handlers:', len(logging.getLogger().handlers))\n"
         "print('root level:', logging.getLogger().level)\n"
     )
+    # cwd is deliberately outside the checkout. An ambient editable install
+    # may point at another worktree, so pin and verify the source under test.
     done = subprocess.run(
-        [sys.executable, "-c", script],
+        [sys.executable, "-I", "-B", "-c", script, str(Path(__file__).resolve().parents[1])],
         capture_output=True, text=True, timeout=300, cwd=tmp_path,
         env={**__import__("os").environ, "HOME": str(tmp_path)},
     )
