@@ -3565,7 +3565,12 @@ def _print_local_simulation(report: dict, *, title: str, include_perf: bool) -> 
             f"  {C.BOLD}Local optimize latency:{C.RESET} "
             f"min {lat['min']:.2f} ms, p95 {lat['p95']:.2f} ms, max {lat['max']:.2f} ms"
         )
-    print(f"  {C.GRAY}{'; '.join(report['limitations'])}{C.RESET}\n")
+    # One limitation per line. Joining with "; " after sentences that already
+    # end in "." produced a single 600-character ".;"-punctuated line.
+    print(f"  {C.GRAY}Limits of this estimate:{C.RESET}")
+    for limitation in report["limitations"]:
+        print(f"  {C.GRAY}- {limitation}{C.RESET}")
+    print()
     from .project_footprint import project_footprint_notice  # onb: footprint notice
 
     if footprint := project_footprint_notice(Path.cwd()):
