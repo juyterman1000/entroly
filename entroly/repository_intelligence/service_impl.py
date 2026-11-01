@@ -25,6 +25,7 @@ from .repository_map import (
     verify_repository_map_commitment,
 )
 from .runtime_overlay import build_verified_runtime_overlay
+from .rename_context import build_rename_context, validate_byte_budget
 from .semantic_overlay import build_verified_semantic_overlay
 from .verified_refactor import (
     apply_verified_rename_plan,
@@ -1006,6 +1007,22 @@ class RepositoryIntelligenceService:
         )
         payload["generation"] = generation
         return payload
+
+    def rename_context(
+        self, symbol_query: str, new_name: str, *,
+        byte_budget: int = 8192, cursor: str | None = None,
+    ) -> dict[str, object]:
+        """Read exact current Python source for one proposed rename, in pages."""
+        validate_byte_budget(byte_budget)
+        with self._build_lock:
+            index = self._build()
+            digest = self._digest_index(index)
+            plan = build_verified_rename_plan(
+                self.root, index, symbol_query, new_name, index_digest=digest,
+            )
+            return build_rename_context(
+                self.root, index, plan, byte_budget=byte_budget, cursor=cursor,
+            )
 
     def rename_preview(
         self,
