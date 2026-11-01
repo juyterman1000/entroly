@@ -227,9 +227,9 @@ Not mocked recordings — each video is rendered from a checked-in command that
 verifies its source artifact before printing a number.
 
 <p align="center">
-  <a href="docs/assets/proof_local.mp4"><img src="docs/assets/proof_local.gif" width="700" alt="Entroly local verification: twelve checks pass without an API key"></a>
+  <a href="docs/assets/proof_local.mp4"><img src="docs/assets/proof_local.gif" width="700" alt="Entroly local verification: every local check passes without an API key"></a>
 </p>
-<p align="center"><code>entroly verify-claims</code> — import, compression, receipts, WITNESS checks, recovery, proxy routing, replay. No API key.</p>
+<p align="center"><code>entroly verify-claims</code> — SDK import and compression, local indexing, budget-bounded selection, exact recovery, run offline. No API key.</p>
 <p align="center">
   <a href="docs/assets/proof_model_recovery.mp4"><img src="docs/assets/proof_model_recovery.gif" width="700" alt="Frozen model-recovery holdout: Entroly 24/24, published baseline 18/24"></a>
 </p>
