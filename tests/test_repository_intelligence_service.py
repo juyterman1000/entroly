@@ -278,6 +278,7 @@ def test_mcp_exposes_fixed_root_bounded_tools(tmp_path: Path, monkeypatch) -> No
         "repository_http_routes",
         "repository_code_health",
         "repository_rename_apply",
+        "repository_rename_context",
         "repository_rename_preview",
         "repository_safe_delete_apply",
         "repository_safe_delete_preview",

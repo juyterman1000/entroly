@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Sequence
 
 from .models import RepositoryLimits
+from .rename_context import RENAME_CONTEXT_SCHEMA, render_rename_context
 from .service import RepositoryIntelligenceError, RepositoryIntelligenceService
 
 CLI_SCHEMA_VERSION = "entroly.repository-cli.v2"
@@ -210,6 +211,14 @@ def _parser() -> argparse.ArgumentParser:
     semantic.add_argument("--relationships-json", required=True)
     semantic.add_argument("--provider", required=True)
     semantic.add_argument("--max-relationships", type=int, default=100_000)
+
+    rename_context = subcommands.add_parser(
+        "rename-context", help="page exact current Python source for a proposed rename",
+    )
+    rename_context.add_argument("--symbol", required=True)
+    rename_context.add_argument("--new-name", required=True)
+    rename_context.add_argument("--byte-budget", type=int, default=8192)
+    rename_context.add_argument("--cursor", help="next_cursor from the preceding page")
 
     rename_preview = subcommands.add_parser(
         "rename-preview",
@@ -482,6 +491,10 @@ def run(argv: Sequence[str] | None = None) -> tuple[int, dict[str, object]]:
             )
             payload["command"] = "semantic"
             return 0, payload
+        if args.command == "rename-context":
+            return 0, service.rename_context(
+                args.symbol, args.new_name, byte_budget=args.byte_budget, cursor=args.cursor,
+            )
         if args.command == "rename-preview":
             relationships: list[dict[str, object]] = []
             if args.semantic_json:
@@ -603,6 +616,16 @@ def run(argv: Sequence[str] | None = None) -> tuple[int, dict[str, object]]:
 
 def main(argv: Sequence[str] | None = None) -> int:
     code, payload = run(argv)
+    if payload.get("schema_version") == RENAME_CONTEXT_SCHEMA:
+        rendered = render_rename_context(payload)
+        binary = getattr(sys.stdout, "buffer", None)
+        if binary is not None:
+            # Avoid Windows newline translation and locale-dependent encoding:
+            # the receipt counts exactly these UTF-8 bytes, including one LF.
+            binary.write(rendered.encode("utf-8"))
+        else:
+            sys.stdout.write(rendered)
+        return code
     json.dump(payload, sys.stdout, indent=2, sort_keys=True)
     sys.stdout.write("\n")
     return code
