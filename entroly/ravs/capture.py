@@ -112,10 +112,12 @@ def capture_from_args(
     return outcome_event
 
 
-def capture_from_stdin(log_path: Optional[str] = None) -> Optional[dict]:
+def capture_from_stdin(
+    log_path: Optional[str] = None, host: Optional[str] = None
+) -> Optional[dict]:
     """Read a JSON object from stdin and capture it.
 
-    Expected stdin format (Claude Code PostToolUse):
+    Accepts a payload that states ``exit_code`` (generic and CI callers):
     {
         "tool_name": "Bash",
         "tool_input": {"command": "pytest tests/"},
@@ -123,6 +125,11 @@ def capture_from_stdin(log_path: Optional[str] = None) -> Optional[dict]:
         "exit_code": 0,
         "duration_ms": 500
     }
+
+    and Claude Code's own Bash events, which state the outcome with the event
+    name instead: ``PostToolUseFailure`` with an ``Exit code N`` error line,
+    and ``PostToolUse`` for exit 0 when ``host`` is ``"claude-code"``. See
+    `entroly.hook_outcome` for why a success needs that flag.
     """
     try:
         # Same machine JSON protocol boundary as the activation hook, and the
@@ -178,16 +185,14 @@ def capture_from_stdin(log_path: Optional[str] = None) -> Optional[dict]:
     # RAVS is fail-closed: a payload that does not state an exit code says
     # nothing about success. Defaulting it to 0 recorded every such command --
     # failing test runs included -- as a strong "pass" (confidence 0.85).
-    raw_exit = data.get("exit_code")
-    try:
-        exit_code = (
-            None if raw_exit is None or isinstance(raw_exit, bool) else int(raw_exit)
-        )
-    except (TypeError, ValueError):
-        exit_code = None
+    # Claude Code states it through the event name rather than a field.
+    from ..hook_outcome import exit_code as stated_exit_code
+    from ..hook_outcome import output_text
+
+    exit_code = stated_exit_code(data, host=host)
     if exit_code is None:
         return None
-    stdout_tail = data.get("tool_output", data.get("stdout", ""))
+    stdout_tail = output_text(data)
     # Truncate stdout to last 1KB to keep events lean
     if len(stdout_tail) > 1024:
         stdout_tail = stdout_tail[-1024:]
@@ -231,11 +236,14 @@ def main() -> None:
                         help="Override event log path")
     parser.add_argument("--quiet", "-q", action="store_true",
                         help="Suppress output")
+    parser.add_argument("--host", type=str, default=None,
+                        help="Host whose event semantics the payload follows "
+                             "(claude-code)")
 
     args = parser.parse_args()
 
     if args.stdin:
-        result = capture_from_stdin(log_path=args.log)
+        result = capture_from_stdin(log_path=args.log, host=args.host)
     elif args.command is not None and args.exit_code is not None:
         result = capture_from_args(
             command=args.command,

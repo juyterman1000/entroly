@@ -286,6 +286,14 @@ def _add_tools_and_runtime_commands(subparsers) -> None:
         "--log", type=str, default=None,
         help="Override RAVS event log path",
     )
+    ravs_capture_parser.add_argument(
+        "--host", type=str, default=None, choices=["claude-code"],
+        help=(
+            "Host whose event semantics the stdin payload follows. "
+            "claude-code: PostToolUse means exit 0 (written by "
+            "`entroly ravs hook install`, which also registers the failure event)"
+        ),
+    )
 
     # entroly ravs hook — install/manage PostToolUse hooks
     ravs_hook_parser = ravs_subparsers.add_parser(

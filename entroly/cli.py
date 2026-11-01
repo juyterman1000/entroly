@@ -6742,7 +6742,9 @@ def cmd_ravs(args):
         log_path = getattr(args, "log", None)
         use_stdin = getattr(args, "stdin", False)
         if use_stdin:
-            result = capture_from_stdin(log_path=log_path)
+            result = capture_from_stdin(
+                log_path=log_path, host=getattr(args, "host", None)
+            )
         else:
             command = getattr(args, "capture_command", None)
             exit_code = getattr(args, "exit_code", None)
