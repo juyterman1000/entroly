@@ -1,6 +1,6 @@
 {
   "name": "entroly",
-  "version": "1.0.87",
+  "version": "1.0.88",
   "description": "Evidence operations, auditable context selection, and exact recovery for AI coding agents.",
   "author": {
     "name": "Entroly"

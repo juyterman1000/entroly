@@ -74,6 +74,31 @@ def test_bump_chains_multiple_edits_to_the_same_file(tmp_path, monkeypatch):
     )
 
 
+def test_bump_updates_worker_lock_identity_without_changing_dependencies(tmp_path, monkeypatch):
+    import copy
+    import json
+
+    relative = "deploy/cloudflare-community-savings/package-lock.json"
+    path = tmp_path / relative
+    path.parent.mkdir(parents=True)
+    original = {
+        "name": "entroly-community-savings-worker", "version": "1.0.87",
+        "lockfileVersion": 3,
+        "packages": {
+            "": {"name": "entroly-community-savings-worker", "version": "1.0.87",
+                 "devDependencies": {"wrangler": "4.156.0"}},
+            "node_modules/third-party": {"version": "1.0.87", "integrity": "unchanged"},
+        },
+    }
+    path.write_text(json.dumps(original, indent=2) + "\n", encoding="utf-8")
+    monkeypatch.setattr(bump_version, "ROOT", tmp_path)
+    monkeypatch.setattr(bump_version, "TARGETS", [item for item in bump_version.TARGETS if item[0] == relative])
+    assert bump_version.main(["bump_version.py", "1.0.88"]) == 0
+    expected = copy.deepcopy(original)
+    expected["version"] = expected["packages"][""]["version"] = "1.0.88"
+    assert json.loads(path.read_text(encoding="utf-8")) == expected
+
+
 def test_bump_summary_reports_replacements_and_unique_files(tmp_path, monkeypatch, capsys):
     manifest = tmp_path / "manifest.toml"
     manifest.write_text('version = "1.0.0"\ndep = "core>=1.0.0,<2"\n', encoding="utf-8")

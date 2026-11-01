@@ -399,7 +399,7 @@ Tools → AI Assistant → Model Context Protocol (MCP)**:
   "mcpServers": {
     "entroly": {
       "command": "npx",
-      "args": ["-y", "entroly-mcp@1.0.87", "serve"],
+      "args": ["-y", "entroly-mcp@1.0.88", "serve"],
       "env": {
         "ENTROLY_NO_DOCKER": "1",
         "ENTROLY_MCP_PASSIVE": "1",
