@@ -302,6 +302,28 @@ def _merge_settings(existing: dict, hook_config: dict) -> dict:
     return merged
 
 
+def capture_registration_path() -> Path | None:
+    """The user settings file when it registers the capture hook, else None.
+
+    Read-only, for callers that must say what they are about to remove.
+    """
+    settings_path = _claude_code_settings_path()
+    try:
+        settings = json.loads(settings_path.read_text(encoding="utf-8-sig"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    hooks = settings.get("hooks") if isinstance(settings, dict) else None
+    if not isinstance(hooks, dict):
+        return None
+    for event in _CAPTURE_EVENTS:
+        section = hooks.get(event)
+        if isinstance(section, list) and any(
+            _is_capture_registration(entry) for entry in section
+        ):
+            return settings_path
+    return None
+
+
 def uninstall_claude_code() -> dict:
     """Remove the RAVS hooks from Claude Code settings."""
     settings_path = _claude_code_settings_path()

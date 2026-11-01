@@ -6146,11 +6146,22 @@ def cmd_uninstall(args):
     uninstall_command = [sys.executable, "-m", "pip", "uninstall", "entroly"]
     if bool(getattr(args, "yes", False)):
         uninstall_command.append("-y")
+    # `entroly ravs hook install` writes this installation's absolute path to
+    # `entroly` into Claude Code's settings. pip deletes that file, and hooks
+    # left behind fail on every later tool call with a hook error.
+    from entroly.ravs.hooks import capture_registration_path
+
+    hook_settings = None if feedback_only else capture_registration_path()
     if feedback_only:
         print("\n  Feedback-only mode: the package will not be uninstalled.")
     else:
         print(f"\n  Uninstall command: {subprocess.list2cmdline(uninstall_command)}")
     if dry_run:
+        if hook_settings is not None:
+            print(
+                f"  Would also remove the RAVS capture hooks from {hook_settings}: "
+                "they run the entroly executable pip is about to delete."
+            )
         print(f"  {C.GRAY}Dry run: feedback was not sent and nothing was uninstalled.{C.RESET}")
         return 0
 
@@ -6192,6 +6203,25 @@ def cmd_uninstall(args):
 
     if feedback_only:
         return 0
+
+    if hook_settings is not None:
+        from entroly.ravs.hooks import uninstall_claude_code
+
+        if uninstall_claude_code().get("action") == "uninstalled":
+            print(
+                f"  Removed the RAVS capture hooks from {hook_settings}: they would "
+                "fail on every tool call once entroly is gone."
+            )
+            print(
+                f"  {C.GRAY}Keeping entroly after all? Restore them with: "
+                f"entroly ravs hook install --claude-code{C.RESET}"
+            )
+        else:
+            print(
+                f"  {C.YELLOW}Could not edit {hook_settings}. Remove its `ravs capture` "
+                f"hooks by hand, or Claude Code will report a hook error on every "
+                f"tool call.{C.RESET}"
+            )
 
     completed = subprocess.run(uninstall_command, check=False)
     return int(completed.returncode)
