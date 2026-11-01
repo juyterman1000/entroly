@@ -101,6 +101,9 @@ def _run(output: str | None, max_files: int, outbound: list[str]) -> int:
 
     config = EntrolyConfig(use_persistent_index=False)
     engine = EntrolyEngine(config)
+    # Decided once, up front: the savings line in [3] and the final banner
+    # both depend on it, and a claim must not be printed before its caveat.
+    native = bool(getattr(engine, "_use_rust", False))
 
     print("\n[1] SDK import path")
     print("-" * 40)
@@ -181,8 +184,9 @@ def _run(output: str | None, max_files: int, outbound: list[str]) -> int:
     )
     print(
         f"  selected={len(selected)} tokens={used:,} "
-        f"savings={savings:.1f}% vs {baseline:,}-token baseline "
-        f"latency={optimize_ms:.1f}ms"
+        f"savings={savings:.1f}% vs {baseline:,}-token baseline"
+        + ("" if native else " (unearned: relevance ranking is OFF)")
+        + f" latency={optimize_ms:.1f}ms"
     )
 
     # A deliberate no-match is not a failure. The engine refuses to return
@@ -299,7 +303,6 @@ def _run(output: str | None, max_files: int, outbound: list[str]) -> int:
 
     print("\n[5] Engine mode")
     print("-" * 40)
-    native = bool(getattr(engine, "_use_rust", False))
     # Reported, not counted: it was a check that could not fail.
     if native:
         print("  [INFO] Engine: native Rust engine")
@@ -342,6 +345,10 @@ def _run(output: str | None, max_files: int, outbound: list[str]) -> int:
             "slice_budget": recovery_budget,
         },
         "engine": "rust" if native else "python",
+        # Without the engine, selection never reads the query and the savings
+        # figure is the budget, not a measurement (same terms `simulate` uses).
+        "relevance_ranking": native,
+        "savings_basis": "query_conditioned" if native else "unranked_budget_arithmetic",
         "passed": passed,
         "failed": failed,
         "results": results,
@@ -369,6 +376,16 @@ def _run(output: str | None, max_files: int, outbound: list[str]) -> int:
 
     print("\n" + "=" * 70)
     print(f"RESULTS: {passed}/{len(results)} checks passed ({failed} failed)")
+    if not native:
+        # The banner is what a first-time user reads. Every check above can pass
+        # on an install where selection ignores the query, so the result has to
+        # say so here, not only in an [INFO] line in section 5.
+        print(
+            "Relevance ranking is OFF: the native engine (entroly-core) is not "
+            "installed, so selection ignores your query and the savings figure "
+            "is budget arithmetic, not a measured saving."
+        )
+        print("Fix: python -m pip install -U entroly-core   (then: entroly doctor)")
     print("=" * 70)
     return 0 if failed == 0 else 1
 
