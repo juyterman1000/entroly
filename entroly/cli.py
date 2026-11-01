@@ -3013,6 +3013,24 @@ def _recommend_quality(project: dict, file_count: int) -> str:
     return "balanced"
 
 
+def _proxy_base_url_guide(port: int) -> str:
+    """What to set, per client family, to route through the proxy.
+
+    `entroly go` printed one URL, ``http://localhost:<port>/v1``. That suffix is
+    right for OpenAI-compatible SDKs but not for the Anthropic SDK or Claude
+    Code, which append ``/v1/messages`` themselves: following it sent
+    ``/v1/v1/messages`` upstream and every request failed with 404. These are
+    the same values `entroly wrap` sets for those clients.
+    """
+    return (
+        f"  {C.BOLD}Point your AI tool's API base URL at the proxy:{C.RESET}\n"
+        f"    Anthropic SDK, Claude Code:  ANTHROPIC_BASE_URL=http://localhost:{port}\n"
+        f"    OpenAI-compatible SDKs:      OPENAI_BASE_URL=http://localhost:{port}/v1\n"
+        f"  {C.GRAY}Anthropic clients add /v1 themselves; a base URL ending in /v1 "
+        f"makes them call /v1/v1/messages.{C.RESET}"
+    )
+
+
 def cmd_go(args):
     """Start local MCP setup, proxy, and dashboard."""
     print(f"""
@@ -3093,10 +3111,10 @@ def cmd_go(args):
     print(f"""
   {C.GREEN}{C.BOLD}Local services ready!{C.RESET}
 
-  {C.GREEN}Proxy:{C.RESET}      http://localhost:{config.port}/v1
+  {C.GREEN}Proxy:{C.RESET}      http://localhost:{config.port}
   {C.GREEN}Dashboard:{C.RESET}  http://localhost:{dashboard_port}
 
-  {C.BOLD}Point your AI tool's API base URL to the proxy URL above.{C.RESET}
+{_proxy_base_url_guide(config.port)}
   {C.GRAY}Only traffic sent to this URL can be optimized; MCP registration alone does not route requests.{C.RESET}
   {C.GRAY}After a real request, run `entroly value --json` and check provider_path.requests_observed.{C.RESET}
   {C.GRAY}Press Ctrl+C to stop.{C.RESET}
