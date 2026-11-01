@@ -176,6 +176,8 @@ def test_source_change_during_selection_is_rejected(tmp_path: Path, monkeypatch)
 @pytest.mark.parametrize("raw", [
     b"@decorate(\n    'value'\n)\ndef execute():\n    return 1\n",
     b"@decorate\r\ndef execute():\r\n    return 1\r\n",
+    b"@decorate\rdef execute():\r    return 1\r",
+    b"@decorate\r\ndef execute():\n    return 1\r",
     b"def execute(): return 1;\n",
 ])
 def test_physical_lines_preserve_decorators_and_crlf(tmp_path: Path, raw: bytes) -> None:

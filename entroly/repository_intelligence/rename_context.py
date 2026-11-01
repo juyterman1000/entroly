@@ -8,6 +8,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import json
+import re
 from pathlib import Path
 
 from .models import RepositoryIndex
@@ -50,11 +51,9 @@ def _regions(root: Path, index: RepositoryIndex, plan: dict) -> list[dict]:
             tree = ast.parse(raw)
         except (UnicodeError, SyntaxError, ValueError) as exc:
             raise ValueError("rename context requires parseable UTF-8 Python source") from exc
-        offsets = [0]
-        # Only LF ends a Python physical line; bytes.splitlines also splits CR.
-        for line in raw.split(b"\n")[:-1]:
-            offsets.append(offsets[-1] + len(line) + 1)
-        offsets.append(len(raw))
+        # Python accepts LF, CRLF and bare CR. Count physical newlines without
+        # changing original bytes or treating Unicode separators as newlines.
+        offsets = [0] + [match.end() for match in re.finditer(rb"\r\n|\r|\n", raw)] + [len(raw)]
         spans = []
         for node in tree.body:
             first = min([node.lineno] + [
