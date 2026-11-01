@@ -173,7 +173,12 @@ def test_every_action_the_installer_returns_has_a_cli_branch() -> None:
 
 
 def test_a_user_scope_hook_is_still_detected_first(scopes) -> None:
-    """The pre-existing same-scope check keeps working."""
+    """The pre-existing same-scope check keeps working.
+
+    This registration predates the failure event and the host flag, so it is
+    brought up to date in place (test_ravs_hook_registers_failure_event.py)
+    rather than reported as current -- and still never duplicated.
+    """
     home, _ = scopes
     (home / ".claude" / "settings.json").write_text(
         json.dumps(
@@ -196,7 +201,8 @@ def test_a_user_scope_hook_is_still_detected_first(scopes) -> None:
         encoding="utf-8",
     )
 
-    assert install_claude_code()["action"] == "already_present"
+    assert install_claude_code()["action"] == "updated"
+    assert len(_registered_commands(home)) == 1
 
 
 def _registered_commands(home) -> list[str]:

@@ -6775,7 +6775,7 @@ def cmd_ravs(args):
             result = uninstall_claude_code()
             path = result.get("path", "")
             if result.get("action") == "uninstalled":
-                print(f"  {C.GREEN}✓ Removed RAVS PostToolUse hook from {path}{C.RESET}")
+                print(f"  {C.GREEN}✓ Removed RAVS PostToolUse hook (and its PostToolUseFailure pair) from {path}{C.RESET}")
                 print(f"  {C.GRAY}Restart Claude Code to apply.{C.RESET}")
                 return 0
             if result.get("action") == "not_found":
@@ -6794,8 +6794,11 @@ def cmd_ravs(args):
         action = result.get("action")
         path = result.get("path", "")
         if action == "installed":
-            print(f"  {C.GREEN}\u2713 Installed RAVS PostToolUse hook \u2192 {path}{C.RESET}")
+            print(f"  {C.GREEN}\u2713 Installed RAVS capture hooks \u2192 {path}{C.RESET}")
             print(f"  {C.GRAY}Restart Claude Code to activate. Every Bash tool use now feeds RAVS.{C.RESET}")
+        elif action == "updated":
+            print(f"  {C.GREEN}\u2713 Updated RAVS capture hooks \u2192 {path}{C.RESET}")
+            print(f"  {C.GRAY}Failing commands now reach RAVS too. Restart Claude Code.{C.RESET}")
         elif action == "unreadable":
             print(
                 f"  {C.RED}✗ Not installed: {path} is "
