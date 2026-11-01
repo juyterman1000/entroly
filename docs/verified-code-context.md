@@ -394,6 +394,56 @@ converts them to exact UTF-8 byte ranges, and verifies both endpoints against
 fresh indexed source. The provider remains explicitly untrusted: this proves
 which source spans it connected, not that its semantic conclusion is correct.
 
+## Exact source pages for a Python rename
+
+For reviewing the source around a proposed rename, including module imports
+that symbol-only context can miss:
+
+```powershell
+python -m entroly.repository_intelligence --root . rename-context `
+  --symbol "payments.service.charge_card" --new-name authorize_card `
+  --byte-budget 8192
+```
+
+The focused repository MCP server exposes the same operation as
+`repository_rename_context(symbol_query, new_name, byte_budget=8192, cursor=None)`.
+The service method is `RepositoryIntelligenceService.rename_context(...)`.
+Pass the returned `delivery.next_cursor` to `--cursor` or `cursor` until it is
+`null`. Keep output files outside the indexed source tree.
+
+Each successful response fits the requested 4096–262144 byte limit, measured
+as the complete UTF-8 JSON text including metadata and its final LF. CLI and
+focused MCP use the same formatter. The MCP transport envelope, error responses,
+tokenization and model billing are outside this byte contract. Tiny budgets
+that cannot fit metadata plus source fail explicitly.
+
+Source regions are exact top-level Python statements covering the verified
+planner's edits, including decorators and import statements. Large regions
+are split at UTF-8 boundaries; fragments carry absolute file byte coordinates,
+region bounds, file hashes and full-region hashes for exact reconstruction.
+Source text is untrusted data, never agent instructions. Cursors bind the task,
+index and region inventory; source or task changes require a fresh first page.
+Only current matching bytes can be recovered; this is not historical storage.
+
+The index and plan are rebuilt on every request under the configured indexing
+limits and exclusions. This costs a fresh bounded repository scan per page.
+Source hashes are rechecked after selection, without claiming an atomic snapshot
+against concurrent external writers. Unsupported source encodings/languages,
+ambiguous queries and edits without enclosing Python statements fail explicitly.
+No code is executed and no edit is applied. Binding conflicts and planner
+omissions remain visible as counts; use `rename-preview` for their full detail.
+Delivery completeness covers **selected plan regions only**. Dynamic references,
+all-reference completeness and semantic correctness remain unproven. This
+operation adds no destructive-write authority and changes no existing context,
+WITNESS or RAVS behavior.
+
+The design uses explicit task and horizon boundaries, informed by
+[finite one-step field partitions](https://arxiv.org/abs/2609.00024),
+[validity-preserving data operations](https://arxiv.org/abs/2609.00273), and
+[predictive-state scope](https://arxiv.org/abs/2609.01131). These motivate the
+boundaries; their theorems do not certify program equivalence, compression
+optimality, model answer quality or a research breakthrough here.
+
 ## Two-phase verified rename
 
 Rename preview is no-write by construction:
