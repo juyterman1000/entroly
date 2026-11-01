@@ -66,6 +66,14 @@ TARGETS = [
     # Benchmark results carry their own historical provenance. The root
     # benchmark now explicitly says that its engine version is unestablished,
     # so a release version must not be written into that evidence record.
+    # A lockfile has two product identities; dependency package versions are
+    # independent. Anchor both rules to the worker's root identity only.
+    ("deploy/cloudflare-community-savings/package-lock.json",
+        r'\A(\{\s*"name"\s*:\s*"entroly-community-savings-worker",\s*"version"\s*:\s*")[^"]+(\")',
+        r'\g<1>{v}\g<2>'),
+    ("deploy/cloudflare-community-savings/package-lock.json",
+        r'("packages"\s*:\s*\{\s*""\s*:\s*\{\s*"name"\s*:\s*"entroly-community-savings-worker",\s*"version"\s*:\s*")[^"]+(\")',
+        r'\g<1>{v}\g<2>'),
     ("deploy/cloudflare-community-savings/package.json",
         r'"version"\s*:\s*"[0-9]+\.[0-9]+\.[0-9]+"', '"version": "{v}"'),
     # Version examples shown to a human filling in a manual-dispatch field or an
