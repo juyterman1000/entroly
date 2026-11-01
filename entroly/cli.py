@@ -3319,7 +3319,7 @@ def _index_coverage(engine, files_indexed: int, max_files: int) -> dict:
 
 
 def _run_local_simulation(args) -> dict:
-    max_files = int(getattr(args, "max_files", 100) or 0)
+    max_files = int(getattr(args, "max_files", 120) or 0)
     engine, files_indexed, total_tokens, index_status = _load_local_simulation_engine(max_files)
     coverage = _index_coverage(engine, files_indexed, max_files)
     query_conditioned = _query_conditioned_selection_active(engine)
