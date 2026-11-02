@@ -16,6 +16,7 @@ from entroly.tree_sitter_support import validate_structural_syntax
 
 from .models import RepositoryIndex, Symbol
 from .parsers import module_name
+from .rename_export_closure import discover_python_export_changes
 from .rename_binding_review import (
     MAX_PREVIEW_REVIEW_FILES,
     reject_rename_binding_conflicts,
@@ -319,6 +320,35 @@ def build_verified_rename_plan(
                 break
             changes[(path, int(item["start_byte"]), int(item["end_byte"]))] = item
 
+    export_closure = discover_python_export_changes(index, symbol, source, max_changes=limit)
+    for key in export_closure["protected_loads"]:
+        changes.pop(key, None)
+    for proposed in export_closure["changes"]:
+        path = proposed["path"]
+        start, end = proposed["start_byte"], proposed["end_byte"]
+        if (path, start, end) in changes:
+            continue
+        if len(changes) >= limit:
+            omissions["change-limit"] += 1
+            export_closure["risk"]["status"] = "unknown"
+            closure_reasons = export_closure["risk"]["unknown_reasons"]
+            closure_reasons["change-limit"] = closure_reasons.get("change-limit", 0) + 1
+            break
+        export_raw, export_status = source(path)
+        if export_raw is None:
+            omissions[export_status] += 1
+            continue
+        item = _change(
+            path=path, start=start, end=end, raw=export_raw,
+            old_name=symbol.name, new_name=clean_new_name,
+            kind=proposed["kind"], source_sha256=index.files[path].sha256,
+            confidence="python-static-export-origin",
+        )
+        if item is not None:
+            changes[(path, start, end)] = item
+    for reason, count in export_closure["risk"]["unknown_reasons"].items():
+        omissions["python-export-closure:" + reason] += count
+
     relationship_limit = max(limit * 4, 100)
     relationships: list[Mapping[str, object]] = []
     for position, relationship in enumerate(semantic_relationships):
@@ -347,6 +377,9 @@ def build_verified_rename_plan(
             path = str(location.get("path", ""))
             start = int(location.get("start_byte", -1))
             end = int(location.get("end_byte", -1))
+            if (path, start, end) in export_closure["protected_loads"]:
+                omissions["explicit-import-alias-retained"] += 1
+                continue
             external_raw, external_status = source(path)
             if external_raw is None:
                 omissions[external_status] += 1
@@ -417,7 +450,9 @@ def build_verified_rename_plan(
         "unindexed_lexical_occurrences": lexical_review_candidates,
         "non_call_references_indexed": bool(relationships),
         "external_provider": str(provider).strip()[:128] or "none",
-        "dynamic_and_string_references": "not-indexed",
+        "dynamic_and_string_references": "only-canonical-literal-exports-indexed"
+        if export_closure["risk"]["status"] != "not-applicable" else "not-indexed",
+        "python_export_closure": export_closure["risk"],
     }
     base["receipt"] = {
         "freshness": "verified-against-indexed-source-sha256",

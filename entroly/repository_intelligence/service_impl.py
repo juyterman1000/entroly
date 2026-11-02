@@ -274,19 +274,36 @@ class RepositoryIntelligenceService:
             digest, generation = self._install(index)
         return self._summary(index, digest=digest, generation=generation)
 
-    def _snapshot(self) -> tuple[RepositoryIndex, str, int]:
+    def _snapshot(self, *, verify_current: bool = False) -> tuple[RepositoryIndex, str, int]:
         with self._lock:
-            if self._index is not None:
+            if self._index is not None and not verify_current:
                 return self._index, self._digest, self._generation
 
-        # Only one caller may perform the initial build. Recheck after taking
-        # the build lock because another caller may have completed it first.
+        # Serialize initial builds and current-scope validation. Ordinary
+        # queries retain their cached snapshot until an explicit refresh.
         with self._build_lock:
             with self._lock:
-                if self._index is not None:
+                if self._index is not None and not verify_current:
                     return self._index, self._digest, self._generation
-            index = self._build()
-            digest, generation = self._install(index)
+            try:
+                index = self._build()
+                if verify_current:
+                    digest = self._digest_index(index)
+                    with self._lock:
+                        if self._index is not None and digest == self._digest:
+                            return self._index, self._digest, self._generation
+                digest, generation = self._install(index)
+            except (OSError, RuntimeError, TypeError, ValueError) as exc:
+                if not verify_current:
+                    raise
+                with self._lock:
+                    self._index = None
+                    self._digest = ""
+                    self._query_graph = None
+                    self._query_graph_digest = ""
+                raise VerifiedRefactorError(
+                    "cannot verify current repository snapshot: " + type(exc).__name__
+                ) from None
             return index, digest, generation
 
     @staticmethod
@@ -1036,7 +1053,7 @@ class RepositoryIntelligenceService:
         """Build a no-write, source-verified rename transaction plan."""
         if not isinstance(symbol_query, str) or not symbol_query.strip():
             raise InvalidSymbolQuery("symbol query must not be empty")
-        index, digest, generation = self._snapshot()
+        index, digest, generation = self._snapshot(verify_current=True)
         try:
             payload = build_verified_rename_plan(
                 self.root,
@@ -1137,7 +1154,7 @@ class RepositoryIntelligenceService:
         """Build a no-write delete plan that blocks on every known reference."""
         if not isinstance(symbol_query, str) or not symbol_query.strip():
             raise InvalidSymbolQuery("symbol query must not be empty")
-        index, digest, generation = self._snapshot()
+        index, digest, generation = self._snapshot(verify_current=True)
         try:
             payload = build_verified_safe_delete_plan(
                 self.root,
@@ -1176,7 +1193,7 @@ class RepositoryIntelligenceService:
         max_blockers: int = 10_000,
     ) -> dict[str, object]:
         """Build a no-write Python module move with exact import rewrites."""
-        index, digest, generation = self._snapshot()
+        index, digest, generation = self._snapshot(verify_current=True)
         try:
             payload = build_verified_file_move_plan(
                 self.root,
@@ -1253,7 +1270,7 @@ class RepositoryIntelligenceService:
         max_relationships: int = 10_000,
     ) -> dict[str, object]:
         """Run one configured local LSP and return a committed no-write plan."""
-        index, digest, generation = self._snapshot()
+        index, digest, generation = self._snapshot(verify_current=True)
         try:
             orchestration = collect_lsp_references(
                 self.root,
