@@ -5,6 +5,27 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
 
 ## Unreleased
 
+- Surfaces that printed figures nobody measured now show measured values or
+  say they have none.
+  - VS Code: the compress commands computed a fixed 72% saving, copied the first
+    1,200 characters under a made-up "Merkle Receipt ... (Verified 0-1
+    Knapsack)" line, and "View Cryptographic Receipt" showed every user the same
+    hardcoded receipt, whose "Merkle Root" was the SHA-256 of the empty string.
+    The commands now run `entroly compress` on what the editor shows and display
+    that receipt; without the CLI they say so and show no figures.
+  - Entroly Desktop (`ui/`): counters started at 1,428,500 tokens and $14.28 and
+    never changed, the header said "DAEMON :9377 ACTIVE" while offline, and the
+    compression preview showed ~78% saved for any text. Counters now show "—"
+    until `/api/stats` reports a value, offline says offline, and the preview is
+    labelled an illustration and reports what its rules removed.
+  - The "Add Entroly to Cursor" links installed `entroly-mcp@1.0.84`: the pin
+    sits base64-encoded inside the link, where no version check could see it.
+    They now install the current release; the staleness checker decodes these
+    links and the bump script re-pins them.
+  - Browser extension: "Compress Selection with Entroly" stored the selection
+    where the playground could never read it, and the GitHub button's `?repo=`
+    was ignored. The selection now travels in the URL fragment (never sent to a
+    server) and the playground loads both.
 - With session rescue off, shell tool output of at most 4,000 characters is
   forwarded verbatim (`ENTROLY_SHELL_VERBATIM_CHARS`, `ENTROLY_SHELL_TOOLS`);
   a 30-file `ls -l` had been rewritten with sizes rounded to "1KB" and modes
