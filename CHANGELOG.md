@@ -5,6 +5,24 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
 
 ## Unreleased
 
+- First-run fixes from a clean-room run of `pip install entroly`, then
+  `verify-claims`, `simulate` and `entroly go`, on pallets/click.
+  - `.entroly/` now ignores itself with its own `.gitignore` (as `.pytest_cache`
+    does). `entroly go` fills it with one generated summary per source file, and
+    the first `git add -A` afterwards committed all 172 of them.
+  - `verify-claims` says when relevance ranking is off. Without `entroly-core`
+    every check read green while selection ignored the query; the result now
+    states that the savings figure is budget arithmetic and how to fix it.
+  - `verify-claims`, `simulate`, `perf` and `demo` share one file cap (120), so
+    two local checks on the same repository no longer report 114 and 94 files.
+  - `simulate` prints its limitations one per line.
+  - `entroly go` gives each client family its own base URL:
+    `ANTHROPIC_BASE_URL=http://localhost:9377` for the Anthropic SDK and Claude
+    Code, and `.../v1` only for OpenAI-compatible SDKs. The single `/v1` URL it
+    printed made Anthropic clients call `/v1/v1/messages`, which returned 404.
+  - A default start no longer warns that auto-recovery will not cover
+    streaming. Both settings involved are defaults; `/stats` still reports it,
+    and the warning remains for an explicit `ENTROLY_AUTO_RECOVERY`.
 - With session rescue off, shell tool output of at most 4,000 characters is
   forwarded verbatim (`ENTROLY_SHELL_VERBATIM_CHARS`, `ENTROLY_SHELL_TOOLS`);
   a 30-file `ls -l` had been rewritten with sizes rounded to "1KB" and modes
