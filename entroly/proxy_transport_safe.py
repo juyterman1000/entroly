@@ -602,7 +602,11 @@ async def _safe_forward_response(self, *args, **kwargs):
             payload = json.loads(bytes(response.body))
         except Exception:
             payload = {}
-        if payload.get("error") not in {"upstream_unavailable"}:
+        # A provider error body carries an object under "error"; only the
+        # proxy's own connect-failure response, already counted by the inner
+        # retry loop, carries the string "upstream_unavailable".
+        error = payload.get("error") if isinstance(payload, dict) else None
+        if error != "upstream_unavailable":
             breaker.record_failure()
     return response
 

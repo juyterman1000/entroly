@@ -2202,6 +2202,23 @@ def _ecp_is_redundant(text: str, context_trigrams: set[str]) -> bool:
 
 # Filler patterns: high-frequency, zero-information phrases
 # Categorized by linguistic function for targeted removal
+# A hedge, the sentence boundary before it (when it opens a sentence) and the
+# first character after it, so a removed opener does not leave a sentence
+# starting in lower case.
+_HEDGE_PATTERN = (
+    r"(?i)(^|(?<=[.!?])\s+)?\b(?:I think |I believe |It seems like |It looks like |"
+    r"It appears that |As far as I can tell,? |From what I can see,? |"
+    r"If I understand correctly,? )(\w?)"
+)
+
+
+def _drop_hedge(match: "_re.Match[str]") -> str:
+    boundary, following = match.group(1), match.group(2)
+    if boundary is None:
+        return following
+    return boundary + following.upper()
+
+
 _DISTILL_FILLER_PATTERNS: list[tuple[str, str]] = [
     # Pleasantries (zero technical content)
     (r"(?i)^(?:Sure!?|Of course!?|Absolutely!?|Great question!?|Happy to help!?|"
@@ -2212,10 +2229,9 @@ _DISTILL_FILLER_PATTERNS: list[tuple[str, str]] = [
      r"(?:take a look|look at|review|examine|analyze|check|investigate)\b[^.]*\.\s*", ""),
     # Meta-commentary ("Here's what I found")
     (r"(?i)^(?:Here(?:'s| is) (?:what|how|the|my|a|an)\b[^:]*:\s*)", ""),
-    # Hedging (near-zero information)
-    (r"(?i)\b(?:I think |I believe |It seems like |It looks like |"
-     r"It appears that |As far as I can tell,? |From what I can see,? |"
-     r"If I understand correctly,? )", ""),
+    # Hedging (near-zero information). Removing one that opens a sentence
+    # must re-capitalise the word after it: see _drop_hedge.
+    (_HEDGE_PATTERN, "_drop_hedge"),
     # Filler transitions
     (r"(?i)^(?:Now,? |Next,? |Then,? |After that,? |Moving on,? |"
      r"With that said,? |That being said,? |Having said that,? )"
@@ -2223,7 +2239,9 @@ _DISTILL_FILLER_PATTERNS: list[tuple[str, str]] = [
     # Closing pleasantries
     (r"(?i)(?:Let me know if (?:you (?:have|need)|there(?:'s| is)|that)\b[^.!]*[.!]?\s*$)", ""),
     (r"(?i)(?:Feel free to (?:ask|reach out|let me know)\b[^.!]*[.!]?\s*$)", ""),
-    (r"(?i)(?:Hope (?:this|that) helps!?\s*$)", ""),
+    # "I hope this helps!" too: matching only "hope this helps!" left the
+    # "I" behind as the last word of the answer.
+    (r"(?i)(?:\b(?:I )?hope (?:this|that|it) helps[.!]?\s*$)", ""),
     (r"(?i)(?:Is there anything else\b[^.?!]*[.?!]?\s*$)", ""),
     # Redundant acknowledgments
     (r"(?i)^(?:I see\.|I understand\.|Got it\.|Right\.|Okay\.)\s*", ""),
@@ -2240,7 +2258,8 @@ _DISTILL_FILLER_PATTERNS: list[tuple[str, str]] = [
 
 # Pre-compile for performance (called on every response)
 _DISTILL_COMPILED = [
-    (_re.compile(pat), repl) for pat, repl in _DISTILL_FILLER_PATTERNS
+    (_re.compile(pat), _drop_hedge if repl == "_drop_hedge" else repl)
+    for pat, repl in _DISTILL_FILLER_PATTERNS
 ]
 
 # Lines that are pure filler (entire line is fluff)
