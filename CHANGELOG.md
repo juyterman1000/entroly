@@ -26,6 +26,15 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
     where the playground could never read it, and the GitHub button's `?repo=`
     was ignored. The selection now travels in the URL fragment (never sent to a
     server) and the playground loads both.
+- A fail-closed `assure_context` now says what it could not verify. It raised
+  only "context assurance failed closed: uncertain"; the error now lists each
+  check that did not pass and, for the token budget, whether tiktoken or only
+  its cached `o200k_base` encoding is missing, with the command that caches it.
+- Documentation that failed when copied: the README's first SDK example raised
+  `NameError`; the Copilot CLI setup used a `--client copilot` the CLI rejects
+  (it now shows Copilot's own `/mcp add`); `entroly attach create` was missing
+  its required `--client`; and `entroly audit --taint` lacked the session
+  chain it needs.
 - With session rescue off, shell tool output of at most 4,000 characters is
   forwarded verbatim (`ENTROLY_SHELL_VERBATIM_CHARS`, `ENTROLY_SHELL_TOOLS`);
   a 30-file `ls -l` had been rewritten with sizes rounded to "1KB" and modes
