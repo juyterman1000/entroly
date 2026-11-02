@@ -23,6 +23,13 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
     uv ... or Node" even when `entroly` was installed and broken, and dropped the
     real error. It now names the failing runner, its exit status and the last
     line of its error, with a separate message when nothing is installed.
+    A broken install that exits before reading the hook payload is reported
+    by its exit status, not by the incidental `EPIPE`.
+  - The capture hook's `entroly` path is written as one word for bash, which
+    Claude Code runs hooks with (Git Bash on Windows). A path containing a
+    space split into words, and on Windows bash removed every backslash, so
+    the hook failed on every Bash tool call. Re-run
+    `entroly ravs hook install --claude-code` to rewrite an existing hook.
 - `entroly hook install` no longer edits shell startup files. The block it
   appended compressed nothing (its functions set a variable nothing read),
   replaced any existing bash `DEBUG` trap, and could not be removed:
