@@ -5,6 +5,26 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
 
 ## Unreleased
 
+- Responses through `entroly proxy` keep the provider's own metadata.
+  - Request ids (`request-id`, `x-request-id`) and rate-limit and retry headers
+    (`anthropic-ratelimit-*`, `x-ratelimit-*`, `retry-after`) reach the client;
+    every one was dropped, so the SDKs' `_request_id` was `None`.
+  - A 429 or a final 5xx on the buffered path is the provider's body and
+    headers, not the proxy's own JSON, so clients can tell `overloaded_error`
+    from `rate_limit_error` again. The retry policy is unchanged.
+  - Other provider endpoints (`count_tokens`, the model list, files, audio)
+    pass through with their headers, and non-JSON bodies arrive byte for byte
+    instead of wrapped as `{"data": ...}` text.
+- Requests the proxy made larger are reported as larger. Appending retrieved
+  context turned a 15-token "Say hello" into 674 tokens, yet `entroly value`
+  counted it as optimized and the `X-Entroly-Outcome` header said
+  `optimized`. Value now reports `requests_enlarged`, `input_tokens_added` and
+  `net_input_tokens_reduced` beside the saving, and the header says
+  `context_added`, `modified` or `observed` unless the request was sent smaller.
+- Response distillation no longer leaves broken text: "I hope this helps!"
+  ended an answer in a bare "I", and removing a hedge at the start of a
+  sentence left it in lower case.
+
 - With session rescue off, shell tool output of at most 4,000 characters is
   forwarded verbatim (`ENTROLY_SHELL_VERBATIM_CHARS`, `ENTROLY_SHELL_TOOLS`);
   a 30-file `ls -l` had been rewritten with sizes rounded to "1KB" and modes
