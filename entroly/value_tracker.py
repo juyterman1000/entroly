@@ -315,28 +315,15 @@ class ValueTracker:
         by older launch paths could also race across processes, so use a unique
         temporary file for the writeability check.
         """
-        explicit = os.environ.get("ENTROLY_DIR")
-        candidates = [Path(explicit).expanduser()] if explicit else [
-            Path.home() / ".entroly",
-            Path(tempfile.gettempdir()) / "entroly",
-        ]
-        for candidate in candidates:
-            try:
-                candidate.mkdir(parents=True, exist_ok=True)
-                with tempfile.NamedTemporaryFile(
-                    dir=candidate,
-                    prefix=".write_probe-",
-                    delete=True,
-                ):
-                    pass
-                return candidate
-            except OSError:
-                continue
+        from entroly.private_temp import writable_data_dir
 
-        # Keep the final path deterministic.  ``__init__`` will still fail
-        # loudly if even the OS temporary directory is unusable; silently
-        # discarding telemetry would be worse than an actionable error there.
-        return Path(tempfile.gettempdir()) / "entroly"
+        explicit = os.environ.get("ENTROLY_DIR")
+        # When nothing is writable this returns the preferred path unchecked,
+        # so ``__init__`` still fails loudly: silently discarding telemetry
+        # would be worse than an actionable error there.
+        return writable_data_dir(
+            Path(explicit).expanduser() if explicit else Path.home() / ".entroly"
+        )
 
     def __init__(self, data_dir: Path | None = None):
         self._dir = data_dir or self._default_dir()

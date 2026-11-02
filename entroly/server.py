@@ -5289,6 +5289,33 @@ def _announce_session_protection_mode() -> None:
     )
 
 
+def _exit_for_signal(signum: int) -> None:
+    """Leave now, without waiting for the thread that reads stdin.
+
+    The stdio transport reads stdin on a worker thread and interpreter
+    shutdown joins it, so while stdin stays open -- a terminal, or a host that
+    signals before closing the pipe -- raising SystemExit or KeyboardInterrupt
+    left the server running: Ctrl-C did nothing until Enter was pressed and
+    then printed three tracebacks, and SIGTERM was logged but the process kept
+    its ports and watchers until stdin closed. State is persisted before this
+    is called; writes elsewhere are atomic, as they must be for SIGKILL.
+    """
+    import signal
+
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.flush()
+        except Exception:
+            pass
+    logging.shutdown()
+    if signum == signal.SIGINT and os.name != "nt":
+        # Die by the signal, as Python does for an uncaught KeyboardInterrupt,
+        # so a shell loop around `entroly serve` stops on Ctrl-C as well.
+        signal.signal(signal.SIGINT, signal.SIG_DFL)
+        os.kill(os.getpid(), signal.SIGINT)
+    os._exit(0 if signum == getattr(signal, "SIGTERM", None) else 130)
+
+
 def main():
     """Entry point for the entroly MCP server.
 
@@ -5313,13 +5340,20 @@ def main():
     except Exception:
         _version = "1.0.88"
     logger.info(f"Starting Entroly MCP server v{_version} ({engine_type} engine)")
-    mcp, engine = create_mcp_server()
 
-    # Graceful shutdown: persist learned state on exit
+    # Graceful shutdown: persist learned state on exit, and stop promptly on
+    # SIGINT/SIGTERM. Installed before the server is built so an early
+    # Ctrl-C is quiet too.
     import atexit
     import signal
 
+    shutdown: dict[str, Any] = {"engine": None, "persisted": False}
+
     def _shutdown_handler(*_args):
+        engine = shutdown["engine"]
+        if engine is None or shutdown["persisted"]:
+            return
+        shutdown["persisted"] = True
         logger.info("Shutdown signal received -- persisting state...")
         try:
             engine.checkpoint()
@@ -5327,11 +5361,19 @@ def main():
         except Exception as e:
             logger.warning(f"Failed to persist state on shutdown: {e}")
 
+    def _stop_now(signum, _frame):
+        _shutdown_handler()
+        _exit_for_signal(signum)
+
+    for _name in ("SIGINT", "SIGTERM"):
+        try:
+            signal.signal(getattr(signal, _name), _stop_now)
+        except (OSError, AttributeError, ValueError):
+            pass  # unavailable on this platform, or not the main thread
+
+    mcp, engine = create_mcp_server()
+    shutdown["engine"] = engine
     atexit.register(_shutdown_handler)
-    try:
-        signal.signal(signal.SIGTERM, lambda s, f: (_shutdown_handler(), sys.exit(0)))
-    except (OSError, AttributeError):
-        pass  # SIGTERM not available on Windows
 
     # Startup services run concurrently so MCP clients are not blocked by
     # the pure-Python fallback's initial project indexing pass.

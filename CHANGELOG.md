@@ -5,6 +5,38 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
 
 ## Unreleased
 
+- The npm MCP server (`entroly serve` after `npm install -g entroly`, and
+  `npx entroly-wasm --serve`) now answers newline-delimited requests with
+  newline-delimited JSON, as the MCP stdio transport specifies. It always
+  replied with `Content-Length` frames, which the official MCP clients cannot
+  parse ("Unexpected token 'C'"), so an editor configured by `entroly init`
+  never completed the handshake. Clients that send `Content-Length` frames
+  still get them back. Its `scan_for_vulnerabilities` tool now scans the code
+  it is given; it looked up a stored fragment named by `source` instead and
+  answered "Fragment not found" to every call.
+- The Python MCP tools `shared_memory_list` and `learn_from_failures` no longer
+  fail on every call. Each passed its backend an argument the backend did not
+  accept (`tag`, `sources`); the store now filters by tag and the miner reads
+  the sources asked for.
+- `entroly serve` now stops on Ctrl-C and SIGTERM while its stdin is still
+  open. In a terminal, Ctrl-C was ignored until Enter was pressed and then
+  printed three tracebacks; when a host kept stdin open, SIGTERM was logged but
+  the server kept running, holding its dashboard port and file watchers. State
+  is still persisted before it exits.
+- With a HOME it cannot write, Entroly now keeps its data in a directory only
+  the current account can open (`<tmp>/entroly-<uid>`, mode 0700) instead of
+  the shared `<tmp>/entroly`. `verify-claims` and `simulate` failed with
+  "Permission denied: '/tmp/entroly/checkpoints'" once another account had
+  used the shared name, and an account that created it world-writable decided
+  where everyone else's checkpoints and telemetry went. A per-account path
+  that is not a private directory owned by the current account is refused with
+  a message naming `ENTROLY_DIR`. Data previously kept under `/tmp/entroly` is
+  not carried over.
+- Two Entroly processes in one project (proxy, MCP server, CLI) no longer
+  corrupt its persisted index. Every writer staged in the same
+  `index.json.gz.tmp`, so concurrent saves produced index files that would not
+  load ("Failed to load persistent index") and forced a full re-index.
+
 - With session rescue off, shell tool output of at most 4,000 characters is
   forwarded verbatim (`ENTROLY_SHELL_VERBATIM_CHARS`, `ENTROLY_SHELL_TOOLS`);
   a 30-file `ls -l` had been rewritten with sizes rounded to "1KB" and modes

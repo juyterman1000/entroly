@@ -11,7 +11,6 @@ from __future__ import annotations
 import hashlib
 import os
 import subprocess
-import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -343,11 +342,13 @@ def _existing_checkpoint_dir(
         if explicit:
             candidates = [Path(explicit).expanduser()]
         else:
+            from entroly.private_temp import existing_account_temp_dir
+
             project_hash = hashlib.sha256(str(root).encode()).hexdigest()[:12]
-            candidates = [
-                Path.home() / ".entroly" / "checkpoints" / project_hash,
-                Path(tempfile.gettempdir()) / "entroly" / "checkpoints" / project_hash,
-            ]
+            candidates = [Path.home() / ".entroly" / "checkpoints" / project_hash]
+            private = existing_account_temp_dir()
+            if private is not None:
+                candidates.append(private / "checkpoints" / project_hash)
     for candidate in candidates:
         try:
             if candidate.exists() and candidate.is_dir() and not candidate.is_symlink():
