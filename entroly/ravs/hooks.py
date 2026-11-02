@@ -18,6 +18,8 @@ Supported targets:
 from __future__ import annotations
 
 import json
+import os
+import shlex
 import sys
 from pathlib import Path
 
@@ -58,17 +60,34 @@ def _claude_code_hook_config() -> dict:
     }
 
 
+def _hook_word(path: str, *, windows: bool | None = None) -> str:
+    """Write ``path`` as one word for the shell that runs the hook.
+
+    Claude Code runs hook commands with bash, Git Bash on Windows. Unquoted,
+    a path with a space split into words ("/home/u/my: No such file or
+    directory" on every Bash call), and bash removed every backslash, so
+    ``C:\\Python312\\Scripts\\entroly.exe`` ran as a command that does not
+    exist. Git Bash accepts forward slashes in Windows paths; quoting is added
+    only when a word needs it, so existing POSIX registrations stay identical.
+    """
+    if windows is None:
+        windows = os.name == "nt"
+    if windows:
+        path = path.replace("\\", "/")
+    return shlex.quote(path)
+
+
 def _find_entroly_bin() -> str:
-    """Find the entroly executable path."""
+    """Find the entroly executable path, as a word bash runs intact."""
     import shutil
 
     # Try shutil.which first
     found = shutil.which("entroly")
     if found:
-        return found
+        return _hook_word(found)
 
     # Try python -m entroly.cli as fallback
-    return f"{sys.executable} -m entroly.cli"
+    return f"{_hook_word(sys.executable)} -m entroly.cli"
 
 
 def _claude_code_settings_path() -> Path:
