@@ -103,21 +103,12 @@ def _resolve_entroly_dir() -> Path:
     HOME. A read-only HOME must not make basic commands like ``entroly status``
     or ``entroly --help`` crash before the command handler runs.
     """
+    from entroly.private_temp import writable_data_dir
+
     explicit = os.environ.get("ENTROLY_DIR")
-    candidates = [Path(explicit).expanduser()] if explicit else [
-        Path.home() / ".entroly",
-        Path(tempfile.gettempdir()) / "entroly",
-    ]
-    for candidate in candidates:
-        try:
-            candidate.mkdir(parents=True, exist_ok=True)
-            probe = candidate / ".write_probe"
-            probe.write_text("ok", encoding="utf-8")
-            probe.unlink(missing_ok=True)
-            return candidate
-        except OSError:
-            continue
-    return Path(tempfile.gettempdir()) / "entroly"
+    return writable_data_dir(
+        Path(explicit).expanduser() if explicit else Path.home() / ".entroly"
+    )
 
 
 _ENTROLY_DIR = _resolve_entroly_dir()
@@ -3745,6 +3736,13 @@ def cmd_value(args):
         f"    Input tokens reduced: "
         f"{C.GREEN}{provider['input_tokens_reduced']:,}{C.RESET}"
     )
+    if provider.get("input_tokens_added"):
+        print(
+            f"    {C.YELLOW}Input tokens added: {provider['input_tokens_added']:,} "
+            f"across {provider['requests_enlarged']:,} request(s) Entroly sent "
+            f"larger (retrieved context){C.RESET}"
+        )
+        print(f"    Net input tokens reduced: {provider['net_input_tokens_reduced']:,}")
     print(
         "    Modeled input cost avoided: "
         f"{C.GREEN}${provider['modeled_input_cost_avoided_usd']:.4f}{C.RESET}"
