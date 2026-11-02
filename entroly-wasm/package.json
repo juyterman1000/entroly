@@ -67,8 +67,8 @@
     "health": "node js/cli.js health",
     "demo": "node js/cli.js demo",
     "autotune": "node js/cli.js autotune",
-    "test": "node test_wasm_e2e.js && node test_activation.js && node test_work_graph.js && node test_work_graph_repo.js && node test_private_temp_fallback.js && node test_work_graph_store.js && node test_work_graph_content_digest.js && node test_work_graph_continuity.js && node test_work_graph_review.js && node test_context_trust_delivery.js && node test_work_graph_performance.js && node test_work_graph_root_exports.js && node test_context_receipt_parity.js && node test_bun_compat.js",
-    "test:bun": "bun test_wasm_e2e.js && bun test_activation.js && bun test_work_graph.js && bun test_work_graph_repo.js && bun test_private_temp_fallback.js && bun test_work_graph_store.js && bun test_work_graph_content_digest.js && bun test_work_graph_continuity.js && bun test_work_graph_review.js && bun test_context_trust_delivery.js && bun test_work_graph_performance.js && bun test_work_graph_root_exports.js && bun test_context_receipt_parity.js && bun test_bun_compat.js"
+    "test": "node test_wasm_e2e.js && node test_activation.js && node test_work_graph.js && node test_work_graph_repo.js && node test_private_temp_fallback.js && node test_work_graph_store.js && node test_work_graph_content_digest.js && node test_work_graph_continuity.js && node test_work_graph_review.js && node test_context_trust_delivery.js && node test_work_graph_performance.js && node test_work_graph_root_exports.js && node test_context_receipt_parity.js && node test_mcp_scan_tool.js && node test_bun_compat.js",
+    "test:bun": "bun test_wasm_e2e.js && bun test_activation.js && bun test_work_graph.js && bun test_work_graph_repo.js && bun test_private_temp_fallback.js && bun test_work_graph_store.js && bun test_work_graph_content_digest.js && bun test_work_graph_continuity.js && bun test_work_graph_review.js && bun test_context_trust_delivery.js && bun test_work_graph_performance.js && bun test_work_graph_root_exports.js && bun test_context_receipt_parity.js && bun test_mcp_scan_tool.js && bun test_bun_compat.js"
   },
   "keywords": [
     "entroly",

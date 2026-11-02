@@ -345,8 +345,21 @@ class EntrolyMCPServer {
       case 'security_report':
         return this.engine.security_report();
 
-      case 'scan_for_vulnerabilities':
-        return this.engine.scan_fragment(args.source || 'unknown');
+      case 'scan_for_vulnerabilities': {
+        // The tool takes the code to scan, as the Python server's does. It
+        // looked up a stored fragment named by `source` instead, so every call
+        // answered "Fragment '<source>' not found" and nothing was scanned.
+        // Scan the given content as a transient fragment, then drop it again
+        // unless it was already in the session.
+        const source = args.source || 'unknown';
+        const ingested = this.engine.ingest(String(args.content ?? ''), source, 0, false);
+        const fragmentId = ingested && (ingested.is_duplicate ? ingested.duplicate_of : ingested.fragment_id);
+        try {
+          return this.engine.scan_fragment(fragmentId);
+        } finally {
+          if (ingested && !ingested.is_duplicate && ingested.fragment_id) this.engine.remove(ingested.fragment_id);
+        }
+      }
 
       case 'entroly_dashboard': {
         const stats = this.engine.stats();
