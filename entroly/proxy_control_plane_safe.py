@@ -238,13 +238,16 @@ async def _secure_catch_all(request: Request) -> Response:
                 proxy._breaker.record_failure()
                 return _safe_upstream_error()
             _record_breaker_outcome(proxy._breaker, response.status_code)
+            # Request ids and rate-limit headers, as on the messages path.
+            provider_headers = _proxy._provider_response_headers(response.headers)
             if request.method == "HEAD":
                 return Response(
                     status_code=response.status_code,
                     headers={
+                        **provider_headers,
                         "Content-Type": response.headers.get(
                             "content-type", "application/octet-stream"
-                        )
+                        ),
                     },
                 )
             content_type = response.headers.get("content-type", "")
@@ -259,10 +262,19 @@ async def _secure_catch_all(request: Request) -> Response:
                         },
                         status_code=502,
                     )
-                return JSONResponse(content=content, status_code=response.status_code)
-            return JSONResponse(
-                content={"data": response.text},
+                return JSONResponse(
+                    content=content,
+                    status_code=response.status_code,
+                    headers=provider_headers,
+                )
+            # Anything else (a file download, audio) goes back as the bytes
+            # the provider sent. It used to be rewritten as
+            # {"data": <body decoded as text>}, corrupting binary content.
+            return Response(
+                content=response.content,
                 status_code=response.status_code,
+                media_type=content_type or "application/octet-stream",
+                headers=provider_headers,
             )
 
         limit = _transport._bounded_positive_int(
@@ -335,6 +347,10 @@ async def _secure_catch_all(request: Request) -> Response:
             proxy._breaker.record_failure()
             return _safe_upstream_error()
         _record_breaker_outcome(proxy._breaker, response.status_code)
+        out_headers = {
+            **_proxy._provider_response_headers(response.headers),
+            **redaction_headers,
+        }
 
         content_type = response.headers.get("content-type", "")
         if "application/json" in content_type:
@@ -361,12 +377,13 @@ async def _secure_catch_all(request: Request) -> Response:
             return JSONResponse(
                 content=content,
                 status_code=response.status_code,
-                headers=redaction_headers,
+                headers=out_headers,
             )
-        return JSONResponse(
-            content={"data": response.text},
+        return Response(
+            content=response.content,
             status_code=response.status_code,
-            headers=redaction_headers,
+            media_type=content_type or "application/octet-stream",
+            headers=out_headers,
         )
     finally:
         _transport._CURRENT_QUERY.reset(token)
