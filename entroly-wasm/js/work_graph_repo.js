@@ -224,10 +224,13 @@ function projectCheckpointCandidates(root, explicitDir = null) {
     .update(path.resolve(root), 'utf8')
     .digest('hex')
     .slice(0, 12);
-  return [
-    path.join(os.homedir(), '.entroly', 'checkpoints', projectHash),
-    path.join(os.tmpdir(), 'entroly', 'checkpoints', projectHash),
-  ];
+  const candidates = [path.join(os.homedir(), '.entroly', 'checkpoints', projectHash)];
+  // Only this account's private fallback, never the shared fixed name (see
+  // accountTempPath in config.js and entroly/private_temp.py).
+  const { existingAccountTempDir } = require('./config');
+  const privateDir = existingAccountTempDir();
+  if (privateDir) candidates.push(path.join(privateDir, 'checkpoints', projectHash));
+  return candidates;
 }
 
 function existingCheckpointDir(root, explicitDir = null) {

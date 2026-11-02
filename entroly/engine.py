@@ -2816,14 +2816,31 @@ class EntrolyEngine:
             return
         if not raw or (len(raw) >= 2 and raw[0] == 0x1F and raw[1] == 0x8B):
             return
-        tmp = p.with_suffix(p.suffix + ".tmp")
-        with gzip.open(tmp, "wb") as f:
-            f.write(raw)
+        tmp = EntrolyEngine._staging_path(p)
         try:
-            os.chmod(tmp, 0o600)
-        except OSError:
-            pass
-        os.replace(tmp, p)
+            with gzip.open(tmp, "wb") as f:
+                f.write(raw)
+            try:
+                os.chmod(tmp, 0o600)
+            except OSError:
+                pass
+            os.replace(tmp, p)
+        finally:
+            tmp.unlink(missing_ok=True)
+
+    @staticmethod
+    def _staging_path(target: Path) -> Path:
+        """A staging file no other writer of ``target`` can be using.
+
+        The proxy, the MCP server and CLI commands in one project write the
+        same index. A shared ``index.json.gz.tmp`` let a second writer
+        truncate the first one's staging file mid-write: renames failed with
+        FileNotFoundError and a corrupt index was published, so the next
+        start logged "Failed to load persistent index" and re-indexed.
+        """
+        return target.with_name(
+            f"{target.name}.{os.getpid()}.{threading.get_ident()}.{uuid.uuid4().hex[:8]}.tmp"
+        )
 
     @staticmethod
     def _write_gzip_index(path: str, state: str | dict[str, Any]) -> None:
@@ -2840,14 +2857,17 @@ class EntrolyEngine:
             data = state
         else:
             data = json.dumps(state, separators=(",", ":"))
-        tmp = p.with_suffix(p.suffix + ".tmp")
-        with gzip.open(tmp, "wt", encoding="utf-8") as f:
-            f.write(data)
+        tmp = EntrolyEngine._staging_path(p)
         try:
-            os.chmod(tmp, 0o600)
-        except OSError:
-            pass
-        os.replace(tmp, p)
+            with gzip.open(tmp, "wt", encoding="utf-8") as f:
+                f.write(data)
+            try:
+                os.chmod(tmp, 0o600)
+            except OSError:
+                pass
+            os.replace(tmp, p)
+        finally:
+            tmp.unlink(missing_ok=True)
 
     # ── Python fallback implementations ──────────────────────────────
 

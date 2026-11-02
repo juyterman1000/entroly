@@ -10,7 +10,6 @@ import hashlib
 import json
 import math
 import os
-import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -20,7 +19,9 @@ def _project_checkpoint_dir() -> Path:
 
     Uses ENTROLY_DIR if set, otherwise hashes the cwd to create
     ~/.entroly/checkpoints/{project_hash}/ so multiple projects
-    don't bleed fragments into each other.
+    don't bleed fragments into each other. When HOME cannot be written the
+    data goes to this account's private temporary directory instead (see
+    ``entroly.private_temp``), never to a name another account can claim.
     """
     explicit = os.environ.get("ENTROLY_DIR")
     if explicit:
@@ -35,18 +36,32 @@ def _project_checkpoint_dir() -> Path:
         probe.unlink(missing_ok=True)
         return default_dir
     except OSError as exc:
-        fallback_dir = (
-            Path(tempfile.gettempdir()) / "entroly" / "checkpoints" / project_hash
+        from entroly.private_temp import (
+            NoPrivateDataDir,
+            account_temp_dir,
+            account_temp_path,
+            reason,
         )
-        fallback_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-        # Recovery stores and other checkpoint data land here; a shared temp
-        # directory must never be chosen silently.
+
+        try:
+            fallback_dir = account_temp_dir() / "checkpoints" / project_hash
+            fallback_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        except OSError as fallback_exc:
+            raise NoPrivateDataDir(
+                f"Entroly has nowhere private to keep this project's data: it "
+                f"cannot write {default_dir} ({reason(exc)}) and will not use "
+                f"{account_temp_path()} ({reason(fallback_exc)}). Set "
+                "ENTROLY_DIR to a writable directory only you can read."
+            ) from fallback_exc
+        # Recovery stores and other checkpoint data land here; a temporary
+        # directory the system may clear must never be chosen silently.
         import warnings
 
         warnings.warn(
-            f"Entroly cannot write {default_dir} ({exc}); using {fallback_dir} "
-            "under the system temporary directory instead. Set ENTROLY_DIR to "
-            "a private directory to choose where this data is kept.",
+            f"Entroly cannot write {default_dir} ({reason(exc)}); using "
+            f"{fallback_dir}, which only this account can open, under the "
+            "system temporary directory instead. Set ENTROLY_DIR to choose "
+            "where this data is kept.",
             RuntimeWarning,
             stacklevel=2,
         )

@@ -169,6 +169,57 @@ class _Locations(ast.NodeVisitor):
                 if self.raw[start:end] == alias.asname.encode():
                     self.record(alias, alias.asname, "import-alias", (start, end))
 
+    def visit_Import(self, node):
+        for alias in node.names:
+            name = alias.asname or alias.name.split(".")[0]
+            span = self.span(alias, name)
+            if alias.asname is not None:
+                end = self.offsets[alias.end_lineno - 1] + alias.end_col_offset
+                start = end - len(name.encode())
+                span = (start, end) if self.raw[start:end] == name.encode() else None
+            self.record(alias, name, "import-alias" if alias.asname else "import-binding", span)
+            if name in self.names:
+                # Mapping a module import is counterevidence for overwrites;
+                # module-import migration itself remains outside this review.
+                self.unknown.append("unsupported-module-import-binding")
+
+    def visit_ExceptHandler(self, node):
+        if node.name in self.names:
+            # Exception targets are implicit writes followed by implicit
+            # deletion. They must not be mistaken for the imported global.
+            self.unknown.append("unsupported-exception-binding")
+        self.generic_visit(node)
+
+    def visit_MatchAs(self, node):
+        if node.name in self.names:
+            self.unknown.append("unsupported-pattern-binding")
+        self.generic_visit(node)
+
+    visit_MatchStar = visit_MatchAs
+
+    def visit_MatchMapping(self, node):
+        if node.rest in self.names:
+            self.unknown.append("unsupported-pattern-binding")
+        self.generic_visit(node)
+
+
+def python_module_binding_evidence(path: str, raw: bytes, tree: ast.AST, name: str) -> dict:
+    """Locate compiler-owned module loads/writes without executing source.
+
+    Shared with rename discovery so scope and shadowing rules cannot drift
+    from the independent staged binding review. Unsupported scopes stay unknown.
+    """
+    tables = _tables(symtable.symtable(raw.decode("utf-8"), path, "exec"))
+    locations = _Locations(raw, tables, {name})
+    locations.visit(tree)
+    return {
+        "loads": [item["span"] for item in locations.loads
+                  if _owner(tables, item["scope"], name) == ("scope", ())],
+        "writes": [item for item in locations.bindings
+                   if _owner(tables, item["scope"], name) == ("scope", ())],
+        "unknown": locations.unknown,
+    }
+
 
 def review_python_rename_bindings(path: str, before: bytes, after: bytes, changes: list[dict]):
     before_sha = hashlib.sha256(before).hexdigest()
