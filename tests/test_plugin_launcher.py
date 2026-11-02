@@ -219,3 +219,42 @@ def test_a_server_that_exits_non_zero_is_reported_with_its_status(tmp_path: Path
     assert result.returncode == 1
     assert "exit 3" in result.stderr
     assert "no runner found" not in result.stderr.lower()
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="fake PATH executables need .cmd shims on Windows",
+)
+def test_a_broken_install_that_ignores_the_payload_still_reports_its_exit_status(
+    tmp_path: Path,
+) -> None:
+    """A child that exits before reading the hook payload leaves EPIPE behind.
+
+    Node's spawnSync then sets both the exit status and an EPIPE error, and the
+    report named the incidental EPIPE instead of "exit 1". A payload larger
+    than the pipe buffer makes the race certain rather than occasional.
+    """
+    fake_bin = _bin_with_only_node(tmp_path)
+    broken = fake_bin / "entroly"
+    broken.write_text(
+        "#!/bin/sh\n"
+        "echo 'ImportError: entroly_core 1.0.87 is older than the required 1.0.88' >&2\n"
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    broken.chmod(0o755)
+
+    result = subprocess.run(
+        ["node", str(LAUNCHER), "activation", "hook", "--host", "claude-code"],
+        input='{"prompt": "' + "x" * (1 << 20) + '"}',
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env=dict(os.environ, PATH=str(fake_bin)),
+    )
+
+    assert result.returncode == 1
+    first_line = result.stderr.splitlines()[0]
+    assert "failed (exit 1)" in first_line, result.stderr
+    assert "EPIPE" not in result.stderr
+    assert "older than the required 1.0.88" in first_line

@@ -94,9 +94,13 @@ function candidateName(candidate) {
 }
 
 function outcome(result) {
-  if (result.error) return result.error.code || result.error.message;
+  // A child that exits before reading the hook payload also leaves EPIPE in
+  // result.error; its exit status is what happened. The error alone means it
+  // never ran (ENOENT, EACCES).
+  if (typeof result.status === "number") return `exit ${result.status}`;
   if (result.signal) return `killed by ${result.signal}`;
-  return `exit ${result.status}`;
+  if (result.error) return result.error.code || result.error.message;
+  return "no exit status";
 }
 
 // The last non-empty stderr line: for a Python traceback, the exception.
