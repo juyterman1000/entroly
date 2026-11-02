@@ -2855,28 +2855,43 @@ def cmd_hook(args):
         print("  Usage: entroly hook [install|uninstall|status]\n")
         return
 
-    from .shell_hook import install_hook, uninstall_hook, hook_status
+    from .shell_hook import hook_status, uninstall_hook
     if sub == "install":
-        shell = getattr(args, "shell", None) or None
-        result = install_hook(shell)
-        if result:
-            print(f"\n  {C.GREEN}Hook installed for {result}.{C.RESET}")
-            print(f"  Restart your shell or run: source ~/.{result}rc\n")
-        else:
-            print(f"\n  {C.RED}Could not detect shell. Use --shell bash|zsh|fish{C.RESET}\n")
+        # The hook this installed compressed nothing and replaced the user's
+        # bash DEBUG trap; see entroly.shell_hook.install_hook.
+        print(
+            f"\n  {C.YELLOW}The shell hook does not compress command output, so "
+            f"nothing was installed.{C.RESET}\n"
+            f"  Run a command through Entroly instead: "
+            f"{C.BOLD}entroly shrink -- pytest -q{C.RESET}\n"
+            f"  (bounded output, with the full output kept for exact recovery)."
+        )
+        if hook_status()["any_installed"]:
+            print(
+                "  An earlier version added a hook block to your shell config; "
+                "remove it with: entroly hook uninstall"
+            )
+        print()
+        return 1
     elif sub == "uninstall":
         shell = getattr(args, "shell", None) or None
-        result = uninstall_hook(shell)
-        if result:
-            print(f"\n  {C.GREEN}Hook removed from {result}.{C.RESET}\n")
+        removed = uninstall_hook(shell)
+        if removed:
+            for path in removed:
+                print(f"\n  {C.GREEN}Removed the Entroly hook from {path}{C.RESET}")
+            print("  Open a new shell for the change to apply.\n")
         else:
             print(f"\n  {C.GRAY}No hook found to remove.{C.RESET}\n")
     elif sub == "status":
         status = hook_status()
         print(f"\n{C.CYAN}{C.BOLD}  Shell Hook Status{C.RESET}")
-        for shell, installed in status.items():
-            icon = f"{C.GREEN}installed" if installed else f"{C.GRAY}not installed"
-            print(f"    {shell:8s} {icon}{C.RESET}")
+        rows = status["installed"] + status["available"]
+        if not rows:
+            print(f"    {C.GRAY}No shell config files found.{C.RESET}")
+        for row in rows:
+            icon = (f"{C.YELLOW}hook block present (remove: entroly hook uninstall)"
+                    if row["installed"] else f"{C.GRAY}no hook")
+            print(f"    {row['file']}  {icon}{C.RESET}")
         print()
 
 

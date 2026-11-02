@@ -577,14 +577,15 @@ results = shared_memory_search("authentication tokens")  # finds it, from any ag
 
 Three-layer pipeline: effort classification steers verbosity directives, `max_tokens` budgets cap generation, and post-generation distillation trims filler. A "yes/no" query gets 150 max tokens; a detailed architecture review gets 16,384.
 
-### Shell hook compression
+### Shell output compression
 
-Command-specific patterns for git, npm, cargo, docker, pytest, kubectl, and terraform strip progress bars, deprecation warnings, and boilerplate while preserving errors and key results. Full output is recoverable via content-addressed handles.
+Command-specific patterns for git, npm, cargo, docker, pytest, kubectl, and terraform strip progress bars, deprecation warnings, and boilerplate while preserving errors and key results. Run a command through it, and the full output stays recoverable through a content-addressed handle:
 
 ```bash
-entroly hook install     # adds transparent compression to your shell
-entroly hook status      # shows which shells have the hook
+entroly shrink -- pytest -q
 ```
+
+`entroly hook install` in earlier versions appended a block to your shell config that compressed nothing and, in bash, replaced any existing `DEBUG` trap. It now installs nothing; `entroly hook uninstall` removes a block an earlier version added, and `entroly hook status` shows where one remains.
 
 ### Failure mining
 

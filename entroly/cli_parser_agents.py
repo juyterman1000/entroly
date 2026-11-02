@@ -258,11 +258,11 @@ def _add_agent_and_governance_commands(
     # entroly hook
     hook_parser = subparsers.add_parser(
         "hook",
-        help="Manage shell hook for transparent CLI output compression",
+        help="Remove or inspect the shell hook earlier versions installed (it compressed nothing; use `entroly shrink -- <cmd>`)",
     )
     hook_sub = hook_parser.add_subparsers(dest="hook_action")
-    hook_install = hook_sub.add_parser("install", help="Install shell hook")
+    hook_install = hook_sub.add_parser("install", help="Explain why no hook is installed, and what to use instead")
     hook_install.add_argument("--shell", choices=["bash", "zsh", "fish"], help="Target shell")
-    hook_uninstall = hook_sub.add_parser("uninstall", help="Remove shell hook")
+    hook_uninstall = hook_sub.add_parser("uninstall", help="Remove a hook block an earlier version added")
     hook_uninstall.add_argument("--shell", choices=["bash", "zsh", "fish"], help="Target shell")
-    hook_sub.add_parser("status", help="Show hook installation status")
+    hook_sub.add_parser("status", help="Show which shell configs still contain a hook block")
