@@ -65,7 +65,10 @@ def test_tracker_falls_back_when_home_is_not_a_directory(tmp_path, monkeypatch):
     import entroly.value_tracker as vt
     tracker = vt.ValueTracker()
 
-    assert tracker._dir == fallback_tmp / "entroly"
+    # Under the shared temporary directory the fallback is this account's
+    # own directory, never a fixed name another account can claim first.
+    private = f"entroly-{os.getuid()}" if hasattr(os, "getuid") else "entroly"
+    assert tracker._dir == fallback_tmp / private
     assert tracker._dir.is_dir()
 
 

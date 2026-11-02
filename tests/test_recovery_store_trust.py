@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -286,7 +287,7 @@ def test_checkpoint_fallback_to_the_temp_dir_is_loud_and_private(tmp_path: Path,
     bad_home.write_text("not a directory", encoding="utf-8")
     monkeypatch.delenv("ENTROLY_DIR", raising=False)
     monkeypatch.setenv("HOME", str(bad_home))
-    monkeypatch.setattr(config.tempfile, "gettempdir", lambda: str(tmp_path / "tmp"))
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path / "tmp"))
 
     with pytest.warns(RuntimeWarning, match="temporary directory"):
         chosen = config._project_checkpoint_dir()
