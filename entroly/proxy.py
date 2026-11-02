@@ -135,6 +135,38 @@ _HOP_BY_HOP_HEADERS = {
     "content-length",
 }
 
+# Response metadata a provider's client reads: the request id a support case
+# needs, and the rate-limit and retry headers its backoff and usage displays
+# depend on. The proxy rebuilds every response, and it used to send none of
+# these back (see tests/test_proxy_provider_response_semantics.py).
+_PROVIDER_RESPONSE_HEADERS = frozenset({
+    "request-id",
+    "x-request-id",
+    "retry-after",
+    "retry-after-ms",
+    "x-should-retry",
+})
+_PROVIDER_RESPONSE_PREFIXES = ("anthropic-", "openai-", "x-ratelimit-", "x-goog-")
+
+
+def _provider_response_headers(headers: Any) -> dict[str, str]:
+    """The upstream response headers to hand back to the client.
+
+    Only provider metadata is copied. Framing headers (content-length,
+    content-encoding, transfer-encoding) describe the upstream bytes, which
+    the proxy may have re-encoded, and cookies stay with the proxy.
+    """
+    kept: dict[str, str] = {}
+    try:
+        items = headers.items()
+    except AttributeError:
+        return kept
+    for name, value in items:
+        lower = str(name).lower()
+        if lower in _PROVIDER_RESPONSE_HEADERS or lower.startswith(_PROVIDER_RESPONSE_PREFIXES):
+            kept[lower] = value
+    return kept
+
 _COMMON_PROVIDER_HEADERS = {
     "accept",
     "accept-language",
@@ -4296,12 +4328,9 @@ class PromptCompilerProxy:
             self._breaker.record_failure()
             error_body = await upstream.aread()
             await upstream.aclose()
-            error_headers: dict[str, str] = {}
-            retry_after = upstream.headers.get("retry-after")
-            if retry_after:
-                # Without this the client cannot honour the provider's own
-                # backoff signal and will retry immediately.
-                error_headers["Retry-After"] = retry_after
+            # Retry-After among them: without it the client cannot honour
+            # the provider's own backoff signal and will retry immediately.
+            error_headers = _provider_response_headers(upstream.headers)
             logger.warning(
                 "Upstream %d on streaming request", upstream.status_code
             )
@@ -4414,6 +4443,7 @@ class PromptCompilerProxy:
                     logger.debug("WITNESS stream audit failed", exc_info=True)
 
         resp_headers = {
+            **_provider_response_headers(upstream.headers),
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "X-Entroly-Optimized": "true",
@@ -5224,22 +5254,16 @@ class PromptCompilerProxy:
                         retry_after, RATE_LIMIT_INLINE_WAIT_S,
                         RATE_LIMIT_TOTAL_BUDGET_S - total_slept,
                     )
-                    out_headers = {"X-Entroly-Source": "upstream"}
+                    # The provider's own body and headers, Retry-After included:
+                    # this used to be replaced with {"error": "rate_limited"},
+                    # which dropped error.type and the request id.
+                    out_headers = _provider_response_headers(response.headers)
+                    out_headers["X-Entroly-Source"] = "upstream"
                     out_headers.update(extra_headers or {})
-                    upstream_ra = response.headers.get("retry-after")
-                    if upstream_ra:
-                        # Propagate Retry-After verbatim so the client honors
-                        # the upstream's exact cooldown directive.
-                        out_headers["Retry-After"] = upstream_ra
-                    return JSONResponse(
-                        {
-                            "error": "rate_limited",
-                            "status": 429,
-                            "detail": "Upstream rate-limited this request; client should honor Retry-After.",
-                            "retry_after_s": retry_after,
-                            "source": "upstream_api",
-                        },
+                    return Response(
+                        content=response.content,
                         status_code=429,
+                        media_type=response.headers.get("content-type", "application/json"),
                         headers=out_headers,
                     )
                 # Short cooldown: wait the FULL duration (no silent cap) and retry once.
@@ -5268,16 +5292,16 @@ class PromptCompilerProxy:
                     total_slept += backoff
                     attempts += 1
                     continue
-                out_headers = {"X-Entroly-Source": "upstream"}
+                # The final upstream answer as the provider sent it. It used to
+                # be replaced with {"error": "upstream_error"}, so a client
+                # could no longer tell overloaded_error from api_error.
+                out_headers = _provider_response_headers(response.headers)
+                out_headers["X-Entroly-Source"] = "upstream"
                 out_headers.update(extra_headers or {})
-                return JSONResponse(
-                    {
-                        "error": "upstream_error",
-                        "status": response.status_code,
-                        "detail": f"Upstream returned {response.status_code} after {SERVER_ERROR_MAX_RETRIES} retries",
-                        "source": "upstream_api",
-                    },
+                return Response(
+                    content=response.content,
                     status_code=response.status_code,
+                    media_type=response.headers.get("content-type", "application/json"),
                     headers=out_headers,
                 )
 
@@ -5332,7 +5356,8 @@ class PromptCompilerProxy:
             # Success — break out of retry loop
             break
 
-        resp_headers: dict[str, str] = {"X-Entroly-Optimized": "true"}
+        resp_headers: dict[str, str] = _provider_response_headers(response.headers)
+        resp_headers["X-Entroly-Optimized"] = "true"
         resp_headers.update(extra_headers or {})
         with self._stats_lock:
             # Use getattr so this is robust to call paths that didn't go
