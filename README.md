@@ -182,10 +182,20 @@ can prove it — `entroly verify-claims` and `entroly simulate` show real
 numbers on your own repo before you connect a paid key.
 
 ```python
+import json
 from entroly import compress, compress_messages, optimize
-compressed = compress(api_response, budget=2000)
-messages   = compress_messages(messages, budget=30000)
-context    = optimize(fragments, budget=8000, query="fix the login bug")
+
+api_response = json.dumps({"items": [{"id": i, "status": "ok"} for i in range(500)]})
+compressed = compress(api_response, budget=2000)   # text in, text out
+messages = compress_messages(
+    [{"role": "user", "content": "build log:\n" + "step ok\n" * 3000},
+     {"role": "user", "content": "Why did the login test fail?"}],
+    budget=30000,
+)
+context = optimize(
+    [{"content": "def login(user):\n    return check(user)\n", "source": "auth.py"}],
+    budget=8000, query="fix the login bug",
+)
 ```
 
 ```bash
