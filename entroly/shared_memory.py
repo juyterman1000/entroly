@@ -222,11 +222,14 @@ class SharedMemoryStore:
         self,
         agent_id: str | None = None,
         limit: int = 50,
+        tag: str | None = None,
     ) -> list[SharedEntry]:
-        """List entries, optionally filtered by agent, newest first."""
+        """List entries, optionally filtered by agent or tag, newest first."""
         entries = self._load_entries()
         if agent_id:
             entries = [e for e in entries if e.agent_id == agent_id]
+        if tag:
+            entries = [e for e in entries if tag in e.tags]
         entries.sort(key=lambda e: -e.timestamp)
         return entries[:limit]
 
