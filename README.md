@@ -585,7 +585,7 @@ results = shared_memory_search("authentication tokens")  # finds it, from any ag
 
 ### Output token reduction
 
-Three-layer pipeline: effort classification steers verbosity directives, `max_tokens` budgets cap generation, and post-generation distillation trims filler. A "yes/no" query gets 150 max tokens; a detailed architecture review gets 16,384.
+Through the proxy, post-generation distillation trims filler from answers (on by default; `ENTROLY_DISTILL=0` turns it off). Effort budgets are yours to apply: `entroly.sdk.classify_effort()` and `steer_output()`, and the `steer_output` MCP tool, return a verbosity directive and a `max_tokens` budget (150 for a "yes/no" question, 16,384 for a detailed architecture review). The proxy does not set `max_tokens` on your requests.
 
 ### Shell hook compression
 
