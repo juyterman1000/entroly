@@ -65,6 +65,28 @@ def test_exact_regions_include_import_caller_and_decorators_without_execution(tm
     assert pages[-1]["scope"]["semantic_status"] == "not-checked"
 
 
+def test_reexport_plan_pages_include_public_exports_and_distant_callback(tmp_path: Path) -> None:
+    sources = {
+        "source.py": b"def execute(value):\n    return value + 1\n",
+        "facade.py": b"from source import execute\n__all__ = ['execute']\n",
+        "facade2.py": b"from facade import execute\n__all__ = ['execute']\n",
+        "caller.py": b"from facade2 import execute\ncallback = execute\n",
+    }
+    for path, raw in sources.items():
+        (tmp_path / path).write_bytes(raw)
+    pages = _pages(RepositoryIntelligenceService(tmp_path))
+    fragments = [fragment for page in pages for fragment in page["fragments"]]
+    assert {fragment["path"] for fragment in fragments} == set(sources)
+    assert {fragment["text"] for fragment in fragments} >= {
+        "__all__ = ['execute']\n", "callback = execute\n",
+        "from facade import execute\n", "from facade2 import execute\n",
+    }
+    for page in pages:
+        assert page["plan"]["python_export_closure"]["status"] == "resolved-static-subset"
+        assert page["scope"]["reference_completeness"] == "not-proven"
+    assert all((tmp_path / path).read_bytes() == raw for path, raw in sources.items())
+
+
 def test_unicode_pagination_recovers_exact_bytes_and_region_hashes(tmp_path: Path) -> None:
     _project(tmp_path, large=True)
     pages = _pages(RepositoryIntelligenceService(tmp_path))

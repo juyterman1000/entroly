@@ -20,6 +20,7 @@ CALLERS = {
     "callback": "from payments import charge\nhandler = charge\ndef process(amount):\n    return handler(amount)\n",
     "direct": "from payments import charge\ndef process(amount):\n    return charge(amount)\n",
     "alias": "from payments import charge as invoke\ndef process(authorize):\n    return invoke(authorize)\n",
+    "same-spelling-alias": "from payments import charge as charge\ndef process(amount):\n    return charge(amount)\n",
     "unrelated-local": "from payments import charge\ndef other(authorize):\n    return authorize\ndef process(amount):\n    return charge(amount)\n",
     "attribute": "import payments\ndef process(amount):\n    return payments.charge(amount)\n",
 }
@@ -53,7 +54,7 @@ def _apply(root, index, digest, plan, implementation=verified_refactor):
     )
 
 
-@pytest.mark.parametrize("kind", ("parameter", "existing-binding", "callback"))
+@pytest.mark.parametrize("kind", ("parameter", "existing-binding"))
 def test_preview_exposes_source_bound_conflicts_without_writes(tmp_path: Path, kind: str):
     _index, _digest, plan = _project(tmp_path, kind)
     before = _bytes(tmp_path)
@@ -74,7 +75,7 @@ def test_preview_exposes_source_bound_conflicts_without_writes(tmp_path: Path, k
     assert _bytes(tmp_path) == before
 
 
-@pytest.mark.parametrize("kind", ("parameter", "existing-binding", "callback"))
+@pytest.mark.parametrize("kind", ("parameter", "existing-binding"))
 @pytest.mark.parametrize("implementation", (verified_refactor, verified_refactor_impl))
 def test_apply_rejects_conflicts_before_any_write(tmp_path: Path, kind: str, implementation):
     index, digest, plan = _project(tmp_path, kind)
@@ -118,7 +119,7 @@ print(json.dumps(consumer.process(3)))
     return json.loads(child.stdout)
 
 
-@pytest.mark.parametrize("kind", ("direct", "alias", "unrelated-local"))
+@pytest.mark.parametrize("kind", ("direct", "alias", "same-spelling-alias", "unrelated-local", "callback"))
 def test_nonconflicting_rename_still_completes_with_same_caller_result(tmp_path: Path, kind: str):
     index, digest, plan = _project(tmp_path, kind)
     assert _run(tmp_path) == 5
@@ -128,6 +129,20 @@ def test_nonconflicting_rename_still_completes_with_same_caller_result(tmp_path:
     assert result["file_count"] == 2
     assert "def authorize" in (tmp_path / "payments.py").read_text(encoding="utf-8")
     assert _run(tmp_path) == 5
+
+
+@pytest.mark.parametrize("implementation", (verified_refactor, verified_refactor_impl))
+def test_partial_callback_plan_still_rejected_before_writes(tmp_path: Path, implementation):
+    index, digest, plan = _project(tmp_path, "callback")
+    plan["changes"] = [item for item in plan["changes"]
+                       if item["kind"] != "python-module-reference"]
+    plan["receipt"]["change_count"] = len(plan["changes"])
+    plan["receipt"].pop("plan_sha256")
+    plan = verified_refactor_impl._finish_plan(plan)
+    before = _bytes(tmp_path)
+    with pytest.raises(ValueError, match="binding conflict"):
+        _apply(tmp_path, index, digest, plan, implementation)
+    assert _bytes(tmp_path) == before
 
 
 def test_unknown_attribute_scope_is_not_mislabeled_safe(tmp_path: Path):
