@@ -1252,9 +1252,20 @@ def cmd_daemon(args):
 {C.GRAY}  Single process managing proxy, dashboard, MCP, learning{C.RESET}
 """)
 
+    def _port(flag: str, variable: str, default: int) -> int:
+        # The same precedence as `entroly proxy`: flag, then variable, then
+        # default. The daemon hard-coded 9377/9378 and ignored the variables.
+        value = getattr(args, flag, None)
+        if value is not None:
+            return int(value)
+        try:
+            return int(os.environ.get(variable, "") or default)
+        except ValueError:
+            return default
+
     daemon = EntrolyDaemon(
-        proxy_port=getattr(args, "proxy_port", 9377),
-        dashboard_port=getattr(args, "dashboard_port", 9378),
+        proxy_port=_port("proxy_port", "ENTROLY_PROXY_PORT", 9377),
+        dashboard_port=_port("dashboard_port", "ENTROLY_DASHBOARD_PORT", 9378),
         mcp_port=getattr(args, "mcp_port", 9379),
         host=getattr(args, "host", "127.0.0.1"),
         enable_proxy=not getattr(args, "no_proxy", False),
