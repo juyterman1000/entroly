@@ -98,3 +98,33 @@ def test_a_quoted_registration_is_still_recognised(tmp_path, monkeypatch) -> Non
     assert first.get("action") == "installed", first
     assert again.get("action") == "already_present", again
     assert hooks.uninstall_claude_code().get("action") == "uninstalled"
+
+
+@pytest.mark.skipif(BASH is None or os.name == "nt", reason="needs a POSIX bash")
+def test_reinstalling_repairs_a_registration_written_unquoted(tmp_path, monkeypatch) -> None:
+    """The changelog tells affected users to re-run install; that must fix it."""
+    import json
+
+    bindir = tmp_path / "my venv" / "bin"
+    bindir.mkdir(parents=True)
+    fake = bindir / "entroly"
+    fake.write_text('#!/bin/sh\nprintf "ran %s\\n" "$*"\n', encoding="utf-8")
+    fake.chmod(0o755)
+    monkeypatch.setattr(shutil, "which", lambda name: str(fake) if name == "entroly" else None)
+    monkeypatch.chdir(tmp_path)
+    settings = tmp_path / "settings.json"
+    monkeypatch.setattr(hooks, "_claude_code_settings_path", lambda: settings)
+    old = f"{fake} ravs capture --stdin --host claude-code --quiet"  # as 1.0.88 wrote it
+    settings.write_text(json.dumps({"hooks": {event: [
+        {"matcher": "Bash", "hooks": [{"type": "command", "command": old}]}
+    ] for event in ("PostToolUse", "PostToolUseFailure")}}), encoding="utf-8")
+
+    outcome = hooks.install_claude_code()
+
+    assert outcome.get("action") == "updated", outcome
+    written = json.loads(settings.read_text(encoding="utf-8"))
+    for event in ("PostToolUse", "PostToolUseFailure"):
+        [entry] = written["hooks"][event]
+        command = entry["hooks"][0]["command"]
+        done = subprocess.run([BASH, "-c", command], capture_output=True, text=True)
+        assert done.returncode == 0, (event, command, done.stderr)

@@ -265,6 +265,24 @@ def _with_host_flag(command: str) -> str:
     return f"{command} {_HOST_FLAG}"
 
 
+def _requote_executable(command: str) -> str:
+    """Rewrite an executable this module once wrote unquoted, keeping the rest.
+
+    Registrations written before the executable was quoted fail in bash when
+    its path holds a space or, on Windows, a backslash. Only a command that
+    starts with this installation's own path is touched.
+    """
+    import shutil
+
+    for raw in (shutil.which("entroly"), sys.executable):
+        if not raw:
+            continue
+        word = _hook_word(raw)
+        if word != raw and command.startswith(raw + " "):
+            return word + command[len(raw):]
+    return command
+
+
 def _upgrade_registration(existing: dict, registered: dict) -> dict | None:
     """Bring an existing registration up to date, or None if it already is.
 
@@ -282,7 +300,7 @@ def _upgrade_registration(existing: dict, registered: dict) -> dict | None:
             if not _is_capture_registration(entry):
                 continue
             for hook in _capture_hooks(entry):
-                upgraded = _with_host_flag(hook["command"])
+                upgraded = _with_host_flag(_requote_executable(hook["command"]))
                 if upgraded != hook["command"]:
                     hook["command"] = upgraded
                     changed = True
