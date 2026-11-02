@@ -5,8 +5,9 @@ Scoop manifest for installing entroly on Windows.
 ## Status
 
 **Manifest written, not yet submitted.** [`entroly.json`](entroly.json) pins
-release `entroly-v1.0.85` and carries a SHA-256 verified against the published
-sidecar — see
+release `entroly-v1.0.88`. Its SHA-256 was checked against the downloaded archive
+and [published sidecar](https://github.com/juyterman1000/entroly/releases/download/entroly-v1.0.88/entroly-rs-x86_64-pc-windows-msvc.zip.sha256).
+Earlier verification notes remain in
 [windows-artifact-verification.md](../../docs/distribution/windows-artifact-verification.md).
 
 This file previously said the manifest was "on the v0.19.x roadmap" and should
