@@ -153,6 +153,9 @@ def build_rename_context(root: Path, index: RepositoryIndex, plan: dict, *,
             "unindexed_lexical_occurrences": plan["risk"]["unindexed_lexical_occurrences"],
             "binding_review": plan["binding_review"]["status"],
             "binding_conflict_count": plan["binding_review"]["conflict_count"],
+            "python_export_closure": plan["risk"].get("python_export_closure", {
+                "status": "not-evaluated",
+            }),
         },
         "delivery": {
             "region_count": len(regions),
