@@ -130,7 +130,7 @@ def _exercise(
     tmp_path: Path, before: dict[str, str], after: dict[str, str],
     modules: list[str], before_probe: str, after_probe: str, expected_result,
     origin: str = "core.py",
-) -> None:
+) -> object:
     project, oracle = tmp_path / "project", tmp_path / "authored-after"
     _write(project, before)
     _write(oracle, after)
@@ -150,7 +150,7 @@ def _exercise(
     assert _snapshot(project) == {
         name: text.encode("utf-8") for name, text in after.items()
     }
-    assert _probe(project, modules, after_probe) == expected_result
+    return _probe(project, modules, after_probe)
 
 
 def test_static_chain_updates_exports_callbacks_and_global_uses_only(tmp_path: Path):
@@ -192,7 +192,7 @@ def test_static_chain_updates_exports_callbacks_and_global_uses_only(tmp_path: P
             "parameter(lambda n: n * 7), local(3), outsider.run()]\n"
         ),
     }
-    _exercise(
+    observed = _exercise(
         tmp_path, before, after, ["core", "facade", "facade2", "consumer", "outsider"],
         "from facade2 import *\nassert compute(3) == 5",
         "from facade2 import *\nassert calculate(3) == 5\n"
@@ -203,6 +203,7 @@ def test_static_chain_updates_exports_callbacks_and_global_uses_only(tmp_path: P
         "assert not hasattr(facade2, 'compute')",
         [5, 5, 21, 3, 103],
     )
+    assert observed == [5, 5, 21, 3, 103]
 
 
 @pytest.mark.parametrize("boundary", ["first-hop", "second-hop", "same-spelling"])
@@ -241,11 +242,12 @@ def test_explicit_alias_stops_public_name_propagation(tmp_path: Path, boundary: 
         f"from facade2 import *\nassert {public}(3) == 5\n"
         f"import facade2\nassert facade2.__all__ == ['{public}']"
     )
-    _exercise(
+    observed = _exercise(
         tmp_path, before, after, ["core", "facade", "facade2", "consumer"],
         export_probe, export_probe + f"\nimport core\nassert {public} is core.calculate",
         [5, 6],
     )
+    assert observed == [5, 6]
 
 
 def test_relative_chain_through_package_init(tmp_path: Path):
@@ -267,13 +269,14 @@ def test_relative_chain_through_package_init(tmp_path: Path):
             "def run():\n    return [calculate(3), callback(4)]\n"
         ),
     }
-    _exercise(
+    observed = _exercise(
         tmp_path, before, after, ["pkg.core", "pkg.facade", "pkg", "consumer"],
         "from pkg import *\nassert compute(3) == 5",
         "from pkg import *\nassert calculate(3) == 5\n"
         "import pkg\nassert pkg.__all__ == ['calculate']",
         [5, 6], origin="pkg/core.py",
     )
+    assert observed == [5, 6]
 
 
 @pytest.mark.parametrize("facade", [
