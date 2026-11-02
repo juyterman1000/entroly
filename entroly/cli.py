@@ -2897,7 +2897,9 @@ def cmd_learn(args):
         from .cli_context_workflows import cmd_history
 
         return cmd_history(args)
-    print(f"\n{C.CYAN}{C.BOLD}  Entroly Learn — Failure Pattern Analysis{C.RESET}\n")
+    as_json = bool(getattr(args, "json_output", False))
+    if not as_json:
+        print(f"\n{C.CYAN}{C.BOLD}  Entroly Learn — Failure Pattern Analysis{C.RESET}\n")
 
     import urllib.request
     port = args.port or 9377
@@ -2908,6 +2910,11 @@ def cmd_learn(args):
         feedback = stats.get("implicit_feedback", {})
     except Exception:
         feedback = {}
+
+    if as_json:
+        # --json used to be read only by --history, so this path printed the
+        # human report and a JSON consumer got prose.
+        return _print_learn_json(feedback, port)
 
     if not feedback:
         print(f"  {C.YELLOW}No feedback data available.{C.RESET}")
@@ -2987,6 +2994,33 @@ def cmd_learn(args):
             print(f"  {C.GRAY}No recurring failure patterns found.{C.RESET}")
 
     print()
+
+
+def _print_learn_json(feedback: dict, port: int) -> int:
+    if not feedback:
+        print(json.dumps({
+            "status": "no_data",
+            "detail": f"no feedback from a running proxy on port {port}; "
+                      "run the proxy and make some requests first",
+            "proxy_port": port,
+        }, indent=2))
+        return 0
+    total = int(feedback.get("total_assessed", 0) or 0)
+    confident = int(feedback.get("confidence_detections", 0) or 0)
+    print(json.dumps({
+        "status": "ok",
+        "proxy_port": port,
+        "session": {
+            "total_assessed": total,
+            "confident": confident,
+            "confused": int(feedback.get("confusion_detections", 0) or 0),
+            "rephrases": int(feedback.get("rephrase_detections", 0) or 0),
+            "quality_trend": feedback.get("quality_trend", "stable"),
+            "success_rate_pct": round(confident * 100 / total, 1) if total else None,
+        },
+        "reliable": total > 5,
+    }, indent=2))
+    return 0
 
 
 def _recommend_quality(project: dict, file_count: int) -> str:
