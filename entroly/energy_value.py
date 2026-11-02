@@ -1,15 +1,15 @@
-"""Electricity not spent, derived from tokens not sent.
+"""An assumption-based prefill energy proxy for input-token reduction.
 
 Reducing input tokens removes prefill work. Prefill is the forward pass over
 the prompt, and its cost is approximately ``2 * P * T`` floating-point
 operations for ``P`` parameters and ``T`` tokens -- one multiply and one add
-per parameter per token. Tokens never sent are operations never executed, and
-operations never executed are joules never drawn.
+per parameter per token. This dense-model approximation omits attention and
+serving effects; it does not establish net electricity savings.
 
 Scope is deliberately narrow. This models prefill only, because prefill is what
-input-token reduction avoids. Decode -- generating the response -- is
-memory-bandwidth bound rather than compute bound and is unaffected by shortening
-the prompt, so it is excluded rather than estimated.
+input-token reduction may avoid. Decode, prompt-cache hits, retries, local
+selection and verification, and shared-server utilization are not modeled.
+Shortening a prompt can affect decode work and the generated response as well.
 
 The result is modeled, not measured: Entroly runs locally and cannot observe a
 provider's accelerators. Every input is therefore stated and overridable, and
@@ -27,11 +27,10 @@ from __future__ import annotations
 
 import math
 import os
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Any
 
-# Defaults describe one widely deployed accelerator running a mid-size model.
-# Frontier models are larger, so the defaults understate rather than flatter.
+# Illustrative assumptions, not a conservative bound on deployed hardware.
 _DEFAULT_PARAMS_B = 70.0          # billions of parameters
 _DEFAULT_PEAK_TFLOPS = 989.0      # BF16 dense, no sparsity
 _DEFAULT_MFU = 0.40               # achieved fraction of peak during prefill
@@ -62,7 +61,7 @@ def _env_float(name: str, fallback: float) -> float:
         value = float(raw)
     except ValueError:
         return fallback
-    return value if value > 0 else fallback
+    return value if math.isfinite(value) and value > 0 else fallback
 
 
 @dataclass(frozen=True)
@@ -73,6 +72,22 @@ class EnergyAssumptions:
     accelerator_peak_tflops: float = _DEFAULT_PEAK_TFLOPS
     model_flops_utilization: float = _DEFAULT_MFU
     accelerator_tdp_watts: float = _DEFAULT_TDP_WATTS
+
+    def __post_init__(self) -> None:
+        for name, value in self.as_dict().items():
+            try:
+                valid = (
+                    not isinstance(value, bool)
+                    and isinstance(value, (int, float))
+                    and math.isfinite(value)
+                    and value > 0
+                )
+            except OverflowError:
+                valid = False
+            if not valid:
+                raise ValueError(f"{name} must be finite and positive")
+        if self.model_flops_utilization > 1:
+            raise ValueError("model_flops_utilization must be <= 1")
 
     @classmethod
     def from_env(cls) -> "EnergyAssumptions":
@@ -106,7 +121,7 @@ class EnergyAssumptions:
 def energy_for_tokens(
     tokens_saved: int, assumptions: EnergyAssumptions | None = None
 ) -> dict[str, Any]:
-    """Prefill energy avoided by not sending ``tokens_saved`` input tokens.
+    """Model a prefill energy proxy for ``tokens_saved`` input tokens.
 
     Returns the intermediate quantities as well as the answer. A single kWh
     figure invites belief; showing the FLOPs and accelerator-seconds it came
@@ -120,8 +135,14 @@ def energy_for_tokens(
     effective_flops_per_second = (
         cfg.accelerator_peak_tflops * 1e12 * cfg.model_flops_utilization
     )
-    seconds = flops / effective_flops_per_second if effective_flops_per_second else 0.0
+    if not math.isfinite(effective_flops_per_second) or effective_flops_per_second <= 0:
+        raise ValueError("effective prefill throughput must be finite and positive")
+    seconds = flops / effective_flops_per_second
     kwh = seconds * cfg.accelerator_tdp_watts / _JOULES_PER_KWH
+    if not all(math.isfinite(value) for value in (flops, seconds, kwh)):
+        raise ValueError("energy estimate exceeds finite arithmetic range")
+    if tokens and any(value <= 0 for value in (flops, seconds, kwh)):
+        raise ValueError("energy estimate underflows finite arithmetic range")
 
     # Rounded to significant figures rather than decimal places. A fixed
     # decimal count silently zeroes small results -- a thousand tokens is
@@ -139,9 +160,10 @@ def energy_for_tokens(
         "method": (
             "prefill FLOPs = 2 * parameters * tokens; accelerator-seconds = "
             "FLOPs / (peak_tflops * MFU); kWh = seconds * TDP / 3.6e6. Prefill "
-            "only: decode is memory-bound and unaffected by a shorter prompt. "
-            "Modeled from stated assumptions, not measured on the provider's "
-            "hardware."
+            "proxy only; attention, decode, prompt caching, retries, local "
+            "processing and serving utilization are not modeled. TDP is an "
+            "assumed power input, not measured draw. This is not a measurement "
+            "of provider electricity or demonstrated net energy savings."
         ),
     }
 
