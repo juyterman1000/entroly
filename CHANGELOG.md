@@ -14,6 +14,10 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
   still get them back. Its `scan_for_vulnerabilities` tool now scans the code
   it is given; it looked up a stored fragment named by `source` instead and
   answered "Fragment not found" to every call.
+- The Python MCP tools `shared_memory_list` and `learn_from_failures` no longer
+  fail on every call. Each passed its backend an argument the backend did not
+  accept (`tag`, `sources`); the store now filters by tag and the miner reads
+  the sources asked for.
 - `entroly serve` now stops on Ctrl-C and SIGTERM while its stdin is still
   open. In a terminal, Ctrl-C was ignored until Enter was pressed and then
   printed three tracebacks; when a host kept stdin open, SIGTERM was logged but
