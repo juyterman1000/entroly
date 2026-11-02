@@ -18,6 +18,7 @@ import logging
 import os
 import re
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -60,21 +61,35 @@ class FailureMiner:
             root = Path(os.environ.get("ENTROLY_DIR", ".entroly"))
         self._root = Path(root)
 
-    def mine(self, min_occurrences: int = 2) -> list[FailurePattern]:
+    SOURCES = ("prism", "vault", "evolution", "checkpoints")
+
+    def mine(
+        self, min_occurrences: int = 2, sources: Iterable[str] | None = None
+    ) -> list[FailurePattern]:
         """
-        Mine all available data sources for failure patterns.
+        Mine data sources for failure patterns; all of them unless ``sources``
+        names a subset.
 
         Sources:
-          1. PRISM feedback (outcome=negative)
-          2. Vault beliefs (status=invalidated or confidence < 0.3)
-          3. Evolution daemon failures
-          4. Session checkpoint errors
+          1. prism: PRISM feedback (outcome=negative)
+          2. vault: Vault beliefs (status=invalidated or confidence < 0.3)
+          3. evolution: Evolution daemon failures
+          4. checkpoints: Session checkpoint errors
         """
+        selected = self.SOURCES if sources is None else tuple(sources)
+        unknown = sorted(set(selected) - set(self.SOURCES))
+        if unknown:
+            raise ValueError(f"unknown failure sources: {unknown}")
+        miners = {
+            "prism": self._mine_prism,
+            "vault": self._mine_vault,
+            "evolution": self._mine_evolution,
+            "checkpoints": self._mine_checkpoints,
+        }
         patterns: list[FailurePattern] = []
-        patterns.extend(self._mine_prism())
-        patterns.extend(self._mine_vault())
-        patterns.extend(self._mine_evolution())
-        patterns.extend(self._mine_checkpoints())
+        for name in self.SOURCES:
+            if name in selected:
+                patterns.extend(miners[name]())
 
         # Cluster by entity and deduplicate
         clustered = self._cluster(patterns)

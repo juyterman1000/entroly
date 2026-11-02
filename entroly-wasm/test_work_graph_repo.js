@@ -131,6 +131,43 @@ try {
       observedAtMs: 2200,
     });
     assert(defaultCheckpoint.task_hint.title === 'Fix streaming', 'default checkpoint path parity failed');
+
+    if (typeof process.getuid === 'function') {
+      // A HOME without checkpoints falls back to this account's private temp
+      // directory, never to one planted at the shared fixed name.
+      const oldTmp = process.env.TMPDIR;
+      const emptyHome = path.join(root, 'empty-home');
+      const fakeTmp = path.join(root, 'tmp');
+      fs.mkdirSync(emptyHome);
+      fs.mkdirSync(fakeTmp);
+      process.env.HOME = emptyHome;
+      process.env.USERPROFILE = emptyHome;
+      process.env.TMPDIR = fakeTmp;
+      try {
+        const saved = path.join(checkpointDir, 'ckpt_test_1.json.gz');
+        const planted = path.join(fakeTmp, 'entroly', 'checkpoints', projectHash);
+        fs.mkdirSync(planted, { recursive: true });
+        fs.copyFileSync(saved, path.join(planted, 'ckpt_test_1.json.gz'));
+        const ignored = discoverRepositoryObservation(repo, {
+          includeCheckpoint: true,
+          observedAtMs: 2300,
+        });
+        assert(ignored.task_hint === null, 'read a checkpoint planted at the shared temp name');
+
+        const mine = path.join(fakeTmp, `entroly-${process.getuid()}`);
+        fs.mkdirSync(path.join(mine, 'checkpoints', projectHash), { recursive: true });
+        fs.chmodSync(mine, 0o700);
+        fs.copyFileSync(saved, path.join(mine, 'checkpoints', projectHash, 'ckpt_test_1.json.gz'));
+        const fallback = discoverRepositoryObservation(repo, {
+          includeCheckpoint: true,
+          observedAtMs: 2400,
+        });
+        assert(fallback.task_hint && fallback.task_hint.title === 'Fix streaming',
+          'private temp checkpoint parity failed');
+      } finally {
+        if (oldTmp === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = oldTmp;
+      }
+    }
   } finally {
     if (oldHome === undefined) delete process.env.HOME; else process.env.HOME = oldHome;
     if (oldUserProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = oldUserProfile;

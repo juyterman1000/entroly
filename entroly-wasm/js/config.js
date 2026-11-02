@@ -6,6 +6,62 @@ const os = require('os');
 const fs = require('fs');
 const crypto = require('crypto');
 
+// This account's own directory under the shared temporary directory, used when
+// HOME cannot be written. Mirrors entroly/private_temp.py: the fixed name
+// <tmp>/entroly belonged to whichever account created it first, so the next
+// account to fall back could not write it and a world-writable one decided
+// where everyone else's checkpoints went. Windows already gives each account
+// its own temporary directory, so there the name stays "entroly".
+function accountTempPath() {
+  const name = typeof process.getuid === 'function' ? `entroly-${process.getuid()}` : 'entroly';
+  return path.join(os.tmpdir(), name);
+}
+
+function notPrivate(dir) {
+  const stat = fs.lstatSync(dir);
+  if (stat.isSymbolicLink()) return 'it is a symbolic link';
+  if (!stat.isDirectory()) return 'it is not a directory';
+  if (typeof process.getuid !== 'function') return null;
+  if (stat.uid !== process.getuid()) return `it belongs to uid ${stat.uid}, not this account`;
+  if (stat.mode & 0o077) {
+    return `other accounts can open it, mode ${(stat.mode & 0o7777).toString(8).padStart(4, '0')}`;
+  }
+  return null;
+}
+
+function accountTempDir() {
+  const dir = accountTempPath();
+  if (typeof process.getuid !== 'function') {
+    fs.mkdirSync(dir, { recursive: true });
+    return dir;
+  }
+  fs.mkdirSync(path.dirname(dir), { recursive: true });
+  try {
+    fs.mkdirSync(dir, { mode: 0o700 });
+    fs.chmodSync(dir, 0o700);
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error;
+  }
+  const reason = notPrivate(dir);
+  if (reason) {
+    const error = new Error(`${dir}: ${reason}`);
+    error.code = 'EACCES';
+    error.path = dir;
+    error.reason = reason;
+    throw error;
+  }
+  return dir;
+}
+
+function existingAccountTempDir() {
+  const dir = accountTempPath();
+  try {
+    return notPrivate(dir) ? null : dir;
+  } catch {
+    return null;
+  }
+}
+
 function projectCheckpointDir() {
   const explicit = process.env.ENTROLY_DIR;
   if (explicit) return explicit;
@@ -20,10 +76,19 @@ function projectCheckpointDir() {
     fs.writeFileSync(probe, 'ok');
     fs.unlinkSync(probe);
     return defaultDir;
-  } catch {
-    const fallback = path.join(os.tmpdir(), 'entroly', 'checkpoints', projectHash);
-    fs.mkdirSync(fallback, { recursive: true });
-    return fallback;
+  } catch (homeError) {
+    try {
+      const fallback = path.join(accountTempDir(), 'checkpoints', projectHash);
+      fs.mkdirSync(fallback, { recursive: true, mode: 0o700 });
+      return fallback;
+    } catch (fallbackError) {
+      const why = (error) => error.reason || error.code || error.message;
+      throw new Error(
+        `Entroly has nowhere private to keep this project's data: it cannot write ${defaultDir} ` +
+        `(${why(homeError)}) and will not use ${accountTempPath()} (${why(fallbackError)}). ` +
+        'Set ENTROLY_DIR to a writable directory only you can read.'
+      );
+    }
   }
 }
 
@@ -50,4 +115,10 @@ class EntrolyConfig {
   }
 }
 
-module.exports = { EntrolyConfig, projectCheckpointDir };
+module.exports = {
+  EntrolyConfig,
+  projectCheckpointDir,
+  accountTempPath,
+  accountTempDir,
+  existingAccountTempDir,
+};
