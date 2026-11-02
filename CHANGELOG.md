@@ -23,6 +23,13 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
     uv ... or Node" even when `entroly` was installed and broken, and dropped the
     real error. It now names the failing runner, its exit status and the last
     line of its error, with a separate message when nothing is installed.
+- `entroly hook install` no longer edits shell startup files. The block it
+  appended compressed nothing (its functions set a variable nothing read),
+  replaced any existing bash `DEBUG` trap, and could not be removed:
+  `entroly hook uninstall` failed with "takes 0 positional arguments". Install
+  now changes nothing and points at `entroly shrink -- <command>`, which does
+  compress command output; uninstall removes an existing block byte for byte;
+  status lists each shell config file.
 - With session rescue off, shell tool output of at most 4,000 characters is
   forwarded verbatim (`ENTROLY_SHELL_VERBATIM_CHARS`, `ENTROLY_SHELL_TOOLS`);
   a 30-file `ls -l` had been rewritten with sizes rounded to "1KB" and modes
