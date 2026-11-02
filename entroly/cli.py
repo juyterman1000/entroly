@@ -3730,6 +3730,13 @@ def cmd_value(args):
         f"    Input tokens reduced: "
         f"{C.GREEN}{provider['input_tokens_reduced']:,}{C.RESET}"
     )
+    if provider.get("input_tokens_added"):
+        print(
+            f"    {C.YELLOW}Input tokens added: {provider['input_tokens_added']:,} "
+            f"across {provider['requests_enlarged']:,} request(s) Entroly sent "
+            f"larger (retrieved context){C.RESET}"
+        )
+        print(f"    Net input tokens reduced: {provider['net_input_tokens_reduced']:,}")
     print(
         "    Modeled input cost avoided: "
         f"{C.GREEN}${provider['modeled_input_cost_avoided_usd']:.4f}{C.RESET}"

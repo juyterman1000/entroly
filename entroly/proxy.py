@@ -2922,6 +2922,10 @@ class PromptCompilerProxy:
                     # ── Persistent value tracking ──
                     try:
                         _saved = max(0, original_tokens - optimized_tokens)
+                        # Injected context can make the forwarded body larger
+                        # than the one received; that is not an optimization
+                        # and must not vanish into a zero saving.
+                        _added = max(0, optimized_tokens - original_tokens)
                         _model = extract_model(body, path) or ""
                         _coverage = (len(selected_frags) / max(self.engine._rust.fragment_count(), 1) * 100) if selected_frags and hasattr(self.engine, '_rust') else 0.0
                         _confidence = avg_entropy if selected_frags else 0.0
@@ -2929,10 +2933,11 @@ class PromptCompilerProxy:
                             tokens_saved=_saved,
                             model=_model,
                             duplicates=0,
-                            optimized=True,
+                            optimized=_saved > 0,
                             coverage_pct=_coverage,
                             confidence=_confidence,
                             source="proxy",
+                            tokens_added=_added,
                         )
                         from .product_telemetry import (
                             capture_optimization_outcome,
