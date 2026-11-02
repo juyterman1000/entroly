@@ -174,3 +174,71 @@ def test_framing_headers_are_not_copied_onto_a_rewritten_body() -> None:
 
     assert response.headers.get("content-encoding") is None
     assert int(response.headers["content-length"]) == len(response.content)
+
+
+def _get_upstream(content: bytes, content_type: str):
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            self.send_response(200)
+            self.send_header("content-type", content_type)
+            self.send_header("content-length", str(len(content)))
+            for key, value in PROVIDER_HEADERS.items():
+                self.send_header(key, value)
+            self.end_headers()
+            self.wfile.write(content)
+
+        def log_message(self, *args):  # noqa: A003
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
+def _get(server, path: str) -> httpx.Response:
+    port = server.server_address[1]
+    config = ProxyConfig(
+        anthropic_base_url=f"http://127.0.0.1:{port}",
+        openai_base_url=f"http://127.0.0.1:{port}",
+    )
+    app = create_proxy_app(object(), config, start_dashboard=False, start_autotune=False)
+
+    async def _run() -> httpx.Response:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://proxy"
+        ) as client:
+            return await client.get(path, headers={"x-api-key": "sk-ant-test"})
+
+    try:
+        return asyncio.run(_run())
+    finally:
+        server.shutdown()
+
+
+def test_count_tokens_keeps_the_provider_headers() -> None:
+    """Claude Code calls this endpoint; it takes the catch-all route."""
+    response = _post(_upstream(200, {"input_tokens": 123}), "/v1/messages/count_tokens", ANTHROPIC)
+
+    assert response.status_code == 200
+    assert response.json() == {"input_tokens": 123}
+    _assert_provider_headers(response)
+
+
+def test_a_model_list_keeps_the_provider_headers() -> None:
+    listing = json.dumps({"data": [{"id": "claude-sonnet-4-5", "type": "model"}]}).encode()
+
+    response = _get(_get_upstream(listing, "application/json"), "/v1/models")
+
+    assert response.json()["data"][0]["id"] == "claude-sonnet-4-5"
+    _assert_provider_headers(response)
+
+
+def test_a_non_json_body_is_passed_through_byte_for_byte() -> None:
+    """A file download was rewritten as {"data": <body decoded as text>}."""
+    blob = b"\x00\x01binary \xff\xfe payload\n"
+
+    response = _get(_get_upstream(blob, "application/octet-stream"), "/v1/files/file_1/content")
+
+    assert response.status_code == 200
+    assert response.content == blob
+    assert response.headers["content-type"] == "application/octet-stream"
