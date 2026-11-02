@@ -23,6 +23,11 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
   - A default start no longer warns that auto-recovery will not cover
     streaming. Both settings involved are defaults; `/stats` still reports it,
     and the warning remains for an explicit `ENTROLY_AUTO_RECOVERY`.
+  - `entroly daemon` honours `ENTROLY_PROXY_PORT` and `ENTROLY_DASHBOARD_PORT`,
+    as `entroly proxy` documents. It hard-coded 9377 and 9378, so with the
+    proxy moved to another port it still tried to bind the old one.
+  - `entroly learn --json` prints JSON. Without `--history` it printed its
+    human report, which no JSON consumer can parse.
 - With session rescue off, shell tool output of at most 4,000 characters is
   forwarded verbatim (`ENTROLY_SHELL_VERBATIM_CHARS`, `ENTROLY_SHELL_TOOLS`);
   a 30-file `ls -l` had been rewritten with sizes rounded to "1KB" and modes
