@@ -3327,7 +3327,20 @@ class PromptCompilerProxy:
                 headers=headers,
                 allow_model_change=_ravs_swapped,
             )
-            control_outcome = "optimized" if body != control_before else "observed"
+            # "optimized" only for a request sent smaller. Retrieved context
+            # can make it larger, and docs/limitations.md tells users to read
+            # this header to see what happened to their traffic.
+            if body == control_before:
+                control_outcome = "observed"
+            else:
+                before_tokens = self._estimate_body_tokens(control_before)
+                after_tokens = self._estimate_body_tokens(body)
+                if after_tokens < before_tokens:
+                    control_outcome = "optimized"
+                elif after_tokens > before_tokens:
+                    control_outcome = "context_added"
+                else:
+                    control_outcome = "modified"
             control_headers.update(
                 self._control_headers(
                     control_decision,

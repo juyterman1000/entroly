@@ -67,8 +67,9 @@ def _send(tracker_dir, monkeypatch, sent: dict):
         app = Starlette(routes=[Route("/v1/messages", proxy.handle_proxy, methods=["POST"])])
         captured = {}
 
-        async def capture(_url, _headers, body, *_args, **_kwargs):
+        async def capture(_url, _headers, body, *_args, **kwargs):
             captured["body"] = json.loads(json.dumps(body))
+            captured["headers"] = dict(kwargs.get("extra_headers") or {})
             return JSONResponse({"id": "msg-test", "type": "message", "model": sent["model"],
                                  "content": [{"type": "text", "text": "hello"}]})
 
@@ -76,17 +77,18 @@ def _send(tracker_dir, monkeypatch, sent: dict):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             await client.post("/v1/messages", json=sent, headers={
                 "x-api-key": "sk-ant-test", "anthropic-version": "2023-06-01"})
-        return captured["body"]
+        return captured
 
-    forwarded = asyncio.run(run())
-    return tracker, forwarded
+    captured = asyncio.run(run())
+    return tracker, captured
 
 
 def test_a_request_the_proxy_enlarged_is_reported_as_enlarged(tmp_path, monkeypatch) -> None:
     sent = {"model": "claude-sonnet-4-5", "max_tokens": 64,
             "messages": [{"role": "user", "content": "Say hello"}]}
 
-    tracker, forwarded = _send(tmp_path, monkeypatch, sent)
+    tracker, captured = _send(tmp_path, monkeypatch, sent)
+    forwarded = captured["body"]
 
     grown = (PromptCompilerProxy._estimate_body_tokens(forwarded)
              - PromptCompilerProxy._estimate_body_tokens(sent))
@@ -110,3 +112,16 @@ def test_old_value_files_load_with_the_new_counters_at_zero(tmp_path) -> None:
     assert provider["input_tokens_added"] == 0
     assert provider["requests_enlarged"] == 0
     assert provider["net_input_tokens_reduced"] == 120
+
+
+def test_the_outcome_header_does_not_call_an_enlarged_request_optimized(
+    tmp_path, monkeypatch
+) -> None:
+    """docs/limitations.md points users at X-Entroly-Outcome for live traffic."""
+    sent = {"model": "claude-sonnet-4-5", "max_tokens": 64,
+            "messages": [{"role": "user", "content": "Say hello"}]}
+
+    _tracker, captured = _send(tmp_path, monkeypatch, sent)
+
+    outcome = {k.lower(): v for k, v in captured["headers"].items()}.get("x-entroly-outcome")
+    assert outcome == "context_added", outcome
