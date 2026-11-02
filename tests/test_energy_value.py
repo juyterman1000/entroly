@@ -1,7 +1,6 @@
-"""Electricity avoided must be derivable by hand from the numbers it reports.
+"""The modeled energy proxy must be derivable from the numbers it reports.
 
-Token reduction removes prefill work, and prefill work is joules. The figure is
-modeled rather than measured -- Entroly runs locally and cannot instrument a
+The figure is modeled rather than measured; Entroly cannot instrument a
 provider's accelerators -- so its only defence is that every input is stated and
 the arithmetic is checkable. These tests recompute it independently rather than
 asserting a constant, which would pass even if the formula drifted.
@@ -73,6 +72,52 @@ class TestHonesty:
 
 
 class TestOverrides:
+    @pytest.mark.parametrize(
+        ("environment", "field"),
+        [
+            ("ENTROLY_ENERGY_MODEL_PARAMS_B", "model_params_billions"),
+            ("ENTROLY_ENERGY_PEAK_TFLOPS", "accelerator_peak_tflops"),
+            ("ENTROLY_ENERGY_MFU", "model_flops_utilization"),
+            ("ENTROLY_ENERGY_TDP_WATTS", "accelerator_tdp_watts"),
+        ],
+    )
+    @pytest.mark.parametrize("invalid", ["inf", "-inf", "nan", "1e999"])
+    def test_nonfinite_environment_uses_default(self, monkeypatch, environment, field, invalid):
+        monkeypatch.setenv(environment, invalid)
+        assert getattr(EnergyAssumptions.from_env(), field) == getattr(EnergyAssumptions(), field)
+        assert energy_for_tokens(1_000)["kwh_avoided"] > 0
+
+    @pytest.mark.parametrize("field", [
+        "model_params_billions", "accelerator_peak_tflops",
+        "model_flops_utilization", "accelerator_tdp_watts",
+    ])
+    @pytest.mark.parametrize("invalid", [float("inf"), float("nan"), 0, -1, True])
+    def test_invalid_direct_assumptions_rejected(self, field, invalid):
+        with pytest.raises(ValueError, match=field):
+            EnergyAssumptions(**{field: invalid})
+
+    def test_direct_utilization_above_one_rejected(self):
+        with pytest.raises(ValueError, match="model_flops_utilization"):
+            EnergyAssumptions(model_flops_utilization=1.01)
+
+    def test_finite_environment_utilization_still_clamped(self, monkeypatch):
+        monkeypatch.setenv("ENTROLY_ENERGY_MFU", "2")
+        assert EnergyAssumptions.from_env().model_flops_utilization == 1.0
+
+    @pytest.mark.parametrize("assumptions", [
+        {"model_params_billions": 1e308},
+        {"accelerator_peak_tflops": 1e308},
+        {"accelerator_tdp_watts": 1e308},
+        {"accelerator_peak_tflops": 5e-324, "model_flops_utilization": 5e-324},
+    ])
+    def test_nonfinite_arithmetic_cannot_be_reported_as_zero(self, assumptions):
+        with pytest.raises(ValueError, match="finite"):
+            energy_for_tokens(1_000_000, EnergyAssumptions(**assumptions))
+
+    def test_positive_estimate_underflow_cannot_be_reported_as_zero(self):
+        with pytest.raises(ValueError, match="underflows"):
+            energy_for_tokens(1, EnergyAssumptions(accelerator_tdp_watts=5e-324))
+
     def test_a_smaller_model_avoids_less_energy(self):
         big = energy_for_tokens(1_000_000, EnergyAssumptions(model_params_billions=70))
         small = energy_for_tokens(1_000_000, EnergyAssumptions(model_params_billions=7))
@@ -93,6 +138,20 @@ class TestOverrides:
 
 
 class TestReceiptIntegration:
+    @pytest.mark.parametrize("invalid", ["1e308", "5e-324"])
+    def test_unrepresentable_energy_keeps_observed_receipt_totals(
+        self, tmp_path, monkeypatch, invalid
+    ):
+        monkeypatch.setenv("ENTROLY_DIR", str(tmp_path))
+        monkeypatch.setenv("ENTROLY_ENERGY_TDP_WATTS", invalid)
+        from entroly.value_tracker import ValueTracker
+
+        tracker = ValueTracker(data_dir=tmp_path)
+        tracker.record(tokens_saved=1_000_000, source="sdk")
+        receipt = tracker.get_value_receipt()
+        assert "energy" not in receipt
+        assert receipt["local_operations"]["tokens_reduced"] == 1_000_000
+
     def test_energy_appears_without_being_asked_for(self, tmp_path, monkeypatch):
         monkeypatch.setenv("ENTROLY_DIR", str(tmp_path))
         from entroly.value_tracker import ValueTracker
