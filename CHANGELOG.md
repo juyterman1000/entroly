@@ -5,6 +5,24 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
 
 ## Unreleased
 
+- Claude Code integration fixes.
+  - The RAVS capture hook recorded no outcome from Claude Code. Claude Code puts
+    no exit code in a Bash hook payload: it fires `PostToolUse` only after exit
+    0 and `PostToolUseFailure` after a non-zero exit, whose `error` opens with
+    `Exit code N`. Capture now reads both, inferring exit 0 from `PostToolUse`
+    only under `--host claude-code`, and the session journal records a failing
+    command as `exit:N` rather than "ok".
+  - `entroly ravs hook install --claude-code` now registers `PostToolUseFailure`
+    too, with `--host claude-code` on the command. Re-run it to upgrade an
+    existing registration in place; the cookbook snippet and this repository's
+    `.claude/settings.json` are updated the same way.
+  - `entroly uninstall` removes those hooks before running pip. They name this
+    installation's `entroly` by absolute path, so once pip deleted it every Bash
+    call in Claude Code showed a hook error.
+  - When every plugin runner failed, the plugin said "no runner found. Install
+    uv ... or Node" even when `entroly` was installed and broken, and dropped the
+    real error. It now names the failing runner, its exit status and the last
+    line of its error, with a separate message when nothing is installed.
 - With session rescue off, shell tool output of at most 4,000 characters is
   forwarded verbatim (`ENTROLY_SHELL_VERBATIM_CHARS`, `ENTROLY_SHELL_TOOLS`);
   a 30-file `ls -l` had been rewritten with sizes rounded to "1KB" and modes
