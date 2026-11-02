@@ -695,7 +695,7 @@ class EntrolyMCPServer {
           const body = this._buffer.slice(bodyStart, bodyStart + contentLength);
           this._buffer = this._buffer.slice(bodyStart + contentLength);
           try {
-            this._handleMessage(JSON.parse(body));
+            this._handleMessage(JSON.parse(body), 'content-length');
           } catch (e) {
             this._log(`JSON parse error (LSP frame): ${e.message}`);
           }
@@ -709,14 +709,19 @@ class EntrolyMCPServer {
       this._buffer = this._buffer.slice(nlIdx + 1);
       if (!line) continue;
       try {
-        this._handleMessage(JSON.parse(line));
+        this._handleMessage(JSON.parse(line), 'newline');
       } catch (e) {
         this._log(`JSON parse error (NDJSON): ${e.message}`);
       }
     }
   }
 
-  _handleMessage(msg) {
+  _handleMessage(msg, framing = 'newline') {
+    // Answer in the framing the request arrived in. MCP stdio is one JSON
+    // message per line; replies were always Content-Length framed, which the
+    // official MCP clients cannot parse ("Unexpected token 'C'"), so an editor
+    // configured by `entroly init` never completed the handshake.
+    this._framing = framing;
     if (msg.method === 'initialize') {
       this._initialized = true;
       this._respond(msg.id, {
@@ -751,15 +756,20 @@ class EntrolyMCPServer {
 
   _respond(id, result) {
     if (id === undefined) return;
-    const response = JSON.stringify({ jsonrpc: '2.0', id, result });
-    const header = `Content-Length: ${Buffer.byteLength(response)}\r\n\r\n`;
-    process.stdout.write(header + response);
+    this._send({ jsonrpc: '2.0', id, result });
   }
 
   _respondError(id, code, message) {
-    const response = JSON.stringify({ jsonrpc: '2.0', id, error: { code, message } });
-    const header = `Content-Length: ${Buffer.byteLength(response)}\r\n\r\n`;
-    process.stdout.write(header + response);
+    this._send({ jsonrpc: '2.0', id, error: { code, message } });
+  }
+
+  _send(message) {
+    const response = JSON.stringify(message);
+    if (this._framing === 'content-length') {
+      process.stdout.write(`Content-Length: ${Buffer.byteLength(response)}\r\n\r\n${response}`);
+    } else {
+      process.stdout.write(`${response}\n`);
+    }
   }
 }
 
