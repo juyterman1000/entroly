@@ -1,93 +1,24 @@
-"""Conformal selective-verification cascade.
+"""Empirical selective-verification bands with class-rank diagnostics.
 
-What this is (and is not)
--------------------------
-This is the piece that makes the proven escalation bound in
-`escalation.py` operational on a *measured* two-verifier system instead
-of a hypothetical model ladder.
+select_band greedily fits score cutoffs using calibration error and a cost
+threshold. Rank p-values are reported but do not determine actions. Under a
+fixed scorer and within-class exchangeability, they are marginally super-uniform
+for their class nulls; a small value rejects that null. They do not certify the
+population error conditional on a cheap decision.
 
-What makes this cascade different: its cheap stage is a **deterministic,
-zero-LLM-cost verifier** emitting a class-conditional conformal p-value. Every
-comparable cascade spends a model call to decide whether it needs a bigger
-model call. This one decides for free, and the decision is replayable — which
-is what lets the escalation band carry a finite-sample guarantee instead of a
-heuristic threshold.
+Empirical prefix errors need not be monotone. The greedy scan stops at the
+first failed cutoff and need not find the largest feasible cheap region.
+Separate evaluation is descriptive evidence, not a distribution-free selective
+risk, local-error, per-user or regret guarantee. cascade_assessment separately
+implements an opt-in held-out binomial assessment with explicit assumptions.
 
-The foundations are well-understood and deliberately reused rather than
-reinvented: split-conformal prediction and its ⌈(n+1)(1−α)⌉ quantile (shared
-with `witness_calibration.conformal_quantile`), the selective-prediction
-risk–coverage tradeoff, conformal risk control, and cost-tiered cascades.
-Standing on settled theory is what makes the guarantee above provable.
+evaluate_policy.expected_cost counts resource-call cost only. An error penalty
+q additionally requires q times joint error probability:
+P(cheap)*R_cheap + P(escalate)*R_escalated. Conditional cheap error alone is not
+that penalty. Deterministic scoring also consumes local resources.
 
-The contribution here is specific and modest: a cascade whose *cheap*
-stage is a deterministic, zero-LLM-cost verifier (WITNESS) emitting a
-**class-conditional conformal p-value**, whose escalation band is the
-`escalation.py` rule (★) with the *conformal local error rate* as the
-operative risk, and whose total cost decomposes exactly into the α·q
-form already proven there — with α now the **realized** miscoverage on
-the cheaply-decided mass. Whether this Pareto-dominates either verifier
-alone is an empirical question answered by the falsification harness
-(`tests/test_conformal_cascade_breakthrough.py`), not asserted here.
-
-Setup
------
-Cheap verifier maps an item to risk s ∈ [0,1] (higher ⇒ more likely
-hallucinated); cost c_cheap ≈ 0, deterministic. Expensive verifier
-(an LLM judge) is treated as a near-oracle at cost c_exp per call. A
-hallucination that reaches the user costs q. We hold a labelled
-calibration sample (s_i, y_i), y_i ∈ {0 faithful, 1 hallucinated}.
-
-Class-conditional (Mondrian) conformal p-values
------------------------------------------------
-    p_h(s) = (1 + #{i: y_i=1, s_i ≥ s}) / (n_h + 1)
-    p_g(s) = (1 + #{i: y_i=0, s_i ≤ s}) / (n_g + 1)
-
-By exchangeability within a class, p_h is a valid p-value for the
-hallucinated null and p_g for the faithful null: for a genuinely
-hallucinated test point, P[p_h ≤ α] ≤ α (and symmetrically). Small
-p_h ⇒ "looks hallucinated with conformal confidence"; small p_g ⇒
-"looks faithful with conformal confidence".
-
-Three-way decision (the cascade)
---------------------------------
-    p_g ≤ α_acc                  → ACCEPT (predict faithful), pay c_cheap
-    else p_h ≤ α_flag            → FLAG  (predict hallucinated), c_cheap
-    else                         → ESCALATE to the LLM, pay c_cheap+c_exp
-
-Why the band edge IS escalation.py rule (★)
--------------------------------------------
-Deciding cheaply at score s incurs expected hallucination cost q·r(s),
-where r(s) is the cheap verifier's local error rate at s; escalating
-costs c_exp and (near-oracle) removes that error down to the LLM's
-residual r_floor. Escalate iff
-
-    q·(r(s) − r_floor) > c_exp   ⟺   r(s) > r_floor + c_exp/q          (★)
-
-— exactly `escalation.should_escalate` with upper_risk=r(s),
-delta_cost=c_exp, hallucination_cost=q. The conformal layer is what
-makes r(s) a finite-sample-honest *certified* local error rather than a
-point estimate, so the selective risk on the cheap region inherits the
-conformal guarantee.
-
-Cost decomposition (the deployable identity)
---------------------------------------------
-    E[cost] = c_cheap
-            + P(escalate)·c_exp
-            + q · SelRisk(cheap region)
-
-and E[cost] − E[cost_clairvoyant] ≤ α·q with α = realized miscoverage
-on the cheap region — the bound (R) of `escalation.py`, now realized
-and measurable, not hypothetical.
-
-Proven vs. NOT
---------------
-Proven / established: marginal finite-sample selective-risk control on
-the cheap region (conformal exchangeability + the ⌈(n+1)(1−α)⌉
-correction); the cost identity above is algebraic. NOT proven here and
-deliberately not claimed: per-input (conditional) coverage; robustness
-under distribution shift; any independence between the two verifiers'
-errors; that the LLM stage is a true oracle (it is not — its measured
-error is carried explicitly as r_floor).
+No providers are invoked here. Production proxy fusion thresholds are a separate
+rule; these fitted bands do not certify that routing policy.
 """
 
 from __future__ import annotations
@@ -131,14 +62,14 @@ def fit_cascade(scores: list[float], labels: list[int]) -> CascadeCalibration:
 
 def p_hallucinated(cal: CascadeCalibration, s: float) -> float:
     """p_h(s) = (1 + #{halu cal ≥ s}) / (n_h + 1).  Valid conformal
-    p-value for the hallucinated null; small ⇒ confidently hallucinated."""
+    p-value under within-class exchangeability; small rejects the hallucinated null."""
     ge = cal.n_h - bisect_left(cal.halu_scores, s)
     return (1 + ge) / (cal.n_h + 1)
 
 
 def p_faithful(cal: CascadeCalibration, s: float) -> float:
     """p_g(s) = (1 + #{faithful cal ≤ s}) / (n_g + 1).  Small ⇒
-    confidently faithful."""
+    reject the faithful null, under within-class exchangeability."""
     le = bisect_right(cal.faith_scores, s)
     return (1 + le) / (cal.n_g + 1)
 
@@ -148,7 +79,7 @@ class CascadePolicy:
     """An operating point: accept below `t_lo`, flag at/above `t_hi`,
     escalate in the open band (t_lo, t_hi). Edges are score cutoffs so
     the rule is total and audit-clear; the conformal p-values are
-    reported per decision for the guarantee accounting."""
+    reported per decision as diagnostics, not selective-risk certification."""
     cal: CascadeCalibration
     t_lo: float                  # accept-as-faithful if s ≤ t_lo
     t_hi: float                  # flag-as-hallucinated if s ≥ t_hi
@@ -211,15 +142,13 @@ def select_band(
     q: float,
     r_floor: float = 0.0,
 ) -> CascadePolicy:
-    """Closed-form-ish band: the *largest* cheap region whose empirical
-    selective error stays ≤ `target_selective_risk` on each side, AND
-    whose edges respect escalation rule (★) — escalate exactly where the
-    local error rate exceeds r_floor + c_exp/q.
+    """Greedily grow two empirical cheap regions until a cutoff fails.
 
-    Monotone structure makes this an O(n log n) sweep, not a search:
-    accepted-side error is non-decreasing in t_lo, flagged-side error is
-    non-decreasing as t_hi falls, so the optimum is the extreme cutoff
-    on each side that still satisfies both the risk budget and (★)."""
+    The target applies to observed calibration error, not population conditional
+    risk. Prefix errors need not be monotone; later feasible cutoffs can be
+    missed. Repeated prefix scans can take quadratic time. Independent held-out
+    assessment is separate from fitting these cutoffs.
+    """
     if len(scores) != len(labels):
         raise ValueError("scores/labels length mismatch")
     cal = fit_cascade(scores, labels)
@@ -228,8 +157,8 @@ def select_band(
     rule_tau = r_floor + (c_exp / q if q > 0 else float("inf"))
 
     # Grow the accept region upward through candidate cutoffs while both
-    # the conformal risk budget and rule (★) (local error ≤ rule_tau)
-    # hold. Local error proxy on the accept side = cumulative error rate.
+    # the empirical target and rule (★) hold. Cumulative error is an
+    # empirical proxy, not a certified local error probability.
     cand = sorted({s for s, _ in pairs})
     t_lo = float("-inf")
     for t in cand:

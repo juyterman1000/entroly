@@ -217,12 +217,12 @@ class TestP2_ConformalCascadeIntegration:
         assert cal.n_h == 4  # 4 hallucinated
         assert cal.n_g == 4  # 4 faithful
 
-        # Low score → low p_g (confidently faithful)
+        # Low score gives low p_g: evidence against the faithful class null.
         pg_low = p_faithful(cal, 0.1)
         pg_high = p_faithful(cal, 0.9)
         assert pg_low < pg_high  # more faithful cal ≤ 0.1 → lower p
 
-        # High score → low p_h (confidently hallucinated)
+        # High score gives low p_h: evidence against the hallucinated class null.
         ph_high = p_hallucinated(cal, 0.9)
         ph_low = p_hallucinated(cal, 0.1)
         assert ph_high < ph_low  # more halu cal ≥ 0.9 → lower p
