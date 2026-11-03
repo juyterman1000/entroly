@@ -238,7 +238,7 @@ def test_unknown_mass_is_not_supported_by_same_subjects_book_count(
         # the unrelated exact verb is not grounds for a hard flag either.
         assert alignment.knowledge_triplet is None
         assert result.n_matched == 0
-        assert result.verdict == "pass"
+        assert result.verdict == "warn"
     else:
         assert alignment.knowledge_triplet.sentence == "Alice weighs 60 kilograms."
         assert result.n_matched == 1
@@ -313,7 +313,64 @@ def test_coherent_different_raw_predicate_defers_instead_of_hard_flagging(facts)
     assert result.n_matched == result.n_wrong_slot == 0
     assert result.stave_score == 0.5
     assert result.hallucination_risk == stave_risk(answer, passage) == 0.5
-    assert result.verdict == "pass"
+    assert result.verdict == "warn"
+
+
+@pytest.mark.parametrize(
+    "facts", tuple(permutations(("Bruno created Ruby.", "Alice founded Amber."))),
+)
+@pytest.mark.parametrize(
+    "claims", tuple(permutations(("Bruno founded Ruby.", "Alice founded Amber."))),
+)
+def test_ambiguous_claim_cannot_disappear_beside_supported_claim(facts, claims):
+    passage, answer = " ".join(facts), " ".join(claims)
+    result = stave_verify(answer, passage)
+    assert len(result.answer_triplets) == len(result.alignments) == 2
+    by_subject = {a.answer_triplet.subject: a for a in result.alignments}
+    ambiguous, supported = by_subject["Bruno"], by_subject["Alice"]
+    assert ambiguous.knowledge_triplet is None
+    assert ambiguous.pred_sim == 1.0
+    assert ambiguous.subject_fid == ambiguous.object_fid == ambiguous.rsf == 0.0
+    assert not ambiguous.wrong_slot
+    assert supported.knowledge_triplet.sentence == "Alice founded Amber."
+    assert supported.pred_sim == supported.subject_fid == supported.object_fid == 1.0
+    assert supported.rsf == 1.0
+    assert not supported.wrong_slot
+    assert result.n_matched == 1
+    assert result.n_wrong_slot == 0
+    assert not result.wrong_slot_detected
+    assert result.stave_score == 0.5
+    assert result.hallucination_risk == stave_risk(answer, passage) == 0.5
+    assert result.verdict == "warn"
+
+
+@pytest.mark.parametrize(
+    "facts", tuple(permutations(("Bruno created Ruby.", "Alice founded Amber."))),
+)
+@pytest.mark.parametrize(
+    "claims", tuple(permutations(("Bruno founded Ruby.", "Alice founded Ruby."))),
+)
+def test_ambiguity_does_not_wash_out_a_clear_crossed_wrong_slot(facts, claims):
+    # Controlled fixture: Alice's sole founded project is Amber. Crossing
+    # Bruno's Ruby into her assertion supplies the explicit wrong-slot control.
+    passage, answer = " ".join(facts), " ".join(claims)
+    result = stave_verify(answer, passage)
+    assert len(result.answer_triplets) == len(result.alignments) == 2
+    by_subject = {a.answer_triplet.subject: a for a in result.alignments}
+    ambiguous, crossed = by_subject["Bruno"], by_subject["Alice"]
+    assert ambiguous.knowledge_triplet is None
+    assert ambiguous.pred_sim == 1.0
+    assert not ambiguous.wrong_slot
+    assert crossed.knowledge_triplet.sentence == "Alice founded Amber."
+    assert crossed.pred_sim == crossed.subject_fid == 1.0
+    assert crossed.object_fid == crossed.rsf == 0.0
+    assert crossed.wrong_slot
+    assert result.n_matched == result.n_wrong_slot == 1
+    assert result.wrong_slot_detected
+    assert result.stave_score <= 0.25
+    assert result.hallucination_risk >= 0.75
+    assert result.hallucination_risk == stave_risk(answer, passage)
+    assert result.verdict == "flag"
 
 
 @pytest.mark.parametrize(
