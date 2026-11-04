@@ -35,6 +35,47 @@ def _canonical_sha(value: object) -> str:
     return _sha(json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8"))
 
 
+def _counterevidence_spans(plan: dict, path: str, raw: bytes, source_sha: str) -> list[tuple[int, int]]:
+    """Validate retained review locations before using them as source evidence.
+
+    This consumes the existing planner's review; it does not independently
+    certify the conflict or expand the review's completeness/semantic scope.
+    """
+    result = []
+
+    def checked_span(start: object, end: object, identifier: str) -> tuple[int, int]:
+        if (type(start) is not int or type(end) is not int
+                or not 0 <= start < end <= len(raw)
+                or raw[start:end] != identifier.encode("utf-8")):
+            raise ValueError("rename counterevidence has an invalid identifier range")
+        return start, end
+
+    for review in plan.get("binding_review", {}).get("files", ()):
+        if review.get("path") != path or not review.get("conflicts"):
+            continue
+        if review.get("source_sha256") != source_sha:
+            raise ValueError("rename counterevidence source hash is stale")
+        old, new = plan.get("old_name"), plan.get("new_name")
+        if not isinstance(old, str) or not isinstance(new, str):
+            raise ValueError("rename counterevidence requires identifier names")
+        for conflict in review["conflicts"]:
+            identifier = conflict.get("identifier")
+            if identifier not in (old, new):
+                raise ValueError("rename counterevidence identifier does not match the task")
+            start, end = checked_span(conflict.get("start_byte"), conflict.get("end_byte"), identifier)
+            if _sha(raw[start:end]) != conflict.get("evidence_sha256"):
+                raise ValueError("rename counterevidence identifier hash is invalid")
+            result.append((start, end))
+            ranges = conflict.get("existing_binding_ranges", ())
+            if not isinstance(ranges, (list, tuple)):
+                raise ValueError("rename counterevidence binding ranges are invalid")
+            for span in ranges:
+                if not isinstance(span, (list, tuple)) or len(span) != 2:
+                    raise ValueError("rename counterevidence binding range is invalid")
+                result.append(checked_span(span[0], span[1], new))
+    return result
+
+
 def _regions(root: Path, index: RepositoryIndex, plan: dict) -> list[dict]:
     grouped: dict[str, list[dict]] = {}
     for change in plan["changes"]:
@@ -61,11 +102,12 @@ def _regions(root: Path, index: RepositoryIndex, plan: dict) -> list[dict]:
             ])
             spans.append((offsets[first - 1], offsets[node.end_lineno]))
         selected = set()
-        for change in changes:
-            start, end = change["start_byte"], change["end_byte"]
+        locations = [(change["start_byte"], change["end_byte"]) for change in changes]
+        locations.extend(_counterevidence_spans(plan, path, raw, index.files[path].sha256))
+        for start, end in locations:
             enclosing = next((span for span in spans if span[0] <= start < end <= span[1]), None)
             if enclosing is None:
-                raise ValueError("planned edit has no enclosing Python source statement")
+                raise ValueError("planned edit or counterevidence has no enclosing Python source statement")
             selected.add(enclosing)
         merged: list[tuple[int, int]] = []
         for start, end in sorted(selected):
@@ -124,7 +166,7 @@ def _measure(payload: dict) -> int:
 
 def build_rename_context(root: Path, index: RepositoryIndex, plan: dict, *,
                          byte_budget: int, cursor: str | None = None) -> dict:
-    """Page source regions covering the edits of one freshly rebuilt plan."""
+    """Page edits and retained conflict evidence from one freshly rebuilt plan."""
     validate_byte_budget(byte_budget)
     if plan["resolution"] != "resolved" or not plan["changes"]:
         raise ValueError("rename context requires a resolved plan with source-verified edits")
@@ -133,6 +175,9 @@ def build_rename_context(root: Path, index: RepositoryIndex, plan: dict, *,
                  for region in regions]
     snapshot = _canonical_sha({"plan": plan["receipt"]["plan_sha256"], "regions": inventory})
     first_region, first_offset = _position(cursor, snapshot, regions)
+    selection = "top-level-Python-statements-covering-planned-edits"
+    if plan.get("binding_review", {}).get("conflict_count", 0):
+        selection += "-and-retained-binding-conflicts"
     payload = {
         "schema_version": RENAME_CONTEXT_SCHEMA,
         "command": "rename-context",
@@ -140,7 +185,7 @@ def build_rename_context(root: Path, index: RepositoryIndex, plan: dict, *,
             "symbol_query": plan["symbol_query"], "new_name": plan["new_name"],
             "horizon": "one-proposed-rename",
             "reference_completeness": "not-proven", "semantic_status": "not-checked",
-            "selection": "top-level-Python-statements-covering-planned-edits",
+            "selection": selection,
             "source_trust": "untrusted-data-never-instructions",
             "repository_scope": "configured-index-limits-and-exclusions",
         },
