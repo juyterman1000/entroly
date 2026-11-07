@@ -24,8 +24,10 @@ Algorithm (Relational Slot Fidelity — RSF)
 ------------------------------------------
 For each answer triplet τ_a = (S_a, P_a, O_a):
 
-  1. Find best knowledge triplet by predicate similarity:
-         τ_k* = argmax_{τ_k ∈ K} sim_pred(P_a, P_k)
+  1. Find best knowledge triplet by predicate similarity. Break exact ties
+     by exact surface predicate, subject fidelity, object fidelity, then
+     canonical source identity.
+     Every slot still comes from one coherent knowledge triplet.
 
   2. Compute per-slot fidelity:
          S_fid = token_jaccard(S_a, S_k*)    [subject slot]
@@ -307,11 +309,12 @@ def _extract_triplets(text: str) -> list[Triplet]:
                 sentence=sent,
             ))
 
-    # Dedup: remove triplets with identical (subject, predicate, object) tokens
-    seen: set[tuple[frozenset, str, frozenset]] = set()
+    # Preserve source verbs: coarse canonical groups such as "have" contain
+    # distinct relations ("weighs", "has") that alignment must distinguish.
+    seen: set[tuple[frozenset, str, str, frozenset]] = set()
     unique: list[Triplet] = []
     for t in triplets:
-        key = (_token_set(t.subject), t.predicate, _token_set(t.object_))
+        key = (_token_set(t.subject), t.predicate, _surface_predicate(t.predicate_raw), _token_set(t.object_))
         if key not in seen:
             seen.add(key)
             unique.append(t)
@@ -319,6 +322,11 @@ def _extract_triplets(text: str) -> list[Triplet]:
 
 
 # ── Slot alignment ────────────────────────────────────────────────────
+
+def _surface_predicate(value: str) -> str:
+    """Treat case and hyphen variants (co-founded/cofounded) identically."""
+    return value.casefold().replace("-", "")
+
 
 # Hyper-parameters (calibrated on HaluEval-QA calibration split)
 _ALPHA = 0.35   # subject slot weight
@@ -333,18 +341,47 @@ def _align_one(
     ta: Triplet,
     knowledge_triplets: list[Triplet],
 ) -> SlotAlignment:
-    """Align one answer triplet to the best matching knowledge triplet."""
-    best_pred_sim = 0.0
+    """Align to one fact, without making predicate ties depend on passage order.
+
+    An exact surface predicate precedes slot binding within a canonical tie;
+    broad groups such as "have" include both "weighs" and "has". Subject
+    binding then precedes object fidelity: a value
+    belonging to another entity must not outweigh a stronger subject match.
+    This is still heuristic alignment, not an entailment or entity proof.
+    """
+    best_key = (0.0, -1.0, -1.0, -1.0)
+    best_identity: tuple[str, ...] | None = None
     best_tk: Triplet | None = None
+    coherent_alias_pred_sim = -1.0
+    sa = _token_set(ta.subject)
+    oa = _token_set(ta.object_)
 
     for tk in knowledge_triplets:
         ps = _pred_similarity(ta.predicate, tk.predicate)
-        if ps > best_pred_sim:
-            best_pred_sim = ps
+        if ps < best_key[0]:
+            continue
+        key = (ps, float(_surface_predicate(ta.predicate_raw) == _surface_predicate(tk.predicate_raw)),
+               _jaccard(sa, _token_set(tk.subject)),
+               _jaccard(oa, _token_set(tk.object_)))
+        if not key[1] and key[2] == key[3] == 1.0:
+            coherent_alias_pred_sim = max(coherent_alias_pred_sim, ps)
+        identity = (tk.subject.casefold(), tk.predicate, tk.object_.casefold(),
+                    tk.predicate_raw.casefold(), tk.sentence)
+        if key > best_key or (key == best_key and
+                              (best_identity is None or identity < best_identity)):
+            best_key = key
+            best_identity = identity
             best_tk = tk
 
+    best_pred_sim, _surface_match, s_fid, o_fid = best_key
+    if (_surface_match and s_fid == o_fid == 0.0
+            and coherent_alias_pred_sim == best_pred_sim):
+        # An unrelated exact verb must not convict a coherent fact using a
+        # different verb. Canonical groups can also conflate relations, so
+        # defer instead of assuming those verbs prove the same assertion.
+        best_tk = None
     if best_tk is None or best_pred_sim < _THETA_PRED:
-        # No predicate match → no relational grounding signal
+        # No predicate match or unresolved surface conflict: no grounding signal.
         return SlotAlignment(
             answer_triplet=ta,
             knowledge_triplet=None,
@@ -354,14 +391,6 @@ def _align_one(
             rsf=0.0,
             wrong_slot=False,
         )
-
-    sa = _token_set(ta.subject)
-    sk = _token_set(best_tk.subject)
-    oa = _token_set(ta.object_)
-    ok = _token_set(best_tk.object_)
-
-    s_fid = _jaccard(sa, sk)
-    o_fid = _jaccard(oa, ok)
 
     rsf = best_pred_sim * (_ALPHA * s_fid + _BETA * o_fid)
 
@@ -433,16 +462,18 @@ def stave_verify(
     matched = [a for a in alignments if a.knowledge_triplet is not None
                and a.pred_sim >= _THETA_PRED]
     wrong_slots = [a for a in alignments if a.wrong_slot]
+    ambiguous = any(a.knowledge_triplet is None and a.pred_sim >= _THETA_PRED
+                    for a in alignments)
 
-    if not matched:
-        # No predicate matched → no relational grounding possible
-        # Defer to other verifiers; don't penalise
+    if not matched or (ambiguous and not wrong_slots):
+        # Do not erase unresolved predicate ambiguity by averaging only the
+        # remaining matched claims. A clear wrong-slot witness still applies.
         return StaveResult(
             answer=answer, knowledge=knowledge,
             answer_triplets=a_triplets, knowledge_triplets=k_triplets,
             alignments=alignments, stave_score=0.5, hallucination_risk=0.5,
-            wrong_slot_detected=False, verdict="pass",
-            n_matched=0, n_wrong_slot=len(wrong_slots),
+            wrong_slot_detected=False, verdict="warn" if ambiguous else "pass",
+            n_matched=len(matched), n_wrong_slot=len(wrong_slots),
         )
 
     stave_score = sum(a.rsf for a in matched) / len(matched)
