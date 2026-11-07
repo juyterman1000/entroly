@@ -1,21 +1,9 @@
-"""Falsification of the conformal selective-verification cascade.
+"""Descriptive regression scenarios for empirical cascade fitting.
 
-Two layers:
-
-  A. SYNTHETIC, deterministic, always-on — falsifies the *math*:
-       - conformal selective-risk control on the cheap region holds
-         within the finite-sample ⌈(n+1)(1−α)⌉ slack, even adversarially;
-       - the band edge equals escalation.py rule (★) exactly;
-       - the cascade Pareto-dominates both single verifiers when the
-         cheap verifier's errors are score-concentrated (the regime the
-         HaluEval-QA forensic established) — and *fails to* when they
-         are not (the honest negative control).
-
-  B. REAL DATA, skipped unless benchmarks/results/cascade_arrays.json
-     exists — asserts the guarantee + a Pareto point on the actual
-     HaluEval-QA WITNESS vs gpt-4o-mini arrays.
-
-If the derivation is wrong, layer A fails with no Monte-Carlo excuse.
+Seeded synthetic scenarios and optional recorded HaluEval arrays check their
+observed errors, resource cost and tradeoffs. These finite examples do not prove
+population selective-risk control, Pareto dominance on other workloads or a
+research breakthrough. Held-out statistical assessment is tested separately.
 """
 
 from __future__ import annotations
@@ -61,25 +49,22 @@ def _synthetic(n, rng, *, concentrated: bool):
     return scores, labels, llm
 
 
-def test_band_edge_is_escalation_rule_star():
-    """The selective-risk band edge must coincide with escalation.py
-    rule (★): escalate iff local error > r_floor + c_exp/q."""
+def test_policy_keeps_configured_escalation_threshold():
+    """Check threshold arithmetic; this does not certify the fitted errors."""
     rng = random.Random(1)
     cs, cl, _ = _synthetic(4000, rng, concentrated=True)
     q, c_exp, r_floor = 1.0, 0.10, 0.0
     pol = select_band(cs, cl, target_selective_risk=0.10,
                        c_exp=c_exp, q=q, r_floor=r_floor)
     assert abs(pol.rule_threshold - (r_floor + c_exp / q)) < 1e-12
-    # Just inside the accept region the local error must NOT trigger (★);
-    # the band is exactly the (★) escalation set by construction.
+    # The configured empirical target is below this escalation threshold.
     assert not should_escalate(pol.target_selective_risk - 1e-6,
                                c_exp, q, r_floor)
 
 
 @pytest.mark.parametrize("eps", [0.03, 0.05, 0.10])
-def test_conformal_selective_risk_controlled(eps):
-    """Realized selective risk on the cheap region ≤ ε + finite-sample
-    slack, on disjoint test data. Falsifies the core guarantee."""
+def test_seeded_empirical_selective_risk_regression(eps):
+    """Observed cheap error stays within this seeded scenario's tolerance."""
     rng = random.Random(7)
     cs, cl, cj = _synthetic(6000, rng, concentrated=True)
     ts, tl, tj = _synthetic(6000, rng, concentrated=True)
@@ -90,7 +75,7 @@ def test_conformal_selective_risk_controlled(eps):
     slack = 3.0 * (eps * (1 - eps) / max(n_cheap, 1)) ** 0.5 + 1.0 / 60
     assert out.selective_risk_cheap <= eps + slack, (
         f"selective risk {out.selective_risk_cheap:.4f} > ε={eps} + "
-        f"slack={slack:.4f} — conformal control BROKEN"
+        f"slack={slack:.4f} — seeded empirical regression"
     )
     assert out.realized_alpha == out.selective_risk_cheap
 
@@ -152,7 +137,7 @@ def test_negative_control_no_free_lunch():
 
 @pytest.mark.skipif(not ARRAYS.exists(),
                     reason="run benchmarks/cascade_frontier.py first")
-def test_real_halueval_cascade_guarantee_and_pareto():
+def test_real_halueval_recorded_cascade_tradeoff():
     data = json.loads(ARRAYS.read_text(encoding="utf-8"))
     idx = list(range(data["n"]))
     random.Random(49).shuffle(idx)
