@@ -1243,9 +1243,20 @@ def cmd_daemon(args):
 {C.GRAY}  Single process managing proxy, dashboard, MCP, learning{C.RESET}
 """)
 
+    def _port(flag: str, variable: str, default: int) -> int:
+        # The same precedence as `entroly proxy`: flag, then variable, then
+        # default. The daemon hard-coded 9377/9378 and ignored the variables.
+        value = getattr(args, flag, None)
+        if value is not None:
+            return int(value)
+        try:
+            return int(os.environ.get(variable, "") or default)
+        except ValueError:
+            return default
+
     daemon = EntrolyDaemon(
-        proxy_port=getattr(args, "proxy_port", 9377),
-        dashboard_port=getattr(args, "dashboard_port", 9378),
+        proxy_port=_port("proxy_port", "ENTROLY_PROXY_PORT", 9377),
+        dashboard_port=_port("dashboard_port", "ENTROLY_DASHBOARD_PORT", 9378),
         mcp_port=getattr(args, "mcp_port", 9379),
         host=getattr(args, "host", "127.0.0.1"),
         enable_proxy=not getattr(args, "no_proxy", False),
@@ -2877,7 +2888,9 @@ def cmd_learn(args):
         from .cli_context_workflows import cmd_history
 
         return cmd_history(args)
-    print(f"\n{C.CYAN}{C.BOLD}  Entroly Learn — Failure Pattern Analysis{C.RESET}\n")
+    as_json = bool(getattr(args, "json_output", False))
+    if not as_json:
+        print(f"\n{C.CYAN}{C.BOLD}  Entroly Learn — Failure Pattern Analysis{C.RESET}\n")
 
     import urllib.request
     port = args.port or 9377
@@ -2888,6 +2901,11 @@ def cmd_learn(args):
         feedback = stats.get("implicit_feedback", {})
     except Exception:
         feedback = {}
+
+    if as_json:
+        # --json used to be read only by --history, so this path printed the
+        # human report and a JSON consumer got prose.
+        return _print_learn_json(feedback, port)
 
     if not feedback:
         print(f"  {C.YELLOW}No feedback data available.{C.RESET}")
@@ -2969,6 +2987,33 @@ def cmd_learn(args):
     print()
 
 
+def _print_learn_json(feedback: dict, port: int) -> int:
+    if not feedback:
+        print(json.dumps({
+            "status": "no_data",
+            "detail": f"no feedback from a running proxy on port {port}; "
+                      "run the proxy and make some requests first",
+            "proxy_port": port,
+        }, indent=2))
+        return 0
+    total = int(feedback.get("total_assessed", 0) or 0)
+    confident = int(feedback.get("confidence_detections", 0) or 0)
+    print(json.dumps({
+        "status": "ok",
+        "proxy_port": port,
+        "session": {
+            "total_assessed": total,
+            "confident": confident,
+            "confused": int(feedback.get("confusion_detections", 0) or 0),
+            "rephrases": int(feedback.get("rephrase_detections", 0) or 0),
+            "quality_trend": feedback.get("quality_trend", "stable"),
+            "success_rate_pct": round(confident * 100 / total, 1) if total else None,
+        },
+        "reliable": total > 5,
+    }, indent=2))
+    return 0
+
+
 def _recommend_quality(project: dict, file_count: int) -> str:
     """Recommend a starting quality preset from project characteristics.
 
@@ -3002,6 +3047,24 @@ def _recommend_quality(project: dict, file_count: int) -> str:
         return "quality" if file_count > 500 else "balanced"
 
     return "balanced"
+
+
+def _proxy_base_url_guide(port: int) -> str:
+    """What to set, per client family, to route through the proxy.
+
+    `entroly go` printed one URL, ``http://localhost:<port>/v1``. That suffix is
+    right for OpenAI-compatible SDKs but not for the Anthropic SDK or Claude
+    Code, which append ``/v1/messages`` themselves: following it sent
+    ``/v1/v1/messages`` upstream and every request failed with 404. These are
+    the same values `entroly wrap` sets for those clients.
+    """
+    return (
+        f"  {C.BOLD}Point your AI tool's API base URL at the proxy:{C.RESET}\n"
+        f"    Anthropic SDK, Claude Code:  ANTHROPIC_BASE_URL=http://localhost:{port}\n"
+        f"    OpenAI-compatible SDKs:      OPENAI_BASE_URL=http://localhost:{port}/v1\n"
+        f"  {C.GRAY}Anthropic clients add /v1 themselves; a base URL ending in /v1 "
+        f"makes them call /v1/v1/messages.{C.RESET}"
+    )
 
 
 def cmd_go(args):
@@ -3084,10 +3147,10 @@ def cmd_go(args):
     print(f"""
   {C.GREEN}{C.BOLD}Local services ready!{C.RESET}
 
-  {C.GREEN}Proxy:{C.RESET}      http://localhost:{config.port}/v1
+  {C.GREEN}Proxy:{C.RESET}      http://localhost:{config.port}
   {C.GREEN}Dashboard:{C.RESET}  http://localhost:{dashboard_port}
 
-  {C.BOLD}Point your AI tool's API base URL to the proxy URL above.{C.RESET}
+{_proxy_base_url_guide(config.port)}
   {C.GRAY}Only traffic sent to this URL can be optimized; MCP registration alone does not route requests.{C.RESET}
   {C.GRAY}After a real request, run `entroly value --json` and check provider_path.requests_observed.{C.RESET}
   {C.GRAY}Press Ctrl+C to stop.{C.RESET}
@@ -3310,7 +3373,7 @@ def _index_coverage(engine, files_indexed: int, max_files: int) -> dict:
 
 
 def _run_local_simulation(args) -> dict:
-    max_files = int(getattr(args, "max_files", 100) or 0)
+    max_files = int(getattr(args, "max_files", 120) or 0)
     engine, files_indexed, total_tokens, index_status = _load_local_simulation_engine(max_files)
     coverage = _index_coverage(engine, files_indexed, max_files)
     query_conditioned = _query_conditioned_selection_active(engine)
@@ -3556,7 +3619,12 @@ def _print_local_simulation(report: dict, *, title: str, include_perf: bool) -> 
             f"  {C.BOLD}Local optimize latency:{C.RESET} "
             f"min {lat['min']:.2f} ms, p95 {lat['p95']:.2f} ms, max {lat['max']:.2f} ms"
         )
-    print(f"  {C.GRAY}{'; '.join(report['limitations'])}{C.RESET}\n")
+    # One limitation per line. Joining with "; " after sentences that already
+    # end in "." produced a single 600-character ".;"-punctuated line.
+    print(f"  {C.GRAY}Limits of this estimate:{C.RESET}")
+    for limitation in report["limitations"]:
+        print(f"  {C.GRAY}- {limitation}{C.RESET}")
+    print()
     from .project_footprint import project_footprint_notice  # onb: footprint notice
 
     if footprint := project_footprint_notice(Path.cwd()):

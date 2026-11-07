@@ -123,6 +123,9 @@ def _read_marker(vault: Path, directory: Path) -> dict[str, Any]:
 def _write_marker(vault: Path, directory: Path, payload: dict[str, Any]) -> None:
     try:
         vault.mkdir(parents=True, exist_ok=True)
+        from .project_footprint import mark_local_state_dir
+
+        mark_local_state_dir(vault.parent)
         markers = _read_all_markers(vault)
         markers[_marker_key(directory)] = payload
         target = vault / _MARKER_NAME
