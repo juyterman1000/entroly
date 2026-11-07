@@ -2857,28 +2857,43 @@ def cmd_hook(args):
         print("  Usage: entroly hook [install|uninstall|status]\n")
         return
 
-    from .shell_hook import install_hook, uninstall_hook, hook_status
+    from .shell_hook import hook_status, uninstall_hook
     if sub == "install":
-        shell = getattr(args, "shell", None) or None
-        result = install_hook(shell)
-        if result:
-            print(f"\n  {C.GREEN}Hook installed for {result}.{C.RESET}")
-            print(f"  Restart your shell or run: source ~/.{result}rc\n")
-        else:
-            print(f"\n  {C.RED}Could not detect shell. Use --shell bash|zsh|fish{C.RESET}\n")
+        # The hook this installed compressed nothing and replaced the user's
+        # bash DEBUG trap; see entroly.shell_hook.install_hook.
+        print(
+            f"\n  {C.YELLOW}The shell hook does not compress command output, so "
+            f"nothing was installed.{C.RESET}\n"
+            f"  Run a command through Entroly instead: "
+            f"{C.BOLD}entroly shrink -- pytest -q{C.RESET}\n"
+            f"  (bounded output, with the full output kept for exact recovery)."
+        )
+        if hook_status()["any_installed"]:
+            print(
+                "  An earlier version added a hook block to your shell config; "
+                "remove it with: entroly hook uninstall"
+            )
+        print()
+        return 1
     elif sub == "uninstall":
         shell = getattr(args, "shell", None) or None
-        result = uninstall_hook(shell)
-        if result:
-            print(f"\n  {C.GREEN}Hook removed from {result}.{C.RESET}\n")
+        removed = uninstall_hook(shell)
+        if removed:
+            for path in removed:
+                print(f"\n  {C.GREEN}Removed the Entroly hook from {path}{C.RESET}")
+            print("  Open a new shell for the change to apply.\n")
         else:
             print(f"\n  {C.GRAY}No hook found to remove.{C.RESET}\n")
     elif sub == "status":
         status = hook_status()
         print(f"\n{C.CYAN}{C.BOLD}  Shell Hook Status{C.RESET}")
-        for shell, installed in status.items():
-            icon = f"{C.GREEN}installed" if installed else f"{C.GRAY}not installed"
-            print(f"    {shell:8s} {icon}{C.RESET}")
+        rows = status["installed"] + status["available"]
+        if not rows:
+            print(f"    {C.GRAY}No shell config files found.{C.RESET}")
+        for row in rows:
+            icon = (f"{C.YELLOW}hook block present (remove: entroly hook uninstall)"
+                    if row["installed"] else f"{C.GRAY}no hook")
+            print(f"    {row['file']}  {icon}{C.RESET}")
         print()
 
 
@@ -6212,11 +6227,22 @@ def cmd_uninstall(args):
     uninstall_command = [sys.executable, "-m", "pip", "uninstall", "entroly"]
     if bool(getattr(args, "yes", False)):
         uninstall_command.append("-y")
+    # `entroly ravs hook install` writes this installation's absolute path to
+    # `entroly` into Claude Code's settings. pip deletes that file, and hooks
+    # left behind fail on every later tool call with a hook error.
+    from entroly.ravs.hooks import capture_registration_path
+
+    hook_settings = None if feedback_only else capture_registration_path()
     if feedback_only:
         print("\n  Feedback-only mode: the package will not be uninstalled.")
     else:
         print(f"\n  Uninstall command: {subprocess.list2cmdline(uninstall_command)}")
     if dry_run:
+        if hook_settings is not None:
+            print(
+                f"  Would also remove the RAVS capture hooks from {hook_settings}: "
+                "they run the entroly executable pip is about to delete."
+            )
         print(f"  {C.GRAY}Dry run: feedback was not sent and nothing was uninstalled.{C.RESET}")
         return 0
 
@@ -6258,6 +6284,25 @@ def cmd_uninstall(args):
 
     if feedback_only:
         return 0
+
+    if hook_settings is not None:
+        from entroly.ravs.hooks import uninstall_claude_code
+
+        if uninstall_claude_code().get("action") == "uninstalled":
+            print(
+                f"  Removed the RAVS capture hooks from {hook_settings}: they would "
+                "fail on every tool call once entroly is gone."
+            )
+            print(
+                f"  {C.GRAY}Keeping entroly after all? Restore them with: "
+                f"entroly ravs hook install --claude-code{C.RESET}"
+            )
+        else:
+            print(
+                f"  {C.YELLOW}Could not edit {hook_settings}. Remove its `ravs capture` "
+                f"hooks by hand, or Claude Code will report a hook error on every "
+                f"tool call.{C.RESET}"
+            )
 
     completed = subprocess.run(uninstall_command, check=False)
     return int(completed.returncode)
@@ -6808,7 +6853,9 @@ def cmd_ravs(args):
         log_path = getattr(args, "log", None)
         use_stdin = getattr(args, "stdin", False)
         if use_stdin:
-            result = capture_from_stdin(log_path=log_path)
+            result = capture_from_stdin(
+                log_path=log_path, host=getattr(args, "host", None)
+            )
         else:
             command = getattr(args, "capture_command", None)
             exit_code = getattr(args, "exit_code", None)
@@ -6839,7 +6886,7 @@ def cmd_ravs(args):
             result = uninstall_claude_code()
             path = result.get("path", "")
             if result.get("action") == "uninstalled":
-                print(f"  {C.GREEN}✓ Removed RAVS PostToolUse hook from {path}{C.RESET}")
+                print(f"  {C.GREEN}✓ Removed RAVS PostToolUse hook (and its PostToolUseFailure pair) from {path}{C.RESET}")
                 print(f"  {C.GRAY}Restart Claude Code to apply.{C.RESET}")
                 return 0
             if result.get("action") == "not_found":
@@ -6858,8 +6905,11 @@ def cmd_ravs(args):
         action = result.get("action")
         path = result.get("path", "")
         if action == "installed":
-            print(f"  {C.GREEN}\u2713 Installed RAVS PostToolUse hook \u2192 {path}{C.RESET}")
+            print(f"  {C.GREEN}\u2713 Installed RAVS capture hooks \u2192 {path}{C.RESET}")
             print(f"  {C.GRAY}Restart Claude Code to activate. Every Bash tool use now feeds RAVS.{C.RESET}")
+        elif action == "updated":
+            print(f"  {C.GREEN}\u2713 Updated RAVS capture hooks \u2192 {path}{C.RESET}")
+            print(f"  {C.GRAY}Failing commands now reach RAVS too. Restart Claude Code.{C.RESET}")
         elif action == "unreadable":
             print(
                 f"  {C.RED}✗ Not installed: {path} is "

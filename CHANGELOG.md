@@ -5,6 +5,38 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
 
 ## Unreleased
 
+- Claude Code integration fixes.
+  - The RAVS capture hook recorded no outcome from Claude Code. Claude Code puts
+    no exit code in a Bash hook payload: it fires `PostToolUse` only after exit
+    0 and `PostToolUseFailure` after a non-zero exit, whose `error` opens with
+    `Exit code N`. Capture now reads both, inferring exit 0 from `PostToolUse`
+    only under `--host claude-code`, and the session journal records a failing
+    command as `exit:N` rather than "ok".
+  - `entroly ravs hook install --claude-code` now registers `PostToolUseFailure`
+    too, with `--host claude-code` on the command. Re-run it to upgrade an
+    existing registration in place; the cookbook snippet and this repository's
+    `.claude/settings.json` are updated the same way.
+  - `entroly uninstall` removes those hooks before running pip. They name this
+    installation's `entroly` by absolute path, so once pip deleted it every Bash
+    call in Claude Code showed a hook error.
+  - When every plugin runner failed, the plugin said "no runner found. Install
+    uv ... or Node" even when `entroly` was installed and broken, and dropped the
+    real error. It now names the failing runner, its exit status and the last
+    line of its error, with a separate message when nothing is installed.
+    A broken install that exits before reading the hook payload is reported
+    by its exit status, not by the incidental `EPIPE`.
+  - The capture hook's `entroly` path is written as one word for bash, which
+    Claude Code runs hooks with (Git Bash on Windows). A path containing a
+    space split into words, and on Windows bash removed every backslash, so
+    the hook failed on every Bash tool call. Re-run
+    `entroly ravs hook install --claude-code` to rewrite an existing hook.
+- `entroly hook install` no longer edits shell startup files. The block it
+  appended compressed nothing (its functions set a variable nothing read),
+  replaced any existing bash `DEBUG` trap, and could not be removed:
+  `entroly hook uninstall` failed with "takes 0 positional arguments". Install
+  now changes nothing and points at `entroly shrink -- <command>`, which does
+  compress command output; uninstall removes an existing block byte for byte;
+  status lists each shell config file.
 - First-run fixes from a clean-room run of `pip install entroly`, then
   `verify-claims`, `simulate` and `entroly go`, on pallets/click.
   - `.entroly/` now ignores itself with its own `.gitignore` (as `.pytest_cache`

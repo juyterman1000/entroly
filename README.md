@@ -587,14 +587,15 @@ results = shared_memory_search("authentication tokens")  # finds it, from any ag
 
 Through the proxy, post-generation distillation trims filler from answers (on by default; `ENTROLY_DISTILL=0` turns it off). Effort budgets are yours to apply: `entroly.sdk.classify_effort()` and `steer_output()`, and the `steer_output` MCP tool, return a verbosity directive and a `max_tokens` budget (150 for a "yes/no" question, 16,384 for a detailed architecture review). The proxy does not set `max_tokens` on your requests.
 
-### Shell hook compression
+### Shell output compression
 
-Command-specific patterns for git, npm, cargo, docker, pytest, kubectl, and terraform strip progress bars, deprecation warnings, and boilerplate while preserving errors and key results. Full output is recoverable via content-addressed handles.
+Command-specific patterns for git, npm, cargo, docker, pytest, kubectl, and terraform strip progress bars, deprecation warnings, and boilerplate while preserving errors and key results. Run a command through it, and the full output stays recoverable through a content-addressed handle:
 
 ```bash
-entroly hook install     # adds transparent compression to your shell
-entroly hook status      # shows which shells have the hook
+entroly shrink -- pytest -q
 ```
+
+`entroly hook install` in earlier versions appended a block to your shell config that compressed nothing and, in bash, replaced any existing `DEBUG` trap. It now installs nothing; `entroly hook uninstall` removes a block an earlier version added, and `entroly hook status` shows where one remains.
 
 ### Failure mining
 
