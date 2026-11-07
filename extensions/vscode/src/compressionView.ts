@@ -1,7 +1,45 @@
+import { ExecFileException, execFile } from 'child_process';
 import { randomBytes } from 'crypto';
+import { promises as fs } from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import * as vscode from 'vscode';
-import { compressionHtml, compressionPacket, isCopyRequest } from './compressionHtml';
-import { estimateTokens } from './tokenCounter';
+import {
+  CompressReceipt,
+  compressionErrorHtml,
+  compressionHtml,
+  compressionPacket,
+  isCopyRequest,
+  lastLine,
+  parseCompressReceipt,
+} from './compressionHtml';
+
+/** The receipt of this window's last successful run, for the receipt view. */
+export let lastCompression: { receipt: CompressReceipt; fileName: string } | undefined;
+
+interface CliResult {
+  stdout: string;
+  stderr: string;
+  error: ExecFileException | null;
+}
+
+function runCompress(source: string, out: string, cwd: string | undefined): Promise<CliResult> {
+  return new Promise((resolve) => {
+    execFile(
+      'entroly',
+      ['compress', source, '--out', out, '--json'],
+      {
+        cwd,
+        timeout: 120_000,
+        windowsHide: true,
+        maxBuffer: 16 * 1024 * 1024,
+        env: { ...process.env, ENTROLY_NO_DOCKER: '1' },
+      },
+      (error, stdout, stderr) =>
+        resolve({ stdout: String(stdout), stderr: String(stderr), error })
+    );
+  });
+}
 
 export class CompressionViewPanel {
   public static currentPanel: CompressionViewPanel | undefined;
@@ -24,7 +62,7 @@ export class CompressionViewPanel {
 
     if (CompressionViewPanel.currentPanel) {
       CompressionViewPanel.currentPanel._panel.reveal(column);
-      CompressionViewPanel.currentPanel.update(rawText, fileName);
+      void CompressionViewPanel.currentPanel.update(rawText, fileName);
       return;
     }
 
@@ -68,11 +106,67 @@ export class CompressionViewPanel {
       this._disposables
     );
 
-    this.update(rawText, fileName);
+    void this.update(rawText, fileName);
   }
 
-  public update(rawText: string, fileName: string): void {
-    this._panel.webview.html = this._getHtmlForWebview(rawText, fileName);
+  /**
+   * Compress what the editor shows with the local CLI and render its receipt.
+   *
+   * This view used to compute a fixed 72% "saving" from the text length, copy
+   * the first 1,200 characters under a made-up "Merkle Receipt ... (Verified
+   * 0-1 Knapsack)" line, and claim the rest was "omitted with verifiable
+   * recovery handles". None of that was measured or recoverable. The text is
+   * now written to a temporary file (so a selection or an unsaved buffer is
+   * compressed as shown) and passed to `entroly compress`; everything the
+   * panel displays or copies comes from that run.
+   */
+  public async update(rawText: string, fileName: string): Promise<void> {
+    this._packet = '';
+    const label = path.basename(fileName) || 'untitled';
+    if (!vscode.workspace.getConfiguration('entroly').get<boolean>('useCliIfAvailable', true)) {
+      this._panel.webview.html = compressionErrorHtml(
+        label,
+        'Compression is turned off: the entroly.useCliIfAvailable setting is false.'
+      );
+      return;
+    }
+
+    const workDir = await fs.mkdtemp(path.join(os.tmpdir(), 'entroly-compress-'));
+    // Keep the extension: it picks the codec (code skeleton, prose, data...).
+    const source = path.join(workDir, `input${path.extname(fileName)}`);
+    const out = path.join(workDir, `output${path.extname(fileName)}`);
+    try {
+      await fs.writeFile(source, rawText, 'utf8');
+      const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      const result = await runCompress(source, out, cwd);
+      const receipt = result.error ? null : parseCompressReceipt(result.stdout);
+      if (receipt === null) {
+        const reason =
+          result.error?.code === 'ENOENT'
+            ? 'The entroly CLI was not found on PATH.'
+            : lastLine(result.stderr) ||
+              lastLine(result.stdout) ||
+              (result.error ? result.error.message : 'entroly compress returned no receipt.');
+        this._panel.webview.html = compressionErrorHtml(label, reason);
+        return;
+      }
+      const compressed = await fs.readFile(out, 'utf8');
+      this._packet = compressionPacket(compressed, label, receipt);
+      lastCompression = { receipt, fileName: label };
+      this._panel.webview.html = compressionHtml({
+        fileName: label,
+        receipt,
+        packet: this._packet,
+        nonce: randomBytes(16).toString('base64'),
+      });
+    } catch (error) {
+      this._panel.webview.html = compressionErrorHtml(
+        label,
+        error instanceof Error ? error.message : String(error)
+      );
+    } finally {
+      await fs.rm(workDir, { recursive: true, force: true });
+    }
   }
 
   public dispose(): void {
@@ -84,21 +178,5 @@ export class CompressionViewPanel {
         x.dispose();
       }
     }
-  }
-
-  private _getHtmlForWebview(rawText: string, fileName: string): string {
-    const rawTokens = estimateTokens(rawText);
-    const targetTokens = Math.min(rawTokens, Math.max(120, Math.floor(rawTokens * 0.28)));
-    const savingsPct = rawTokens > 0 ? (((rawTokens - targetTokens) / rawTokens) * 100).toFixed(1) : '0';
-    this._packet = compressionPacket(rawText, fileName, Date.now());
-
-    return compressionHtml({
-      fileName,
-      rawTokens,
-      targetTokens,
-      savingsPct,
-      packet: this._packet,
-      nonce: randomBytes(16).toString('base64'),
-    });
   }
 }

@@ -1,5 +1,9 @@
 """The first-run local checks must say what they leave in the user's repo.
 
+`.entroly/` now ignores itself (see test_dogfood_project_state_self_ignored),
+so only files git would still pick up, such as `.entroly_verification.json`,
+are named.
+
 Reproduced on a fresh HOME in a clean click checkout: after
 `entroly verify-claims` and `entroly simulate`, `git status` showed
 `?? .entroly/` and `?? .entroly_verification.json` (simulate also wrote 11
@@ -47,8 +51,11 @@ def test_verify_claims_names_what_it_left_in_the_project(project, capsys):
     assert (project / ".entroly_verification.json").exists()
     line = next((x for x in out.splitlines() if "Entroly writes local state" in x), "")
     assert ".entroly_verification.json" in line, out
-    assert ".entroly/" in line  # the autoseed vault, even if still being written
     assert ".gitignore" in line
+    # The vault directory ignores itself, so it is no longer something to add
+    # to .gitignore -- even while the background autoseed is still writing it.
+    assert ".entroly/" not in line
+    assert "*" in (project / ".entroly" / ".gitignore").read_text(encoding="utf-8")
 
 
 @needs_git
@@ -71,4 +78,6 @@ def test_simulate_names_the_project_vault(project, capsys):
     )
     out = capsys.readouterr().out
 
-    assert "Entroly writes local state into this project: .entroly/" in out, out
+    # The vault directory now ignores itself, so simulate has nothing to flag.
+    assert "Entroly writes local state" not in out, out
+    assert "*" in (project / ".entroly" / ".gitignore").read_text(encoding="utf-8")

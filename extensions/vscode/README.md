@@ -7,26 +7,27 @@ Select and compress repository context for AI tools with auditable receipts insi
 ## Key Features
 
 1. **⚡ Status Bar Live Token Counter**: See a local token estimate for the active file or highlighted code block. Provider billing may differ.
-2. **One-Click Context Selection (`Ctrl+Alt+E` / `Cmd+Alt+E`)**: Select code or a file and ask Entroly to assemble context under a chosen budget for Claude Code, Cursor, or ChatGPT.
-3. **Auditable Merkle Receipts**: Inspect SHA-256 fragment hashes and source offsets for supported recovery paths.
-4. **Inspectable Omissions**: See exactly why low-utility spans were pruned to protect your token budget.
+2. **Compress a selection or file (`Ctrl+Alt+E` / `Cmd+Alt+E`)**: Runs the local `entroly compress` CLI on what the editor shows, including unsaved edits. The panel shows the token counts from that run's receipt and copies the compressed text under a one-line header naming the `entroly recover` command that restores the omitted parts.
+3. **Compress receipts**: View the last run's source SHA-256, token counts, codec, recovery digest and recovery store. Nothing is shown that the CLI did not report; with no run yet, the view says so.
+
+Requires the Python CLI on the PATH VS Code starts with (`pip install -U entroly`). Without it the compress commands report that and show no figures.
 
 ---
 
 ## Commands
 
-- `Entroly: Compress Selection into Optimal Context` (`Ctrl+Alt+E` / `Cmd+Alt+E`)
+- `Entroly: Compress Selection` (`Ctrl+Alt+E` / `Cmd+Alt+E`)
 - `Entroly: Compress Current File for Prompt`
-- `Entroly: Inspect Cryptographic Merkle Receipt`
+- `Entroly: View Last Compress Receipt`
 - `Entroly: Open Interactive Web Playground`
 
 ---
 
 ## Extension Settings
 
-- `entroly.tokenBudget`: Default target token budget (default: `450` tokens).
+- `entroly.tokenBudget`: Token budget shown beside the status bar count (default: `450` tokens).
 - `entroly.showStatusBarTokens`: Toggle real-time token counter in the status bar (default: `true`).
-- `entroly.useCliIfAvailable`: Use local Rust/Python `entroly` CLI if present on path.
+- `entroly.useCliIfAvailable`: Run the local `entroly compress` CLI for the compress commands (default: `true`). They have no other implementation.
 - `entroly.syncUnsavedBuffers`: Opt in to sending dirty file buffers to the configured proxy so selection can see edits before save (default: `false`). Save, close, or undo to the saved state retracts an installed overlay. Avoid pointing `entroly.proxyUrl` at an untrusted service when this is enabled.
 
 ---

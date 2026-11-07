@@ -337,3 +337,19 @@ def test_importing_entroly_does_not_install_anything() -> None:
         f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
     )
     assert result.stdout == "", f"import wrote to stdout: {result.stdout!r}"
+
+
+def test_limitations_print_one_per_line_without_run_on_punctuation() -> None:
+    """The limitations were joined with "; " after sentences that already end
+    in ".", so the first-run screen ended in one 600-character line reading
+    "quality is not judged here.; Token differences are ...". Each limitation
+    is now its own line; the JSON list is unchanged."""
+    import re
+
+    report = _report(query_conditioned=False)
+    out = re.sub(r"\x1b\[[0-9;]*m", "", _render(report))
+
+    assert ".;" not in out
+    lines = [line.strip() for line in out.splitlines()]
+    for limitation in report["limitations"]:
+        assert f"- {limitation}" in lines, out

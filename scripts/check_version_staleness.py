@@ -169,6 +169,28 @@ HISTORICAL_MARKERS = re.compile(
 )
 
 
+# A Cursor one-click install link carries its MCP config base64-encoded, so a
+# version pinned inside it (`npx -y entroly-mcp@X`) is invisible to every
+# pattern above. README's link pinned entroly-mcp@1.0.84 through 1.0.88 while
+# the plain JSON snippet beside it moved with every bump.
+CURSOR_DEEPLINK = re.compile(
+    r"cursor://anysphere\.cursor-deeplink/mcp/install\?[^\s)\"'<>]*?\bconfig=([A-Za-z0-9_\-+/]+=*)"
+)
+
+
+def decode_deeplink_config(encoded: str) -> str | None:
+    """The JSON text inside a Cursor install link, or None if it is not one."""
+    import base64
+    import binascii
+
+    try:
+        # urlsafe_b64decode also accepts the standard alphabet's + and /.
+        raw = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
+        return raw.decode("utf-8")
+    except (binascii.Error, ValueError, UnicodeDecodeError):
+        return None
+
+
 def _tracked_files() -> list[str]:
     result = subprocess.run(
         ["git", "ls-files"], cwd=str(ROOT),
@@ -187,6 +209,56 @@ def _is_archive(rel: str) -> bool:
     )
 
 
+def _classify(
+    rel: str, version: str, index: int, line: str, kind: str,
+    stale: list[str], allowed: list[str],
+) -> None:
+    try:
+        parsed = tuple(int(p) for p in version.split("."))
+    except ValueError:
+        return
+    if parsed >= MASTER_TUPLE:
+        return
+    entry = f"{rel}:{index + 1}  [{kind}] {version}  {line[:88]}"
+    if _is_archive(rel):
+        allowed.append(f"archive        {entry}")
+    elif rel in PINNED_ARTIFACTS:
+        allowed.append(f"pinned artifact{entry}")
+    elif HISTORICAL_MARKERS.search(line):
+        allowed.append(f"past tense     {entry}")
+    else:
+        stale.append(entry)
+
+
+def scan_text(rel: str, text: str) -> tuple[list[str], list[str]]:
+    """Classify every version declaration in one file's text."""
+    stale: list[str] = []
+    allowed: list[str] = []
+    lines = text.splitlines()
+
+    def line_at(offset: int) -> tuple[int, str]:
+        index = text[:offset].count("\n")
+        return index, (lines[index].strip() if index < len(lines) else "")
+
+    for pattern, kind in DECLARATION_PATTERNS:
+        for match in pattern.finditer(text):
+            index, line = line_at(match.start())
+            _classify(rel, match.group(1), index, line, kind, stale, allowed)
+
+    for link in CURSOR_DEEPLINK.finditer(text):
+        decoded = decode_deeplink_config(link.group(1))
+        if decoded is None:
+            continue
+        index, line = line_at(link.start())
+        for pattern, kind in DECLARATION_PATTERNS:
+            for match in pattern.finditer(decoded):
+                _classify(
+                    rel, match.group(1), index, line,
+                    f"{kind} in Cursor link config", stale, allowed,
+                )
+    return stale, allowed
+
+
 def scan() -> tuple[list[str], list[str]]:
     """Return (stale, allowed) — stale entries are declarations below master."""
     stale: list[str] = []
@@ -200,29 +272,9 @@ def scan() -> tuple[list[str], list[str]]:
             text = path.read_text(encoding="utf-8", errors="ignore")
         except OSError:
             continue
-        lines = text.splitlines()
-
-        for pattern, kind in DECLARATION_PATTERNS:
-            for match in pattern.finditer(text):
-                version = match.group(1)
-                try:
-                    parsed = tuple(int(p) for p in version.split("."))
-                except ValueError:
-                    continue
-                if parsed >= MASTER_TUPLE:
-                    continue
-                index = text[: match.start()].count("\n")
-                line = lines[index].strip() if index < len(lines) else ""
-                entry = f"{rel}:{index + 1}  [{kind}] {version}  {line[:88]}"
-
-                if _is_archive(rel):
-                    allowed.append(f"archive        {entry}")
-                elif rel in PINNED_ARTIFACTS:
-                    allowed.append(f"pinned artifact{entry}")
-                elif HISTORICAL_MARKERS.search(line):
-                    allowed.append(f"past tense     {entry}")
-                else:
-                    stale.append(entry)
+        file_stale, file_allowed = scan_text(rel, text)
+        stale += file_stale
+        allowed += file_allowed
     return stale, allowed
 
 

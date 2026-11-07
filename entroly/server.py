@@ -5308,12 +5308,60 @@ def _exit_for_signal(signum: int) -> None:
         except Exception:
             pass
     logging.shutdown()
-    if signum == signal.SIGINT and os.name != "nt":
+    if (
+        signum == signal.SIGINT
+        and os.name != "nt"
+        and threading.current_thread() is threading.main_thread()
+    ):
         # Die by the signal, as Python does for an uncaught KeyboardInterrupt,
         # so a shell loop around `entroly serve` stops on Ctrl-C as well.
+        # Handlers can only be reset from the main thread; elsewhere exit 130.
         signal.signal(signal.SIGINT, signal.SIG_DFL)
         os.kill(os.getpid(), signal.SIGINT)
     os._exit(0 if signum == getattr(signal, "SIGTERM", None) else 130)
+
+
+def _watch_signals(stop) -> tuple | None:
+    """Act on SIGINT/SIGTERM from a thread that is awake to see them.
+
+    The kernel may deliver a process-directed signal to any thread that does
+    not block it, but Python runs signal handlers only on the main thread, and
+    an idle server's main thread sleeps in its event loop until a descriptor
+    is ready. A SIGTERM that landed on a worker thread was therefore never
+    acted on (seen once on CI; certain when sent to a worker directly). The
+    C-level handler writes every signal's number to the wakeup descriptor
+    from whichever thread received it, so a thread blocked on that socket
+    wakes for all of them. POSIX only; returns the socket pair to keep open.
+    """
+    import signal
+    import socket
+
+    if os.name == "nt" or threading.current_thread() is not threading.main_thread():
+        return None
+    reader, writer = socket.socketpair()
+    writer.setblocking(False)
+    try:
+        signal.set_wakeup_fd(writer.fileno(), warn_on_full_buffer=False)
+    except (ValueError, OSError):
+        reader.close()
+        writer.close()
+        return None
+    wanted = {int(signal.SIGINT), int(signal.SIGTERM)}
+
+    def _watch() -> None:
+        while True:
+            try:
+                received = reader.recv(64)
+            except OSError:
+                return
+            if not received:
+                return
+            for signum in received:
+                if signum in wanted:
+                    stop(signum)
+
+    threading.Thread(target=_watch, name="entroly-signal-watch", daemon=True).start()
+    return reader, writer
 
 
 def main():
@@ -5361,7 +5409,13 @@ def main():
         except Exception as e:
             logger.warning(f"Failed to persist state on shutdown: {e}")
 
-    def _stop_now(signum, _frame):
+    stopping = threading.Lock()
+
+    def _stop_now(signum, _frame=None):
+        # One signal reaches both the main-thread handler and the wakeup
+        # watcher below; whichever runs first stops the server.
+        if not stopping.acquire(blocking=False):
+            return
         _shutdown_handler()
         _exit_for_signal(signum)
 
@@ -5370,6 +5424,7 @@ def main():
             signal.signal(getattr(signal, _name), _stop_now)
         except (OSError, AttributeError, ValueError):
             pass  # unavailable on this platform, or not the main thread
+    shutdown["signal_watch"] = _watch_signals(_stop_now)
 
     mcp, engine = create_mcp_server()
     shutdown["engine"] = engine

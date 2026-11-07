@@ -105,7 +105,8 @@ entry points with context selection, receipts, exact recovery, verification and
 repository-intelligence tools. MCP gives the host tools; it does not silently
 rewrite every model request made by that host.
 
-Start with `entroly attach create --project . --ttl 4h --install` or the
+Start with `entroly attach create --client claude --project . --ttl 4h --install`
+(`--client` is required: `claude`, `codex` or `openclaw`) or the
 client-specific setup in [agent compatibility](agent-compatibility.md).
 
 ### OpenClaw
