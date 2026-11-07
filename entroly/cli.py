@@ -1243,9 +1243,20 @@ def cmd_daemon(args):
 {C.GRAY}  Single process managing proxy, dashboard, MCP, learning{C.RESET}
 """)
 
+    def _port(flag: str, variable: str, default: int) -> int:
+        # The same precedence as `entroly proxy`: flag, then variable, then
+        # default. The daemon hard-coded 9377/9378 and ignored the variables.
+        value = getattr(args, flag, None)
+        if value is not None:
+            return int(value)
+        try:
+            return int(os.environ.get(variable, "") or default)
+        except ValueError:
+            return default
+
     daemon = EntrolyDaemon(
-        proxy_port=getattr(args, "proxy_port", 9377),
-        dashboard_port=getattr(args, "dashboard_port", 9378),
+        proxy_port=_port("proxy_port", "ENTROLY_PROXY_PORT", 9377),
+        dashboard_port=_port("dashboard_port", "ENTROLY_DASHBOARD_PORT", 9378),
         mcp_port=getattr(args, "mcp_port", 9379),
         host=getattr(args, "host", "127.0.0.1"),
         enable_proxy=not getattr(args, "no_proxy", False),
@@ -2846,28 +2857,43 @@ def cmd_hook(args):
         print("  Usage: entroly hook [install|uninstall|status]\n")
         return
 
-    from .shell_hook import install_hook, uninstall_hook, hook_status
+    from .shell_hook import hook_status, uninstall_hook
     if sub == "install":
-        shell = getattr(args, "shell", None) or None
-        result = install_hook(shell)
-        if result:
-            print(f"\n  {C.GREEN}Hook installed for {result}.{C.RESET}")
-            print(f"  Restart your shell or run: source ~/.{result}rc\n")
-        else:
-            print(f"\n  {C.RED}Could not detect shell. Use --shell bash|zsh|fish{C.RESET}\n")
+        # The hook this installed compressed nothing and replaced the user's
+        # bash DEBUG trap; see entroly.shell_hook.install_hook.
+        print(
+            f"\n  {C.YELLOW}The shell hook does not compress command output, so "
+            f"nothing was installed.{C.RESET}\n"
+            f"  Run a command through Entroly instead: "
+            f"{C.BOLD}entroly shrink -- pytest -q{C.RESET}\n"
+            f"  (bounded output, with the full output kept for exact recovery)."
+        )
+        if hook_status()["any_installed"]:
+            print(
+                "  An earlier version added a hook block to your shell config; "
+                "remove it with: entroly hook uninstall"
+            )
+        print()
+        return 1
     elif sub == "uninstall":
         shell = getattr(args, "shell", None) or None
-        result = uninstall_hook(shell)
-        if result:
-            print(f"\n  {C.GREEN}Hook removed from {result}.{C.RESET}\n")
+        removed = uninstall_hook(shell)
+        if removed:
+            for path in removed:
+                print(f"\n  {C.GREEN}Removed the Entroly hook from {path}{C.RESET}")
+            print("  Open a new shell for the change to apply.\n")
         else:
             print(f"\n  {C.GRAY}No hook found to remove.{C.RESET}\n")
     elif sub == "status":
         status = hook_status()
         print(f"\n{C.CYAN}{C.BOLD}  Shell Hook Status{C.RESET}")
-        for shell, installed in status.items():
-            icon = f"{C.GREEN}installed" if installed else f"{C.GRAY}not installed"
-            print(f"    {shell:8s} {icon}{C.RESET}")
+        rows = status["installed"] + status["available"]
+        if not rows:
+            print(f"    {C.GRAY}No shell config files found.{C.RESET}")
+        for row in rows:
+            icon = (f"{C.YELLOW}hook block present (remove: entroly hook uninstall)"
+                    if row["installed"] else f"{C.GRAY}no hook")
+            print(f"    {row['file']}  {icon}{C.RESET}")
         print()
 
 
@@ -2877,7 +2903,9 @@ def cmd_learn(args):
         from .cli_context_workflows import cmd_history
 
         return cmd_history(args)
-    print(f"\n{C.CYAN}{C.BOLD}  Entroly Learn — Failure Pattern Analysis{C.RESET}\n")
+    as_json = bool(getattr(args, "json_output", False))
+    if not as_json:
+        print(f"\n{C.CYAN}{C.BOLD}  Entroly Learn — Failure Pattern Analysis{C.RESET}\n")
 
     import urllib.request
     port = args.port or 9377
@@ -2888,6 +2916,11 @@ def cmd_learn(args):
         feedback = stats.get("implicit_feedback", {})
     except Exception:
         feedback = {}
+
+    if as_json:
+        # --json used to be read only by --history, so this path printed the
+        # human report and a JSON consumer got prose.
+        return _print_learn_json(feedback, port)
 
     if not feedback:
         print(f"  {C.YELLOW}No feedback data available.{C.RESET}")
@@ -2969,6 +3002,33 @@ def cmd_learn(args):
     print()
 
 
+def _print_learn_json(feedback: dict, port: int) -> int:
+    if not feedback:
+        print(json.dumps({
+            "status": "no_data",
+            "detail": f"no feedback from a running proxy on port {port}; "
+                      "run the proxy and make some requests first",
+            "proxy_port": port,
+        }, indent=2))
+        return 0
+    total = int(feedback.get("total_assessed", 0) or 0)
+    confident = int(feedback.get("confidence_detections", 0) or 0)
+    print(json.dumps({
+        "status": "ok",
+        "proxy_port": port,
+        "session": {
+            "total_assessed": total,
+            "confident": confident,
+            "confused": int(feedback.get("confusion_detections", 0) or 0),
+            "rephrases": int(feedback.get("rephrase_detections", 0) or 0),
+            "quality_trend": feedback.get("quality_trend", "stable"),
+            "success_rate_pct": round(confident * 100 / total, 1) if total else None,
+        },
+        "reliable": total > 5,
+    }, indent=2))
+    return 0
+
+
 def _recommend_quality(project: dict, file_count: int) -> str:
     """Recommend a starting quality preset from project characteristics.
 
@@ -3002,6 +3062,24 @@ def _recommend_quality(project: dict, file_count: int) -> str:
         return "quality" if file_count > 500 else "balanced"
 
     return "balanced"
+
+
+def _proxy_base_url_guide(port: int) -> str:
+    """What to set, per client family, to route through the proxy.
+
+    `entroly go` printed one URL, ``http://localhost:<port>/v1``. That suffix is
+    right for OpenAI-compatible SDKs but not for the Anthropic SDK or Claude
+    Code, which append ``/v1/messages`` themselves: following it sent
+    ``/v1/v1/messages`` upstream and every request failed with 404. These are
+    the same values `entroly wrap` sets for those clients.
+    """
+    return (
+        f"  {C.BOLD}Point your AI tool's API base URL at the proxy:{C.RESET}\n"
+        f"    Anthropic SDK, Claude Code:  ANTHROPIC_BASE_URL=http://localhost:{port}\n"
+        f"    OpenAI-compatible SDKs:      OPENAI_BASE_URL=http://localhost:{port}/v1\n"
+        f"  {C.GRAY}Anthropic clients add /v1 themselves; a base URL ending in /v1 "
+        f"makes them call /v1/v1/messages.{C.RESET}"
+    )
 
 
 def cmd_go(args):
@@ -3084,10 +3162,10 @@ def cmd_go(args):
     print(f"""
   {C.GREEN}{C.BOLD}Local services ready!{C.RESET}
 
-  {C.GREEN}Proxy:{C.RESET}      http://localhost:{config.port}/v1
+  {C.GREEN}Proxy:{C.RESET}      http://localhost:{config.port}
   {C.GREEN}Dashboard:{C.RESET}  http://localhost:{dashboard_port}
 
-  {C.BOLD}Point your AI tool's API base URL to the proxy URL above.{C.RESET}
+{_proxy_base_url_guide(config.port)}
   {C.GRAY}Only traffic sent to this URL can be optimized; MCP registration alone does not route requests.{C.RESET}
   {C.GRAY}After a real request, run `entroly value --json` and check provider_path.requests_observed.{C.RESET}
   {C.GRAY}Press Ctrl+C to stop.{C.RESET}
@@ -3310,7 +3388,7 @@ def _index_coverage(engine, files_indexed: int, max_files: int) -> dict:
 
 
 def _run_local_simulation(args) -> dict:
-    max_files = int(getattr(args, "max_files", 100) or 0)
+    max_files = int(getattr(args, "max_files", 120) or 0)
     engine, files_indexed, total_tokens, index_status = _load_local_simulation_engine(max_files)
     coverage = _index_coverage(engine, files_indexed, max_files)
     query_conditioned = _query_conditioned_selection_active(engine)
@@ -3556,7 +3634,12 @@ def _print_local_simulation(report: dict, *, title: str, include_perf: bool) -> 
             f"  {C.BOLD}Local optimize latency:{C.RESET} "
             f"min {lat['min']:.2f} ms, p95 {lat['p95']:.2f} ms, max {lat['max']:.2f} ms"
         )
-    print(f"  {C.GRAY}{'; '.join(report['limitations'])}{C.RESET}\n")
+    # One limitation per line. Joining with "; " after sentences that already
+    # end in "." produced a single 600-character ".;"-punctuated line.
+    print(f"  {C.GRAY}Limits of this estimate:{C.RESET}")
+    for limitation in report["limitations"]:
+        print(f"  {C.GRAY}- {limitation}{C.RESET}")
+    print()
     from .project_footprint import project_footprint_notice  # onb: footprint notice
 
     if footprint := project_footprint_notice(Path.cwd()):
@@ -6144,11 +6227,22 @@ def cmd_uninstall(args):
     uninstall_command = [sys.executable, "-m", "pip", "uninstall", "entroly"]
     if bool(getattr(args, "yes", False)):
         uninstall_command.append("-y")
+    # `entroly ravs hook install` writes this installation's absolute path to
+    # `entroly` into Claude Code's settings. pip deletes that file, and hooks
+    # left behind fail on every later tool call with a hook error.
+    from entroly.ravs.hooks import capture_registration_path
+
+    hook_settings = None if feedback_only else capture_registration_path()
     if feedback_only:
         print("\n  Feedback-only mode: the package will not be uninstalled.")
     else:
         print(f"\n  Uninstall command: {subprocess.list2cmdline(uninstall_command)}")
     if dry_run:
+        if hook_settings is not None:
+            print(
+                f"  Would also remove the RAVS capture hooks from {hook_settings}: "
+                "they run the entroly executable pip is about to delete."
+            )
         print(f"  {C.GRAY}Dry run: feedback was not sent and nothing was uninstalled.{C.RESET}")
         return 0
 
@@ -6190,6 +6284,25 @@ def cmd_uninstall(args):
 
     if feedback_only:
         return 0
+
+    if hook_settings is not None:
+        from entroly.ravs.hooks import uninstall_claude_code
+
+        if uninstall_claude_code().get("action") == "uninstalled":
+            print(
+                f"  Removed the RAVS capture hooks from {hook_settings}: they would "
+                "fail on every tool call once entroly is gone."
+            )
+            print(
+                f"  {C.GRAY}Keeping entroly after all? Restore them with: "
+                f"entroly ravs hook install --claude-code{C.RESET}"
+            )
+        else:
+            print(
+                f"  {C.YELLOW}Could not edit {hook_settings}. Remove its `ravs capture` "
+                f"hooks by hand, or Claude Code will report a hook error on every "
+                f"tool call.{C.RESET}"
+            )
 
     completed = subprocess.run(uninstall_command, check=False)
     return int(completed.returncode)
@@ -6740,7 +6853,9 @@ def cmd_ravs(args):
         log_path = getattr(args, "log", None)
         use_stdin = getattr(args, "stdin", False)
         if use_stdin:
-            result = capture_from_stdin(log_path=log_path)
+            result = capture_from_stdin(
+                log_path=log_path, host=getattr(args, "host", None)
+            )
         else:
             command = getattr(args, "capture_command", None)
             exit_code = getattr(args, "exit_code", None)
@@ -6771,7 +6886,7 @@ def cmd_ravs(args):
             result = uninstall_claude_code()
             path = result.get("path", "")
             if result.get("action") == "uninstalled":
-                print(f"  {C.GREEN}✓ Removed RAVS PostToolUse hook from {path}{C.RESET}")
+                print(f"  {C.GREEN}✓ Removed RAVS PostToolUse hook (and its PostToolUseFailure pair) from {path}{C.RESET}")
                 print(f"  {C.GRAY}Restart Claude Code to apply.{C.RESET}")
                 return 0
             if result.get("action") == "not_found":
@@ -6790,8 +6905,11 @@ def cmd_ravs(args):
         action = result.get("action")
         path = result.get("path", "")
         if action == "installed":
-            print(f"  {C.GREEN}\u2713 Installed RAVS PostToolUse hook \u2192 {path}{C.RESET}")
+            print(f"  {C.GREEN}\u2713 Installed RAVS capture hooks \u2192 {path}{C.RESET}")
             print(f"  {C.GRAY}Restart Claude Code to activate. Every Bash tool use now feeds RAVS.{C.RESET}")
+        elif action == "updated":
+            print(f"  {C.GREEN}\u2713 Updated RAVS capture hooks \u2192 {path}{C.RESET}")
+            print(f"  {C.GRAY}Failing commands now reach RAVS too. Restart Claude Code.{C.RESET}")
         elif action == "unreadable":
             print(
                 f"  {C.RED}✗ Not installed: {path} is "

@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import { receiptHtml } from './compressionHtml';
+import { lastCompression } from './compressionView';
 
 export class ReceiptViewPanel {
   public static currentPanel: ReceiptViewPanel | undefined;
@@ -9,15 +11,17 @@ export class ReceiptViewPanel {
     const column = vscode.ViewColumn.Two;
 
     if (ReceiptViewPanel.currentPanel) {
+      ReceiptViewPanel.currentPanel._panel.webview.html =
+        ReceiptViewPanel.currentPanel._getHtml();
       ReceiptViewPanel.currentPanel._panel.reveal(column);
       return;
     }
 
     const panel = vscode.window.createWebviewPanel(
       'entrolyReceipt',
-      'Entroly — Cryptographic Receipt Inspector',
+      'Entroly — Compress Receipt',
       column,
-      { enableScripts: true }
+      { enableScripts: false }
     );
 
     ReceiptViewPanel.currentPanel = new ReceiptViewPanel(panel, extensionUri);
@@ -38,66 +42,14 @@ export class ReceiptViewPanel {
     }
   }
 
+  /**
+   * The receipt of this window's last `entroly compress` run, or a page that
+   * says there is none. This panel used to show the same hardcoded receipt to
+   * everyone: a "Merkle Root" that was the SHA-256 of the empty string, a
+   * reversibility "PASS (100% bit-exact byte recovery)" and a "Dynamic
+   * Programming verified" knapsack line, none of them computed from anything.
+   */
   private _getHtml(): string {
-    return `<!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta charset="UTF-8">
-      <style>
-        body {
-          font-family: var(--vscode-editor-font-family, monospace);
-          color: var(--vscode-editor-foreground);
-          background-color: var(--vscode-editor-background);
-          padding: 16px;
-          font-size: 12px;
-          line-height: 1.6;
-        }
-        .stamp {
-          color: #34d399;
-          font-weight: 700;
-          border: 1px solid #34d399;
-          display: inline-block;
-          padding: 2px 6px;
-          border-radius: 4px;
-          margin-bottom: 12px;
-        }
-        .code-box {
-          background: rgba(0,0,0,0.25);
-          padding: 8px;
-          border-radius: 4px;
-          color: #38bdf8;
-          word-break: break-all;
-          margin-top: 4px;
-        }
-        .row {
-          margin-bottom: 12px;
-        }
-        .label {
-          opacity: 0.7;
-          text-transform: uppercase;
-          font-size: 10px;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="stamp">AUDITABLE CONTEXT RECEIPT</div>
-      <div class="row">
-        <div class="label">Receipt Schema</div>
-        <div>context-receipt.v1 (Merkle-CCR)</div>
-      </div>
-      <div class="row">
-        <div class="label">Merkle Root</div>
-        <div class="code-box">e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855</div>
-      </div>
-      <div class="row">
-        <div class="label">Reversibility Verification</div>
-        <div style="color: #34d399; font-weight: 600;">PASS (100% bit-exact byte recovery)</div>
-      </div>
-      <div class="row">
-        <div class="label">Knapsack Optimality</div>
-        <div>Dynamic Programming verified · 0-1 budget satisfied</div>
-      </div>
-    </body>
-    </html>`;
+    return receiptHtml(lastCompression?.receipt, lastCompression?.fileName);
   }
 }

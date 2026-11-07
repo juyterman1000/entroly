@@ -515,6 +515,11 @@ class VaultManager:
             )
             created.append("evolution/registry.md")
 
+        # The default vault lives in <project>/.entroly; keep it out of commits.
+        from .project_footprint import mark_local_state_dir
+
+        mark_local_state_dir(self._base.parent)
+
         self._initialized = True
         logger.info(f"Vault initialized at {self._base} (created: {created})")
 

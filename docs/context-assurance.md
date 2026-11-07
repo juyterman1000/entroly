@@ -78,6 +78,12 @@ to provider traffic, and no new MCP tool is introduced.
 
 ## Scoped selection and recovery
 
+The budget check needs the exact `o200k_base` tokenizer, and Entroly never
+downloads it. Install `tiktoken` and cache the encoding once
+(`python -c "import tiktoken; tiktoken.get_encoding('o200k_base')"`);
+without it the budget cannot be verified and `assure_context` fails closed
+with `ContextAssuranceError`, naming the budget as the reason.
+
 ```python
 from entroly import (
     AssuranceScope, assure_context, context_commit_anchor,

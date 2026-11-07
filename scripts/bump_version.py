@@ -193,6 +193,45 @@ SEMVER = re.compile(
 )
 
 
+def _rewrite_cursor_links(text: str, new: str) -> tuple[str, int]:
+    """Re-pin the Entroly versions inside base64 Cursor install-link configs.
+
+    The pattern-based TARGETS cannot see a version inside an encoded config:
+    README's "Add Entroly to Cursor" link was left behind at
+    entroly-mcp@1.0.84 (stale for four releases) while the text around it was bumped.
+    The encoding's alphabet and padding are kept as found.
+    """
+    import base64
+
+    from check_version_staleness import CURSOR_DEEPLINK, decode_deeplink_config
+
+    count = 0
+
+    def repin(match: re.Match[str]) -> str:
+        nonlocal count
+        encoded = match.group(1)
+        decoded = decode_deeplink_config(encoded)
+        if decoded is None:
+            return match.group(0)
+        updated, n = re.subn(
+            r"(entroly(?:-mcp|-wasm)?@)[0-9]+\.[0-9]+\.[0-9]+", rf"\g<1>{new}", decoded
+        )
+        if n == 0:
+            return match.group(0)
+        count += n
+        standard = "+" in encoded or "/" in encoded
+        encode = base64.b64encode if standard else base64.urlsafe_b64encode
+        reencoded = encode(updated.encode("utf-8")).decode("ascii")
+        if not encoded.endswith("="):
+            reencoded = reencoded.rstrip("=")
+        start, end = match.span(1)
+        whole = match.group(0)
+        offset = match.start(0)
+        return whole[: start - offset] + reencoded + whole[end - offset:]
+
+    return CURSOR_DEEPLINK.sub(repin, text), count
+
+
 def main(argv: list[str]) -> int:
     if len(argv) != 2 or not SEMVER.match(argv[1]):
         print("usage: bump_version.py <semver>", file=sys.stderr)
@@ -221,6 +260,12 @@ def main(argv: list[str]) -> int:
         pending[path] = updated
         changed.append(rel)
         replacement_count += n
+
+    for path, updated in list(pending.items()):
+        repinned, n = _rewrite_cursor_links(updated, new)
+        if n:
+            pending[path] = repinned
+            replacement_count += n
 
     for path, updated in pending.items():
         path.write_text(updated, encoding="utf-8")

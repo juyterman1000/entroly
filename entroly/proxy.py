@@ -1259,7 +1259,14 @@ class PromptCompilerProxy:
             self._auto_recovery_streaming_blocked_by = (
                 f"witness_mode={self._witness_mode or 'off'}"
             )
-            logger.warning(
+            # Both settings are defaults unless the operator asked for
+            # recovery, so a warning here greeted every first `entroly go`
+            # with advice about options the user never chose. /stats keeps
+            # reporting the blocker; the warning is kept for an explicit ask.
+            recovery_requested = os.environ.get(
+                "ENTROLY_AUTO_RECOVERY", ""
+            ).strip() not in {"", "0"}
+            (logger.warning if recovery_requested else logger.info)(
                 "Auto-recovery will not run on streaming requests: it retries "
                 "on a verification verdict, and witness_mode=%s produces one "
                 "only on the non-streaming path. Set "

@@ -618,15 +618,31 @@ def record_from_hook_payload(
     elif isinstance(raw_input, str):
         target = raw_input
 
-    try:
-        exit_code = int(data.get("exit_code") or 0)
-    except (TypeError, ValueError):
-        exit_code = 0
-    status = "ok" if exit_code == 0 else f"exit:{exit_code}"
+    if data.get("hook_event_name") == "PostToolUseFailure":
+        # Claude Code's failure event carries no exit_code field, so the
+        # default below recorded every failing command as "ok". The code is
+        # on the leading line of `error`; see entroly.hook_outcome.
+        from .hook_outcome import exit_code as stated_exit_code
+
+        failed_with = stated_exit_code(data)
+        if failed_with is not None:
+            status = f"exit:{failed_with}"
+        elif data.get("is_interrupt") is True:
+            status = "interrupted"
+        else:
+            status = "error"
+    else:
+        try:
+            exit_code = int(data.get("exit_code") or 0)
+        except (TypeError, ValueError):
+            exit_code = 0
+        status = "ok" if exit_code == 0 else f"exit:{exit_code}"
 
     detail = ""
-    if exit_code != 0:
-        output = data.get("tool_output") or data.get("stderr") or ""
+    if status != "ok":
+        from .hook_outcome import output_text
+
+        output = data.get("tool_output") or data.get("stderr") or output_text(data)
         detail = _bounded(str(output)[-MAX_DETAIL_CHARS * 2 :], MAX_DETAIL_CHARS)
 
     return record_event(

@@ -23,16 +23,16 @@ Layer mapping (EICV 6-layer hierarchy)
   Layer 3: Retrieval Necessity I(Ŷ; S)         (entroly/rnr.py)
   Layer 4: Falsification gradient Γ           (entroly/counterfactual.py)
   Layer 5: NLI proxy + Semantic entropy       (entroly/semantic_entropy.py)
-           + E-value composition & CRC        (entroly/e_value.py)
+           + Marginal null evidence            (entroly/e_value.py)
   Layer 6: Selective policy / Certificate     (this module)
 
 The result is an EICVCertificate dataclass that exposes:
   - Φ score ∈ [0, 1] (higher = more grounded)
   - per-layer evidence breakdown (auditable)
-  - composite e-value with α=0.05 decision threshold
-  - manifold worst-case bound (Phase 2)
+  - dependence-safe mean e-value with a marginal null-test threshold
+  - manifold diagnostics when available
   - selective decision: supported | abstain | hallucinated
-  - worst-case shift coverage guarantee (Phase 3)
+  - explicit statistical scope; no shift or answer-correctness guarantee
 
 This is the central artefact of EICV: every decision the system makes
 is traceable to specific evidence flows through the 6 layers.
@@ -98,9 +98,21 @@ class EICVCertificate:
     profile: str = "default"
     schema_version: str = "eicv-cert-v1"
     elapsed_ms: float = 0.0
+    evidence_method: str = "fixed-power-p-to-e-arithmetic-mean"
+    e_product_scope: str = "diagnostic-only-independence-not-established"
+    statistical_scope: str = "single-null-test-under-exchangeability-not-answer-correctness"
+    decision_scope: str = "phi-heuristic-plus-null-evidence-not-alpha-controlled"
+    production_authority: bool = False
 
     def as_dict(self) -> dict:
-        return asdict(self)
+        return {
+            **asdict(self),
+            "evidence_method": "fixed-power-p-to-e-arithmetic-mean",
+            "e_product_scope": "diagnostic-only-independence-not-established",
+            "statistical_scope": "single-null-test-under-exchangeability-not-answer-correctness",
+            "decision_scope": "phi-heuristic-plus-null-evidence-not-alpha-controlled",
+            "production_authority": False,
+        }
 
 
 # ── Calibration bundle ────────────────────────────────────────────────
@@ -180,18 +192,15 @@ def _phi_from_layers(layer_scores: dict[str, float]) -> float:
       rnr_local         : higher = more retrieval-grounded (lower = artifact-prone)
       gamma             : higher = more brittle
       h_sem_norm        : higher = more phrasing-sensitive
-      e_product         : higher = more evidence against H_0 (hallucinated)
+      e_mean            : fixed-family marginal evidence against the common null
     """
     esg_term       = 1.0 - layer_scores.get("esg_tension", 0.5)
     nli_term       = 1.0 - layer_scores.get("nli_bidir_score", 0.5)
     rnr_term       = layer_scores.get("rnr_local", 0.5)
     gamma_inv      = 1.0 - layer_scores.get("gamma", 0.0)
     h_sem_inv      = 1.0 - layer_scores.get("h_sem_norm", 0.0)
-    e_p            = layer_scores.get("e_product", 1.0)
-    # Map e_product (potentially huge) into [0,1] inverse via log:
-    # e_product = 1  → 1.0 (no evidence against H_0)
-    # e_product = 20 → 0.43 (rejection threshold at α=0.05)
-    # e_product = 1e6 → 0.14
+    e_p            = layer_scores.get("e_mean", 1.0)
+    # Legacy weight name e_product_inv now reads only dependence-safe evidence.
     e_inv = 1.0 / (1.0 + math.log10(max(e_p, 1.0)))
 
     phi = (
@@ -215,7 +224,8 @@ class EICVAnalyzer:
         profile: "default" | "rag" | "qa" | "summarization" | "dialogue"
             Currently only affects which sub-analysers are eager-loaded.
         phi_weights: optional override of PHI_WEIGHTS.
-        alpha: significance level for the decision threshold (default 0.05).
+        alpha: significance level for the marginal null test (default 0.05).
+            The combined Phi decision is heuristic and is not alpha-controlled.
         abstain_band: (lo, hi) tuple for Φ-range that produces "abstain".
             Default (0.40, 0.65) — Φ outside this is "supported" / "hallucinated".
     """
@@ -229,7 +239,8 @@ class EICVAnalyzer:
     ) -> None:
         self.profile = profile
         self.phi_weights = phi_weights or PHI_WEIGHTS
-        self.alpha = alpha
+        from entroly.e_value import _alpha
+        self.alpha = _alpha(alpha)
         self.abstain_band = abstain_band
         self.calibration: EICVCalibration | None = None
 
@@ -299,10 +310,10 @@ class EICVAnalyzer:
     def verify(self, evidence: str, claim: str) -> EICVCertificate:
         """Top-level verification — produces an EICVCertificate.
 
-        Falls back to defaults (e_value = 1.0 for all layers) if no
-        calibrators have been fit. The Φ score is still meaningful in
-        that case; only the e_product / decision threshold loses formal
-        statistical guarantee.
+        Unfitted calibration yields neutral e-values. Fitted calibration tests
+        only a common null, under fixed-scoring and exchangeable-null-data
+        assumptions. Phi and the combined decision remain heuristics, including
+        when calibration is fitted; they are not alpha-controlled correctness.
         """
         t0 = time.perf_counter()
 
@@ -332,7 +343,7 @@ class EICVAnalyzer:
                     e_vals.append(cal.e_value(layer_scores[name]))
             ep = e_product(e_vals)
             em = e_mean(e_vals)
-            cp = e_to_conservative_p(ep)
+            cp = e_to_conservative_p(em)
         else:
             ep, em, cp = 1.0, 1.0, 1.0
 
@@ -344,9 +355,9 @@ class EICVAnalyzer:
         phi = _phi_from_layers(layer_scores)
         halu_score = 1.0 - phi
 
-        # Decision: based primarily on Φ, but e_product provides a strict
-        # rejection threshold at α (if calibrated).
-        decision = self._decide(phi, ep)
+        # Product is diagnostic only. Null evidence uses the fixed mean;
+        # the additional Phi policy does not inherit its statistical bound.
+        decision = self._decide(phi, em)
 
         elapsed_ms = (time.perf_counter() - t0) * 1000.0
 
@@ -354,11 +365,12 @@ class EICVAnalyzer:
             phi=round(phi, 4),
             hallucination_score=round(halu_score, 4),
             decision=decision,
-            layer_scores={k: (round(v, 4) if isinstance(v, float) else v)
+            layer_scores={k: (round(v, 4) if isinstance(v, float)
+                              and k not in {"e_mean", "conservative_p"} else v)
                           for k, v in layer_scores.items()},
-            e_product=round(ep, 4),
-            e_mean=round(em, 4),
-            conservative_p=round(cp, 6),
+            e_product=ep,
+            e_mean=em,
+            conservative_p=cp,
             alpha=self.alpha,
             n_claim_atoms=esg_res.n_claim_atoms,
             n_ev_atoms=esg_res.n_ev_atoms,
@@ -371,15 +383,16 @@ class EICVAnalyzer:
     def _decide(self, phi: float, e_product: float) -> str:
         """Layer-6 selective decision policy.
 
-        Strict-reject path: e_product >= 1/α → "hallucinated" regardless of Φ.
+        The legacy e_product parameter receives mean evidence, never a product.
+        A common-null rejection can flag/abstain depending on Phi. Phi alone
+        can also flag/support; this full policy has no alpha-error guarantee.
         Otherwise, Φ-based zone:
           Φ ≤ abstain_band[0]   → hallucinated (low support)
           Φ ≥ abstain_band[1]   → supported
           else                  → abstain
         """
-        # E-value strict rejection (only if calibrators were fit)
-        threshold_e = 1.0 / self.alpha
-        if e_product >= threshold_e:
+        from entroly.e_value import e_to_conservative_p
+        if e_to_conservative_p(e_product) <= self.alpha:
             # Strong evidence against H_0 → hallucinated
             # Unless Φ is unusually high (conflicting signals)
             if phi >= self.abstain_band[1]:
@@ -399,7 +412,7 @@ class EICVAnalyzer:
 def verify(evidence: str, claim: str) -> EICVCertificate:
     """Module-level convenience: verify without calibration.
 
-    Note: without calibrators, e_product is 1.0 and decisions are based
-    on Φ alone. For formal coverage guarantees, fit calibrators first.
+    Without calibrators, evidence is neutral and decisions use Phi alone.
+    Fitting calibrators does not establish correctness or shift coverage.
     """
     return EICVAnalyzer().verify(evidence, claim)

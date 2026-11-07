@@ -25,9 +25,11 @@
     activeAgent: 'claude',
     costScale: 'turn', // 'turn' | 'session' | 'monthly'
     stats: {
-      tokensPruned: 1428500,
-      bankedUsd: 14.28,
-      latencyMs: 0.22,
+      // Unknown until the dashboard reports them. These used to start at
+      // 1,428,500 tokens, $14.28 and 0.22 ms and never change.
+      tokensPruned: null,
+      bankedUsd: null,
+      latencyMs: null,
       activeReceipts: 48,
       totalRequests: 156,
       healthGrade: 'A',
@@ -745,22 +747,24 @@ Validated by Entroly Core Engine v1.0.88 for SOC2/ISO27001 audit.`;
       }
     });
 
-    // Structural Context Scaffolding Header
-    const csePreamble = `<span class="synth-line">/* [entroly/cse] Structural AST Scaffold: Interface preserved, boilerplate pruned, 0 semantic distortion */</span>\n`;
+    // This preview is a few fixed rules in the page, not Entroly's engine.
+    const csePreamble = `<span class="synth-line">/* illustration: struck-through lines are the ones this page's sample rules drop. Entroly's engine is not running here; run \`entroly compress <file>\` for a measured, recoverable result. */</span>\n`;
     if (els.outputPreview) {
       els.outputPreview.innerHTML = csePreamble + keptLines.join('\n');
     }
 
-    // Update Counts & Badges (Achieves realistic 70% - 85% reduction)
-    const effectiveTokens = Math.max(16, Math.min(rawTokens, Math.round(rawTokens * 0.22)));
-    const saved = Math.max(0, rawTokens - effectiveTokens);
-    const ratioPct = rawTokens > 0 ? ((saved / rawTokens) * 100).toFixed(1) : 0;
+    // Report what the rules above actually struck through. This used to be
+    // `rawTokens * 0.22` whatever the text, so anything pasted showed ~78%.
+    const saved = Math.min(rawTokens, prunedCount);
+    const effectiveTokens = rawTokens - saved;
+    const ratio = rawTokens > 0 ? (saved / rawTokens) * 100 : 0;
 
     if (els.originalCount) els.originalCount.textContent = rawTokens.toLocaleString();
     if (els.compressedCount) els.compressedCount.textContent = effectiveTokens.toLocaleString();
-    if (els.savingsRatio) els.savingsRatio.textContent = `-${ratioPct}% saved`;
+    if (els.savingsRatio) els.savingsRatio.textContent = saved > 0 ? `-${ratio.toFixed(1)}% saved` : '0.0% saved';
 
     updateDynamicPricing(rawTokens, effectiveTokens, saved);
+    return ratio.toFixed(1);
   }
 
   function updateDynamicPricing(rawTokens, effectiveTokens, tokensSaved) {
@@ -794,13 +798,14 @@ Validated by Entroly Core Engine v1.0.88 for SOC2/ISO27001 audit.`;
     if (!els.outputPreview) return;
     els.outputPreview.style.opacity = '0.4';
     els.btnCompress.disabled = true;
-    showToast('Executing AST extraction and reversible compression pass...');
+    showToast('Applying the sample rules...');
 
     setTimeout(() => {
-      runContextCompression();
+      const struck = runContextCompression();
       els.outputPreview.style.opacity = '1.0';
       els.btnCompress.disabled = false;
-      showToast('✓ 78.0% Context Scaffolding complete (0.22ms latency)');
+      // Was a fixed "78.0% Context Scaffolding complete (0.22ms latency)".
+      showToast(`Illustration: the sample rules struck through ${struck}% of the estimated tokens`);
     }, 280);
   }
 
@@ -1100,9 +1105,12 @@ Validated against entroly_master_intelligence_dossier.md`;
       if (res.ok) {
         const data = await res.json();
         state.connected = true;
-        if (data.tokens_reduced) state.stats.tokensPruned = data.tokens_reduced;
-        if (data.banked_usd) state.stats.bankedUsd = data.banked_usd;
-        if (data.latency_ms) state.stats.latencyMs = data.latency_ms;
+        // /api/stats nests these under banked_value; the top-level names read
+        // here before never existed, so the defaults were all that showed.
+        const banked = (data && data.banked_value) || {};
+        state.stats.tokensPruned = Number.isFinite(banked.tokens_reduced) ? banked.tokens_reduced : null;
+        state.stats.bankedUsd = Number.isFinite(banked.modeled_future_value_usd) ? banked.modeled_future_value_usd : null;
+        state.stats.latencyMs = Number.isFinite(data && data.latency_ms) ? data.latency_ms : null;
       } else {
         state.connected = false;
       }
@@ -1114,17 +1122,18 @@ Validated against entroly_master_intelligence_dossier.md`;
 
   function updateConnectionStatus() {
     if (!els.statusPill) return;
+    const known = (value) => state.connected && value !== null && value !== undefined;
     if (state.connected) {
       els.statusPill.classList.remove('offline');
       els.statusText.textContent = 'DAEMON :9377 ACTIVE';
-      els.latencyText.textContent = `${state.stats.latencyMs.toFixed(2)}ms`;
     } else {
+      // The offline branch used to print the same "ACTIVE" and a 0.22ms p95.
       els.statusPill.classList.add('offline');
-      els.statusText.textContent = 'DAEMON :9377 ACTIVE';
-      els.latencyText.textContent = '0.22ms p95';
+      els.statusText.textContent = 'DAEMON OFFLINE';
     }
-    if (els.topTokensPruned) els.topTokensPruned.textContent = state.stats.tokensPruned.toLocaleString();
-    if (els.topBankedUsd) els.topBankedUsd.textContent = `$${state.stats.bankedUsd.toFixed(2)}`;
+    els.latencyText.textContent = known(state.stats.latencyMs) ? `${state.stats.latencyMs.toFixed(2)}ms` : '—';
+    if (els.topTokensPruned) els.topTokensPruned.textContent = known(state.stats.tokensPruned) ? state.stats.tokensPruned.toLocaleString() : '—';
+    if (els.topBankedUsd) els.topBankedUsd.textContent = known(state.stats.bankedUsd) ? `$${state.stats.bankedUsd.toFixed(2)}` : '—';
   }
 
   function escapeHtml(str) {
