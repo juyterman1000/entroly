@@ -918,7 +918,7 @@ tr:hover td{background:rgba(255,255,255,0.015);}
 </div>
 <div class="main">
   <div class="whisper" id="whisper">
-    💡 Route your AI tool through the Entroly proxy to optimize its LLM calls: <code>ANTHROPIC_BASE_URL=http://localhost:9377</code> for the Anthropic SDK and Claude Code, <code>OPENAI_BASE_URL=http://localhost:9377/v1</code> for OpenAI-compatible SDKs (default port; <code>entroly go</code> prints yours).
+    💡 Point your AI tool at the Entroly proxy to optimize its LLM calls: <code>ANTHROPIC_BASE_URL=http://localhost:9377</code> for the Anthropic SDK and Claude Code, <code>OPENAI_BASE_URL=http://localhost:9377/v1</code> for OpenAI-compatible SDKs (default port; <code>entroly go</code> prints yours).
     <span class="dismiss" onclick="this.parentElement.style.display='none'">✕</span>
   </div>
   <div id="errBanner" style="display:none;margin-bottom:16px;padding:12px 16px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.4);border-radius:10px;color:#fecaca;font-size:13px;line-height:1.5;"></div>
