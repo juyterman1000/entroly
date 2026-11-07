@@ -109,8 +109,10 @@ def _add_lifecycle_and_measurement_commands(
             help="Emit machine-readable JSON",
         )
         p.add_argument(
-            "--max-files", type=int, default=100,
-            help="Maximum files to index for this local smoke estimate (default: 100; 0 = full auto-index limit)",
+            # Same cap as `verify-claims`, so the README's step 1 and step 2
+            # report the same repository size.
+            "--max-files", type=int, default=120,
+            help="Maximum files to index for this local smoke estimate (default: 120, as verify-claims; 0 = full auto-index limit)",
         )
 
     simulate_parser = subparsers.add_parser(

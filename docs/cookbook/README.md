@@ -101,7 +101,8 @@ a file, formatting). Paying Opus prices for `pytest` is waste. RAVS watches
 your outcomes, builds a confidence model per task type, and starts routing the
 safe ones to Haiku — only after the data says it's safe.
 
-Enable it once — add this `PostToolUse` hook to your `.claude/settings.json`:
+Enable it once with `entroly ravs hook install --claude-code`, or add these
+hooks to your `.claude/settings.json` yourself:
 
 ```json
 {
@@ -110,7 +111,15 @@ Enable it once — add this `PostToolUse` hook to your `.claude/settings.json`:
       {
         "matcher": "Bash|Read|Grep|Glob|Edit|Write|TodoWrite",
         "hooks": [
-          { "type": "command", "command": "entroly ravs capture --stdin --quiet 2>/dev/null || true" }
+          { "type": "command", "command": "entroly ravs capture --stdin --host claude-code --quiet 2>/dev/null || true" }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash|Read|Grep|Glob|Edit|Write|TodoWrite",
+        "hooks": [
+          { "type": "command", "command": "entroly ravs capture --stdin --host claude-code --quiet 2>/dev/null || true" }
         ]
       }
     ]
@@ -118,6 +127,13 @@ Enable it once — add this `PostToolUse` hook to your `.claude/settings.json`:
 }
 ```
 
+> Both events are required. Claude Code fires `PostToolUse` only after a
+> command exits 0 and `PostToolUseFailure` after a non-zero exit, and neither
+> payload carries an exit code field. `--host claude-code` tells capture to
+> read the event name as the outcome; without it, or without the failure
+> hook, capture records nothing rather than a sample of passes with every
+> failure missing.
+>
 > The `2>/dev/null || true` tail is intentional: a missing entroly binary or a
 > slow capture should never block Claude Code. Failure is silent and harmless.
 > The entroly repo's own [`.claude/settings.json`](../../.claude/settings.json)

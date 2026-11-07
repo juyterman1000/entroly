@@ -20,7 +20,6 @@ import json
 import os
 import socket
 import subprocess
-import tempfile
 import urllib.error
 import urllib.request
 from collections.abc import MutableMapping, Sequence
@@ -314,21 +313,12 @@ def _ensure_loopback_no_proxy(environ: MutableMapping[str, str]) -> None:
 
 
 def _runtime_dir(environ: MutableMapping[str, str] | dict[str, str]) -> Path:
+    from entroly.private_temp import writable_data_dir
+
     explicit = environ.get("ENTROLY_DIR")
-    candidates = [Path(explicit).expanduser()] if explicit else [
-        Path.home() / ".entroly",
-        Path(tempfile.gettempdir()) / "entroly",
-    ]
-    for candidate in candidates:
-        try:
-            candidate.mkdir(parents=True, exist_ok=True)
-            probe = candidate / ".copilot-write-probe"
-            probe.write_text("ok", encoding="utf-8")
-            probe.unlink(missing_ok=True)
-            return candidate
-        except OSError:
-            continue
-    return Path(tempfile.gettempdir()) / "entroly"
+    return writable_data_dir(
+        Path(explicit).expanduser() if explicit else Path.home() / ".entroly"
+    )
 
 
 def _port_is_occupied(port: int) -> bool:

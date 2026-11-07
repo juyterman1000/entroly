@@ -62,24 +62,12 @@ def _docker_image() -> str:
 # TTL-based pull caching: skip `docker pull` only when this exact image was
 # pulled recently and remains present locally.
 def _runtime_dir() -> Path:
+    from entroly.private_temp import writable_data_dir
+
     explicit = os.environ.get("ENTROLY_DIR")
-    candidates = [Path(explicit).expanduser()] if explicit else [
-        Path.home() / ".entroly",
-        Path(tempfile.gettempdir()) / "entroly",
-    ]
-    for candidate in candidates:
-        try:
-            candidate.mkdir(parents=True, exist_ok=True)
-            with tempfile.NamedTemporaryFile(
-                dir=candidate,
-                prefix=".write_probe-",
-                delete=True,
-            ):
-                pass
-            return candidate
-        except OSError:
-            continue
-    return Path(tempfile.gettempdir()) / "entroly"
+    return writable_data_dir(
+        Path(explicit).expanduser() if explicit else Path.home() / ".entroly"
+    )
 
 
 _PULL_CACHE_FILE = _runtime_dir() / ".last_pull.json"

@@ -15,7 +15,19 @@
         "hooks": [
           {
             "type": "command",
-            "command": "entroly ravs capture --stdin --quiet 2>/dev/null || true"
+            "command": "entroly ravs capture --stdin --host claude-code --quiet 2>/dev/null || true"
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "_comment": "Claude Code fires this, not PostToolUse, when a command exits non-zero. Without it no failure reaches RAVS.",
+        "matcher": "Bash|Read|Grep|Glob|Edit|Write|TodoWrite",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "entroly ravs capture --stdin --host claude-code --quiet 2>/dev/null || true"
           }
         ]
       }
@@ -37,7 +49,7 @@
       "Bash(entroly health)",
       "Bash(entroly digest)",
       "Bash(entroly ravs report)",
-      "Bash(entroly ravs capture --stdin --quiet 2>/dev/null || true)"
+      "Bash(entroly ravs capture --stdin --host claude-code --quiet 2>/dev/null || true)"
     ]
   }
 }

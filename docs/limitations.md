@@ -63,7 +63,10 @@ pricing changes.
 For live traffic, inspect response headers such as:
 
 - `X-Entroly-Action`
-- `X-Entroly-Outcome`
+- `X-Entroly-Outcome`: `optimized` when the request was sent smaller,
+  `context_added` when retrieved context made it larger, `modified` when it
+  changed at the same size, `observed` when it was forwarded unchanged, and
+  `passthrough` in bypass mode
 - `X-Entroly-Transform-Compliant`
 - `X-Entroly-Tokens-Saved-Pct`
 - `X-Entroly-Cache-Hit-Rate`

@@ -5289,6 +5289,81 @@ def _announce_session_protection_mode() -> None:
     )
 
 
+def _exit_for_signal(signum: int) -> None:
+    """Leave now, without waiting for the thread that reads stdin.
+
+    The stdio transport reads stdin on a worker thread and interpreter
+    shutdown joins it, so while stdin stays open -- a terminal, or a host that
+    signals before closing the pipe -- raising SystemExit or KeyboardInterrupt
+    left the server running: Ctrl-C did nothing until Enter was pressed and
+    then printed three tracebacks, and SIGTERM was logged but the process kept
+    its ports and watchers until stdin closed. State is persisted before this
+    is called; writes elsewhere are atomic, as they must be for SIGKILL.
+    """
+    import signal
+
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.flush()
+        except Exception:
+            pass
+    logging.shutdown()
+    if (
+        signum == signal.SIGINT
+        and os.name != "nt"
+        and threading.current_thread() is threading.main_thread()
+    ):
+        # Die by the signal, as Python does for an uncaught KeyboardInterrupt,
+        # so a shell loop around `entroly serve` stops on Ctrl-C as well.
+        # Handlers can only be reset from the main thread; elsewhere exit 130.
+        signal.signal(signal.SIGINT, signal.SIG_DFL)
+        os.kill(os.getpid(), signal.SIGINT)
+    os._exit(0 if signum == getattr(signal, "SIGTERM", None) else 130)
+
+
+def _watch_signals(stop) -> tuple | None:
+    """Act on SIGINT/SIGTERM from a thread that is awake to see them.
+
+    The kernel may deliver a process-directed signal to any thread that does
+    not block it, but Python runs signal handlers only on the main thread, and
+    an idle server's main thread sleeps in its event loop until a descriptor
+    is ready. A SIGTERM that landed on a worker thread was therefore never
+    acted on (seen once on CI; certain when sent to a worker directly). The
+    C-level handler writes every signal's number to the wakeup descriptor
+    from whichever thread received it, so a thread blocked on that socket
+    wakes for all of them. POSIX only; returns the socket pair to keep open.
+    """
+    import signal
+    import socket
+
+    if os.name == "nt" or threading.current_thread() is not threading.main_thread():
+        return None
+    reader, writer = socket.socketpair()
+    writer.setblocking(False)
+    try:
+        signal.set_wakeup_fd(writer.fileno(), warn_on_full_buffer=False)
+    except (ValueError, OSError):
+        reader.close()
+        writer.close()
+        return None
+    wanted = {int(signal.SIGINT), int(signal.SIGTERM)}
+
+    def _watch() -> None:
+        while True:
+            try:
+                received = reader.recv(64)
+            except OSError:
+                return
+            if not received:
+                return
+            for signum in received:
+                if signum in wanted:
+                    stop(signum)
+
+    threading.Thread(target=_watch, name="entroly-signal-watch", daemon=True).start()
+    return reader, writer
+
+
 def main():
     """Entry point for the entroly MCP server.
 
@@ -5313,13 +5388,20 @@ def main():
     except Exception:
         _version = "1.0.88"
     logger.info(f"Starting Entroly MCP server v{_version} ({engine_type} engine)")
-    mcp, engine = create_mcp_server()
 
-    # Graceful shutdown: persist learned state on exit
+    # Graceful shutdown: persist learned state on exit, and stop promptly on
+    # SIGINT/SIGTERM. Installed before the server is built so an early
+    # Ctrl-C is quiet too.
     import atexit
     import signal
 
+    shutdown: dict[str, Any] = {"engine": None, "persisted": False}
+
     def _shutdown_handler(*_args):
+        engine = shutdown["engine"]
+        if engine is None or shutdown["persisted"]:
+            return
+        shutdown["persisted"] = True
         logger.info("Shutdown signal received -- persisting state...")
         try:
             engine.checkpoint()
@@ -5327,11 +5409,26 @@ def main():
         except Exception as e:
             logger.warning(f"Failed to persist state on shutdown: {e}")
 
+    stopping = threading.Lock()
+
+    def _stop_now(signum, _frame=None):
+        # One signal reaches both the main-thread handler and the wakeup
+        # watcher below; whichever runs first stops the server.
+        if not stopping.acquire(blocking=False):
+            return
+        _shutdown_handler()
+        _exit_for_signal(signum)
+
+    for _name in ("SIGINT", "SIGTERM"):
+        try:
+            signal.signal(getattr(signal, _name), _stop_now)
+        except (OSError, AttributeError, ValueError):
+            pass  # unavailable on this platform, or not the main thread
+    shutdown["signal_watch"] = _watch_signals(_stop_now)
+
+    mcp, engine = create_mcp_server()
+    shutdown["engine"] = engine
     atexit.register(_shutdown_handler)
-    try:
-        signal.signal(signal.SIGTERM, lambda s, f: (_shutdown_handler(), sys.exit(0)))
-    except (OSError, AttributeError):
-        pass  # SIGTERM not available on Windows
 
     # Startup services run concurrently so MCP clients are not blocked by
     # the pure-Python fallback's initial project indexing pass.

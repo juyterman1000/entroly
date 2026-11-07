@@ -315,28 +315,15 @@ class ValueTracker:
         by older launch paths could also race across processes, so use a unique
         temporary file for the writeability check.
         """
-        explicit = os.environ.get("ENTROLY_DIR")
-        candidates = [Path(explicit).expanduser()] if explicit else [
-            Path.home() / ".entroly",
-            Path(tempfile.gettempdir()) / "entroly",
-        ]
-        for candidate in candidates:
-            try:
-                candidate.mkdir(parents=True, exist_ok=True)
-                with tempfile.NamedTemporaryFile(
-                    dir=candidate,
-                    prefix=".write_probe-",
-                    delete=True,
-                ):
-                    pass
-                return candidate
-            except OSError:
-                continue
+        from entroly.private_temp import writable_data_dir
 
-        # Keep the final path deterministic.  ``__init__`` will still fail
-        # loudly if even the OS temporary directory is unusable; silently
-        # discarding telemetry would be worse than an actionable error there.
-        return Path(tempfile.gettempdir()) / "entroly"
+        explicit = os.environ.get("ENTROLY_DIR")
+        # When nothing is writable this returns the preferred path unchecked,
+        # so ``__init__`` still fails loudly: silently discarding telemetry
+        # would be worse than an actionable error there.
+        return writable_data_dir(
+            Path(explicit).expanduser() if explicit else Path.home() / ".entroly"
+        )
 
     def __init__(self, data_dir: Path | None = None):
         self._dir = data_dir or self._default_dir()
@@ -597,6 +584,11 @@ class ValueTracker:
                 "provider_requests_optimized": 0,
                 "provider_unpriced_tokens": 0,
                 "provider_unpriced_requests": 0,
+                # A provider-bound request the proxy forwarded larger than it
+                # arrived (retrieved context added). The saving above is
+                # clamped at zero, so without these the growth was invisible.
+                "provider_tokens_added": 0,
+                "provider_requests_enlarged": 0,
                 "local_tokens_reduced": 0,
                 "local_operations": 0,
                 "unclassified_tokens_reduced": 0,
@@ -1000,8 +992,14 @@ class ValueTracker:
         coverage_pct: float = 0.0,
         confidence: float = 0.0,
         source: str = "unclassified",
+        tokens_added: int = 0,
     ) -> None:
-        """Record value without letting optional telemetry block the caller."""
+        """Record value without letting optional telemetry block the caller.
+
+        ``tokens_added`` is how much larger a provider-bound request was sent
+        than it arrived. It is recorded beside ``tokens_saved`` rather than
+        netted into it, so both directions stay inspectable.
+        """
         try:
             self._record_with_lock(
                 tokens_saved=tokens_saved,
@@ -1011,6 +1009,7 @@ class ValueTracker:
                 coverage_pct=coverage_pct,
                 confidence=confidence,
                 source=source,
+                tokens_added=tokens_added,
             )
         except TimeoutError as error:
             # Dropping beats blocking a user's request on telemetry, so the
@@ -1035,6 +1034,7 @@ class ValueTracker:
         coverage_pct: float = 0.0,
         confidence: float = 0.0,
         source: str = "unclassified",
+        tokens_added: int = 0,
     ) -> None:
         """Process-safe record implementation.
 
@@ -1044,6 +1044,7 @@ class ValueTracker:
         tracker cannot prove their output was sent to a paid provider.
         """
         tokens_saved = self._nonnegative_int(tokens_saved)
+        tokens_added = self._nonnegative_int(tokens_added)
         duplicates = self._nonnegative_int(duplicates)
         confidence = self._finite_float(confidence, maximum=1.0)
         coverage_pct = self._finite_float(coverage_pct, maximum=100.0)
@@ -1076,6 +1077,13 @@ class ValueTracker:
                 lt["provider_requests"] += 1
                 if optimized:
                     lt["provider_requests_optimized"] += 1
+                if tokens_added:
+                    lt["provider_tokens_added"] = (
+                        int(lt.get("provider_tokens_added", 0) or 0) + tokens_added
+                    )
+                    lt["provider_requests_enlarged"] = (
+                        int(lt.get("provider_requests_enlarged", 0) or 0) + 1
+                    )
                 if not provider_priced:
                     lt["provider_unpriced_tokens"] += tokens_saved
                     lt["provider_unpriced_requests"] += 1
@@ -1127,8 +1135,12 @@ class ValueTracker:
             self._activity.append({
                 "ts": round(now, 3),
                 "kind": "optimize",
-                "summary": (f"Optimized request: saved {tokens_saved:,} "
-                            f"tokens" + (f" ({model})" if model else "")),
+                "summary": (
+                    (f"Request enlarged: added {tokens_added:,} tokens"
+                     if tokens_added else
+                     f"Optimized request: saved {tokens_saved:,} tokens")
+                    + (f" ({model})" if model else "")
+                ),
                 "tokens_saved": int(tokens_saved),
                 "cost_saved_usd": round(cost if channel == "provider" else 0.0, 6),
                 "modeled_cost_avoided_usd": round(
@@ -1322,6 +1334,15 @@ class ValueTracker:
                 "input_tokens_reduced": int(
                     lifetime.get("provider_tokens_saved", 0) or 0
                 ),
+                "requests_enlarged": int(
+                    lifetime.get("provider_requests_enlarged", 0) or 0
+                ),
+                "input_tokens_added": int(
+                    lifetime.get("provider_tokens_added", 0) or 0
+                ),
+                "net_input_tokens_reduced": int(
+                    lifetime.get("provider_tokens_saved", 0) or 0
+                ) - int(lifetime.get("provider_tokens_added", 0) or 0),
                 "modeled_input_cost_avoided_usd": round(
                     float(lifetime.get("provider_cost_avoided_usd", 0.0) or 0.0),
                     6,
@@ -1335,9 +1356,12 @@ class ValueTracker:
                 ),
                 "evidence": (
                     "Pre/post local token counts on requests Entroly handled "
-                    "on a provider-bound proxy path. Dollar value applies the "
-                    "recorded model's configured input rate; it is not an invoice. "
-                    "Requests without an explicit catalog match remain unpriced."
+                    "on a provider-bound proxy path. Requests Entroly sent "
+                    "larger (retrieved context added) count toward "
+                    "input_tokens_added, not as optimized. Dollar value applies "
+                    "the recorded model's configured input rate to reductions "
+                    "only; it is not an invoice. Requests without an explicit "
+                    "catalog match remain unpriced."
                 ),
             },
             "local_operations": {
