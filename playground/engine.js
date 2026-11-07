@@ -513,6 +513,26 @@ document.addEventListener('DOMContentLoaded', () => {
       statusBox.textContent = `Error: ${err.message}. Using mock files.`;
     }
   });
+
+  // Hand-offs from the browser extension. Its GitHub button opens
+  // ?repo=owner/name and its "Compress Selection" menu opens #text=<selection>;
+  // neither was read, so both landed on the default sample. The selection
+  // comes in the fragment, which the browser never sends to a server.
+  const params = new URLSearchParams(window.location.search);
+  const handedRepo = params.get('repo');
+  if (handedRepo && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(handedRepo) && !handedRepo.includes('..')) {
+    document.getElementById('githubRepoInput').value = handedRepo;
+    fetchGithubBtn.click();
+  }
+  const fragment = new URLSearchParams(window.location.hash.slice(1));
+  const handedText = fragment.get('text');
+  if (handedText) {
+    currentCorpus = [{ path: fragment.get('name') || 'selection.txt', content: handedText }];
+    // Drop the selection from the address bar and from this history entry.
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+    updateCorpusSummary();
+    runOptimization();
+  }
 });
 
 // Custom Files Support

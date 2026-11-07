@@ -5,6 +5,142 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
 
 ## Unreleased
 
+- Claude Code integration fixes.
+  - The RAVS capture hook recorded no outcome from Claude Code. Claude Code puts
+    no exit code in a Bash hook payload: it fires `PostToolUse` only after exit
+    0 and `PostToolUseFailure` after a non-zero exit, whose `error` opens with
+    `Exit code N`. Capture now reads both, inferring exit 0 from `PostToolUse`
+    only under `--host claude-code`, and the session journal records a failing
+    command as `exit:N` rather than "ok".
+  - `entroly ravs hook install --claude-code` now registers `PostToolUseFailure`
+    too, with `--host claude-code` on the command. Re-run it to upgrade an
+    existing registration in place; the cookbook snippet and this repository's
+    `.claude/settings.json` are updated the same way.
+  - `entroly uninstall` removes those hooks before running pip. They name this
+    installation's `entroly` by absolute path, so once pip deleted it every Bash
+    call in Claude Code showed a hook error.
+  - When every plugin runner failed, the plugin said "no runner found. Install
+    uv ... or Node" even when `entroly` was installed and broken, and dropped the
+    real error. It now names the failing runner, its exit status and the last
+    line of its error, with a separate message when nothing is installed.
+    A broken install that exits before reading the hook payload is reported
+    by its exit status, not by the incidental `EPIPE`.
+  - The capture hook's `entroly` path is written as one word for bash, which
+    Claude Code runs hooks with (Git Bash on Windows). A path containing a
+    space split into words, and on Windows bash removed every backslash, so
+    the hook failed on every Bash tool call. Re-run
+    `entroly ravs hook install --claude-code` to rewrite an existing hook.
+- `entroly hook install` no longer edits shell startup files. The block it
+  appended compressed nothing (its functions set a variable nothing read),
+  replaced any existing bash `DEBUG` trap, and could not be removed:
+  `entroly hook uninstall` failed with "takes 0 positional arguments". Install
+  now changes nothing and points at `entroly shrink -- <command>`, which does
+  compress command output; uninstall removes an existing block byte for byte;
+  status lists each shell config file.
+- First-run fixes from a clean-room run of `pip install entroly`, then
+  `verify-claims`, `simulate` and `entroly go`, on pallets/click.
+  - `.entroly/` now ignores itself with its own `.gitignore` (as `.pytest_cache`
+    does). `entroly go` fills it with one generated summary per source file, and
+    the first `git add -A` afterwards committed all 172 of them.
+  - `verify-claims` says when relevance ranking is off. Without `entroly-core`
+    every check read green while selection ignored the query; the result now
+    states that the savings figure is budget arithmetic and how to fix it.
+  - `verify-claims`, `simulate`, `perf` and `demo` share one file cap (120), so
+    two local checks on the same repository no longer report 114 and 94 files.
+  - `simulate` prints its limitations one per line.
+  - `entroly go` gives each client family its own base URL:
+    `ANTHROPIC_BASE_URL=http://localhost:9377` for the Anthropic SDK and Claude
+    Code, and `.../v1` only for OpenAI-compatible SDKs. The single `/v1` URL it
+    printed made Anthropic clients call `/v1/v1/messages`, which returned 404.
+  - A default start no longer warns that auto-recovery will not cover
+    streaming. Both settings involved are defaults; `/stats` still reports it,
+    and the warning remains for an explicit `ENTROLY_AUTO_RECOVERY`.
+  - `entroly daemon` honours `ENTROLY_PROXY_PORT` and `ENTROLY_DASHBOARD_PORT`,
+    as `entroly proxy` documents. It hard-coded 9377 and 9378, so with the
+    proxy moved to another port it still tried to bind the old one.
+  - `entroly learn --json` prints JSON. Without `--history` it printed its
+    human report, which no JSON consumer can parse.
+- Surfaces that printed figures nobody measured now show measured values or
+  say they have none.
+  - VS Code: the compress commands computed a fixed 72% saving, copied the first
+    1,200 characters under a made-up "Merkle Receipt ... (Verified 0-1
+    Knapsack)" line, and "View Cryptographic Receipt" showed every user the same
+    hardcoded receipt, whose "Merkle Root" was the SHA-256 of the empty string.
+    The commands now run `entroly compress` on what the editor shows and display
+    that receipt; without the CLI they say so and show no figures.
+  - Entroly Desktop (`ui/`): counters started at 1,428,500 tokens and $14.28 and
+    never changed, the header said "DAEMON :9377 ACTIVE" while offline, and the
+    compression preview showed ~78% saved for any text. Counters now show "—"
+    until `/api/stats` reports a value, offline says offline, and the preview is
+    labelled an illustration and reports what its rules removed.
+  - The "Add Entroly to Cursor" links installed `entroly-mcp@1.0.84`: the pin
+    sits base64-encoded inside the link, where no version check could see it.
+    They now install the current release; the staleness checker decodes these
+    links and the bump script re-pins them.
+  - Browser extension: "Compress Selection with Entroly" stored the selection
+    where the playground could never read it, and the GitHub button's `?repo=`
+    was ignored. The selection now travels in the URL fragment (never sent to a
+    server) and the playground loads both.
+- A fail-closed `assure_context` now says what it could not verify. It raised
+  only "context assurance failed closed: uncertain"; the error now lists each
+  check that did not pass and, for the token budget, whether tiktoken or only
+  its cached `o200k_base` encoding is missing, with the command that caches it.
+- Documentation that failed when copied: the README's first SDK example raised
+  `NameError`; the Copilot CLI setup used a `--client copilot` the CLI rejects
+  (it now shows Copilot's own `/mcp add`); `entroly attach create` was missing
+  its required `--client`; and `entroly audit --taint` lacked the session
+  chain it needs.
+- Responses through `entroly proxy` keep the provider's own metadata.
+  - Request ids (`request-id`, `x-request-id`) and rate-limit and retry headers
+    (`anthropic-ratelimit-*`, `x-ratelimit-*`, `retry-after`) reach the client;
+    every one was dropped, so the SDKs' `_request_id` was `None`.
+  - A 429 or a final 5xx on the buffered path is the provider's body and
+    headers, not the proxy's own JSON, so clients can tell `overloaded_error`
+    from `rate_limit_error` again. The retry policy is unchanged.
+  - Other provider endpoints (`count_tokens`, the model list, files, audio)
+    pass through with their headers, and non-JSON bodies arrive byte for byte
+    instead of wrapped as `{"data": ...}` text.
+- Requests the proxy made larger are reported as larger. Appending retrieved
+  context turned a 15-token "Say hello" into 674 tokens, yet `entroly value`
+  counted it as optimized and the `X-Entroly-Outcome` header said
+  `optimized`. Value now reports `requests_enlarged`, `input_tokens_added` and
+  `net_input_tokens_reduced` beside the saving, and the header says
+  `context_added`, `modified` or `observed` unless the request was sent smaller.
+- Response distillation no longer leaves broken text: "I hope this helps!"
+  ended an answer in a bare "I", and removing a hedge at the start of a
+  sentence left it in lower case.
+- The npm MCP server (`entroly serve` after `npm install -g entroly`, and
+  `npx entroly-wasm --serve`) now answers newline-delimited requests with
+  newline-delimited JSON, as the MCP stdio transport specifies. It always
+  replied with `Content-Length` frames, which the official MCP clients cannot
+  parse ("Unexpected token 'C'"), so an editor configured by `entroly init`
+  never completed the handshake. Clients that send `Content-Length` frames
+  still get them back. Its `scan_for_vulnerabilities` tool now scans the code
+  it is given; it looked up a stored fragment named by `source` instead and
+  answered "Fragment not found" to every call.
+- The Python MCP tools `shared_memory_list` and `learn_from_failures` no longer
+  fail on every call. Each passed its backend an argument the backend did not
+  accept (`tag`, `sources`); the store now filters by tag and the miner reads
+  the sources asked for.
+- `entroly serve` now stops on Ctrl-C and SIGTERM while its stdin is still
+  open. In a terminal, Ctrl-C was ignored until Enter was pressed and then
+  printed three tracebacks; when a host kept stdin open, SIGTERM was logged but
+  the server kept running, holding its dashboard port and file watchers. State
+  is still persisted before it exits.
+- With a HOME it cannot write, Entroly now keeps its data in a directory only
+  the current account can open (`<tmp>/entroly-<uid>`, mode 0700) instead of
+  the shared `<tmp>/entroly`. `verify-claims` and `simulate` failed with
+  "Permission denied: '/tmp/entroly/checkpoints'" once another account had
+  used the shared name, and an account that created it world-writable decided
+  where everyone else's checkpoints and telemetry went. A per-account path
+  that is not a private directory owned by the current account is refused with
+  a message naming `ENTROLY_DIR`. Data previously kept under `/tmp/entroly` is
+  not carried over.
+- Two Entroly processes in one project (proxy, MCP server, CLI) no longer
+  corrupt its persisted index. Every writer staged in the same
+  `index.json.gz.tmp`, so concurrent saves produced index files that would not
+  load ("Failed to load persistent index") and forced a full re-index.
+
 - With session rescue off, shell tool output of at most 4,000 characters is
   forwarded verbatim (`ENTROLY_SHELL_VERBATIM_CHARS`, `ENTROLY_SHELL_TOOLS`);
   a 30-file `ls -l` had been rewritten with sizes rounded to "1KB" and modes

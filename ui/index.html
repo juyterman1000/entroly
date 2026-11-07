@@ -53,11 +53,11 @@
         <div class="status-cluster">
           <div id="statusPill" class="status-pill">
             <span class="status-dot"></span>
-            <span id="statusText">DAEMON :9377 ACTIVE</span>
+            <span id="statusText">DAEMON OFFLINE</span>
           </div>
           <div class="status-pill">
             <span class="status-dot" style="background:var(--cyan-400); box-shadow:0 0 10px var(--cyan-400);"></span>
-            <span id="latencyText" class="latency-pill">0.22ms p95</span>
+            <span id="latencyText" class="latency-pill">—</span>
           </div>
         </div>
       </div>
@@ -65,11 +65,11 @@
       <div class="topbar-center">
         <div class="hud-counter">
           <span class="hud-counter-label">Banked Value</span>
-          <span id="topBankedUsd" class="hud-counter-value" style="color:var(--emerald-400)">$14.28</span>
+          <span id="topBankedUsd" class="hud-counter-value" style="color:var(--emerald-400)">—</span>
         </div>
         <div class="hud-counter">
           <span class="hud-counter-label">Tokens Pruned</span>
-          <span id="topTokensPruned" class="hud-counter-value">1,428,500</span>
+          <span id="topTokensPruned" class="hud-counter-value">—</span>
         </div>
         <div class="hud-counter">
           <span class="hud-counter-label">Active Receipts</span>
@@ -369,7 +369,7 @@
               <div>
                 <h2 class="workbench-title">Context Compression & AST Scaffold Workbench</h2>
                 <p style="font-size:12px; color:var(--text-muted); margin-top:2px;">
-                  Real-time side-by-side verification: raw intercepted context vs reversible CSE scaffold. Type or paste your own code below to test live!
+                  Illustration: a few fixed rules in this page strike through boilerplate in the samples. It is not Entroly's engine and verifies nothing; for a measured, recoverable result run <code>entroly compress &lt;file&gt;</code>.
                 </p>
               </div>
               <div class="controls-cluster">
@@ -381,7 +381,7 @@
                   <input type="range" id="budgetSlider" class="budget-slider" min="4000" max="128000" step="4000" value="32000">
                 </div>
                 <button id="btnCompress" class="btn-action">
-                  <span>⚡ Run Live Simulation</span>
+                  <span>⚡ Run illustration</span>
                 </button>
               </div>
             </div>
@@ -406,7 +406,7 @@
                     <span>Raw Input Context</span>
                   </div>
                   <div class="diff-stat-badge">
-                    <span id="originalCount">184,200</span> tokens
+                    <span id="originalCount">—</span> tokens
                   </div>
                 </div>
                 <textarea id="inputEditor" class="editor-textarea" spellcheck="false"></textarea>
@@ -420,8 +420,8 @@
                     <span>Reversibly Compressed Scaffold</span>
                   </div>
                   <div class="diff-stat-badge stat-emerald">
-                    <span id="compressedCount">12,450</span> tokens
-                    <span id="savingsRatio" class="diff-ratio-pill">93.2% saved</span>
+                    <span id="compressedCount">—</span> tokens
+                    <span id="savingsRatio" class="diff-ratio-pill">—</span>
                   </div>
                 </div>
                 <div id="outputPreview" class="editor-textarea code-display"></div>

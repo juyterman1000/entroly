@@ -162,7 +162,7 @@ only optional workspace, offline, provider, and proxy settings.
 | **"I have an API key and my own app."** *(proxy user)* | `entroly proxy` → point `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` / `GOOGLE_GEMINI_BASE_URL` at `localhost:9377` | Requests sent through the proxy are eligible for optimization; inspect receipts and provider-observed usage after a real request |
 
 Cursor MCP users can also use this one-click install link (no marketplace
-account required): [Add Entroly to Cursor](cursor://anysphere.cursor-deeplink/mcp/install?name=entroly&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImVudHJvbHktbWNwQDEuMC44NCIsInNlcnZlIl0sImVudiI6eyJFTlRST0xZX05PX0RPQ0tFUiI6IjEiLCJFTlRST0xZX01DUF9QQVNTSVZFIjoiMSIsIkVOVFJPTFlfTUNQX1BST0ZJTEUiOiJwdWJsaWMiLCJFTlRST0xZX01BWF9GSUxFUyI6IjIwMCJ9fQ).
+account required): [Add Entroly to Cursor](cursor://anysphere.cursor-deeplink/mcp/install?name=entroly&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImVudHJvbHktbWNwQDEuMC44OCIsInNlcnZlIl0sImVudiI6eyJFTlRST0xZX05PX0RPQ0tFUiI6IjEiLCJFTlRST0xZX01DUF9QQVNTSVZFIjoiMSIsIkVOVFJPTFlfTUNQX1BST0ZJTEUiOiJwdWJsaWMiLCJFTlRST0xZX01BWF9GSUxFUyI6IjIwMCJ9fQ).
 
 <sub>**Runaway-session rescue — automatic on the proxy, callable everywhere else.**
 When a long agent session approaches the provider's context limit, bulky tool
@@ -182,10 +182,20 @@ can prove it — `entroly verify-claims` and `entroly simulate` show real
 numbers on your own repo before you connect a paid key.
 
 ```python
+import json
 from entroly import compress, compress_messages, optimize
-compressed = compress(api_response, budget=2000)
-messages   = compress_messages(messages, budget=30000)
-context    = optimize(fragments, budget=8000, query="fix the login bug")
+
+api_response = json.dumps({"items": [{"id": i, "status": "ok"} for i in range(500)]})
+compressed = compress(api_response, budget=2000)   # text in, text out
+messages = compress_messages(
+    [{"role": "user", "content": "build log:\n" + "step ok\n" * 3000},
+     {"role": "user", "content": "Why did the login test fail?"}],
+    budget=30000,
+)
+context = optimize(
+    [{"content": "def login(user):\n    return check(user)\n", "source": "auth.py"}],
+    budget=8000, query="fix the login bug",
+)
 ```
 
 ```bash
@@ -227,9 +237,9 @@ Not mocked recordings — each video is rendered from a checked-in command that
 verifies its source artifact before printing a number.
 
 <p align="center">
-  <a href="docs/assets/proof_local.mp4"><img src="docs/assets/proof_local.gif" width="700" alt="Entroly local verification: twelve checks pass without an API key"></a>
+  <a href="docs/assets/proof_local.mp4"><img src="docs/assets/proof_local.gif" width="700" alt="Entroly local verification: every local check passes without an API key"></a>
 </p>
-<p align="center"><code>entroly verify-claims</code> — import, compression, receipts, WITNESS checks, recovery, proxy routing, replay. No API key.</p>
+<p align="center"><code>entroly verify-claims</code> — SDK import and compression, local indexing, budget-bounded selection, exact recovery, run offline. No API key.</p>
 <p align="center">
   <a href="docs/assets/proof_model_recovery.mp4"><img src="docs/assets/proof_model_recovery.gif" width="700" alt="Frozen model-recovery holdout: Entroly 24/24, published baseline 18/24"></a>
 </p>
@@ -575,16 +585,17 @@ results = shared_memory_search("authentication tokens")  # finds it, from any ag
 
 ### Output token reduction
 
-Three-layer pipeline: effort classification steers verbosity directives, `max_tokens` budgets cap generation, and post-generation distillation trims filler. A "yes/no" query gets 150 max tokens; a detailed architecture review gets 16,384.
+Through the proxy, post-generation distillation trims filler from answers (on by default; `ENTROLY_DISTILL=0` turns it off). Effort budgets are yours to apply: `entroly.sdk.classify_effort()` and `steer_output()`, and the `steer_output` MCP tool, return a verbosity directive and a `max_tokens` budget (150 for a "yes/no" question, 16,384 for a detailed architecture review). The proxy does not set `max_tokens` on your requests.
 
-### Shell hook compression
+### Shell output compression
 
-Command-specific patterns for git, npm, cargo, docker, pytest, kubectl, and terraform strip progress bars, deprecation warnings, and boilerplate while preserving errors and key results. Full output is recoverable via content-addressed handles.
+Command-specific patterns for git, npm, cargo, docker, pytest, kubectl, and terraform strip progress bars, deprecation warnings, and boilerplate while preserving errors and key results. Run a command through it, and the full output stays recoverable through a content-addressed handle:
 
 ```bash
-entroly hook install     # adds transparent compression to your shell
-entroly hook status      # shows which shells have the hook
+entroly shrink -- pytest -q
 ```
+
+`entroly hook install` in earlier versions appended a block to your shell config that compressed nothing and, in bash, replaced any existing `DEBUG` trap. It now installs nothing; `entroly hook uninstall` removes a block an earlier version added, and `entroly hook status` shows where one remains.
 
 ### Failure mining
 

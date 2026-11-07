@@ -286,6 +286,14 @@ def _add_tools_and_runtime_commands(subparsers) -> None:
         "--log", type=str, default=None,
         help="Override RAVS event log path",
     )
+    ravs_capture_parser.add_argument(
+        "--host", type=str, default=None, choices=["claude-code"],
+        help=(
+            "Host whose event semantics the stdin payload follows. "
+            "claude-code: PostToolUse means exit 0 (written by "
+            "`entroly ravs hook install`, which also registers the failure event)"
+        ),
+    )
 
     # entroly ravs hook — install/manage PostToolUse hooks
     ravs_hook_parser = ravs_subparsers.add_parser(
@@ -335,8 +343,14 @@ def _add_tools_and_runtime_commands(subparsers) -> None:
         "daemon",
         help="Start unified supervisor (proxy + dashboard + MCP + learning)",
     )
-    daemon_parser.add_argument("--proxy-port", type=int, default=9377, help="Proxy port")
-    daemon_parser.add_argument("--dashboard-port", type=int, default=9378, help="Dashboard port")
+    daemon_parser.add_argument(
+        "--proxy-port", type=int, default=None,
+        help="Proxy port (default: 9377, or ENTROLY_PROXY_PORT)",
+    )
+    daemon_parser.add_argument(
+        "--dashboard-port", type=int, default=None,
+        help="Dashboard port (default: 9378, or ENTROLY_DASHBOARD_PORT)",
+    )
     daemon_parser.add_argument("--mcp-port", type=int, default=9379, help="MCP (SSE) port")
     daemon_parser.add_argument("--host", type=str, default="127.0.0.1", help="Bind host")
     daemon_parser.add_argument("--no-proxy", action="store_true", help="Skip proxy server")

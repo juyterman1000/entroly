@@ -245,7 +245,7 @@ number.
 ### 1. The installed path works — without an API key
 
 <p align="center">
-  <a href="assets/proof_local.mp4"><img src="assets/proof_local.gif" width="900" alt="Entroly local verification: twelve checks pass without an API key"></a>
+  <a href="assets/proof_local.mp4"><img src="assets/proof_local.gif" width="900" alt="Entroly local verification: every local check passes without an API key"></a>
 </p>
 
 ```bash

@@ -55,10 +55,14 @@ Entroly supports two different Copilot CLI use cases and keeps them separate.
 
 ### Signed-in subscription session: MCP attachment
 
-Use Entroly as an MCP server while Copilot continues to own its hosted model session:
+Use Entroly as an MCP server while Copilot continues to own its hosted model session. `entroly attach create` has no Copilot target (it accepts `claude`, `codex` and `openclaw`), so register the server with Copilot CLI's own MCP setup: run `/mcp add` in interactive mode, choose **Local**, and enter the command `entroly`; or add it to `~/.copilot/mcp-config.json`:
 
-```bash
-entroly attach create --client copilot --project . --ttl 4h --install
+```json
+{
+  "mcpServers": {
+    "entroly": { "type": "local", "command": "entroly", "args": [], "env": {}, "tools": ["*"] }
+  }
+}
 ```
 
 This path can provide scoped context selection, Context Receipts, exact recovery, and verification tools. It does not claim that Copilot's hosted inference request passed through the Entroly proxy.

@@ -6,14 +6,13 @@ before it reaches the LLM and compresses it using command-specific patterns that
 preserve errors, warnings, and salient information while stripping progress bars,
 verbose logs, and repeated boilerplate.
 
-Installation:
-    entroly hook install     # adds hook to ~/.bashrc / ~/.zshrc / ~/.config/fish
-    entroly hook uninstall   # removes it
-    entroly hook status      # shows current hook state
+Compression runs through `entroly shrink -- <command>`, which applies the
+patterns below and stores the full output behind a recovery handle.
 
-The hook works by wrapping command output through `entroly shrink` which applies
-pattern-based compression. The compressed output includes a recovery handle so
-the full output can be retrieved on demand.
+`entroly hook install` used to append a shell block that compressed nothing
+(see `install_hook`); it now changes nothing and says so.
+    entroly hook uninstall   # removes a block an earlier version installed
+    entroly hook status      # shows which shell configs still contain one
 """
 
 from __future__ import annotations
@@ -373,51 +372,57 @@ def _detect_shell_configs() -> list[Path]:
 
 
 def install_hook(shell: str | None = None) -> list[str]:
-    """Install the Entroly shell hook. Returns list of modified files."""
+    """Install nothing, and return no modified files.
+
+    The block this used to append only set and unset ``ENTROLY_LAST_CMD``,
+    which nothing reads, so it compressed no output; and in bash it ran
+    ``trap ... DEBUG``, replacing any DEBUG trap the user already had (the
+    mechanism bash-preexec and similar tools rely on). Output compression is
+    available through ``entroly shrink -- <command>``. Kept so callers of the
+    old API get an empty result rather than an AttributeError.
+    """
+    del shell
+    return []
+
+
+def _shell_matches(config: Path, shell: str | None) -> bool:
+    return shell is None or shell in config.name
+
+
+def uninstall_hook(shell: str | None = None) -> list[str]:
+    """Remove a previously installed hook. Returns the files modified.
+
+    ``shell`` limits removal to that shell's config, as ``--shell`` does on
+    the command line (the CLI passed it, and this function used to take no
+    argument, so every uninstall failed). The exact text the old installer
+    appended is removed first, which restores the file byte for byte; a
+    block that was edited by hand is removed between its markers.
+    """
     modified = []
-    configs = _detect_shell_configs()
-
-    for config in configs:
-        name = config.name
-        content = config.read_text(encoding="utf-8")
-
-        if HOOK_MARKER_START in content:
-            continue  # already installed
-
-        if shell and shell not in name:
+    for config in _detect_shell_configs():
+        if not _shell_matches(config, shell):
             continue
-
-        if "fish" in name:
-            hook = FISH_HOOK
-        elif "zsh" in name:
-            hook = ZSH_HOOK
-        else:
-            hook = BASH_HOOK
-
-        config.write_text(content + "\n" + hook, encoding="utf-8")
-        modified.append(str(config))
-
-    return modified
-
-
-def uninstall_hook() -> list[str]:
-    """Remove the Entroly shell hook. Returns list of modified files."""
-    modified = []
-    configs = _detect_shell_configs()
-
-    for config in configs:
         content = config.read_text(encoding="utf-8")
         if HOOK_MARKER_START not in content:
             continue
 
-        # Remove everything between markers (inclusive)
-        start = content.find(HOOK_MARKER_START)
-        end = content.find(HOOK_MARKER_END)
-        if start >= 0 and end >= 0:
+        new_content = None
+        for hook in (BASH_HOOK, ZSH_HOOK, FISH_HOOK):
+            appended = "\n" + hook
+            if appended in content:
+                new_content = content.replace(appended, "", 1)
+                break
+        if new_content is None:
+            start = content.find(HOOK_MARKER_START)
+            end = content.find(HOOK_MARKER_END, start)
+            if start < 0 or end < 0:
+                continue
             end += len(HOOK_MARKER_END)
-            new_content = content[:start].rstrip("\n") + content[end:].lstrip("\n")
-            config.write_text(new_content, encoding="utf-8")
-            modified.append(str(config))
+            before = content[:start].rstrip("\n")
+            after = content[end:].lstrip("\n")
+            new_content = before + ("\n" if before else "") + after
+        config.write_text(new_content, encoding="utf-8")
+        modified.append(str(config))
 
     return modified
 
