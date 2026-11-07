@@ -37,7 +37,7 @@
     "commands": [
       {
         "command": "entroly.compressSelection",
-        "title": "Entroly: Compress Selection into Optimal Context",
+        "title": "Entroly: Compress Selection",
         "category": "Entroly"
       },
       {
@@ -47,7 +47,7 @@
       },
       {
         "command": "entroly.viewReceipt",
-        "title": "Entroly: Inspect Cryptographic Merkle Receipt",
+        "title": "Entroly: View Last Compress Receipt",
         "category": "Entroly"
       },
       {
@@ -71,7 +71,7 @@
         "entroly.tokenBudget": {
           "type": "number",
           "default": 450,
-          "description": "Default target token budget for knapsack selection"
+          "description": "Token budget shown beside the status bar token count"
         },
         "entroly.showStatusBarTokens": {
           "type": "boolean",
@@ -81,7 +81,7 @@
         "entroly.useCliIfAvailable": {
           "type": "boolean",
           "default": true,
-          "description": "Use local 'entroly' CLI / MCP server if installed on the host"
+          "description": "Run the local 'entroly compress' CLI for the compress commands. They have no other implementation, so when this is off they only say so."
         },
         "entroly.syncUnsavedBuffers": {
           "type": "boolean",
