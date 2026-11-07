@@ -28,6 +28,36 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
     proxy moved to another port it still tried to bind the old one.
   - `entroly learn --json` prints JSON. Without `--history` it printed its
     human report, which no JSON consumer can parse.
+- Surfaces that printed figures nobody measured now show measured values or
+  say they have none.
+  - VS Code: the compress commands computed a fixed 72% saving, copied the first
+    1,200 characters under a made-up "Merkle Receipt ... (Verified 0-1
+    Knapsack)" line, and "View Cryptographic Receipt" showed every user the same
+    hardcoded receipt, whose "Merkle Root" was the SHA-256 of the empty string.
+    The commands now run `entroly compress` on what the editor shows and display
+    that receipt; without the CLI they say so and show no figures.
+  - Entroly Desktop (`ui/`): counters started at 1,428,500 tokens and $14.28 and
+    never changed, the header said "DAEMON :9377 ACTIVE" while offline, and the
+    compression preview showed ~78% saved for any text. Counters now show "—"
+    until `/api/stats` reports a value, offline says offline, and the preview is
+    labelled an illustration and reports what its rules removed.
+  - The "Add Entroly to Cursor" links installed `entroly-mcp@1.0.84`: the pin
+    sits base64-encoded inside the link, where no version check could see it.
+    They now install the current release; the staleness checker decodes these
+    links and the bump script re-pins them.
+  - Browser extension: "Compress Selection with Entroly" stored the selection
+    where the playground could never read it, and the GitHub button's `?repo=`
+    was ignored. The selection now travels in the URL fragment (never sent to a
+    server) and the playground loads both.
+- A fail-closed `assure_context` now says what it could not verify. It raised
+  only "context assurance failed closed: uncertain"; the error now lists each
+  check that did not pass and, for the token budget, whether tiktoken or only
+  its cached `o200k_base` encoding is missing, with the command that caches it.
+- Documentation that failed when copied: the README's first SDK example raised
+  `NameError`; the Copilot CLI setup used a `--client copilot` the CLI rejects
+  (it now shows Copilot's own `/mcp add`); `entroly attach create` was missing
+  its required `--client`; and `entroly audit --taint` lacked the session
+  chain it needs.
 - Responses through `entroly proxy` keep the provider's own metadata.
   - Request ids (`request-id`, `x-request-id`) and rate-limit and retry headers
     (`anthropic-ratelimit-*`, `x-ratelimit-*`, `retry-after`) reach the client;

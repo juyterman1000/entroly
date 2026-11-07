@@ -55,9 +55,54 @@ class HardObligation:
         object.__setattr__(self, "carriers", tuple(sorted(self.carriers)))
 
 
+def _unverified_reasons(certificate: Mapping[str, Any]) -> list[str]:
+    """What in a certificate kept it from passing, in a user's words."""
+    reasons: list[str] = []
+    structural = certificate.get("structural_assurance") or {}
+    for name, status in sorted((structural.get("checks") or {}).items()):
+        if status != "passed":
+            reasons.append(f"{name.replace('_', ' ')}: {status}")
+    budget = structural.get("budget") or {}
+    if budget.get("status") == "unavailable" and budget.get("tokenizer") == "character_heuristic":
+        # Entroly never downloads the encoding (entroly.tokens._encoding), so
+        # an installed tiktoken is not enough on its own.
+        import importlib.util
+
+        cache_once = (
+            "cache it once: python -c \"import tiktoken; "
+            "tiktoken.get_encoding('o200k_base')\""
+        )
+        if importlib.util.find_spec("tiktoken") is None:
+            reasons.append(
+                "budget unverified: no exact tokenizer "
+                f"(pip install tiktoken, then {cache_once})"
+            )
+        else:
+            reasons.append(
+                "budget unverified: tiktoken's o200k_base encoding is not cached "
+                f"locally and Entroly never downloads it ({cache_once})"
+            )
+    elif budget.get("status") not in (None, "passed"):
+        reasons.append(f"budget: {budget.get('status')}")
+    joint = certificate.get("joint_omission_diagnostics") or {}
+    if joint.get("hard_signal_count"):
+        reasons.append(f"{joint['hard_signal_count']} omitted item(s) required by a selected one")
+    if joint.get("soft_signal_count"):
+        reasons.append(f"{joint['soft_signal_count']} possible joint omission(s)")
+    if joint.get("status") == "unavailable":
+        reasons.append("joint omission diagnostics unavailable")
+    return reasons
+
+
 class ContextAssuranceError(RuntimeError):
     def __init__(self, certificate: Mapping[str, Any]) -> None:
-        super().__init__(f"context assurance failed closed: {certificate['verdict']}")
+        # The verdict alone ("uncertain") sent users into the certificate to
+        # learn that, say, the budget could not be checked without tiktoken.
+        reasons = _unverified_reasons(certificate)
+        message = f"context assurance failed closed: {certificate['verdict']}"
+        if reasons:
+            message += " (" + "; ".join(reasons) + ")"
+        super().__init__(message)
         self.certificate = copy.deepcopy(dict(certificate))
 
 
