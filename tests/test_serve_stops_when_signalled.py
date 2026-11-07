@@ -12,6 +12,14 @@ signals before it closes the pipe -- nothing ends that read. Published 1.0.88:
 
 Closing stdin, the shutdown the MCP specification asks hosts to try first,
 already worked; it is covered here so the signal path cannot regress it.
+
+The kernel may hand a process-directed signal to any thread that does not
+block it. Python runs signal handlers only on the main thread, and an idle
+server's main thread sleeps in its event loop until a file descriptor is
+ready, so a SIGTERM that landed on a worker thread was never acted on: the
+SIGTERM test failed that way once on CI (Python 3.11, "still running 15s
+after SIGTERM", with no "Shutdown signal received" logged), and sending the
+signal to a worker thread directly reproduces it every time.
 """
 
 from __future__ import annotations
@@ -112,5 +120,37 @@ def test_closing_stdin_still_shuts_down_cleanly(tmp_path: Path) -> None:
     code, stderr = _stopped(proc)
 
     assert code == 0, (code, stderr[-1500:])
+    assert "State persisted successfully" in stderr
+    assert "Traceback" not in stderr, stderr[-3000:]
+
+
+def _signal_thread(pid: int, tid: int, signum: int) -> None:
+    """tgkill(2): deliver a signal to one thread of another process."""
+    import ctypes
+
+    libc = ctypes.CDLL(None, use_errno=True)
+    if hasattr(libc, "tgkill"):
+        result = libc.tgkill(pid, tid, signum)
+    else:  # glibc before 2.30
+        import platform
+
+        number = {"x86_64": 234, "aarch64": 131}.get(platform.machine())
+        if number is None:
+            pytest.skip("tgkill is not available on this platform")
+        result = libc.syscall(number, pid, tid, signum)
+    assert result == 0, f"tgkill failed: errno {ctypes.get_errno()}"
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="thread-directed signals need Linux")
+@pytest.mark.parametrize("signum", [signal.SIGTERM, signal.SIGINT])
+def test_a_signal_delivered_to_a_worker_thread_still_stops_the_server(tmp_path: Path, signum) -> None:
+    proc = _serve(tmp_path)
+    workers = [int(t) for t in os.listdir(f"/proc/{proc.pid}/task") if int(t) != proc.pid]
+    assert workers, "the server is expected to run worker threads"
+
+    _signal_thread(proc.pid, workers[0], signum)
+    code, stderr = _stopped(proc)
+
+    assert code is not None, f"still running {DEADLINE_S}s after the signal reached a worker thread:\n{stderr[-1500:]}"
     assert "State persisted successfully" in stderr
     assert "Traceback" not in stderr, stderr[-3000:]
