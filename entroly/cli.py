@@ -136,12 +136,13 @@ def _resolve_dashboard_port(args) -> int:
     return port
 
 
-def _report_busy_dashboard_port(port: int, command: str) -> None:
+def _report_busy_dashboard_port(port: int, command: str) -> int:
     print(f"  {C.RED}Dashboard port {port} is already in use.{C.RESET}")
     print(
         f"  {C.GRAY}Choose another: entroly {command} --dashboard-port <port> "
         f"(or set ENTROLY_DASHBOARD_PORT), or stop the service on {port}.{C.RESET}"
     )
+    return 1
 
 
 def _is_entroly_service_running(url: str, expected_service: str) -> bool:
@@ -157,6 +158,29 @@ def _is_entroly_service_running(url: str, expected_service: str) -> bool:
 
 def _is_entroly_proxy_running(port: int) -> bool:
     return _is_entroly_service_running(f"http://127.0.0.1:{port}/health", "entroly-proxy")
+
+
+def _report_busy_proxy_port(port: int, command: str) -> int:
+    """Explain a busy proxy port and return the exit code for it.
+
+    This printed the message and exited 0, so a script or a supervisor read
+    the failed start as a success. When the port belongs to another Entroly
+    proxy, that proxy selects context from the project it was started in,
+    which is easy to miss when switching repositories.
+    """
+    print(f"  {C.RED}Port {port} is already in use.{C.RESET}")
+    if _is_entroly_proxy_running(port):
+        print(
+            f"  {C.GRAY}An Entroly proxy is already running there; it selects context "
+            f"from the project it was started in, not necessarily this one.{C.RESET}"
+        )
+        print(
+            f"  {C.GRAY}Stop it to start one here, or run: "
+            f"entroly {command} --port <other-port>{C.RESET}"
+        )
+    else:
+        print(f"  {C.GRAY}Try: entroly {command} --port <other-port>{C.RESET}")
+    return 1
 
 
 def _tail_text_file(path: Path, max_chars: int = 3000) -> str:
@@ -873,7 +897,7 @@ def cmd_dashboard(args):
     result = auto_index(engine, force=args.force)
 
     if result["status"] == "indexed":
-        print(f"  {C.GREEN}Indexed {result['files_indexed']} files ({result['total_tokens']:,} tokens) in {result['duration_s']}s{C.RESET}")
+        print(f"  {C.GREEN}Indexed {result['files_indexed']} files ({_index_display_tokens(engine, result):,} tokens) in {result['duration_s']}s{C.RESET}")
     elif result["status"] == "skipped":
         print(f"  {C.GRAY}Using persistent index ({result['existing_fragments']} fragments){C.RESET}")
 
@@ -884,7 +908,7 @@ def cmd_dashboard(args):
     if not _free_port(args.port):
         print(f"  {C.RED}Port {args.port} is already in use.{C.RESET}")
         print(f"  {C.GRAY}Try: entroly dashboard --port <other-port>{C.RESET}")
-        return
+        return 1
 
     # Start web dashboard
     start_dashboard(engine=engine, port=args.port, daemon=False)
@@ -946,7 +970,7 @@ def cmd_health(args):
         return 0
 
     if result["status"] == "indexed":
-        print(f"  {C.GREEN}Indexed {result['files_indexed']} files ({result['total_tokens']:,} tokens){C.RESET}")
+        print(f"  {C.GREEN}Indexed {result['files_indexed']} files ({_index_display_tokens(engine, result):,} tokens){C.RESET}")
 
     # Run optimize to build dep graph
     engine.optimize_context(token_budget=128000, query="")
@@ -1146,6 +1170,14 @@ def cmd_proxy(args):
     if getattr(args, "witness_profile", None):
         config.witness_profile = args.witness_profile
 
+    # Refuse to interfere with existing services on the proxy or dashboard
+    # ports, before spending time indexing.
+    if not _free_port(config.port):
+        return _report_busy_proxy_port(config.port, "proxy")
+    dashboard_port = _resolve_dashboard_port(args)
+    if not _free_port(dashboard_port):
+        return _report_busy_dashboard_port(dashboard_port, "proxy")
+
     # Initialize engine + auto-index codebase (non-blocking for large repos)
     engine = EntrolyEngine()
 
@@ -1167,7 +1199,7 @@ def cmd_proxy(args):
     if _index_ready.wait(timeout=5.0):
         result = _index_result
         if result["status"] == "indexed":
-            print(f"  {C.GREEN}Indexed {result['files_indexed']} files ({result['total_tokens']:,} tokens) in {result['duration_s']}s{C.RESET}")
+            print(f"  {C.GREEN}Indexed {result['files_indexed']} files ({_index_display_tokens(engine, result):,} tokens) in {result['duration_s']}s{C.RESET}")
         elif result["status"] == "skipped":
             print(f"  {C.GRAY}Using persistent index ({result['existing_fragments']} fragments){C.RESET}")
     else:
@@ -1179,15 +1211,6 @@ def cmd_proxy(args):
     # Run a warm-up optimize to populate all engine subsystems
     engine.optimize_context(token_budget=128000, query="project overview")
 
-    # Refuse to interfere with existing services on the proxy or dashboard ports.
-    if not _free_port(config.port):
-        print(f"  {C.RED}Port {config.port} is already in use.{C.RESET}")
-        print(f"  {C.GRAY}Try: entroly proxy --port <other-port>{C.RESET}")
-        return
-    dashboard_port = _resolve_dashboard_port(args)
-    if not _free_port(dashboard_port):
-        _report_busy_dashboard_port(dashboard_port, "proxy")
-        return
 
     # Opt-in connectivity probe — useful for diagnosing DNS/firewall/VPN
     # failures without contacting provider hosts during a default startup.
@@ -3093,6 +3116,17 @@ def cmd_go(args):
         if not getattr(args, 'force', False):
             return
 
+    # Refuse to interfere with existing services on the proxy or dashboard
+    # ports before registering MCP configs or indexing.
+    from entroly.proxy_config import ProxyConfig
+
+    proxy_port = args.port or ProxyConfig.from_env().port
+    if not _free_port(proxy_port):
+        return _report_busy_proxy_port(proxy_port, "go")
+    dashboard_port = _resolve_dashboard_port(args)
+    if not _free_port(dashboard_port):
+        return _report_busy_dashboard_port(dashboard_port, "go")
+
     # Step 1: Detect project
     project = _detect_project_type()
     langs = ', '.join(project['languages'])
@@ -3124,7 +3158,7 @@ def cmd_go(args):
     file_count = 0
     if result["status"] == "indexed":
         file_count = result["files_indexed"]
-        print(f"  {C.GREEN}Indexed {file_count} files ({result['total_tokens']:,} tokens) in {result['duration_s']}s{C.RESET}")
+        print(f"  {C.GREEN}Indexed {file_count} files ({_index_display_tokens(engine, result):,} tokens) in {result['duration_s']}s{C.RESET}")
     elif result["status"] == "skipped":
         file_count = result.get("existing_fragments", 0)
         print(f"  {C.GRAY}Using persistent index ({file_count} fragments){C.RESET}")
@@ -3146,15 +3180,6 @@ def cmd_go(args):
     # Warm up engine
     engine.optimize_context(token_budget=128000, query="project overview")
 
-    # Refuse to interfere with existing services on the proxy or dashboard ports.
-    if not _free_port(config.port):
-        print(f"  {C.RED}Port {config.port} is already in use.{C.RESET}")
-        print(f"  {C.GRAY}Try: entroly go --port <other-port>{C.RESET}")
-        return
-    dashboard_port = _resolve_dashboard_port(args)
-    if not _free_port(dashboard_port):
-        _report_busy_dashboard_port(dashboard_port, "go")
-        return
 
     # Start proxy + dashboard
     app = create_proxy_app(engine, config)
@@ -3260,6 +3285,16 @@ def _simulation_queries(args) -> list[str]:
         "Find and fix potential SQL injection vulnerabilities",
         "Explain the module structure and dependency graph",
     ]
+
+
+def _index_display_tokens(engine, result: dict) -> int:
+    """Token figure to print after indexing: content, not selection weights.
+
+    ``auto_index`` reports weighted ``total_tokens`` (configs x3, docs x2).
+    Printing that made one repository read 221,012 tokens in ``verify-claims``
+    and ``go`` and 180,757 in ``simulate`` a minute later.
+    """
+    return _indexed_content_tokens(engine, int(result.get("total_tokens", 0) or 0))
 
 
 def _indexed_content_tokens(engine, fallback: int) -> int:

@@ -121,6 +121,11 @@ entroly verify-claims
 entroly simulate
 ```
 
+<sub>Installed with npm? These two commands ship in the Python package; run them
+without installing it via `uvx --from entroly entroly verify-claims` and
+`uvx --from entroly entroly simulate`. In the Node CLI,
+`entroly optimize 8000 "<your task>"` selects context from your repo.</sub>
+
 <sub>Both run locally. Neither calls an AI or proves answer quality, activation,
 or a lower provider bill. Use a task-specific `--query` with `simulate`; if it
 reports **Relevance ranking is OFF**, run `entroly doctor` before evaluating the

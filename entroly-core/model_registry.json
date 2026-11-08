@@ -503,7 +503,8 @@
       "id": "anthropic/claude-opus-4-20250514",
       "provider": "anthropic",
       "aliases": [
-        "claude-opus-4-20250514"
+        "claude-opus-4-20250514",
+        "claude-opus-4-0"
       ],
       "context_window": 200000,
       "supports_tools": true,
@@ -516,7 +517,8 @@
       "id": "anthropic/claude-sonnet-4-5-20250929",
       "provider": "anthropic",
       "aliases": [
-        "claude-sonnet-4-5-20250929"
+        "claude-sonnet-4-5-20250929",
+        "claude-sonnet-4-5"
       ],
       "context_window": 200000,
       "supports_tools": true,
@@ -529,7 +531,8 @@
       "id": "anthropic/claude-sonnet-4-20250514",
       "provider": "anthropic",
       "aliases": [
-        "claude-sonnet-4-20250514"
+        "claude-sonnet-4-20250514",
+        "claude-sonnet-4-0"
       ],
       "context_window": 200000,
       "supports_tools": true,
@@ -542,7 +545,8 @@
       "id": "anthropic/claude-haiku-4-5-20251001",
       "provider": "anthropic",
       "aliases": [
-        "claude-haiku-4-5-20251001"
+        "claude-haiku-4-5-20251001",
+        "claude-haiku-4-5"
       ],
       "context_window": 200000,
       "supports_tools": true,

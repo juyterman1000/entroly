@@ -5,6 +5,38 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
 
 ## Unreleased
 
+- Onboarding fixes from dogfooding the published 1.0.88 packages.
+  - `entroly value` counts tool output the proxy compressed. An agent turn whose
+    tool output went upstream as 1,822 tokens instead of 64,646 reported "Input
+    tokens reduced: 0", because value was booked only when retrieved context
+    was injected, and against a body already compressed. Every forwarded
+    request is now booked once, the request as received against the body sent,
+    in `entroly value`, `/stats` and `X-Entroly-Tokens-Saved-Pct`.
+    `requests_optimized` counts only requests sent smaller.
+  - The proxy no longer injects a context block with nothing in it. When no
+    overview, structure, code, memory or finding was selected, it still
+    appended a header, a task hint ("Focus on error propagation paths...") and
+    a retrieve pointer to the user's message, so a 27,620-token request went
+    out as 27,765.
+  - The first-request banner says "sent larger" for a request the proxy made
+    larger, instead of "optimized ... (0% saved)".
+  - Gemini `contents` and Responses-API `input` bodies are measured; they
+    counted as 0 tokens in proxy accounting.
+  - `compress()` on JSON returns JSON. The README's own example returned text
+    starting `"ok"}, {"id": 20` that had dropped items 0-19 and 240-459 without
+    a marker. Long lists now keep their ends and any item mentioning an error,
+    and each gap becomes a `[... N items omitted ...]` element.
+  - The Node CLI explains that `verify-claims`, `simulate` and `doctor` are in
+    the Python package (and how to run them with `uvx`) instead of "Unknown
+    command", and its help names the command the user typed (`entroly` when
+    installed as the `entroly` npm package).
+  - `claude-sonnet-4-5`, `claude-haiku-4-5`, `claude-sonnet-4-0` and
+    `claude-opus-4-0` resolve to their dated registry records instead of an
+    unknown model with a 128K fallback window.
+  - `entroly go` and `entroly proxy` check their ports before indexing, exit 1
+    when one is busy, and say when the port belongs to another Entroly proxy.
+  - `verify-claims`, `go`, `proxy` and `dashboard` print content tokens, the
+    same figure `simulate` prints for the same index.
 - Claude Code integration fixes.
   - The RAVS capture hook recorded no outcome from Claude Code. Claude Code puts
     no exit code in a Bash hook payload: it fires `PostToolUse` only after exit

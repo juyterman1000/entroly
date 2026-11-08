@@ -46,6 +46,34 @@ function banner() {
   return `${C.CYAN}${C.BOLD}  Entroly${C.RESET} v${VERSION} — information-theoretic context optimization`;
 }
 
+// Name this CLI was started as. The npm `entroly` package forwards to this
+// file and sets ENTROLY_CLI_NAME, so help and hints match what the user typed.
+const CLI_NAME = process.env.ENTROLY_CLI_NAME === 'entroly' ? 'entroly' : 'entroly-wasm';
+
+function invocation(runnerPrefix) {
+  if (CLI_NAME === 'entroly') {
+    // A global install puts `entroly` on PATH; npx/bunx runs from a cache.
+    return /[\\/]_npx[\\/]|[\\/]bunx-/.test(__dirname) ? `${runnerPrefix} entroly` : 'entroly';
+  }
+  return `${runnerPrefix} entroly-wasm`;
+}
+
+// Commands the README documents that only the Python package provides.
+const PYTHON_ONLY_COMMANDS = new Set([
+  'verify-claims', 'simulate', 'doctor', 'proxy', 'wrap', 'recover',
+  'compress', 'attach', 'capabilities', 'shrink', 'trial', 'learn',
+]);
+
+function cmdPythonOnly(cmd) {
+  const { runnerPrefix } = detectRunner();
+  const here = invocation(runnerPrefix);
+  console.error(`${C.YELLOW}! \`${cmd}\` is part of the Python package, not this Node/WASM CLI.${C.RESET}`);
+  console.error(`  Run it without installing:  ${C.CYAN}uvx --from entroly entroly ${cmd}${C.RESET}`);
+  console.error(`  Or install it:              ${C.CYAN}pip install -U entroly${C.RESET}`);
+  console.error(`  In this CLI, ${C.CYAN}${here} optimize 8000 "<your task>"${C.RESET} selects context from this repo and ${C.CYAN}${here} status${C.RESET} checks the setup.`);
+  process.exit(1);
+}
+
 function detectRunner() {
   const isBun = Boolean(process.versions && process.versions.bun);
   return {
@@ -208,9 +236,10 @@ function cmdInit() {
 
   console.log();
   console.log(`  ${C.BOLD}Quick start:${C.RESET}`);
-  console.log(`    ${C.CYAN}${runnerPrefix} entroly-wasm optimize 8000 "fix the auth bug"${C.RESET}`);
-  console.log(`    ${C.CYAN}${runnerPrefix} entroly-wasm health${C.RESET}`);
-  console.log(`    ${C.CYAN}${runnerPrefix} entroly-wasm demo${C.RESET}`);
+  const here = invocation(runnerPrefix);
+  console.log(`    ${C.CYAN}${here} optimize 8000 "fix the auth bug"${C.RESET}`);
+  console.log(`    ${C.CYAN}${here} health${C.RESET}`);
+  console.log(`    ${C.CYAN}${here} demo${C.RESET}`);
 }
 
 function cmdDemo() {
@@ -373,7 +402,8 @@ function cmdHelp() {
   const { runnerPrefix } = detectRunner();
   console.log(banner());
   console.log();
-  console.log(`  ${C.BOLD}Usage:${C.RESET} entroly-wasm [command] [options]`);
+  const here = invocation(runnerPrefix);
+  console.log(`  ${C.BOLD}Usage:${C.RESET} ${CLI_NAME} [command] [options]`);
   console.log();
   console.log(`  ${C.BOLD}Commands:${C.RESET}`);
   console.log(`    ${C.CYAN}go${C.RESET}         ${C.BOLD}One command: detect IDE → index → start daemon${C.RESET} (default)`);
@@ -390,11 +420,14 @@ function cmdHelp() {
   console.log(`    ${C.CYAN}activation${C.RESET} Run or inspect deterministic host-hook activation`);
   console.log(`    ${C.CYAN}clean${C.RESET}      Clear cached state`);
   console.log();
+  console.log(`  ${C.GRAY}verify-claims, simulate, doctor and proxy are in the Python package:${C.RESET}`);
+  console.log(`  ${C.GRAY}uvx --from entroly entroly verify-claims${C.RESET}`);
+  console.log();
   console.log(`  ${C.BOLD}Examples:${C.RESET}`);
-  console.log(`    ${C.GRAY}${runnerPrefix} entroly-wasm${C.RESET}                              ${C.GRAY}# auto-detect + start${C.RESET}`);
-  console.log(`    ${C.GRAY}${runnerPrefix} entroly-wasm optimize 8000 "fix the auth bug"${C.RESET}`);
-  console.log(`    ${C.GRAY}${runnerPrefix} entroly-wasm health${C.RESET}`);
-  console.log(`    ${C.GRAY}${runnerPrefix} entroly-wasm gateways${C.RESET}`);
+  console.log(`    ${C.GRAY}${here}${C.RESET}                              ${C.GRAY}# auto-detect + start${C.RESET}`);
+  console.log(`    ${C.GRAY}${here} optimize 8000 "fix the auth bug"${C.RESET}`);
+  console.log(`    ${C.GRAY}${here} health${C.RESET}`);
+  console.log(`    ${C.GRAY}${here} gateways${C.RESET}`);
 }
 
 // ── Main ──
@@ -417,6 +450,7 @@ switch (cmd) {
   case '--version': case '-v': console.log(VERSION); break;
   case '--help': case '-h': cmdHelp(); break;
   default:
+    if (PYTHON_ONLY_COMMANDS.has(cmd)) cmdPythonOnly(cmd);
     console.error(`Unknown command: ${cmd}`);
     cmdHelp();
     process.exit(1);

@@ -137,7 +137,11 @@ def _run(output: str | None, max_files: int, outbound: list[str]) -> int:
         _auto_index.MAX_FILES = previous_max_files
     index_s = time.perf_counter() - t0
     files = int(index_result.get("files_indexed", 0) or 0)
-    tokens = int(index_result.get("total_tokens", 0) or 0)
+    # Content tokens, the figure `entroly simulate` reports for the same index;
+    # auto_index's total weights configs and docs for selection.
+    from entroly.cli import _index_display_tokens
+
+    tokens = _index_display_tokens(engine, index_result)
     print(f"  {files} files, {tokens:,} tokens, {index_s:.2f}s")
     check("IDX-1", "Files indexed > 0", files > 0, f"{files} files")
     index_status = str(index_result.get("status", ""))
