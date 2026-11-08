@@ -484,7 +484,7 @@ def universal_compress(
 
     # Dispatch to type-specific compressor
     _DISPATCH = {
-        "json": lambda t, r: _compress_json_universal(t),
+        "json": lambda t, r: _compress_json_universal(t, r),
         "xml": lambda t, r: compress_xml(t),
         "markdown": lambda t, r: compress_markdown(t, r),
         "log": lambda t, r: _compress_log_universal(t),
@@ -509,27 +509,119 @@ def universal_compress(
         compressed = tfidf_extractive_summarize(content, target_ratio)
 
     savings = 1.0 - len(compressed) / max(len(content), 1)
-    if savings < 0.05:
-        # Compression didn't help — fallback to TF-IDF
+    if savings < 0.05 and ctype != "json":
+        # Compression didn't help — fallback to TF-IDF. Never for JSON: a
+        # sentence extractor cuts objects mid-way and drops items unmarked.
         compressed = tfidf_extractive_summarize(content, target_ratio)
         savings = 1.0 - len(compressed) / max(len(content), 1)
 
     return compressed, ctype, max(0.0, savings)
 
 
-def _compress_json_universal(text: str) -> str:
-    """Compress JSON to schema (reuses proxy_transform logic)."""
+def _compress_json_universal(text: str, target_ratio: float = 0.3) -> str:
+    """Compress JSON to schema, else shorten its lists; the result stays JSON.
+
+    When the schema pass did not shrink enough this returned the input and
+    ``universal_compress`` handed JSON to the prose sentence extractor. The
+    README's own ``compress(api_response, budget=2000)`` example came back as
+    ``"ok"}, {"id": 20, ...`` -- invalid JSON that had silently dropped items
+    0-19 and 240-459 with no marker.
+    """
     import json
     stripped = text.strip()
     try:
         data = json.loads(stripped)
+    except (json.JSONDecodeError, ValueError):
+        return text
+    try:
         schema = _json_to_schema(data, depth=0, max_depth=4)
         result = json.dumps(schema, indent=2)
         if len(result) < len(text) * 0.6:
             return f"[JSON schema, {len(text)} chars → {len(result)} chars]\n{result}"
-    except (json.JSONDecodeError, ValueError):
+    except (TypeError, ValueError, RecursionError):
         pass
-    return text
+    return compress_json_structure(
+        data, max_chars=max(200, int(len(text) * max(0.05, target_ratio)))
+    )
+
+
+_JSON_SALIENT = re.compile(
+    r"error|fail|exception|denied|declined|invalid|refused|timeout|warn|fatal|panic",
+    re.IGNORECASE,
+)
+
+
+def _json_omission_marker(count: int) -> str:
+    return f"[... {count} item{'s' if count != 1 else ''} omitted ...]"
+
+
+def _shorten_lists(value: Any, keep: int) -> Any:
+    """Keep ``keep`` items at each end of every long list, plus salient ones.
+
+    Every gap is replaced by a string marker naming how many items it holds,
+    so the output is valid JSON and nothing disappears without a trace.
+    """
+    if isinstance(value, dict):
+        return {k: _shorten_lists(v, keep) for k, v in value.items()}
+    if not isinstance(value, list):
+        return value
+    items = [_shorten_lists(v, keep) for v in value]
+    if len(items) <= 2 * keep + 1:
+        return items
+    keep_idx = set(range(keep)) | set(range(len(items) - keep, len(items)))
+    for idx in range(keep, len(items) - keep):
+        if _JSON_SALIENT.search(json.dumps(value[idx], ensure_ascii=False, default=str)):
+            keep_idx.add(idx)
+    out: list[Any] = []
+    gap = 0
+    for idx, item in enumerate(items):
+        if idx in keep_idx:
+            if gap:
+                out.append(_json_omission_marker(gap))
+                gap = 0
+            out.append(item)
+        else:
+            gap += 1
+    if gap:
+        out.append(_json_omission_marker(gap))
+    return out
+
+
+def compress_json_structure(data: Any, *, max_chars: int) -> str:
+    """Render parsed JSON within ``max_chars`` by shortening its lists.
+
+    Head and tail items of every long list are kept, along with any item that
+    mentions an error, failure or refusal; each gap becomes a marker string.
+    The result always parses as JSON. If even one item per list end does not
+    fit, the smallest such rendering is returned and the caller's budget
+    enforcement decides what happens next.
+    """
+    rendered = json.dumps(data, ensure_ascii=False, separators=(",", ":"), default=str)
+    if len(rendered) <= max_chars:
+        return rendered
+    longest = 0
+    stack = [data]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, list):
+            longest = max(longest, len(node))
+            stack.extend(node)
+        elif isinstance(node, dict):
+            stack.extend(node.values())
+    keep = max(1, longest // 2)
+    best = rendered
+    while keep >= 1:
+        candidate = json.dumps(
+            _shorten_lists(data, keep), ensure_ascii=False,
+            separators=(",", ":"), default=str,
+        )
+        best = candidate if len(candidate) < len(best) else best
+        if len(candidate) <= max_chars:
+            return candidate
+        if keep == 1:
+            break
+        keep = max(1, keep * 2 // 3)
+    return best
 
 
 # Keys whose values are the answer, not the shape. A payload is usually sent

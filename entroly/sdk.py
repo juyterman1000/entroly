@@ -173,7 +173,7 @@ def _budget_bounded_head(content: str, budget: int) -> str:
     return result
 
 
-def _enforce_budget(out: str, budget: int | None) -> str:
+def _enforce_budget(out: str, budget: int | None, original: str | None = None) -> str:
     """Apply the SDK's explicit estimated-token ceiling.
 
     Query-agnostic compression cannot know which omitted fact a future query
@@ -183,7 +183,41 @@ def _enforce_budget(out: str, budget: int | None) -> str:
     """
     if budget is None or count_tokens(out) <= budget:
         return out
+    # Re-shorten from the original when there is one: shortening an
+    # already-shortened document would count earlier omission markers as items.
+    shrunk = _json_within_budget(original if original is not None else out, budget)
+    if shrunk is None and original is not None:
+        shrunk = _json_within_budget(out, budget)
+    if shrunk is not None:
+        return shrunk
     return _budget_bounded_head(out, budget)
+
+
+def _json_within_budget(text: str, budget: int) -> str | None:
+    """Shorten a JSON document's lists until it fits, or None if it cannot.
+
+    A character-prefix cut leaves JSON that no longer parses; shortening lists
+    with explicit omission markers keeps it valid.
+    """
+    import json
+
+    from .universal_compress import compress_json_structure
+
+    if budget <= 0:
+        return None
+    try:
+        data = json.loads(text)
+    except (ValueError, TypeError):
+        return None
+    candidate = text
+    max_chars = len(text)
+    for _ in range(8):
+        tokens = count_tokens(candidate)
+        if tokens <= budget:
+            return candidate
+        max_chars = max(1, int(max_chars * budget / max(tokens, 1) * 0.9))
+        candidate = compress_json_structure(data, max_chars=max_chars)
+    return candidate if count_tokens(candidate) <= budget else None
 
 
 def _guard_against_inflation(out: str, content: str) -> str:
@@ -508,7 +542,7 @@ def compress(
             out, _, _ = universal_compress(content, ratio, content_type)
 
     out = _ensure_non_empty(out, content, budget, ratio)
-    out = _enforce_budget(out, budget)
+    out = _enforce_budget(out, budget, original=content)
     out = _guard_against_inflation(out, content)
     _track_savings(current_tokens, count_tokens(out), "compress")
     return out
