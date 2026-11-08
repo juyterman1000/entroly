@@ -220,3 +220,41 @@ class TestHCCVsFlat:
         assert "Codebase Overview" in text
         assert "Related Code Structure" in text
         assert "Full Code" in text
+
+
+# ═══════════════════════════════════════════════════════════════
+# Empty renders inject nothing
+# ═══════════════════════════════════════════════════════════════
+
+def test_hierarchy_with_nothing_rendered_injects_nothing():
+    """Dogfood 1.0.88: a 27,620-token prompt was forwarded with a block that
+    read "100 files (Overview). 0 tokens." plus a task hint and a retrieve
+    pointer. With no level, memory or finding to show, there is no block."""
+    result = {
+        "status": "compressed",
+        "level1_map": "",
+        "level2_cluster": "",
+        "level3_fragments": [],
+        "coverage": {"level1_files": 100, "level2_cluster_files": 0},
+        "level1_tokens": 0,
+        "level2_tokens": 0,
+        "level3_tokens": 0,
+    }
+    assert format_hierarchical_context(result, [], [], None, task_type="BugTracing") == ""
+
+
+def test_hierarchy_with_only_a_security_finding_still_reports_it():
+    result = {"status": "compressed", "level1_map": "", "level2_cluster": "",
+              "level3_fragments": [], "coverage": {}}
+    text = format_hierarchical_context(result, ["[auth.py] hardcoded secret"], [], None)
+    assert "hardcoded secret" in text
+
+
+def test_flat_block_with_only_empty_fragments_injects_nothing():
+    fragments = [{"source": "a.py", "content": "", "preview": "", "variant": "full"}]
+    assert format_context_block(fragments, [], [], None, task_type="BugTracing") == ""
+
+
+def test_flat_block_keeps_reference_only_fragments():
+    fragments = [{"source": "src/a.py", "content": "", "variant": "reference"}]
+    assert "src/a.py" in format_context_block(fragments, [], [], None)

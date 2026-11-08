@@ -327,7 +327,10 @@ class TestProxyContentBlockAccounting:
         response, captured, proxy = asyncio.run(run())
 
         assert response.status_code == 200
-        assert proxy._requests_optimized == 1
+        # The pipeline ran and injected context, so the request went out
+        # larger. That is accounted for, but it is not counted as optimized.
+        assert proxy._total_optimized_tokens > proxy._total_original_tokens > 0
+        assert proxy._requests_optimized == 0
         assert "context_management" not in captured["body"]
         assert "auth.py" in json.dumps(captured["body"])
 

@@ -596,6 +596,14 @@ def format_context_block(
     """
     if not fragments and not ltm_memories:
         return ""
+    # Fragments with no text to show would leave only the frame and the
+    # preamble, i.e. instructions with no evidence behind them.
+    if not ltm_memories and not security_issues and not any(
+        str(f.get("content") or f.get("preview") or "").strip()
+        or (f.get("variant") == "reference" and f.get("source"))
+        for f in fragments
+    ):
+        return ""
 
     # Deduplicate fragments (saves tokens in multi-turn sessions)
     fragments = _deduplicate_fragments(fragments)
@@ -739,6 +747,19 @@ def format_hierarchical_context(
     of relevant neighborhood (L2), and full code where it matters (L3).
     """
     if hcc_result.get("status") == "empty":
+        return ""
+    # Nothing to show the model: no overview, no structure, no code, no
+    # memory and no finding. Emitting the frame anyway sent a block that
+    # read "100 files (Overview). 0 tokens." plus a task hint and a pointer
+    # to a retrieve tool, appended to the user's own message, which made a
+    # 27,620-token request larger and changed what the model was asked.
+    if not (
+        str(hcc_result.get("level1_map") or "").strip()
+        or str(hcc_result.get("level2_cluster") or "").strip()
+        or hcc_result.get("level3_fragments")
+        or ltm_memories
+        or security_issues
+    ):
         return ""
 
     parts: list[str] = []

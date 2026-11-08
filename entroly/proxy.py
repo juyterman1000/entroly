@@ -287,6 +287,49 @@ def _entroly_tags_to_headers(tags: dict[str, str]) -> dict[str, str]:
     return headers
 
 
+def _first_request_banner(
+    before_tokens: int,
+    after_tokens: int,
+    fragments: list[dict[str, Any]],
+    pipeline_ms: float | None,
+) -> str:
+    """Describe the first request the proxy changed, in the direction it went.
+
+    This said "First request optimized: 27,620 -> 27,765 tokens (0% saved)"
+    for a request the proxy had made larger.
+    """
+    timing = f" in {pipeline_ms:.1f}ms" if pipeline_ms is not None else ""
+    if after_tokens < before_tokens:
+        pct = (before_tokens - after_tokens) * 100 // max(before_tokens, 1)
+        headline = (
+            f"First request optimized: {before_tokens:,} → {after_tokens:,} "
+            f"tokens ({pct}% smaller){timing}"
+        )
+    else:
+        headline = (
+            f"First request sent larger: {before_tokens:,} → {after_tokens:,} "
+            f"tokens (+{after_tokens - before_tokens:,} retrieved context){timing}"
+        )
+    lines = [f"\n  {headline}"]
+    full = [f for f in fragments if f.get("variant", "full") == "full"]
+    names = [
+        str(f.get("source", "")).rsplit("/", 1)[-1].removeprefix("file:")
+        for f in full[:5]
+    ]
+    if names:
+        more = f", +{len(full) - len(names)} more" if len(full) > len(names) else ""
+        lines.append(f"  ├─ Full (100%):    {', '.join(names)}{more}")
+    for variant, label in (
+        ("belief", "Belief:       "),
+        ("skeleton", "Skeleton:     "),
+        ("reference", "Reference:    "),
+    ):
+        count = sum(1 for f in fragments if f.get("variant") == variant)
+        if count:
+            lines.append(f"  ├─ {label} {count} files")
+    return "\n".join(lines) + "\n"
+
+
 def _estimate_message_tokens(messages: Any) -> int:
     """Local token estimate for OpenAI/Anthropic message arrays.
 
@@ -1903,15 +1946,123 @@ class PromptCompilerProxy:
         counts measure the same thing. Reading only ``text`` keys here counted
         a tool_result, tool_use or list-form system block as nothing on the
         way out, and the whole tool output was booked as tokens reduced.
+
+        Gemini ``contents`` and Responses-API ``input`` bodies are read too.
+        Reading only ``messages`` returned 0 for both, so every saving on
+        those routes was booked as nothing.
         """
         try:
             tokens = _estimate_message_tokens(body.get("messages") or [])
-            system = body.get("system")
-            if system:
-                tokens += count_tokens(_content_to_text(system))
+            if not isinstance(body.get("messages"), list):
+                contents = body.get("contents")
+                if isinstance(contents, list):
+                    tokens += sum(
+                        count_tokens(_content_to_text(item.get("parts", [])))
+                        for item in contents
+                        if isinstance(item, dict)
+                    )
+                request_input = body.get("input")
+                if isinstance(request_input, str):
+                    tokens += count_tokens(request_input)
+                elif isinstance(request_input, list):
+                    tokens += count_tokens(_content_to_text(request_input))
+            for key in ("system", "systemInstruction", "instructions"):
+                system = body.get(key)
+                if system:
+                    tokens += count_tokens(_content_to_text(system))
             return tokens
         except Exception:  # noqa: BLE001
             return 0
+
+    def _account_forwarded_request(
+        self,
+        *,
+        body: dict[str, Any],
+        path: str,
+        before_tokens: int,
+        after_tokens: int,
+        coverage_pct: float,
+        confidence: float,
+        banner_fragments: list[dict[str, Any]],
+        pipeline_ms: float | None,
+        control_headers: dict[str, str],
+    ) -> None:
+        """Book one forwarded request in /stats, the value receipt and the banner.
+
+        ``before_tokens`` is the request as received and ``after_tokens`` the
+        body being forwarded, measured with the same estimator. Savings were
+        previously booked only when retrieved context was injected, and against
+        a body that tool-output compression had already shrunk. A request whose
+        tool output went from 64,646 to 1,822 tokens therefore reported 0
+        tokens reduced in ``entroly value``.
+        """
+        saved = max(0, before_tokens - after_tokens)
+        added = max(0, after_tokens - before_tokens)
+        if before_tokens > 0:
+            control_headers["X-Entroly-Tokens-Saved-Pct"] = str(
+                saved * 100 // before_tokens
+            )
+        first_change = False
+        with self._stats_lock:
+            if saved:
+                self._requests_optimized += 1
+            self._total_original_tokens += before_tokens
+            self._total_optimized_tokens += after_tokens
+            # Not clamped at zero: a request the proxy made *larger* has to
+            # report that it did, otherwise growth reads as breaking even.
+            if before_tokens > 0 and (saved or added):
+                self._waste_ratios.append((before_tokens - after_tokens) / before_tokens)
+                if len(self._waste_ratios) > self._waste_max_samples:
+                    self._waste_ratios.pop(0)
+            if (saved or added) and not getattr(self, "_first_change_reported", False):
+                self._first_change_reported = True
+                first_change = True
+
+        try:
+            model = extract_model(body, path) or ""
+            get_tracker().record(
+                tokens_saved=saved,
+                model=model,
+                duplicates=0,
+                optimized=saved > 0,
+                coverage_pct=coverage_pct,
+                confidence=confidence,
+                source="proxy",
+                tokens_added=added,
+            )
+            from .product_telemetry import (
+                capture_optimization_outcome,
+                capture_savings_contribution,
+                flush_async,
+            )
+            from .value_tracker import _has_priced_model, estimate_cost
+
+            priced_model = saved > 0 and _has_priced_model(model)
+            coarse_captured = capture_optimization_outcome(
+                "proxy",
+                before_tokens=before_tokens,
+                after_tokens=after_tokens,
+                measurement_scope="provider_bound_estimate",
+                cost_evidence="modeled_positive" if priced_model else "not_available",
+            )
+            savings_captured = capture_savings_contribution(
+                provider_tokens_saved=saved,
+                modeled_cost_avoided_usd=(
+                    estimate_cost(saved, model, kind="input") if priced_model else 0.0
+                ),
+            )
+            if coarse_captured or savings_captured:
+                flush_async()
+        except Exception:
+            pass  # Never block a request for tracking
+
+        if first_change:
+            print(
+                _first_request_banner(
+                    before_tokens, after_tokens, banner_fragments, pipeline_ms
+                ),
+                file=sys.stderr,
+            )
 
     def _cache_economics_allow_ravs(
         self,
@@ -2664,6 +2815,11 @@ class PromptCompilerProxy:
         _selected_frag_ids: list = []
         _selected_fragments: list[dict[str, Any]] = []
         _recoverable_fragments: list[dict[str, Any]] = []
+        # Inputs to the single accounting step before forwarding.
+        _value_coverage = 0.0
+        _value_confidence = 0.0
+        _banner_fragments: list[dict[str, Any]] = []
+        _banner_pipeline_ms: float | None = None
         user_message = ""
         witness_context = ""
         # Run the optimization pipeline (synchronous Rust, off the event loop)
@@ -2682,6 +2838,7 @@ class PromptCompilerProxy:
                 )
                 context_text = pipeline_result["context"]
                 pipeline_ms = pipeline_result["elapsed_ms"]
+                _banner_pipeline_ms = pipeline_ms
                 # Track pipeline latency
                 self._pipeline_stats.add(pipeline_ms)
 
@@ -2715,41 +2872,12 @@ class PromptCompilerProxy:
                         witness_context = user_message
 
                 if context_text:
-                    # Gap #27 & #29: Track original vs optimized tokens
-                    if provider == "gemini":
-                        # Gemini uses contents/parts instead of messages
-                        original_tokens = sum(
-                            len(p.get("text", "").split())
-                            for item in body.get("contents", [])
-                            for p in item.get("parts", [])
-                            if isinstance(p, dict) and "text" in p
-                        ) * 4 // 3
-                    elif _is_responses_api:
-                        # Responses API: token count from `input` + `instructions`
-                        _inp = body.get("input", "")
-                        if isinstance(_inp, str):
-                            _inp_text = _inp
-                        elif isinstance(_inp, list):
-                            _inp_parts = []
-                            for _item in _inp:
-                                if isinstance(_item, dict):
-                                    _inp_parts.append(_item.get("text", _item.get("content", "")))
-                                elif isinstance(_item, str):
-                                    _inp_parts.append(_item)
-                            _inp_text = " ".join(str(p) for p in _inp_parts)
-                        else:
-                            _inp_text = str(_inp)
-                        _instr_text = body.get("instructions", "")
-                        original_tokens = (len(_inp_text.split()) + len(_instr_text.split())) * 4 // 3
-                    else:
-                        # Same measure as the outbound count below.
-                        original_tokens = self._estimate_body_tokens(body)
                     # Savings are NOT scored here. ``context_text`` is the snippet
                     # about to be injected, and injection adds to the body; scoring
                     # it against the whole inbound conversation compares two
                     # different quantities and yields ~99% no matter what happened.
-                    # The outbound body does not exist until after injection and
-                    # pruning below, so the accounting runs there instead.
+                    # The outbound body does not exist until every transform has
+                    # run, so the accounting runs once, just before forwarding.
                     with self._stats_lock:
                         self._last_context_fragments = selected_frags[:20] if selected_frags else []
                         # Track the top 10 excluded fragments for /explain transparency.
@@ -2900,139 +3028,19 @@ class PromptCompilerProxy:
                         except Exception:
                             pass  # Never block for conversation pruning
 
-                    # ── Savings accounting ──
-                    # Both sides measured on the same artifact with the same
-                    # tokenizer: the conversation as received, against the body
-                    # actually being sent upstream after injection and pruning.
-                    optimized_tokens = self._estimate_body_tokens(body)
-                    if original_tokens > 0:
-                        control_headers["X-Entroly-Tokens-Saved-Pct"] = str(
-                            max(0, original_tokens - optimized_tokens)
-                            * 100 // original_tokens
-                        )
-                    with self._stats_lock:
-                        self._requests_optimized += 1
-                        opt_count = self._requests_optimized
-                        total_count = self._requests_total
-                        self._total_original_tokens += original_tokens
-                        self._total_optimized_tokens += optimized_tokens
-                        # ── Context Waste Telemetry ──
-                        # Not clamped at zero: a request the proxy made *larger*
-                        # has to report that it did, otherwise growth is
-                        # indistinguishable from breaking even.
-                        if original_tokens > 0:
-                            waste_ratio = (original_tokens - optimized_tokens) / original_tokens
-                            self._waste_ratios.append(waste_ratio)
-                            if len(self._waste_ratios) > self._waste_max_samples:
-                                self._waste_ratios.pop(0)
-
-                    # ── Persistent value tracking ──
-                    try:
-                        _saved = max(0, original_tokens - optimized_tokens)
-                        # Injected context can make the forwarded body larger
-                        # than the one received; that is not an optimization
-                        # and must not vanish into a zero saving.
-                        _added = max(0, optimized_tokens - original_tokens)
-                        _model = extract_model(body, path) or ""
-                        _coverage = (len(selected_frags) / max(self.engine._rust.fragment_count(), 1) * 100) if selected_frags and hasattr(self.engine, '_rust') else 0.0
-                        _confidence = avg_entropy if selected_frags else 0.0
-                        get_tracker().record(
-                            tokens_saved=_saved,
-                            model=_model,
-                            duplicates=0,
-                            optimized=_saved > 0,
-                            coverage_pct=_coverage,
-                            confidence=_confidence,
-                            source="proxy",
-                            tokens_added=_added,
-                        )
-                        from .product_telemetry import (
-                            capture_optimization_outcome,
-                            capture_savings_contribution,
-                            flush_async,
-                        )
-                        from .value_tracker import _has_priced_model, estimate_cost
-
-                        priced_model = _saved > 0 and _has_priced_model(_model)
-                        coarse_captured = capture_optimization_outcome(
-                            "proxy",
-                            before_tokens=original_tokens,
-                            after_tokens=optimized_tokens,
-                            measurement_scope="provider_bound_estimate",
-                            cost_evidence=(
-                                "modeled_positive"
-                                if priced_model
-                                else "not_available"
-                            ),
-                        )
-                        savings_captured = capture_savings_contribution(
-                            provider_tokens_saved=_saved,
-                            modeled_cost_avoided_usd=(
-                                estimate_cost(_saved, _model, kind="input")
-                                if priced_model
-                                else 0.0
-                            ),
-                        )
-                        if coarse_captured or savings_captured:
-                            flush_async()
-                    except Exception:
-                        pass  # Never block a request for tracking
-
-                    # Startup banner: on first optimized request, print a
-                    # human-visible confirmation so the user knows it's working.
-                    if opt_count == 1:
-                        if original_tokens > 0:
-                            saved_pct = max(0, (original_tokens - optimized_tokens)) * 100 // original_tokens
-                            # Resolution breakdown for the trust-building banner
-                            s_frags = pipeline_result.get("selected_fragments", [])
-                            full_names: list[str] = []
-                            skel_c = 0
-                            ref_c = 0
-                            belief_c = 0
-                            for sf in s_frags:
-                                v = sf.get("variant", "full")
-                                src = sf.get("source", "")
-                                bname = src.rsplit("/", 1)[-1].removeprefix("file:")
-                                if v == "full":
-                                    if len(full_names) < 5:
-                                        full_names.append(bname)
-                                elif v == "skeleton":
-                                    skel_c += 1
-                                elif v == "reference":
-                                    ref_c += 1
-                                elif v == "belief":
-                                    belief_c += 1
-                            banner_lines = [
-                                f"\n  First request optimized: "
-                                f"{original_tokens:,} \u2192 {optimized_tokens:,} tokens "
-                                f"({saved_pct}% saved) in {pipeline_ms:.1f}ms",
-                            ]
-                            if full_names:
-                                more = f", +{len([sf for sf in s_frags if sf.get('variant', 'full') == 'full']) - len(full_names)} more" if len([sf for sf in s_frags if sf.get("variant", "full") == "full"]) > 5 else ""
-                                banner_lines.append(
-                                    f"  \u251c\u2500 Full (100%):    {', '.join(full_names)}{more}"
-                                )
-                            if belief_c:
-                                banner_lines.append(
-                                    f"  \u251c\u2500 Belief:        {belief_c} files"
-                                )
-                            if skel_c:
-                                banner_lines.append(
-                                    f"  \u251c\u2500 Skeleton:      {skel_c} files"
-                                )
-                            if ref_c:
-                                banner_lines.append(
-                                    f"  \u2514\u2500 Reference:     {ref_c} files"
-                                )
-                            print(
-                                "\n".join(banner_lines) + "\n",
-                                file=sys.stderr,
-                            )
-
-                    logger.info(
-                        f"Optimized in {pipeline_ms:.1f}ms "
-                        f"({opt_count}/{total_count} requests)"
-                    )
+                    # Accounting (savings, /stats, value receipt, first-request
+                    # banner) runs once just before forwarding, against the
+                    # request as received. Recording it here measured only the
+                    # injection step: tool output compressed earlier in this
+                    # handler never reached the value receipt.
+                    _value_coverage = (
+                        len(selected_frags)
+                        / max(self.engine._rust.fragment_count(), 1)
+                        * 100
+                    ) if selected_frags and hasattr(self.engine, "_rust") else 0.0
+                    _value_confidence = avg_entropy if selected_frags else 0.0
+                    _banner_fragments = pipeline_result.get("selected_fragments", [])
+                    logger.info(f"Context pipeline ran in {pipeline_ms:.1f}ms")
         except Exception as e:
             # Cardinal rule: never block a request due to entroly errors
             logger.warning("Pipeline error (forwarding unmodified): %s: %s",
@@ -3325,6 +3333,28 @@ class PromptCompilerProxy:
             )
         )
 
+        # One accounting step per provider-bound request, on the request as
+        # received against the body actually forwarded. Every transform above
+        # (tool-output compression, session rescue, context injection,
+        # pruning) is reflected exactly once.
+        before_tokens = self._estimate_body_tokens(control_before)
+        after_tokens = (
+            before_tokens
+            if body == control_before
+            else self._estimate_body_tokens(body)
+        )
+        self._account_forwarded_request(
+            body=body,
+            path=path,
+            before_tokens=before_tokens,
+            after_tokens=after_tokens,
+            coverage_pct=_value_coverage,
+            confidence=_value_confidence,
+            banner_fragments=_banner_fragments,
+            pipeline_ms=_banner_pipeline_ms,
+            control_headers=control_headers,
+        )
+
         try:
             control_audit = audit_request_transform(
                 control_before,
@@ -3340,8 +3370,6 @@ class PromptCompilerProxy:
             if body == control_before:
                 control_outcome = "observed"
             else:
-                before_tokens = self._estimate_body_tokens(control_before)
-                after_tokens = self._estimate_body_tokens(body)
                 if after_tokens < before_tokens:
                     control_outcome = "optimized"
                 elif after_tokens > before_tokens:
