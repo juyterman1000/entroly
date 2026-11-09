@@ -9,12 +9,15 @@ import ast
 import hashlib
 import json
 import re
+from bisect import bisect_left
+from itertools import chain, pairwise
 from pathlib import Path
 
 from .models import RepositoryIndex
 from .verified_refactor_impl import _verified_source
 
 RENAME_CONTEXT_SCHEMA = "entroly.rename-context.v1"
+_MAX_FOCUSED_DECORATOR_PREFIX_BYTES = 1024
 
 
 def render_rename_context(payload: dict) -> str:
@@ -81,6 +84,7 @@ def _regions(root: Path, index: RepositoryIndex, plan: dict) -> list[dict]:
     for change in plan["changes"]:
         grouped.setdefault(change["path"], []).append(change)
     regions = []
+    nested_focus = False
     for path, changes in sorted(grouped.items()):
         if index.files[path].language != "python":
             raise ValueError("rename context currently supports Python source only")
@@ -95,37 +99,108 @@ def _regions(root: Path, index: RepositoryIndex, plan: dict) -> list[dict]:
         # Python accepts LF, CRLF and bare CR. Count physical newlines without
         # changing original bytes or treating Unicode separators as newlines.
         offsets = [0] + [match.end() for match in re.finditer(rb"\r\n|\r|\n", raw)] + [len(raw)]
-        spans = []
-        for node in tree.body:
+
+        def statement_span(node: ast.AST) -> tuple[int, int]:
             first = min([node.lineno] + [
                 decorator.lineno for decorator in getattr(node, "decorator_list", ())
             ])
-            spans.append((offsets[first - 1], offsets[node.end_lineno]))
+            return offsets[first - 1], offsets[node.end_lineno]
+
+        spans = [statement_span(node) for node in tree.body]
+        top_level = set(tree.body)
         selected = set()
-        locations = [(change["start_byte"], change["end_byte"]) for change in changes]
-        locations.extend(_counterevidence_spans(plan, path, raw, index.files[path].sha256))
-        for start, end in locations:
+        focuses = []
+        locations = [(change["start_byte"], change["end_byte"],
+                      0 if change.get("kind") == "definition" else 2) for change in changes]
+        locations.extend((start, end, 1) for start, end in
+                         _counterevidence_spans(plan, path, raw, index.files[path].sha256))
+        locations.sort()
+        starts = [start for start, _, _ in locations]
+        scopes: list[tuple[int, int] | None] = [None] * len(locations)
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                continue
+            left, right = statement_span(node)
+            definition_start = offsets[node.lineno - 1]
+            # An oversized or grouped decorator prefix can bury the definition
+            # or begin in the middle of an expression. Keep it in the selected
+            # source and start the prioritized scope at the definition instead.
+            if node not in top_level and node.decorator_list and (
+                definition_start - left > _MAX_FOCUSED_DECORATOR_PREFIX_BYTES
+                or not raw[left:definition_start].lstrip().startswith(b"@")
+            ):
+                left = definition_start
+            for i in range(bisect_left(starts, left), bisect_left(starts, right)):
+                previous = scopes[i]
+                if locations[i][1] <= right and (previous is None or right - left < previous[1] - previous[0]):
+                    scopes[i] = (left, right)
+        file_nested_focus = False
+        for (start, end, priority), scope in zip(locations, scopes):
             enclosing = next((span for span in spans if span[0] <= start < end <= span[1]), None)
             if enclosing is None:
                 raise ValueError("planned edit or counterevidence has no enclosing Python source statement")
             selected.add(enclosing)
+            focus = scope or enclosing
+            file_nested_focus |= focus != enclosing
+            focuses.append((*focus, priority))
         merged: list[tuple[int, int]] = []
         for start, end in sorted(selected):
             if merged and start < merged[-1][1]:
                 merged[-1] = (merged[-1][0], max(end, merged[-1][1]))
             else:
                 merged.append((start, end))
-        for start, end in merged:
+        nested_focus |= file_nested_focus
+        for priority, start, end in _focus_partitions(merged, focuses, split=file_nested_focus):
             content = raw[start:end]
-            regions.append({
+            regions.append((priority, {
                 "path": path,
                 "start_byte": start,
                 "end_byte": end,
                 "file_sha256": index.files[path].sha256,
                 "region_sha256": _sha(content),
                 "text": content.decode("utf-8"),
-            })
-    return regions
+            }))
+    if nested_focus:
+        regions.sort(key=lambda item: (item[0], item[1]["path"], item[1]["start_byte"]))
+    else:
+        # Preserve the established bytes and ordering for top-level-only tasks.
+        regions.sort(key=lambda item: (item[1]["path"], item[1]["start_byte"]))
+    return [region for _, region in regions]
+
+
+def _focus_partitions(
+    selected: list[tuple[int, int]], focuses: list[tuple[int, int, int]], *, split: bool,
+) -> list[tuple[tuple[int, int], int, int]]:
+    """Partition selected bytes once; ranking never discards surrounding source."""
+    surrounding = (3, 0)
+    selected_starts = {start for start, _ in selected}
+    events: dict[int, list[tuple[tuple[int, int], int]]] = {}
+    # For equal evidence roles, a tight scope must precede a broader scope
+    # that contains it, such as a retained binding inside a conflicting factory.
+    ranked = ((a, b, (role, b - a)) for a, b, role in focuses)
+    for start, end, priority in chain(ranked, ((a, b, surrounding) for a, b in selected)):
+        events.setdefault(start, []).append((priority, 1))
+        events.setdefault(end, []).append((priority, -1))
+
+    result = []
+    active: dict[tuple[int, int], int] = {}
+    for left, right in pairwise(sorted(events)):
+        for priority, delta in events[left]:
+            count = active.get(priority, 0) + delta
+            if count:
+                active[priority] = count
+            else:
+                del active[priority]
+        if surrounding not in active:
+            continue
+        priority = min(active)
+        if (result and left not in selected_starts and result[-1][2] == left
+                and (not split or result[-1][0] == priority)):
+            previous, start, _ = result[-1]
+            result[-1] = (min(previous, priority), start, right)
+        else:
+            result.append((priority, left, right))
+    return result
 
 
 def _position(cursor: str | None, snapshot: str, regions: list[dict]) -> tuple[int, int]:
@@ -178,6 +253,9 @@ def build_rename_context(root: Path, index: RepositoryIndex, plan: dict, *,
     selection = "top-level-Python-statements-covering-planned-edits"
     if plan.get("binding_review", {}).get("conflict_count", 0):
         selection += "-and-retained-binding-conflicts"
+    source_order = [(region["path"], region["start_byte"]) for region in regions]
+    if source_order != sorted(source_order):
+        selection += "-task-regions-first"
     payload = {
         "schema_version": RENAME_CONTEXT_SCHEMA,
         "command": "rename-context",
