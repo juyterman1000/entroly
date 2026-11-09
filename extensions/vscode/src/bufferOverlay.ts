@@ -41,7 +41,8 @@ const DEFAULT_EXCLUDED: RegExp[] = [
 ];
 
 export class BufferOverlay {
-  private readonly pending = new Map<string, string>();
+  // null retracts an overlay. An empty string is still editor content.
+  private readonly pending = new Map<string, string | null>();
   private readonly active = new Set<string>();
   private inFlight: Promise<void> = Promise.resolve();
   private readonly maxBytes: number;
@@ -88,7 +89,7 @@ export class BufferOverlay {
   recordSave(path: string): void {
     this.pending.delete(path);
     if (this.active.has(path)) {
-      this.pending.set(path, '');
+      this.pending.set(path, null);
     }
   }
 
@@ -119,7 +120,7 @@ export class BufferOverlay {
     const run = this.inFlight.then(async () => {
       for (const [path, content] of batch) {
         try {
-          if (content === '') {
+          if (content === null) {
             await this.transport.clear(path);
             this.active.delete(path);
           } else {

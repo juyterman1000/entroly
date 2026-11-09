@@ -95,6 +95,20 @@ def test_clearing_restores_the_file_from_disk(app_and_engine) -> None:
     assert "UNSAVED_BUFFER" not in served
 
 
+def test_empty_overlay_hides_saved_content_until_cleared(app_and_engine) -> None:
+    app, engine = app_and_engine
+    assert "ON_DISK" in _served(engine)
+
+    response = _post(app, {"path": "billing.py", "content": ""})
+    assert response.status_code == 200
+    assert response.json()["status"] == "applied"
+    assert "ON_DISK" not in _served(engine)
+
+    response = _post(app, {"path": "billing.py", "content": None})
+    assert response.status_code == 200
+    assert "ON_DISK" in _served(engine)
+
+
 def test_overlay_is_idempotent(app_and_engine) -> None:
     app, engine = app_and_engine
     for _ in range(3):
