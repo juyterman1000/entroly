@@ -68,6 +68,25 @@ test('saving retracts the overlay so disk is authoritative again', async () => {
   assert.deepEqual(overlay.activePaths(), []);
 });
 
+test('an empty dirty buffer overrides disk until the editor closes it', async () => {
+  const { calls, transport } = recorder();
+  const overlay = new BufferOverlay(transport);
+  const path = '/w/a.py';
+
+  overlay.recordChange(path, 'dirty', true);
+  await overlay.flush();
+  overlay.recordChange(path, '', true);
+  await overlay.flush();
+
+  assert.deepEqual(calls.at(-1), { op: 'push', path, content: '' });
+  assert.deepEqual(overlay.activePaths(), [path]);
+
+  overlay.recordClose(path);
+  await overlay.flush();
+  assert.deepEqual(calls.map((call) => call.op), ['push', 'push', 'clear']);
+  assert.deepEqual(overlay.activePaths(), []);
+});
+
 test('closing retracts the overlay', async () => {
   const { calls, transport } = recorder();
   const overlay = new BufferOverlay(transport);
