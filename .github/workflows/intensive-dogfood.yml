@@ -20,6 +20,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Record source identity and archive public code
         run: |
           set -euo pipefail
@@ -28,8 +30,8 @@ jobs:
           git status --porcelain > artifacts/intensive-dogfood/checkout-status.txt
           # Archive only tracked public files; never .git, untracked files,
           # credentials, runner state, or a generated .env file.
-          git ls-files -z | tar --null -T - --exclude='.env' --exclude='.env.*'             -czf "$RUNNER_TEMP/entroly-exact-head-source.tar.gz"
-          sha256sum "$RUNNER_TEMP/entroly-exact-head-source.tar.gz"             > artifacts/intensive-dogfood/source-archive-sha256.txt
+          git ls-files -z | tar --exclude='.env' --exclude='.env.*' --null -czf "$RUNNER_TEMP/entroly-exact-head-source.tar.gz" -T -
+          sha256sum "$RUNNER_TEMP/entroly-exact-head-source.tar.gz" > artifacts/intensive-dogfood/source-archive-sha256.txt
           du -h "$RUNNER_TEMP/entroly-exact-head-source.tar.gz"
       - uses: actions/upload-artifact@v7
         with:
