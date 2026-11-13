@@ -53,7 +53,7 @@ DOCS = [
 
 
 def _commits() -> list[dict]:
-    first = create_context_commit(DOCS, query="refund approval tier", token_budget=400,
+    first = create_context_commit(DOCS, query="refund approval tier", token_budget=1500,
                                   prefer_rust=False)
     second = create_context_commit(DOCS, query="charge handler rounding", token_budget=300,
                                    prefer_rust=False, parent_commit_id=first["commit_id"])
@@ -382,10 +382,15 @@ def test_cli_sign_without_a_key_writes_nothing(workdir) -> None:
     assert not (workdir / "bundle.json").exists()
 
 
-def test_cli_refuses_to_export_evidence_that_does_not_verify(workdir) -> None:
-    path = next((workdir / ".entroly" / "context-commits").glob("*.json"))
+@pytest.mark.parametrize("which", [0, 1])
+def test_cli_refuses_to_export_evidence_that_does_not_verify(workdir, which) -> None:
+    # Every commit has recovery chunks; not every commit selected any (the
+    # second one here selects none), and directory order is not stable, so the
+    # file is chosen by sorted name and corrupted where all commits have bytes.
+    path = sorted((workdir / ".entroly" / "context-commits").glob("*.json"))[which]
     commit = json.loads(path.read_text())
-    commit["receipt"]["selected_context"][0]["text"] += "!"
+    chunk = next(iter(commit["recovery_bundle"]["chunks"].values()))
+    chunk["text"] += "!"
     path.write_text(json.dumps(commit))
     out = _cli(["export-proof", "--out", "bundle.json"], workdir)
     assert out.returncode == 1 and "Refusing to export" in out.stderr
