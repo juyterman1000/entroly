@@ -3811,9 +3811,25 @@ def cmd_value(args):
             f"larger (retrieved context){C.RESET}"
         )
         print(f"    Net input tokens reduced: {provider['net_input_tokens_reduced']:,}")
+    headline = receipt.get("headline") or {}
+    priced = int(headline.get("priced_requests", 0) or 0)
+    if priced:
+        net_usd = float(headline.get("usd") or 0.0)
+        colour = C.GREEN if net_usd >= 0 else C.YELLOW
+        print(
+            f"    {C.BOLD}Net saving (conservative): {colour}"
+            f"{'-' if net_usd < 0 else ''}${abs(net_usd):.4f}{C.RESET}"
+            f"  (cache-aware, net of what Entroly added; priced {priced:,} of "
+            f"{int(headline.get('requests_observed', 0) or 0):,} proxy requests)"
+        )
+    else:
+        print(
+            "    Net saving (conservative): unavailable -- no proxy request had "
+            "provider usage and a verified price for its model"
+        )
     print(
-        "    Modeled input cost avoided: "
-        f"{C.GREEN}${provider['modeled_input_cost_avoided_usd']:.4f}{C.RESET}"
+        "    List-price model (ignores prompt caching, not the headline): "
+        f"${provider['modeled_input_cost_avoided_usd']:.4f}"
     )
     print(f"    Active days with provider traffic: {provider['active_days']:,}\n")
     if provider["unpriced_requests"]:

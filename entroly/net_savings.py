@@ -82,6 +82,14 @@ Stated limits, carried with every estimate:
 * on a request that rewrites old history, removed bytes can also appear in
   the interference charge, so that request's estimate is lower than reality
   (later requests in the conversation recover the saving).
+* prices are the provider's published standard text rates for the executed
+  model, bundled per provider with a source link and a verification date
+  (Anthropic, OpenAI, Gemini). A model, or a request size, that the table
+  does not carry has no price: the estimate is absent, never a default;
+* where a provider bills a cache-write premium without reporting which
+  tokens it wrote, every uncached token Entroly is charged for is priced as
+  that provider's dearest write; removed content is still credited at the
+  plain input rate or the cache-read rate, whichever applies.
 
 Only digests, byte counts and integer microdollars are produced. No prompt
 content is stored and nothing here makes a network call.
@@ -100,7 +108,15 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 BASIS = "provider-calibrated estimate"
-_BUNDLED_PRICING = Path(__file__).resolve().parent / "data" / "anthropic_pricing.json"
+_DATA_DIR = Path(__file__).resolve().parent / "data"
+_BUNDLED_PRICING = _DATA_DIR / "anthropic_pricing.json"
+#: One dated, source-linked table per provider. Each is loaded on its own, so a
+#: table that fails to parse removes that provider's prices and nothing else.
+_BUNDLED_TABLES = (
+    _BUNDLED_PRICING,
+    _DATA_DIR / "openai_pricing.json",
+    _DATA_DIR / "google_pricing.json",
+)
 _DIGEST_HEX = 32  # 128-bit truncated SHA-256: identity only, never content
 _SEEN_CAPACITY = 200_000
 
@@ -129,6 +145,19 @@ class ModelRates:
     base: TierRates
     long_context: TierRates | None = None
     long_context_threshold: int | None = None
+    #: The table the rates came from; empty means "the catalog's own source".
+    source: str = ""
+    #: Largest request, in provider input tokens, these rates are verified
+    #: for. Above it the provider bills a tier this table does not carry, so
+    #: the request has no price rather than the wrong one.
+    priced_up_to: int | None = None
+    #: The provider bills cache writes at a premium but its usage does not
+    #: say which input tokens were written. Every uncached token Entroly is
+    #: charged for is then priced as the dearest write.
+    writes_unreported: bool = False
+
+    def covers(self, total_input_tokens: int) -> bool:
+        return self.priced_up_to is None or int(total_input_tokens) <= self.priced_up_to
 
     def tier(self, total_input_tokens: int) -> TierRates:
         if (
@@ -157,7 +186,13 @@ def _rate(raw: Mapping[str, Any], key: str) -> Decimal:
 
 
 def _tier(raw: Mapping[str, Any]) -> TierRates:
-    five = _rate(raw, "cache_write_per_million")
+    # A table may omit cache writes (the provider has no write premium, or an
+    # operator catalog leaves it out); writes are then billed at the input
+    # rate. Mirror that, never lower.
+    five = _rate(
+        raw,
+        "cache_write_per_million" if "cache_write_per_million" in raw else "input_per_million",
+    )
     one = (
         _rate(raw, "cache_write_1h_per_million")
         if raw.get("cache_write_1h_per_million") is not None
@@ -180,19 +215,36 @@ def catalog_from_mapping(payload: Mapping[str, Any], *, source: str) -> NetSavin
         provider, sep, model = str(key).partition(":")
         if not sep or not provider or not model or not isinstance(raw, Mapping):
             raise ValueError(f"invalid pricing entry {key!r}")
-        if "cache_write_per_million" not in raw:
-            # An explicit operator catalog may omit cache writes; the ledger
-            # then bills writes at the input rate. Mirror that, never lower.
-            raw = {**raw, "cache_write_per_million": raw["input_per_million"]}
         long_raw = raw.get("long_context")
         long_tier = None
         threshold = None
         if isinstance(long_raw, Mapping):
             long_tier = _tier(long_raw)
             threshold = int(long_raw["threshold_input_tokens"])
-        entries[f"{provider.lower()}:{model}"] = ModelRates(
-            base=_tier(raw), long_context=long_tier, long_context_threshold=threshold
+        cap = raw.get("priced_up_to_input_tokens")
+        if cap is not None and int(cap) <= 0:
+            raise ValueError(f"invalid priced_up_to_input_tokens for {key!r}")
+        rates = ModelRates(
+            base=_tier(raw),
+            long_context=long_tier,
+            long_context_threshold=threshold,
+            source=source,
+            priced_up_to=int(cap) if cap is not None else None,
+            writes_unreported=raw.get("cache_writes_unreported") is True,
         )
+        aliases = raw.get("aliases", ())
+        if not isinstance(aliases, (list, tuple)):
+            raise ValueError(f"invalid aliases for {key!r}")
+        # Exact identifiers only: an alias is a second spelling the provider
+        # itself documents at the same price, never a prefix or a pattern.
+        for name in (model, *aliases):
+            name = str(name).strip()
+            if not name:
+                raise ValueError(f"invalid alias for {key!r}")
+            entry_key = f"{provider.lower()}:{name}"
+            if entry_key in entries:
+                raise ValueError(f"duplicate pricing entry {entry_key!r}")
+            entries[entry_key] = rates
     return NetSavingCatalog(entries=entries, source=source)
 
 
@@ -201,18 +253,30 @@ _CATALOG_CACHE: dict[str, NetSavingCatalog | None] = {}
 
 
 def bundled_catalog() -> NetSavingCatalog | None:
-    """The bundled, source-linked Anthropic table, or None when disabled."""
+    """The bundled, source-linked provider tables, or None when disabled."""
     if os.environ.get("ENTROLY_BUNDLED_PRICING", "1").strip().lower() in {"0", "false", "no", "off"}:
         return None
     with _CATALOG_LOCK:
         if "bundled" not in _CATALOG_CACHE:
-            try:
-                payload = json.loads(_BUNDLED_PRICING.read_text(encoding="utf-8"))
-                _CATALOG_CACHE["bundled"] = catalog_from_mapping(
-                    payload, source=str(payload.get("source") or "bundled")
-                )
-            except (OSError, ValueError, KeyError, json.JSONDecodeError):
-                _CATALOG_CACHE["bundled"] = None
+            entries: dict[str, ModelRates] = {}
+            sources: list[str] = []
+            for table in _BUNDLED_TABLES:
+                try:
+                    payload = json.loads(table.read_text(encoding="utf-8"))
+                    loaded = catalog_from_mapping(
+                        payload, source=str(payload.get("source") or f"bundled:{table.stem}")
+                    )
+                except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+                    continue
+                if entries.keys() & loaded.entries.keys():
+                    # Two tables pricing one model is a packaging error; the
+                    # later table is dropped whole rather than half-applied.
+                    continue
+                entries.update(loaded.entries)
+                sources.append(loaded.source)
+            _CATALOG_CACHE["bundled"] = (
+                NetSavingCatalog(entries=entries, source="+".join(sources)) if entries else None
+            )
         return _CATALOG_CACHE["bundled"]
 
 
@@ -238,7 +302,7 @@ def resolve_rates(provider: str, model: str) -> tuple[ModelRates, str] | None:
     if catalog is None:
         return None
     rates = catalog.resolve(provider, model)
-    return (rates, catalog.source) if rates is not None else None
+    return (rates, rates.source or catalog.source) if rates is not None else None
 
 
 def _reset_catalog_cache_for_tests() -> None:
@@ -530,11 +594,16 @@ def estimate_net_saving(
     # then 5-minute writes, then uncached input. Without the provider's TTL
     # split, every write is assumed to be a 1-hour write.
     one_hour = writes if cache_write_1h_tokens is None else min(writes, max(0, int(cache_write_1h_tokens)))
+    # A provider that bills a write premium without reporting which tokens it
+    # wrote may have written any uncached token, at its longest retention.
+    uncached_rate = (
+        max(tier.input, tier.cache_write_max) if rates.writes_unreported else tier.input
+    )
     pool = sorted(
         [
             [one_hour, tier.cache_write_1h],
             [writes - one_hour, tier.cache_write_5m],
-            [uncached, tier.input],
+            [uncached, uncached_rate],
         ],
         key=lambda item: item[1],
         reverse=True,

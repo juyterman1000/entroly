@@ -5,6 +5,42 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
 
 ## Unreleased
 
+- Dollars: the headline is now the conservative, cache-aware net saving, and
+  OpenAI and Gemini traffic is priced.
+  - **The headline dollar figure changed.** Traffic Value, `/stats`
+    (`headline`) and `entroly value` now lead with **Net saving
+    (conservative)**: what Entroly removed, priced at the cheapest rate the
+    provider could have billed it, minus what it added and any cached prefix
+    it broke at the dearest, summed (signed) over requests that have provider
+    usage and a verified price, and shown with that coverage ("priced N of M
+    requests"). With no priced request there is no dollar figure; the
+    list-price model is never substituted. The former lead figures stay in
+    the API under their existing keys and are relabelled as what they are:
+    "List-price model (ignores caching)" (`estimated_value_avoided_usd`),
+    "Provider cache discount (measured)" (`measured_cache_benefit_usd`) and
+    "Modeled total (list price + cache discount)"
+    (`total_ai_value_protected_usd`). New fields: `headline`,
+    `net_saving_conservative_usd`, `net_saving_conservative_micro_usd`,
+    `net_saving_priced_requests`, `net_saving_coverage_pct`, `headline_metric`,
+    and Prometheus `entroly_net_saving_conservative_usd` /
+    `entroly_net_saving_priced_requests_total`.
+  - Bundled, dated, source-linked price tables for OpenAI
+    (`gpt-6-astra`, `gpt-6.1-sol`, `gpt-6.1-terra`, `gpt-6-luna`, `gpt-4.1`,
+    `gpt-4.1-mini`, `gpt-4o`, `gpt-4o-mini`) and Gemini (`gemini-3.5-flash`,
+    `gemini-3.1-pro-preview`, `gemini-3.1-flash-lite`,
+    `gemini-3-flash-preview`, `gemini-2.5-pro`, `gemini-2.5-flash`,
+    `gemini-2.5-flash-lite`) join the Anthropic one. Until now an OpenAI or
+    Gemini receipt carried provider usage and no dollar figure. Models and
+    request sizes whose price could not be read from the provider's own page
+    stay unpriced; `ENTROLY_PRICING_CATALOG` still overrides everything.
+  - Measured on a replayed 25-turn agent session per provider against a
+    provider stub that bills cache reads and writes (64 requests): stub-billed
+    saving $0.760, headline $0.554, list-price model $1.62. Per provider:
+    Anthropic $0.253 measured / $0.159 reported, OpenAI $0.507 / $0.396.
+    One workload and one stub, not a bound.
+  - The governor now also sees OpenAI and Gemini conversations, since it acts
+    only on priced requests.
+
 - Proxy: agent sessions cost less time and keep the code the agent read.
   Measured by replaying one 25-turn tool session and a set of plain chat
   requests through `entroly proxy` against a provider stub that counts tokens

@@ -92,6 +92,10 @@ def _install_cli_and_stats() -> None:
                 out["net_value_after_observed_extra_provider_cost_usd"] = lifetime.get(
                     "net_value_after_observed_extra_provider_cost_usd", 0.0
                 )
+                out["headline"] = lifetime.get("headline")
+                out["net_saving_conservative_usd"] = lifetime.get(
+                    "net_saving_conservative_usd"
+                )
             return out
 
         value_receipt.__entroly_value_projection_original__ = original_receipt
@@ -115,6 +119,7 @@ def _install_cli_and_stats() -> None:
             lifetime = _value.build_traffic_value_snapshot().get(
                 "windows", {}
             ).get("lifetime", {})
+            payload["headline"] = lifetime.get("headline")
             payload["value_attribution"] = {
                 "schema_version": _state.ATTRIBUTION_SCHEMA,
                 "by_source": lifetime.get("value_by_source", []),
@@ -151,6 +156,22 @@ def _prometheus_rows() -> str:
     lines.append(
         f"entroly_value_extra_provider_cost_usd {float(lifetime.get('extra_provider_cost_usd', 0.0) or 0.0):.6f}"
     )
+    headline = lifetime.get("headline") or {}
+    lines.extend(
+        (
+            "# HELP entroly_net_saving_priced_requests_total Requests with provider usage and a verified price",
+            "# TYPE entroly_net_saving_priced_requests_total counter",
+            f"entroly_net_saving_priced_requests_total {int(headline.get('priced_requests', 0) or 0)}",
+        )
+    )
+    if int(headline.get("priced_requests", 0) or 0):
+        lines.extend(
+            (
+                "# HELP entroly_net_saving_conservative_usd Conservative cache-aware net saving over priced requests (signed)",
+                "# TYPE entroly_net_saving_conservative_usd gauge",
+                f"entroly_net_saving_conservative_usd {int(lifetime.get('net_saving_conservative_micro_usd', 0) or 0) / 1_000_000.0:.6f}",
+            )
+        )
     headline_tokens = sum(
         max(0, int(row.get("tokens", 0) or 0))
         for row in lifetime.get("value_by_source", []) or []
@@ -244,6 +265,12 @@ def install_value_projection() -> None:
                 round(int(extra_cost) / 1_000_000.0, 6)
                 if extra_cost is not None else 0.0
             )
+            # The headline dollar figure. None on the receipt means "no
+            # provider usage or no verified price": the request is counted as
+            # unpriced and contributes no dollars, not zero dollars.
+            net = meta.get("net_saving_conservative_micro_usd")
+            out["net_saving_priced_requests"] = int(net is not None)
+            out["net_saving_conservative_micro_usd"] = int(net) if net is not None else 0
             out["_value_attribution"] = _row_map(rows)
             return out
         receipt_delta.__entroly_value_projection_original__ = original_delta
@@ -298,9 +325,12 @@ def install_value_projection() -> None:
                 "Net saving (conservative) prices only what Entroly changed: removed "
                 "content at the cheapest rate it could have been billed, added content "
                 "and any cache prefix Entroly broke at the most expensive, scaled by "
-                "the provider's own token count. It can be negative, is never added to "
-                "the headline, and excludes the provider's cache discount. Requires "
-                "provider usage and a priced model; otherwise it is absent, not zero."
+                "the provider's own token count. It can be negative and excludes the "
+                "provider's cache discount. It is the headline dollar figure, summed "
+                "over priced requests only and never combined with the list-price "
+                "model. Requires provider usage and a verified price for the executed "
+                "model (bundled, dated tables for Anthropic, OpenAI and Gemini, or "
+                "ENTROLY_PRICING_CATALOG); otherwise it is absent, not zero."
             )
             return out
         snapshot.__entroly_value_projection_original__ = original_snapshot
