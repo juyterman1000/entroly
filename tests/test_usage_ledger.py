@@ -44,6 +44,13 @@ def test_invalid_provider_infinite_token_counter_cannot_crash_parsing(provider, 
     assert usage.output_tokens == 1
 
 
+def test_direct_usage_pricing_still_accepts_numeric_literals() -> None:
+    price = UsagePricing(2, 4, 0.5)
+    assert price.input_per_million == 2
+    assert price.output_per_million == 4
+    assert price.cache_read_per_million == 0.5
+
+
 def test_openai_usage_separates_cached_from_uncached_tokens() -> None:
     usage = parse_provider_usage(
         "openai",

@@ -111,8 +111,15 @@ class UsagePricing:
         # Nonfinite rates must never enter the durable cost ledger. NaN
         # comparisons raise InvalidOperation, while Infinity otherwise passes
         # the nonnegative guard and poisons dollar calculations.
-        if any(rate is not None and (not rate.is_finite() or rate < 0) for rate in rates):
-            raise ValueError("pricing rates must be finite and nonnegative")
+        for rate in rates:
+            if rate is None:
+                continue
+            try:
+                checked = Decimal(str(rate))
+            except (InvalidOperation, TypeError, ValueError) as exc:
+                raise ValueError("pricing rates must be finite and nonnegative") from exc
+            if not checked.is_finite() or checked < 0:
+                raise ValueError("pricing rates must be finite and nonnegative")
 
     @property
     def cache_write_rate(self) -> Decimal:
