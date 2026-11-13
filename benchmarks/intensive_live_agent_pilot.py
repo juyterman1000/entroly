@@ -29,9 +29,10 @@ if str(ROOT) not in sys.path:
 from benchmarks.agentic_arms import Arm, Fragment, build_closed_loop, build_for_arm  # noqa: E402
 from benchmarks.agentic_tasks_run import (  # noqa: E402
     PROMPT, Task, build_dependency_tasks, call_model, classify_failure, extract_source,
-    mcnemar_exact, run_oracle,
+    mcnemar_exact,
 )
 from benchmarks.engine_isolation import assert_engine_isolated, isolated_engine_dir  # noqa: E402
+from benchmarks.intensive_oracle_sandbox import run_sandboxed_oracle  # noqa: E402
 from entroly.native_status import native_status  # noqa: E402
 
 
@@ -80,12 +81,14 @@ def answer(task: Task, context: str, *, model: str, base_url: str, seed: int,
         count = result.get(field)
         if not isinstance(count, int) or isinstance(count, bool) or count <= 0:
             raise RuntimeError(f"model omitted measured positive {field}; not imputing zero")
-    passed, oracle = run_oracle(task, extract_source(result["text"]))
+    submitted_patch = extract_source(result["text"])
+    passed, oracle = run_sandboxed_oracle(task, submitted_patch)
     return {"passed": bool(passed), "outcome": classify_failure(passed, oracle),
             "input_tokens": result["input_tokens"], "output_tokens": result["output_tokens"],
             "latency_s": result["latency_s"],
             "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
             "answer_sha256": hashlib.sha256(result["text"].encode()).hexdigest(),
+            "model_response": result["text"], "submitted_patch": submitted_patch,
             "oracle_tail": oracle.strip()[-300:]}
 
 
@@ -203,6 +206,7 @@ def run(*, model: str, base_url: str, budget: int, seeds: list[int],
             "Too few independent tasks for any noninferiority quality claim",
             "Model-reported token counts, no measured dollar billing or compute energy cost",
             "Recovery uses static imports, not model autonomous missing-evidence detection",
+            "Generated patches execute only inside networkless, nonroot, read-only Docker oracle containers",
         ],
         "summary": summarize(rows), "trials": rows,
     }

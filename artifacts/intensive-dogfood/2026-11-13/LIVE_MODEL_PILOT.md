@@ -36,3 +36,24 @@ The workflow now launches an additional Qwen 2.5 Coder **3B** run with seeds 17 
 - End-to-end latency for hosted providers and exhaustive audit across all modules.
 
 This negative result must remain visible in all dogfood reporting. The PR stays draft and unmerged until appropriately reviewed. 
+
+## Run 2: CPU Ollama Qwen 2.5 Coder 3B — genuine paired task-oracle results
+
+Exact source head `858753de44ecf7ad66a86f7e2c7e21fd07a17b62`; [GitHub Actions run 43500819779](https://github.com/juyterman1000/entroly/actions/runs/43500819779); model digest `f72c60cabf6237b07f6e632b2c48d533cef25eda2efbd34bed21c5e9c01e6225`.
+
+Four synthetic dependency-bearing tasks × seeds 17 and 42 = **eight paired attempts** (not eight independent tasks):
+
+| Metric | RAW | COMPRESS | CLOSED_LOOP |
+| --- | ---: | ---: | ---: |
+| Executable task successes | **4 / 8** | **4 / 8** | **6 / 8** |
+| Ollama prompt tokens (measured) | 4,496 | 1,988 | 2,926 |
+| Ollama completion tokens (measured) | 356 | 354 | 544 |
+| Model inference wall time, seconds | 60.477 | 39.452 | 57.753 |
+
+COMPRESS used **55.78% fewer measured prompt tokens** than RAW with exactly the same success set in this sample; paired McNemar raw-vs-compress has zero discordant pairs and p=1, which is **not** a noninferiority demonstration. CLOSED_LOOP used **34.92% fewer prompt tokens** than RAW including real retries and fixed two extra task attempts (the fee-in-cents integration bug under both seeds). The TTL-unit bug remained unsolved for both seeds and all arms. Repeated seeds on the same task are not independent tasks.
+
+**Accounting caveats:** Model latency excludes context selection and external service startup. Token totals exclude context cache effects (Ollama does not supply commercial invoice records), GPU/CPU energy cost, storage and retries beyond one. No monetary return, success-per-dollar or statistically powered accuracy claim is possible. The enhanced next run executes generated code in an isolated networkless Docker pytest oracle rather than directly on the CI host, and preserves model output/patch data for audit.
+
+## Historical mined-code task-source evidence
+
+Workflow 43500819779 found **59 candidate source+test commits** and validated the first **8 of 8** with pass-at-fix and fail-after-revert in separate worktrees. These are real Entroly-history failure oracles, **not** eight model-solved real repository tasks. Independent repository holdout and n>=400 remain unexecuted.

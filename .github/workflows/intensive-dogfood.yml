@@ -183,7 +183,15 @@ jobs:
       - name: Install exact-head native package and pytest oracle
         run: |
           python scripts/ci_install_exact_head.py --extras test,proxy --extra-package pytest-timeout
-          python -m pytest -q tests/test_intensive_live_agent_pilot.py
+          python -m pytest -q tests/test_intensive_live_agent_pilot.py tests/test_intensive_oracle_sandbox.py
+      - name: Build a separate pytest sandbox with no inference inputs
+        run: |
+          printf '%s\n' \
+            'FROM python:3.12-slim' \
+            'RUN python -m pip install --no-cache-dir pytest==9.2.0' \
+            | docker build -t entroly-dogfood-oracle:py312 -
+          docker image inspect --format '{{.Id}}' entroly-dogfood-oracle:py312 \
+            | tee "$RUNNER_TEMP/pytest-oracle-image-digest.txt"
       - name: Start isolated CPU Ollama without publishing model API
         run: |
           set -euo pipefail
@@ -225,6 +233,7 @@ jobs:
             ${{ runner.temp }}/live-agent-pilot.json
             ${{ runner.temp }}/live-agent-pilot.log
             ${{ runner.temp }}/ollama-image-digest.txt
+            ${{ runner.temp }}/pytest-oracle-image-digest.txt
             ${{ runner.temp }}/ollama-container.log
           if-no-files-found: warn
       - name: Stop isolated Ollama
