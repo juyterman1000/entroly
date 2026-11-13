@@ -16,6 +16,13 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
   shares digests without source text. Every bundle carries a statement of
   what it does not establish. See `docs/proof-bundles.md`.
 
+- Proxy: `ENTROLY_FORWARD_HEADERS` passes operator-named client headers to
+  the upstream (exact names or `prefix-*`). The proxy drops every header
+  outside a provider's own families, which also stripped the run, team and
+  trace ids that a usage-attribution gateway or benchmark harness behind
+  Entroly keys on. Off by default; credentials, cookies, transport headers
+  and `x-entroly-*` are refused even when listed.
+
 - Dollars: the headline is now the conservative, cache-aware net saving, and
   OpenAI and Gemini traffic is priced.
   - **The headline dollar figure changed.** Traffic Value, `/stats`

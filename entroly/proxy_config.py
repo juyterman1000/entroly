@@ -33,6 +33,115 @@ class ProviderCapability:
     supports_vision: bool = True
 
 
+logger = logging.getLogger("entroly.proxy")
+
+# ── operator-selected header forwarding ───────────────────────────────────
+#
+# The proxy forwards a provider's own header families and drops every other
+# client header, so an unknown header never reaches a provider by accident.
+# That default also strips the tags a gateway *behind* Entroly keys on: a run
+# or team id for usage attribution, a trace id for an observability layer.
+# ENTROLY_FORWARD_HEADERS names the ones to keep. It is opt-in and can only
+# add ordinary metadata headers: credentials, cookies, transport headers and
+# Entroly's own control headers are refused whatever the list says.
+
+_FORWARD_HEADER_TOKEN = frozenset("abcdefghijklmnopqrstuvwxyz0123456789-_.")
+_FORWARD_MIN_PREFIX = 3
+_NEVER_FORWARD_HEADERS = frozenset(
+    {
+        # credentials: forwarded only by the provider's own auth rule
+        "authorization", "proxy-authorization", "x-api-key", "api-key",
+        "x-goog-api-key", "cookie", "set-cookie",
+        # transport: owned by the HTTP client for the upstream connection
+        "host", "content-length", "content-type", "content-encoding",
+        "transfer-encoding", "connection", "keep-alive", "te", "trailer",
+        "upgrade", "proxy-authenticate", "accept-encoding", "expect",
+    }
+)
+_NEVER_FORWARD_PREFIXES = ("x-entroly-", "proxy-", "sec-")
+
+
+@dataclass(frozen=True)
+class ForwardHeaderRules:
+    """Parsed ENTROLY_FORWARD_HEADERS: what to keep, and what was refused."""
+
+    names: frozenset[str] = frozenset()
+    prefixes: tuple[str, ...] = ()
+    rejected: tuple[str, ...] = ()
+
+    def allows(self, lower_name: str) -> bool:
+        if not (self.names or self.prefixes):
+            return False
+        if _never_forward(lower_name):
+            return False
+        return lower_name in self.names or lower_name.startswith(self.prefixes)
+
+    def describe(self) -> list[str]:
+        return sorted(self.names) + [f"{prefix}*" for prefix in self.prefixes]
+
+
+def _never_forward(lower_name: str) -> bool:
+    return lower_name in _NEVER_FORWARD_HEADERS or lower_name.startswith(
+        _NEVER_FORWARD_PREFIXES
+    )
+
+
+@lru_cache(maxsize=32)
+def forward_header_rules(spec: str) -> ForwardHeaderRules:
+    """Parse a comma-separated list of header names and ``prefix-*`` entries.
+
+    An entry that could carry a credential or change the transport, a bare
+    ``*``, or a prefix shorter than three characters is refused and reported,
+    never widened or guessed at. Parsed once per distinct value.
+    """
+    names: set[str] = set()
+    prefixes: list[str] = []
+    rejected: list[str] = []
+    for raw in (spec or "").split(","):
+        entry = raw.strip().lower()
+        if not entry:
+            continue
+        is_prefix = entry.endswith("*")
+        stem = entry[:-1] if is_prefix else entry
+        valid = bool(stem) and all(ch in _FORWARD_HEADER_TOKEN for ch in stem)
+        if is_prefix:
+            # A prefix must not be able to match a refused header either.
+            valid = (
+                valid
+                and len(stem) >= _FORWARD_MIN_PREFIX
+                and not any(
+                    blocked.startswith(stem) for blocked in _NEVER_FORWARD_HEADERS
+                )
+                and not any(
+                    blocked.startswith(stem) or stem.startswith(blocked)
+                    for blocked in _NEVER_FORWARD_PREFIXES
+                )
+            )
+        else:
+            valid = valid and not _never_forward(stem)
+        if not valid:
+            rejected.append(entry)
+        elif is_prefix:
+            if stem not in prefixes:
+                prefixes.append(stem)
+        else:
+            names.add(stem)
+    rules = ForwardHeaderRules(frozenset(names), tuple(prefixes), tuple(rejected))
+    if rules.rejected:
+        logger.warning(
+            "ENTROLY_FORWARD_HEADERS: ignored %s (credentials, cookies, transport "
+            "and x-entroly-* headers cannot be forwarded; a prefix needs at least "
+            "%d characters)",
+            ", ".join(rules.rejected),
+            _FORWARD_MIN_PREFIX,
+        )
+    if rules.names or rules.prefixes:
+        logger.info(
+            "Forwarding extra client headers upstream: %s", ", ".join(rules.describe())
+        )
+    return rules
+
+
 PROVIDER_CAPABILITIES: dict[str, ProviderCapability] = {
     "openai": ProviderCapability(
         name="openai",
@@ -401,6 +510,10 @@ class ProxyConfig:
     # A tool result byte-identical to an earlier one in the same request is
     # replaced by one line pointing at the earlier copy.
     dedupe_tool_results: bool = True
+    # Extra client request headers to pass to the provider endpoint, by exact
+    # name or `prefix-*` (ENTROLY_FORWARD_HEADERS). Empty: only the provider's
+    # own header families are forwarded, as before.
+    forward_headers: str = ""
     enable_context_sanitizer: bool = True
     enable_ecp_anti_thrash: bool = True
 
@@ -530,6 +643,7 @@ class ProxyConfig:
                 os.environ.get("ENTROLY_TOOL_RESULT_DEDUP", "1").strip().lower()
                 not in {"0", "false", "no", "off"}
             ),
+            forward_headers=os.environ.get("ENTROLY_FORWARD_HEADERS", ""),
             witness_mode=os.environ.get("ENTROLY_WITNESS_MODE", "off"),
             witness_use_nli=(
                 os.environ.get("ENTROLY_WITNESS_NLI", "0") == "1"

@@ -39,7 +39,13 @@ from starlette.routing import Route
 
 from .adaptive_budget import AdaptiveBudgetModel, extract_features
 from .context_scaffold import generate_scaffold
-from .proxy_config import ProxyConfig, context_window_for_model, model_resolution_for_model, provider_capability
+from .proxy_config import (
+    ProxyConfig,
+    context_window_for_model,
+    forward_header_rules,
+    model_resolution_for_model,
+    provider_capability,
+)
 from .proxy_transform import (
     compute_dynamic_budget,
     compute_token_budget,
@@ -5823,6 +5829,11 @@ class PromptCompilerProxy:
     ) -> dict[str, str]:
         """Build headers for the forwarded request without losing provider metadata."""
         capability = provider_capability(provider)
+        # Operator-selected extras (ENTROLY_FORWARD_HEADERS). Evaluated last, so
+        # hop-by-hop and credential headers are decided by the rules above.
+        extra = forward_header_rules(
+            getattr(getattr(self, "config", None), "forward_headers", "") or ""
+        )
         forward: dict[str, str] = {"Content-Type": "application/json"}
         for name, value in original.items():
             lower = name.lower()
@@ -5838,6 +5849,9 @@ class PromptCompilerProxy:
                     forward[name] = value
                 continue
             if any(lower.startswith(prefix) for prefix in capability.header_prefixes):
+                forward[name] = value
+                continue
+            if extra.allows(lower):
                 forward[name] = value
         return forward
 
