@@ -224,12 +224,24 @@ class UsageEvent:
 
 
 def _int(value: Any) -> int:
-    try:
-        return max(0, int(value or 0))
-    except (TypeError, ValueError, OverflowError):
-        # Follow existing policy for invalid provider usage rather than
-        # crashing the gateway on an infinite token count.
+    """Parse provider-reported counters without manufacturing zero spend.
+
+    Missing fields in partial streaming updates are zero. *Present but invalid*
+    fields must be rejected: silently converting Infinity, NaN, negative or
+    fractional values to zero creates an apparently priced but false receipt.
+    """
+    if value is None or value == "":
         return 0
+    if isinstance(value, bool):
+        raise ValueError("provider token count must be a finite nonnegative integer")
+    try:
+        number = Decimal(str(value))
+    except (TypeError, ValueError, InvalidOperation) as exc:
+        raise ValueError("provider token count must be a finite nonnegative integer") from exc
+    if (not number.is_finite() or number < 0
+            or number != number.to_integral_value() or number > 2**63 - 1):
+        raise ValueError("provider token count must be a finite nonnegative integer")
+    return int(number)
 
 
 def parse_provider_usage(provider: str, payload: Mapping[str, Any]) -> TokenUsage:

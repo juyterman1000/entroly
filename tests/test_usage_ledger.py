@@ -39,9 +39,30 @@ def test_direct_usage_pricing_rejects_nonfinite_decimal(invalid: str) -> None:
     ("gemini", {"usageMetadata": {"promptTokenCount": float("inf"), "candidatesTokenCount": 1}}),
 ])
 def test_invalid_provider_infinite_token_counter_cannot_crash_parsing(provider, payload) -> None:
-    usage = parse_provider_usage(provider, payload)
+    with pytest.raises(ValueError, match="finite nonnegative integer"):
+        parse_provider_usage(provider, payload)
+
+
+@pytest.mark.parametrize("invalid", ["NaN", "sNaN", "Infinity", "-Infinity", "not-numeric", "-10", "1.5", True, 2**63])
+def test_invalid_present_provider_counter_never_produces_zero_billing(invalid) -> None:
+    payload = {"usage": {"prompt_tokens": invalid, "completion_tokens": 1}}
+    with pytest.raises(ValueError, match="finite nonnegative integer"):
+        parse_provider_usage("openai", payload)
+
+
+def test_missing_counters_in_partial_stream_frame_remain_zero() -> None:
+    usage = parse_provider_usage("anthropic", {"usage": {"output_tokens": 5}})
     assert usage.total_input_tokens == 0
-    assert usage.output_tokens == 1
+    assert usage.output_tokens == 5
+
+
+def test_malformed_usage_never_creates_priced_ledger_row(tmp_path) -> None:
+    pricing = UsagePricing.from_values(input_per_million="2", cache_read_per_million="0.2", output_per_million="4")
+    with UsageLedger(tmp_path / "usage.db") as ledger:
+        with pytest.raises(ValueError, match="finite nonnegative integer"):
+            ledger.record_provider_payload(request_id="poison", provider="openai", model="model",
+                                           payload={"usage": {"prompt_tokens": "Infinity"}}, pricing=pricing)
+        assert ledger.summary()["requests"] == 0
 
 
 def test_direct_usage_pricing_still_accepts_numeric_literals() -> None:
