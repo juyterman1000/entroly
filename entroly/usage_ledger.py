@@ -15,7 +15,7 @@ import sqlite3
 import threading
 import time
 from dataclasses import dataclass, field
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -80,14 +80,23 @@ class UsagePricing:
         cache_write_per_million: str | int | float | None = None,
         source: str = "explicit",
     ) -> "UsagePricing":
+        def parse_rate(value: str | int | float, field: str) -> Decimal:
+            try:
+                result = Decimal(str(value))
+            except (InvalidOperation, TypeError, ValueError) as exc:
+                raise ValueError(f"{field} must be a finite nonnegative rate") from exc
+            if not result.is_finite() or result < 0:
+                raise ValueError(f"{field} must be a finite nonnegative rate")
+            return result
+
         return cls(
-            input_per_million=Decimal(str(input_per_million)),
-            output_per_million=Decimal(str(output_per_million)),
-            cache_read_per_million=Decimal(str(cache_read_per_million)),
+            input_per_million=parse_rate(input_per_million, "input_per_million"),
+            output_per_million=parse_rate(output_per_million, "output_per_million"),
+            cache_read_per_million=parse_rate(cache_read_per_million, "cache_read_per_million"),
             cache_write_per_million=(
                 None
                 if cache_write_per_million is None
-                else Decimal(str(cache_write_per_million))
+                else parse_rate(cache_write_per_million, "cache_write_per_million")
             ),
             source=source,
         )
@@ -97,11 +106,13 @@ class UsagePricing:
             self.input_per_million,
             self.output_per_million,
             self.cache_read_per_million,
+            self.cache_write_per_million,
         )
-        if any(rate < 0 for rate in rates):
-            raise ValueError("pricing cannot be negative")
-        if self.cache_write_per_million is not None and self.cache_write_per_million < 0:
-            raise ValueError("cache-write pricing cannot be negative")
+        # Nonfinite rates must never enter the durable cost ledger. NaN
+        # comparisons raise InvalidOperation, while Infinity otherwise passes
+        # the nonnegative guard and poisons dollar calculations.
+        if any(rate is not None and (not rate.is_finite() or rate < 0) for rate in rates):
+            raise ValueError("pricing rates must be finite and nonnegative")
 
     @property
     def cache_write_rate(self) -> Decimal:
