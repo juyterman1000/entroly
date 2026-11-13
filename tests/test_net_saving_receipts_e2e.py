@@ -407,3 +407,13 @@ def test_gemini_request_is_priced_from_the_gemini_table(app) -> None:
     assert receipt["net_saving_basis"]["pricing_source"].startswith(
         "bundled:google-gemini-pricing@"
     )
+
+
+def test_invalid_provider_usage_preserves_reply_but_cannot_claim_savings(app) -> None:
+    """Invalid billed counters must not break the provider reply or create savings."""
+    response, receipt, _ = _run(app, _body(), input_tokens="Infinity")
+    assert response.status_code == 200
+    assert response.json()["content"][0]["text"] == "ok"
+    assert receipt is not None
+    assert receipt["net_saving_conservative_micro_usd"] is None
+    assert _net_row(receipt) is None
