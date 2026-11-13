@@ -219,7 +219,9 @@ class UsageEvent:
 def _int(value: Any) -> int:
     try:
         return max(0, int(value or 0))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
+        # Follow existing policy for invalid provider usage rather than
+        # crashing the gateway on an infinite token count.
         return 0
 
 
