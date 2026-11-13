@@ -12,6 +12,7 @@ import ast
 import json
 import os
 import random
+import re
 import subprocess
 import statistics
 import sys
@@ -46,7 +47,6 @@ CASES = (
 )
 BUDGETS = (600, 1600)
 SEEDS = (17, 42)
-MAX_FRAGMENT_CHARS = 2700
 
 
 def source_corpus() -> list[Fragment]:
@@ -61,8 +61,20 @@ def source_corpus() -> list[Fragment]:
         content = ast.get_source_segment(text, matching[0])
         if not content:
             raise RuntimeError(f"cannot extract source: {path}::{symbol}")
-        corpus.append(Fragment(source=f"{path}::{symbol}", content=content[:MAX_FRAGMENT_CHARS]))
+        corpus.append(Fragment(source=f"{path}::{symbol}", content=content))
     return corpus
+
+
+def recover_omitted_for_query(query: str, omitted: list[Fragment]) -> list[Fragment]:
+    """Deterministic query-symbol recovery; never consult the expected target.
+
+    The caller supplies only the user query and omitted-source registry.
+    Ambiguous/missing symbol names fail closed. This is NOT an agent failure
+    detector, and it must not be presented as autonomous LLM retrieval.
+    """
+    identifiers = set(re.findall(r"[A-Za-z_][A-Za-z_0-9]*", query))
+    matches = [f for f in omitted if f.source.rpartition("::")[-1] in identifiers]
+    return matches if len(matches) == 1 else []
 
 
 def run() -> dict:
@@ -91,8 +103,10 @@ def run() -> dict:
                     raise AssertionError(f"Foreign sources in selection: {sources-set(index)}")
                 exact = any(f.source == target and f.content == index[target].content
                             for f in selected.included)
-                final = build_closed_loop(selected,
-                                          recovered=[index[target]] if not exact else [])
+                # No ground-truth target is passed to retrieval; it receives
+                # only user query and the recoverable omitted registry.
+                restored = recover_omitted_for_query(query, selected.omitted)
+                final = build_closed_loop(selected, recovered=restored)
                 after = any(f.source == target and f.content == index[target].content
                             for f in final.included)
                 if not after:
@@ -105,6 +119,9 @@ def run() -> dict:
                     "after_recovery_estimated_tokens": final.estimated_tokens,
                     "source_hit": target in sources, "first_pass_exact": exact,
                     "exact_after_recovery": after, "recovery_needed": not exact,
+                    "automatic_recovered_sources": [f.source for f in restored],
+                    "recovery_over_budget": final.estimated_tokens > budget,
+                    "source_length_chars": len(index[target].content),
                     "selection_ms": round(elapsed_ms, 3),
                     "selected_sources": sorted(sources),
                 })
@@ -135,11 +152,14 @@ def run() -> dict:
         "native_available": bool(native.available),
         "native_version": native.version,
         "protocol": {"cases": len(CASES), "budgets": list(BUDGETS), "seeds": list(SEEDS),
-                     "max_fragment_chars": MAX_FRAGMENT_CHARS},
+                     "source_mode": "complete AST definition; never truncated",
+                     "retrieval_policy": "exact query-symbol match; no ground-truth label"},
         "limitations": ["Not a live LLM or coding-agent test",
                         "Estimated tokens are NOT provider-reported usage",
                         "Selection latency excludes provider network and generation",
-                        "No invoice-backed cost evidence"],
+                        "No invoice-backed cost evidence",
+                        "Symbol retrieval is a deterministic completeness check, NOT agent failure detection",
+                        "Not a live LLM task-completion experiment"],
         "aggregate": {
             "planned": len(CASES)*len(BUDGETS)*len(SEEDS),
             "completed": len(measured),
@@ -150,6 +170,9 @@ def run() -> dict:
                                        if measured else None),
             "exact_recovery_rate": (sum(x["exact_after_recovery"] for x in measured)/len(measured)
                                      if measured else None),
+            "recovery_over_budget_rate": (sum(x["recovery_over_budget"] for x in measured)/len(measured)
+                                          if measured else None),
+            "longer_than_prior_cap": sum(len(f.content) > 2700 for f in fragments),
             "median_estimated_context_reduction_pct": (round(statistics.median(reduction), 2)
                                                        if reduction else None),
             "median_selection_ms": (round(statistics.median(latency), 3)
