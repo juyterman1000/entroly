@@ -256,6 +256,8 @@ def parse_provider_usage(provider: str, payload: Mapping[str, Any]) -> TokenUsag
         raw = payload
 
     if provider_key in {"openai", "azure_openai", "azure"}:
+        if not any(key in raw for key in ("input_tokens", "prompt_tokens", "output_tokens", "completion_tokens")):
+            raise ValueError("provider usage has no recognized token counters")
         input_total = _int(raw.get("input_tokens", raw.get("prompt_tokens")))
         output = _int(raw.get("output_tokens", raw.get("completion_tokens")))
         details = raw.get("input_tokens_details", raw.get("prompt_tokens_details"))
@@ -269,6 +271,8 @@ def parse_provider_usage(provider: str, payload: Mapping[str, Any]) -> TokenUsag
         )
 
     if provider_key in {"anthropic", "claude"}:
+        if not any(key in raw for key in ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")):
+            raise ValueError("provider usage has no recognized token counters")
         writes = _int(raw.get("cache_creation_input_tokens"))
         split = raw.get("cache_creation")
         one_hour: int | None = None
@@ -285,6 +289,8 @@ def parse_provider_usage(provider: str, payload: Mapping[str, Any]) -> TokenUsag
         )
 
     if provider_key in {"google", "gemini", "vertex"}:
+        if not any(key in raw for key in ("promptTokenCount", "prompt_token_count", "candidatesTokenCount", "candidates_token_count")):
+            raise ValueError("provider usage has no recognized token counters")
         input_total = _int(
             raw.get("promptTokenCount", raw.get("prompt_token_count"))
         )

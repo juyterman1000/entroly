@@ -59,6 +59,14 @@ def test_cache_read_more_than_input_is_unpriced_not_clamped(provider, payload) -
         parse_provider_usage(provider, payload)
 
 
+@pytest.mark.parametrize("provider,field", [
+    ("openai", "usage"), ("anthropic", "usage"), ("gemini", "usageMetadata"),
+])
+def test_empty_usage_metadata_is_not_valid_zero_cost_evidence(provider, field) -> None:
+    with pytest.raises(ValueError, match="no recognized token counters"):
+        parse_provider_usage(provider, {field: {}})
+
+
 def test_missing_counters_in_partial_stream_frame_remain_zero() -> None:
     usage = parse_provider_usage("anthropic", {"usage": {"output_tokens": 5}})
     assert usage.total_input_tokens == 0

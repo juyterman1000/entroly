@@ -105,6 +105,7 @@ jobs:
           set +e
           python -m pytest -q --tb=short \
             tests/test_usage_ledger.py \
+            tests/test_intensive_dogfood_trials.py \
             tests/test_net_savings.py \
             tests/test_proof_bundle.py \
             tests/test_context_commit.py \

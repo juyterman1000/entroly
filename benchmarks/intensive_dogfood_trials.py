@@ -122,6 +122,12 @@ def run() -> dict:
                     "automatic_recovered_sources": [f.source for f in restored],
                     "recovery_over_budget": final.estimated_tokens > budget,
                     "source_length_chars": len(index[target].content),
+                    # Any retry generates another provider-bound prompt. Model
+                    # tokens, outputs and caching are NOT measured here.
+                    "paired_attempt_estimated_tokens": (
+                        selected.estimated_tokens +
+                        (final.estimated_tokens if not exact else 0)
+                    ),
                     "selection_ms": round(elapsed_ms, 3),
                     "selected_sources": sorted(sources),
                 })
@@ -172,6 +178,13 @@ def run() -> dict:
                                      if measured else None),
             "recovery_over_budget_rate": (sum(x["recovery_over_budget"] for x in measured)/len(measured)
                                           if measured else None),
+            "paired_total_estimated_tokens": sum(x["paired_attempt_estimated_tokens"] for x in measured),
+            "raw_total_estimated_tokens": sum(x["raw_estimated_tokens"] for x in measured),
+            "paired_estimated_context_reduction_pct": (
+                round(100*(1 - sum(x["paired_attempt_estimated_tokens"] for x in measured) /
+                                sum(x["raw_estimated_tokens"] for x in measured)), 2)
+                if measured and sum(x["raw_estimated_tokens"] for x in measured) > 0 else None
+            ),
             "longer_than_prior_cap": sum(len(f.content) > 2700 for f in fragments),
             "median_estimated_context_reduction_pct": (round(statistics.median(reduction), 2)
                                                        if reduction else None),

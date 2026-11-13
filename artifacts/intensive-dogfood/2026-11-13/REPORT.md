@@ -1,73 +1,61 @@
-# Intensive Entroly dogfood: independent execution evidence (2026-11-13)
+# Entroly intensive dogfooding: corrected, falsifiable evidence (2026-11-13)
 
-## Status — executed vs unverified
+**Campaign:** [draft PR #592](https://github.com/juyterman1000/entroly/pull/592). Baseline main: `6286baff5e29022ff1a593a649ba717496172df9`. These are **in-process and model-free trials**, not evidence of agent task success or billable dollars saved.
 
-Campaign PR: [#592](https://github.com/juyterman1000/entroly/pull/592); baseline `main` `6286baff5e29022ff1a593a649ba717496172df9`.
+## Critical falsification: the first report was overly optimistic
 
-This is **measured deterministic dogfooding**, not full production-validation or the pre-registered 400-task model experiment.
+The original `benchmarks/intensive_dogfood_trials.py` silently shortened source functions to the first **2,700 characters**. **7 of 12** test definitions in the initial checkout were longer. Earlier claims of “48/48 byte-exact recovery” were comparisons to these truncated examples, **not** full original code. The corrected harness retains complete AST source, verifies it with a regression test, and removes recovery decisions based on the known testcase target. Instead it uses only the user query and omitted-source registry and refuses ambiguous matches.
 
-| Phase | Evidence | Status |
+**Do not reuse pre-correction performance/recovery headlines without this qualification.**
+
+## Corrected real-source results — native engine, head 18d94013
+
+[GitHub Actions run](https://github.com/juyterman1000/entroly/actions/runs/43489247044) independently installed native engine on Ubuntu. Data artifact: `intensive-dogfood-native-source-evidence`; its embedded SHA and expected head both equal `18d94013c130abeeb0adf01cfff6579360194eec`, and `provenance_validated=true`.
+
+| Metric | Value | Qualification |
 | --- | --- | --- |
-| 0 baseline / architecture | Exact-head GitHub Actions source archive, static import graph | EXECUTED |
-| 1 install/user paths | Installed native engine on GitHub Actions; local Python 3.13 fallback | EXECUTED ON LINUX, not a fresh Windows/macOS consumer install |
-| 2 true agent task completion | No comparable paid/live coding-agent runs | NOT EXECUTED |
-| 3 proxy fidelity/performance | Two-provider 25-turn in-process replay (50 cumulative requests); file view and fatal marker checked | EXECUTED (synthetic tool outputs) |
-| 4 provider invoices / full ROI | No paid API calls; no provider bills; byte/token estimates labeled correctly | NOT EXECUTED |
-| 5 adversarial trust | Proof-bundle, context commit, recovery fuzz, malformed usage/rates, proxy protection | PARTIAL / tests executed |
-| 6 code graph and audit | 412 Python modules, 1,149 static edges, 46 statically unreached modules (14,953 lines), 4 import cycles | PARTIAL (static only) |
-| 7 defects and repairs | Nonfinite pricing rejected in usage ledger; infinite provider token counters do not raise OverflowError | FIX IN PR |
-| 8 production gates | Independent CI + preexisting CI; security and real-provider oracles outstanding | CONDITIONAL |
-| 9 machine-readable artifacts | GitHub Actions artifacts and exact SHA/provenance | EXECUTED |
-| 10 GitHub delivery | Draft PR #592 with code, experiments, tests, workflow | OPEN / NOT MERGED |
+| Planned / completed | 48 / 48 | 12 actual full-source AST symbols × 2 budgets × 2 seeds |
+| Target source selected | 48 / 48 | Source presence **may be excerpted** |
+| First pass contains entire source | 8 / 48 | 16.7%; no oracle label in retrieval |
+| Complete source restored | 48 / 48 | Exact symbol-name lookup from query, not autonomous agent detection |
+| Second-attempt context exceeds original budget | **40 / 48** | **83.3%**; essential cost and capacity caveat |
+| Median first-pass estimated reduction | 93.56% | Estimated characters/4; not provider tokens |
+| Median native selection latency | 60.198 ms | In-process, no network |
+| p95 native selection latency | 185.879 ms | In-process, no network |
+| Total modeled input tokens, RAW | 636,048 | Sum over all 48 trials |
+| Modeled input tokens, first pass + one recovery attempt | 127,370 | Sums 51,488 first-pass + 75,882 second-pass |
+| Overall modeled paired reduction | **79.97%** | Both attempts, not outputs, cache or invoices |
 
-## Run A — Python fallback (local)
+The local Python fallback full-source experiment completed **40/48**, with **8 selection-unavailable** and 60% second-attempt budget overruns among completed trials. Local measurements were on an exploratory working copy, not a published model-quality result. The final branch reruns the native experiment and now emits paired cost fields directly.
 
-Using the exact-head source snapshot at `10a426696cccc85fd8f9caefdbc1a7d318f9cf21`:
-- 48 planned source-evidence trials, 40 measured, 8 returned no usable fragment at the stated budget.
-- First-pass source hit rate in completed trials: 40%.
-- Exact full-source recovery succeeded for all 40 completed trials.
-- Median *estimated* context reduction among completed trials: 78.84%.
-- A constrained budget on larger functions can be infeasible. This does not mean all source is unrecoverable or that an LLM necessarily fails.
+### Proxy transform replay
 
-## Run B — production native engine 1.0.88 on Linux GitHub Actions
+The same native workflow ran 25 cumulative turns per OpenAI/Anthropic payload format using synthetic tool outputs. Both retained the initial exact source file, a traceable repeated-read pointer and the fatal error marker. The last request body was ~94.9% smaller in serialized bytes. This is **not** billed-token reduction or model end-to-end latency.
 
-Reproducible [trial workflow](https://github.com/juyterman1000/entroly/actions/runs/43483092179), head `15de3f21a74925a1d34dc94d0481a675078dd06c`.
-- 48/48 selections produced a usable result; target source appeared in 48/48.
-- Exactly full original target source appeared on first pass in 8/48 (16.7%) cases; excerpts are **not** automatically failures of an LLM task.
-- The full target original was recoverable in 48/48 using the content-digest-verified closed-loop arm.
-- Median first-pass **estimated** context reduction: 89.13%, native median selector latency: 33.658ms; p95 37.088ms (GitHub runner, no provider).
-- These are context-retention measurements, not agent task-success rates or actual provider tokens.
+## Independently exercised installation and security surfaces
 
-### 25-turn proxy transform replay
+The `43489247044` run's **fresh isolated wheel** jobs all succeeded for Ubuntu, macOS and Windows (Python 3.12). Wheels were built from the branch, installed in new virtual environments outside the source checkout, and the native runtime / CLI were checked. The cross-platform success pertains to that SHA; newer commits require fresh CI.
 
-Same [native workflow](https://github.com/juyterman1000/entroly/actions/runs/43483092179), synthetic tool data, 25 cumulative turns for each provider:
-- OpenAI-format: final-request serialized-byte reduction 94.91%; median transform 37.606ms; p95 39.690ms.
-- Anthropic-format: final-request serialized-byte reduction 94.92%; median transform 37.781ms; p95 39.492ms.
-- Initial file views remained byte-exact and repeat views retained pointers to the original; the fatal `E_CONNRESET` marker survived.
-- **Do not call these token savings, invoice savings, HTTP latency, or an agent-success comparison.**
+The existing repository Deep Dogfood Runtime independently includes installed MCP entrypoints, Bandit, pip-audit and Cargo advisories, while CodeQL runs independently. This is meaningful coverage, **not** a comprehensive 400+ module manual security review.
 
-## Local static and adversarial verification
+## Confirmed defects corrected in PR #592
 
-- 245 existing tests passed over agent arms, task miner, proof bundles, context commits, 73 recovery fuzz cases, proxy fidelity, and header forwarding.
-- Before the usage fix, `UsagePricing.from_values(..., 'Infinity')` accepted a nonfinite amount; `NaN` and invalid strings leaked `decimal.InvalidOperation`.
-- Before the overflow fix, OpenAI/Anthropic/Gemini usage with `Infinity` token counters raised `OverflowError` in `_int`.
-- New regression cases validate fail-closed price handling, numeric-literal compatibility, and the three provider usage parsers. Existing policy treats malformed provider token counters as zero: this prevents an exception **but is not evidence of accurate provider spending**.
-- Python source compileall succeeded and static codebase graph completed.
+1. Local or operator pricing rates `Infinity`, `NaN`, or malformed text could leak nonfinite amounts or unhandled decimal exceptions. Invalid rates now fail closed, with tests.
+2. Invalid provider usage values such as `Infinity`, non-integer, negative and over-large counters could crash or be silently converted to **zero**, creating false priced spend. Now malformed present fields raise `ValueError`; the proxy catches accounting errors rather than changing provider responses. Missing counters in a legitimate partial stream remain zero.
+3. A provider reporting more cached input than total input was silently clamped and still priced. Contradictory counts now fail closed.
+4. Empty usage metadata was able to masquerade as valid zero-cost evidence; now a provider-specific recognized counter is required.
+5. The source-retention harness clipped original source and supplied the expected target directly to recovery. It now retains full source, uses deterministic query-symbol retrieval without testcase target labels, and counts second-attempt context separately.
 
-## Independent replay commands
+Local regression suite after fixes: **191 passed** for pricing/receipt/proxy/retrieval cases. `tests/test_intensive_dogfood_trials.py` checks full-source fidelity, exact-symbol retrieval, ambiguity refusal and digest-gated restoration.
 
-```bash
-python benchmarks/intensive_dogfood_trials.py --out native-source-evidence.json
-python benchmarks/intensive_proxy_replay.py --out native-proxy-replay.json
-python -m pytest -q tests/test_usage_ledger.py tests/test_net_savings.py
-python -m pytest -q tests/test_proof_bundle.py tests/test_context_commit.py tests/test_recovery_fidelity_fuzz.py
-python scripts/codebase_graph.py --json graph.json
-```
+## Phases still unverified
 
-`Intensive Dogfood Evidence` runs these against the installed, exact PR head on GitHub Linux runners and uploads JSON and test logs.
+| Phase | Evidence |
+| --- | --- |
+| Live coding-agent RAW/COMPRESS/CLOSED_LOOP A/B/C | NOT EXECUTED: no authorized runnable model endpoint in this investigation |
+| Independent provider invoice reconciliation | NOT EXECUTED: no API credentials, billing invoices or paired live traffic |
+| Statistically powered task success comparison | NOT EXECUTED: preregistered 400-task holdout experiment has not run |
+| Exhaustive security/manual module audit | NOT EXECUTED: existing static and adversarial checks are **partial** |
+| End-to-end model success/quality, retry effects and billed dollars | UNKNOWN: do not infer from source selection or synthetic bytes |
 
-## Remaining blockers
-
-No live provider credentials, authorized paid billing, side-by-side real coding agents, or independent production invoices were available. No attempt was made to fabricate them. A native model-free corpus cannot prove no task-quality regression; output-token spend, retries, cache economics, and actual bill savings remain **NOT TESTED**. An exhaustive 412-module manual audit was not executed.
-
-**Readiness verdict:** valuable new evidence and regression hardening, but **production ROI and real-agent-task non-inferiority remain unverified**. Keep this PR draft until required CI passes and reviewers approve the scope; do not merge merely because source-retention metrics are green.
+**Verdict: CONDITIONAL / RESEARCH ONLY.** Keep draft PR #592 unmerged pending latest-head CI and review. Do not claim a production ROI, user task-success improvement, or 400-task non-inferiority result from these artifacts.
