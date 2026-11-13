@@ -223,18 +223,30 @@ def catalog_from_mapping(payload: Mapping[str, Any], *, source: str) -> NetSavin
         long_raw = raw.get("long_context")
         long_tier = None
         threshold = None
-        if isinstance(long_raw, Mapping):
+        if long_raw is not None:
+            if not isinstance(long_raw, Mapping):
+                raise ValueError(f"invalid long_context for {key!r}")
             long_tier = _tier(long_raw)
-            threshold = int(long_raw["threshold_input_tokens"])
+            try:
+                threshold = int(long_raw["threshold_input_tokens"])
+            except (ValueError, TypeError, OverflowError) as exc:
+                raise ValueError(f"invalid long_context threshold for {key!r}") from exc
+            if threshold <= 0:
+                raise ValueError(f"invalid long_context threshold for {key!r}")
         cap = raw.get("priced_up_to_input_tokens")
-        if cap is not None and int(cap) <= 0:
-            raise ValueError(f"invalid priced_up_to_input_tokens for {key!r}")
+        if cap is not None:
+            try:
+                cap = int(cap)
+            except (ValueError, TypeError, OverflowError) as exc:
+                raise ValueError(f"invalid priced_up_to_input_tokens for {key!r}") from exc
+            if cap <= 0:
+                raise ValueError(f"invalid priced_up_to_input_tokens for {key!r}")
         rates = ModelRates(
             base=_tier(raw),
             long_context=long_tier,
             long_context_threshold=threshold,
             source=source,
-            priced_up_to=int(cap) if cap is not None else None,
+            priced_up_to=cap,
             writes_unreported=raw.get("cache_writes_unreported") is True,
         )
         aliases = raw.get("aliases", ())
@@ -268,6 +280,8 @@ def bundled_catalog() -> NetSavingCatalog | None:
             for table in _BUNDLED_TABLES:
                 try:
                     payload = json.loads(table.read_text(encoding="utf-8"))
+                    if not isinstance(payload, Mapping):
+                        raise ValueError("pricing catalog must be a JSON object")
                     loaded = catalog_from_mapping(
                         payload, source=str(payload.get("source") or f"bundled:{table.stem}")
                     )
@@ -292,6 +306,8 @@ def explicit_catalog(path: str) -> NetSavingCatalog | None:
         if key not in _CATALOG_CACHE:
             try:
                 payload = json.loads(Path(path).read_text(encoding="utf-8"))
+                if not isinstance(payload, Mapping):
+                    raise ValueError("pricing catalog must be a JSON object")
                 _CATALOG_CACHE[key] = catalog_from_mapping(
                     payload, source=str(payload.get("source") or key)
                 )
