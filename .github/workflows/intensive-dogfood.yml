@@ -72,12 +72,15 @@ jobs:
           assert status.available and status.version_ok is not False, "Native engine not actually active"
           PY
           python benchmarks/intensive_dogfood_trials.py --out "$RUNNER_TEMP/native-source-evidence.json"
+          python benchmarks/intensive_proxy_replay.py --out "$RUNNER_TEMP/native-proxy-replay.json"
       - name: Upload all measured trials (including negative results)
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: intensive-dogfood-native-source-evidence
-          path: ${{ runner.temp }}/native-source-evidence.json
+          path: |
+            ${{ runner.temp }}/native-source-evidence.json
+            ${{ runner.temp }}/native-proxy-replay.json
           if-no-files-found: warn
 
   independent-adversarial-regressions:
