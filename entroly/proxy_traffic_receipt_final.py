@@ -178,6 +178,11 @@ def _net_saving_for(context: Any, built: Any, response: Response) -> Any:
     if raw is None or outbound is None:
         return None
     removed, added_bytes = net_savings.inventory_delta(raw, outbound)
+    # Asked before this request is recorded: the question is whether an
+    # *earlier* request carried the block.
+    forwarded_before = net_savings.SEEN.known(
+        digest for digest, _, _ in net_savings.added_units(raw, outbound)
+    )
     # Every forwarded request updates the seen-set, priced or not.
     seen_bytes, new_bytes = net_savings.SEEN.classify_and_remember(removed, raw, outbound)
 
@@ -204,6 +209,9 @@ def _net_saving_for(context: Any, built: Any, response: Response) -> Any:
     if resolved is None:
         return None
     rates, source = resolved
+    uncached_input_tokens = int(getattr(usage, "uncached_input_tokens", 0) or 0)
+    cache_read_tokens = int(getattr(usage, "cache_read_tokens", 0) or 0)
+    cache_write_tokens = int(getattr(usage, "cache_write_tokens", 0) or 0)
     return net_savings.estimate_net_saving(
         raw=raw,
         outbound=outbound,
@@ -211,12 +219,21 @@ def _net_saving_for(context: Any, built: Any, response: Response) -> Any:
         removed_new_bytes=new_bytes,
         added_bytes=added_bytes,
         interference_bytes=interference_bytes,
-        uncached_input_tokens=int(getattr(usage, "uncached_input_tokens", 0) or 0),
-        cache_read_tokens=int(getattr(usage, "cache_read_tokens", 0) or 0),
-        cache_write_tokens=int(getattr(usage, "cache_write_tokens", 0) or 0),
+        uncached_input_tokens=uncached_input_tokens,
+        cache_read_tokens=cache_read_tokens,
+        cache_write_tokens=cache_write_tokens,
         cache_write_1h_tokens=getattr(usage, "cache_write_1h_tokens", None),
         rates=rates,
         pricing_source=source,
+        added_cached_bytes=net_savings.added_bytes_in_cached_prefix(
+            raw,
+            outbound,
+            cache_read_tokens=cache_read_tokens,
+            total_input_tokens=(
+                uncached_input_tokens + cache_read_tokens + cache_write_tokens
+            ),
+            forwarded_before=forwarded_before,
+        ),
     )
 
 

@@ -2376,11 +2376,7 @@ impl CommentTracker {
         }
 
         // Single-line comment
-        if trimmed.starts_with("//") || trimmed.starts_with('#') {
-            return true;
-        }
-
-        false
+        trimmed.starts_with("//") || trimmed.starts_with('#')
     }
 }
 

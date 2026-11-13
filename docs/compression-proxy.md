@@ -81,6 +81,64 @@ matched to its tool's name through the call that produced it (Anthropic
   the floor; `0` turns it off.
 - Tools named in `ENTROLY_TOOL_RESULT_EXCLUDE` are never compressed.
 
+On the default path (session rescue on) the live proxy applies a tool-result
+policy before the lossy codec runs:
+
+- **File reads and program source are forwarded as sent.** A result is
+  protected when its tool is a file reader (`Read`, `read_file`, `view`,
+  `cat`, `get_file_contents`, `str_replace_editor` and similar, matched on the
+  last segment of the name so `mcp__filesystem__read_file` counts), or when
+  its text is a numbered file view or reads as source code. The line codec
+  keeps anchors and drops the lines between them; in source those lines are
+  the function body. Set `ENTROLY_PROTECT_FILE_READS=0` to restore the earlier
+  behaviour, where every tool result over the block budget is cut.
+- **Tools named in `ENTROLY_TOOL_RESULT_EXCLUDE` are never compressed**, on
+  this path as well as the pattern-based one.
+- **A byte-identical repeat becomes a pointer.** When a tool result is the
+  same bytes as an earlier one in the same request (a test run twice, a file
+  read again), the later copy is replaced by one line naming the earlier
+  call. The earlier copy is forwarded untouched, so nothing is lost. Results
+  under 1,024 characters are left alone. `ENTROLY_TOOL_RESULT_DEDUP=0` turns
+  it off.
+- **A rewrite must remove at least 20% of a block.** A block just over the
+  budget used to lose a few lines for a few tokens; a rewrite that keeps more
+  than 80% costs more than it saves on the turn it is made, because the
+  rewritten block is written to the provider cache at 1.25x the input rate.
+
+The response reports what happened in `X-Entroly-Protected-Blocks` and
+`X-Entroly-Deduped-Blocks` beside the existing compression headers.
+
+`compress_proxy_payload()` called directly keeps its earlier behaviour unless
+a policy is passed:
+
+```python
+from entroly.compression_proxy import ToolResultPolicy, compress_proxy_payload
+
+result = compress_proxy_payload(body, provider="anthropic",
+                                policy=ToolResultPolicy.from_names("my_tool"))
+```
+
+## Repository context is opt-in
+
+The proxy forwards a request with nothing added unless
+`ENTROLY_CONTEXT_INJECTION` says otherwise:
+
+| Value | Requests that receive selected repository context |
+|---|---|
+| `off` (default) | none |
+| `chat` | requests that declare no tools |
+| `always` | every request whose newest item is a new user question |
+
+Injected context is text the client did not send, so it can only make a
+request larger, and selecting it costs seconds per question on a large index.
+It is worth that when the model has no other way to see the code. It is pure
+cost for an agent that reads files with its own tools, or for an application
+whose prompts are not about the repository the proxy was started in, and the
+proxy cannot tell those apart from the request. In `chat` and `always` mode
+selection runs once per new user question, never on a tool turn; the reason a
+request received no context is reported in `X-Entroly-Context-Injection`
+(`off`, `agent-has-tools`, `not-a-new-question`).
+
 Entroly preserves user and assistant text by default because the latest user
 message is usually the semantic target. User-message compression is explicit:
 

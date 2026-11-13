@@ -5,6 +5,42 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
 
 ## Unreleased
 
+- Proxy: agent sessions cost less time and keep the code the agent read.
+  Measured by replaying one 25-turn tool session and a set of plain chat
+  requests through `entroly proxy` against a provider stub that counts tokens
+  and bills prefix-cache reads and writes.
+  - **Repository context is now opt-in** (`ENTROLY_CONTEXT_INJECTION=off|chat|always`,
+    default `off`). Every new question gained ~740 tokens and 5-6 s; the
+    tokens were an alphabetical file listing, identical for a haiku and for a
+    question about `handle_proxy`, because the hierarchy was seeded with
+    `qccr::<source>` ids the fragment store does not hold. A query-conditioned
+    selection is now rendered flat, as the ranker produced it, and a listing
+    with no cluster and no code is never injected. **Behaviour change:** set
+    `ENTROLY_CONTEXT_INJECTION=chat` or `always` to keep context injection.
+  - Selection runs once per new user question. On OpenAI-format requests it
+    ran on every tool turn, for the question asked many turns earlier: ~5.8 s
+    per turn, now ~0.1 s.
+  - File reads and source code are forwarded as sent. 36% of the lines of the
+    files an agent read reached the model, and the request carried no tool or
+    instruction for recovering the rest. `ENTROLY_PROTECT_FILE_READS=0`
+    restores the old behaviour. `ENTROLY_TOOL_RESULT_EXCLUDE` is now honoured
+    on the default path; it was read and then applied only with session
+    rescue off.
+  - A tool result byte-identical to an earlier one in the same request is
+    replaced by a one-line pointer to it (`ENTROLY_TOOL_RESULT_DEDUP`).
+  - A tool result is rewritten only when that removes at least 20% of it.
+  - Net-saving ledger: an added block the provider read from cache is charged
+    as a cache read. It was charged against whatever the request wrote, so a
+    turn that appended the client's own new content billed old rewrites as
+    fresh 1-hour writes; four such turns held the conversation, and the hold
+    forwarded raw history and broke the cache. A block's digest no longer
+    includes `cache_control`, which clients move every turn: a removed block
+    was priced as never-sent on two consecutive turns, which put the ledger
+    above the measured saving ($0.418 against $0.395 on the same session).
+  - `/stats` and `entroly value` count requests whose only change was
+    compression. They were booked only when context was injected, so a session
+    cut by half reported `saved_total: 0` and `input_tokens_reduced: 0`.
+
 - Claude Code integration fixes.
   - The RAVS capture hook recorded no outcome from Claude Code. Claude Code puts
     no exit code in a Bash hook payload: it fires `PostToolUse` only after exit

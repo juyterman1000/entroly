@@ -800,8 +800,8 @@ mod tests {
 
     fn random_fp(seed: &mut u64) -> Fingerprint {
         let mut fp = Fingerprint::zero();
-        for k in 0..FINGERPRINT_DIM {
-            fp.dims[k] = fp_lcg(seed);
+        for dim in fp.dims.iter_mut() {
+            *dim = fp_lcg(seed);
         }
         fp
     }

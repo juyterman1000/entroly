@@ -144,6 +144,110 @@ def extract_user_message(body: dict[str, Any], provider: str) -> str:
     return ""
 
 
+_TOOL_OUTPUT_ITEM_TYPES = frozenset(
+    {
+        "function_call_output",
+        "custom_tool_call_output",
+        "computer_call_output",
+        "local_shell_call_output",
+        "mcp_call_output",
+        "tool_result",
+    }
+)
+
+
+def latest_turn_is_user_text(body: dict[str, Any], provider: str) -> bool:
+    """True when the newest item of the conversation is text the user wrote.
+
+    ``extract_user_message`` answers "what did the user last ask", walking
+    back past anything that is not a user message. That is the right query to
+    rank by, but the wrong trigger for work that belongs to a new question:
+    on an OpenAI tool turn the newest item is ``role: "tool"``, so it returns
+    the question from many turns ago and the caller ran the whole selection
+    pipeline again for it -- once per tool call. Anthropic tool turns never
+    did, only because their ``tool_result`` blocks carry no ``text`` block.
+    Measured through the proxy on a 25-turn tool session: ~5.8 s added to
+    every OpenAI turn, ~0.1 s to the same Anthropic turns.
+
+    A user message that carries a tool result is a tool turn whatever else is
+    in it: agents attach reminder text beside ``tool_result`` blocks, and that
+    text is not a question to select repository context for.
+    """
+    if "input" in body and "messages" not in body:
+        inp = body["input"]
+        if isinstance(inp, str):
+            return bool(inp.strip())
+        if not isinstance(inp, list) or not inp:
+            return False
+        last = inp[-1]
+        if isinstance(last, str):
+            return bool(last.strip())
+        if not isinstance(last, dict):
+            return False
+        item_type = str(last.get("type") or "")
+        if item_type in _TOOL_OUTPUT_ITEM_TYPES:
+            return False
+        if item_type == "input_text":
+            return bool(str(last.get("text") or "").strip())
+        if last.get("role") != "user":
+            return False
+        return _content_has_user_text(last.get("content"), text_types=("input_text", "text"))
+
+    if provider == "gemini":
+        contents = body.get("contents")
+        if not isinstance(contents, list) or not contents:
+            return False
+        last = contents[-1]
+        if not isinstance(last, dict) or last.get("role", "user") != "user":
+            return False
+        parts = last.get("parts")
+        if not isinstance(parts, list):
+            return False
+        if any(isinstance(p, dict) and "functionResponse" in p for p in parts):
+            return False
+        return any(
+            isinstance(p, dict) and str(p.get("text") or "").strip() for p in parts
+        )
+
+    messages = body.get("messages")
+    if not isinstance(messages, list) or not messages:
+        return False
+    last = messages[-1]
+    if not isinstance(last, dict) or last.get("role") != "user":
+        return False
+    return _content_has_user_text(last.get("content"), text_types=("text",))
+
+
+def _content_has_user_text(content: Any, *, text_types: tuple[str, ...]) -> bool:
+    if isinstance(content, str):
+        return bool(content.strip())
+    if not isinstance(content, list):
+        return False
+    has_text = False
+    for block in content:
+        if not isinstance(block, dict):
+            continue
+        block_type = str(block.get("type") or "")
+        if block_type in _TOOL_OUTPUT_ITEM_TYPES:
+            return False
+        if block_type in text_types and str(block.get("text") or "").strip():
+            has_text = True
+    return has_text
+
+
+def request_declares_tools(body: dict[str, Any]) -> bool:
+    """True when the client gave the model tools to call.
+
+    A model with tools fetches the files it needs itself and pays for exactly
+    those. A model without tools sees only what the request carries.
+    """
+    for key in ("tools", "functions"):
+        value = body.get(key)
+        if isinstance(value, list) and value:
+            return True
+    return False
+
+
 def extract_model(body: dict[str, Any], path: str = "") -> str:
     """Extract the model name from the request body or URL path.
 
