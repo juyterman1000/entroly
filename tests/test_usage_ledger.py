@@ -6,6 +6,7 @@ import pytest
 
 from entroly.usage_ledger import (
     UsageLedger,
+    TokenUsage,
     UsagePricing,
     UsagePricingCatalog,
     parse_provider_usage,
@@ -86,7 +87,8 @@ def test_direct_usage_pricing_still_accepts_numeric_literals() -> None:
     price = UsagePricing(2, 4, 0.5)
     assert price.input_per_million == 2
     assert price.output_per_million == 4
-    assert price.cache_read_per_million == 0.5
+    assert price.cache_read_per_million == Decimal("0.5")
+    assert price_usage(TokenUsage(uncached_input_tokens=100, cache_read_tokens=100), price) == (250, 150)
 
 
 def test_openai_usage_separates_cached_from_uncached_tokens() -> None:

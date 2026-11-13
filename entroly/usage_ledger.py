@@ -111,7 +111,9 @@ class UsagePricing:
         # Nonfinite rates must never enter the durable cost ledger. NaN
         # comparisons raise InvalidOperation, while Infinity otherwise passes
         # the nonnegative guard and poisons dollar calculations.
-        for rate in rates:
+        for field_name in ("input_per_million", "output_per_million",
+                           "cache_read_per_million", "cache_write_per_million"):
+            rate = getattr(self, field_name)
             if rate is None:
                 continue
             try:
@@ -120,6 +122,9 @@ class UsagePricing:
                 raise ValueError("pricing rates must be finite and nonnegative") from exc
             if not checked.is_finite() or checked < 0:
                 raise ValueError("pricing rates must be finite and nonnegative")
+            # Direct dataclass construction must honor its Decimal contract;
+            # otherwise floats pass validation and crash _micro_cost later.
+            object.__setattr__(self, field_name, checked)
 
     @property
     def cache_write_rate(self) -> Decimal:
