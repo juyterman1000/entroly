@@ -21,7 +21,9 @@ IMAGE = "entroly-dogfood-oracle:py312"
 def docker_command(project: Path, test_file: str, image: str = IMAGE) -> list[str]:
     if not project.is_absolute():
         raise ValueError("sandbox project path must be absolute")
-    if Path(test_file).is_absolute() or ".." in Path(test_file).parts:
+    # A Windows root-relative path such as /etc/shadow has an anchor but
+    # Path.is_absolute() can be false when no drive letter is supplied.
+    if Path(test_file).anchor or ".." in Path(test_file).parts:
         raise ValueError("sandbox test path must stay inside task workspace")
     return [
         "docker", "run", "--rm", "--pull=never",
@@ -57,7 +59,7 @@ def run_sandboxed_oracle(task: Task, patched_source: str, *, timeout: float = 12
             files[task.dependency_file] = task.dependency_source
         for name, body in files.items():
             path = root / name
-            if (Path(name).is_absolute() or ".." in Path(name).parts
+            if (Path(name).anchor or ".." in Path(name).parts
                     or not path.resolve().is_relative_to(root)):
                 raise ValueError("task file escapes the isolated project")
             path.parent.mkdir(parents=True, exist_ok=True)

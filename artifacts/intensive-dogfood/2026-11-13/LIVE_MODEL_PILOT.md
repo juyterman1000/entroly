@@ -57,3 +57,9 @@ COMPRESS used **55.78% fewer measured prompt tokens** than RAW with exactly the 
 ## Historical mined-code task-source evidence
 
 Workflow 43500819779 found **59 candidate source+test commits** and validated the first **8 of 8** with pass-at-fix and fail-after-revert in separate worktrees. These are real Entroly-history failure oracles, **not** eight model-solved real repository tasks. Independent repository holdout and n>=400 remain unexecuted.
+
+## Run 3: sandboxed model-generated patch execution
+
+Exact head `e550bb2d10544b0bac9dbe7b6c222e7133421c9d`, [GitHub Actions run 43501829520](https://github.com/juyterman1000/entroly/actions/runs/43501829520). All eight dedicated jobs succeeded, including CPU-hosted Qwen 2.5 Coder 3B actual model generation. A dedicated Python 3.12 pytest image was built before model code existed; each model-generated patch was graded in a nonroot, no-network Docker container with no runner credentials, a read-only synthetic-task bind mount, memory/PID limits, and no elevated capabilities. The artifact records the model and oracle image digests and the exact generated patch text.
+
+The sandboxed replay reproduced the earlier measured result **exactly**: RAW 4/8, COMPRESS 4/8, CLOSED_LOOP 6/8; input tokens 4,496 / 1,988 / 2,926 and output tokens 356 / 354 / 544. Model-only latency differs slightly as expected. This confirms that changing the test executor did not change the observed task success set in this controlled pilot.
