@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import ast
+import os
+import subprocess
+import sys
 
 from benchmarks.agentic_arms import Arm, BuiltContext, Fragment, build_closed_loop
 from benchmarks.intensive_dogfood_trials import CASES, ROOT, recover_omitted_for_query, source_corpus
@@ -47,3 +50,17 @@ def test_recovered_content_must_match_omitted_digest() -> None:
     restored = build_closed_loop(first, recovered=recover_omitted_for_query("inspect validate", first.omitted))
     assert restored.included == [original]
     assert restored.omitted == []
+
+
+def test_importing_benchmark_does_not_set_global_airgap() -> None:
+    flags = ("ENTROLY_AIR_GAP", "ENTROLY_DISABLE_UPDATE_CHECK", "ENTROLY_DISABLE_TELEMETRY")
+    environment = os.environ.copy()
+    for flag in flags:
+        environment.pop(flag, None)
+    script = (
+        "import os; import benchmarks.intensive_dogfood_trials; "
+        "assert not any(k in os.environ for k in " + repr(flags) + ")"
+    )
+    process = subprocess.run([sys.executable, "-c", script], cwd=ROOT, env=environment,
+                             text=True, capture_output=True, timeout=30)
+    assert process.returncode == 0, process.stderr

@@ -22,9 +22,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-os.environ.setdefault("ENTROLY_AIR_GAP", "1")
-os.environ.setdefault("ENTROLY_DISABLE_UPDATE_CHECK", "1")
-os.environ.setdefault("ENTROLY_DISABLE_TELEMETRY", "1")
 
 from benchmarks.agentic_arms import Arm, Fragment, build_closed_loop, build_for_arm  # noqa: E402
 from entroly.native_status import native_status  # noqa: E402
@@ -209,6 +206,11 @@ def main() -> int:
     cli = argparse.ArgumentParser()
     cli.add_argument("--out", required=True, type=Path)
     output = cli.parse_args().out
+    # CLI-only isolation. Importing this module during pytest collection must
+    # not mutate the test process and break unrelated telemetry-consent tests.
+    os.environ.setdefault("ENTROLY_AIR_GAP", "1")
+    os.environ.setdefault("ENTROLY_DISABLE_UPDATE_CHECK", "1")
+    os.environ.setdefault("ENTROLY_DISABLE_TELEMETRY", "1")
     report = run()
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2)+"\n", encoding="utf-8")
