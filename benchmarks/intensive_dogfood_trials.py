@@ -12,6 +12,7 @@ import ast
 import json
 import os
 import random
+import subprocess
 import statistics
 import sys
 import time
@@ -112,10 +113,24 @@ def run() -> dict:
     reduction = [100*(1-x["selected_estimated_tokens"]/x["raw_estimated_tokens"])
                  for x in measured]
     native = native_status()
+    expected = os.environ.get("ENTROLY_DOGFOOD_EXPECTED_SHA", "").strip()
+    try:
+        checkout_sha = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True, stderr=subprocess.DEVNULL
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        checkout_sha = None
+    if expected and checkout_sha != expected:
+        raise RuntimeError(
+            f"Dogfood checkout provenance mismatch: expected {expected}, got {checkout_sha}"
+        )
     return {
         "schema": "entroly.intensive-dogfood.model-free.v1",
         "recorded_utc": datetime.now(timezone.utc).isoformat(),
-        "sha": os.environ.get("GITHUB_SHA", "locally-unset"),
+        "sha": checkout_sha,
+        "expected_head_sha": expected or None,
+        "github_event_sha": os.environ.get("GITHUB_SHA"),
+        "provenance_validated": bool(expected and checkout_sha == expected),
         "python": sys.version.split()[0],
         "native_available": bool(native.available),
         "native_version": native.version,

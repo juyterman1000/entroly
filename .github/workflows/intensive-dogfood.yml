@@ -62,7 +62,7 @@ jobs:
           ENTROLY_AIR_GAP: "1"
           ENTROLY_DISABLE_UPDATE_CHECK: "1"
           ENTROLY_DISABLE_TELEMETRY: "1"
-          GITHUB_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          ENTROLY_DOGFOOD_EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           python - <<'PY'
