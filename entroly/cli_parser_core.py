@@ -397,6 +397,70 @@ def _add_core_commands(subparsers) -> None:
         help="Maximum turns to show in the text ledger (default: 20; -1 = all, 0 = none)",
     )
 
+    # entroly export-proof / verify-proof
+    export_proof = subparsers.add_parser(
+        "export-proof",
+        help="Export a signed, offline-verifiable proof bundle of context evidence",
+    )
+    export_proof.add_argument(
+        "--session", default=None,
+        help="Session id the chain must belong to, or a path to session_chain.json",
+    )
+    export_proof.add_argument(
+        "--session-chain", default=None, help="session_chain.json to include"
+    )
+    export_proof.add_argument(
+        "--taint", default=None,
+        help="WITNESS taint JSON (default: session_taint.json or taint.json beside the chain)",
+    )
+    export_proof.add_argument(
+        "--commit", action="append", default=[], metavar="PATH",
+        help="Context Commit JSON to include (repeatable)",
+    )
+    export_proof.add_argument(
+        "--commits-dir", default=None,
+        help="Directory of Context Commit JSON files "
+             "(default: .entroly/context-commits when nothing else is given)",
+    )
+    export_proof.add_argument(
+        "--format", choices=["json", "html"], default="json",
+        help="json: the bundle. html: the bundle plus a printable report beside it",
+    )
+    export_proof.add_argument("--out", default=None, help="Bundle output path (.json)")
+    export_proof.add_argument(
+        "--sign", action="store_true",
+        help="Sign with Ed25519 (ENTROLY_PROOF_SIGNING_KEY, or a key derived "
+             "from ENTROLY_IDENTITY_KEY). Fails if no key is available",
+    )
+    export_proof.add_argument(
+        "--no-content", action="store_true",
+        help="Leave commit content (source text) out; keeps anchors and the "
+             "exporter's verification result, which can then not be re-run",
+    )
+    export_proof.add_argument(
+        "--generate-key", default=None, metavar="PATH",
+        help="Write a new Ed25519 private key (hex, mode 0600) to PATH, "
+             "print its public key, and exit",
+    )
+    export_proof.add_argument("--json", action="store_true", help="Print a JSON summary")
+
+    verify_proof = subparsers.add_parser(
+        "verify-proof",
+        help="Verify a proof bundle offline; non-zero exit if it fails",
+    )
+    verify_proof.add_argument("bundle", help="Proof bundle JSON path")
+    verify_proof.add_argument(
+        "--public-key", default=None,
+        help="Ed25519 public key (hex) obtained from the issuer; the bundle "
+             "must be signed by it",
+    )
+    verify_proof.add_argument(
+        "--require-signature", action="store_true",
+        help="Fail an unsigned bundle",
+    )
+    verify_proof.add_argument("--html", default=None, help="Also write an HTML report here")
+    verify_proof.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+
     # entroly explain
     explain_parser = subparsers.add_parser(
         "explain",
