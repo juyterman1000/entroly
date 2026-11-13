@@ -258,3 +258,27 @@ Entroly retrieves dropped context and keeps auditable evidence receipts for what
 
 That is the product wedge: Entroly is not only a compression proxy; it is an
 auditable, recoverable evidence-control plane for compressed LLM context.
+
+## Headers a gateway behind Entroly depends on
+
+The proxy forwards a provider's own header families (`anthropic-*`,
+`openai-*`, `x-stainless-*`, tracing headers, the provider's auth header) and
+drops every other client header, so an unknown header never reaches a
+provider by accident.
+
+That default also removes the tags a gateway *behind* Entroly keys on: a run
+or team id used for usage attribution, or a trace id for an observability
+layer. Name the ones to keep:
+
+```bash
+ENTROLY_FORWARD_HEADERS="x-ccb-run-id, x-team-*" entroly proxy
+```
+
+- Entries are exact header names or `prefix-*` (at least three characters).
+- Off by default. Nothing extra is forwarded unless it is listed.
+- Credentials (`authorization`, `x-api-key`, `api-key`, `x-goog-api-key`),
+  cookies, transport headers and Entroly's own `x-entroly-*` headers are
+  refused even if listed, including through a prefix that would match them.
+  Refused entries are named in a warning; accepted ones in an info line.
+- The same list applies to Anthropic, OpenAI and Gemini upstreams.
+
