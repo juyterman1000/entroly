@@ -102,12 +102,6 @@ class UsagePricing:
         )
 
     def __post_init__(self) -> None:
-        rates = (
-            self.input_per_million,
-            self.output_per_million,
-            self.cache_read_per_million,
-            self.cache_write_per_million,
-        )
         # Nonfinite rates must never enter the durable cost ledger. NaN
         # comparisons raise InvalidOperation, while Infinity otherwise passes
         # the nonnegative guard and poisons dollar calculations.
