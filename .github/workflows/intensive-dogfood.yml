@@ -198,7 +198,7 @@ jobs:
             sleep 2
           done
           curl --noproxy '*' -fsS http://127.0.0.1:11434/api/tags >/dev/null
-          timeout 900 docker exec entroly-dogfood-ollama ollama pull qwen2.5-coder:0.5b
+          timeout 900 docker exec entroly-dogfood-ollama ollama pull qwen2.5-coder:3b
       - name: Run real local model with three paired arms and test oracle
         env:
           ENTROLY_AIR_GAP: "1"
@@ -209,7 +209,7 @@ jobs:
         run: |
           set -euo pipefail
           timeout 2700 python benchmarks/intensive_live_agent_pilot.py \
-            --model qwen2.5-coder:0.5b --limit 4 --seeds 17 --budget 600 \
+            --model qwen2.5-coder:3b --limit 4 --seeds 17 42 --budget 600 \
             --timeout 240 --out "$RUNNER_TEMP/live-agent-pilot.json" \
             2>&1 | tee "$RUNNER_TEMP/live-agent-pilot.log"
           test "${PIPESTATUS[0]}" -eq 0
@@ -230,3 +230,49 @@ jobs:
       - name: Stop isolated Ollama
         if: always()
         run: docker rm -f entroly-dogfood-ollama || true
+
+  historical-commit-oracles:
+    name: Mine and validate real repository history test oracles
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 150
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install exact-head test dependencies
+        run: |
+          python scripts/ci_install_exact_head.py --extras test,proxy --extra-package pytest-timeout
+      - name: Discover and independently prove fix versus reverted behavior
+        env:
+          ENTROLY_AIR_GAP: "1"
+          ENTROLY_DISABLE_TELEMETRY: "1"
+          ENTROLY_DISABLE_UPDATE_CHECK: "1"
+        run: |
+          set -euo pipefail
+          python benchmarks/agentic_task_miner.py discover \
+            --repo . --max-commits 120 --out "$RUNNER_TEMP/real-commit-candidates.jsonl"
+          python benchmarks/agentic_task_miner.py validate \
+            --repo . --max-validate 8 --timeout 70 \
+            --candidates "$RUNNER_TEMP/real-commit-candidates.jsonl" \
+            --out "$RUNNER_TEMP/real-validated-oracles.jsonl"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'])
+          c = (root / 'real-commit-candidates.jsonl').read_text().splitlines()
+          v = (root / 'real-validated-oracles.jsonl').read_text().splitlines()
+          print(json.dumps({'candidates': len(c), 'validated': len(v),
+                            'note': 'No model A/B performed on these real commits yet.'}))
+          PY
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: intensive-dogfood-validated-repo-history
+          path: |
+            ${{ runner.temp }}/real-commit-candidates.jsonl
+            ${{ runner.temp }}/real-validated-oracles.jsonl
+          if-no-files-found: warn
