@@ -18,7 +18,9 @@ The original `benchmarks/intensive_dogfood_trials.py` silently shortened source 
 | Target source selected | 48 / 48 | Source presence **may be excerpted** |
 | First pass contains entire source | 8 / 48 | 16.7%; no oracle label in retrieval |
 | Complete source restored | 48 / 48 | Exact symbol-name lookup from query, not autonomous agent detection |
-| Second-attempt context exceeds original budget | **40 / 48** | **83.3%**; essential cost and capacity caveat |
+| First-pass rendered context exceeds configured budget | **34 / 48** | Rendering/framing overhead; not strict budget compliance |
+| Recovered context exceeds budget | **36 / 40 actual recoveries** | **90%** of recovery attempts |
+| Final context above original budget | **40 / 48** | Includes 4 tasks with no recovery, whose first pass was over budget |
 | Median first-pass estimated reduction | 93.56% | Estimated characters/4; not provider tokens |
 | Median native selection latency | 60.198 ms | In-process, no network |
 | p95 native selection latency | 185.879 ms | In-process, no network |
