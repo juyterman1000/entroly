@@ -381,6 +381,101 @@ def test_one_unreadable_table_removes_only_that_provider(monkeypatch, tmp_path) 
     assert ns.resolve_rates("gemini", "gemini-2.5-pro") is not None
 
 
+@pytest.mark.parametrize("bad_rate", ["NaN", "sNaN", "Infinity", "-Infinity", "not-a-number"])
+def test_invalid_operator_catalog_rate_is_unpriced_not_an_exception(
+    monkeypatch, tmp_path, bad_rate
+) -> None:
+    path = tmp_path / "pricing.json"
+    path.write_text(json.dumps({
+        "source": "operator-invalid",
+        "models": {
+            "openai:gpt-4o": {
+                "input_per_million": bad_rate,
+                "cache_read_per_million": "0.50",
+            },
+        },
+    }), encoding="utf-8")
+    monkeypatch.setenv("ENTROLY_PRICING_CATALOG", str(path))
+    ns._reset_catalog_cache_for_tests()
+    # A broken operator catalog must never produce nonfinite dollar claims or
+    # propagate decimal.InvalidOperation into the proxy's receipt handling.
+    assert ns.resolve_rates("openai", "gpt-4o") is None
+    assert ns.resolve_rates("anthropic", "claude-opus-4-6") is None
+
+
+@pytest.mark.parametrize("bad_rate", ["NaN", "Infinity", "not-a-number"])
+def test_bad_bundled_rate_isolated_to_its_table(
+    monkeypatch, tmp_path, bad_rate
+) -> None:
+    bad = tmp_path / "openai_pricing.json"
+    bad.write_text(json.dumps({
+        "models": {
+            "openai:gpt-4o": {
+                "input_per_million": "2.50",
+                "cache_read_per_million": bad_rate,
+            },
+        },
+    }), encoding="utf-8")
+    monkeypatch.setattr(
+        ns, "_BUNDLED_TABLES",
+        (DATA / "anthropic_pricing.json", bad, DATA / "google_pricing.json"),
+    )
+    ns._reset_catalog_cache_for_tests()
+    assert ns.resolve_rates("openai", "gpt-4o") is None
+    assert ns.resolve_rates("anthropic", "claude-opus-4-6") is not None
+    assert ns.resolve_rates("gemini", "gemini-2.5-pro") is not None
+
+
+@pytest.mark.parametrize("payload", [[], 42, {"models": []}])
+def test_malformed_operator_catalog_structure_is_unpriced(
+    monkeypatch, tmp_path, payload
+) -> None:
+    path = tmp_path / "pricing.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.setenv("ENTROLY_PRICING_CATALOG", str(path))
+    ns._reset_catalog_cache_for_tests()
+    assert ns.resolve_rates("openai", "gpt-4o") is None
+
+
+@pytest.mark.parametrize("field", ["priced_up_to_input_tokens", "long_context"])
+def test_nonfinite_catalog_token_limit_is_unpriced(
+    monkeypatch, tmp_path, field
+) -> None:
+    entry = {
+        "input_per_million": "2",
+        "cache_read_per_million": "0.5",
+    }
+    if field == "long_context":
+        entry[field] = {
+            "threshold_input_tokens": float("inf"),
+            "input_per_million": "4",
+            "cache_read_per_million": "1",
+        }
+    else:
+        entry[field] = float("inf")
+    path = tmp_path / "pricing.json"
+    path.write_text(json.dumps({
+        "models": {"openai:gpt-4o": entry},
+    }), encoding="utf-8")
+    monkeypatch.setenv("ENTROLY_PRICING_CATALOG", str(path))
+    ns._reset_catalog_cache_for_tests()
+    assert ns.resolve_rates("openai", "gpt-4o") is None
+
+
+def test_malformed_long_context_shape_disables_that_catalog(monkeypatch, tmp_path) -> None:
+    path = tmp_path / "pricing.json"
+    path.write_text(json.dumps({
+        "models": {"gemini:gemini-2.5-pro": {
+            "input_per_million": "1.25",
+            "cache_read_per_million": "0.125",
+            "long_context": "invalid",
+        }},
+    }), encoding="utf-8")
+    monkeypatch.setenv("ENTROLY_PRICING_CATALOG", str(path))
+    ns._reset_catalog_cache_for_tests()
+    assert ns.resolve_rates("gemini", "gemini-2.5-pro") is None
+
+
 def test_a_table_repricing_another_tables_model_is_dropped_whole(monkeypatch, tmp_path) -> None:
     clash = tmp_path / "clash.json"
     clash.write_text(json.dumps({"source": "clash", "models": {

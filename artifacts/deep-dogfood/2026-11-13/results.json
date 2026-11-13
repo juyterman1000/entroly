@@ -1,0 +1,53 @@
+{
+  "schema_version": "entroly.deep-dogfood-evidence.v1",
+  "date": "2026-11-13",
+  "baseline": {
+    "repository": "juyterman1000/entroly",
+    "sha": "1de499a58835f13eba923a89a8020a9e43eed92e"
+  },
+  "evidence": {
+    "post_merge_ci": {
+      "run_id": 43425789632,
+      "successful_jobs": 12,
+      "failed_jobs": 0,
+      "source": "GitHub Actions API"
+    },
+    "pre_merge_deep_dogfood": {
+      "run_id": 43419434393,
+      "successful_jobs": 16,
+      "failed_jobs": 0,
+      "source": "GitHub Actions API"
+    }
+  },
+  "completed_real_provider_trials": 0,
+  "completed_agent_abc_comparisons": 0,
+  "independently_measured_cost_per_successful_task": null,
+  "independently_measured_p95_latency_ms": null,
+  "new_findings": [
+    {
+      "id": "DOGFOOD-001",
+      "status": "fix_proposed",
+      "component": "entroly/net_savings.py",
+      "summary": "Nonfinite or malformed numeric rates were not fail-closed"
+    }
+  ],
+  "phase_status": {
+    "phase_0": "baseline_verified_remotely",
+    "phase_1": "ci_only",
+    "phase_2": "not_executed",
+    "phase_3": "synthetic_ci_only",
+    "phase_4": "partial_static_catalog_review",
+    "phase_5": "partial_parser_audit",
+    "phase_6": "not_complete",
+    "phase_7": "fix_proposed",
+    "phase_8": "baseline_ci_green_branch_ci_pending",
+    "phase_9": "evidence_recorded",
+    "phase_10": "pr_pending"
+  },
+  "limitations": [
+    "No local repository clone due DNS/network restriction",
+    "No live provider credentials or invoice access",
+    "No completed real agent trial or paired billing measurement",
+    "Not a comprehensive audit"
+  ]
+}
