@@ -278,6 +278,8 @@ class TestProxyContentBlockAccounting:
 
         async def run():
             cfg = ProxyConfig()
+            # These tests are about what injection does, so they turn it on.
+            cfg.context_injection = "always"
             cfg.enable_adaptive_budget = False
             cfg.enable_dynamic_budget = False
             cfg.enable_hierarchical_compression = False

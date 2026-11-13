@@ -53,13 +53,15 @@ from .proxy_transform import (
     inject_context_live_zone,
     inject_context_openai,
     inject_context_responses,
+    latest_turn_is_user_text,
+    request_declares_tools,
     strip_anthropic_unsupported_params,
 )
 from .behavioral_waste import BehavioralWasteDetector, observe_canonical_messages
 from .cache_aligner import CacheAligner
 from .cache_routing import CacheAwareRouter, CachePrice, ModelCandidate
 from .prefix_continuity import PrefixContinuityGuard
-from .compression_proxy import compress_proxy_payload
+from .compression_proxy import ToolResultPolicy, compress_proxy_payload
 from .compression_retrieval_store_secure import CompressionRetrievalStore
 from .control_plane import (
     ControlAudit,
@@ -633,6 +635,48 @@ def compress_conversation_messages(
     except Exception as e:
         logger.debug("Conversation compression skipped: %s", e)
         return messages
+
+
+def _hierarchy_seed_ids(selected: list[dict[str, Any]]) -> list[str] | None:
+    """Engine fragment ids to seed the hierarchy with, or ``None`` to stay flat.
+
+    Query-conditioned selection returns one synthetic fragment per file whose
+    ``id`` is ``qccr::<source>``. The engine's fragment store has never held
+    such an id, so seeding the hierarchy with it matched nothing and the
+    renderer returned level 1 alone: an alphabetical file listing, identical
+    for every query. Measured on this repository, a question about
+    ``handle_proxy`` ranked ``entroly/proxy.py`` first and then injected the
+    same 500-token listing as "Write a haiku about autumn".
+
+    The stored fragments behind a synthetic one (``source_fragment_ids``) are
+    not a substitute. They are every chunk of the file in file order, and the
+    hierarchy renders seeds in order until the budget is spent: for the same
+    question it rendered chunks 0-5 of ``entroly/proxy.py`` while
+    ``handle_proxy`` is defined in chunk 11. The synthetic fragment's own
+    ``content`` is the query-conditioned excerpt -- it did contain
+    ``handle_proxy`` -- so a selection of synthetic fragments is rendered
+    flat, exactly as the ranker produced it.
+    """
+    seeds: list[str] = []
+    for fragment in selected:
+        if not isinstance(fragment, dict):
+            continue
+        own = str(fragment.get("id") or fragment.get("fragment_id") or "")
+        if own.startswith("qccr::"):
+            return None
+        if own and own not in seeds:
+            seeds.append(own)
+    return seeds
+
+
+def _hierarchy_is_overview_only(hcc_result: dict[str, Any]) -> bool:
+    """True when the hierarchy carries a file listing and nothing else."""
+    if hcc_result.get("level3_fragments") or hcc_result.get("level2_cluster"):
+        return False
+    return not (
+        int(hcc_result.get("level2_tokens", 0) or 0)
+        or int(hcc_result.get("level3_tokens", 0) or 0)
+    )
 
 
 def _extract_text_from_sse(raw_bytes: bytes) -> str:
@@ -2221,6 +2265,60 @@ class PromptCompilerProxy:
                 self._usage_failures += 1
             logger.warning("Streaming usage accounting failed", exc_info=True)
 
+    def _account_forwarded_request(
+        self,
+        inbound_body: dict[str, Any],
+        outbound_body: dict[str, Any],
+        path: str,
+    ) -> None:
+        """Book a request that took no repository context.
+
+        Savings were only ever booked on the branch that injects context, so
+        a request whose tool output the proxy compressed -- the transform that
+        removes tokens -- was recorded nowhere: ``/stats`` reported
+        ``saved_total: 0`` and ``entroly value`` reported
+        ``input_tokens_reduced: 0`` for a session the proxy had cut by half.
+        Both sides are measured with the same estimator on the request as
+        received and the request as forwarded.
+        """
+        try:
+            inbound = self._estimate_body_tokens(inbound_body)
+            outbound = self._estimate_body_tokens(outbound_body)
+            if inbound <= 0 and outbound <= 0:
+                return
+            saved = max(0, inbound - outbound)
+            added = max(0, outbound - inbound)
+            with self._stats_lock:
+                self._total_original_tokens += inbound
+                self._total_optimized_tokens += outbound
+                if saved:
+                    self._requests_optimized += 1
+            get_tracker().record(
+                tokens_saved=saved,
+                model=extract_model(outbound_body, path) or "",
+                duplicates=0,
+                optimized=saved > 0,
+                source="proxy",
+                tokens_added=added,
+            )
+        except Exception as exc:  # noqa: BLE001 - accounting never blocks a request
+            logger.debug("Forwarded-request accounting skipped: %s", exc)
+
+    def _context_injection_skip_reason(self, body: dict[str, Any], provider: str) -> str:
+        """Why this request gets no repository context, or ``""`` to select.
+
+        The value is reported as ``X-Entroly-Context-Injection`` so a client
+        can see which rule applied without reading logs.
+        """
+        mode = str(getattr(self.config, "context_injection", "off") or "off")
+        if mode == "off":
+            return "off"
+        if mode == "chat" and request_declares_tools(body):
+            return "agent-has-tools"
+        if not latest_turn_is_user_text(body, provider):
+            return "not-a-new-question"
+        return ""
+
     def _conversation_context_window(self, body: dict, path: str) -> int:
         """Window that conversation-compression utilisation is measured against.
 
@@ -2461,6 +2559,18 @@ class PromptCompilerProxy:
                     include_receipt_header=True,
                     compress_user_messages=False,
                     retrieval_store=self._session_rescue_store,
+                    # ENTROLY_TOOL_RESULT_EXCLUDE was read into the config
+                    # and then honoured only on the legacy path below, so on
+                    # the default path an operator's exclusions did nothing.
+                    policy=ToolResultPolicy.from_names(
+                        getattr(self.config, "tool_result_excluded_tools", ""),
+                        protect_file_reads=bool(
+                            getattr(self.config, "protect_file_reads", True)
+                        ),
+                        dedupe_repeats=bool(
+                            getattr(self.config, "dedupe_tool_results", True)
+                        ),
+                    ),
                 )
                 body = tool_result.body
                 control_headers.update(tool_result.headers())
@@ -2666,12 +2776,19 @@ class PromptCompilerProxy:
         _recoverable_fragments: list[dict[str, Any]] = []
         user_message = ""
         witness_context = ""
+        _value_accounted = False
         # Run the optimization pipeline (synchronous Rust, off the event loop)
         try:
             user_message = extract_user_message(body, provider)
             witness_context = user_message
             control_headers["X-Entroly-Context-Tokens-Added"] = "0"
-            if user_message and not _query_can_rank_context(user_message):
+            injection_skip = self._context_injection_skip_reason(body, provider)
+            if injection_skip:
+                # Decided before the pipeline runs, not after: selection is
+                # the expensive part (seconds per call on a large index), and
+                # a result that will not be injected is not worth computing.
+                control_headers["X-Entroly-Context-Injection"] = injection_skip
+            elif user_message and not _query_can_rank_context(user_message):
                 # "?" or "What is this?" has nothing to rank by, yet the
                 # engine still fills the budget: ~37k tokens of repository
                 # context rode along with a one-word question. Forward as sent.
@@ -2742,8 +2859,13 @@ class PromptCompilerProxy:
                         _instr_text = body.get("instructions", "")
                         original_tokens = (len(_inp_text.split()) + len(_instr_text.split())) * 4 // 3
                     else:
-                        # Same measure as the outbound count below.
-                        original_tokens = self._estimate_body_tokens(body)
+                        # Same measure as the outbound count below, taken on
+                        # the request as the client sent it. Measuring ``body``
+                        # here read it after tool-output compression, so the
+                        # tokens that compression removed were in neither
+                        # count and every such request was booked as enlarged
+                        # by the injection alone.
+                        original_tokens = self._estimate_body_tokens(control_before)
                     # Savings are NOT scored here. ``context_text`` is the snippet
                     # about to be injected, and injection adds to the body; scoring
                     # it against the whole inbound conversation compares two
@@ -2926,6 +3048,8 @@ class PromptCompilerProxy:
                             if len(self._waste_ratios) > self._waste_max_samples:
                                 self._waste_ratios.pop(0)
 
+                    _value_accounted = True
+
                     # ── Persistent value tracking ──
                     try:
                         _saved = max(0, original_tokens - optimized_tokens)
@@ -3052,6 +3176,9 @@ class PromptCompilerProxy:
             body=body,
         )
         control_headers.update(pac_headers)
+
+        if not _value_accounted:
+            self._account_forwarded_request(control_before, body, path)
 
         # Await warmup (usually completes during pipeline, essentially free)
         await warmup_task
@@ -3612,15 +3739,21 @@ class PromptCompilerProxy:
         hcc_result = None
         if self.config.enable_hierarchical_compression:
             try:
-                hcc_seed_ids = [
-                    fragment.get("id", fragment.get("fragment_id", ""))
-                    for fragment in selected
-                    if fragment.get("id") or fragment.get("fragment_id")
-                ]
-                hcc_result = self.engine._rust.hierarchical_compress(
-                    token_budget, user_message, hcc_seed_ids
-                )
-                if hcc_result.get("status") == "empty":
+                hcc_seed_ids = _hierarchy_seed_ids(selected)
+                if hcc_seed_ids is not None:
+                    hcc_result = self.engine._rust.hierarchical_compress(
+                        token_budget, user_message, hcc_seed_ids
+                    )
+                if hcc_result is None:
+                    pass
+                elif hcc_result.get("status") == "empty":
+                    hcc_result = None
+                elif _hierarchy_is_overview_only(hcc_result):
+                    # A file listing with no cluster and no code is not the
+                    # selection: render what the ranker chose instead.
+                    logger.info(
+                        "HCC rendered an overview only; using the flat selection"
+                    )
                     hcc_result = None
             except (AttributeError, Exception) as e:
                 logger.debug(f"HCC unavailable, falling back to flat: {e}")

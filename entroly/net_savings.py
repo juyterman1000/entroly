@@ -55,6 +55,20 @@ input at ``r_in``), and any added tokens beyond it are charged at ``r_read``. On
 later turn, content Entroly already forwarded is mostly a cache read, and is
 charged as one, instead of turning every follow-up turn into a false loss.
 
+Which added tokens were cache reads is also provider truth, not an assumption.
+The provider serves a *prefix* from cache and reports its length, so an added
+block that this proxy has forwarded before and that starts inside that prefix
+was read, and is charged ``r_read`` without touching the pool. Without this
+the pool is whatever the request wrote, and a
+client that appends new content of its own -- every agent turn does -- hands
+that whole pool to blocks Entroly rewrote many turns ago: measured on a
+25-turn session, a 1,300-token rewritten block that the provider was reading
+from cache was charged as a fresh 1-hour write on each turn that carried a
+new file read, four such turns took the conversation below the governor's
+floor, and the governor then forwarded the raw history, which broke the cache
+it had been reading. A block forwarded for the first time, and any block that
+starts at or after the end of the prefix, still draws from the pool.
+
 ``removed_new`` covers blocks that no recent request through this proxy has
 sent (any conversation, since subagent forks share history). The provider
 cache can only serve a prefix that was written before, so a block never sent
@@ -251,6 +265,15 @@ def _canonical(value: Any) -> bytes:
 
 
 def _unit(field: str, value: Any) -> tuple[str, int]:
+    # ``cache_control`` says where the client wants a cache breakpoint; it is
+    # not content, and the provider does not key its cache on it. Clients move
+    # the marker to the newest block on every turn, so digesting it made each
+    # block two different units -- once with the marker, once without -- and a
+    # block Entroly removed was priced as "never sent before" on both turns.
+    # Measured on a 25-turn session: a 24,800-token block booked at the input
+    # rate twice, where the second turn's true saving was a cache read.
+    if isinstance(value, Mapping) and "cache_control" in value:
+        value = {key: item for key, item in value.items() if key != "cache_control"}
     encoded = _canonical([field, value])
     return hashlib.sha256(encoded).hexdigest()[:_DIGEST_HEX], len(encoded)
 
@@ -301,6 +324,65 @@ def inventory_delta(
     return tuple(sorted(removed)), added
 
 
+def added_units(
+    raw: PromptInventory, outbound: PromptInventory
+) -> tuple[tuple[str, int, int], ...]:
+    """Added blocks as ``(digest, bytes, start_byte)``, in prompt order.
+
+    A block present in the client's request is matched against it first, so
+    of several identical blocks the *last* ones are the added ones.
+    """
+    unmatched = Counter(raw.units)
+    position = 0
+    added: list[tuple[str, int, int]] = []
+    for unit in outbound.units:
+        if unmatched[unit] > 0:
+            unmatched[unit] -= 1
+        else:
+            added.append((unit[0], unit[1], position))
+        position += unit[1]
+    return tuple(added)
+
+
+def added_bytes_in_cached_prefix(
+    raw: PromptInventory,
+    outbound: PromptInventory,
+    *,
+    cache_read_tokens: int,
+    total_input_tokens: int,
+    forwarded_before: Iterable[str],
+) -> int:
+    """Bytes of added blocks that the provider served from its cache.
+
+    Two conditions, both required. The block's digest is in
+    ``forwarded_before`` -- this proxy has sent these exact bytes upstream on
+    an earlier request -- because the provider can only read what was written.
+    And the block starts inside the prefix the provider reports having read:
+    the provider caches whole blocks, so one that starts before the end of the
+    cached prefix lies in it entirely.
+
+    The start is converted to provider tokens with the larger ratio, rounded
+    up, so the conversion moves a block towards the uncached side. The first
+    condition is what keeps a block that is new on this request out, however
+    the conversion falls: a new block has never been forwarded.
+    """
+    read = max(0, int(cache_read_tokens))
+    total = max(0, int(total_input_tokens))
+    if read <= 0 or total <= 0 or outbound.unit_bytes <= 0:
+        return 0
+    known = set(forwarded_before)
+    if not known:
+        return 0
+    cached = 0
+    for digest, length, start in added_units(raw, outbound):
+        if digest not in known:
+            continue
+        start_tokens = -(-start * total // outbound.unit_bytes)
+        if start_tokens < read:
+            cached += length
+    return cached
+
+
 class SeenUnits:
     """Bounded, process-wide set of block digests recently sent upstream.
 
@@ -336,6 +418,11 @@ class SeenUnits:
                 self._digests.popitem(last=False)
         return seen, new
 
+    def known(self, digests: Iterable[str]) -> frozenset[str]:
+        """Which of ``digests`` an earlier request carried. Records nothing."""
+        with self._lock:
+            return frozenset(d for d in digests if d in self._digests)
+
     def clear(self) -> None:
         with self._lock:
             self._digests.clear()
@@ -356,12 +443,14 @@ class NetSavingEstimate:
     interference_tokens: int
     pricing_source: str
     long_context_tier: bool
+    added_cached_tokens: int = 0
 
     def details(self) -> dict[str, int | bool]:
         return {
             "removed_seen_tokens": self.removed_seen_tokens,
             "removed_new_tokens": self.removed_new_tokens,
             "added_tokens": self.added_tokens,
+            "added_cached_tokens": self.added_cached_tokens,
             "interference_tokens": self.interference_tokens,
             "long_context_tier": self.long_context_tier,
         }
@@ -419,8 +508,14 @@ def estimate_net_saving(
     rates: ModelRates,
     pricing_source: str,
     cache_write_1h_tokens: int | None = None,
+    added_cached_bytes: int = 0,
 ) -> NetSavingEstimate:
-    """Price the difference between the client's prompt and the forwarded one."""
+    """Price the difference between the client's prompt and the forwarded one.
+
+    ``added_cached_bytes`` is the part of ``added_bytes`` that
+    :func:`added_bytes_in_cached_prefix` placed inside the provider's cached
+    prefix. Left at zero, every added token draws from the pool first.
+    """
     if raw.units == outbound.units and interference_bytes <= 0:
         return NetSavingEstimate(0, 0, 0, 0, 0, pricing_source, False)
 
@@ -454,13 +549,26 @@ def estimate_net_saving(
     # Removed content priced at the base tier: the counterfactual's own (often
     # higher) long-context tier is not assumed. The actual request's tier sets
     # the cost of what Entroly added.
-    added_cost, added_left = _draw(pool, added_tokens, tier.cache_read, minus_read=False)
+    # Rounded down, and never more than was added: an added token is treated
+    # as a cache read only where the provider's own prefix length says so.
+    cached_tokens = min(
+        added_tokens,
+        _tokens(
+            min(max(0, int(added_cached_bytes)), max(0, int(added_bytes))),
+            total,
+            outbound.unit_bytes,
+            round_up=False,
+        ),
+    )
+    added_cost, added_left = _draw(
+        pool, added_tokens - cached_tokens, tier.cache_read, minus_read=False
+    )
     broken_cost, _ = _draw(pool, broken_tokens, tier.cache_read, minus_read=True)
     saving = (
         _micro(seen_tokens, rates.base.cache_read)
         + _micro(new_tokens, rates.base.input)
         - added_cost
-        - _micro(added_left, tier.cache_read)
+        - _micro(added_left + cached_tokens, tier.cache_read)
         - broken_cost
     )
     return NetSavingEstimate(
@@ -471,6 +579,7 @@ def estimate_net_saving(
         interference_tokens=broken_tokens,
         pricing_source=pricing_source,
         long_context_tier=tier is not rates.base,
+        added_cached_tokens=cached_tokens,
     )
 
 
@@ -659,6 +768,8 @@ __all__ = [
     "PromptInventory",
     "SEEN",
     "SeenUnits",
+    "added_bytes_in_cached_prefix",
+    "added_units",
     "TierRates",
     "bundled_catalog",
     "catalog_from_mapping",

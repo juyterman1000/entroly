@@ -104,6 +104,10 @@ Its tools include `retrieve_compressed_span`, `search_compressed_spans`, and
 | `ENTROLY_SESSION_TAIL_MESSAGES` | `8` | Recent messages that are not compacted |
 | `ENTROLY_SESSION_TOOL_BUDGET` | `1200` | Per-block live-zone token budget |
 | `ENTROLY_CACHE_STABLE_INJECTION` | `1` | Put dynamic context after stable history |
+| `ENTROLY_CONTEXT_INJECTION` | `off` | `off`, `chat` or `always`: when repository context is added |
+| `ENTROLY_PROTECT_FILE_READS` | `1` | Forward file reads and source code uncompressed |
+| `ENTROLY_TOOL_RESULT_DEDUP` | `1` | Replace a byte-identical repeat tool result with a pointer |
+| `ENTROLY_TOOL_RESULT_EXCLUDE` | empty | Comma-separated tool names never compressed |
 
 Watermarks must satisfy:
 

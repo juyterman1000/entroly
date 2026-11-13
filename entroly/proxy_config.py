@@ -284,6 +284,27 @@ def _env_optional_float(name: str) -> float | None:
         return None
 
 
+CONTEXT_INJECTION_MODES = ("off", "chat", "always")
+
+
+def resolve_context_injection(value: str | None) -> str:
+    """Normalise ENTROLY_CONTEXT_INJECTION; anything unrecognised is ``off``.
+
+    Unknown values fall back to the mode that adds nothing, so a typo can
+    never turn on a feature that enlarges requests.
+    """
+    mode = str(value or "").strip().lower()
+    if mode in {"1", "true", "yes", "on"}:
+        return "always"
+    if mode in CONTEXT_INJECTION_MODES:
+        return mode
+    if mode not in {"", "0", "false", "no"}:
+        logging.getLogger("entroly.proxy").warning(
+            "Invalid ENTROLY_CONTEXT_INJECTION=%r; using 'off'", value
+        )
+    return "off"
+
+
 def resolve_quality(value: str) -> float:
     """Accept either a named preset or a float 0.0-1.0."""
     if value in QUALITY_PRESETS:
@@ -340,6 +361,20 @@ class ProxyConfig:
     # Fraction of model context window to use for injected context (0.0-1.0)
     context_fraction: float = 0.15
 
+    # When the proxy adds repository context to a request.
+    #   off     the request is forwarded with nothing added (default)
+    #   chat    only requests that declare no tools
+    #   always  every request with a new user question
+    # Injection can only make a request larger: the client never sent the
+    # text, so nothing is removed to pay for it. Measured on this repository
+    # through the proxy, a selection adds up to the whole injection budget
+    # (~30,000 tokens at the default fraction) and 4-6 s of ranking to each
+    # new question. That is worth paying when the model has no other way to
+    # see the code, and is pure cost for an agent that reads files itself or
+    # an application whose prompts are not about this repository. The proxy
+    # cannot tell those apart from the request, so the operator says which.
+    context_injection: str = "off"
+
     enable_query_refinement: bool = True
     enable_ltm: bool = True
     enable_security_scan: bool = True
@@ -358,6 +393,14 @@ class ProxyConfig:
     aged_tool_tail_window: int = 4
     tool_result_policy: str = "auto"
     tool_result_excluded_tools: str = ""
+    # File reads and program source are forwarded as the client sent them:
+    # the line codec drops the lines between its anchors, and in source those
+    # lines are the function body. Off restores the earlier behaviour, where
+    # every tool result over the block budget is cut.
+    protect_file_reads: bool = True
+    # A tool result byte-identical to an earlier one in the same request is
+    # replaced by one line pointing at the earlier copy.
+    dedupe_tool_results: bool = True
     enable_context_sanitizer: bool = True
     enable_ecp_anti_thrash: bool = True
 
@@ -454,6 +497,9 @@ class ProxyConfig:
                 "https://generativelanguage.googleapis.com",
             ),
             context_fraction=_env_float("ENTROLY_CONTEXT_FRACTION", 0.15),
+            context_injection=resolve_context_injection(
+                os.environ.get("ENTROLY_CONTEXT_INJECTION", "off")
+            ),
             enable_trajectory_convergence=(
                 os.environ.get("ENTROLY_TRAJECTORY_CONVERGENCE", "1") != "0"
             ),
@@ -475,6 +521,14 @@ class ProxyConfig:
             ).strip().lower() or "auto",
             tool_result_excluded_tools=os.environ.get(
                 "ENTROLY_TOOL_RESULT_EXCLUDE", ""
+            ),
+            protect_file_reads=(
+                os.environ.get("ENTROLY_PROTECT_FILE_READS", "1").strip().lower()
+                not in {"0", "false", "no", "off"}
+            ),
+            dedupe_tool_results=(
+                os.environ.get("ENTROLY_TOOL_RESULT_DEDUP", "1").strip().lower()
+                not in {"0", "false", "no", "off"}
             ),
             witness_mode=os.environ.get("ENTROLY_WITNESS_MODE", "off"),
             witness_use_nli=(
