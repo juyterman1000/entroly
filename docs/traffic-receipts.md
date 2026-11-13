@@ -75,8 +75,11 @@ Traffic Receipts intentionally distinguish measurement from modeling:
   relabeled as realized invoice savings.
 - **Net saving (conservative)** (`net_saving_conservative_micro_usd`, with
   `net_saving_basis`) is a provider-calibrated *estimate*, not a measured
-  counterfactual, and is never added to the headline. It prices only what
-  Entroly changed, with every unknown resolved against Entroly:
+  counterfactual. It is the **headline dollar figure** on Traffic Value, on
+  `/stats` and in `entroly value`: summed, signed, over the requests that have
+  it, reported with how many requests that was, and never combined with the
+  list-price model. It prices only what Entroly changed, with every unknown
+  resolved against Entroly:
   - removed content at the cache-read rate if any recent request carried it,
     otherwise at the uncached input rate;
   - added content (injected context, rewritten blocks) and any cached prefix
@@ -91,10 +94,51 @@ Traffic Receipts intentionally distinguish measurement from modeling:
   An unchanged request is exactly zero, the provider's own cache discount is
   never credited, and the value can be negative. It needs provider usage, a
   prefix-continuity observation and a priced model; otherwise it is absent,
-  not zero. Prices come from `ENTROLY_PRICING_CATALOG` when set, else a
-  bundled, dated Anthropic table (`entroly/data/anthropic_pricing.json`,
-  disable with `ENTROLY_BUNDLED_PRICING=0`). The bundled table is used for
-  this estimate only and never satisfies routing's explicit-catalog rule.
+  not zero. Prices come from `ENTROLY_PRICING_CATALOG` when set, else the
+  bundled tables in `entroly/data/` (disable with `ENTROLY_BUNDLED_PRICING=0`).
+  The bundled tables are used for this estimate only and never satisfy
+  routing's explicit-catalog rule.
+
+  | Table | Provider key | Source |
+  |---|---|---|
+  | `anthropic_pricing.json` | `anthropic` | platform.claude.com pricing page |
+  | `openai_pricing.json` | `openai` | developers.openai.com pricing and model pages |
+  | `google_pricing.json` | `gemini` | ai.google.dev Gemini API pricing page |
+
+  Each table carries `source_url` and `verified_at`, and the receipt's
+  `net_saving_basis.pricing_source` names the table and its date. A table
+  lists only models whose standard text price was read from the provider's
+  own page on that date, under their exact API ids (a dated snapshot only
+  where the provider documents it at the same price). Anything else has no
+  price and the request makes no dollar claim:
+  - a model the table does not list (for example `gpt-5.6-sol`, whose page
+    price was marked promotional);
+  - a request larger than the size the table was verified for
+    (`priced_up_to_input_tokens`): OpenAI's page has a long-context switch
+    with no stated threshold, so those models are priced up to 200,000 input
+    tokens and not above;
+  - batch, flex, priority, regional-uplift, audio and image pricing.
+
+  Two provider-specific rules, both against Entroly:
+  - OpenAI lists 30-minute and 12-hour cache-write prices for its newest
+    models without saying which usage field reports written tokens
+    (`cache_writes_unreported`). Every uncached token Entroly is charged for
+    on those models is priced as a 12-hour write; removed content is still
+    credited at the plain input rate or the cached-input rate.
+  - Gemini prompts above 200,000 tokens bill at the long-context rate, which
+    sets the price of what Entroly added; removed content is credited at the
+    base rate. The hourly storage price of an explicit Gemini cache is not
+    modelled, since an explicit cache is addressed by name and Entroly's
+    edits neither create nor break one.
+
+  Measured by replaying a 25-turn agent session per provider through the
+  proxy against a provider stub that bills prefix-cache reads and writes
+  (64 requests, all priced): the stub billed $0.253 less on the Anthropic
+  session and $0.507 less on the OpenAI one; the ledger reported $0.159 and
+  $0.396. The headline was $0.554 against $0.760 measured; the list-price
+  model for the same traffic was $1.62. One workload, one stub, published
+  prices: evidence that the estimate lands under the measured saving there,
+  not a bound for every workload.
 - **Net-saving governor** (`net_saving_governor`) uses the same estimate to
   restrain Entroly. Per conversation it adds up the conservative net saving of
   sealed receipts; once a conversation has at least 3 priced requests, losses

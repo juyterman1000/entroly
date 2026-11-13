@@ -1,0 +1,81 @@
+{
+  "schema_version": "entroly.bundled-pricing.v1",
+  "source": "bundled:openai-pricing@2026-11-13",
+  "source_url": "https://developers.openai.com/api/docs/pricing",
+  "verified_at": "2026-11-13",
+  "scope": "Conservative net-saving estimates on Traffic Receipts only. Never used for routing decisions or the explicit pricing catalog.",
+  "tier": "Standard processing, text tokens. Batch, Flex, Fast mode, regional and FedRAMP uplifts, audio and image tokens are not priced here.",
+  "notes": [
+    "cache_write_per_million is the provider's 30-minute cache-write price and cache_write_1h_per_million its 12-hour price: the ledger reads the second key as 'the dearest write', whatever its retention.",
+    "cache_writes_unreported: the pricing page lists write prices without saying which usage field reports written tokens, so every uncached token Entroly is charged for is priced as a 12-hour write.",
+    "priced_up_to_input_tokens: the page has a Short/Long context switch but states no threshold. Requests above 200,000 input tokens (below the 272,000-token threshold OpenAI states for GPT-5.5) get no price.",
+    "Only models whose price was read from the linked OpenAI page on verified_at are listed. Anything else has no bundled price; use ENTROLY_PRICING_CATALOG."
+  ],
+  "models": {
+    "openai:gpt-6-astra": {
+      "input_per_million": "10",
+      "cache_read_per_million": "1",
+      "cache_write_per_million": "12.50",
+      "cache_write_1h_per_million": "25",
+      "cache_writes_unreported": true,
+      "priced_up_to_input_tokens": 200000,
+      "source_url": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai:gpt-6.1-sol": {
+      "input_per_million": "2",
+      "cache_read_per_million": "0.10",
+      "cache_write_per_million": "2.50",
+      "cache_write_1h_per_million": "5",
+      "cache_writes_unreported": true,
+      "priced_up_to_input_tokens": 200000,
+      "source_url": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai:gpt-6.1-terra": {
+      "input_per_million": "1",
+      "cache_read_per_million": "0.05",
+      "cache_write_per_million": "1.25",
+      "cache_write_1h_per_million": "2.50",
+      "cache_writes_unreported": true,
+      "priced_up_to_input_tokens": 200000,
+      "source_url": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai:gpt-6-luna": {
+      "input_per_million": "0.10",
+      "cache_read_per_million": "0.01",
+      "cache_write_per_million": "0.125",
+      "cache_write_1h_per_million": "0.25",
+      "cache_writes_unreported": true,
+      "priced_up_to_input_tokens": 200000,
+      "source_url": "https://developers.openai.com/api/docs/pricing"
+    },
+    "openai:gpt-4.1": {
+      "input_per_million": "2",
+      "cache_read_per_million": "0.50",
+      "aliases": [
+        "gpt-4.1-2025-04-14"
+      ],
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-4.1"
+    },
+    "openai:gpt-4.1-mini": {
+      "input_per_million": "0.40",
+      "cache_read_per_million": "0.10",
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-4.1-mini"
+    },
+    "openai:gpt-4o": {
+      "input_per_million": "2.50",
+      "cache_read_per_million": "1.25",
+      "aliases": [
+        "gpt-4o-2024-08-06"
+      ],
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-4o"
+    },
+    "openai:gpt-4o-mini": {
+      "input_per_million": "0.15",
+      "cache_read_per_million": "0.075",
+      "aliases": [
+        "gpt-4o-mini-2024-07-18"
+      ],
+      "source_url": "https://developers.openai.com/api/docs/models/gpt-4o-mini"
+    }
+  }
+}

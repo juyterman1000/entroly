@@ -292,3 +292,118 @@ def test_unpriced_conversation_is_never_held(app, monkeypatch) -> None:
 
     assert response.headers["X-Entroly-Net-Saving-Governor"] == "observe"
     assert receipt["net_saving_governor"]["priced_requests"] == 0
+
+
+# ── OpenAI and Gemini requests are priced from their own published tables ──
+
+
+def _run_provider(app, path: str, body: dict, upstream_json: dict, headers: dict):
+    seen: dict = {}
+
+    def upstream(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json=upstream_json)
+
+    async def go():
+        proxy = app.state.proxy
+        proxy._client = httpx.AsyncClient(transport=httpx.MockTransport(upstream))
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                     base_url="http://proxy.test") as client:
+            response = await client.post(path, json=body, headers=headers)
+            await response.aread()
+        return response, proxy._traffic_receipt_ledger.snapshot()["latest"], seen
+
+    return asyncio.run(go())
+
+
+def _openai_body(model: str, tool_output: str) -> dict:
+    return {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": "You are a coding agent."},
+            {"role": "user", "content": "run the tests and tell me what failed"},
+            {"role": "assistant", "content": None, "tool_calls": [
+                {"id": "call_1", "type": "function",
+                 "function": {"name": "bash", "arguments": "{\"command\": \"pytest -q\"}"}}]},
+            {"role": "tool", "tool_call_id": "call_1", "content": tool_output},
+        ],
+    }
+
+
+def _openai_json(model: str, prompt_tokens: int, cached: int = 0) -> dict:
+    return {
+        "id": "chatcmpl-1", "object": "chat.completion", "model": model,
+        "choices": [{"index": 0, "finish_reason": "stop",
+                     "message": {"role": "assistant", "content": "ok"}}],
+        "usage": {"prompt_tokens": prompt_tokens, "completion_tokens": 3,
+                  "total_tokens": prompt_tokens + 3,
+                  "prompt_tokens_details": {"cached_tokens": cached}},
+    }
+
+
+_OPENAI_HEADERS = {"authorization": "Bearer sk-test"}
+
+
+def test_openai_request_is_priced_from_the_openai_table(monkeypatch) -> None:
+    live = _live_app(monkeypatch)
+    response, receipt, upstream = _run_provider(
+        live, "/v1/chat/completions", _openai_body("gpt-4o", LOG),
+        _openai_json("gpt-4o", 900), _OPENAI_HEADERS,
+    )
+    assert response.status_code == 200
+    assert len(json.dumps(upstream["body"]["messages"][-1])) < len(LOG)
+    basis = receipt["net_saving_basis"]
+    assert basis["pricing_source"].startswith("bundled:openai-pricing@")
+    assert basis["removed_new_tokens"] > 0
+    assert receipt["net_saving_conservative_micro_usd"] > 0
+
+
+def test_openai_cache_hit_on_an_untouched_request_is_not_a_saving(app) -> None:
+    _, receipt, _ = _run_provider(
+        app, "/v1/chat/completions", _openai_body("gpt-4o", "ok"),
+        _openai_json("gpt-4o", 40_000, cached=38_016), _OPENAI_HEADERS,
+    )
+    assert receipt["cache_hit"] is True
+    assert receipt["net_saving_conservative_micro_usd"] == 0
+
+
+def test_openai_model_without_a_verified_price_makes_no_claim(app) -> None:
+    _, receipt, _ = _run_provider(
+        app, "/v1/chat/completions", _openai_body("gpt-5.6-sol", "ok"),
+        _openai_json("gpt-5.6-sol", 1_000), _OPENAI_HEADERS,
+    )
+    assert receipt["net_saving_conservative_micro_usd"] is None
+    assert _net_row(receipt) is None
+
+
+def test_openai_request_above_the_verified_size_makes_no_claim(app) -> None:
+    _, priced, _ = _run_provider(
+        app, "/v1/chat/completions", _openai_body("gpt-6-astra", "ok"),
+        _openai_json("gpt-6-astra", 200_000), _OPENAI_HEADERS,
+    )
+    assert priced["net_saving_conservative_micro_usd"] == 0
+    _, unpriced, _ = _run_provider(
+        app, "/v1/chat/completions", _openai_body("gpt-6-astra", "ok"),
+        _openai_json("gpt-6-astra", 200_001), _OPENAI_HEADERS,
+    )
+    assert unpriced["net_saving_conservative_micro_usd"] is None
+
+
+def test_gemini_request_is_priced_from_the_gemini_table(app) -> None:
+    body = {"contents": [{"role": "user", "parts": [{"text": "summarise the failing test"}]}]}
+    upstream = {
+        "candidates": [{"content": {"role": "model", "parts": [{"text": "ok"}]},
+                        "finishReason": "STOP"}],
+        "usageMetadata": {"promptTokenCount": 5_000, "candidatesTokenCount": 3,
+                          "totalTokenCount": 5_003, "cachedContentTokenCount": 4_096},
+        "modelVersion": "gemini-2.5-pro",
+    }
+    response, receipt, _ = _run_provider(
+        app, "/v1beta/models/gemini-2.5-pro:generateContent", body, upstream,
+        {"x-goog-api-key": "test"},
+    )
+    assert response.status_code == 200
+    assert receipt["net_saving_conservative_micro_usd"] == 0
+    assert receipt["net_saving_basis"]["pricing_source"].startswith(
+        "bundled:google-gemini-pricing@"
+    )

@@ -56,7 +56,14 @@ _COUNTER_FIELDS = (
     "estimated_priced_requests",
     "cache_benefit_priced_requests",
     "provider_priced_requests",
+    "net_saving_priced_requests",
 )
+#: Signed integer microdollars. The conservative net saving can be negative
+#: (a request Entroly made dearer) and is summed exactly, never clamped.
+_SIGNED_MICRO_FIELDS = ("net_saving_conservative_micro_usd",)
+#: The one dollar figure presented as "what Entroly saved". Everything else
+#: on the page is a labelled model or a provider observation.
+HEADLINE_METRIC = "net_saving_conservative_usd"
 _MONEY_FIELDS = (
     "estimated_value_avoided_usd",
     "measured_cache_benefit_usd",
@@ -87,9 +94,17 @@ def _nonnegative_float(value: object) -> float:
     return parsed
 
 
+def _signed_int(value: object) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _empty_metrics() -> dict[str, int | float]:
     return {
         **{field: 0 for field in _COUNTER_FIELDS},
+        **{field: 0 for field in _SIGNED_MICRO_FIELDS},
         **{field: 0.0 for field in _MONEY_FIELDS},
     }
 
@@ -116,6 +131,8 @@ def _accumulate(target: dict[str, Any], row: Mapping[str, Any]) -> None:
             + _nonnegative_float(row.get(field)),
             6,
         )
+    for field in _SIGNED_MICRO_FIELDS:
+        target[field] = _signed_int(target.get(field)) + _signed_int(row.get(field))
 
 
 def _finalize_metrics(row: dict[str, Any]) -> dict[str, Any]:
@@ -152,6 +169,23 @@ def _finalize_metrics(row: dict[str, Any]) -> dict[str, Any]:
         + _nonnegative_float(row.get("measured_cache_benefit_usd")),
         6,
     )
+    # The headline. Absent (None), never $0.00, when no request in the window
+    # had provider usage and a verified price: an unpriced window makes no
+    # dollar claim, and the list-price model is never substituted for it.
+    net_priced = _nonnegative_int(row.get("net_saving_priced_requests"))
+    net_micro = _signed_int(row.get("net_saving_conservative_micro_usd"))
+    row[HEADLINE_METRIC] = round(net_micro / 1_000_000.0, 6) if net_priced else None
+    row["net_saving_coverage_pct"] = (
+        round(100.0 * net_priced / requests, 2) if requests else None
+    )
+    row["headline"] = {
+        "metric": HEADLINE_METRIC,
+        "usd": row[HEADLINE_METRIC],
+        "basis": "provider-calibrated estimate",
+        "priced_requests": net_priced,
+        "requests_observed": requests,
+        "unpriced_requests": max(0, requests - net_priced),
+    }
     return row
 
 
@@ -472,7 +506,19 @@ def build_traffic_value_snapshot(
         "windows": {window["key"]: window for window in windows},
         "window_order": [window["key"] for window in windows],
         "pricing": pricing_provenance(),
+        "headline_metric": HEADLINE_METRIC,
         "truth": {
+            "headline": (
+                "The headline dollar figure is Net saving (conservative): what "
+                "Entroly removed, priced at the cheapest rate the provider could "
+                "have billed it (a cache read when the content had been sent "
+                "before), minus what Entroly added and any cached prefix it "
+                "broke, priced at the dearest. It is cache-aware, signed, summed "
+                "only over requests with provider usage and a verified price for "
+                "the executed model, and reported with that coverage. It is an "
+                "estimate calibrated to the provider's token counts, not an "
+                "invoice. With no priced request it is absent, not $0.00."
+            ),
             "session": (
                 "This session is a process-local rollup of verified Traffic "
                 "Receipts. It resets on proxy restart and is not added again to "
@@ -483,8 +529,10 @@ def build_traffic_value_snapshot(
                 "requests observed by Traffic Receipts."
             ),
             "estimated_value": (
-                "Observed avoided input tokens multiplied by the configured model "
-                "input rate. It is modeled value avoided, not invoice savings."
+                "List-price model: observed avoided input tokens multiplied by "
+                "the model's uncached input rate. It ignores prompt caching, so "
+                "it overstates what a cached conversation would have been billed, "
+                "and it is not the headline."
             ),
             "measured_cache_benefit": (
                 "Shown only when provider usage and auditable pricing were present "
@@ -504,8 +552,9 @@ def build_traffic_value_snapshot(
                 "verification."
             ),
             "total_ai_value": (
-                "Estimated value on tokens not sent plus measured cache benefit on "
-                "tokens that were sent. The components keep separate evidence labels."
+                "List-price model plus the provider's own cache discount on tokens "
+                "that were sent. The cache discount is the provider's, not "
+                "Entroly's, so this is a modeled total and not the headline."
             ),
             "lifetime": (
                 "All Time persists in the existing ValueTracker file across proxy "
@@ -530,6 +579,7 @@ main{max-width:1080px;margin:0 auto;padding:32px 20px 64px}.eyebrow{font-size:11
 .sessionstatus{display:flex;justify-content:space-between;gap:16px;margin-top:14px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:rgba(8,12,18,.6)}.sessionstatus.measurable b{color:var(--good)}.sessionstatus.waiting b{color:var(--blue)}.sessionstatus.no_measurable_value b{color:var(--warn)}.sessionstatus span{color:var(--dim);font-size:12px}
 .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:16px}.metric{border:1px solid var(--line);border-radius:14px;padding:15px;background:rgba(8,12,18,.58)}.mval{font:800 21px ui-monospace,SFMono-Regular,Menlo,monospace}.mlabel{color:var(--dim);font-size:12px;margin-top:5px}
 .moneygrid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:16px}.moneybox{border:1px solid var(--line);border-radius:15px;padding:17px;background:rgba(8,12,18,.7)}.money{font-size:30px;font-weight:900;letter-spacing:-.04em}.moneylabel{color:var(--dim);font-size:12px;margin-top:4px}
+.headline{margin-top:16px;border:1px solid #2c5a47;border-radius:16px;padding:18px 20px;background:rgba(12,26,22,.72)}.headline.neg{border-color:#6b3340;background:rgba(30,14,18,.6)}.headline.none{border-color:var(--line);background:rgba(8,12,18,.58)}.hval{font-size:40px;font-weight:900;letter-spacing:-.04em}.hlabel{font-size:12px;letter-spacing:.12em;text-transform:uppercase;font-weight:850;color:var(--text)}.hsub{color:var(--dim);font-size:12px;margin-top:4px}
 .alltime{margin-top:18px;border-color:#30435e}.alltitle{display:flex;justify-content:space-between;gap:20px;align-items:center}.badge{font-size:11px;color:var(--dim);border:1px solid var(--line);padding:5px 9px;border-radius:999px}
 .good{color:var(--good)}.blue{color:var(--blue)}.warn{color:var(--warn)}.bad{color:var(--bad)}.dim{color:var(--dim)}
 .note{margin-top:14px;padding:13px 15px;border:1px solid var(--line);border-radius:12px;color:var(--dim);font-size:12px}.note b{color:var(--text)}.meta{display:flex;justify-content:space-between;gap:18px;margin-top:14px;color:var(--dim);font-size:11px}
@@ -543,7 +593,7 @@ main{max-width:1080px;margin:0 auto;padding:32px 20px 64px}.eyebrow{font-size:11
 <div class="tabs" id="tabs"></div>
 <div class="card" id="period"><div class="period">Loading live value…</div></div>
 <div class="card alltime" id="lifetime"><div class="period">Loading All Time…</div></div>
-<div class="note"><b>Evidence policy:</b> avoided-token dollars are estimates from observed token reduction and configured model prices. Cache benefit is measured only when provider usage is available. Provider input spend is not presented as a full invoice.</div>
+<div class="note"><b>Evidence policy:</b> the headline is Net saving (conservative): removed content priced at the cheapest rate the provider could have billed it, minus what Entroly added or re-wrote at the dearest, on requests with provider usage and a verified price only. The list-price model ignores prompt caching and is shown for comparison, not as savings. Cache benefit is the provider's own discount. Provider input spend is not presented as a full invoice.</div>
 </main>
 <script>
 const fmt=n=>Number(n||0).toLocaleString();
@@ -555,6 +605,13 @@ const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 let DATA=null,ACTIVE=null,USER_SELECTED=false;
 function moneyBox(value,label,cls='good'){return `<div class="moneybox"><div class="money ${cls}">${usd(value)}</div><div class="moneylabel">${esc(label)}</div></div>`}
 function moneyMaybe(value,label,available,cls='good'){return `<div class="moneybox"><div class="money ${available?cls:'dim'}">${available?usd(value):'—'}</div><div class="moneylabel">${esc(label)}${available?'':' · not measured'}</div></div>`}
+const usdSigned=v=>{v=Number(v||0);const a=Math.abs(v);return (v<0?'-$':'$')+a.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:a>0&&a<1?4:2})};
+function headlineBox(w){
+ const h=w.headline||{},priced=Number(h.priced_requests||0),seen=Number(h.requests_observed||0);
+ if(!priced)return `<div class="headline none"><div class="hlabel">Net saving (conservative)</div><div class="hval dim">—</div><div class="hsub">${seen?`No dollar claim: none of ${fmt(seen)} requests had provider usage and a verified price for its model. The list-price model below is not a substitute.`:'Appears once a request with provider usage and a verified price has passed through.'}</div></div>`;
+ const v=Number(h.usd||0);
+ return `<div class="headline ${v<0?'neg':''}"><div class="hlabel">Net saving (conservative)</div><div class="hval ${v<0?'bad':'good'}">${usdSigned(v)}</div><div class="hsub">Cache-aware, net of what Entroly added · priced ${fmt(priced)} of ${fmt(seen)} requests${seen>priced?` · ${fmt(seen-priced)} unpriced, not counted`:''} · estimate calibrated to provider token counts, input side only</div></div>`;
+}
 function metric(value,label,cls=''){return `<div class="metric"><div class="mval ${cls}">${value}</div><div class="mlabel">${esc(label)}</div></div>`}
 function renderWindow(w){
  const estimateAvailable=w.estimated_priced_requests>0;
@@ -565,6 +622,7 @@ function renderWindow(w){
  document.getElementById('period').innerHTML=`
  <div class="period">AI TRAFFIC VALUE — ${esc(w.label).toUpperCase()}</div>
  ${sessionBanner}
+ ${headlineBox(w)}
  <div class="grid">
   ${metric(fmt(w.requests_optimized),'Requests optimized','blue')}
   ${metric(compact(w.tokens_received)+' tokens','Tokens received by Entroly')}
@@ -574,8 +632,8 @@ function renderWindow(w){
   ${metric(compact(w.warm_cache_protected_tokens)+' tokens','Warm cache protected','blue')}
  </div>
  <div class="moneygrid">
-  ${moneyMaybe(w.estimated_value_avoided_usd,'Estimated value avoided',estimateAvailable)}
-  ${moneyMaybe(w.measured_cache_benefit_usd,'Measured cache benefit',cacheBenefitAvailable)}
+  ${moneyMaybe(w.estimated_value_avoided_usd,'List-price model (ignores caching)',estimateAvailable,'')}
+  ${moneyMaybe(w.measured_cache_benefit_usd,'Provider cache discount (measured)',cacheBenefitAvailable,'blue')}
   ${moneyMaybe(w.provider_input_spend_usd,'Provider input spend observed',spendAvailable,'')}
  </div>
  <div class="grid">
@@ -584,7 +642,7 @@ function renderWindow(w){
   ${metric(pct(w.recovery_succeeded_pct),'Recovery evidence + PASS')}
   ${metric(pct(w.verification_pass_pct),'Verification pass rate')}
   ${metric(pct(w.cache_hit_request_pct),'Cache-hit requests')}
-  ${metric(totalAvailable?usd(w.total_ai_value_protected_usd):'—','Total AI value protected',totalAvailable?'good':'dim')}
+  ${metric(totalAvailable?usd(w.total_ai_value_protected_usd):'—','Modeled total (list price + cache discount)',totalAvailable?'':'dim')}
  </div>
  <div class="meta"><span>${w.key==='session'?'Process-local session':(w.window_start?esc(w.window_start)+' → '+esc(w.window_end):'')}</span><span>${spendAvailable?'provider-priced input usage observed':'provider $ appears when usage + pricing exist'}</span></div>`;
 }
@@ -594,10 +652,11 @@ function renderLifetime(w){
  const totalAvailable=(Number(w.tokens_avoided||0)===0||estimateAvailable)&&(Number(w.cache_hits||0)===0||cacheBenefitAvailable);
  document.getElementById('lifetime').innerHTML=`
  <div class="alltitle"><div><div class="period">ALL TIME</div><div class="dim">Keeps accumulating across proxy restarts.</div></div><div class="badge">${fmt(DATA.installed_days||0)} days collecting Traffic Value</div></div>
+ ${headlineBox(w)}
  <div class="moneygrid">
-  ${moneyMaybe(w.estimated_value_avoided_usd,'Estimated value avoided',estimateAvailable)}
-  ${moneyMaybe(w.measured_cache_benefit_usd,'Measured cache benefit',cacheBenefitAvailable,'blue')}
-  ${moneyMaybe(w.total_ai_value_protected_usd,'Total AI value protected',totalAvailable)}
+  ${moneyMaybe(w.estimated_value_avoided_usd,'List-price model (ignores caching)',estimateAvailable,'')}
+  ${moneyMaybe(w.measured_cache_benefit_usd,'Provider cache discount (measured)',cacheBenefitAvailable,'blue')}
+  ${moneyMaybe(w.total_ai_value_protected_usd,'Modeled total (list price + cache discount)',totalAvailable,'')}
  </div>
  <div class="grid">
   ${metric(compact(w.tokens_avoided),'Tokens avoided')}

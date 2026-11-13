@@ -65,12 +65,13 @@ def _body(*tool_outputs: str, injected: str | None = None) -> dict:
 
 def _estimate(raw_body: dict, out_body: dict, *, provider_tokens: int, interference: int = 0,
               model: str = "claude-opus-4-6", cache_read: int = 0, cache_write: int = 0,
-              cache_write_1h: int | None = None) -> ns.NetSavingEstimate:
+              cache_write_1h: int | None = None,
+              provider: str = "anthropic") -> ns.NetSavingEstimate:
     raw = ns.prompt_inventory(raw_body)
     out = ns.prompt_inventory(out_body)
     removed, added = ns.inventory_delta(raw, out)
     seen, new = ns.SEEN.classify_and_remember(removed, raw, out)
-    rates, source = ns.resolve_rates("anthropic", model)
+    rates, source = ns.resolve_rates(provider, model)
     return ns.estimate_net_saving(
         raw=raw, outbound=out, removed_seen_bytes=seen, removed_new_bytes=new,
         added_bytes=added, interference_bytes=interference,
@@ -261,6 +262,205 @@ def test_operator_catalog_overrides_the_bundled_one(monkeypatch, tmp_path) -> No
 def test_unknown_model_has_no_price_rather_than_a_default() -> None:
     assert ns.resolve_rates("anthropic", "claude-unreleased-9") is None
     assert ns.resolve_rates("openai", "gpt-5.6-sol") is None
+
+
+# ── more than one provider ──────────────────────────────────────────────
+
+DATA = ROOT / "entroly" / "data"
+PROVIDER_TABLES = {
+    "anthropic_pricing.json": ("anthropic", "https://platform.claude.com/"),
+    "openai_pricing.json": ("openai", "https://developers.openai.com/"),
+    "google_pricing.json": ("gemini", "https://ai.google.dev/"),
+}
+
+
+def _floor(value: Decimal) -> int:
+    from decimal import ROUND_FLOOR
+
+    return int(value.to_integral_value(rounding=ROUND_FLOOR))
+
+
+def _provider_rates(provider: str, model: str) -> ns.ModelRates:
+    resolved = ns.resolve_rates(provider, model)
+    assert resolved is not None, (provider, model)
+    return resolved[0]
+
+
+@pytest.mark.parametrize("name", sorted(PROVIDER_TABLES))
+def test_every_bundled_table_is_dated_and_links_the_providers_own_page(name) -> None:
+    import datetime
+
+    provider, domain = PROVIDER_TABLES[name]
+    doc = json.loads((DATA / name).read_text(encoding="utf-8"))
+    datetime.date.fromisoformat(doc["verified_at"])
+    assert doc["source"].startswith("bundled:") and doc["source"].endswith(doc["verified_at"])
+    assert doc["source_url"].startswith(domain)
+    assert doc["models"]
+    for key, entry in doc["models"].items():
+        assert key.startswith(f"{provider}:"), key
+        # A per-model link, where present, is the provider's page too.
+        assert str(entry.get("source_url", doc["source_url"])).startswith(domain), key
+        assert ns.resolve_rates(provider, key.partition(":")[2])[1] == doc["source"]
+
+
+def test_bundled_tables_cover_exactly_the_shipped_files() -> None:
+    assert sorted(path.name for path in ns._BUNDLED_TABLES) == sorted(PROVIDER_TABLES)
+
+
+def test_openai_rates_match_the_published_pages() -> None:
+    expect = {  # id: (input, cached input, dearest write) per MTok
+        "gpt-6-astra": ("10", "1", "25"),
+        "gpt-6.1-sol": ("2", "0.10", "5"),
+        "gpt-6.1-terra": ("1", "0.05", "2.50"),
+        "gpt-6-luna": ("0.10", "0.01", "0.25"),
+        "gpt-4.1": ("2", "0.50", "2"),
+        "gpt-4.1-mini": ("0.40", "0.10", "0.40"),
+        "gpt-4o": ("2.50", "1.25", "2.50"),
+        "gpt-4o-mini": ("0.15", "0.075", "0.15"),
+    }
+    for model, (inp, read, write) in expect.items():
+        rates = _provider_rates("openai", model).base
+        assert (rates.input, rates.cache_read, rates.cache_write_max) == (
+            Decimal(inp), Decimal(read), Decimal(write)
+        ), model
+
+
+def test_gemini_rates_match_the_published_page() -> None:
+    expect = {  # id: (input, cached, long input, long cached) per MTok
+        "gemini-3.5-flash": ("1.50", "0.15", None, None),
+        "gemini-3.1-pro-preview": ("2", "0.20", "4", "0.40"),
+        "gemini-3.1-flash-lite": ("0.25", "0.025", None, None),
+        "gemini-3-flash-preview": ("0.50", "0.05", None, None),
+        "gemini-2.5-pro": ("1.25", "0.125", "2.50", "0.25"),
+        "gemini-2.5-flash": ("0.30", "0.03", None, None),
+        "gemini-2.5-flash-lite": ("0.10", "0.01", None, None),
+    }
+    for model, (inp, read, long_inp, long_read) in expect.items():
+        rates = _provider_rates("gemini", model)
+        assert (rates.base.input, rates.base.cache_read) == (Decimal(inp), Decimal(read)), model
+        # No write premium is published: a write costs what input costs.
+        assert rates.base.cache_write_max == rates.base.input, model
+        if long_inp is None:
+            assert rates.long_context is None, model
+        else:
+            assert rates.tier(200_000) is rates.base, model
+            long = rates.tier(200_001)
+            assert (long.input, long.cache_read) == (Decimal(long_inp), Decimal(long_read)), model
+
+
+def test_a_dated_alias_is_an_exact_id_never_a_prefix() -> None:
+    assert _provider_rates("openai", "gpt-4o-2024-08-06") is _provider_rates("openai", "gpt-4o")
+    # A different snapshot was sold at a different price; it has none here.
+    assert ns.resolve_rates("openai", "gpt-4o-2024-05-13") is None
+    assert ns.resolve_rates("openai", "gpt-4o-audio-preview") is None
+    assert ns.resolve_rates("gemini", "gemini-2.5-pro-preview-06-05") is None
+    # A model is priced under its own provider only.
+    assert ns.resolve_rates("openai", "gemini-2.5-pro") is None
+    assert ns.resolve_rates("gemini", "gpt-4o") is None
+
+
+def test_duplicate_model_in_one_table_is_rejected() -> None:
+    entry = {"input_per_million": 1, "cache_read_per_million": 0.1}
+    with pytest.raises(ValueError, match="duplicate"):
+        ns.catalog_from_mapping(
+            {"models": {"openai:a": {**entry, "aliases": ["b"]}, "openai:b": entry}},
+            source="t",
+        )
+
+
+def test_one_unreadable_table_removes_only_that_provider(monkeypatch, tmp_path) -> None:
+    broken = tmp_path / "openai_pricing.json"
+    broken.write_text("{not json", encoding="utf-8")
+    monkeypatch.setattr(
+        ns, "_BUNDLED_TABLES",
+        (DATA / "anthropic_pricing.json", broken, DATA / "google_pricing.json"),
+    )
+    ns._reset_catalog_cache_for_tests()
+    assert ns.resolve_rates("openai", "gpt-4o") is None
+    assert ns.resolve_rates("anthropic", "claude-opus-4-6") is not None
+    assert ns.resolve_rates("gemini", "gemini-2.5-pro") is not None
+
+
+def test_a_table_repricing_another_tables_model_is_dropped_whole(monkeypatch, tmp_path) -> None:
+    clash = tmp_path / "clash.json"
+    clash.write_text(json.dumps({"source": "clash", "models": {
+        "anthropic:claude-opus-4-6": {"input_per_million": 0, "cache_read_per_million": 0},
+        "openai:gpt-new": {"input_per_million": 1, "cache_read_per_million": 1},
+    }}), encoding="utf-8")
+    monkeypatch.setattr(ns, "_BUNDLED_TABLES", (DATA / "anthropic_pricing.json", clash))
+    ns._reset_catalog_cache_for_tests()
+    rates, source = ns.resolve_rates("anthropic", "claude-opus-4-6")
+    assert rates.base.input == Decimal("5") and source.startswith("bundled:anthropic")
+    assert ns.resolve_rates("openai", "gpt-new") is None
+
+
+@pytest.mark.parametrize(
+    ("provider", "model"), [("openai", "gpt-4o"), ("openai", "gpt-6-astra"), ("gemini", "gemini-2.5-pro")]
+)
+def test_provider_cache_hit_is_not_entroly_saving_on_any_provider(provider, model) -> None:
+    body = _body("x" * 4_000)
+    estimate = _estimate(body, body, provider_tokens=50_000, cache_read=48_000,
+                         provider=provider, model=model)
+    assert estimate.micro_usd == 0
+
+
+def test_openai_removed_content_is_priced_at_the_published_input_rate() -> None:
+    raw, out = _body("y" * 40_000), _body("y" * 400)
+    estimate = _estimate(raw, out, provider_tokens=1_000, provider="openai", model="gpt-4o")
+    assert estimate.removed_new_tokens > 0 and estimate.added_tokens > 0
+    # Removed at $2.50, the rewritten stub charged at $2.50: no write premium
+    # is published for this model, so nothing dearer than input exists.
+    assert estimate.micro_usd == _floor(
+        Decimal(estimate.removed_new_tokens) * Decimal("2.50")
+        - Decimal(estimate.added_tokens) * Decimal("2.50")
+    )
+    assert estimate.pricing_source.startswith("bundled:openai-pricing@")
+
+
+def test_unreported_cache_writes_are_charged_as_the_dearest_write() -> None:
+    """OpenAI lists 30-minute and 12-hour write prices for this model, and the
+    usage Entroly reads does not say which tokens were written. What Entroly
+    added is charged $25/MTok; what it removed is still credited at $10."""
+    raw, out = _body("z" * 400), _body("z" * 400, injected="context " * 600)
+    estimate = _estimate(raw, out, provider_tokens=2_000, provider="openai", model="gpt-6-astra")
+    assert estimate.removed_new_tokens == 0 and estimate.added_tokens > 0
+    assert estimate.micro_usd == _floor(-Decimal(estimate.added_tokens) * Decimal("25"))
+
+    ns.SEEN.clear()
+    raw, out = _body("q" * 40_000), _body()
+    credit = _estimate(raw, out, provider_tokens=500, provider="openai", model="gpt-6-astra")
+    assert credit.added_tokens == 0 and credit.removed_seen_tokens == 0
+    assert credit.micro_usd == _floor(Decimal(credit.removed_new_tokens) * Decimal("10"))
+
+
+def test_broken_prefix_on_an_unreported_write_model_costs_the_dearest_write() -> None:
+    body = _body("w" * 4_000)
+    estimate = _estimate(body, body, provider_tokens=10_000, interference=2_000,
+                         provider="openai", model="gpt-6-astra")
+    assert estimate.interference_tokens > 0
+    # (12-hour write - cache read) per token of prefix that should have been read.
+    assert estimate.micro_usd == _floor(
+        -Decimal(estimate.interference_tokens) * (Decimal("25") - Decimal("1"))
+    )
+
+
+def test_request_above_the_verified_size_has_no_price() -> None:
+    rates = _provider_rates("openai", "gpt-6-astra")
+    assert rates.priced_up_to == 200_000
+    assert rates.covers(200_000) and not rates.covers(200_001)
+    # A model with one published tier is priced at any size.
+    assert _provider_rates("openai", "gpt-4.1").covers(900_000)
+    assert _provider_rates("anthropic", "claude-opus-4-6").covers(900_000)
+
+
+def test_gemini_long_prompt_charges_added_content_at_the_long_tier_only() -> None:
+    raw, out = _body("g" * 400), _body("g" * 400, injected="context " * 600)
+    small = _estimate(raw, out, provider_tokens=100_000, provider="gemini", model="gemini-2.5-pro")
+    ns.SEEN.clear()
+    large = _estimate(raw, out, provider_tokens=300_000, provider="gemini", model="gemini-2.5-pro")
+    assert not small.long_context_tier and large.long_context_tier
+    assert small.micro_usd == _floor(-Decimal(small.added_tokens) * Decimal("1.25"))
+    assert large.micro_usd == _floor(-Decimal(large.added_tokens) * Decimal("2.50"))
 
 
 # ── content-blind ───────────────────────────────────────────────────────

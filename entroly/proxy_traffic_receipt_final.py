@@ -212,6 +212,10 @@ def _net_saving_for(context: Any, built: Any, response: Response) -> Any:
     uncached_input_tokens = int(getattr(usage, "uncached_input_tokens", 0) or 0)
     cache_read_tokens = int(getattr(usage, "cache_read_tokens", 0) or 0)
     cache_write_tokens = int(getattr(usage, "cache_write_tokens", 0) or 0)
+    # A request larger than the table was verified for is billed on a tier the
+    # table does not carry: no price, rather than the cheaper tier's price.
+    if not rates.covers(uncached_input_tokens + cache_read_tokens + cache_write_tokens):
+        return None
     return net_savings.estimate_net_saving(
         raw=raw,
         outbound=outbound,

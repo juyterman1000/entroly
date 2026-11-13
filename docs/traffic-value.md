@@ -22,7 +22,7 @@ The page is designed to answer three questions immediately:
 
 `This session` is a process-local, in-memory rollup built natively in the same Traffic Value accounting path as the durable dashboard. It consumes the same verified Traffic Receipt stream; there is no session monkey patch, second savings ledger, or second database.
 
-After a handful of requests, a user can immediately see requests optimized, tokens received/sent/avoided, context reduction, estimated value avoided when model pricing is available, measured cache benefit when provider evidence is available, warm-cache protection, verification/recovery evidence, and Total AI value protected when its dollar components are sufficiently evidenced.
+After a handful of requests, a user can immediately see the conservative net saving and how many requests it covers, requests optimized, tokens received/sent/avoided, context reduction, the list-price model when model pricing is available, the provider's cache discount when provider evidence is available, warm-cache protection, and verification/recovery evidence.
 
 The session view is deliberately non-durable and resets when the proxy process restarts. It is **not** added again to All Time, so showing the immediate number cannot double-count durable value.
 
@@ -67,9 +67,10 @@ So an install with 3 days of history opens on 7D, one with 45 days opens on 30D,
 The selected session/recent period is always accompanied by a separate **ALL TIME** card. It highlights:
 
 ```text
-Estimated value avoided
-Measured cache benefit
-Total AI value protected
+Net saving (conservative)                       <- the headline
+List-price model (ignores caching)
+Provider cache discount (measured)
+Modeled total (list price + cache discount)
 Tokens avoided
 Requests optimized
 Warm-cache tokens protected
@@ -81,13 +82,15 @@ All Time persists in the existing `ValueTracker` file across proxy restarts and 
 
 The dashboard intentionally keeps evidence classes visible instead of turning every number into a generic "savings" claim.
 
-**Estimated value avoided** uses the locally observed token difference on a provider-bound request multiplied by the configured input price for the executed model. It is modeled economic value, not an invoice counterfactual. If the executed model has no auditable configured price, the UI shows the dollar value as unavailable rather than pretending that an unknown value is `$0.00`.
+**Net saving (conservative)** is the headline, and the only figure presented as what Entroly saved. It is the signed sum of `net_saving_conservative_micro_usd` over the Traffic Receipts that carry one: removed content priced at the cheapest rate the provider could have billed it (a cache read if the content had been sent before), minus what Entroly added and any cached prefix it broke at the dearest rate. It is shown with its coverage, "priced N of M requests". A request without provider usage or without a verified price for its model is counted as unpriced and adds nothing; a window with no priced request shows no dollar figure at all, and the list-price model is never substituted. It can be negative. It is an estimate calibrated to the provider's token counts, input side only, not an invoice. API: `headline` and `net_saving_conservative_usd` on every window, `headline_metric` on the snapshot. See the [Traffic Receipts truth contract](traffic-receipts.md#truth-contract) for the pricing rules and the bundled price tables.
 
-**Measured cache benefit** appears only when the Traffic Receipt has provider-reported cache usage plus auditable pricing. Missing provider/pricing evidence is displayed as unavailable, not as a measured zero.
+**List-price model (ignores caching)** (`estimated_value_avoided_usd`, formerly labelled "Estimated value avoided") uses the locally observed token difference on a provider-bound request multiplied by the configured input price for the executed model. It is modeled economic value, not an invoice counterfactual: in a cached conversation most removed tokens would have been billed as cache reads, at a tenth to a half of this rate, so the model overstates the bill difference. It is shown for comparison and is not the headline. If the executed model has no auditable configured price, the UI shows the dollar value as unavailable rather than pretending that an unknown value is `$0.00`.
+
+**Provider cache discount (measured)** (`measured_cache_benefit_usd`, formerly "Measured cache benefit") is the provider's own discount, not Entroly's saving. It appears only when the Traffic Receipt has provider-reported cache usage plus auditable pricing. Missing provider/pricing evidence is displayed as unavailable, not as a measured zero.
 
 **Provider input spend observed** prices the provider-reported input/cache token categories currently carried by Traffic Receipt v1. It is intentionally not labeled full provider invoice spend because output cost is not yet part of that receipt field.
 
-**Total AI value protected** is the sum of avoided-input value and measured cache benefit when the required evidence for those components is available. The two components remain visible separately so an operator can distinguish modeled optimization value from provider-observed cache economics.
+**Modeled total (list price + cache discount)** (`total_ai_value_protected_usd`, formerly "Total AI value protected") is the sum of the list-price model and the provider's cache discount when the required evidence for those components is available. It is a modeled total and is not the headline. The two components remain visible separately so an operator can distinguish modeled optimization value from provider-observed cache economics.
 
 Verification percentages count only explicit PASS/FAIL evidence. Traffic Receipt v1 currently exposes recovery evidence rather than a dedicated recovery-invocation event, so the dashboard labels that evidence conservatively; final PASS is additionally required for the corresponding successful-recovery evidence metric.
 
