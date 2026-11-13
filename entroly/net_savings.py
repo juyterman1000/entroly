@@ -103,7 +103,7 @@ import os
 import threading
 from collections import Counter, OrderedDict
 from dataclasses import dataclass
-from decimal import ROUND_FLOOR, Decimal
+from decimal import ROUND_FLOOR, Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -179,9 +179,14 @@ class NetSavingCatalog:
 
 
 def _rate(raw: Mapping[str, Any], key: str) -> Decimal:
-    value = Decimal(str(raw[key]))
-    if value < 0:
-        raise ValueError(f"{key} cannot be negative")
+    # A malformed operator or bundled table must disable pricing, not crash
+    # the receipt path or let Infinity/NaN become a monetary claim.
+    try:
+        value = Decimal(str(raw[key]))
+    except (InvalidOperation, ValueError) as exc:
+        raise ValueError(f"{key} must be a finite nonnegative rate") from exc
+    if not value.is_finite() or value < 0:
+        raise ValueError(f"{key} must be a finite nonnegative rate")
     return value
 
 
