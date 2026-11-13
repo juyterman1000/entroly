@@ -120,8 +120,10 @@ def run() -> dict:
                     "source_hit": target in sources, "first_pass_exact": exact,
                     "exact_after_recovery": after, "recovery_needed": not exact,
                     "automatic_recovered_sources": [f.source for f in restored],
-                    "recovery_over_budget": final.estimated_tokens > budget,
+                    "first_pass_over_budget": selected.estimated_tokens > budget,
+                    "recovery_over_budget": (not exact and final.estimated_tokens > budget),
                     "source_length_chars": len(index[target].content),
+                    "original_source_sha256": index[target].digest,
                     # Any retry generates another provider-bound prompt. Model
                     # tokens, outputs and caching are NOT measured here.
                     "paired_attempt_estimated_tokens": (
@@ -176,8 +178,15 @@ def run() -> dict:
                                        if measured else None),
             "exact_recovery_rate": (sum(x["exact_after_recovery"] for x in measured)/len(measured)
                                      if measured else None),
-            "recovery_over_budget_rate": (sum(x["recovery_over_budget"] for x in measured)/len(measured)
-                                          if measured else None),
+            "first_pass_over_budget_rate": (sum(x["first_pass_over_budget"] for x in measured)/len(measured)
+                                            if measured else None),
+            "recovery_attempted_count": sum(x["recovery_needed"] for x in measured),
+            "recovery_over_budget_count": sum(x["recovery_over_budget"] for x in measured),
+            "recovery_over_budget_rate": (
+                sum(x["recovery_over_budget"] for x in measured) /
+                sum(x["recovery_needed"] for x in measured)
+                if any(x["recovery_needed"] for x in measured) else None
+            ),
             "paired_total_estimated_tokens": sum(x["paired_attempt_estimated_tokens"] for x in measured),
             "raw_total_estimated_tokens": sum(x["raw_estimated_tokens"] for x in measured),
             "paired_estimated_context_reduction_pct": (
