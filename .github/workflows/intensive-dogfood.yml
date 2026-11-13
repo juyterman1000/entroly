@@ -1,0 +1,42 @@
+name: Intensive Dogfood Evidence
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: intensive-dogfood-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-provenance:
+    name: Exact-head source provenance
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - name: Record source identity and archive public code
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/intensive-dogfood
+          git rev-parse HEAD | tee artifacts/intensive-dogfood/head-sha.txt
+          git status --porcelain > artifacts/intensive-dogfood/checkout-status.txt
+          # Archive only tracked public files; never .git, untracked files,
+          # credentials, runner state, or a generated .env file.
+          git ls-files -z | tar --null -T - --exclude='.env' --exclude='.env.*'             -czf "$RUNNER_TEMP/entroly-exact-head-source.tar.gz"
+          sha256sum "$RUNNER_TEMP/entroly-exact-head-source.tar.gz"             > artifacts/intensive-dogfood/source-archive-sha256.txt
+          du -h "$RUNNER_TEMP/entroly-exact-head-source.tar.gz"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: intensive-dogfood-exact-head-source
+          path: |
+            ${{ runner.temp }}/entroly-exact-head-source.tar.gz
+            artifacts/intensive-dogfood/head-sha.txt
+            artifacts/intensive-dogfood/source-archive-sha256.txt
+            artifacts/intensive-dogfood/checkout-status.txt
+          if-no-files-found: error
