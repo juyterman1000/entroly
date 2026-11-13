@@ -106,6 +106,7 @@ jobs:
           python -m pytest -q --tb=short \
             tests/test_usage_ledger.py \
             tests/test_intensive_dogfood_trials.py \
+            tests/test_intensive_live_agent_pilot.py \
             tests/test_net_savings.py \
             tests/test_net_saving_receipts_e2e.py \
             tests/test_proof_bundle.py \
@@ -167,3 +168,65 @@ jobs:
           name: intensive-clean-wheel-${{ matrix.os }}
           path: ${{ runner.temp }}/clean-wheel-evidence.json
           if-no-files-found: warn
+
+  real-coding-model-pilot:
+    name: Live local coding-model task correctness A/B/C
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install exact-head native package and pytest oracle
+        run: |
+          python scripts/ci_install_exact_head.py --extras test,proxy --extra-package pytest-timeout
+          python -m pytest -q tests/test_intensive_live_agent_pilot.py
+      - name: Start isolated CPU Ollama without publishing model API
+        run: |
+          set -euo pipefail
+          docker run -d --name entroly-dogfood-ollama \
+            --publish 127.0.0.1:11434:11434 --cpus 4 --memory 5g \
+            ollama/ollama:latest
+          docker inspect --format '{{.Image}}' entroly-dogfood-ollama | tee "$RUNNER_TEMP/ollama-image-digest.txt"
+          for i in $(seq 1 90); do
+            if curl --noproxy '*' -fsS http://127.0.0.1:11434/api/tags >/dev/null; then
+              break
+            fi
+            sleep 2
+          done
+          curl --noproxy '*' -fsS http://127.0.0.1:11434/api/tags >/dev/null
+          timeout 900 docker exec entroly-dogfood-ollama ollama pull qwen2.5-coder:0.5b
+      - name: Run real local model with three paired arms and test oracle
+        env:
+          ENTROLY_AIR_GAP: "1"
+          ENTROLY_DISABLE_TELEMETRY: "1"
+          ENTROLY_DISABLE_UPDATE_CHECK: "1"
+          ENTROLY_NO_SELF_HEAL: "1"
+          ENTROLY_DOGFOOD_EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          timeout 2700 python benchmarks/intensive_live_agent_pilot.py \
+            --model qwen2.5-coder:0.5b --limit 4 --seeds 17 --budget 600 \
+            --timeout 240 --out "$RUNNER_TEMP/live-agent-pilot.json" \
+            2>&1 | tee "$RUNNER_TEMP/live-agent-pilot.log"
+          test "${PIPESTATUS[0]}" -eq 0
+      - name: Preserve model evidence, including negative results
+        if: always()
+        run: |
+          docker logs entroly-dogfood-ollama > "$RUNNER_TEMP/ollama-container.log" 2>&1 || true
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: intensive-dogfood-real-model-pilot
+          path: |
+            ${{ runner.temp }}/live-agent-pilot.json
+            ${{ runner.temp }}/live-agent-pilot.log
+            ${{ runner.temp }}/ollama-image-digest.txt
+            ${{ runner.temp }}/ollama-container.log
+          if-no-files-found: warn
+      - name: Stop isolated Ollama
+        if: always()
+        run: docker rm -f entroly-dogfood-ollama || true
