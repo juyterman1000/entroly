@@ -522,6 +522,15 @@ entroly govern audit verify                    # exit non-zero on a broken chain
 
 Authorization is deny-by-default and every denial names the policy and the reason it gave. `audit verify` checks that recorded entries were not altered after the fact — it does not prove every action was recorded, and `govern status` reports the state of the local control plane only, not an attestation that each agent action passed through it. Identity tokens are unsigned unless `ENTROLY_IDENTITY_KEY` is set, and the credential is never printed.
 
+**Proof bundles: evidence someone else can check.**
+
+```bash
+entroly export-proof --sign --format html --out audit.json   # Context Commits + session chain, Ed25519-signed
+entroly verify-proof audit.json --public-key <KEY>           # offline; exits non-zero on any change
+```
+
+A reviewer recomputes every Context Commit from its own bytes, the session chain, one Merkle root over all evidence, and the signature, with no access to your stores. `verify-proof` says how far that goes: `verified` only when the bundle is signed by the key you supplied, otherwise `signed_unpinned`, `integrity_only` or `invalid`. A bundle shows which context was selected and that omitted context is recoverable; it does not vouch for the model's output, carries no trusted timestamp, and is technical evidence rather than a compliance certification. Details: [proof bundles](docs/proof-bundles.md).
+
 Also available: `entroly memory`, `entroly wrap`, `entroly unwrap`, `entroly serve`, `entroly daemon`, `entroly dashboard`, `entroly demo`, `entroly capabilities`, `entroly ingest`, `entroly select`, `entroly receipt`, `entroly explain`, `entroly context-commit`, `entroly proof`, `entroly benchmark`, `entroly cache`, `entroly ravs`, `entroly perf`, `entroly batch`, `entroly usage`. Full description: [command reference](docs/DETAILS.md#command-reference).
 
 ---

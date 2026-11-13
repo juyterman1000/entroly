@@ -5,6 +5,17 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
 
 ## Unreleased
 
+- `entroly export-proof` / `entroly verify-proof`: a signed, offline-verifiable
+  proof bundle of context evidence (Context Commits, a session receipt chain,
+  WITNESS taint records). The verifier recomputes every commit from its own
+  bytes, the chain links, one Merkle root over all evidence, the bundle
+  digest and the Ed25519 signature, and reports how far that goes: `verified`
+  (signed by the key the verifier supplied), `signed_unpinned`,
+  `integrity_only` or `invalid`. `--sign` without a key is an error, the
+  exporter refuses to write evidence that does not verify, and `--no-content`
+  shares digests without source text. Every bundle carries a statement of
+  what it does not establish. See `docs/proof-bundles.md`.
+
 - Proxy: `ENTROLY_FORWARD_HEADERS` passes operator-named client headers to
   the upstream (exact names or `prefix-*`). The proxy drops every header
   outside a provider's own families, which also stripped the run, team and

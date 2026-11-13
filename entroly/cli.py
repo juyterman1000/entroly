@@ -6001,6 +6001,222 @@ def cmd_audit(args):
     return 0
 
 
+def _read_proof_json(path: Path, label: str):
+    """Read one JSON object for a proof bundle; raise ValueError with the path."""
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise ValueError(f"could not read {label} {path}: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"{label} is not valid JSON: {path} (line {exc.lineno}, column {exc.colno})"
+        ) from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"{label} must contain a JSON object: {path}")
+    return payload
+
+
+def cmd_export_proof(args):
+    """entroly export-proof - write a signed, offline-verifiable proof bundle."""
+    from entroly.proof_bundle import (
+        ProofBundleError,
+        build_proof_bundle,
+        generate_signing_key,
+        load_signing_key,
+        render_html_report,
+        verify_proof_bundle,
+    )
+
+    if getattr(args, "generate_key", None):
+        key_path = Path(args.generate_key)
+        if key_path.exists():
+            print(f"Refusing to overwrite an existing key: {key_path}", file=sys.stderr)
+            return 1
+        try:
+            private_hex, public_hex = generate_signing_key()
+            fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(private_hex + "\n")
+        except (OSError, ProofBundleError) as exc:
+            print(f"Could not create a signing key: {exc}", file=sys.stderr)
+            return 1
+        print(f"Private key written to {key_path} (keep it secret).")
+        print(f"Public key (give this to whoever verifies your bundles): {public_hex}")
+        print(f"Sign with: ENTROLY_PROOF_SIGNING_KEY=$(cat {key_path}) entroly export-proof --sign ...")
+        return 0
+
+    session_id = getattr(args, "session", None)
+    chain_arg = getattr(args, "session_chain", None)
+    if session_id and not chain_arg and Path(session_id).is_file():
+        chain_arg, session_id = session_id, None
+    commit_paths = [Path(item) for item in (getattr(args, "commit", None) or [])]
+    commits_dir = getattr(args, "commits_dir", None)
+    if commits_dir is None and not commit_paths and not chain_arg:
+        default_dir = Path(".entroly") / "context-commits"
+        if default_dir.is_dir():
+            commits_dir = str(default_dir)
+    if commits_dir is not None:
+        directory = Path(commits_dir)
+        if not directory.is_dir():
+            print(f"Context Commit directory not found: {directory}", file=sys.stderr)
+            return 1
+        commit_paths.extend(sorted(directory.glob("*.json")))
+
+    try:
+        commits = [_read_proof_json(path, "Context Commit") for path in commit_paths]
+        chain = taint = None
+        if chain_arg:
+            chain_path = Path(chain_arg)
+            chain = _read_proof_json(chain_path, "session chain")
+            taint_arg = getattr(args, "taint", None)
+            candidates = (
+                [Path(taint_arg)]
+                if taint_arg
+                else [chain_path.with_name("session_taint.json"), chain_path.with_name("taint.json")]
+            )
+            if taint_arg and not candidates[0].exists():
+                raise ValueError(f"taint file not found: {candidates[0]}")
+            for candidate in candidates:
+                if candidate.exists():
+                    taint = _read_proof_json(candidate, "taint tracker")
+                    break
+        elif session_id:
+            raise ValueError(
+                f"--session {session_id} names a session but no chain was given; "
+                "pass --session-chain PATH (or give --session the chain's path)"
+            )
+        signing_key, key_source = (None, "")
+        if getattr(args, "sign", False):
+            signing_key, key_source = load_signing_key()
+        bundle = build_proof_bundle(
+            commits=commits,
+            session_chain=chain,
+            taint=taint,
+            session_id=session_id,
+            embed_content=not getattr(args, "no_content", False),
+            signing_key=signing_key,
+            key_source=key_source,
+        )
+    except (ProofBundleError, ValueError, KeyError, TypeError) as exc:
+        print(f"Could not export a proof bundle: {exc}", file=sys.stderr)
+        return 1
+
+    # Never hand out a bundle that does not verify: the exporter runs the same
+    # check a reviewer will, pinned to its own key when it signed.
+    verification = verify_proof_bundle(
+        bundle,
+        public_key=signing_key.public_hex() if signing_key is not None else None,
+    )
+    if not verification.valid:
+        print(
+            "Refusing to export: the evidence does not verify -- "
+            + "; ".join(verification.errors),
+            file=sys.stderr,
+        )
+        return 1
+
+    output = (
+        Path(args.out)
+        if getattr(args, "out", None)
+        else Path(".entroly") / "proofs" / f"{bundle['bundle_id']}.json"
+    )
+    try:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(
+            json.dumps(bundle, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        html_path = None
+        if getattr(args, "format", "json") == "html":
+            html_path = output.with_suffix(".html")
+            html_path.write_text(render_html_report(bundle, verification), encoding="utf-8")
+    except OSError as exc:
+        print(f"Could not write the proof bundle: {exc}", file=sys.stderr)
+        return 1
+
+    summary = {
+        "bundle_id": bundle["bundle_id"],
+        "bundle": str(output),
+        "report": str(html_path) if html_path else None,
+        "status": verification.status,
+        "signed": verification.signed,
+        "public_key": verification.public_key or None,
+        "context_commits": verification.context_commits,
+        "session_turns": verification.session_turns,
+        "content_embedded": bundle["context_commits"]["content_embedded"],
+        "warnings": list(verification.warnings),
+    }
+    if getattr(args, "json", False):
+        print(json.dumps(summary, indent=2, sort_keys=True))
+        return 0
+    print(f"  {C.GREEN}Proof bundle {bundle['bundle_id']} written:{C.RESET} {output}")
+    if html_path:
+        print(f"  Report: {html_path}")
+    print(
+        f"  {verification.context_commits} Context Commit(s), "
+        f"{verification.session_turns} session turn(s)"
+    )
+    if verification.signed:
+        print(f"  Signed (Ed25519). Public key: {verification.public_key}")
+        print(f"  Verify: entroly verify-proof {output} --public-key {verification.public_key}")
+    else:
+        print(
+            f"  {C.YELLOW}Not signed{C.RESET}: self-consistent, but it does not show "
+            "who produced it. Re-run with --sign."
+        )
+    if bundle["context_commits"]["content_embedded"] and verification.context_commits:
+        print(
+            "  Note: the bundle embeds the selected and omitted context text. "
+            "Use --no-content to share digests only."
+        )
+    return 0
+
+
+def cmd_verify_proof(args):
+    """entroly verify-proof BUNDLE - verify a proof bundle offline."""
+    from entroly.proof_bundle import render_html_report, verify_proof_bundle
+
+    path = Path(args.bundle)
+    try:
+        bundle = _read_proof_json(path, "proof bundle")
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    result = verify_proof_bundle(
+        bundle,
+        public_key=getattr(args, "public_key", None),
+        require_signature=bool(getattr(args, "require_signature", False)),
+    )
+    if getattr(args, "html", None):
+        try:
+            Path(args.html).write_text(render_html_report(bundle, result), encoding="utf-8")
+        except OSError as exc:
+            print(f"Could not write the report: {exc}", file=sys.stderr)
+            return 1
+    if getattr(args, "json", False):
+        print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+        return 0 if result.valid else 1
+
+    labels = {
+        "verified": f"{C.GREEN}VERIFIED{C.RESET} - intact and signed by the expected key",
+        "signed_unpinned": f"{C.YELLOW}INTACT, SIGNER NOT AUTHENTICATED{C.RESET}",
+        "integrity_only": f"{C.YELLOW}INTACT, NOT SIGNED{C.RESET}",
+        "invalid": f"{C.RED}FAILED{C.RESET} - do not rely on this bundle",
+    }
+    print(f"  {labels[result.status]}")
+    print(f"  Bundle: {result.bundle_id or '(no id)'}")
+    print(
+        f"  {result.context_commits} Context Commit(s), {result.session_turns} session turn(s)"
+    )
+    for name, passed in result.checks.items():
+        print(f"    {'pass' if passed else 'FAIL'}  {name}")
+    for message in result.errors:
+        print(f"  {C.RED}error:{C.RESET} {message}")
+    for message in result.warnings:
+        print(f"  {C.YELLOW}note:{C.RESET} {message}")
+    return 0 if result.valid else 1
+
+
 def cmd_explain(args):
     """entroly explain --why-omitted CHUNK_ID - explain an omitted receipt item."""
     from entroly.context_receipts import explain_omitted
@@ -7099,6 +7315,8 @@ def main():
         "context-commit": cmd_context_commit,
         "proof": cmd_proof,
         "audit": cmd_audit,
+        "export-proof": cmd_export_proof,
+        "verify-proof": cmd_verify_proof,
         "explain": cmd_explain,
         "status": cmd_status,
         "config": cmd_config,
