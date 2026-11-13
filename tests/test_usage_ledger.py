@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
+import pytest
+
 from entroly.usage_ledger import (
     UsageLedger,
     UsagePricing,
@@ -8,6 +12,25 @@ from entroly.usage_ledger import (
     parse_stream_usage,
     price_usage,
 )
+
+
+@pytest.mark.parametrize("field", [
+    "input_per_million", "output_per_million", "cache_read_per_million", "cache_write_per_million",
+])
+@pytest.mark.parametrize("invalid", ["NaN", "sNaN", "Infinity", "-Infinity", "not-a-rate"])
+def test_nonfinite_or_invalid_usage_pricing_fails_closed(field: str, invalid: str) -> None:
+    rates = dict(input_per_million="2", output_per_million="4", cache_read_per_million="0.2")
+    rates[field] = invalid
+    with pytest.raises(ValueError, match="finite nonnegative"):
+        UsagePricing.from_values(**rates)
+    with pytest.raises(ValueError, match="finite nonnegative"):
+        UsagePricingCatalog.from_mapping({"models": {"openai:my-model": rates}})
+
+
+@pytest.mark.parametrize("invalid", ["NaN", "sNaN", "Infinity", "-Infinity"])
+def test_direct_usage_pricing_rejects_nonfinite_decimal(invalid: str) -> None:
+    with pytest.raises(ValueError, match="finite and nonnegative"):
+        UsagePricing(Decimal(invalid), Decimal("1"), Decimal("0.1"))
 
 
 def test_openai_usage_separates_cached_from_uncached_tokens() -> None:
