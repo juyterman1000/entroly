@@ -33,6 +33,17 @@ def test_direct_usage_pricing_rejects_nonfinite_decimal(invalid: str) -> None:
         UsagePricing(Decimal(invalid), Decimal("1"), Decimal("0.1"))
 
 
+@pytest.mark.parametrize("provider,payload", [
+    ("openai", {"usage": {"prompt_tokens": float("inf"), "completion_tokens": 1}}),
+    ("anthropic", {"usage": {"input_tokens": float("inf"), "output_tokens": 1}}),
+    ("gemini", {"usageMetadata": {"promptTokenCount": float("inf"), "candidatesTokenCount": 1}}),
+])
+def test_invalid_provider_infinite_token_counter_cannot_crash_parsing(provider, payload) -> None:
+    usage = parse_provider_usage(provider, payload)
+    assert usage.total_input_tokens == 0
+    assert usage.output_tokens == 1
+
+
 def test_openai_usage_separates_cached_from_uncached_tokens() -> None:
     usage = parse_provider_usage(
         "openai",
