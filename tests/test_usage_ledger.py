@@ -463,3 +463,25 @@ def test_stream_ignores_empty_usage_placeholders_but_not_invalid_counters() -> N
     assert parse_stream_usage("anthropic", 'data: {"usage":{}}\n\n') is None
     with pytest.raises(ValueError, match="finite nonnegative integer"):
         parse_stream_usage("anthropic", 'data: {"usage":{"output_tokens":"Infinity"}}\n\n')
+
+
+@pytest.mark.parametrize("field", ["uncached_input_tokens", "cache_read_tokens", "cache_write_tokens", "output_tokens", "cache_write_1h_tokens"])
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf"), 1.25, "not-numeric", True])
+def test_direct_token_usage_rejects_poisoned_counters(field, bad) -> None:
+    values = {"uncached_input_tokens": 1, "cache_read_tokens": 1,
+              "cache_write_tokens": 3, "output_tokens": 1}
+    values[field] = bad
+    with pytest.raises(ValueError, match="finite nonnegative integer"):
+        TokenUsage(**values)
+
+
+def test_direct_token_usage_coerces_exact_numeric_inputs() -> None:
+    usage = TokenUsage(uncached_input_tokens="5", cache_read_tokens=Decimal("2"),
+                       cache_write_tokens=3.0, output_tokens=7,
+                       cache_write_1h_tokens="1")
+    assert (usage.uncached_input_tokens, usage.cache_read_tokens,
+            usage.cache_write_tokens, usage.output_tokens,
+            usage.cache_write_1h_tokens) == (5, 2, 3, 7, 1)
+    assert all(isinstance(getattr(usage, key), int)
+               for key in ("uncached_input_tokens", "cache_read_tokens",
+                           "cache_write_tokens", "output_tokens", "cache_write_1h_tokens"))

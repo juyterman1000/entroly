@@ -32,20 +32,20 @@ class TokenUsage:
     cache_write_1h_tokens: int | None = None
 
     def __post_init__(self) -> None:
-        if any(
-            value < 0
-            for value in (
-                self.uncached_input_tokens,
-                self.cache_read_tokens,
-                self.cache_write_tokens,
-                self.output_tokens,
-            )
-        ):
-            raise ValueError("token usage cannot be negative")
-        if self.cache_write_1h_tokens is not None and not (
-            0 <= self.cache_write_1h_tokens <= self.cache_write_tokens
-        ):
-            raise ValueError("1-hour cache writes must lie within cache writes")
+        # Public SDK callers can construct TokenUsage directly, bypassing the
+        # provider parser. Validate and normalize those inputs too, or
+        # nonfinite/fractional counters can poison durable cost calculations.
+        for field_name in ("uncached_input_tokens", "cache_read_tokens",
+                           "cache_write_tokens", "output_tokens"):
+            value = getattr(self, field_name)
+            if value is None:
+                raise ValueError("token usage must be a finite nonnegative integer")
+            object.__setattr__(self, field_name, _int(value))
+        if self.cache_write_1h_tokens is not None:
+            one_hour = _int(self.cache_write_1h_tokens)
+            if one_hour > self.cache_write_tokens:
+                raise ValueError("1-hour cache writes must lie within cache writes")
+            object.__setattr__(self, "cache_write_1h_tokens", one_hour)
 
     @property
     def total_input_tokens(self) -> int:
