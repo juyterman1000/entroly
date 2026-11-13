@@ -51,9 +51,20 @@ def test_closed_loop_must_charge_both_model_requests() -> None:
                         "input_tokens": 700, "output_tokens": 25, "latency_s": 7},
     }
     summary = summarize([trial])
-    assert summary["raw"]["passed"] == 1
-    assert summary["compress"]["passed"] == 0
-    assert summary["closed_loop"]["reported_input_tokens"] == 700
+    assert summary["arms"]["raw"]["passed"] == 1
+    assert summary["arms"]["compress"]["passed"] == 0
+    assert summary["arms"]["closed_loop"]["reported_input_tokens"] == 700
     assert summary["input_token_reduction_compress_vs_raw_pct"] == 80.0
     assert summary["input_token_reduction_closed_loop_vs_raw_pct"] == 30.0
     assert summary["closed_loop_real_retry_count"] == 1
+
+
+@pytest.mark.parametrize("bad_url", [
+    "http://127.0.0.1:@evil.example",
+    "http://localhost:11434@evil.example",
+    "http://127.0.0.1:11434/extra",
+    "https://localhost:11434",
+])
+def test_model_endpoint_does_not_allow_external_host_userinfo_or_url_paths(bad_url) -> None:
+    with pytest.raises(ValueError, match="only a local"):
+        model_identity(bad_url, "qwen2.5-coder:0.5b")

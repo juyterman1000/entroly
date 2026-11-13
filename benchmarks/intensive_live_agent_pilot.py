@@ -19,6 +19,7 @@ import sys
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -36,7 +37,11 @@ from entroly.native_status import native_status  # noqa: E402
 
 def model_identity(url: str, model: str) -> dict[str, Any]:
     """Reject remote model endpoints, and require the named model's digest."""
-    if not (url.startswith("http://127.0.0.1:") or url.startswith("http://localhost:")):
+    parsed = urlsplit(url)
+    if (parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost"}
+            or parsed.username is not None or parsed.password is not None
+            or parsed.path not in {"", "/"} or parsed.query or parsed.fragment
+            or parsed.port is None):
         raise ValueError("only a local Ollama endpoint is allowed")
     with urllib.request.urlopen(url.rstrip("/") + "/api/tags", timeout=15) as response:
         available = json.load(response).get("models", [])
