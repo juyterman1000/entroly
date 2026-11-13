@@ -260,6 +260,8 @@ def parse_provider_usage(provider: str, payload: Mapping[str, Any]) -> TokenUsag
         output = _int(raw.get("output_tokens", raw.get("completion_tokens")))
         details = raw.get("input_tokens_details", raw.get("prompt_tokens_details"))
         cached = _int(details.get("cached_tokens")) if isinstance(details, Mapping) else 0
+        if cached > input_total:
+            raise ValueError("provider cache-read tokens cannot exceed total input tokens")
         return TokenUsage(
             uncached_input_tokens=max(0, input_total - cached),
             cache_read_tokens=min(cached, input_total),
@@ -292,6 +294,8 @@ def parse_provider_usage(provider: str, payload: Mapping[str, Any]) -> TokenUsag
         output = _int(
             raw.get("candidatesTokenCount", raw.get("candidates_token_count"))
         )
+        if cached > input_total:
+            raise ValueError("provider cache-read tokens cannot exceed total input tokens")
         return TokenUsage(
             uncached_input_tokens=max(0, input_total - cached),
             cache_read_tokens=min(cached, input_total),

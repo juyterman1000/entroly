@@ -50,6 +50,15 @@ def test_invalid_present_provider_counter_never_produces_zero_billing(invalid) -
         parse_provider_usage("openai", payload)
 
 
+@pytest.mark.parametrize("provider,payload", [
+    ("openai", {"usage": {"prompt_tokens": 100, "prompt_tokens_details": {"cached_tokens": 200}}}),
+    ("gemini", {"usageMetadata": {"promptTokenCount": 100, "cachedContentTokenCount": 200}}),
+])
+def test_cache_read_more_than_input_is_unpriced_not_clamped(provider, payload) -> None:
+    with pytest.raises(ValueError, match="cache-read tokens cannot exceed"):
+        parse_provider_usage(provider, payload)
+
+
 def test_missing_counters_in_partial_stream_frame_remain_zero() -> None:
     usage = parse_provider_usage("anthropic", {"usage": {"output_tokens": 5}})
     assert usage.total_input_tokens == 0
