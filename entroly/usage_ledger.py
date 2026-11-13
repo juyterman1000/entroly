@@ -368,6 +368,11 @@ def parse_stream_usage(
                 candidates.append({"usage": container["usage"]})
 
         for candidate in candidates:
+            # A provider may emit an empty usage placeholder before final
+            # cumulative counters. It is not a measurement; skip the empty
+            # interim frame. Nonempty invalid counters still fail closed.
+            if not next(iter(candidate.values())):
+                continue
             usage = parse_provider_usage(provider, candidate)
             aggregate = TokenUsage(
                 uncached_input_tokens=max(

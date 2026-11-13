@@ -448,3 +448,18 @@ def test_export_csv_respects_filters() -> None:
     assert len(rows) == 4
     for row in rows[1:]:
         assert row[2] == "anthropic"
+
+
+def test_stream_ignores_empty_usage_placeholders_but_not_invalid_counters() -> None:
+    from entroly.usage_ledger import parse_stream_usage
+    transcript = (
+        'data: {"type":"message_start","message":{"usage":{}}}\n\n'
+        'data: {"type":"message_delta","usage":{"output_tokens":8}}\n\n'
+    )
+    usage = parse_stream_usage("anthropic", transcript)
+    assert usage is not None
+    assert usage.output_tokens == 8
+    assert usage.total_input_tokens == 0
+    assert parse_stream_usage("anthropic", 'data: {"usage":{}}\n\n') is None
+    with pytest.raises(ValueError, match="finite nonnegative integer"):
+        parse_stream_usage("anthropic", 'data: {"usage":{"output_tokens":"Infinity"}}\n\n')
