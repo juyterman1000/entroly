@@ -127,3 +127,41 @@ jobs:
           if-no-files-found: warn
       - name: Enforce no regression failure
         run: test "$(cat "$RUNNER_TEMP/independent-regressions.status")" -eq 0
+
+  clean-wheel-platform-matrix:
+    name: Fresh isolated wheel / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Build real wheel, not editable checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -q build
+          python -m build --wheel --outdir "$RUNNER_TEMP/entroly-wheels"
+      - name: Install in fresh venv outside repository and inspect native plus CLI
+        shell: bash
+        env:
+          ENTROLY_AIR_GAP: "1"
+          ENTROLY_NO_SELF_HEAL: "1"
+          ENTROLY_DISABLE_TELEMETRY: "1"
+          ENTROLY_DISABLE_UPDATE_CHECK: "1"
+        run: |
+          python scripts/intensive_fresh_install.py --wheel-dir "$RUNNER_TEMP/entroly-wheels" --out "$RUNNER_TEMP/clean-wheel-evidence.json"
+      - name: Preserve platform evidence, including failures
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: intensive-clean-wheel-${{ matrix.os }}
+          path: ${{ runner.temp }}/clean-wheel-evidence.json
+          if-no-files-found: warn
