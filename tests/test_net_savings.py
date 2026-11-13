@@ -381,6 +381,51 @@ def test_one_unreadable_table_removes_only_that_provider(monkeypatch, tmp_path) 
     assert ns.resolve_rates("gemini", "gemini-2.5-pro") is not None
 
 
+@pytest.mark.parametrize("bad_rate", ["NaN", "sNaN", "Infinity", "-Infinity", "not-a-number"])
+def test_invalid_operator_catalog_rate_is_unpriced_not_an_exception(
+    monkeypatch, tmp_path, bad_rate
+) -> None:
+    path = tmp_path / "pricing.json"
+    path.write_text(json.dumps({
+        "source": "operator-invalid",
+        "models": {
+            "openai:gpt-4o": {
+                "input_per_million": bad_rate,
+                "cache_read_per_million": "0.50",
+            },
+        },
+    }), encoding="utf-8")
+    monkeypatch.setenv("ENTROLY_PRICING_CATALOG", str(path))
+    ns._reset_catalog_cache_for_tests()
+    # A broken operator catalog must never produce nonfinite dollar claims or
+    # propagate decimal.InvalidOperation into the proxy's receipt handling.
+    assert ns.resolve_rates("openai", "gpt-4o") is None
+    assert ns.resolve_rates("anthropic", "claude-opus-4-6") is None
+
+
+@pytest.mark.parametrize("bad_rate", ["NaN", "Infinity", "not-a-number"])
+def test_bad_bundled_rate_isolated_to_its_table(
+    monkeypatch, tmp_path, bad_rate
+) -> None:
+    bad = tmp_path / "openai_pricing.json"
+    bad.write_text(json.dumps({
+        "models": {
+            "openai:gpt-4o": {
+                "input_per_million": "2.50",
+                "cache_read_per_million": bad_rate,
+            },
+        },
+    }), encoding="utf-8")
+    monkeypatch.setattr(
+        ns, "_BUNDLED_TABLES",
+        (DATA / "anthropic_pricing.json", bad, DATA / "google_pricing.json"),
+    )
+    ns._reset_catalog_cache_for_tests()
+    assert ns.resolve_rates("openai", "gpt-4o") is None
+    assert ns.resolve_rates("anthropic", "claude-opus-4-6") is not None
+    assert ns.resolve_rates("gemini", "gemini-2.5-pro") is not None
+
+
 def test_a_table_repricing_another_tables_model_is_dropped_whole(monkeypatch, tmp_path) -> None:
     clash = tmp_path / "clash.json"
     clash.write_text(json.dumps({"source": "clash", "models": {
