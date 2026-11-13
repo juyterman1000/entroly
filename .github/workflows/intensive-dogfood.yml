@@ -42,3 +42,85 @@ jobs:
             artifacts/intensive-dogfood/source-archive-sha256.txt
             artifacts/intensive-dogfood/checkout-status.txt
           if-no-files-found: error
+
+  native-source-evidence-trials:
+    name: Paired RAW / COMPRESS / RECOVERY on native engine
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install exact-head native package
+        run: |
+          python scripts/ci_install_exact_head.py --extras test,proxy --extra-package pytest-timeout
+      - name: Assert native engine, then run preregistered source-evidence trials
+        env:
+          ENTROLY_AIR_GAP: "1"
+          ENTROLY_DISABLE_UPDATE_CHECK: "1"
+          ENTROLY_DISABLE_TELEMETRY: "1"
+          GITHUB_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from entroly.native_status import native_status
+          status = native_status()
+          print(status)
+          assert status.available and status.version_ok is not False, "Native engine not actually active"
+          PY
+          python benchmarks/intensive_dogfood_trials.py --out "$RUNNER_TEMP/native-source-evidence.json"
+      - name: Upload all measured trials (including negative results)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: intensive-dogfood-native-source-evidence
+          path: ${{ runner.temp }}/native-source-evidence.json
+          if-no-files-found: warn
+
+  independent-adversarial-regressions:
+    name: Independent pricing, proof, and proxy fidelity regression batch
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install exact-head package
+        run: |
+          python scripts/ci_install_exact_head.py --extras test,proxy --extra-package pytest-timeout
+      - name: Execute adversarial and user-path tests
+        env:
+          ENTROLY_AIR_GAP: "1"
+          ENTROLY_DISABLE_TELEMETRY: "1"
+        run: |
+          set +e
+          python -m pytest -q --tb=short \
+            tests/test_usage_ledger.py \
+            tests/test_net_savings.py \
+            tests/test_proof_bundle.py \
+            tests/test_context_commit.py \
+            tests/test_agentic_arms.py \
+            tests/test_recovery_fidelity_fuzz.py \
+            tests/test_proxy_agent_session_fidelity.py \
+            tests/test_proxy_forward_headers.py \
+            2>&1 | tee "$RUNNER_TEMP/independent-regressions.log"
+          result=${PIPESTATUS[0]}
+          echo "$result" > "$RUNNER_TEMP/independent-regressions.status"
+          exit 0
+      - name: Keep failure evidence available
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: intensive-dogfood-regression-log
+          path: |
+            ${{ runner.temp }}/independent-regressions.log
+            ${{ runner.temp }}/independent-regressions.status
+          if-no-files-found: warn
+      - name: Enforce no regression failure
+        run: test "$(cat "$RUNNER_TEMP/independent-regressions.status")" -eq 0
