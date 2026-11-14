@@ -343,6 +343,13 @@ def _render_context_result(
 
 
 def _error(kind: str, exc: Exception) -> dict[str, Any]:
+    from .handoff_authority import AuthorityRefused
+
+    if isinstance(exc, AuthorityRefused):
+        return {
+            "status": "error", "kind": kind, "error": "handoff_authority_refused",
+            "code": exc.code, "detail": exc.detail[:2000],
+        }
     if isinstance(exc, WorkGraphUnavailableError):
         code = "native_work_graph_unavailable"
     elif isinstance(exc, WorkGraphLockTimeout):
@@ -541,6 +548,16 @@ def work_handoff(
         path = _project_path(project)
         store = _store_for_path(path)
         recovery_require_acknowledged(store.repo_dir)
+        # Once a host assertion has moved authority over this workstream, only
+        # its holder may hand it on, and that needs the CLI's --assertion. The
+        # MCP tool takes no assertion, so it refuses rather than bypassing the
+        # fence.
+        from .handoff_authority import require_write_authority
+
+        require_write_authority(
+            store.repo_dir, repo_id=store.repo_id, workstream=selected_workstream,
+            assertion=None, trust=None,
+        )
         observation = _passive_observation(path)
         store.submit_repository_observation(observation, repository_path=path)
         receipt = store.handoff(selected_workstream, source_agent, target_agent)
