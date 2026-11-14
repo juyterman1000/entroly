@@ -146,12 +146,13 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - name: Build real wheel, not editable checkout
+      - name: Build Python and native wheels from the same checkout
         shell: bash
         run: |
           set -euo pipefail
           python -m pip install -q build
           python -m build --wheel --outdir "$RUNNER_TEMP/entroly-wheels"
+          python -m pip wheel --no-deps --wheel-dir "$RUNNER_TEMP/entroly-wheels" ./entroly-core
       - name: Install in fresh venv outside repository and inspect native plus CLI
         shell: bash
         env:
