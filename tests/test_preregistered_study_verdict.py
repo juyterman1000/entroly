@@ -50,7 +50,11 @@ def test_fake_400_task_data_still_requires_real_invoice():
 
 
 def test_even_self_reported_400_task_invoices_do_not_auto_certify():
-    result = inspect(study(400, invoice="attested_per_request_reconciled"))
+    payload = study(400, invoice="attested_per_request_reconciled")
+    for row in payload["rows"]:
+        if row["arm"] == "closed_loop":
+            row["billed_usd"] = "0.0008"
+    result = inspect(payload)
     assert result["status"] == "external_review_required"
     assert result["limitations"]
 
