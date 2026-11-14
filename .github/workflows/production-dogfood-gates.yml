@@ -31,6 +31,7 @@ jobs:
         run: |
           python -m pytest -q --tb=short \
             tests/test_provider_invoice_reconcile.py \
+            tests/test_preregistered_study_verdict.py \
             tests/test_production_real_commit_security.py \
             tests/test_real_commit_pilot.py
       - name: Prohibit fake invoice success on CI
@@ -46,6 +47,10 @@ jobs:
           PY
 
   real-history-model-pilot:
+    # The frozen pilot ran on 2026-11-14 (run 43613862356).
+    # Expensive model replays are explicit opt-in; PR edits to statistical
+    # checks must not silently spend runner minutes or alter the sample.
+    if: github.event_name == 'workflow_dispatch'
     name: Frozen real-repo bug-fix model pilot (not 400-task claim)
     runs-on: ubuntu-latest
     timeout-minutes: 95
