@@ -136,8 +136,12 @@ def _check_patch_paths(patch: str, allowed: list[str]) -> None:
     headers = re.findall(r"^diff --git a/(\S+) b/(\S+)$", patch, re.M)
     if any(a != b or a not in allowed_set for a, b in headers):
         raise ValueError("patch diff header changes an unapproved path")
-    if any(marker in patch for marker in ("GIT binary patch", "rename from", "rename to")):
-        raise ValueError("binary and rename patches are unsupported")
+    if any(marker in patch for marker in (
+        "GIT binary patch", "rename from", "rename to", "new file mode",
+        "deleted file mode", "old mode", "new mode", "copy from", "copy to",
+        "Subproject commit",
+    )):
+        raise ValueError("binary, mode, symlink, copy and rename patches are unsupported")
 
 
 def _apply_patch(root: Path, response: str, allowed: list[str]) -> tuple[str, str]:
@@ -155,9 +159,36 @@ def _apply_patch(root: Path, response: str, allowed: list[str]) -> tuple[str, st
 def _oracle(root: Path, task: dict[str, Any], timeout: int) -> tuple[str, str]:
     env = os.environ.copy()
     env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
+    if env.get("ENTROLY_REAL_COMMIT_SANDBOX") == "1":
+        # Historical and model-generated Python execute ONLY in an isolated
+        # container. The checkout is mounted read-only, no host credentials,
+        # network, writeable bind volumes or extra Linux capabilities.
+        root.chmod(0o755)
+        for test_file in task["test_files"]:
+            if Path(test_file).anchor or ".." in Path(test_file).parts:
+                raise ValueError("invalid test path for sandbox")
+        command = [
+            "docker", "run", "--rm", "--pull=never", "--network=none",
+            "--cap-drop=ALL", "--security-opt=no-new-privileges",
+            "--read-only", "--pids-limit=64", "--cpus=1", "--memory=768m",
+            "--user=65534:65534", "--tmpfs=/tmp:rw,nosuid,nodev,size=64m",
+            "--workdir=/task",
+            f"--mount=type=bind,src={root},dst=/task,readonly",
+            "--env=PYTHONPATH=/task",
+            "--env=PYTHONDONTWRITEBYTECODE=1",
+            "--env=PYTEST_DISABLE_PLUGIN_AUTOLOAD=1",
+            "entroly-dogfood-real-oracle:py312",
+            "python", "-m", "pytest", *task["test_files"],
+            "-x", "-q", "--tb=short", "-p", "no:cacheprovider",
+        ]
+    else:
+        # Legacy trusted unit-test behavior only. Production model trials set
+        # ENTROLY_REAL_COMMIT_SANDBOX=1 and fail if Docker is unavailable.
+        command = [sys.executable, "-m", "pytest", *task["test_files"],
+                   "-x", "-q", "--tb=short", "-p", "no:cacheprovider"]
     try:
         result = subprocess.run(
-            [sys.executable, "-m", "pytest", *task["test_files"], "-x", "-q", "--tb=short", "-p", "no:cacheprovider"],
+            command,
             cwd=root,
             capture_output=True,
             text=True,
@@ -167,6 +198,8 @@ def _oracle(root: Path, task: dict[str, Any], timeout: int) -> tuple[str, str]:
     except subprocess.TimeoutExpired:
         return "timeout", ""
     output = result.stdout + "\n" + result.stderr
+    if env.get("ENTROLY_REAL_COMMIT_SANDBOX") == "1" and result.returncode in (125, 126, 127):
+        return "infrastructure_error", output[-500:]
     if result.returncode == 0:
         return "passed", output[-500:]
     lowered = output.lower()
@@ -189,7 +222,10 @@ def _prompt(context: str, task: dict[str, Any]) -> str:
 
 def _local_model_digest(base_url: str, model: str) -> str:
     parsed = urllib.parse.urlparse(base_url)
-    if parsed.scheme != "http" or parsed.hostname not in {"localhost", "127.0.0.1", "::1"}:
+    if (parsed.scheme != "http" or parsed.hostname not in {"localhost", "127.0.0.1", "::1"}
+            or parsed.username is not None or parsed.password is not None
+            or parsed.path not in ("", "/") or parsed.query or parsed.fragment
+            or parsed.port is None):
         raise ValueError("pilot requires a local Ollama HTTP endpoint")
     with urllib.request.urlopen(f"{base_url.rstrip('/')}/api/tags", timeout=10) as response:
         tags = json.loads(response.read().decode("utf-8"))
