@@ -1,13 +1,94 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
+import pytest
+
 from entroly.usage_ledger import (
     UsageLedger,
+    TokenUsage,
     UsagePricing,
     UsagePricingCatalog,
     parse_provider_usage,
     parse_stream_usage,
     price_usage,
 )
+
+
+@pytest.mark.parametrize("field", [
+    "input_per_million", "output_per_million", "cache_read_per_million", "cache_write_per_million",
+])
+@pytest.mark.parametrize("invalid", ["NaN", "sNaN", "Infinity", "-Infinity", "not-a-rate"])
+def test_nonfinite_or_invalid_usage_pricing_fails_closed(field: str, invalid: str) -> None:
+    rates = dict(input_per_million="2", output_per_million="4", cache_read_per_million="0.2")
+    rates[field] = invalid
+    with pytest.raises(ValueError, match="finite nonnegative"):
+        UsagePricing.from_values(**rates)
+    with pytest.raises(ValueError, match="finite nonnegative"):
+        UsagePricingCatalog.from_mapping({"models": {"openai:my-model": rates}})
+
+
+@pytest.mark.parametrize("invalid", ["NaN", "sNaN", "Infinity", "-Infinity"])
+def test_direct_usage_pricing_rejects_nonfinite_decimal(invalid: str) -> None:
+    with pytest.raises(ValueError, match="finite and nonnegative"):
+        UsagePricing(Decimal(invalid), Decimal("1"), Decimal("0.1"))
+
+
+@pytest.mark.parametrize("provider,payload", [
+    ("openai", {"usage": {"prompt_tokens": float("inf"), "completion_tokens": 1}}),
+    ("anthropic", {"usage": {"input_tokens": float("inf"), "output_tokens": 1}}),
+    ("gemini", {"usageMetadata": {"promptTokenCount": float("inf"), "candidatesTokenCount": 1}}),
+])
+def test_invalid_provider_infinite_token_counter_cannot_crash_parsing(provider, payload) -> None:
+    with pytest.raises(ValueError, match="finite nonnegative integer"):
+        parse_provider_usage(provider, payload)
+
+
+@pytest.mark.parametrize("invalid", ["NaN", "sNaN", "Infinity", "-Infinity", "not-numeric", "-10", "1.5", True, 2**63])
+def test_invalid_present_provider_counter_never_produces_zero_billing(invalid) -> None:
+    payload = {"usage": {"prompt_tokens": invalid, "completion_tokens": 1}}
+    with pytest.raises(ValueError, match="finite nonnegative integer"):
+        parse_provider_usage("openai", payload)
+
+
+@pytest.mark.parametrize("provider,payload", [
+    ("openai", {"usage": {"prompt_tokens": 100, "prompt_tokens_details": {"cached_tokens": 200}}}),
+    ("gemini", {"usageMetadata": {"promptTokenCount": 100, "cachedContentTokenCount": 200}}),
+])
+def test_cache_read_more_than_input_is_unpriced_not_clamped(provider, payload) -> None:
+    with pytest.raises(ValueError, match="cache-read tokens cannot exceed"):
+        parse_provider_usage(provider, payload)
+
+
+@pytest.mark.parametrize("provider,field", [
+    ("openai", "usage"), ("anthropic", "usage"), ("gemini", "usageMetadata"),
+])
+def test_empty_usage_metadata_is_not_valid_zero_cost_evidence(provider, field) -> None:
+    with pytest.raises(ValueError, match="no recognized token counters"):
+        parse_provider_usage(provider, {field: {}})
+
+
+def test_missing_counters_in_partial_stream_frame_remain_zero() -> None:
+    usage = parse_provider_usage("anthropic", {"usage": {"output_tokens": 5}})
+    assert usage.total_input_tokens == 0
+    assert usage.output_tokens == 5
+
+
+def test_malformed_usage_never_creates_priced_ledger_row(tmp_path) -> None:
+    pricing = UsagePricing.from_values(input_per_million="2", cache_read_per_million="0.2", output_per_million="4")
+    with UsageLedger(tmp_path / "usage.db") as ledger:
+        with pytest.raises(ValueError, match="finite nonnegative integer"):
+            ledger.record_provider_payload(request_id="poison", provider="openai", model="model",
+                                           payload={"usage": {"prompt_tokens": "Infinity"}}, pricing=pricing)
+        assert ledger.summary()["requests"] == 0
+
+
+def test_direct_usage_pricing_still_accepts_numeric_literals() -> None:
+    price = UsagePricing(2, 4, 0.5)
+    assert price.input_per_million == 2
+    assert price.output_per_million == 4
+    assert price.cache_read_per_million == Decimal("0.5")
+    assert price_usage(TokenUsage(uncached_input_tokens=100, cache_read_tokens=100), price) == (250, 150)
 
 
 def test_openai_usage_separates_cached_from_uncached_tokens() -> None:
@@ -367,3 +448,40 @@ def test_export_csv_respects_filters() -> None:
     assert len(rows) == 4
     for row in rows[1:]:
         assert row[2] == "anthropic"
+
+
+def test_stream_ignores_empty_usage_placeholders_but_not_invalid_counters() -> None:
+    from entroly.usage_ledger import parse_stream_usage
+    transcript = (
+        'data: {"type":"message_start","message":{"usage":{}}}\n\n'
+        'data: {"type":"message_delta","usage":{"output_tokens":8}}\n\n'
+    )
+    usage = parse_stream_usage("anthropic", transcript)
+    assert usage is not None
+    assert usage.output_tokens == 8
+    assert usage.total_input_tokens == 0
+    assert parse_stream_usage("anthropic", 'data: {"usage":{}}\n\n') is None
+    with pytest.raises(ValueError, match="finite nonnegative integer"):
+        parse_stream_usage("anthropic", 'data: {"usage":{"output_tokens":"Infinity"}}\n\n')
+
+
+@pytest.mark.parametrize("field", ["uncached_input_tokens", "cache_read_tokens", "cache_write_tokens", "output_tokens", "cache_write_1h_tokens"])
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf"), 1.25, "not-numeric", True])
+def test_direct_token_usage_rejects_poisoned_counters(field, bad) -> None:
+    values = {"uncached_input_tokens": 1, "cache_read_tokens": 1,
+              "cache_write_tokens": 3, "output_tokens": 1}
+    values[field] = bad
+    with pytest.raises(ValueError, match="finite nonnegative integer"):
+        TokenUsage(**values)
+
+
+def test_direct_token_usage_coerces_exact_numeric_inputs() -> None:
+    usage = TokenUsage(uncached_input_tokens="5", cache_read_tokens=Decimal("2"),
+                       cache_write_tokens=3.0, output_tokens=7,
+                       cache_write_1h_tokens="1")
+    assert (usage.uncached_input_tokens, usage.cache_read_tokens,
+            usage.cache_write_tokens, usage.output_tokens,
+            usage.cache_write_1h_tokens) == (5, 2, 3, 7, 1)
+    assert all(isinstance(getattr(usage, key), int)
+               for key in ("uncached_input_tokens", "cache_read_tokens",
+                           "cache_write_tokens", "output_tokens", "cache_write_1h_tokens"))

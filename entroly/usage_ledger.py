@@ -15,7 +15,7 @@ import sqlite3
 import threading
 import time
 from dataclasses import dataclass, field
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -32,20 +32,20 @@ class TokenUsage:
     cache_write_1h_tokens: int | None = None
 
     def __post_init__(self) -> None:
-        if any(
-            value < 0
-            for value in (
-                self.uncached_input_tokens,
-                self.cache_read_tokens,
-                self.cache_write_tokens,
-                self.output_tokens,
-            )
-        ):
-            raise ValueError("token usage cannot be negative")
-        if self.cache_write_1h_tokens is not None and not (
-            0 <= self.cache_write_1h_tokens <= self.cache_write_tokens
-        ):
-            raise ValueError("1-hour cache writes must lie within cache writes")
+        # Public SDK callers can construct TokenUsage directly, bypassing the
+        # provider parser. Validate and normalize those inputs too, or
+        # nonfinite/fractional counters can poison durable cost calculations.
+        for field_name in ("uncached_input_tokens", "cache_read_tokens",
+                           "cache_write_tokens", "output_tokens"):
+            value = getattr(self, field_name)
+            if value is None:
+                raise ValueError("token usage must be a finite nonnegative integer")
+            object.__setattr__(self, field_name, _int(value))
+        if self.cache_write_1h_tokens is not None:
+            one_hour = _int(self.cache_write_1h_tokens)
+            if one_hour > self.cache_write_tokens:
+                raise ValueError("1-hour cache writes must lie within cache writes")
+            object.__setattr__(self, "cache_write_1h_tokens", one_hour)
 
     @property
     def total_input_tokens(self) -> int:
@@ -80,28 +80,45 @@ class UsagePricing:
         cache_write_per_million: str | int | float | None = None,
         source: str = "explicit",
     ) -> "UsagePricing":
+        def parse_rate(value: str | int | float, field: str) -> Decimal:
+            try:
+                result = Decimal(str(value))
+            except (InvalidOperation, TypeError, ValueError) as exc:
+                raise ValueError(f"{field} must be a finite nonnegative rate") from exc
+            if not result.is_finite() or result < 0:
+                raise ValueError(f"{field} must be a finite nonnegative rate")
+            return result
+
         return cls(
-            input_per_million=Decimal(str(input_per_million)),
-            output_per_million=Decimal(str(output_per_million)),
-            cache_read_per_million=Decimal(str(cache_read_per_million)),
+            input_per_million=parse_rate(input_per_million, "input_per_million"),
+            output_per_million=parse_rate(output_per_million, "output_per_million"),
+            cache_read_per_million=parse_rate(cache_read_per_million, "cache_read_per_million"),
             cache_write_per_million=(
                 None
                 if cache_write_per_million is None
-                else Decimal(str(cache_write_per_million))
+                else parse_rate(cache_write_per_million, "cache_write_per_million")
             ),
             source=source,
         )
 
     def __post_init__(self) -> None:
-        rates = (
-            self.input_per_million,
-            self.output_per_million,
-            self.cache_read_per_million,
-        )
-        if any(rate < 0 for rate in rates):
-            raise ValueError("pricing cannot be negative")
-        if self.cache_write_per_million is not None and self.cache_write_per_million < 0:
-            raise ValueError("cache-write pricing cannot be negative")
+        # Nonfinite rates must never enter the durable cost ledger. NaN
+        # comparisons raise InvalidOperation, while Infinity otherwise passes
+        # the nonnegative guard and poisons dollar calculations.
+        for field_name in ("input_per_million", "output_per_million",
+                           "cache_read_per_million", "cache_write_per_million"):
+            rate = getattr(self, field_name)
+            if rate is None:
+                continue
+            try:
+                checked = Decimal(str(rate))
+            except (InvalidOperation, TypeError, ValueError) as exc:
+                raise ValueError("pricing rates must be finite and nonnegative") from exc
+            if not checked.is_finite() or checked < 0:
+                raise ValueError("pricing rates must be finite and nonnegative")
+            # Direct dataclass construction must honor its Decimal contract;
+            # otherwise floats pass validation and crash _micro_cost later.
+            object.__setattr__(self, field_name, checked)
 
     @property
     def cache_write_rate(self) -> Decimal:
@@ -206,10 +223,24 @@ class UsageEvent:
 
 
 def _int(value: Any) -> int:
-    try:
-        return max(0, int(value or 0))
-    except (TypeError, ValueError):
+    """Parse provider-reported counters without manufacturing zero spend.
+
+    Missing fields in partial streaming updates are zero. *Present but invalid*
+    fields must be rejected: silently converting Infinity, NaN, negative or
+    fractional values to zero creates an apparently priced but false receipt.
+    """
+    if value is None or value == "":
         return 0
+    if isinstance(value, bool):
+        raise ValueError("provider token count must be a finite nonnegative integer")
+    try:
+        number = Decimal(str(value))
+    except (TypeError, ValueError, InvalidOperation) as exc:
+        raise ValueError("provider token count must be a finite nonnegative integer") from exc
+    if (not number.is_finite() or number < 0
+            or number != number.to_integral_value() or number > 2**63 - 1):
+        raise ValueError("provider token count must be a finite nonnegative integer")
+    return int(number)
 
 
 def parse_provider_usage(provider: str, payload: Mapping[str, Any]) -> TokenUsage:
@@ -224,10 +255,14 @@ def parse_provider_usage(provider: str, payload: Mapping[str, Any]) -> TokenUsag
         raw = payload
 
     if provider_key in {"openai", "azure_openai", "azure"}:
+        if not any(key in raw for key in ("input_tokens", "prompt_tokens", "output_tokens", "completion_tokens")):
+            raise ValueError("provider usage has no recognized token counters")
         input_total = _int(raw.get("input_tokens", raw.get("prompt_tokens")))
         output = _int(raw.get("output_tokens", raw.get("completion_tokens")))
         details = raw.get("input_tokens_details", raw.get("prompt_tokens_details"))
         cached = _int(details.get("cached_tokens")) if isinstance(details, Mapping) else 0
+        if cached > input_total:
+            raise ValueError("provider cache-read tokens cannot exceed total input tokens")
         return TokenUsage(
             uncached_input_tokens=max(0, input_total - cached),
             cache_read_tokens=min(cached, input_total),
@@ -235,6 +270,8 @@ def parse_provider_usage(provider: str, payload: Mapping[str, Any]) -> TokenUsag
         )
 
     if provider_key in {"anthropic", "claude"}:
+        if not any(key in raw for key in ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")):
+            raise ValueError("provider usage has no recognized token counters")
         writes = _int(raw.get("cache_creation_input_tokens"))
         split = raw.get("cache_creation")
         one_hour: int | None = None
@@ -251,6 +288,8 @@ def parse_provider_usage(provider: str, payload: Mapping[str, Any]) -> TokenUsag
         )
 
     if provider_key in {"google", "gemini", "vertex"}:
+        if not any(key in raw for key in ("promptTokenCount", "prompt_token_count", "candidatesTokenCount", "candidates_token_count")):
+            raise ValueError("provider usage has no recognized token counters")
         input_total = _int(
             raw.get("promptTokenCount", raw.get("prompt_token_count"))
         )
@@ -260,6 +299,8 @@ def parse_provider_usage(provider: str, payload: Mapping[str, Any]) -> TokenUsag
         output = _int(
             raw.get("candidatesTokenCount", raw.get("candidates_token_count"))
         )
+        if cached > input_total:
+            raise ValueError("provider cache-read tokens cannot exceed total input tokens")
         return TokenUsage(
             uncached_input_tokens=max(0, input_total - cached),
             cache_read_tokens=min(cached, input_total),
@@ -327,6 +368,11 @@ def parse_stream_usage(
                 candidates.append({"usage": container["usage"]})
 
         for candidate in candidates:
+            # A provider may emit an empty usage placeholder before final
+            # cumulative counters. It is not a measurement; skip the empty
+            # interim frame. Nonempty invalid counters still fail closed.
+            if not next(iter(candidate.values())):
+                continue
             usage = parse_provider_usage(provider, candidate)
             aggregate = TokenUsage(
                 uncached_input_tokens=max(
