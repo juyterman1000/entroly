@@ -1,0 +1,34 @@
+{
+  "schema": "entroly.real-commit-pilot-plan.v1",
+  "frozen_at": "2026-11-14",
+  "source_baseline": "2c3ff80f67ecd948308430d180488e450cdf1a0f",
+  "sampling": "eight previously validated consecutive Entroly source+test commits, predeclared in this file; no post-result inclusion changes",
+  "repository": "juyterman1000/entroly",
+  "candidate_shas": [
+    "c3a6116464e19db20baa998acae30db380f59d0d",
+    "7c1bf2600e8bb5c928173b5ea8db91c76bc5a39c",
+    "b93d578d10d27422eb3a67d27d2bbd93560dfa37",
+    "b040189415abe8b489b1c9b90bdf1e2c1e91935c",
+    "f817b637fdb153ec349679ab19dc3cc4033badd1",
+    "e965586f8ea78dc96d1f8de7a68e2abe95e3d9be",
+    "18d94013c130abeeb0adf01cfff6579360194eec",
+    "d17366b2f3eef5c0026bea37a3339b8b0e5085ca"
+  ],
+  "model": "qwen2.5-coder:3b",
+  "model_digest": "f72c60cabf6237b07f6e632b2c48d533cef25eda2efbd34bed21c5e9c01e6225",
+  "seed": 17,
+  "max_corpus_bytes": 18000,
+  "selection_budget": 1400,
+  "max_output_tokens": 768,
+  "context_window": 8192,
+  "model_timeout_s": 240,
+  "test_timeout_s": 40,
+  "budget_dollars": "0",
+  "invoice_status": "NO_PAID_PROVIDER",
+  "limitations": [
+    "Development model pilot from one user's repository, never a cross-repo holdout",
+    "Some candidate corpora may be ineligible under frozen context cap; log every exclusion",
+    "RAW, COMPRESS, RAW_REPEAT; no autonomous agent tool loop or CLOSED_LOOP in this pilot",
+    "Local CPU model usage is not external provider billing"
+  ]
+}
