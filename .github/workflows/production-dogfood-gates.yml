@@ -1,0 +1,120 @@
+name: Production Dogfood Evidence Gates
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-dogfood-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  invoice-and-security-contracts:
+    name: Invoice reconciliation and real-commit sandbox contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install exact-head package and test dependencies
+        run: |
+          python scripts/ci_install_exact_head.py --extras test,proxy --extra-package pytest-timeout
+      - name: Exercise fail-closed invoice matching and untrusted-patch guards
+        run: |
+          python -m pytest -q --tb=short \
+            tests/test_provider_invoice_reconcile.py \
+            tests/test_production_real_commit_security.py \
+            tests/test_real_commit_pilot.py
+      - name: Prohibit fake invoice success on CI
+        run: |
+          python - <<'PY'
+          from benchmarks.provider_invoice_reconcile import reconcile
+          try:
+              reconcile(b"", b"")
+          except ValueError as exc:
+              print("Correctly refused fabricated/missing invoice:", exc)
+          else:
+              raise SystemExit("Missing invoice was incorrectly treated as evidence")
+          PY
+
+  real-history-model-pilot:
+    name: Frozen real-repo bug-fix model pilot (not 400-task claim)
+    runs-on: ubuntu-latest
+    timeout-minutes: 95
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install native engine and pytest
+        run: |
+          python scripts/ci_install_exact_head.py --extras test,proxy --extra-package pytest-timeout
+      - name: Build networkless nonroot historical-code test sandbox
+        run: |
+          set -euo pipefail
+          printf '%s\n' \
+            'FROM python:3.12-slim' \
+            'RUN python -m pip install --no-cache-dir pytest==9.2.0 "entroly[proxy]==1.0.88"' \
+            | docker build -t entroly-dogfood-real-oracle:py312 -
+          docker image inspect --format '{{.Id}}' entroly-dogfood-real-oracle:py312 \
+            | tee "$RUNNER_TEMP/oracle-image-id.txt"
+      - name: Start isolated CPU model and verify registry digest
+        run: |
+          set -euo pipefail
+          docker run -d --name entroly-real-history-ollama \
+            --publish 127.0.0.1:11434:11434 --cpus=4 --memory=5g \
+            ollama/ollama:latest
+          docker image inspect ollama/ollama:latest --format '{{.Id}}' \
+            | tee "$RUNNER_TEMP/ollama-image-id.txt"
+          for i in $(seq 1 100); do
+            if curl --noproxy '*' -fsS http://127.0.0.1:11434/api/tags >/dev/null; then
+              break
+            fi
+            sleep 2
+          done
+          timeout 1200 docker exec entroly-real-history-ollama \
+            ollama pull qwen2.5-coder:3b
+      - name: Revalidate all frozen history oracles and run model on eligible tasks
+        env:
+          ENTROLY_REAL_COMMIT_SANDBOX: "1"
+          ENTROLY_DISABLE_TELEMETRY: "1"
+          ENTROLY_DISABLE_UPDATE_CHECK: "1"
+          ENTROLY_NO_SELF_HEAL: "1"
+        run: |
+          set -euo pipefail
+          timeout 4600 python -m benchmarks.run_frozen_real_commit_pilot \
+            --repo . \
+            --manifest benchmarks/protocols/real_commit_pilot_2026_11_14.json \
+            --outdir "$RUNNER_TEMP/production-real-history" \
+            2>&1 | tee "$RUNNER_TEMP/real-history-model.log"
+          test "${PIPESTATUS[0]}" -eq 0
+      - name: Preserve failures, actual generations and task eligibility
+        if: always()
+        run: |
+          docker logs entroly-real-history-ollama > "$RUNNER_TEMP/ollama-runner.log" 2>&1 || true
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: production-dogfood-real-history-model
+          path: |
+            ${{ runner.temp }}/production-real-history/*.json
+            ${{ runner.temp }}/production-real-history/*.jsonl
+            ${{ runner.temp }}/real-history-model.log
+            ${{ runner.temp }}/oracle-image-id.txt
+            ${{ runner.temp }}/ollama-image-id.txt
+            ${{ runner.temp }}/ollama-runner.log
+          if-no-files-found: warn
+      - name: Stop isolated model
+        if: always()
+        run: docker rm -f entroly-real-history-ollama || true
