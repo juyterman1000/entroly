@@ -4,8 +4,7 @@ title: "Entroly: Context Assurance for AI Agents"
 type: software
 authors:
   - name: "Entroly Contributors"
-version: 1.0.88
-date-released: 2026-11-01
+version: 1.0.89
 license: Apache-2.0
 repository-code: "https://github.com/juyterman1000/entroly"
 url: "https://github.com/juyterman1000/entroly"
