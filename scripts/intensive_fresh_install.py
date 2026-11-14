@@ -17,13 +17,16 @@ import tempfile
 from pathlib import Path
 
 
-def verify(wheel: Path, report: dict) -> None:
+def verify(wheel: Path, core_wheel: Path, report: dict) -> None:
     assert wheel.is_file(), f"wheel missing: {wheel}"
+    assert core_wheel.is_file(), f"native wheel missing: {core_wheel}"
     report.update({
         "python": sys.version.split()[0],
         "platform": platform.platform(),
         "wheel": wheel.name,
         "wheel_sha256": hashlib.sha256(wheel.read_bytes()).hexdigest(),
+        "core_wheel": core_wheel.name,
+        "core_wheel_sha256": hashlib.sha256(core_wheel.read_bytes()).hexdigest(),
         "checks": {},
     })
     with tempfile.TemporaryDirectory(prefix="entroly-fresh-wheel-") as location:
@@ -46,12 +49,15 @@ def verify(wheel: Path, report: dict) -> None:
             if completed.returncode != 0:
                 raise RuntimeError(f"fresh install {name} failed: {completed.stdout[-500:]}")
 
-        command("install", [str(python), "-m", "pip", "install", "--no-cache-dir", str(wheel)], 420)
+        command("install", [
+            str(python), "-m", "pip", "install", "--no-cache-dir", str(wheel), str(core_wheel),
+        ], 420)
         command("pip_check", [str(python), "-m", "pip", "check"])
         command("import_and_native", [str(python), "-c", (
             "import json, entroly; from entroly.native_status import native_status; "
             "n=native_status(); print(json.dumps({'file':entroly.__file__,'ok':n.ok,'version':n.version})); "
-            "assert n.ok, 'native backend not active'")], 60)
+            "assert n.ok, 'native backend not active'; "
+            "assert n.version == entroly.__version__, 'native wheel version differs from Python wheel'")], 60)
         command("cli_version", [str(cli), "--version"], 45)
         command("cli_help", [str(cli), "--help"], 45)
 
@@ -66,7 +72,10 @@ def main() -> int:
         matches = list(args.wheel_dir.glob("entroly-*.whl"))
         if len(matches) != 1:
             raise RuntimeError(f"expected exactly one Entroly wheel: {[x.name for x in matches]}")
-        verify(matches[0].resolve(), report)
+        core_matches = list(args.wheel_dir.glob("entroly_core-*.whl"))
+        if len(core_matches) != 1:
+            raise RuntimeError(f"expected exactly one native wheel: {[x.name for x in core_matches]}")
+        verify(matches[0].resolve(), core_matches[0].resolve(), report)
         report["status"] = "passed"
         return_code = 0
     except Exception as exc:
