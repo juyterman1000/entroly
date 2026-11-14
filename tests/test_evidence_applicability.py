@@ -271,3 +271,14 @@ def test_the_resolved_executable_is_bound(tmp_path: Path) -> None:
     decision = _decision(record, project, switched)
     assert decision["decision"] == REVALIDATE
     assert any(item["kind"] == "executable" for item in decision["changed"])
+
+    # Same target binary started from another directory (another virtual
+    # environment's bin/): still a different verification.
+    third = tmp_path / "bin-c"
+    third.mkdir()
+    try:
+        (third / "verify-python").symlink_to(launcher)
+    except (OSError, NotImplementedError):  # pragma: no cover
+        return
+    moved = dict(env, PATH=str(third) + os.pathsep + _environment().get("PATH", ""))
+    assert _decision(record, project, moved)["decision"] == REVALIDATE

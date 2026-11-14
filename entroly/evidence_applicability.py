@@ -206,11 +206,16 @@ def _executable_digest(argv0: str, cwd: Path, environ: Mapping[str, str]) -> str
     located = _resolve_executable(argv0, cwd, environ)
     if not located:
         return _ABSENT
+    # The invoked path, not only its target: two virtual environments share
+    # one interpreter binary but have different site-packages, and Python
+    # finds its environment from the path it was started by.
+    invoked = os.path.abspath(located)
     real = os.path.realpath(located)
     content = _file_digest(Path(real))
     if not content.startswith("sha256:"):
         return content
-    return f"{_sha256(real.encode('utf-8', 'surrogatepass'))};{content}"
+    where = _sha256(f"{invoked}\x00{real}".encode("utf-8", "surrogatepass"))
+    return f"{where};{content}"
 
 
 class _Context:
