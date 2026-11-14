@@ -5,6 +5,24 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
 
 ## Unreleased
 
+- `entroly-work evidence run` runs a verification command itself and binds
+  the result to digests of what it read: files, scanned directories, probed
+  paths, environment variables, the interpreter and loaded modules.
+  `evidence check` then answers `reuse`, `revalidate` (listing what changed)
+  or `unknown`. An untraced child process, an unreadable input or an altered
+  record is never reused. `entroly-work accept` takes over a handed-off
+  workstream only with a host-signed Ed25519 assertion from a pinned key. The
+  assertion is bound to the successor, workspace, workstream, the exact offer
+  (which includes the evidence digests) and a single attempt, and concurrent
+  acceptances have one winner. After acceptance, `handoff`,
+  `evidence run --workstream` and the MCP `work_handoff` tool need the
+  current holder's assertion. `host-keygen`, `issue-assertion` and
+  `authority` are new. Existing handoffs keep working. A handoff made before
+  this version, or through MCP, carries no offer and cannot be accepted this
+  way. Verifying assertions needs `cryptography` (`entroly[receipt-proof]`).
+  See `docs/agent-continuity.md` and
+  `docs/research/authenticated-handoff-evidence.md`.
+
 - `entroly export-proof` / `entroly verify-proof`: a signed, offline-verifiable
   proof bundle of context evidence (Context Commits, a session receipt chain,
   WITNESS taint records). The verifier recomputes every commit from its own
