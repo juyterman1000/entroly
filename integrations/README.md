@@ -48,7 +48,7 @@ AI Assistant | Model Context Protocol (MCP)** with:
   "mcpServers": {
     "entroly": {
       "command": "npx",
-      "args": ["-y", "entroly-mcp@1.0.89", "serve"],
+      "args": ["-y", "entroly-mcp@1.0.90", "serve"],
       "env": {
         "ENTROLY_NO_DOCKER": "1",
         "ENTROLY_MCP_PASSIVE": "1",
@@ -99,7 +99,7 @@ entroly activation install --host cursor --project .
 ```
 
 For MCP-only use, Cursor can add the published server through this one-click
-[MCP install link](cursor://anysphere.cursor-deeplink/mcp/install?name=entroly&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImVudHJvbHktbWNwQDEuMC44OSIsInNlcnZlIl0sImVudiI6eyJFTlRST0xZX05PX0RPQ0tFUiI6IjEiLCJFTlRST0xZX01DUF9QQVNTSVZFIjoiMSIsIkVOVFJPTFlfTUFYX0ZJTEVTIjoiMjAwIn19).
+[MCP install link](cursor://anysphere.cursor-deeplink/mcp/install?name=entroly&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImVudHJvbHktbWNwQDEuMC45MCIsInNlcnZlIl0sImVudiI6eyJFTlRST0xZX05PX0RPQ0tFUiI6IjEiLCJFTlRST0xZX01DUF9QQVNTSVZFIjoiMSIsIkVOVFJPTFlfTUFYX0ZJTEVTIjoiMjAwIn19).
 
 Kiro IDE 1.x and CLI 3.x accept context from successful `PromptSubmit` command
 stdout:
