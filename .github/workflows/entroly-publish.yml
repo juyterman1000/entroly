@@ -530,7 +530,8 @@ jobs:
     needs: [release-metadata, publish-npm-alias]
     if: needs.release-metadata.outputs.should_publish == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Registry propagation can outlast the initial five-minute retry window.
+    timeout-minutes: 25
     env:
       RELEASE_VERSION: ${{ needs.release-metadata.outputs.version }}
       # The assertion below looks for the literal "Entroly v<version>" in the
@@ -541,6 +542,7 @@ jobs:
       # CLI honours NO_COLOR (cli.js:30), which collapses the codes to empty
       # strings and makes the banner say what the assertion expects.
       NO_COLOR: '1'
+      npm_config_prefer_online: 'true'
     steps:
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -562,7 +564,7 @@ jobs:
           probe_runner() {
             local label="$1"
             shift
-            for attempt in $(seq 1 20); do
+            for attempt in $(seq 1 60); do
               probe_dir="$(mktemp -d)"
               output="$probe_dir/help.txt"
               error="$probe_dir/error.txt"
@@ -580,11 +582,11 @@ jobs:
                 rm -rf "$probe_dir"
                 return 0
               fi
-              echo "$label could not run entroly@${RELEASE_VERSION} (attempt $attempt/20)." >&2
+              echo "$label could not run entroly@${RELEASE_VERSION} (attempt $attempt/60)." >&2
               cat "$output" >&2 || true
               cat "$error" >&2 || true
               rm -rf "$probe_dir"
-              if [[ "$attempt" != 20 ]]; then
+              if [[ "$attempt" != 60 ]]; then
                 sleep 15
               fi
             done
