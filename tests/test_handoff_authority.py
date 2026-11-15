@@ -126,37 +126,41 @@ def world(tmp_path: Path) -> World:
     return World(tmp_path)
 
 
-def _refused(world: World, assertion, code: str, **kwargs) -> None:
+def _refusal(world: World, assertion, **kwargs) -> AuthorityRefused:
+    """Attempt the acceptance, require a refusal that leaves the log untouched, return it.
+
+    Each caller asserts the refusal code itself, so every test carries its own assertion.
+    """
     before = world.history()
     with pytest.raises(AuthorityRefused) as caught:
         world.accept(assertion, **kwargs)
-    assert caught.value.code == code, caught.value
     assert world.history() == before
+    return caught.value
 
 
 def test_01_unknown_issuer(world: World) -> None:
-    _refused(world, world.assertion(issuer="someone-else"), "unknown-issuer")
+    assert _refusal(world, world.assertion(issuer="someone-else")).code == "unknown-issuer"
 
 
 def test_02_signature_valid_only_under_an_unpinned_key(world: World) -> None:
     rogue_private, _ = generate_host_key()
-    _refused(world, world.assertion(private=rogue_private), "unpinned-key")
+    assert _refusal(world, world.assertion(private=rogue_private)).code == "unpinned-key"
 
 
 def test_03_wrong_audience(world: World) -> None:
-    _refused(world, world.assertion(audience="another-verifier"), "wrong-audience")
+    assert _refusal(world, world.assertion(audience="another-verifier")).code == "wrong-audience"
 
 
 def test_04_successor_differs_from_the_offer(world: World) -> None:
-    _refused(world, world.assertion(subject="rogue:agent"), "wrong-subject")
+    assert _refusal(world, world.assertion(subject="rogue:agent")).code == "wrong-subject"
 
 
 def test_05_wrong_task(world: World) -> None:
-    _refused(world, world.assertion(task="workstream:other"), "wrong-task")
+    assert _refusal(world, world.assertion(task="workstream:other")).code == "wrong-task"
 
 
 def test_06_wrong_workspace(world: World) -> None:
-    _refused(world, world.assertion(workspace="repo:elsewhere"), "wrong-workspace")
+    assert _refusal(world, world.assertion(workspace="repo:elsewhere")).code == "wrong-workspace"
 
 
 def test_07_offer_altered_after_the_assertion_was_issued(world: World) -> None:
@@ -165,21 +169,21 @@ def test_07_offer_altered_after_the_assertion_was_issued(world: World) -> None:
     payload = json.loads(inbox.read_text(encoding="utf-8"))
     payload["offer"]["evidence"] = [{"record_id": "evidence:" + "0" * 32, "record_digest": "sha256:" + "0" * 64}]
     inbox.write_text(json.dumps(payload), encoding="utf-8")
-    _refused(world, assertion, "wrong-handoff")
+    assert _refusal(world, assertion).code == "wrong-handoff"
 
 
 def test_08_expired(world: World) -> None:
     issued = int(time.time() * 1000) - 3_000_000
-    _refused(world, world.assertion(now_ms=issued, ttl_seconds=600), "expired")
+    assert _refusal(world, world.assertion(now_ms=issued, ttl_seconds=600)).code == "expired"
 
 
 def test_09_not_yet_valid(world: World) -> None:
     now = int(time.time() * 1000)
-    _refused(world, world.assertion(now_ms=now, not_before_ms=now + 600_000, ttl_seconds=1800), "not-yet-valid")
+    assert _refusal(world, world.assertion(now_ms=now, not_before_ms=now + 600_000, ttl_seconds=1800)).code == "not-yet-valid"
 
 
 def test_10_lifetime_longer_than_the_configured_maximum(world: World) -> None:
-    _refused(world, world.assertion(ttl_seconds=7200), "lifetime-too-long")
+    assert _refusal(world, world.assertion(ttl_seconds=7200)).code == "lifetime-too-long"
 
 
 def test_11_attempt_id_reused_after_a_successful_acceptance(world: World) -> None:
@@ -192,37 +196,37 @@ def test_11_attempt_id_reused_after_a_successful_acceptance(world: World) -> Non
     )
     ref, digest, _ = world.make_offer(to_agent="gemini:c", base_epoch=authority["epoch"], from_agent=SUCCESSOR)
     replay = world.assertion(attempt_id="attempt-1", subject="gemini:c", handoff=digest)
-    _refused(world, replay, "replayed-attempt", ref=ref)
+    assert _refusal(world, replay, ref=ref).code == "replayed-attempt"
 
 
 def test_12_altered_signature_byte(world: World) -> None:
     assertion = world.assertion()
     signature = assertion["signature"]
     assertion["signature"] = ("0" if signature[0] != "0" else "1") + signature[1:]
-    _refused(world, assertion, "bad-signature")
+    assert _refusal(world, assertion).code == "bad-signature"
 
 
 def test_13_missing_claim(world: World) -> None:
     assertion = world.assertion()
     del assertion["claims"]["workspace"]
-    _refused(world, assertion, "missing-claim")
+    assert _refusal(world, assertion).code == "missing-claim"
 
 
 def test_14_unknown_extra_claim(world: World) -> None:
     assertion = world.assertion()
     assertion["claims"]["role"] = "admin"
-    _refused(world, assertion, "unknown-claim")
+    assert _refusal(world, assertion).code == "unknown-claim"
 
 
 def test_15_scope_without_accept(world: World) -> None:
-    _refused(world, world.assertion(scope=["work:write"]), "scope-missing")
+    assert _refusal(world, world.assertion(scope=["work:write"])).code == "scope-missing"
 
 
 def test_16_outstanding_recovery_acknowledgement(world: World) -> None:
     from entroly.work_graph_recovery_ack import arm
 
     arm(world.store.repo_dir, "recovery:outstanding", ["unknown:previous-agent-intent"])
-    _refused(world, world.assertion(), "recovery-unacknowledged")
+    assert _refusal(world, world.assertion()).code == "recovery-unacknowledged"
 
 
 def _accept_in_process(args: tuple) -> str:
@@ -504,7 +508,7 @@ def test_a_caller_supplied_trust_file_makes_authority_advisory(world: World) -> 
 def test_a_future_issue_time_does_not_stretch_the_lifetime(world: World) -> None:
     now = int(time.time() * 1000)
     stretched = world.assertion(now_ms=now + 3_000_000, not_before_ms=now - 60_000, ttl_seconds=600)
-    _refused(world, stretched, "not-yet-valid")
+    assert _refusal(world, stretched).code == "not-yet-valid"
 
 
 def test_evidence_run_exits_with_the_verifications_own_code(tmp_path: Path, monkeypatch, capsys) -> None:
