@@ -92,6 +92,17 @@ that are merely interesting are omitted.
 
 ---
 
+## Verifying traces and dynamic file dependencies
+
+| | |
+|---|---|
+| source | A. Mokhov, N. Mitchell, S. Peyton Jones, "Build Systems à la Carte", ICFP 2018 (verifying traces); M. Gligoric, L. Eloussi, D. Marinov, "Practical regression test selection with dynamic file dependencies" (Ekstazi), ISSTA 2015 |
+| verification | landing pages and abstracts read in this work, through fetched summaries; the full papers were not re-read |
+| where it lives | `entroly/evidence_applicability.py`, `entroly/evidence_tracer.py` |
+| mechanism taken | reuse a result only if a recorded trace of the inputs it read still hashes the same; collect the trace dynamically at file level |
+| deviation from the source | bind directory listings, probes of absent paths, environment variables read and the resolved executable, not only file contents. Listings by the import system and `importlib.metadata` are narrowed to the names those consumers use. Any untraced process makes the result unknown, rather than assuming no dependency |
+| measured here | synthetic 19-case suite: 0/13 stale against 6/12 for pytest-testmon 2.3.0; 1 redundant rerun against testmon's 0 (the efficiency claim against testmon was killed as preregistered). Post-hoc click replay: 13/40 reuses |
+
 ## Sources deliberately not adopted
 
 | area | why not |
@@ -99,6 +110,8 @@ that are merely interesting are omitted.
 | LLMLingua family | requires a model at compression time. Entroly's contract is training-free and local-first; adding an inference dependency would change the product's deployment story. Recorded as a deliberate trade, not an oversight |
 | Dense / late-interaction retrieval | needs an embedding model and an index. Same trade as above |
 | DPP / log-determinant selection | the redundancy signal is already a confidence-bounded estimate over a noisy fingerprint; a determinant over the same noisy similarities would inherit the noise with more machinery |
+| MemTrace (arXiv 2610.04838) whole-workspace invalidation | its released code marks every test result stale on any workspace revision. That is safe, but it gives no reuse after an unrelated edit, which is the case this work measures |
+| Delegation chains (AIP, arXiv 2603.24775; RFC 8693 actor chains) | a single host-signed hop was enough for one handoff contract. Chains add revocation and audience questions this slice does not need yet |
 | Conformal prediction | the correct eventual home for calibrated sufficiency, but it requires a held-out calibration set, which does not exist here. Current thresholds are in-sample on three fixtures and are labelled as such |
 
 ## What this ledger does not contain

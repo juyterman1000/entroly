@@ -24,16 +24,27 @@ def _inbox(store: WorkGraphStore) -> Path:
 
 
 def save_handoff(
-    store: WorkGraphStore, handoff: dict[str, Any], continuation_proof: dict[str, Any]
+    store: WorkGraphStore,
+    handoff: dict[str, Any],
+    continuation_proof: dict[str, Any],
+    *,
+    offer: dict[str, Any] | None = None,
 ) -> str:
-    """Persist a bounded receipt for another local host; no transcript is stored."""
+    """Persist a bounded receipt for another local host; no transcript is stored.
+
+    ``offer`` is the authority offer a host assertion binds to. Its digest
+    covers the receipt commitment, the workspace commitment and the evidence
+    records handed over (see ``entroly.handoff_authority``).
+    """
     if not store.load().verify_handoff(handoff):
         raise ValueError("cannot save a handoff that does not match the current graph")
-    payload = {
+    payload: dict[str, Any] = {
         "schema_version": 1,
         "handoff": handoff,
         "continuation_proof": continuation_proof,
     }
+    if offer is not None:
+        payload["offer"] = offer
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     if len(encoded) > _MAX_HANDOFF_BYTES:
         raise ValueError("handoff exceeds local inbox size limit")
@@ -78,12 +89,24 @@ def pending_handoffs(*, root: Path, store: WorkGraphStore, to_agent: str) -> dic
                 valid = current == _graph_source_state(sealed, store.repo_id)
             except ValueError:
                 valid = False
-            entries.append({
+            entry = {
                 "ref": "handoff:" + file.stem,
                 "current": valid,
                 "handoff": handoff,
                 "continuation_proof": payload["continuation_proof"],
-            })
+            }
+            offer = payload.get("offer")
+            if isinstance(offer, dict):
+                from .handoff_authority import offer_digest
+
+                entry["offer_digest"] = offer_digest(offer)
+                entry["base_epoch"] = offer.get("base_epoch")
+                entry["evidence"] = [
+                    {k: item.get(k) for k in ("record_id", "record_digest", "name", "verdict")}
+                    for item in offer.get("evidence") or ()
+                    if isinstance(item, dict)
+                ]
+            entries.append(entry)
         except (OSError, ValueError, KeyError, TypeError):
             continue
     return {"status": "ok", "kind": "work_pending_handoffs", "to_agent": to_agent, "handoffs": entries}

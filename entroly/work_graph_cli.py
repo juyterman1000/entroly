@@ -187,6 +187,50 @@ def _human_lines(payload: dict[str, Any]) -> list[str]:
     elif "acknowledged" in payload:
         lines.append("  Status       Recovered work state acknowledged.")
 
+    elif payload.get("kind") == "work_evidence":
+        _add_field(lines, "Evidence", payload.get("record_id"))
+        _add_field(lines, "Verdict", f"{payload.get('verdict')} (exit {payload.get('exit_code')})")
+        trace = payload.get("trace") or {}
+        _add_field(lines, "Trace", "complete" if trace.get("complete")
+                   else "incomplete: " + ", ".join(trace.get("reasons") or []))
+        _add_field(lines, "Inputs", sum((payload.get("inputs") or {}).values()))
+
+    elif payload.get("kind") == "work_evidence_check":
+        _add_field(lines, "Evidence", payload.get("record_id"))
+        _add_field(lines, "Decision", payload.get("decision"))
+        _add_field(lines, "Reasons", ", ".join(payload.get("reasons") or []))
+        for item in (payload.get("changed") or [])[:10]:
+            lines.append(f"  Changed      {item.get('kind')} {item.get('key')}")
+
+    elif payload.get("kind") == "work_accept":
+        epoch = payload.get("epoch") or {}
+        _add_field(lines, "Outcome", payload.get("outcome"))
+        _add_field(lines, "Holder", f"{epoch.get('holder')} (epoch {epoch.get('epoch')}, {epoch.get('authority')})")
+        for action in payload.get("next_actions") or []:
+            lines.append(f"  Next         {action}")
+        for warning in payload.get("warnings") or []:
+            lines.append(f"  Warning      {warning}")
+
+    elif payload.get("kind") == "work_authority":
+        current = payload.get("current") or {}
+        _add_field(lines, "Workstream", payload.get("workstream"))
+        _add_field(lines, "Epoch", payload.get("epoch"))
+        if current:
+            _add_field(lines, "Holder", f"{current.get('holder')} ({current.get('authority')})")
+            _add_field(lines, "Expired", "yes" if payload.get("expired") else "no")
+
+    elif payload.get("kind") == "work_host_key":
+        _add_field(lines, "Public key", payload.get("public_key"))
+        _add_field(lines, "Key id", payload.get("key_id"))
+        _add_field(lines, "Private key", payload.get("private_key_file"))
+        lines.append("  Note         Keep the private key on the host; pin the public key in the trust file.")
+
+    elif payload.get("kind") == "work_host_assertion":
+        claims = (payload.get("assertion") or {}).get("claims") or {}
+        _add_field(lines, "Subject", claims.get("sub"))
+        _add_field(lines, "Expires", claims.get("exp"))
+        lines.append("  State        Assertion signed; use --json or --out for the file.")
+
     elif "handoff_acceptance" in payload:
         accepted = _mapping(payload["handoff_acceptance"])
         _add_field(lines, "Accepted by", accepted.get("successor_id"))
@@ -201,6 +245,9 @@ def _human_lines(payload: dict[str, Any]) -> list[str]:
         _add_field(lines, "Receipt", _first(receipt, "receipt_id", "handoff_id", "id"))
         _add_field(lines, "Inbox ref", payload.get("handoff_ref"))
         _add_field(lines, "Commitment", _first(receipt, "graph_commitment", "commitment"))
+        if payload.get("offer_digest"):
+            _add_field(lines, "Offer digest", payload.get("offer_digest"))
+            _add_field(lines, "Repository", _mapping(payload.get("offer")).get("repo_id"))
         if len(lines) == 2:
             lines.append("  State        Handoff created; use --json for the complete receipt.")
 
@@ -225,6 +272,18 @@ def _emit(payload: dict[str, Any], *, json_output: bool) -> None:
 
 
 def _error(exc: Exception) -> dict[str, Any]:
+    from .evidence_applicability import EvidenceError
+    from .handoff_authority import AuthorityRefused
+
+    if isinstance(exc, AuthorityRefused):
+        return {
+            "status": "error",
+            "error": "handoff_authority_refused",
+            "code": exc.code,
+            "detail": exc.detail[:2000],
+        }
+    if isinstance(exc, EvidenceError):
+        return {"status": "error", "error": "evidence_error", "detail": str(exc)[:2000]}
     if isinstance(exc, WorkGraphUnavailableError):
         code = "native_work_graph_unavailable"
     elif isinstance(exc, WorkGraphLockTimeout):
@@ -299,6 +358,251 @@ def _claim(project: Path, args: Any) -> tuple[Any, str]:
     return store.submit_repository_observation(
         observation, repository_path=project
     ), lease_id
+
+
+def _authority_inputs(args: Any) -> tuple[dict[str, Any] | None, Any]:
+    """The caller's host assertion and the pinned trust anchors, if supplied."""
+    import os
+
+    from .handoff_authority import ASSERTION_FILE_ENV, load_assertion, load_trust
+
+    path = getattr(args, "assertion", "") or os.environ.get(ASSERTION_FILE_ENV, "")
+    if not path:
+        return None, None
+    from .handoff_authority import AuthorityRefused
+
+    try:
+        trust = load_trust(getattr(args, "trust_file", "") or None)
+    except AuthorityRefused:
+        # Needed only if the workstream is held; require_write_authority asks
+        # for it then, so a global assertion does not break unheld work.
+        trust = None
+    return load_assertion(path), trust
+
+
+def _evidence_ref(store: WorkGraphStore, record_id: str) -> dict[str, Any]:
+    from .evidence_applicability import EvidenceError, load_record, record_digest, verify_record
+
+    record = load_record(store.repo_dir, _required_id(record_id, "--evidence"))
+    problems = verify_record(record)
+    if problems:
+        raise EvidenceError(f"evidence {record_id} fails its integrity check: {', '.join(problems)}")
+    return {
+        "record_id": record["record_id"],
+        "record_digest": record_digest(record),
+        "name": record.get("name", ""),
+        "argv": list(record["command"]["argv"]),
+        "verdict": record["result"]["verdict"],
+    }
+
+
+def _evidence_action(project: Path, args: Any) -> dict[str, Any]:
+    from .evidence_applicability import (
+        EvidenceError,
+        assess,
+        load_record,
+        provenance,
+        record_digest,
+        run_and_record,
+        save_record,
+        state_digest_secret,
+        summarize_inputs,
+    )
+
+    store = _store_for_path(project)
+    if args.evidence_action == "run":
+        command = list(args.command or [])
+        if command and command[0] == "--":
+            command = command[1:]
+        if not command:
+            raise ValueError("give the verification command after --")
+        workstream = str(args.workstream or "").strip()
+        authority = None
+        if workstream:
+            from .handoff_authority import require_write_authority
+
+            assertion, trust = _authority_inputs(args)
+            authority = require_write_authority(
+                store.repo_dir, repo_id=store.repo_id, workstream=workstream,
+                assertion=assertion, trust=trust,
+            )
+        timeout = args.timeout
+        if timeout is not None and (not math.isfinite(timeout) or timeout <= 0):
+            raise ValueError("--timeout must be a positive number of seconds")
+        record, output = run_and_record(
+            project,
+            command,
+            name=str(args.name or ""),
+            timeout_seconds=timeout,
+            work_dir=store.repo_dir / "evidence-runs",
+            excluded_roots=[store.root],
+            recorded_by={
+                "agent": str(args.agent or ""),
+                "workstream": workstream or None,
+                "authority_epoch": authority["epoch"] if authority else None,
+            },
+            repository_id=store.repo_id,
+            digest_secret=state_digest_secret(store.repo_dir),
+        )
+        save_record(store.repo_dir, record)
+        return {
+            "status": "ok",
+            "kind": "work_evidence",
+            "record_id": record["record_id"],
+            "record_digest": record_digest(record),
+            "verdict": record["result"]["verdict"],
+            "exit_code": record["result"]["exit_code"],
+            "trace": record["trace"],
+            "inputs": summarize_inputs(record),
+            "provenance": provenance(record),
+            "output": output,
+        }
+    if args.evidence_action == "check":
+        record_id = _required_id(args.record, "--record")
+        try:
+            record = load_record(store.repo_dir, record_id)
+        except EvidenceError as exc:
+            return {
+                "status": "ok",
+                "kind": "work_evidence_check",
+                "record_id": record_id,
+                "decision": "unknown",
+                "reasons": ["record-unavailable"],
+                "detail": str(exc),
+            }
+        decision = assess(record, project, digest_secret=state_digest_secret(store.repo_dir))
+        return {
+            "status": "ok",
+            "kind": "work_evidence_check",
+            **decision,
+            "provenance": provenance(record),
+        }
+    raise ValueError("choose evidence run or evidence check")
+
+
+def _next_action(item: dict[str, Any], decision: dict[str, Any]) -> str:
+    argv = " ".join(item.get("argv") or ()) or "the verification"
+    verdict = item.get("verdict") or "unknown"
+    choice = decision.get("decision", "unknown")
+    if choice == "reuse":
+        return f"reuse: '{argv}' {verdict}; every input it read is unchanged"
+    if choice == "revalidate":
+        return f"rerun '{argv}': {decision.get('changed_count', 0)} input(s) it read have changed"
+    return f"rerun '{argv}': applicability unknown ({', '.join(decision.get('reasons', []))})"
+
+
+def _accept_action(project: Path, args: Any) -> dict[str, Any]:
+    from .evidence_applicability import EvidenceError, assess, load_record, provenance, state_digest_secret
+    from .handoff_authority import accept_handoff, load_assertion, load_trust
+
+    store = _store_for_path(project)
+    trust = load_trust(getattr(args, "trust_file", "") or None)
+    assertion = load_assertion(_required_id(args.assertion, "--assertion"))
+    observation = _passive_observation(project)
+    details: dict[str, dict[str, Any]] = {}
+
+    def assess_one(item: dict[str, Any]) -> dict[str, Any]:
+        record_id = str(item.get("record_id") or "")
+        try:
+            record = load_record(store.repo_dir, record_id)
+        except EvidenceError:
+            result = {"decision": "unknown", "reasons": ["record-unavailable"], "changed_count": 0}
+        else:
+            try:
+                result = assess(
+                    record, project, expected_digest=str(item.get("record_digest") or ""),
+                    digest_secret=state_digest_secret(store.repo_dir),
+                )
+            except Exception:  # a record that cannot be assessed is never reused
+                result = {"decision": "unknown", "reasons": ["record-malformed"], "changed_count": 0}
+                details[record_id] = result
+                return result
+            result["provenance"] = provenance(record, bound_by="record digest in the host-signed offer (host did not inspect it)")
+        details[record_id] = result
+        return result
+
+    accepted = accept_handoff(
+        store.repo_dir,
+        repo_id=store.repo_id,
+        handoff_ref=_required_id(args.handoff_ref, "--handoff-ref"),
+        assertion=assertion,
+        trust=trust,
+        workspace_commitment=workspace_commitment(observation),
+        assess_evidence=assess_one,
+    )
+    from .handoff_authority import load_offer
+
+    _, offer = load_offer(store.repo_dir, args.handoff_ref)
+    handed = {str(item.get("record_id")): item for item in offer.get("evidence") or ()}
+    for record_id, item in handed.items():
+        if record_id not in details:  # an idempotent retry still reports current applicability
+            assess_one(item)
+    next_actions = [
+        _next_action(handed.get(record_id, {}), decision)
+        for record_id, decision in details.items()
+    ] or ["no verification evidence was handed over: run the verification before relying on it"]
+    warnings = []
+    if accepted.get("epoch", {}).get("authority") != "host-protected-trust":
+        warnings.append(
+            "advisory authority: the trust file is writable by this user, so a local process could "
+            "have pinned its own key; the host should verify this epoch's key_id against its own keys"
+        )
+    return {
+        "status": "ok",
+        "kind": "work_accept",
+        **accepted,
+        "evidence_details": details,
+        "next_actions": next_actions,
+        "warnings": warnings,
+    }
+
+
+def _host_keygen(args: Any) -> dict[str, Any]:
+    import os
+
+    from .handoff_authority import generate_host_key, key_id
+
+    target = Path(_required_id(args.private_key_out, "--private-key-out")).expanduser()
+    private_hex, public_hex = generate_host_key()
+    fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(private_hex + "\n")
+    return {
+        "status": "ok",
+        "kind": "work_host_key",
+        "private_key_file": str(target),
+        "public_key": public_hex,
+        "key_id": key_id(public_hex),
+        "note": "keep the private key on the host; pin the public key in the trust file",
+    }
+
+
+def _issue_assertion(args: Any) -> dict[str, Any]:
+    from .handoff_authority import issue_assertion
+
+    key_file = Path(_required_id(args.private_key_file, "--private-key-file")).expanduser()
+    private_hex = key_file.read_text(encoding="utf-8").strip()
+    ttl = float(args.ttl)
+    if not math.isfinite(ttl) or ttl <= 0:
+        raise ValueError("--ttl must be a positive number of seconds")
+    assertion = issue_assertion(
+        private_hex,
+        issuer=_required_id(args.issuer, "--issuer"),
+        audience=_required_id(args.audience, "--audience"),
+        subject=_required_id(args.subject, "--subject"),
+        workspace=_required_id(args.workspace, "--workspace"),
+        task=_required_id(args.task, "--task"),
+        handoff=_required_id(args.handoff, "--handoff"),
+        scope=args.scope or ("work:accept", "work:write"),
+        ttl_seconds=ttl,
+    )
+    if args.out:
+        import os
+
+        fd = os.open(Path(args.out).expanduser(), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(assertion, handle, sort_keys=True)
+    return {"status": "ok", "kind": "work_host_assertion", "assertion": assertion}
 
 
 def run(args: Any) -> int:
@@ -383,6 +687,18 @@ def run(args: Any) -> int:
             target_agent = _required_id(args.to_agent, "--to-agent")
             store = _store_for_path(project)
             recovery_require_acknowledged(store.repo_dir)
+            from .handoff_authority import build_offer, offer_digest, require_write_authority
+
+            # A held workstream may only be handed on by its current holder.
+            assertion, trust = _authority_inputs(args)
+            authority = require_write_authority(
+                store.repo_dir, repo_id=store.repo_id, workstream=workstream,
+                assertion=assertion, trust=trust,
+            )
+            evidence = [
+                _evidence_ref(store, record_id)
+                for record_id in getattr(args, "evidence", None) or ()
+            ]
             # A handoff receipt must commit to the latest durable worktree and
             # checkpoint facts, including exact unstaged worktree content identity.
             observation = _passive_observation(project)
@@ -390,6 +706,17 @@ def run(args: Any) -> int:
             handoff = store.handoff(workstream, source_agent, target_agent)
             resume_view = attach_current_worktree_changes(
                 store.resume(workstream, max_evidence=128), observation
+            )
+            offer = build_offer(
+                handoff_receipt=handoff,
+                workstream=workstream,
+                from_agent=source_agent,
+                to_agent=target_agent,
+                repo_id=store.repo_id,
+                base_epoch=int(authority["epoch"]) if authority else 0,
+                workspace_commitment=resume_view["current_workspace_commitment"],
+                evidence=evidence,
+                from_authority=authority,
             )
             payload = {
                 "status": "ok",
@@ -399,12 +726,31 @@ def run(args: Any) -> int:
                     outstanding_work_refs=continuation_outstanding_refs(resume_view),
                     created_at_ms=int(time.time() * 1000),
                 ),
+                "offer": offer,
+                "offer_digest": offer_digest(offer),
             }
             from .work_graph_inbox import save_handoff
 
             payload["handoff_ref"] = save_handoff(
-                store, payload["handoff"], payload["continuation_proof"]
+                store, payload["handoff"], payload["continuation_proof"], offer=offer
             )
+        elif action == "evidence":
+            payload = _evidence_action(project, args)
+        elif action == "accept":
+            payload = _accept_action(project, args)
+        elif action == "authority":
+            from .handoff_authority import authority_view
+
+            store = _store_for_path(project)
+            payload = {
+                "status": "ok",
+                "kind": "work_authority",
+                **authority_view(store.repo_dir, _required_id(args.workstream, "--workstream")),
+            }
+        elif action == "host-keygen":
+            payload = _host_keygen(args)
+        elif action == "issue-assertion":
+            payload = _issue_assertion(args)
         elif action == "handoffs":
             target_agent = _required_id(args.to_agent, "--to-agent")
             store = _store_for_path(project)
@@ -462,12 +808,32 @@ def run(args: Any) -> int:
             payload = {
                 "status": "error",
                 "error": "missing_work_action",
-                "detail": "choose state, claim, resume, acknowledge, handoff, handoffs, review, or reviews",
+                "detail": (
+                    "choose state, claim, resume, acknowledge, handoff, handoffs, review, "
+                    "reviews, evidence, accept, authority, host-keygen, or issue-assertion"
+                ),
             }
     except Exception as exc:
         payload = _error(exc)
     _emit(payload, json_output=json_output)
-    return 0 if payload.get("status") == "ok" else 1
+    if payload.get("status") != "ok":
+        return 1
+    if payload.get("kind") == "work_evidence":
+        # The verification's own result: wrapping a failing test run must not
+        # turn a red build green.
+        code = payload.get("exit_code")
+        return code if isinstance(code, int) and 0 <= code < 256 else 1
+    if payload.get("kind") == "work_evidence_check":
+        return 0 if payload.get("decision") == "reuse" else 3
+    return 0
+
+
+def _add_authority_arguments(parser: argparse.ArgumentParser, help_text: str) -> None:
+    parser.add_argument(
+        "--assertion", default="",
+        help=f"{help_text} (or ENTROLY_HANDOFF_ASSERTION)",
+    )
+    parser.add_argument("--trust-file", default="", help="Pinned host keys (or ENTROLY_HANDOFF_TRUST_FILE)")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -508,6 +874,47 @@ def build_parser() -> argparse.ArgumentParser:
     handoff.add_argument("--workstream", required=True)
     handoff.add_argument("--from-agent", required=True)
     handoff.add_argument("--to-agent", required=True)
+    handoff.add_argument(
+        "--evidence", action="append", default=[], metavar="EVIDENCE_ID",
+        help="Bind a recorded verification (from 'evidence run') into the offer; repeatable",
+    )
+    _add_authority_arguments(handoff, "Current holder's host assertion, required once the workstream is held")
+    evidence = actions.add_parser(
+        "evidence", help="Record a verification Entroly runs itself, or check whether one still applies",
+    )
+    evidence_actions = evidence.add_subparsers(dest="evidence_action", required=True)
+    evidence_run = evidence_actions.add_parser(
+        "run", help="Run a verification command with input tracing and record the result",
+    )
+    evidence_run.add_argument("--name", default="", help="Label for the verification")
+    evidence_run.add_argument("--agent", default="", help="Label of the recording agent (not authenticated)")
+    evidence_run.add_argument("--workstream", default="", help="Workstream the evidence belongs to")
+    evidence_run.add_argument("--timeout", type=float, default=None, help="Seconds before the run is abandoned")
+    _add_authority_arguments(evidence_run, "Holder's host assertion, required when the workstream is held")
+    evidence_run.add_argument("command", nargs=argparse.REMAINDER, help="-- then the command and its arguments")
+    evidence_check = evidence_actions.add_parser(
+        "check", help="Decide reuse, revalidate or unknown for a recorded verification",
+    )
+    evidence_check.add_argument("--record", required=True, help="evidence:<id> from 'evidence run'")
+    accept = actions.add_parser("accept", help="Accept a handoff with a host assertion and take authority")
+    accept.add_argument("--handoff-ref", required=True)
+    accept.add_argument("--assertion", required=True, help="Host-signed assertion file for this successor")
+    accept.add_argument("--trust-file", default="", help="Pinned host keys (or ENTROLY_HANDOFF_TRUST_FILE)")
+    authority = actions.add_parser("authority", help="Show who holds a workstream and since which epoch")
+    authority.add_argument("--workstream", required=True)
+    keygen = actions.add_parser("host-keygen", help="Host side: create an Ed25519 key for signing assertions")
+    keygen.add_argument("--private-key-out", required=True, help="New file for the private key (mode 0600)")
+    issue = actions.add_parser("issue-assertion", help="Host side: sign an assertion for one successor")
+    issue.add_argument("--private-key-file", required=True)
+    issue.add_argument("--issuer", required=True)
+    issue.add_argument("--audience", required=True)
+    issue.add_argument("--subject", required=True, help="Successor agent id; must equal the offer's to_agent")
+    issue.add_argument("--workspace", required=True, help="Work Graph repo_id")
+    issue.add_argument("--task", required=True, help="Workstream id")
+    issue.add_argument("--handoff", required=True, help="offer_digest printed by 'handoff'")
+    issue.add_argument("--scope", action="append", default=[], choices=("work:accept", "work:write"))
+    issue.add_argument("--ttl", type=float, default=900.0, help="Validity in seconds")
+    issue.add_argument("--out", default="", help="Also write the assertion to this new file")
     handoffs = actions.add_parser("handoffs", help="List current and stale handoffs for one agent")
     handoffs.add_argument("--to-agent", required=True)
     challenge_parser = actions.add_parser("handoff-challenge", help="Print fields for a trusted host to sign")

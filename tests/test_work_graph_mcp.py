@@ -45,6 +45,9 @@ class FakeStore:
         self.repo_dir = Path(repo_dir) if repo_dir is not None else Path(
             tempfile.mkdtemp(prefix="fake-store-")
         )
+        # Handoffs check the workstream's authority log under repo_dir, keyed
+        # by the repository id, so the double carries one.
+        self.repo_id = "repo:test"
 
     def load(self):
         return FakeGraph()

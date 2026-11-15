@@ -1,0 +1,4255 @@
+{
+  "all_repetitions": [
+    [
+      {
+        "case": "A1",
+        "consequential": true,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": false,
+            "decision": "revalidate",
+            "decision_seconds": 0.796
+          },
+          "M3": {
+            "decision": "revalidate",
+            "exit_code": 1,
+            "seconds": 0.323,
+            "tests_executed": 2
+          },
+          "M4": {
+            "applicability": "revalidate",
+            "changed": [
+              "src/invoice/tax.py"
+            ],
+            "decision": "revalidate",
+            "decision_seconds": 0.613,
+            "epoch": 1,
+            "reasons": [
+              "input-changed"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:015037fac6cb3339b13770a4e7ddcca97b769df343a4c8870707b103d7c1399e",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:956faf3a297eb4f2bb3f8d2a29f2b7a64fc03e1f454f20b46cd6fe43ad857fa2",
+            "record_id": "evidence:e9113b427126d34e203057a510bc7d1a",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "revalidate",
+        "rerun": {
+          "exit_code": 1,
+          "passed": false,
+          "seconds": 0.326,
+          "tests": 2
+        }
+      },
+      {
+        "case": "A2",
+        "consequential": true,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": false,
+            "decision": "revalidate",
+            "decision_seconds": 0.768
+          },
+          "M3": {
+            "decision": "reuse",
+            "exit_code": 0,
+            "seconds": 0.313,
+            "tests_executed": 0
+          },
+          "M4": {
+            "applicability": "revalidate",
+            "changed": [
+              "src/invoice/data/rates.json"
+            ],
+            "decision": "revalidate",
+            "decision_seconds": 0.615,
+            "epoch": 1,
+            "reasons": [
+              "input-changed"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:cfeb65f393a3022cdd4fca29db22c439bdf802a41069495f8d9dd17d6e1df2db",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:9a3065e8014798339a4351e6c0f027eda8f603d2fc0dd78bc6903ea67c1af68e",
+            "record_id": "evidence:fcfa591e9d41fa99a16c474dc7d99880",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "revalidate",
+        "rerun": {
+          "exit_code": 1,
+          "passed": false,
+          "seconds": 0.301,
+          "tests": 2
+        }
+      },
+      {
+        "case": "A3",
+        "consequential": false,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": false,
+            "decision": "revalidate",
+            "decision_seconds": 0.57
+          },
+          "M3": {
+            "decision": "reuse",
+            "exit_code": 0,
+            "seconds": 0.267,
+            "tests_executed": 0
+          },
+          "M4": {
+            "applicability": "revalidate",
+            "changed": [
+              "src/invoice/pricing.py"
+            ],
+            "decision": "revalidate",
+            "decision_seconds": 0.629,
+            "epoch": 1,
+            "reasons": [
+              "input-changed"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:0606817a2b407397a9a7ef7ef1976a688485b7f7fc9b996ba4e272e6685c10a3",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:22cc383d5adb7cbc313abef8f56fd56a457d77750edaab516e9a18b03656afb9",
+            "record_id": "evidence:5e21bca1071b5afcb2d394ff6dae5e3e",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "revalidate",
+        "rerun": {
+          "exit_code": 0,
+          "passed": true,
+          "seconds": 0.254,
+          "tests": 2
+        }
+      },
+      {
+        "case": "A4",
+        "consequential": true,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": false,
+            "decision": "revalidate",
+            "decision_seconds": 0.616
+          },
+          "M3": {
+            "decision": "reuse",
+            "exit_code": 0,
+            "seconds": 0.263,
+            "tests_executed": 0
+          },
+          "M4": {
+            "applicability": "revalidate",
+            "changed": [
+              "src/invoice"
+            ],
+            "decision": "revalidate",
+            "decision_seconds": 0.62,
+            "epoch": 1,
+            "reasons": [
+              "input-changed"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:12ed72cdb602b94762e0fc9b37e3ea676424be318bc5df51ff15844d3c5519c7",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:2778070f685df317f612637d64bbc1c7fdef0656a1969bdd6de35406dd9e7611",
+            "record_id": "evidence:8b22ef0a310e1cedfd9b916f47b3b05e",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "revalidate",
+        "rerun": {
+          "exit_code": 1,
+          "passed": false,
+          "seconds": 0.264,
+          "tests": 2
+        }
+      },
+      {
+        "case": "A5",
+        "consequential": true,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": false,
+            "decision": "revalidate",
+            "decision_seconds": 0.604
+          },
+          "M3": {
+            "decision": "revalidate",
+            "exit_code": 1,
+            "seconds": 0.333,
+            "tests_executed": 2
+          },
+          "M4": {
+            "applicability": "revalidate",
+            "changed": [
+              "tests/conftest.py"
+            ],
+            "decision": "revalidate",
+            "decision_seconds": 0.589,
+            "epoch": 1,
+            "reasons": [
+              "input-changed"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:6025ed03c13ea04d4670198a9872da3e3183ce8222dc0f22bbaf1403c196aa64",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:b0d21b2254d2a80cd5eea74d0382830f8d33c1dda4d5dee73286437896a4697b",
+            "record_id": "evidence:e7a64fd6261ebf70a0ac49599ba98e37",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "revalidate",
+        "rerun": {
+          "exit_code": 1,
+          "passed": false,
+          "seconds": 0.332,
+          "tests": 2
+        }
+      },
+      {
+        "case": "B1",
+        "consequential": true,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": false,
+            "decision": "revalidate",
+            "decision_seconds": 0.569
+          },
+          "M3": {
+            "decision": "reuse",
+            "exit_code": 0,
+            "seconds": 0.266,
+            "tests_executed": 0
+          },
+          "M4": {
+            "applicability": "revalidate",
+            "changed": [
+              "pyproject.toml"
+            ],
+            "decision": "revalidate",
+            "decision_seconds": 0.585,
+            "epoch": 1,
+            "reasons": [
+              "input-changed"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:84ab8749158a44f19f1dc6fbf8be2f87bec2b231fb8dce32892856faf5f2d9d8",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:175a70f70ce921807b65233ffcfcccbf4362549d248b2a7d8b89f9b0b9b0592f",
+            "record_id": "evidence:a32ed48bb0c5258e0e6af0748a3a7191",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "revalidate",
+        "rerun": {
+          "exit_code": 1,
+          "passed": false,
+          "seconds": 0.308,
+          "tests": 2
+        }
+      },
+      {
+        "case": "B2",
+        "consequential": true,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": true,
+            "decision": "reuse",
+            "decision_seconds": 0.636
+          },
+          "M3": {
+            "decision": "reuse",
+            "exit_code": 0,
+            "seconds": 0.284,
+            "tests_executed": 0
+          },
+          "M4": {
+            "applicability": "revalidate",
+            "changed": [
+              "PYTEST_ADDOPTS"
+            ],
+            "decision": "revalidate",
+            "decision_seconds": 0.613,
+            "epoch": 1,
+            "reasons": [
+              "input-changed"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:81a9abba13789f1b360dde4bc7d21f437de4bd8e7cd1a000a6e380fe53095e14",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:4aa4d87dc155326ad0e3279519b1800fb5b540285651fc52b17f023c260c5568",
+            "record_id": "evidence:ab029240c8de9a5678d2df45d0620960",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "revalidate",
+        "rerun": {
+          "exit_code": 1,
+          "passed": false,
+          "seconds": 0.275,
+          "tests": 2
+        }
+      },
+      {
+        "case": "B3",
+        "consequential": true,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": true,
+            "decision": "reuse",
+            "decision_seconds": 0.631
+          },
+          "M3": {
+            "decision": "reuse",
+            "exit_code": 0,
+            "seconds": 0.262,
+            "tests_executed": 0
+          },
+          "M4": {
+            "applicability": "revalidate",
+            "changed": [
+              "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages/ratelib/__init__.py",
+              "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages",
+              "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages"
+            ],
+            "decision": "revalidate",
+            "decision_seconds": 0.67,
+            "epoch": 1,
+            "reasons": [
+              "input-changed"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:a4146e4b0328073b64b5c071cd6a8361cbd08cb11707ea0cc372b2573dc04c68",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:50250165395914b478c8841f0afa007cca4996e421aaa307526260ce8965f167",
+            "record_id": "evidence:26087c51cfc8028f6796f461b6374e0b",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "revalidate",
+        "rerun": {
+          "exit_code": 1,
+          "passed": false,
+          "seconds": 0.279,
+          "tests": 2
+        }
+      },
+      {
+        "case": "B4",
+        "consequential": true,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": true,
+            "decision": "reuse",
+            "decision_seconds": 0.635
+          },
+          "M3": {
+            "decision": "revalidate",
+            "exit_code": 1,
+            "seconds": 0.349,
+            "tests_executed": 2
+          },
+          "M4": {
+            "applicability": "revalidate",
+            "changed": [
+              "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages/ratelib/__init__.py",
+              "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages",
+              "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages"
+            ],
+            "decision": "revalidate",
+            "decision_seconds": 0.567,
+            "epoch": 1,
+            "reasons": [
+              "input-changed"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:5fa3f06231b17995eaac28c10c131483a5dabeb981f4c691c627f6c5b9357f22",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:1bb14c60d7b50a901865c33d9c25d7436dd8554bd547cc861f68f2c707eb7b04",
+            "record_id": "evidence:ef1eb7a5e450c47f81c594e77ebf97b7",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "revalidate",
+        "rerun": {
+          "exit_code": 1,
+          "passed": false,
+          "seconds": 0.292,
+          "tests": 2
+        }
+      },
+      {
+        "case": "B5",
+        "consequential": false,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": true,
+            "decision": "reuse",
+            "decision_seconds": 0.557
+          },
+          "M3": {
+            "decision": "revalidate",
+            "exit_code": 0,
+            "seconds": 0.303,
+            "tests_executed": 2
+          },
+          "M4": {
+            "applicability": "revalidate",
+            "changed": [
+              "python"
+            ],
+            "decision": "revalidate",
+            "decision_seconds": 0.577,
+            "epoch": 1,
+            "reasons": [
+              "input-changed"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:984baa431f393ea9dc90750b333fe113324df9f89181b796f9bd93346578298b",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:7fbd8ac92673a8610cba03143612b5a0fe8a096ed2f62325f7dd4c8ebb8db755",
+            "record_id": "evidence:6c5533547dea3e4a5d6e52fecbd843af",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "revalidate",
+        "rerun": {
+          "exit_code": 0,
+          "passed": true,
+          "seconds": 0.246,
+          "tests": 2
+        }
+      },
+      {
+        "case": "C1",
+        "consequential": false,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": false,
+            "decision": "revalidate",
+            "decision_seconds": 0.606
+          },
+          "M3": {
+            "decision": "reuse",
+            "exit_code": 0,
+            "seconds": 0.324,
+            "tests_executed": 0
+          },
+          "M4": {
+            "applicability": "reuse",
+            "changed": [],
+            "decision": "reuse",
+            "decision_seconds": 0.613,
+            "epoch": 1,
+            "reasons": [
+              "all-inputs-unchanged"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:0f7c06a6f1614cad8278868ea0deb8bc5c15366c6a94d3fbb3e3bbdbb5aa84c2",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:e5b474733968db8d2f685c2920ca781aa370871ac0e5c124fb09208369b1b432",
+            "record_id": "evidence:bc2e77bedf2dc15050d148d615fdbaeb",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "reuse",
+        "rerun": {
+          "exit_code": 0,
+          "passed": true,
+          "seconds": 0.254,
+          "tests": 2
+        }
+      },
+      {
+        "case": "C2",
+        "consequential": false,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": false,
+            "decision": "revalidate",
+            "decision_seconds": 0.614
+          },
+          "M3": {
+            "decision": "reuse",
+            "exit_code": 0,
+            "seconds": 0.285,
+            "tests_executed": 0
+          },
+          "M4": {
+            "applicability": "reuse",
+            "changed": [],
+            "decision": "reuse",
+            "decision_seconds": 0.626,
+            "epoch": 1,
+            "reasons": [
+              "all-inputs-unchanged"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:4e3b6119cf2fe4df1c95aedff5a7c2671f7d905131f0dbe32b417bf47cde2323",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:25c4af1df2cb56f8c0415d04c7f11748f3c17dfd72811ec6958d80410be3b4a0",
+            "record_id": "evidence:dbf4a55d887e4be6fc63c344234d64fa",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "reuse",
+        "rerun": {
+          "exit_code": 0,
+          "passed": true,
+          "seconds": 0.299,
+          "tests": 2
+        }
+      },
+      {
+        "case": "C3",
+        "consequential": false,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": false,
+            "decision": "revalidate",
+            "decision_seconds": 0.571
+          },
+          "M3": {
+            "decision": "reuse",
+            "exit_code": 0,
+            "seconds": 0.312,
+            "tests_executed": 0
+          },
+          "M4": {
+            "applicability": "reuse",
+            "changed": [],
+            "decision": "reuse",
+            "decision_seconds": 0.672,
+            "epoch": 1,
+            "reasons": [
+              "all-inputs-unchanged"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:343868dec93ba8b53cca8d6112a0a68a81da159f90cf67508800d03b3806295e",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:885984d5026c9eb013d1d944e559443bf7456ed0ed0fd21b1cf89f86a51a83a0",
+            "record_id": "evidence:f60cac9e129cf8c3b21b0192dfac0453",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "reuse",
+        "rerun": {
+          "exit_code": 0,
+          "passed": true,
+          "seconds": 0.317,
+          "tests": 2
+        }
+      },
+      {
+        "case": "C4",
+        "consequential": false,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": false,
+            "decision": "revalidate",
+            "decision_seconds": 0.612
+          },
+          "M3": {
+            "decision": "reuse",
+            "exit_code": 0,
+            "seconds": 0.263,
+            "tests_executed": 0
+          },
+          "M4": {
+            "applicability": "revalidate",
+            "changed": [
+              "."
+            ],
+            "decision": "revalidate",
+            "decision_seconds": 0.613,
+            "epoch": 1,
+            "reasons": [
+              "input-changed"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:4bba1de864505262b6d9b970dd76aa8b99c06506b6f4504ee777050e3825464a",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:cecf31187e6bbc638641b302337882e31521f9ba080377b47cac7ad9f6a29e98",
+            "record_id": "evidence:ab66665f7477876b84461f023d6f304d",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "reuse",
+        "rerun": {
+          "exit_code": 0,
+          "passed": true,
+          "seconds": 0.284,
+          "tests": 2
+        }
+      },
+      {
+        "case": "C5",
+        "consequential": false,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": false,
+            "decision": "revalidate",
+            "decision_seconds": 0.561
+          },
+          "M3": {
+            "decision": "reuse",
+            "exit_code": 0,
+            "seconds": 0.281,
+            "tests_executed": 0
+          },
+          "M4": {
+            "applicability": "reuse",
+            "changed": [],
+            "decision": "reuse",
+            "decision_seconds": 0.605,
+            "epoch": 1,
+            "reasons": [
+              "all-inputs-unchanged"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:fdf0356bfba9d978a3a96d3cdec0465ea6db48bb6a22d65fa44aec37a44738d8",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:37d48cef0d22756871e26027b258a580fcdaf908a3eaae1254b1feaee2b55abe",
+            "record_id": "evidence:c7e4ff61c7eaa6b3ede0f287ee8f8984",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "reuse",
+        "rerun": {
+          "exit_code": 0,
+          "passed": true,
+          "seconds": 0.263,
+          "tests": 2
+        }
+      },
+      {
+        "case": "C6",
+        "consequential": false,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": true,
+            "decision": "reuse",
+            "decision_seconds": 0.563
+          },
+          "M3": {
+            "decision": "reuse",
+            "exit_code": 0,
+            "seconds": 0.288,
+            "tests_executed": 0
+          },
+          "M4": {
+            "applicability": "reuse",
+            "changed": [],
+            "decision": "reuse",
+            "decision_seconds": 0.645,
+            "epoch": 1,
+            "reasons": [
+              "all-inputs-unchanged"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:d8a8e0401dcc7253dbcbfffa851c532bea1e29ead2c69c8c330de0c89fa3ddc9",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:679247bbbd6cd10ae3f90b1dc7fb9c611c270b0cd5d242e60e9dd9282ef9eb7b",
+            "record_id": "evidence:c05f026de2def7e15b679f9938ade2ec",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "reuse",
+        "rerun": {
+          "exit_code": 0,
+          "passed": true,
+          "seconds": 0.344,
+          "tests": 2
+        }
+      },
+      {
+        "case": "D1",
+        "consequential": false,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": true,
+            "decision": "reuse",
+            "decision_seconds": 0.665
+          },
+          "M3": {
+            "decision": "revalidate",
+            "exit_code": 0,
+            "note": "its evidence (.testmondata) deleted",
+            "seconds": 0.308,
+            "tests_executed": 2
+          },
+          "M4": {
+            "applicability": "unknown",
+            "changed": [],
+            "decision": "revalidate",
+            "decision_seconds": 0.813,
+            "epoch": 1,
+            "reasons": [
+              "record-unavailable"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:3076c8d2386b809c27c3f37069761d68ab8eaf38d9c4a21d7f089573e52057f8",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:85436fb1d2908f3fea95dc0a91bf1a77f15dc0038335f631ccfef2aa146d2612",
+            "record_id": "evidence:f08609939c753096a795ed72d22fd23a",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "revalidate",
+        "rerun": {
+          "exit_code": 0,
+          "passed": true,
+          "seconds": 0.28,
+          "tests": 2
+        }
+      },
+      {
+        "case": "D2",
+        "consequential": false,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": true,
+            "decision": "reuse",
+            "decision_seconds": 0.589
+          },
+          "M3": {
+            "decision": "n/a",
+            "note": "n/a: testmon has no handed-over artifact to alter (no offer binding)"
+          },
+          "M4": {
+            "applicability": "unknown",
+            "changed": [],
+            "decision": "revalidate",
+            "decision_seconds": 0.641,
+            "epoch": 1,
+            "reasons": [
+              "record-not-the-one-handed-off"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:80c0c6a0982a682c205fd4e44692c0c0683f344867af372803c56acd56ab9a65",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:babffd2548c2f2b38bf3ac1db34ef246d667a9d32105170b60715d14ad2fcd89",
+            "record_id": "evidence:df98a8a7258e79afa408a3c0a7ac8245",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "revalidate",
+        "rerun": {
+          "exit_code": 0,
+          "passed": true,
+          "seconds": 0.344,
+          "tests": 2
+        }
+      },
+      {
+        "case": "D3",
+        "consequential": false,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": true,
+            "decision": "reuse",
+            "decision_seconds": 0.582
+          },
+          "M3": {
+            "decision": "revalidate",
+            "exit_code": 0,
+            "note": "no .testmondata: the predecessor recorded no evidence",
+            "seconds": 0.387,
+            "tests_executed": 2
+          },
+          "M4": {
+            "applicability": "no-evidence",
+            "changed": [],
+            "decision": "revalidate",
+            "decision_seconds": 0.579,
+            "epoch": 1,
+            "reasons": [
+              "no evidence handed over"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:e56b7cdf300e6ea7f92621481c337526075f53b79e8696186312de5249480ae1",
+          "record": null,
+          "testmon_seed_passed": null
+        },
+        "required": "revalidate",
+        "rerun": {
+          "exit_code": 0,
+          "passed": true,
+          "seconds": 0.252,
+          "tests": 2
+        }
+      }
+    ],
+    [
+      {
+        "case": "A1",
+        "consequential": true,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": false,
+            "decision": "revalidate",
+            "decision_seconds": 0.583
+          },
+          "M3": {
+            "decision": "revalidate",
+            "exit_code": 1,
+            "seconds": 0.383,
+            "tests_executed": 2
+          },
+          "M4": {
+            "applicability": "revalidate",
+            "changed": [
+              "src/invoice/tax.py"
+            ],
+            "decision": "revalidate",
+            "decision_seconds": 0.773,
+            "epoch": 1,
+            "reasons": [
+              "input-changed"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:26bf00d2436f05482169e7fe5abfbfe0d968d4e574316167f539eedbb1d03ad8",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:24eb602dcd6ea33339e76bc475225d5717126893e1c191f60f67b94744bff1f3",
+            "record_id": "evidence:baf5caab7b5398f074b5dfb6f8f5be7d",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "revalidate",
+        "rerun": {
+          "exit_code": 1,
+          "passed": false,
+          "seconds": 0.28,
+          "tests": 2
+        }
+      },
+      {
+        "case": "A2",
+        "consequential": true,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": false,
+            "decision": "revalidate",
+            "decision_seconds": 0.725
+          },
+          "M3": {
+            "decision": "reuse",
+            "exit_code": 0,
+            "seconds": 0.305,
+            "tests_executed": 0
+          },
+          "M4": {
+            "applicability": "revalidate",
+            "changed": [
+              "src/invoice/data/rates.json"
+            ],
+            "decision": "revalidate",
+            "decision_seconds": 0.658,
+            "epoch": 1,
+            "reasons": [
+              "input-changed"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:71d066fffda796c580ac9f8412dc848e8b6539df5312fc5ba08a1e089c81d114",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:6faff8a8045f3df8f99b07835e8c8d2b7c47fc3f7a8c0cdb9a130c2040b0fcb8",
+            "record_id": "evidence:cfed0370c428b2cc8a4f36393c71e531",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "revalidate",
+        "rerun": {
+          "exit_code": 1,
+          "passed": false,
+          "seconds": 0.328,
+          "tests": 2
+        }
+      },
+      {
+        "case": "A3",
+        "consequential": false,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": false,
+            "decision": "revalidate",
+            "decision_seconds": 0.714
+          },
+          "M3": {
+            "decision": "reuse",
+            "exit_code": 0,
+            "seconds": 0.279,
+            "tests_executed": 0
+          },
+          "M4": {
+            "applicability": "revalidate",
+            "changed": [
+              "src/invoice/pricing.py"
+            ],
+            "decision": "revalidate",
+            "decision_seconds": 0.604,
+            "epoch": 1,
+            "reasons": [
+              "input-changed"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:f0c8ca58b2ea1a9bf1e099e0ecccbef599cb08d2e9c37641f8378547ea61536b",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:b0858f4f9747610fe01caeb9283a9cf8af15abbc237f0ba4ce400366ab18e1df",
+            "record_id": "evidence:0a632d8ccd907676b44c2017be0d1660",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "revalidate",
+        "rerun": {
+          "exit_code": 0,
+          "passed": true,
+          "seconds": 0.302,
+          "tests": 2
+        }
+      },
+      {
+        "case": "A4",
+        "consequential": true,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": false,
+            "decision": "revalidate",
+            "decision_seconds": 0.723
+          },
+          "M3": {
+            "decision": "reuse",
+            "exit_code": 0,
+            "seconds": 0.286,
+            "tests_executed": 0
+          },
+          "M4": {
+            "applicability": "revalidate",
+            "changed": [
+              "src/invoice"
+            ],
+            "decision": "revalidate",
+            "decision_seconds": 0.594,
+            "epoch": 1,
+            "reasons": [
+              "input-changed"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:2293ab295b90d20f3a5b1bedd801b2a71b358cd9a6052014fc5c8ad57e2a7fbf",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:e89e22a921f2f8297ebb02aef7cec380cb97455056a3ba1ce428965da426f0f4",
+            "record_id": "evidence:4f0cac88365765e34142380b1ea58d99",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "revalidate",
+        "rerun": {
+          "exit_code": 1,
+          "passed": false,
+          "seconds": 0.263,
+          "tests": 2
+        }
+      },
+      {
+        "case": "A5",
+        "consequential": true,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": false,
+            "decision": "revalidate",
+            "decision_seconds": 0.832
+          },
+          "M3": {
+            "decision": "revalidate",
+            "exit_code": 1,
+            "seconds": 0.446,
+            "tests_executed": 2
+          },
+          "M4": {
+            "applicability": "revalidate",
+            "changed": [
+              "tests/conftest.py"
+            ],
+            "decision": "revalidate",
+            "decision_seconds": 0.708,
+            "epoch": 1,
+            "reasons": [
+              "input-changed"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:97ef063542e24579c1a3111b7aa40703c24ca906611363c4ed55c9085acba538",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:5917e80005c89cb2074dae252d1a8bff1cf8ac5a3ec0fbd26353f65dde7b5c93",
+            "record_id": "evidence:9fdfba956ad6af82a1cc91e8adb4430e",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "revalidate",
+        "rerun": {
+          "exit_code": 1,
+          "passed": false,
+          "seconds": 0.373,
+          "tests": 2
+        }
+      },
+      {
+        "case": "B1",
+        "consequential": true,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": false,
+            "decision": "revalidate",
+            "decision_seconds": 0.558
+          },
+          "M3": {
+            "decision": "reuse",
+            "exit_code": 0,
+            "seconds": 0.305,
+            "tests_executed": 0
+          },
+          "M4": {
+            "applicability": "revalidate",
+            "changed": [
+              "pyproject.toml"
+            ],
+            "decision": "revalidate",
+            "decision_seconds": 0.616,
+            "epoch": 1,
+            "reasons": [
+              "input-changed"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:72e4bacd07893ce230563fd5dd5b0efb311f3623f019e9e56fb0bab8c8c64c36",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:58b306f45866dfa2ddceaafef421e7f5696db4880e8191e1be8fc7b108f7860d",
+            "record_id": "evidence:87225c28b3b46bf413d74f6b9ae21610",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "revalidate",
+        "rerun": {
+          "exit_code": 1,
+          "passed": false,
+          "seconds": 0.312,
+          "tests": 2
+        }
+      },
+      {
+        "case": "B2",
+        "consequential": true,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": true,
+            "decision": "reuse",
+            "decision_seconds": 0.545
+          },
+          "M3": {
+            "decision": "reuse",
+            "exit_code": 0,
+            "seconds": 0.33,
+            "tests_executed": 0
+          },
+          "M4": {
+            "applicability": "revalidate",
+            "changed": [
+              "PYTEST_ADDOPTS"
+            ],
+            "decision": "revalidate",
+            "decision_seconds": 0.618,
+            "epoch": 1,
+            "reasons": [
+              "input-changed"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:58a90181680dc229a180391a3bae26dd50f7fa92da35bc9607de48af04a75c80",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:63476ad8810927521ebb26fc888151591b0469f558f3295da21b7bbe9e142536",
+            "record_id": "evidence:237238c5e347a9a3f2f66d5145c27ccf",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "revalidate",
+        "rerun": {
+          "exit_code": 1,
+          "passed": false,
+          "seconds": 0.318,
+          "tests": 2
+        }
+      },
+      {
+        "case": "B3",
+        "consequential": true,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": true,
+            "decision": "reuse",
+            "decision_seconds": 0.612
+          },
+          "M3": {
+            "decision": "reuse",
+            "exit_code": 0,
+            "seconds": 0.272,
+            "tests_executed": 0
+          },
+          "M4": {
+            "applicability": "revalidate",
+            "changed": [
+              "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages/ratelib/__init__.py",
+              "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages",
+              "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages"
+            ],
+            "decision": "revalidate",
+            "decision_seconds": 0.561,
+            "epoch": 1,
+            "reasons": [
+              "input-changed"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:b433fc0553a35a282a19a9b96008af2c26c6df23350f00e22c353c8065d6ec8a",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:27b3529777b6dd1b4bb76b8cac5a61d4a423545e847604e1d450cdf35a569d4b",
+            "record_id": "evidence:4ac72e33e94df11f0e8f4f362fb85632",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "revalidate",
+        "rerun": {
+          "exit_code": 1,
+          "passed": false,
+          "seconds": 0.289,
+          "tests": 2
+        }
+      },
+      {
+        "case": "B4",
+        "consequential": true,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": true,
+            "decision": "reuse",
+            "decision_seconds": 0.706
+          },
+          "M3": {
+            "decision": "revalidate",
+            "exit_code": 1,
+            "seconds": 0.322,
+            "tests_executed": 2
+          },
+          "M4": {
+            "applicability": "revalidate",
+            "changed": [
+              "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages/ratelib/__init__.py",
+              "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages",
+              "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages"
+            ],
+            "decision": "revalidate",
+            "decision_seconds": 0.577,
+            "epoch": 1,
+            "reasons": [
+              "input-changed"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:3f0464135d29a01c330e6b1ebc9398a1e1917962a2f97abb75e13ef8b24e98d5",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:9bfa5740194e8b84a5bffa28c47565e4dcbd45bee8b8c9e137948f501ec5099f",
+            "record_id": "evidence:7b0fb340efaff29da5ccf38c164db2a3",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "revalidate",
+        "rerun": {
+          "exit_code": 1,
+          "passed": false,
+          "seconds": 0.324,
+          "tests": 2
+        }
+      },
+      {
+        "case": "B5",
+        "consequential": false,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": true,
+            "decision": "reuse",
+            "decision_seconds": 0.595
+          },
+          "M3": {
+            "decision": "revalidate",
+            "exit_code": 0,
+            "seconds": 0.318,
+            "tests_executed": 2
+          },
+          "M4": {
+            "applicability": "revalidate",
+            "changed": [
+              "python"
+            ],
+            "decision": "revalidate",
+            "decision_seconds": 0.556,
+            "epoch": 1,
+            "reasons": [
+              "input-changed"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:82dabad48ee0f170e9f59be20214027a8e05721f60e5f39ee27710433532909b",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:8e361dfa2c5af3882960f30e8b33839b7cad26e9be1a29d751233ee38fa3a1a7",
+            "record_id": "evidence:1f7f26618b626488a2f00cfc847788fa",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "revalidate",
+        "rerun": {
+          "exit_code": 0,
+          "passed": true,
+          "seconds": 0.268,
+          "tests": 2
+        }
+      },
+      {
+        "case": "C1",
+        "consequential": false,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": false,
+            "decision": "revalidate",
+            "decision_seconds": 0.631
+          },
+          "M3": {
+            "decision": "reuse",
+            "exit_code": 0,
+            "seconds": 0.404,
+            "tests_executed": 0
+          },
+          "M4": {
+            "applicability": "reuse",
+            "changed": [],
+            "decision": "reuse",
+            "decision_seconds": 0.7,
+            "epoch": 1,
+            "reasons": [
+              "all-inputs-unchanged"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:e840d138cbd0229e148b7d5d4be3186f5c5ba0ff0d49807724367580f8a61b2a",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:6ba34ca276d63f7284472eb84070503c927e07db2f3fa149887d2af7a7036cdd",
+            "record_id": "evidence:0ef9965d57abfd9a302892ce2a65d338",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "reuse",
+        "rerun": {
+          "exit_code": 0,
+          "passed": true,
+          "seconds": 0.295,
+          "tests": 2
+        }
+      },
+      {
+        "case": "C2",
+        "consequential": false,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": false,
+            "decision": "revalidate",
+            "decision_seconds": 0.581
+          },
+          "M3": {
+            "decision": "reuse",
+            "exit_code": 0,
+            "seconds": 0.33,
+            "tests_executed": 0
+          },
+          "M4": {
+            "applicability": "reuse",
+            "changed": [],
+            "decision": "reuse",
+            "decision_seconds": 0.698,
+            "epoch": 1,
+            "reasons": [
+              "all-inputs-unchanged"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:4bc65ccf63db39167a6abc08116d2e76aa62356e743c87ba77f7cbd7c5186b70",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:030a0b1669f52361e11778951c94fa4a851d9ea75daafd5d10ef6738c8ca8169",
+            "record_id": "evidence:0498edc231497e3a8a056770be0361cc",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "reuse",
+        "rerun": {
+          "exit_code": 0,
+          "passed": true,
+          "seconds": 0.331,
+          "tests": 2
+        }
+      },
+      {
+        "case": "C3",
+        "consequential": false,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": false,
+            "decision": "revalidate",
+            "decision_seconds": 0.586
+          },
+          "M3": {
+            "decision": "reuse",
+            "exit_code": 0,
+            "seconds": 0.289,
+            "tests_executed": 0
+          },
+          "M4": {
+            "applicability": "reuse",
+            "changed": [],
+            "decision": "reuse",
+            "decision_seconds": 0.606,
+            "epoch": 1,
+            "reasons": [
+              "all-inputs-unchanged"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:c4b38148547cc409e7c3b10cd20675bcc3563a46fdfd54b140b033f42af3258a",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:7f48197462cf4fa890cd6bcae5198870443e387d257a8585c9b5d90c1f8f48dd",
+            "record_id": "evidence:3a2cdc5adf3814b35327a17602152fc7",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "reuse",
+        "rerun": {
+          "exit_code": 0,
+          "passed": true,
+          "seconds": 0.363,
+          "tests": 2
+        }
+      },
+      {
+        "case": "C4",
+        "consequential": false,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": false,
+            "decision": "revalidate",
+            "decision_seconds": 0.591
+          },
+          "M3": {
+            "decision": "reuse",
+            "exit_code": 0,
+            "seconds": 0.274,
+            "tests_executed": 0
+          },
+          "M4": {
+            "applicability": "revalidate",
+            "changed": [
+              "."
+            ],
+            "decision": "revalidate",
+            "decision_seconds": 0.636,
+            "epoch": 1,
+            "reasons": [
+              "input-changed"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:8217784012f88f45accc84feb730e2422a48ff09b680ebc4c5e73ead5d0478cb",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:5558fef2c4a4a283347c9fdbf38111969923b8d8cba82a36a960f696c3d63ca8",
+            "record_id": "evidence:f50e9f7016485c2dc9b5dad7dac26e50",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "reuse",
+        "rerun": {
+          "exit_code": 0,
+          "passed": true,
+          "seconds": 0.26,
+          "tests": 2
+        }
+      },
+      {
+        "case": "C5",
+        "consequential": false,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": false,
+            "decision": "revalidate",
+            "decision_seconds": 0.634
+          },
+          "M3": {
+            "decision": "reuse",
+            "exit_code": 0,
+            "seconds": 0.331,
+            "tests_executed": 0
+          },
+          "M4": {
+            "applicability": "reuse",
+            "changed": [],
+            "decision": "reuse",
+            "decision_seconds": 0.627,
+            "epoch": 1,
+            "reasons": [
+              "all-inputs-unchanged"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:b0ff40a1e8a2c24239c8045a11777f39c818913c43bf20d261bfa41a4bcc619d",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:ff5f3f1576a811fe77e50a82c1f18620149225739009dc2496baf54dd581ebe8",
+            "record_id": "evidence:84f6178398e3e3a0ac28d49d30048169",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "reuse",
+        "rerun": {
+          "exit_code": 0,
+          "passed": true,
+          "seconds": 0.31,
+          "tests": 2
+        }
+      },
+      {
+        "case": "C6",
+        "consequential": false,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": true,
+            "decision": "reuse",
+            "decision_seconds": 0.562
+          },
+          "M3": {
+            "decision": "reuse",
+            "exit_code": 0,
+            "seconds": 0.27,
+            "tests_executed": 0
+          },
+          "M4": {
+            "applicability": "reuse",
+            "changed": [],
+            "decision": "reuse",
+            "decision_seconds": 0.619,
+            "epoch": 1,
+            "reasons": [
+              "all-inputs-unchanged"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:db8a91a217336acaa9ac2a7f6cbd65a1e05ce848c2dd5a040de7c61921ae7898",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:95231b421f11e0a53b0ee1fc7b5f7b64dedf4a2d5bd0f61f5c9e41d68edbecc2",
+            "record_id": "evidence:8ba15078f50eac9f2a5bc04dce71a72f",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "reuse",
+        "rerun": {
+          "exit_code": 0,
+          "passed": true,
+          "seconds": 0.252,
+          "tests": 2
+        }
+      },
+      {
+        "case": "D1",
+        "consequential": false,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": true,
+            "decision": "reuse",
+            "decision_seconds": 0.572
+          },
+          "M3": {
+            "decision": "revalidate",
+            "exit_code": 0,
+            "note": "its evidence (.testmondata) deleted",
+            "seconds": 0.376,
+            "tests_executed": 2
+          },
+          "M4": {
+            "applicability": "unknown",
+            "changed": [],
+            "decision": "revalidate",
+            "decision_seconds": 0.611,
+            "epoch": 1,
+            "reasons": [
+              "record-unavailable"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:e8f380aad64d54416ac62a9aafcd9c93d07b6a815a78f03509a21bb8be2a1aff",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:6a2866ef36c509dcc432d8825bf9ad38621863248e0db0779f50e82bb6dbcbd1",
+            "record_id": "evidence:419d7c327e6b70ec973aa38c17c863bc",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "revalidate",
+        "rerun": {
+          "exit_code": 0,
+          "passed": true,
+          "seconds": 0.333,
+          "tests": 2
+        }
+      },
+      {
+        "case": "D2",
+        "consequential": false,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": true,
+            "decision": "reuse",
+            "decision_seconds": 0.678
+          },
+          "M3": {
+            "decision": "n/a",
+            "note": "n/a: testmon has no handed-over artifact to alter (no offer binding)"
+          },
+          "M4": {
+            "applicability": "unknown",
+            "changed": [],
+            "decision": "revalidate",
+            "decision_seconds": 0.595,
+            "epoch": 1,
+            "reasons": [
+              "record-not-the-one-handed-off"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:cc5394ea5d038aaf4b9e9aea6884d45b4df3fa6263a8e758141ffeadd1f79788",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:719bae9d2b2c509c6920bad63411b4f86d197932569abc3cd9444609f9bb219d",
+            "record_id": "evidence:00ee2f9e8fd5456aad98b179d8938575",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "revalidate",
+        "rerun": {
+          "exit_code": 0,
+          "passed": true,
+          "seconds": 0.265,
+          "tests": 2
+        }
+      },
+      {
+        "case": "D3",
+        "consequential": false,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": true,
+            "decision": "reuse",
+            "decision_seconds": 0.572
+          },
+          "M3": {
+            "decision": "revalidate",
+            "exit_code": 0,
+            "note": "no .testmondata: the predecessor recorded no evidence",
+            "seconds": 0.329,
+            "tests_executed": 2
+          },
+          "M4": {
+            "applicability": "no-evidence",
+            "changed": [],
+            "decision": "revalidate",
+            "decision_seconds": 0.542,
+            "epoch": 1,
+            "reasons": [
+              "no evidence handed over"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:d9955957ac33f3c1cd45ce941c1a950b0374a72d9dfdbef7f3e57104f3414c94",
+          "record": null,
+          "testmon_seed_passed": null
+        },
+        "required": "revalidate",
+        "rerun": {
+          "exit_code": 0,
+          "passed": true,
+          "seconds": 0.268,
+          "tests": 2
+        }
+      }
+    ]
+  ],
+  "benchmark_module": "benchmarks/handoff_evidence.py",
+  "cases": [
+    {
+      "case": "A1",
+      "consequential": true,
+      "decisions": {
+        "M0": {
+          "decision": "reuse"
+        },
+        "M1": {
+          "decision": "revalidate"
+        },
+        "M2": {
+          "current": false,
+          "decision": "revalidate",
+          "decision_seconds": 0.57
+        },
+        "M3": {
+          "decision": "revalidate",
+          "exit_code": 1,
+          "seconds": 0.319,
+          "tests_executed": 2
+        },
+        "M4": {
+          "applicability": "revalidate",
+          "changed": [
+            "src/invoice/tax.py"
+          ],
+          "decision": "revalidate",
+          "decision_seconds": 0.562,
+          "epoch": 1,
+          "reasons": [
+            "input-changed"
+          ]
+        }
+      },
+      "fixture_defect": false,
+      "predecessor": {
+        "offer_digest": "sha256:72b1ad9b8baae3468b434cee80003dc37b93924967e426f436dc58dcbc25c429",
+        "record": {
+          "inputs": {
+            "env:none": 42,
+            "executable:none": 1,
+            "file:external": 365,
+            "file:project": 7,
+            "import-listing:external": 36,
+            "import-listing:project": 2,
+            "listing:project": 2,
+            "metadata-listing:external": 4,
+            "metadata-listing:project": 1,
+            "probe:external": 37,
+            "probe:project": 45,
+            "project-root:none": 1
+          },
+          "record_digest": "sha256:c7e877b67abc8ccea48bc6b6150f7b5c515531ee9a03cb401b289a35da2727cb",
+          "record_id": "evidence:7f80522d9e1bae71579c28b239e9f3ae",
+          "trace": {
+            "complete": true,
+            "excluded_outputs": 4,
+            "processes": 1,
+            "reasons": []
+          },
+          "verdict": "passed"
+        },
+        "testmon_seed_passed": true
+      },
+      "required": "revalidate",
+      "rerun": {
+        "exit_code": 1,
+        "passed": false,
+        "seconds": 0.346,
+        "tests": 2
+      }
+    },
+    {
+      "case": "A2",
+      "consequential": true,
+      "decisions": {
+        "M0": {
+          "decision": "reuse"
+        },
+        "M1": {
+          "decision": "revalidate"
+        },
+        "M2": {
+          "current": false,
+          "decision": "revalidate",
+          "decision_seconds": 0.588
+        },
+        "M3": {
+          "decision": "reuse",
+          "exit_code": 0,
+          "seconds": 0.281,
+          "tests_executed": 0
+        },
+        "M4": {
+          "applicability": "revalidate",
+          "changed": [
+            "src/invoice/data/rates.json"
+          ],
+          "decision": "revalidate",
+          "decision_seconds": 0.691,
+          "epoch": 1,
+          "reasons": [
+            "input-changed"
+          ]
+        }
+      },
+      "fixture_defect": false,
+      "predecessor": {
+        "offer_digest": "sha256:77d517115b653d0024f56a97d562ee027403372c457cbb2c7000ffc98d82b7ba",
+        "record": {
+          "inputs": {
+            "env:none": 42,
+            "executable:none": 1,
+            "file:external": 365,
+            "file:project": 7,
+            "import-listing:external": 36,
+            "import-listing:project": 2,
+            "listing:project": 2,
+            "metadata-listing:external": 4,
+            "metadata-listing:project": 1,
+            "probe:external": 37,
+            "probe:project": 45,
+            "project-root:none": 1
+          },
+          "record_digest": "sha256:0f4dcc54040a37b0e5d7bd7f82a154585f68f093554e38ca2f9312ddcfaba653",
+          "record_id": "evidence:8547732eb2c1c246ac3dcf21deaef398",
+          "trace": {
+            "complete": true,
+            "excluded_outputs": 4,
+            "processes": 1,
+            "reasons": []
+          },
+          "verdict": "passed"
+        },
+        "testmon_seed_passed": true
+      },
+      "required": "revalidate",
+      "rerun": {
+        "exit_code": 1,
+        "passed": false,
+        "seconds": 0.254,
+        "tests": 2
+      }
+    },
+    {
+      "case": "A3",
+      "consequential": false,
+      "decisions": {
+        "M0": {
+          "decision": "reuse"
+        },
+        "M1": {
+          "decision": "revalidate"
+        },
+        "M2": {
+          "current": false,
+          "decision": "revalidate",
+          "decision_seconds": 0.565
+        },
+        "M3": {
+          "decision": "reuse",
+          "exit_code": 0,
+          "seconds": 0.26,
+          "tests_executed": 0
+        },
+        "M4": {
+          "applicability": "revalidate",
+          "changed": [
+            "src/invoice/pricing.py"
+          ],
+          "decision": "revalidate",
+          "decision_seconds": 0.571,
+          "epoch": 1,
+          "reasons": [
+            "input-changed"
+          ]
+        }
+      },
+      "fixture_defect": false,
+      "predecessor": {
+        "offer_digest": "sha256:86b2c1f29ef3240b7f0f59aadb29fc4f269cabdd93fca73ea5378a4253919e26",
+        "record": {
+          "inputs": {
+            "env:none": 42,
+            "executable:none": 1,
+            "file:external": 365,
+            "file:project": 7,
+            "import-listing:external": 36,
+            "import-listing:project": 2,
+            "listing:project": 2,
+            "metadata-listing:external": 4,
+            "metadata-listing:project": 1,
+            "probe:external": 37,
+            "probe:project": 45,
+            "project-root:none": 1
+          },
+          "record_digest": "sha256:eb96471887f25e045a202edc02cb5e13bc64ea14c2273e8b7baf7385e8c6fd79",
+          "record_id": "evidence:232a2a9f5773fab444c82211cc662d7b",
+          "trace": {
+            "complete": true,
+            "excluded_outputs": 4,
+            "processes": 1,
+            "reasons": []
+          },
+          "verdict": "passed"
+        },
+        "testmon_seed_passed": true
+      },
+      "required": "revalidate",
+      "rerun": {
+        "exit_code": 0,
+        "passed": true,
+        "seconds": 0.273,
+        "tests": 2
+      }
+    },
+    {
+      "case": "A4",
+      "consequential": true,
+      "decisions": {
+        "M0": {
+          "decision": "reuse"
+        },
+        "M1": {
+          "decision": "revalidate"
+        },
+        "M2": {
+          "current": false,
+          "decision": "revalidate",
+          "decision_seconds": 0.597
+        },
+        "M3": {
+          "decision": "reuse",
+          "exit_code": 0,
+          "seconds": 0.342,
+          "tests_executed": 0
+        },
+        "M4": {
+          "applicability": "revalidate",
+          "changed": [
+            "src/invoice"
+          ],
+          "decision": "revalidate",
+          "decision_seconds": 0.711,
+          "epoch": 1,
+          "reasons": [
+            "input-changed"
+          ]
+        }
+      },
+      "fixture_defect": false,
+      "predecessor": {
+        "offer_digest": "sha256:5328fc9e5b49279bd6f17c25c954d1e57af380ffd4a3891474c25f14d5acaba5",
+        "record": {
+          "inputs": {
+            "env:none": 42,
+            "executable:none": 1,
+            "file:external": 365,
+            "file:project": 7,
+            "import-listing:external": 36,
+            "import-listing:project": 2,
+            "listing:project": 2,
+            "metadata-listing:external": 4,
+            "metadata-listing:project": 1,
+            "probe:external": 37,
+            "probe:project": 45,
+            "project-root:none": 1
+          },
+          "record_digest": "sha256:a1f0e98848aff5e6b4a4c1c8521f0564985590c675ebe40ecdcf5758532c473b",
+          "record_id": "evidence:e91a00cccbf54475b87e455fb37e4964",
+          "trace": {
+            "complete": true,
+            "excluded_outputs": 4,
+            "processes": 1,
+            "reasons": []
+          },
+          "verdict": "passed"
+        },
+        "testmon_seed_passed": true
+      },
+      "required": "revalidate",
+      "rerun": {
+        "exit_code": 1,
+        "passed": false,
+        "seconds": 0.352,
+        "tests": 2
+      }
+    },
+    {
+      "case": "A5",
+      "consequential": true,
+      "decisions": {
+        "M0": {
+          "decision": "reuse"
+        },
+        "M1": {
+          "decision": "revalidate"
+        },
+        "M2": {
+          "current": false,
+          "decision": "revalidate",
+          "decision_seconds": 0.601
+        },
+        "M3": {
+          "decision": "revalidate",
+          "exit_code": 1,
+          "seconds": 0.397,
+          "tests_executed": 2
+        },
+        "M4": {
+          "applicability": "revalidate",
+          "changed": [
+            "tests/conftest.py"
+          ],
+          "decision": "revalidate",
+          "decision_seconds": 0.747,
+          "epoch": 1,
+          "reasons": [
+            "input-changed"
+          ]
+        }
+      },
+      "fixture_defect": false,
+      "predecessor": {
+        "offer_digest": "sha256:878669a8dd34a68d41fc1eae684ecdffe4e5f4a8ffd54221b1cebc433556cba8",
+        "record": {
+          "inputs": {
+            "env:none": 42,
+            "executable:none": 1,
+            "file:external": 365,
+            "file:project": 7,
+            "import-listing:external": 36,
+            "import-listing:project": 2,
+            "listing:project": 2,
+            "metadata-listing:external": 4,
+            "metadata-listing:project": 1,
+            "probe:external": 37,
+            "probe:project": 45,
+            "project-root:none": 1
+          },
+          "record_digest": "sha256:e6e10b874b5aa858eabcecf88751942f94cf124fb56c47db33e0528b230ff97f",
+          "record_id": "evidence:1018f26cba2a484af1a91891d58a78de",
+          "trace": {
+            "complete": true,
+            "excluded_outputs": 4,
+            "processes": 1,
+            "reasons": []
+          },
+          "verdict": "passed"
+        },
+        "testmon_seed_passed": true
+      },
+      "required": "revalidate",
+      "rerun": {
+        "exit_code": 1,
+        "passed": false,
+        "seconds": 0.295,
+        "tests": 2
+      }
+    },
+    {
+      "case": "B1",
+      "consequential": true,
+      "decisions": {
+        "M0": {
+          "decision": "reuse"
+        },
+        "M1": {
+          "decision": "revalidate"
+        },
+        "M2": {
+          "current": false,
+          "decision": "revalidate",
+          "decision_seconds": 0.569
+        },
+        "M3": {
+          "decision": "reuse",
+          "exit_code": 0,
+          "seconds": 0.27,
+          "tests_executed": 0
+        },
+        "M4": {
+          "applicability": "revalidate",
+          "changed": [
+            "pyproject.toml"
+          ],
+          "decision": "revalidate",
+          "decision_seconds": 0.56,
+          "epoch": 1,
+          "reasons": [
+            "input-changed"
+          ]
+        }
+      },
+      "fixture_defect": false,
+      "predecessor": {
+        "offer_digest": "sha256:9c06d4918223012c099bc483ba37bb3128f6d0b781f4f9e5c06cbbe172656728",
+        "record": {
+          "inputs": {
+            "env:none": 42,
+            "executable:none": 1,
+            "file:external": 365,
+            "file:project": 7,
+            "import-listing:external": 36,
+            "import-listing:project": 2,
+            "listing:project": 2,
+            "metadata-listing:external": 4,
+            "metadata-listing:project": 1,
+            "probe:external": 37,
+            "probe:project": 45,
+            "project-root:none": 1
+          },
+          "record_digest": "sha256:c149f0789c03a103a63cb30985e211a82ee91d07e1b0773e792b14412cb762b8",
+          "record_id": "evidence:23ca2b3d3f1d472e871e230d8a3f7b2a",
+          "trace": {
+            "complete": true,
+            "excluded_outputs": 4,
+            "processes": 1,
+            "reasons": []
+          },
+          "verdict": "passed"
+        },
+        "testmon_seed_passed": true
+      },
+      "required": "revalidate",
+      "rerun": {
+        "exit_code": 1,
+        "passed": false,
+        "seconds": 0.265,
+        "tests": 2
+      }
+    },
+    {
+      "case": "B2",
+      "consequential": true,
+      "decisions": {
+        "M0": {
+          "decision": "reuse"
+        },
+        "M1": {
+          "decision": "revalidate"
+        },
+        "M2": {
+          "current": true,
+          "decision": "reuse",
+          "decision_seconds": 0.743
+        },
+        "M3": {
+          "decision": "reuse",
+          "exit_code": 0,
+          "seconds": 0.369,
+          "tests_executed": 0
+        },
+        "M4": {
+          "applicability": "revalidate",
+          "changed": [
+            "PYTEST_ADDOPTS"
+          ],
+          "decision": "revalidate",
+          "decision_seconds": 0.58,
+          "epoch": 1,
+          "reasons": [
+            "input-changed"
+          ]
+        }
+      },
+      "fixture_defect": false,
+      "predecessor": {
+        "offer_digest": "sha256:30e04c1a4515dc62f789a06fdee2ed4d1df936fcf1cfd147a78299763430bd13",
+        "record": {
+          "inputs": {
+            "env:none": 42,
+            "executable:none": 1,
+            "file:external": 365,
+            "file:project": 7,
+            "import-listing:external": 36,
+            "import-listing:project": 2,
+            "listing:project": 2,
+            "metadata-listing:external": 4,
+            "metadata-listing:project": 1,
+            "probe:external": 37,
+            "probe:project": 45,
+            "project-root:none": 1
+          },
+          "record_digest": "sha256:3bd304eb9d5a319f71ef415912e1452680d02c854201c8f4fc843a226df332e5",
+          "record_id": "evidence:eca1c2962e6692251cd9a2dd2b1e9647",
+          "trace": {
+            "complete": true,
+            "excluded_outputs": 4,
+            "processes": 1,
+            "reasons": []
+          },
+          "verdict": "passed"
+        },
+        "testmon_seed_passed": true
+      },
+      "required": "revalidate",
+      "rerun": {
+        "exit_code": 1,
+        "passed": false,
+        "seconds": 0.345,
+        "tests": 2
+      }
+    },
+    {
+      "case": "B3",
+      "consequential": true,
+      "decisions": {
+        "M0": {
+          "decision": "reuse"
+        },
+        "M1": {
+          "decision": "revalidate"
+        },
+        "M2": {
+          "current": true,
+          "decision": "reuse",
+          "decision_seconds": 0.703
+        },
+        "M3": {
+          "decision": "reuse",
+          "exit_code": 0,
+          "seconds": 0.264,
+          "tests_executed": 0
+        },
+        "M4": {
+          "applicability": "revalidate",
+          "changed": [
+            "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages/ratelib/__init__.py",
+            "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages",
+            "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages"
+          ],
+          "decision": "revalidate",
+          "decision_seconds": 0.587,
+          "epoch": 1,
+          "reasons": [
+            "input-changed"
+          ]
+        }
+      },
+      "fixture_defect": false,
+      "predecessor": {
+        "offer_digest": "sha256:620ec9d601f102066039ee8b021b498fe8ec0f40c05352ed90b99b329a9bf151",
+        "record": {
+          "inputs": {
+            "env:none": 42,
+            "executable:none": 1,
+            "file:external": 365,
+            "file:project": 7,
+            "import-listing:external": 36,
+            "import-listing:project": 2,
+            "listing:project": 2,
+            "metadata-listing:external": 4,
+            "metadata-listing:project": 1,
+            "probe:external": 37,
+            "probe:project": 45,
+            "project-root:none": 1
+          },
+          "record_digest": "sha256:ba214146c6ec05b0e335e47761d89937383123d688bd69bbdf90926e85734dcd",
+          "record_id": "evidence:a943820df5b3af8cb579ea23dcba46a7",
+          "trace": {
+            "complete": true,
+            "excluded_outputs": 4,
+            "processes": 1,
+            "reasons": []
+          },
+          "verdict": "passed"
+        },
+        "testmon_seed_passed": true
+      },
+      "required": "revalidate",
+      "rerun": {
+        "exit_code": 1,
+        "passed": false,
+        "seconds": 0.265,
+        "tests": 2
+      }
+    },
+    {
+      "case": "B4",
+      "consequential": true,
+      "decisions": {
+        "M0": {
+          "decision": "reuse"
+        },
+        "M1": {
+          "decision": "revalidate"
+        },
+        "M2": {
+          "current": true,
+          "decision": "reuse",
+          "decision_seconds": 0.597
+        },
+        "M3": {
+          "decision": "revalidate",
+          "exit_code": 1,
+          "seconds": 0.38,
+          "tests_executed": 2
+        },
+        "M4": {
+          "applicability": "revalidate",
+          "changed": [
+            "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages/ratelib/__init__.py",
+            "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages",
+            "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages"
+          ],
+          "decision": "revalidate",
+          "decision_seconds": 0.596,
+          "epoch": 1,
+          "reasons": [
+            "input-changed"
+          ]
+        }
+      },
+      "fixture_defect": false,
+      "predecessor": {
+        "offer_digest": "sha256:2c90b5d792ae7091a5cd0769eed3be69cf67cee218f95580ceb259d7438a8f2e",
+        "record": {
+          "inputs": {
+            "env:none": 42,
+            "executable:none": 1,
+            "file:external": 365,
+            "file:project": 7,
+            "import-listing:external": 36,
+            "import-listing:project": 2,
+            "listing:project": 2,
+            "metadata-listing:external": 4,
+            "metadata-listing:project": 1,
+            "probe:external": 37,
+            "probe:project": 45,
+            "project-root:none": 1
+          },
+          "record_digest": "sha256:a00d7df4e64874ac8a63f6426c10686d673a9eaf06166b941edfe2e4bb2005d1",
+          "record_id": "evidence:aa845d277c6fc9bc97e7b3feb87cd790",
+          "trace": {
+            "complete": true,
+            "excluded_outputs": 4,
+            "processes": 1,
+            "reasons": []
+          },
+          "verdict": "passed"
+        },
+        "testmon_seed_passed": true
+      },
+      "required": "revalidate",
+      "rerun": {
+        "exit_code": 1,
+        "passed": false,
+        "seconds": 0.314,
+        "tests": 2
+      }
+    },
+    {
+      "case": "B5",
+      "consequential": false,
+      "decisions": {
+        "M0": {
+          "decision": "reuse"
+        },
+        "M1": {
+          "decision": "revalidate"
+        },
+        "M2": {
+          "current": true,
+          "decision": "reuse",
+          "decision_seconds": 0.642
+        },
+        "M3": {
+          "decision": "revalidate",
+          "exit_code": 0,
+          "seconds": 0.738,
+          "tests_executed": 2
+        },
+        "M4": {
+          "applicability": "revalidate",
+          "changed": [
+            "python"
+          ],
+          "decision": "revalidate",
+          "decision_seconds": 0.744,
+          "epoch": 1,
+          "reasons": [
+            "input-changed"
+          ]
+        }
+      },
+      "fixture_defect": false,
+      "predecessor": {
+        "offer_digest": "sha256:991c5f604e5d5eeb76cd76342bb4f12ba8a9c7abbadfe35a111b184d37361c81",
+        "record": {
+          "inputs": {
+            "env:none": 42,
+            "executable:none": 1,
+            "file:external": 365,
+            "file:project": 7,
+            "import-listing:external": 36,
+            "import-listing:project": 2,
+            "listing:project": 2,
+            "metadata-listing:external": 4,
+            "metadata-listing:project": 1,
+            "probe:external": 37,
+            "probe:project": 45,
+            "project-root:none": 1
+          },
+          "record_digest": "sha256:91b50a878d2f0f168ce70540dec0e89a2c1305844d8a72ee45b95aa17c6abd12",
+          "record_id": "evidence:837298c2c9652295084dab6d777c5a76",
+          "trace": {
+            "complete": true,
+            "excluded_outputs": 4,
+            "processes": 1,
+            "reasons": []
+          },
+          "verdict": "passed"
+        },
+        "testmon_seed_passed": true
+      },
+      "required": "revalidate",
+      "rerun": {
+        "exit_code": 0,
+        "passed": true,
+        "seconds": 0.292,
+        "tests": 2
+      }
+    },
+    {
+      "case": "C1",
+      "consequential": false,
+      "decisions": {
+        "M0": {
+          "decision": "reuse"
+        },
+        "M1": {
+          "decision": "revalidate"
+        },
+        "M2": {
+          "current": false,
+          "decision": "revalidate",
+          "decision_seconds": 0.665
+        },
+        "M3": {
+          "decision": "reuse",
+          "exit_code": 0,
+          "seconds": 0.278,
+          "tests_executed": 0
+        },
+        "M4": {
+          "applicability": "reuse",
+          "changed": [],
+          "decision": "reuse",
+          "decision_seconds": 0.547,
+          "epoch": 1,
+          "reasons": [
+            "all-inputs-unchanged"
+          ]
+        }
+      },
+      "fixture_defect": false,
+      "predecessor": {
+        "offer_digest": "sha256:3143ab67794cdc640010bfd6414ff03b43253b551493b066bb1dc6492c094da3",
+        "record": {
+          "inputs": {
+            "env:none": 42,
+            "executable:none": 1,
+            "file:external": 365,
+            "file:project": 7,
+            "import-listing:external": 36,
+            "import-listing:project": 2,
+            "listing:project": 2,
+            "metadata-listing:external": 4,
+            "metadata-listing:project": 1,
+            "probe:external": 37,
+            "probe:project": 45,
+            "project-root:none": 1
+          },
+          "record_digest": "sha256:8396992d4943c04ce4be55edd1491f2cea74d13d583ad5835758df7080d41674",
+          "record_id": "evidence:e0ada2fe7fb1350e24b1693b54e6c739",
+          "trace": {
+            "complete": true,
+            "excluded_outputs": 4,
+            "processes": 1,
+            "reasons": []
+          },
+          "verdict": "passed"
+        },
+        "testmon_seed_passed": true
+      },
+      "required": "reuse",
+      "rerun": {
+        "exit_code": 0,
+        "passed": true,
+        "seconds": 0.29,
+        "tests": 2
+      }
+    },
+    {
+      "case": "C2",
+      "consequential": false,
+      "decisions": {
+        "M0": {
+          "decision": "reuse"
+        },
+        "M1": {
+          "decision": "revalidate"
+        },
+        "M2": {
+          "current": false,
+          "decision": "revalidate",
+          "decision_seconds": 0.6
+        },
+        "M3": {
+          "decision": "reuse",
+          "exit_code": 0,
+          "seconds": 0.288,
+          "tests_executed": 0
+        },
+        "M4": {
+          "applicability": "reuse",
+          "changed": [],
+          "decision": "reuse",
+          "decision_seconds": 0.627,
+          "epoch": 1,
+          "reasons": [
+            "all-inputs-unchanged"
+          ]
+        }
+      },
+      "fixture_defect": false,
+      "predecessor": {
+        "offer_digest": "sha256:acfbbf5ff79ae23ebfabc1a67168a7604b82b462ae352a96e2451c9d2bd3e9a4",
+        "record": {
+          "inputs": {
+            "env:none": 42,
+            "executable:none": 1,
+            "file:external": 365,
+            "file:project": 7,
+            "import-listing:external": 36,
+            "import-listing:project": 2,
+            "listing:project": 2,
+            "metadata-listing:external": 4,
+            "metadata-listing:project": 1,
+            "probe:external": 37,
+            "probe:project": 45,
+            "project-root:none": 1
+          },
+          "record_digest": "sha256:ba9298a0379ab8a35994ff2b19b70d2691773ed2fed0112215810982d11b5f72",
+          "record_id": "evidence:7e4aa1aee0cb7755202601167d3553c3",
+          "trace": {
+            "complete": true,
+            "excluded_outputs": 4,
+            "processes": 1,
+            "reasons": []
+          },
+          "verdict": "passed"
+        },
+        "testmon_seed_passed": true
+      },
+      "required": "reuse",
+      "rerun": {
+        "exit_code": 0,
+        "passed": true,
+        "seconds": 0.257,
+        "tests": 2
+      }
+    },
+    {
+      "case": "C3",
+      "consequential": false,
+      "decisions": {
+        "M0": {
+          "decision": "reuse"
+        },
+        "M1": {
+          "decision": "revalidate"
+        },
+        "M2": {
+          "current": false,
+          "decision": "revalidate",
+          "decision_seconds": 0.633
+        },
+        "M3": {
+          "decision": "reuse",
+          "exit_code": 0,
+          "seconds": 0.332,
+          "tests_executed": 0
+        },
+        "M4": {
+          "applicability": "reuse",
+          "changed": [],
+          "decision": "reuse",
+          "decision_seconds": 0.616,
+          "epoch": 1,
+          "reasons": [
+            "all-inputs-unchanged"
+          ]
+        }
+      },
+      "fixture_defect": false,
+      "predecessor": {
+        "offer_digest": "sha256:092e61320bb243734604afb431815b6c654463db49fdb8403facee1d0d850a1f",
+        "record": {
+          "inputs": {
+            "env:none": 42,
+            "executable:none": 1,
+            "file:external": 365,
+            "file:project": 7,
+            "import-listing:external": 36,
+            "import-listing:project": 2,
+            "listing:project": 2,
+            "metadata-listing:external": 4,
+            "metadata-listing:project": 1,
+            "probe:external": 37,
+            "probe:project": 45,
+            "project-root:none": 1
+          },
+          "record_digest": "sha256:d47a3bd73526611d068f0b818285282b6b37de6ee0007b280b435940e099e06e",
+          "record_id": "evidence:6051cd96e947dbcf6c2edd4ec1ec6bba",
+          "trace": {
+            "complete": true,
+            "excluded_outputs": 4,
+            "processes": 1,
+            "reasons": []
+          },
+          "verdict": "passed"
+        },
+        "testmon_seed_passed": true
+      },
+      "required": "reuse",
+      "rerun": {
+        "exit_code": 0,
+        "passed": true,
+        "seconds": 0.26,
+        "tests": 2
+      }
+    },
+    {
+      "case": "C4",
+      "consequential": false,
+      "decisions": {
+        "M0": {
+          "decision": "reuse"
+        },
+        "M1": {
+          "decision": "revalidate"
+        },
+        "M2": {
+          "current": false,
+          "decision": "revalidate",
+          "decision_seconds": 0.708
+        },
+        "M3": {
+          "decision": "reuse",
+          "exit_code": 0,
+          "seconds": 0.306,
+          "tests_executed": 0
+        },
+        "M4": {
+          "applicability": "revalidate",
+          "changed": [
+            "."
+          ],
+          "decision": "revalidate",
+          "decision_seconds": 0.635,
+          "epoch": 1,
+          "reasons": [
+            "input-changed"
+          ]
+        }
+      },
+      "fixture_defect": false,
+      "predecessor": {
+        "offer_digest": "sha256:efad6b958657603ddceec5da84d8478ede58fd71fa67fa1a98ad39b24b62c324",
+        "record": {
+          "inputs": {
+            "env:none": 42,
+            "executable:none": 1,
+            "file:external": 365,
+            "file:project": 7,
+            "import-listing:external": 36,
+            "import-listing:project": 2,
+            "listing:project": 2,
+            "metadata-listing:external": 4,
+            "metadata-listing:project": 1,
+            "probe:external": 37,
+            "probe:project": 45,
+            "project-root:none": 1
+          },
+          "record_digest": "sha256:6dc78a0cbc72165cf597f5025b6b118cf1c125fe49671379923ca854af95d5a5",
+          "record_id": "evidence:a6af967539b4b8abbfdb74fee044358e",
+          "trace": {
+            "complete": true,
+            "excluded_outputs": 4,
+            "processes": 1,
+            "reasons": []
+          },
+          "verdict": "passed"
+        },
+        "testmon_seed_passed": true
+      },
+      "required": "reuse",
+      "rerun": {
+        "exit_code": 0,
+        "passed": true,
+        "seconds": 0.319,
+        "tests": 2
+      }
+    },
+    {
+      "case": "C5",
+      "consequential": false,
+      "decisions": {
+        "M0": {
+          "decision": "reuse"
+        },
+        "M1": {
+          "decision": "revalidate"
+        },
+        "M2": {
+          "current": false,
+          "decision": "revalidate",
+          "decision_seconds": 0.807
+        },
+        "M3": {
+          "decision": "reuse",
+          "exit_code": 0,
+          "seconds": 0.31,
+          "tests_executed": 0
+        },
+        "M4": {
+          "applicability": "reuse",
+          "changed": [],
+          "decision": "reuse",
+          "decision_seconds": 0.638,
+          "epoch": 1,
+          "reasons": [
+            "all-inputs-unchanged"
+          ]
+        }
+      },
+      "fixture_defect": false,
+      "predecessor": {
+        "offer_digest": "sha256:018ad6999d03d7749a0ae05556c528f3dba7335ec1ca5e7351732071c3494592",
+        "record": {
+          "inputs": {
+            "env:none": 42,
+            "executable:none": 1,
+            "file:external": 365,
+            "file:project": 7,
+            "import-listing:external": 36,
+            "import-listing:project": 2,
+            "listing:project": 2,
+            "metadata-listing:external": 4,
+            "metadata-listing:project": 1,
+            "probe:external": 37,
+            "probe:project": 45,
+            "project-root:none": 1
+          },
+          "record_digest": "sha256:e080f58c0b47140b21ef29d43fcaaa3f2328fd48bcbdd088b7d6da3766e42c2f",
+          "record_id": "evidence:7df72e416b8568d6e1c3d7ddfb74e203",
+          "trace": {
+            "complete": true,
+            "excluded_outputs": 4,
+            "processes": 1,
+            "reasons": []
+          },
+          "verdict": "passed"
+        },
+        "testmon_seed_passed": true
+      },
+      "required": "reuse",
+      "rerun": {
+        "exit_code": 0,
+        "passed": true,
+        "seconds": 0.325,
+        "tests": 2
+      }
+    },
+    {
+      "case": "C6",
+      "consequential": false,
+      "decisions": {
+        "M0": {
+          "decision": "reuse"
+        },
+        "M1": {
+          "decision": "revalidate"
+        },
+        "M2": {
+          "current": true,
+          "decision": "reuse",
+          "decision_seconds": 0.788
+        },
+        "M3": {
+          "decision": "reuse",
+          "exit_code": 0,
+          "seconds": 0.267,
+          "tests_executed": 0
+        },
+        "M4": {
+          "applicability": "reuse",
+          "changed": [],
+          "decision": "reuse",
+          "decision_seconds": 0.743,
+          "epoch": 1,
+          "reasons": [
+            "all-inputs-unchanged"
+          ]
+        }
+      },
+      "fixture_defect": false,
+      "predecessor": {
+        "offer_digest": "sha256:3836272101bf4c5993136c91f3ed8749f6d2f1e1d50209b63e43fa5d420c1ebc",
+        "record": {
+          "inputs": {
+            "env:none": 42,
+            "executable:none": 1,
+            "file:external": 365,
+            "file:project": 7,
+            "import-listing:external": 36,
+            "import-listing:project": 2,
+            "listing:project": 2,
+            "metadata-listing:external": 4,
+            "metadata-listing:project": 1,
+            "probe:external": 37,
+            "probe:project": 45,
+            "project-root:none": 1
+          },
+          "record_digest": "sha256:86a588903975de2fa79800940020cfb77b7fed650d5368299009839e1602289f",
+          "record_id": "evidence:a52e83d0da739ed1cbf876db69d4bbd8",
+          "trace": {
+            "complete": true,
+            "excluded_outputs": 4,
+            "processes": 1,
+            "reasons": []
+          },
+          "verdict": "passed"
+        },
+        "testmon_seed_passed": true
+      },
+      "required": "reuse",
+      "rerun": {
+        "exit_code": 0,
+        "passed": true,
+        "seconds": 0.267,
+        "tests": 2
+      }
+    },
+    {
+      "case": "D1",
+      "consequential": false,
+      "decisions": {
+        "M0": {
+          "decision": "reuse"
+        },
+        "M1": {
+          "decision": "revalidate"
+        },
+        "M2": {
+          "current": true,
+          "decision": "reuse",
+          "decision_seconds": 0.591
+        },
+        "M3": {
+          "decision": "revalidate",
+          "exit_code": 0,
+          "note": "its evidence (.testmondata) deleted",
+          "seconds": 0.376,
+          "tests_executed": 2
+        },
+        "M4": {
+          "applicability": "unknown",
+          "changed": [],
+          "decision": "revalidate",
+          "decision_seconds": 0.608,
+          "epoch": 1,
+          "reasons": [
+            "record-unavailable"
+          ]
+        }
+      },
+      "fixture_defect": false,
+      "predecessor": {
+        "offer_digest": "sha256:dddc99068cfaca32f0c1a978cd88e412bf0be1d14fafd1b1a24b07f4a3998bbd",
+        "record": {
+          "inputs": {
+            "env:none": 42,
+            "executable:none": 1,
+            "file:external": 365,
+            "file:project": 7,
+            "import-listing:external": 36,
+            "import-listing:project": 2,
+            "listing:project": 2,
+            "metadata-listing:external": 4,
+            "metadata-listing:project": 1,
+            "probe:external": 37,
+            "probe:project": 45,
+            "project-root:none": 1
+          },
+          "record_digest": "sha256:7bde1af9a64688adf839cf822655cf9a7a9c2db482aef3beeb5470873d62a392",
+          "record_id": "evidence:b24e4389afcabbc7de8e59ab4301bf11",
+          "trace": {
+            "complete": true,
+            "excluded_outputs": 4,
+            "processes": 1,
+            "reasons": []
+          },
+          "verdict": "passed"
+        },
+        "testmon_seed_passed": true
+      },
+      "required": "revalidate",
+      "rerun": {
+        "exit_code": 0,
+        "passed": true,
+        "seconds": 0.291,
+        "tests": 2
+      }
+    },
+    {
+      "case": "D2",
+      "consequential": false,
+      "decisions": {
+        "M0": {
+          "decision": "reuse"
+        },
+        "M1": {
+          "decision": "revalidate"
+        },
+        "M2": {
+          "current": true,
+          "decision": "reuse",
+          "decision_seconds": 0.607
+        },
+        "M3": {
+          "decision": "n/a",
+          "note": "n/a: testmon has no handed-over artifact to alter (no offer binding)"
+        },
+        "M4": {
+          "applicability": "unknown",
+          "changed": [],
+          "decision": "revalidate",
+          "decision_seconds": 0.754,
+          "epoch": 1,
+          "reasons": [
+            "record-not-the-one-handed-off"
+          ]
+        }
+      },
+      "fixture_defect": false,
+      "predecessor": {
+        "offer_digest": "sha256:db177bb89b7a699ac845674455d83237eb8245f8caaf98a18ca28ef52d70b6a8",
+        "record": {
+          "inputs": {
+            "env:none": 42,
+            "executable:none": 1,
+            "file:external": 365,
+            "file:project": 7,
+            "import-listing:external": 36,
+            "import-listing:project": 2,
+            "listing:project": 2,
+            "metadata-listing:external": 4,
+            "metadata-listing:project": 1,
+            "probe:external": 37,
+            "probe:project": 45,
+            "project-root:none": 1
+          },
+          "record_digest": "sha256:648a6bcb7705be3dbdca11a8b94633754290ed3a9d8087d26148d50b3d602633",
+          "record_id": "evidence:7046bc778cdf42bff927844b05607ed8",
+          "trace": {
+            "complete": true,
+            "excluded_outputs": 4,
+            "processes": 1,
+            "reasons": []
+          },
+          "verdict": "passed"
+        },
+        "testmon_seed_passed": true
+      },
+      "required": "revalidate",
+      "rerun": {
+        "exit_code": 0,
+        "passed": true,
+        "seconds": 0.252,
+        "tests": 2
+      }
+    },
+    {
+      "case": "D3",
+      "consequential": false,
+      "decisions": {
+        "M0": {
+          "decision": "reuse"
+        },
+        "M1": {
+          "decision": "revalidate"
+        },
+        "M2": {
+          "current": true,
+          "decision": "reuse",
+          "decision_seconds": 0.587
+        },
+        "M3": {
+          "decision": "revalidate",
+          "exit_code": 0,
+          "note": "no .testmondata: the predecessor recorded no evidence",
+          "seconds": 0.336,
+          "tests_executed": 2
+        },
+        "M4": {
+          "applicability": "no-evidence",
+          "changed": [],
+          "decision": "revalidate",
+          "decision_seconds": 0.554,
+          "epoch": 1,
+          "reasons": [
+            "no evidence handed over"
+          ]
+        }
+      },
+      "fixture_defect": false,
+      "predecessor": {
+        "offer_digest": "sha256:2707fb578ead5aacbbef5575589fa8e1c7f106058c6776ec50d0caabfa684441",
+        "record": null,
+        "testmon_seed_passed": null
+      },
+      "required": "revalidate",
+      "rerun": {
+        "exit_code": 0,
+        "passed": true,
+        "seconds": 0.275,
+        "tests": 2
+      }
+    }
+  ],
+  "comparator_main_head": "7e8d2bc57c368cd5e7607daa79ac66edc5d551ab",
+  "decisions_stable_across_repetitions": true,
+  "fixture_pins": [
+    "pytest==9.2.0",
+    "pytest-testmon==2.3.0",
+    "coverage==7.17.3",
+    "ratelib (local wheels 1.0.0, 1.0.1, 1.1.0)"
+  ],
+  "implementation_head": "21799f9113e23983e82db66be5914338a33077c2",
+  "labels": {
+    "entry_point": "real entry point (entroly-work console scripts)",
+    "host": "mock host (harness-generated Ed25519 key)",
+    "provider": "not run: no model or provider credentials",
+    "repository": "fixture"
+  },
+  "median_seconds": {
+    "M2": {
+      "A1": 0.583,
+      "A2": 0.725,
+      "A3": 0.57,
+      "A4": 0.616,
+      "A5": 0.604,
+      "B1": 0.569,
+      "B2": 0.636,
+      "B3": 0.631,
+      "B4": 0.635,
+      "B5": 0.595,
+      "C1": 0.631,
+      "C2": 0.6,
+      "C3": 0.586,
+      "C4": 0.612,
+      "C5": 0.634,
+      "C6": 0.563,
+      "D1": 0.591,
+      "D2": 0.607,
+      "D3": 0.582
+    },
+    "M3": {
+      "A1": 0.323,
+      "A2": 0.305,
+      "A3": 0.267,
+      "A4": 0.286,
+      "A5": 0.397,
+      "B1": 0.27,
+      "B2": 0.33,
+      "B3": 0.264,
+      "B4": 0.349,
+      "B5": 0.318,
+      "C1": 0.324,
+      "C2": 0.288,
+      "C3": 0.312,
+      "C4": 0.274,
+      "C5": 0.31,
+      "C6": 0.27,
+      "D1": 0.376,
+      "D2": null,
+      "D3": 0.336
+    },
+    "M4": {
+      "A1": 0.613,
+      "A2": 0.658,
+      "A3": 0.604,
+      "A4": 0.62,
+      "A5": 0.708,
+      "B1": 0.585,
+      "B2": 0.613,
+      "B3": 0.587,
+      "B4": 0.577,
+      "B5": 0.577,
+      "C1": 0.613,
+      "C2": 0.627,
+      "C3": 0.616,
+      "C4": 0.635,
+      "C5": 0.627,
+      "C6": 0.645,
+      "D1": 0.611,
+      "D2": 0.641,
+      "D3": 0.554
+    },
+    "rerun": {
+      "A1": 0.326,
+      "A2": 0.301,
+      "A3": 0.273,
+      "A4": 0.264,
+      "A5": 0.332,
+      "B1": 0.308,
+      "B2": 0.318,
+      "B3": 0.279,
+      "B4": 0.314,
+      "B5": 0.268,
+      "C1": 0.29,
+      "C2": 0.299,
+      "C3": 0.317,
+      "C4": 0.284,
+      "C5": 0.31,
+      "C6": 0.267,
+      "D1": 0.291,
+      "D2": 0.265,
+      "D3": 0.268
+    }
+  },
+  "preregistration": "HANDOFF_EVIDENCE_PREREGISTRATION.md",
+  "preregistration_sha256": "4f89f3d8dfb5de003918754d281a15c057690203668d95a3f3d734d752ee9b25",
+  "python": "3.12.3",
+  "repetitions": 3,
+  "score": {
+    "M0": {
+      "correct_next_action": 6,
+      "false_stops": [],
+      "missed_required_inputs_or_evidence": [
+        "A2",
+        "A4",
+        "B1",
+        "B2",
+        "B3",
+        "B4",
+        "B5",
+        "D1",
+        "D2",
+        "D3"
+      ],
+      "not_applicable": [],
+      "redundant_count": 0,
+      "redundant_reruns": [],
+      "redundant_test_executions": 0,
+      "reuse_allowed_denominator": 6,
+      "revalidate_denominator": 13,
+      "stale_accepted": [
+        "A1",
+        "A2",
+        "A3",
+        "A4",
+        "A5",
+        "B1",
+        "B2",
+        "B3",
+        "B4",
+        "B5",
+        "D1",
+        "D2",
+        "D3"
+      ],
+      "stale_count": 13,
+      "stale_upper_95": 1.0
+    },
+    "M1": {
+      "correct_next_action": 19,
+      "false_stops": [],
+      "missed_required_inputs_or_evidence": [],
+      "not_applicable": [],
+      "redundant_count": 6,
+      "redundant_reruns": [
+        "C1",
+        "C2",
+        "C3",
+        "C4",
+        "C5",
+        "C6"
+      ],
+      "redundant_test_executions": 12,
+      "reuse_allowed_denominator": 6,
+      "revalidate_denominator": 13,
+      "stale_accepted": [],
+      "stale_count": 0,
+      "stale_upper_95": 0.2058
+    },
+    "M2": {
+      "correct_next_action": 12,
+      "false_stops": [],
+      "missed_required_inputs_or_evidence": [
+        "B2",
+        "B3",
+        "B4",
+        "B5",
+        "D1",
+        "D2",
+        "D3"
+      ],
+      "not_applicable": [],
+      "redundant_count": 5,
+      "redundant_reruns": [
+        "C1",
+        "C2",
+        "C3",
+        "C4",
+        "C5"
+      ],
+      "redundant_test_executions": 10,
+      "reuse_allowed_denominator": 6,
+      "revalidate_denominator": 13,
+      "stale_accepted": [
+        "B2",
+        "B3",
+        "B4",
+        "B5",
+        "D1",
+        "D2",
+        "D3"
+      ],
+      "stale_count": 7,
+      "stale_upper_95": 0.776
+    },
+    "M3": {
+      "correct_next_action": 12,
+      "false_stops": [],
+      "missed_required_inputs_or_evidence": [
+        "A2",
+        "A4",
+        "B1",
+        "B2",
+        "B3"
+      ],
+      "not_applicable": [
+        "D2"
+      ],
+      "redundant_count": 0,
+      "redundant_reruns": [],
+      "redundant_test_executions": 0,
+      "reuse_allowed_denominator": 6,
+      "revalidate_denominator": 12,
+      "stale_accepted": [
+        "A2",
+        "A3",
+        "A4",
+        "B1",
+        "B2",
+        "B3"
+      ],
+      "stale_count": 6,
+      "stale_upper_95": 0.7547
+    },
+    "M4": {
+      "correct_next_action": 19,
+      "false_stops": [],
+      "missed_required_inputs_or_evidence": [],
+      "not_applicable": [],
+      "redundant_count": 1,
+      "redundant_reruns": [
+        "C4"
+      ],
+      "redundant_test_executions": 2,
+      "reuse_allowed_denominator": 6,
+      "revalidate_denominator": 13,
+      "stale_accepted": [],
+      "stale_count": 0,
+      "stale_upper_95": 0.2058
+    }
+  }
+}

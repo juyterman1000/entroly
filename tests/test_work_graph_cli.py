@@ -27,6 +27,7 @@ class FakeStore:
         self.observation = None
         self._state_dir = TemporaryDirectory()
         self.repo_dir = Path(self._state_dir.name)
+        self.repo_id = "repo:test"
 
     def load(self):
         return FakeGraph()
@@ -387,7 +388,7 @@ def test_cli_handoff_fingerprints_repo_before_receipt(monkeypatch, tmp_path):
 
     monkeypatch.setattr(
         work_graph_inbox, "save_handoff",
-        lambda store, handoff, proof: calls.append("save") or "handoff:" + "a" * 64,
+        lambda store, handoff, proof, offer=None: calls.append("save") or "handoff:" + "a" * 64,
     )
     args = SimpleNamespace(
         work_action="handoff",
