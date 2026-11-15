@@ -77,8 +77,10 @@ and report findings to the user without inventing a writer receipt.
 `--to-agent` above is a label. Any process that can reach the state directory
 can claim to be that agent. A reviewer's `--check` is also only a statement.
 When an agent other than the one that started the work must take over, a
-trusted host can make the successor provable, and Entroly can say whether a
-recorded test result still applies.
+host that holds a signing key outside the agents' reach can name the
+successor, and Entroly can say whether a recorded test result still applies.
+Both checks run inside the workspace, so read the limits at the end of this
+section before relying on them.
 
 **Predecessor.** Record a verification that Entroly runs itself, then attach
 it to the handoff:
@@ -91,8 +93,11 @@ entroly-work --project . --json handoff --workstream <id> --from-agent claude-co
 `evidence run` traces what the Python processes of the command read. That
 covers files, the directories they scanned, paths they probed for (such as a
 missing `conftest.py`), environment variables, the resolved `python`, and
-every loaded module. The record stores only digests of these, never file
-contents, environment values or test output.
+every loaded module. The record stores digests of these, never file contents
+or test output. Environment values are stored as digests keyed by a secret
+kept in Entroly's state directory. The command line is stored as you typed it,
+so do not put secrets in it. The command exits with the verification's own
+exit code.
 
 **Host.** The host is whatever runs the agents and holds credentials outside
 their sandbox. It keeps the private key and signs one assertion for the
@@ -144,13 +149,26 @@ MCP `work_handoff` tool refuses on a held workstream.
 `entroly-work evidence check --record <id>` gives the same decision at any
 time, without a handoff.
 
-Limits: the checks run inside the workspace, so a process that can rewrite
-the trust file or Entroly's state can defeat them. A new file beside the
-tests or at the repository root revalidates, because pytest scans those
-directories in full. Native extensions and non-Python tools are not traced:
-a run that starts an untraced child process is `unknown`, but reads that a
-native extension makes inside a traced process are not seen at all. See
-`docs/research/authenticated-handoff-evidence.md` for the full rules and the
+Limits:
+
+- Entroly cannot stop a local process from naming a trust file of its own
+  making. The acceptance is therefore labelled `advisory` unless the trust
+  file and its directory are beyond the current user's reach, for example
+  mounted read-only by the host. Every epoch record names the key and the
+  trust file digest, so the host can check them.
+- "One winner" holds within one state directory.
+- Records are not signed. A process that can write Entroly's state can forge
+  one, so a result is only as trustworthy as the workspace it was recorded in.
+- Only `handoff`, `evidence run --workstream` and MCP `work_handoff` are
+  fenced.
+- A new file beside the tests or at the repository root revalidates, because
+  pytest scans those directories in full.
+- Native extensions and non-Python tools are not traced. A run whose command
+  or child process the tracer did not see is `unknown`. This includes a shell
+  script that `exec`s Python, `pytest -n` workers, `make` and `tox`. Reads
+  made by a native extension inside a traced process are not seen at all.
+
+See `docs/research/authenticated-handoff-evidence.md` for the full rules and the
 measured comparison.
 
 ## Measure the user outcome

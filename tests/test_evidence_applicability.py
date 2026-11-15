@@ -253,12 +253,14 @@ def test_the_resolved_executable_is_bound(tmp_path: Path) -> None:
     first = tmp_path / "bin-a"
     first.mkdir()
     launcher = first / "verify-python"
-    launcher.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n', encoding="utf-8")
+    launcher.write_text(
+        f"#!{sys.executable}\nimport sys, pytest\nsys.exit(pytest.main(sys.argv[1:]))\n", encoding="utf-8",
+    )
     launcher.chmod(0o755)
     env = _environment()
     env["PATH"] = str(first) + os.pathsep + env.get("PATH", "")
     record, _ = _record(
-        project, tmp_path / "work", argv=["verify-python", "-m", "pytest", "tests/test_tax.py"], env=env,
+        project, tmp_path / "work", argv=["verify-python", "tests/test_tax.py"], env=env,
     )
     assert record["result"]["verdict"] == "passed"
     assert _decision(record, project, env)["decision"] == REUSE
@@ -282,3 +284,111 @@ def test_the_resolved_executable_is_bound(tmp_path: Path) -> None:
         return
     moved = dict(env, PATH=str(third) + os.pathsep + _environment().get("PATH", ""))
     assert _decision(record, project, moved)["decision"] == REVALIDATE
+
+
+# ── regressions from the independent security review ────────────────
+
+
+def test_a_shell_that_execs_python_is_not_a_traced_command(tmp_path: Path) -> None:
+    """``run.sh`` keeps its pid through ``exec python``; what it read is unseen."""
+    _require_native()
+    if os.name != "posix":  # pragma: no cover
+        pytest.skip("POSIX shell")
+    project = _project(tmp_path / "proj")
+    (project / "flag.txt").write_text("enabled\n", encoding="utf-8")
+    wrapper = project / "run.sh"
+    wrapper.write_text(
+        f'#!/bin/sh\ngrep -q enabled flag.txt || exit 3\nexec "{sys.executable}" -c pass\n',
+        encoding="utf-8",
+    )
+    wrapper.chmod(0o755)
+    record, _ = _record(project, tmp_path / "work", argv=["./run.sh"])
+    assert "command-started-by-untraced-program" in record["trace"]["reasons"]
+    assert _decision(record, project)["decision"] == UNKNOWN
+
+
+def test_a_shebang_console_script_is_still_traced(tmp_path: Path) -> None:
+    _require_native()
+    if os.name != "posix":  # pragma: no cover
+        pytest.skip("POSIX shebang")
+    project = _project(tmp_path / "proj")
+    script = tmp_path / "bin" / "run-pytest"
+    script.parent.mkdir()
+    script.write_text(
+        f"#!{sys.executable}\nimport sys, pytest\nsys.exit(pytest.main(sys.argv[1:]))\n", encoding="utf-8",
+    )
+    script.chmod(0o755)
+    env = dict(_environment(), PATH=str(script.parent) + os.pathsep + _environment().get("PATH", ""))
+    record, _ = _record(project, tmp_path / "work", argv=["run-pytest", "tests/test_tax.py"], env=env)
+    assert record["trace"]["complete"], record["trace"]
+    assert _decision(record, project, env)["decision"] == REUSE
+
+
+def test_reads_from_many_threads_are_all_bound(tmp_path: Path) -> None:
+    """One re-entrancy flag shared across threads used to drop other threads' reads."""
+    _require_native()
+    project = _project(tmp_path / "proj")
+    data = project / "many"
+    data.mkdir()
+    for i in range(200):
+        (data / f"f{i}.txt").write_text(str(i), encoding="utf-8")
+    script = (
+        "import sys, threading\n"
+        "sys.setswitchinterval(1e-6)\n"
+        "def read(start):\n"
+        "    for i in range(start, 200, 4):\n"
+        "        open(f'many/f{i}.txt').read()\n"
+        "threads = [threading.Thread(target=read, args=(n,)) for n in range(4)]\n"
+        "[t.start() for t in threads]; [t.join() for t in threads]\n"
+    )
+    record, _ = _record(project, tmp_path / "work", argv=[sys.executable, "-c", script])
+    bound = {item["key"] for item in record["inputs"] if item["key"].startswith("many/")}
+    assert len(bound) == 200 or not record["trace"]["complete"]
+    (data / "f102.txt").write_text("changed", encoding="utf-8")
+    assert _decision(record, project)["decision"] != REUSE
+
+
+def test_tracing_keeps_rmtree_symlink_protection(tmp_path: Path) -> None:
+    _require_native()
+    project = _project(tmp_path / "proj")
+    script = "import shutil, sys\nsys.exit(0 if shutil.rmtree.avoids_symlink_attacks else 7)\n"
+    expected = __import__("shutil").rmtree.avoids_symlink_attacks
+    record, _ = _record(project, tmp_path / "work", argv=[sys.executable, "-c", script])
+    assert (record["result"]["exit_code"] == 0) == expected
+
+
+def test_a_hand_written_record_with_no_traced_reads_is_not_reused(tmp_path: Path) -> None:
+    _require_native()
+    from entroly import evidence_applicability as ea
+
+    project = _project(tmp_path / "proj")
+    record, _ = _record(project, tmp_path / "work")
+    forged = json.loads(json.dumps(record))
+    forged["inputs"] = [i for i in forged["inputs"] if i["kind"] == "project-root"]
+    forged["inputs_digest"] = ea._sha256(ea._canonical(forged["inputs"]))
+    forged.pop("verification_record")
+    forged["record_id"] = "evidence:" + ea._body_digest(forged).split(":", 1)[1][:32]
+    forged["verification_record"] = ea._verification_record(forged, "forged")
+    assert verify_record(forged) == []  # self-consistent: digests are not signatures
+    decision = _decision(forged, project)
+    assert decision["decision"] == UNKNOWN
+    assert decision["reasons"] == ["closure-implausibly-small"]
+    assert ea.provenance(forged)["record_is_signed"] is False
+
+
+def test_the_timeout_stops_grandchildren_too(tmp_path: Path) -> None:
+    _require_native()
+    if os.name != "posix":  # pragma: no cover
+        pytest.skip("process groups")
+    import time
+
+    from entroly.evidence_applicability import EvidenceError
+
+    project = _project(tmp_path / "proj")
+    script = "import subprocess, sys\nsubprocess.run([sys.executable, '-c', 'import time; time.sleep(30)'])\n"
+    started = time.monotonic()
+    with pytest.raises(EvidenceError, match="timed out"):
+        run_and_record(project, [sys.executable, "-c", script], environ=_environment(),
+                       work_dir=tmp_path / "work", timeout_seconds=1)
+    assert time.monotonic() - started < 15
+    assert not list((tmp_path / "work").glob("run-*"))

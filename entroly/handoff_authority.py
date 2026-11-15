@@ -158,6 +158,26 @@ class TrustAnchors:
     max_lifetime_ms: int
     clock_skew_ms: int
     source: str
+    digest: str = ""
+    host_protected: bool = False
+
+
+def _host_protected(path: Path) -> bool:
+    """True only if the current process cannot change which keys are pinned.
+
+    Entroly cannot stop a local process from pointing it at a trust file of
+    its own making, so the location alone proves nothing. What it can report
+    is whether *this* file and its directory are beyond the current user's
+    reach, as they are when a host mounts them read-only or owns them. As
+    root, nothing is beyond reach.
+    """
+    if os.name == "posix" and os.geteuid() == 0:
+        return False
+    try:
+        real = Path(os.path.realpath(path))
+    except OSError:
+        return False
+    return not os.access(real, os.W_OK) and not os.access(real.parent, os.W_OK)
 
 
 def load_trust(path: str | None = None, environ: Mapping[str, str] | None = None) -> TrustAnchors:
@@ -196,12 +216,15 @@ def load_trust(path: str | None = None, environ: Mapping[str, str] | None = None
         if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
             raise AuthorityRefused("no-trust-anchors", f"{name} must be a positive integer")
         return value * 1000
+    raw = Path(location).read_bytes()
     return TrustAnchors(
         audience=audience,
         issuers=issuers,
         max_lifetime_ms=seconds("max_lifetime_seconds", _DEFAULT_MAX_LIFETIME_MS),
         clock_skew_ms=seconds("clock_skew_seconds", _DEFAULT_SKEW_MS),
         source=str(location),
+        digest=_sha256(raw),
+        host_protected=_host_protected(Path(location)),
     )
 
 
@@ -328,7 +351,9 @@ def verify_assertion(
         raise AuthorityRefused("wrong-audience", f"assertion is for {claims['aud']!r}, not {trust.audience!r}")
     if not claims["exp"] > claims["nbf"] or not claims["exp"] > claims["iat"]:
         raise AuthorityRefused("malformed-assertion", "exp must follow nbf and iat")
-    if claims["exp"] - claims["iat"] > trust.max_lifetime_ms:
+    if claims["iat"] > now_ms + trust.clock_skew_ms:
+        raise AuthorityRefused("not-yet-valid", "assertion was issued in the future")
+    if claims["exp"] - min(claims["iat"], claims["nbf"]) > trust.max_lifetime_ms:
         raise AuthorityRefused("lifetime-too-long", "assertion lifetime exceeds the configured maximum")
     if now_ms + trust.clock_skew_ms < claims["nbf"]:
         raise AuthorityRefused("not-yet-valid", "assertion is not valid yet")
@@ -426,7 +451,10 @@ class AuthorityLog:
         self.directory = Path(state_dir) / "authority" / key
 
     def _ensure(self) -> Path:
-        self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        for folder in (self.directory.parent, self.directory):
+            folder.mkdir(mode=0o700, exist_ok=True)
+            if os.name == "posix":
+                os.chmod(folder, 0o700)
         if self.directory.is_symlink() or not self.directory.is_dir():
             raise AuthorityRefused("authority-log-corrupt", "authority directory is unsafe")
         return self.directory
@@ -511,6 +539,8 @@ def _epoch_summary(record: Mapping[str, Any]) -> dict[str, Any]:
         "authority_expires_at_ms": record.get("authority_expires_at_ms"),
         "accepted_at_ms": record.get("accepted_at_ms"),
         "offer_digest": record.get("offer_digest"),
+        "authority": record.get("authority", "advisory"),
+        "trust_digest": record.get("trust_digest"),
         "record_digest": chain_digest(record),
     }
 
@@ -543,7 +573,12 @@ def require_write_authority(
         raise AuthorityRefused("scope-missing", "assertion does not grant work:write")
     if claims["workspace"] != repo_id or claims["task"] != workstream:
         raise AuthorityRefused("fenced", "assertion is for another workspace or workstream")
-    if attempt_digest(claims["jti"]) != current.get("attempt_digest") or claims["sub"] != current.get("holder"):
+    if (
+        attempt_digest(claims["jti"]) != current.get("attempt_digest")
+        or claims["sub"] != current.get("holder")
+        or claims["iss"] != current.get("issuer")
+        or assertion.get("kid") != current.get("key_id")
+    ):
         raise AuthorityRefused(
             "fenced",
             f"authority moved to epoch {current['epoch']} ({current['holder']!r}); this assertion is not current",
@@ -629,6 +664,9 @@ def accept_handoff(
         "workspace_commitment": workspace_commitment,
         "authority_expires_at_ms": claims["exp"],
         "accepted_at_ms": timestamp,
+        "trust_digest": trust.digest,
+        "trust_host_protected": trust.host_protected,
+        "authority": "host-protected-trust" if trust.host_protected else "advisory",
         "evidence": evidence,
         "prev_digest": chain_digest(history[-1]) if history else "",
     }

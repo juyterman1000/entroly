@@ -187,6 +187,50 @@ def _human_lines(payload: dict[str, Any]) -> list[str]:
     elif "acknowledged" in payload:
         lines.append("  Status       Recovered work state acknowledged.")
 
+    elif payload.get("kind") == "work_evidence":
+        _add_field(lines, "Evidence", payload.get("record_id"))
+        _add_field(lines, "Verdict", f"{payload.get('verdict')} (exit {payload.get('exit_code')})")
+        trace = payload.get("trace") or {}
+        _add_field(lines, "Trace", "complete" if trace.get("complete")
+                   else "incomplete: " + ", ".join(trace.get("reasons") or []))
+        _add_field(lines, "Inputs", sum((payload.get("inputs") or {}).values()))
+
+    elif payload.get("kind") == "work_evidence_check":
+        _add_field(lines, "Evidence", payload.get("record_id"))
+        _add_field(lines, "Decision", payload.get("decision"))
+        _add_field(lines, "Reasons", ", ".join(payload.get("reasons") or []))
+        for item in (payload.get("changed") or [])[:10]:
+            lines.append(f"  Changed      {item.get('kind')} {item.get('key')}")
+
+    elif payload.get("kind") == "work_accept":
+        epoch = payload.get("epoch") or {}
+        _add_field(lines, "Outcome", payload.get("outcome"))
+        _add_field(lines, "Holder", f"{epoch.get('holder')} (epoch {epoch.get('epoch')}, {epoch.get('authority')})")
+        for action in payload.get("next_actions") or []:
+            lines.append(f"  Next         {action}")
+        for warning in payload.get("warnings") or []:
+            lines.append(f"  Warning      {warning}")
+
+    elif payload.get("kind") == "work_authority":
+        current = payload.get("current") or {}
+        _add_field(lines, "Workstream", payload.get("workstream"))
+        _add_field(lines, "Epoch", payload.get("epoch"))
+        if current:
+            _add_field(lines, "Holder", f"{current.get('holder')} ({current.get('authority')})")
+            _add_field(lines, "Expired", "yes" if payload.get("expired") else "no")
+
+    elif payload.get("kind") == "work_host_key":
+        _add_field(lines, "Public key", payload.get("public_key"))
+        _add_field(lines, "Key id", payload.get("key_id"))
+        _add_field(lines, "Private key", payload.get("private_key_file"))
+        lines.append("  Note         Keep the private key on the host; pin the public key in the trust file.")
+
+    elif payload.get("kind") == "work_host_assertion":
+        claims = (payload.get("assertion") or {}).get("claims") or {}
+        _add_field(lines, "Subject", claims.get("sub"))
+        _add_field(lines, "Expires", claims.get("exp"))
+        lines.append("  State        Assertion signed; use --json or --out for the file.")
+
     elif "handoff" in payload:
         receipt = _mapping(payload.get("handoff"))
         lines.append("  Status       Handoff sealed to the current Work Graph.")
@@ -196,6 +240,9 @@ def _human_lines(payload: dict[str, Any]) -> list[str]:
         _add_field(lines, "Receipt", _first(receipt, "receipt_id", "handoff_id", "id"))
         _add_field(lines, "Inbox ref", payload.get("handoff_ref"))
         _add_field(lines, "Commitment", _first(receipt, "graph_commitment", "commitment"))
+        if payload.get("offer_digest"):
+            _add_field(lines, "Offer digest", payload.get("offer_digest"))
+            _add_field(lines, "Repository", _mapping(payload.get("offer")).get("repo_id"))
         if len(lines) == 2:
             lines.append("  State        Handoff created; use --json for the complete receipt.")
 
@@ -317,7 +364,15 @@ def _authority_inputs(args: Any) -> tuple[dict[str, Any] | None, Any]:
     path = getattr(args, "assertion", "") or os.environ.get(ASSERTION_FILE_ENV, "")
     if not path:
         return None, None
-    return load_assertion(path), load_trust(getattr(args, "trust_file", "") or None)
+    from .handoff_authority import AuthorityRefused
+
+    try:
+        trust = load_trust(getattr(args, "trust_file", "") or None)
+    except AuthorityRefused:
+        # Needed only if the workstream is held; require_write_authority asks
+        # for it then, so a global assertion does not break unheld work.
+        trust = None
+    return load_assertion(path), trust
 
 
 def _evidence_ref(store: WorkGraphStore, record_id: str) -> dict[str, Any]:
@@ -345,6 +400,7 @@ def _evidence_action(project: Path, args: Any) -> dict[str, Any]:
         record_digest,
         run_and_record,
         save_record,
+        state_digest_secret,
         summarize_inputs,
     )
 
@@ -381,6 +437,7 @@ def _evidence_action(project: Path, args: Any) -> dict[str, Any]:
                 "authority_epoch": authority["epoch"] if authority else None,
             },
             repository_id=store.repo_id,
+            digest_secret=state_digest_secret(store.repo_dir),
         )
         save_record(store.repo_dir, record)
         return {
@@ -408,7 +465,7 @@ def _evidence_action(project: Path, args: Any) -> dict[str, Any]:
                 "reasons": ["record-unavailable"],
                 "detail": str(exc),
             }
-        decision = assess(record, project)
+        decision = assess(record, project, digest_secret=state_digest_secret(store.repo_dir))
         return {
             "status": "ok",
             "kind": "work_evidence_check",
@@ -430,7 +487,7 @@ def _next_action(item: dict[str, Any], decision: dict[str, Any]) -> str:
 
 
 def _accept_action(project: Path, args: Any) -> dict[str, Any]:
-    from .evidence_applicability import EvidenceError, assess, load_record, provenance
+    from .evidence_applicability import EvidenceError, assess, load_record, provenance, state_digest_secret
     from .handoff_authority import accept_handoff, load_assertion, load_trust
 
     store = _store_for_path(project)
@@ -446,8 +503,16 @@ def _accept_action(project: Path, args: Any) -> dict[str, Any]:
         except EvidenceError:
             result = {"decision": "unknown", "reasons": ["record-unavailable"], "changed_count": 0}
         else:
-            result = assess(record, project, expected_digest=str(item.get("record_digest") or ""))
-            result["provenance"] = provenance(record, bound_by="host-assertion-over-offer")
+            try:
+                result = assess(
+                    record, project, expected_digest=str(item.get("record_digest") or ""),
+                    digest_secret=state_digest_secret(store.repo_dir),
+                )
+            except Exception:  # a record that cannot be assessed is never reused
+                result = {"decision": "unknown", "reasons": ["record-malformed"], "changed_count": 0}
+                details[record_id] = result
+                return result
+            result["provenance"] = provenance(record, bound_by="record digest in the host-signed offer (host did not inspect it)")
         details[record_id] = result
         return result
 
@@ -471,12 +536,19 @@ def _accept_action(project: Path, args: Any) -> dict[str, Any]:
         _next_action(handed.get(record_id, {}), decision)
         for record_id, decision in details.items()
     ] or ["no verification evidence was handed over: run the verification before relying on it"]
+    warnings = []
+    if accepted.get("epoch", {}).get("authority") != "host-protected-trust":
+        warnings.append(
+            "advisory authority: the trust file is writable by this user, so a local process could "
+            "have pinned its own key; the host should verify this epoch's key_id against its own keys"
+        )
     return {
         "status": "ok",
         "kind": "work_accept",
         **accepted,
         "evidence_details": details,
         "next_actions": next_actions,
+        "warnings": warnings,
     }
 
 
@@ -729,7 +801,16 @@ def run(args: Any) -> int:
     except Exception as exc:
         payload = _error(exc)
     _emit(payload, json_output=json_output)
-    return 0 if payload.get("status") == "ok" else 1
+    if payload.get("status") != "ok":
+        return 1
+    if payload.get("kind") == "work_evidence":
+        # The verification's own result: wrapping a failing test run must not
+        # turn a red build green.
+        code = payload.get("exit_code")
+        return code if isinstance(code, int) and 0 <= code < 256 else 1
+    if payload.get("kind") == "work_evidence_check":
+        return 0 if payload.get("decision") == "reuse" else 3
+    return 0
 
 
 def _add_authority_arguments(parser: argparse.ArgumentParser, help_text: str) -> None:

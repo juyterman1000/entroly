@@ -5,22 +5,32 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
 
 ## Unreleased
 
-- `entroly-work evidence run` runs a verification command itself and binds
-  the result to digests of what it read: files, scanned directories, probed
-  paths, environment variables, the interpreter and loaded modules.
-  `evidence check` then answers `reuse`, `revalidate` (listing what changed)
-  or `unknown`. An untraced child process, an unreadable input or an altered
-  record is never reused. `entroly-work accept` takes over a handed-off
-  workstream only with a host-signed Ed25519 assertion from a pinned key. The
-  assertion is bound to the successor, workspace, workstream, the exact offer
-  (which includes the evidence digests) and a single attempt, and concurrent
-  acceptances have one winner. After acceptance, `handoff`,
-  `evidence run --workstream` and the MCP `work_handoff` tool need the
-  current holder's assertion. `host-keygen`, `issue-assertion` and
-  `authority` are new. Existing handoffs keep working. A handoff made before
-  this version, or through MCP, carries no offer and cannot be accepted this
-  way. Verifying assertions needs `cryptography` (`entroly[receipt-proof]`).
-  See `docs/agent-continuity.md` and
+- `entroly-work evidence run` runs a verification command itself and binds the
+  result to digests of what its Python processes read: files, scanned
+  directories, probed paths, environment variables, interpreter start-up
+  inputs, the interpreter and loaded modules. It exits with the command's own
+  code. `evidence check` answers `reuse` (exit 0), `revalidate` (exit 3,
+  listing what changed) or `unknown` (exit 3), and fails closed to unknown on
+  any of these:
+  - a child process or launcher that the tracer did not see;
+  - lost trace events;
+  - an input that changed during the run;
+  - an unreadable input;
+  - a record that is not the one handed over.
+
+  Records are not signed. A process that can write Entroly's state can forge
+  one, so a result is only as trustworthy as the workspace it was recorded in.
+  `entroly-work accept` moves authority over a handed-off workstream on an
+  Ed25519 host assertion, bound to the successor, workspace, workstream, the
+  exact offer and a single attempt. Concurrent acceptances have one winner
+  within a state directory. The keys come from a trust file the caller names.
+  Unless that file is beyond the current user's reach, the acceptance is
+  reported as `advisory`, because a local process could have pinned its own
+  key. After acceptance, `handoff`, `evidence run --workstream` and MCP
+  `work_handoff` need the current holder's assertion; other writes are not
+  fenced. `host-keygen`, `issue-assertion` and `authority` are new. Handoffs
+  made before this version, or through MCP, carry no offer and cannot be
+  accepted this way. See `docs/agent-continuity.md` and
   `docs/research/authenticated-handoff-evidence.md`.
 
 - `entroly export-proof` / `entroly verify-proof`: a signed, offline-verifiable

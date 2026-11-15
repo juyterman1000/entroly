@@ -35,6 +35,13 @@ an observation that cannot be written makes the trace incomplete, never wrong.
 from __future__ import annotations
 
 TRACE_DIR_ENV = "ENTROLY_EVIDENCE_TRACE_DIR"
+# Audit events that change a path without opening it for writing; every path
+# argument is recorded as written, so a file the run read and then replaced is
+# never bound as an input.
+_MUTATION_EVENTS = frozenset({
+    "os.rename", "os.remove", "os.rmdir", "os.truncate", "os.link", "os.symlink",
+    "os.chmod", "os.utime", "shutil.copyfile", "shutil.copytree", "shutil.move", "shutil.rmtree",
+})
 _SPAWN_EVENTS = frozenset({
     "subprocess.Popen",
     "os.posix_spawn",
@@ -69,7 +76,12 @@ def _install() -> None:  # pragma: no cover - runs only inside traced children
     except OSError:
         return
 
-    busy = [False]
+    from _thread import get_ident
+
+    # Re-entrancy is guarded per thread. One flag shared by all threads made a
+    # hook running in one thread silently drop events from the others.
+    busy_threads: set[int] = set()
+    lost = [False]
     seen: set[tuple[str, str]] = set()
     written_env: set[str] = set()
     getcwd = os.getcwd
@@ -83,7 +95,7 @@ def _install() -> None:  # pragma: no cover - runs only inside traced children
             line = dumps(record, separators=(",", ":"), ensure_ascii=False)
             write(fd, (line + "\n").encode("utf-8", "surrogatepass"))
         except Exception:
-            busy[0] = True  # stop observing; the missing exit record marks it incomplete
+            lost[0] = True  # reported in the exit record; the trace becomes incomplete
 
     def as_path(value) -> str | None:
         if value is None or isinstance(value, int):
@@ -115,9 +127,9 @@ def _install() -> None:  # pragma: no cover - runs only inside traced children
         return False
 
     def hook(event: str, args) -> None:
-        if busy[0]:
+        if get_ident() in busy_threads:
             return
-        busy[0] = True
+        busy_threads.add(get_ident())
         try:
             if event == "open":
                 path = as_path(args[0])
@@ -126,7 +138,21 @@ def _install() -> None:  # pragma: no cover - runs only inside traced children
                     flags = args[2] if len(args) > 2 else None
                     kind = "write" if writes(mode, flags) else "read"
                     if once(kind, path):
-                        emit({"t": "open", "p": path, "w": kind == "write"})
+                        record = {"t": "open", "p": path, "w": kind == "write"}
+                        if kind == "read":
+                            # Size and mtime as first read, so the recorder can
+                            # tell an input that changed during the run.
+                            try:
+                                st = original_stat(path)
+                                record["s"] = [st.st_size, st.st_mtime_ns]
+                            except OSError:
+                                pass
+                        emit(record)
+            elif event in _MUTATION_EVENTS:
+                for value in args[:2]:
+                    path = as_path(value) if isinstance(value, (str, bytes)) or hasattr(value, "__fspath__") else None
+                    if path is not None and once("write", path):
+                        emit({"t": "open", "p": path, "w": True})
             elif event in ("os.listdir", "os.scandir"):
                 target = args[0] if args else None
                 path = as_path(target if target is not None else getcwd())
@@ -153,25 +179,25 @@ def _install() -> None:  # pragma: no cover - runs only inside traced children
             elif event in _SPAWN_EVENTS:
                 emit({"t": "spawn", "e": event})
         except Exception:
-            pass
+            lost[0] = True
         finally:
-            busy[0] = False
+            busy_threads.discard(get_ident())
 
     original_stat = os.stat
     original_lstat = os.lstat
 
     def probe(path) -> None:
-        if busy[0]:
+        if get_ident() in busy_threads:
             return
-        busy[0] = True
+        busy_threads.add(get_ident())
         try:
             text = as_path(path)
             if text is not None and once("probe", text):
                 emit({"t": "probe", "p": text})
         except Exception:
-            pass
+            lost[0] = True
         finally:
-            busy[0] = False
+            busy_threads.discard(get_ident())
 
     def traced_stat(path, *args, **kwargs):
         if kwargs.get("dir_fd") is None:  # relative to an open directory: not resolvable
@@ -182,6 +208,13 @@ def _install() -> None:  # pragma: no cover - runs only inside traced children
         if kwargs.get("dir_fd") is None:
             probe(path)
         return original_lstat(path, *args, **kwargs)
+
+    original_access = os.access
+
+    def traced_access(path, *args, **kwargs):
+        if kwargs.get("dir_fd") is None:
+            probe(path)
+        return original_access(path, *args, **kwargs)
 
     environ_class = type(os.environ)
     original_getitem = environ_class.__getitem__
@@ -198,15 +231,15 @@ def _install() -> None:  # pragma: no cover - runs only inside traced children
         return key if isinstance(key, str) else None
 
     def traced_getitem(self, key):
-        if not busy[0]:
+        if get_ident() not in busy_threads:
             name = env_key(key)
             if name is not None and name not in written_env and name != TRACE_DIR_ENV:
-                busy[0] = True
+                busy_threads.add(get_ident())
                 try:
                     if once("env", name):
                         emit({"t": "env", "k": name})
                 finally:
-                    busy[0] = False
+                    busy_threads.discard(get_ident())
         return original_getitem(self, key)
 
     def traced_setitem(self, key, value):
@@ -222,17 +255,17 @@ def _install() -> None:  # pragma: no cover - runs only inside traced children
         return original_delitem(self, key)
 
     def traced_iter(self):
-        if not busy[0]:
-            busy[0] = True
+        if get_ident() not in busy_threads:
+            busy_threads.add(get_ident())
             try:
                 if once("env-iter", ""):
                     emit({"t": "env-iter"})
             finally:
-                busy[0] = False
+                busy_threads.discard(get_ident())
         return original_iter(self)
 
     def at_exit() -> None:
-        busy[0] = True
+        busy_threads.add(get_ident())
         try:
             modules = {}
             for name, module in list(sys.modules.items()):
@@ -253,7 +286,7 @@ def _install() -> None:  # pragma: no cover - runs only inside traced children
                             distributions[dist] = ""
             except Exception:
                 distributions = {"": "unresolved"}
-            emit({"t": "exit", "modules": modules, "dists": distributions})
+            emit({"t": "exit", "modules": modules, "dists": distributions, "lost": lost[0]})
         except Exception:
             pass
 
@@ -265,15 +298,37 @@ def _install() -> None:  # pragma: no cover - runs only inside traced children
         "version": sys.version,
         "cwd": getcwd(),
         "flags": [bool(sys.flags.isolated), bool(sys.flags.ignore_environment)],
+        # The argv this interpreter was started with. A shell script ending
+        # in ``exec python ...`` keeps its pid, so only this tells the
+        # recorder that an untraced program ran first.
+        "argv": list(getattr(sys, "orig_argv", sys.argv)),
     })
-    atexit.register(at_exit)  # registered first, so it runs after the command's own handlers
+    # shutil.rmtree defends against symlink attacks only while os.stat is in
+    # os.supports_dir_fd / supports_fd / supports_follow_symlinks; replacing the
+    # function must not silently turn that defence off in the traced program.
+    for capability in ("supports_dir_fd", "supports_fd", "supports_follow_symlinks"):
+        members = getattr(os, capability, None)
+        if isinstance(members, set):
+            if original_stat in members:
+                members.add(traced_stat)
+            if original_lstat in members:
+                members.add(traced_lstat)
+    for capability in ("supports_dir_fd", "supports_effective_ids", "supports_follow_symlinks"):
+        members = getattr(os, capability, None)
+        if isinstance(members, set) and original_access in members:
+            members.add(traced_access)
     os.stat = traced_stat
     os.lstat = traced_lstat
+    os.access = traced_access
     environ_class.__getitem__ = traced_getitem
     environ_class.__setitem__ = traced_setitem
     environ_class.__delitem__ = traced_delitem
     environ_class.__iter__ = traced_iter
     sys.addaudithook(hook)
+    # Only now: an interpreter without audit hooks (before 3.8) fails above and
+    # never writes an exit record, so its trace is incomplete, not empty and
+    # complete. Registered before the command's own handlers, so it runs last.
+    atexit.register(at_exit)
 
     # Chain to the sitecustomize this one shadows, if there is one.
     here = os.path.dirname(abspath(__file__))

@@ -408,7 +408,7 @@ def test_cli_handoff_accept_and_fence(tmp_path: Path, monkeypatch, capsys) -> No
 
     (repo / "calc.py").write_text("def add(a, b):\n    return a + b + 0\n", encoding="utf-8")
     code, check = _cli(capsys, *project, "evidence", "check", "--record", run["record_id"])
-    assert code == 0 and check["decision"] == "revalidate"
+    assert code == 3 and check["decision"] == "revalidate"  # 0 is reserved for reuse
     assert check["provenance"]["observed_by_entroly"] is True
     assert check["provenance"]["recorded_by_is_authenticated"] is False
 
@@ -475,3 +475,47 @@ def test_cli_accept_with_missing_evidence_says_rerun(tmp_path: Path, monkeypatch
     assert accepted["evidence"][0]["decision"] == "unknown"
     assert "record-unavailable" in accepted["evidence"][0]["reasons"]
     assert accepted["next_actions"][0].startswith("rerun")
+
+
+# ── regressions from the independent security review ────────────────
+
+
+def test_a_caller_supplied_trust_file_makes_authority_advisory(world: World) -> None:
+    """A local process can pin its own key; the acceptance must say so."""
+    rogue_private, rogue_public = generate_host_key()
+    rogue_trust = world.trust_path.with_name("rogue-trust.json")
+    rogue_trust.write_text(json.dumps({
+        "schema": "entroly.handoff-trust.v1", "audience": AUDIENCE, "issuers": {ISSUER: [rogue_public]},
+    }), encoding="utf-8")
+    trust = load_trust(str(rogue_trust))
+    assert trust.host_protected is False
+    result = accept_handoff(
+        world.store.repo_dir, repo_id=world.store.repo_id, handoff_ref=world.ref,
+        assertion=world.assertion(private=rogue_private), trust=trust,
+        workspace_commitment=WORKSPACE_COMMITMENT,
+    )
+    assert result["epoch"]["authority"] == "advisory"
+    assert world.history()[0]["trust_digest"] == trust.digest
+    assert world.history()[0]["key_id"] != __import__("entroly.handoff_authority", fromlist=["key_id"]).key_id(
+        world.public
+    )
+
+
+def test_a_future_issue_time_does_not_stretch_the_lifetime(world: World) -> None:
+    now = int(time.time() * 1000)
+    stretched = world.assertion(now_ms=now + 3_000_000, not_before_ms=now - 60_000, ttl_seconds=600)
+    _refused(world, stretched, "not-yet-valid")
+
+
+def test_evidence_run_exits_with_the_verifications_own_code(tmp_path: Path, monkeypatch, capsys) -> None:
+    """Wrapping a failing test run must not turn a red build green."""
+    _require_native()
+    monkeypatch.setenv("ENTROLY_DIR", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-b", "main")
+    (repo / "fail.py").write_text("raise SystemExit(4)\n", encoding="utf-8")
+    code, run = _cli(capsys, "--project", str(repo), "evidence", "run", "--", sys.executable, "fail.py")
+    assert code == 4 and run["verdict"] == "failed"
+    code, check = _cli(capsys, "--project", str(repo), "evidence", "check", "--record", run["record_id"])
+    assert code == 0 and check["decision"] == "reuse"  # the failure still applies

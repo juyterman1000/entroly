@@ -202,32 +202,45 @@ The decision is sound for reuse under these assumptions:
 
 1. The outcome is a deterministic function of the closure. Clock time,
    randomness, network responses and hardware are not bound.
-2. Native code is opaque. File reads and `getenv` calls made from C extensions
-   are not observed. Non-Python child processes make the record unknown,
-   because they cannot be traced.
+2. Native code is opaque. File reads and `getenv` calls from C extensions,
+   and `stat` calls by the import system itself, are not observed. A
+   namespace package gaining `__init__.py` is caught only through the import
+   listing.
 3. Excluded tool caches do not change outcomes. For example, a stored
-   Hypothesis example or a `--lf` selection is not an input.
-4. `os.stat` calls relative to a directory descriptor are not resolved. In
-   practice only temporary-directory cleanup makes them.
+   Hypothesis example, a `--lf` selection or a `.pyc` with the same mtime and
+   size as its source is not an input.
+4. Listings and `stat` calls relative to a directory descriptor are not
+   resolved. `shutil.rmtree` and `os.fwalk` make them.
+5. The workspace is honest. Records and epoch logs are unkeyed digests, not
+   signatures.
 
-Known conservative behaviour, where a rerun is correct but redundant:
+The trace is marked incomplete, and the result is never reused, in these cases:
 
-- pytest's directory collector scans the project root and the test directory
-  in full, so any new name there revalidates (case C4 below, and a pinned
-  test).
-- Presentation variables that pytest reads, such as `COLUMNS`, `NO_COLOR` and
-  `FORCE_COLOR`, are bound, so two agents with different terminal settings
-  revalidate.
-- Any package install in the virtual environment revalidates.
+- a process that is not traced, including a launcher that `exec`s Python and
+  keeps its pid;
+- a lost trace event;
+- an environment that was enumerated;
+- an input modified or replaced by the run;
+- an input whose size or mtime changed during the run.
+
+Known conservative behaviour (a correct but redundant rerun):
+
+- New names in a directory pytest scanned (case C4).
+- Presentation variables pytest reads (`COLUMNS`, `NO_COLOR`).
+- Any package install in the environment.
+- Every `PYTHON*` start-up variable.
 
 ## 6. Security and privacy review notes
 
-- **The verifier runs inside the workspace.** A process that can rewrite the
-  pinned trust file or the state directory can subvert it, for example by
-  editing the head epoch record, which is not self-signed. The trust file
-  belongs on a read-only path the host provides. The host can audit every
-  epoch record against its own issuance log through `assertion_digest`. The
-  private key never needs to be on the agent's machine.
+- **The caller chooses the trust file.** A local process can generate a key,
+  write its own trust file and accept a real offer as the named successor.
+  Entroly cannot prevent this from inside the workspace. It records the trust
+  file's digest and key id in the epoch. It labels the authority `advisory`
+  unless the trust file and its directory are beyond the current user's reach
+  (as with a read-only host mount; never as root). The host must check epoch
+  key ids against its own keys. Acceptance binds to one state directory, so
+  the same assertion can be accepted in another one; the host must record
+  each attempt id it consumes.
 - **The assertion is a bearer capability** for the attempt while it is valid.
   It is written 0600 and not stored in the state directory. Only its digest
   and the digest of its `jti` are stored.
@@ -252,6 +265,32 @@ Known conservative behaviour, where a rerun is correct but redundant:
 
 ## 7. Results
 
-Filled in from `benchmarks/results/handoff_evidence.json` and
-`benchmarks/results/handoff_evidence_replay.json`; see the PR description for
-the exact head the runs used.
+See `benchmarks/results/handoff_evidence.json` (challenge suite) and
+`benchmarks/results/handoff_evidence_replay.json` (held-out click replay).
+Each file records the exact head it ran on.
+
+## 8. Independent review
+
+Two reviewers with no part in writing the code reviewed `554bb380`, one for
+security and one for production. Their reproductions changed the code before
+the final runs:
+
+| Finding | Severity | Change |
+|---|---|---|
+| A local process can pin its own key | high | `advisory` label, trust digest and key id in the epoch, documented host check |
+| Evidence records are unsigned | high | `record_is_signed: false` in provenance; a record with no traced reads is `unknown`; no claim of host inspection |
+| A shell that `exec`s Python looked fully traced | high | The root's own argv must match the command (direct or shebang), else `command-started-by-untraced-program` |
+| One re-entrancy flag for all threads dropped reads | high | Per-thread guard; dropped events mark the trace incomplete |
+| A missing audit hook still wrote a complete trace | high | Exit handler registered only after the audit hook |
+| `--timeout` hung on grandchildren | high/medium | Process group killed; output streamed to private files |
+| Start-up inputs (`PYTHONPATH`, `.pth`) were unbound | medium | Every `PYTHON*` start-up variable and each `.pth` file's contents bound |
+| Rename/remove after a read was not a write; inputs changed during the run | medium | Mutation audit events recorded as writes; first-read size and mtime compared after the run |
+| `os.access`, and new `__init__.py` in import listings | medium | Traced as probes; `__init__` kept in listings |
+| Tracing disabled `rmtree`'s symlink defence | medium | Wrappers added to `os.supports_*` |
+| Future `iat` stretched the lifetime | low | `iat <= now + skew`; lifetime measured from `min(iat, nbf)` |
+| Low-entropy environment values could be brute-forced from the record | low | Digests keyed by a state-directory secret |
+| `evidence run` exited 0 on a failed command | medium | Exits with the command's code; `check` exits 0 only for reuse |
+| Fence ignored issuer and key; a malformed record crashed `accept` | low | Both fixed |
+| One winner per state directory; deleting the log unfences; only three writes fenced; argv stored verbatim | medium/low | Documented, not fixed |
+
+The reviewers' reports are kept with the private evidence, outside Git.
