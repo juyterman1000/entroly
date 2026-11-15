@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 import threading
 import time
+from random import Random
 from typing import Any
 
 # ── Passive Implicit Feedback ─────────────────────────────────────────────
@@ -54,7 +55,7 @@ class ImplicitFeedbackTracker:
     # Buffer cap for streaming responses (bytes)
     _MAX_BUFFER_BYTES = 50 * 1024  # 50KB — covers 99%+ of LLM responses
 
-    def __init__(self):
+    def __init__(self, *, sequential_drift: bool = False):
         self._lock = threading.Lock()
         # Per-client trajectory: client_key -> (query_simhash, selected_ids, timestamp)
         self._trajectories: dict[str, tuple] = {}
@@ -66,6 +67,7 @@ class ImplicitFeedbackTracker:
         self._total_assessed = 0
         # Monitor the change in the observed confusion rate.
         self._drift_detector = _FrozenBaselineDriftDetector()
+        self._sequential_drift = _SequentialConfusionMonitor() if sequential_drift else None
 
     def assess_response(self, response_text: str) -> float:
         """Assess an LLM response for confusion vs confidence.
@@ -190,6 +192,8 @@ class ImplicitFeedbackTracker:
             elif reward > 0.25:
                 self._confidence_detections += 1
             self._drift_detector.update(reward)
+            if self._sequential_drift is not None:
+                self._sequential_drift.update(reward < -0.25)
 
     def quality_trend(self) -> str:
         """Return current quality trend: 'stable', 'declining', or 'improving'."""
@@ -200,7 +204,7 @@ class ImplicitFeedbackTracker:
         """Return feedback tracker statistics."""
         with self._lock:
             drift_stats = self._drift_detector.to_dict()
-            return {
+            result = {
                 "total_assessed": self._total_assessed,
                 "confusion_detections": self._confusion_detections,
                 "confidence_detections": self._confidence_detections,
@@ -209,6 +213,66 @@ class ImplicitFeedbackTracker:
                 "quality_trend": drift_stats["trend"],
                 "drift_detector": drift_stats,
             }
+            if self._sequential_drift is not None:
+                result["sequential_drift_shadow"] = self._sequential_drift.to_dict()
+            return result
+
+
+class _SequentialConfusionMonitor:
+    """Fixed-score, one-sided conformal monitoring of the confusion heuristic.
+
+    Randomized sequential ranks are independently uniform for exchangeable
+    observations. Each bet integrates to one under a uniform rank. Future
+    start times hold their unspent weight in reserve, so their mixture starts
+    at one and has an anytime crossing bound of alpha under that null.
+    Traffic dependence and changes in workload mix limit its interpretation.
+    Calls are serialized by ImplicitFeedbackTracker.
+    """
+
+    _ALPHA = 0.05
+    _TAILS = (0.05, 0.20, 0.50)
+    _STAKE = 0.20
+    _RESTART_SCALE = 2048
+
+    def __init__(self, *, seed: int | None = None) -> None:
+        self._random = Random(seed)
+        self._count = 0
+        self._confused = 0
+        self._capital = [0.0] * len(self._TAILS)
+        self._evidence = 1.0
+        self._first_alarm_at: int | None = None
+
+    def update(self, confused: bool) -> None:
+        if self._first_alarm_at is not None:
+            return
+        self._count += 1
+        self._confused += confused
+        # Confusion sorts first. Include the new observation in the tie group.
+        below = 0 if confused else self._confused
+        tied = self._confused if confused else self._count - self._confused
+        rank = (below + self._random.random() * tied) / self._count
+
+        # Spread restart weight over the expected scale of the startup baseline.
+        # The weights telescope to one and leave positive weight for late changes.
+        denominator = self._RESTART_SCALE + self._count
+        restart_weight = self._RESTART_SCALE / ((denominator - 1) * denominator)
+        for i, tail in enumerate(self._TAILS):
+            bet = 1 - self._STAKE + (self._STAKE / tail if rank < tail else 0)
+            self._capital[i] = (self._capital[i] + restart_weight) * bet
+        self._evidence = sum(self._capital) / len(self._TAILS) + self._RESTART_SCALE / denominator
+        if self._evidence >= 1 / self._ALPHA:
+            self._first_alarm_at = self._count
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "method": "restarted_conformal_confusion_v1",
+            "null_assumption": "exchangeable_confusion_observations",
+            "nominal_alpha_under_null": self._ALPHA,
+            "observations_at_evaluation": self._count,
+            "e_value": self._evidence,
+            "first_alarm_at": self._first_alarm_at,
+            "production_authority": False,
+        }
 
 
 class _FrozenBaselineDriftDetector:
