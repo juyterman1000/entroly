@@ -392,3 +392,16 @@ def test_the_timeout_stops_grandchildren_too(tmp_path: Path) -> None:
                        work_dir=tmp_path / "work", timeout_seconds=1)
     assert time.monotonic() - started < 15
     assert not list((tmp_path / "work").glob("run-*"))
+
+
+def test_tool_caches_appearing_or_vanishing_do_not_revalidate(tmp_path: Path) -> None:
+    """Found on the held-out replay: a cleaned __pycache__ revalidated every commit."""
+    _require_native()
+    import shutil as _shutil
+
+    project = _project(tmp_path / "proj")
+    record, _ = _record(project, tmp_path / "work")
+    for cache in list(project.rglob("__pycache__")):
+        _shutil.rmtree(cache)
+    (project / ".pytest_cache").mkdir(exist_ok=True)
+    assert _decision(record, project)["decision"] == REUSE

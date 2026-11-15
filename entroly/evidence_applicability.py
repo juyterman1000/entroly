@@ -174,6 +174,12 @@ def _listing_digest(path: Path, consumer: str, import_names: frozenset[str]) -> 
         return _ABSENT
     except OSError:
         return "unreadable"
+    # Tool caches are excluded as inputs, so their names are not inputs either:
+    # a cleaned __pycache__ or a fresh .pytest_cache changes nothing a run used.
+    entries = [
+        entry for entry in entries
+        if entry not in _CACHE_PARTS and not entry.startswith(_CACHE_PREFIXES)
+    ]
     if consumer == "import":
         # The import system's directory cache resolves module names; only an
         # entry that could become (or stop being) one of the names attempted
