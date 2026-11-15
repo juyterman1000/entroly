@@ -68,6 +68,13 @@ def _live_binding(root: Path) -> tuple[dict[str, Any], str]:
 
 def challenge(root: Path, store: WorkGraphStore, ref: str) -> dict[str, Any]:
     """Return the exact fields a trusted host must sign for this workspace."""
+    claims, _ = _challenge_with_graph(root, store, ref)
+    return claims
+
+
+def _challenge_with_graph(
+    root: Path, store: WorkGraphStore, ref: str
+) -> tuple[dict[str, Any], tuple[int, str]]:
     digest = _reference(ref)
     inbox = _read_object(_inbox(store) / f"{digest}.json", _MAX_HANDOFF_BYTES)
     handoff, proof = inbox.get("handoff"), inbox.get("continuation_proof")
@@ -118,7 +125,7 @@ def challenge(root: Path, store: WorkGraphStore, ref: str) -> dict[str, Any]:
         "successor_id": handoff["to_agent"],
         "handoff_commitment": handoff["payload_commitment"],
         "continuation_sha256": stable_hash(proof),
-    }
+    }, (graph.revision, graph.graph_commitment)
 
 
 def _verification_decision(evidence: Any) -> dict[str, Any]:
@@ -174,7 +181,7 @@ def accept(
     folder = _inbox(store)
     target = folder / f"{digest}.accepted"
     with exclusive_file_lock(folder / "acceptance.lock", timeout=5):
-        expected = challenge(root, store, ref)
+        expected, graph_binding = _challenge_with_graph(root, store, ref)
         claims = assertion.receipt
         issued_at, expires_at = claims.get("issued_at_ms"), claims.get("expires_at_ms")
         verification_claim = (
@@ -201,6 +208,8 @@ def accept(
             "schema_version": 1,
             **expected,
             "issuer": issuer,
+            "issued_at_ms": issued_at,
+            "expires_at_ms": expires_at,
             "assertion_sha256": stable_hash(document),
             "decision": "accepted",
             "verification_evidence": "revalidate_before_reuse",
@@ -211,15 +220,33 @@ def accept(
                 "expires_at_ms": expires_at,
             }
             result["verification_evidence"] = "host_bound_check_decision"
-        if target.exists() or target.is_symlink():
-            if _read_object(target, _MAX_ASSERTION_BYTES) != result:
-                raise ValueError(
-                    "a different acceptance already exists for this handoff"
-                )
-        else:
-            if challenge(root, store, ref) != expected:
-                raise ValueError("workspace changed during handoff acceptance")
-            _write_receipt(target, result)
+        if _challenge_with_graph(root, store, ref) != (expected, graph_binding):
+            raise ValueError("workspace or graph changed during handoff acceptance")
+        # Match graph writers' lock order. Workspace observation remains outside
+        # the graph lock so a slow Git scan cannot strand the graph writer.
+        with store.lock():
+            graph = store._load_unlocked()
+            if (graph.revision, graph.graph_commitment) != graph_binding:
+                raise ValueError("handoff graph revision changed during acceptance")
+            if not issued_at <= time.time_ns() // 1_000_000 < expires_at:
+                raise ValueError("host assertion expired during handoff acceptance")
+            if target.exists() or target.is_symlink():
+                stored = _read_object(target, _MAX_ASSERTION_BYTES)
+                if stored != result:
+                    # Earlier receipts used the same assertion digest but did
+                    # not record the validity interval at the top level.
+                    old_result = {
+                        k: v
+                        for k, v in result.items()
+                        if k not in {"issued_at_ms", "expires_at_ms"}
+                    }
+                    if stored != old_result:
+                        raise ValueError(
+                            "a different acceptance already exists for this handoff"
+                        )
+                    _write_receipt(target, result)
+            else:
+                _write_receipt(target, result)
     return result
 
 

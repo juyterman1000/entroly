@@ -85,7 +85,8 @@ trust boundary for this command.
 
 The acceptance record binds the successor, exact checkout, handoff and
 continuation digests, and current workspace state. A current graph revision
-is required. Unbound source changes require a fresh handoff. The command
+is required. Receipts include the signed validity interval. Unbound source
+changes require a fresh handoff. The command
 records acceptance. By default it requires revalidation before evidence reuse.
 A host that has independently checked a prior passing result and can bind the
 complete inputs for the same verification action may include a signed
