@@ -58,6 +58,18 @@ _IMPORT_FILLER = "<frozen importlib._bootstrap_external>"
 _METADATA_FILES = ("importlib/metadata/__init__.py", "importlib_metadata/__init__.py")
 
 
+class _Unbound:
+    """A callable that stays a plain function when stored on a class."""
+
+    __slots__ = ("_function",)
+
+    def __init__(self, function) -> None:
+        self._function = function
+
+    def __call__(self, *args, **kwargs):
+        return self._function(*args, **kwargs)
+
+
 def _install() -> None:  # pragma: no cover - runs only inside traced children
     import atexit
     import json
@@ -303,6 +315,9 @@ def _install() -> None:  # pragma: no cover - runs only inside traced children
         # recorder that an untraced program ran first.
         "argv": list(getattr(sys, "orig_argv", sys.argv)),
     })
+    stat_wrapper = _Unbound(traced_stat)
+    lstat_wrapper = _Unbound(traced_lstat)
+    access_wrapper = _Unbound(traced_access)
     # shutil.rmtree defends against symlink attacks only while os.stat is in
     # os.supports_dir_fd / supports_fd / supports_follow_symlinks; replacing the
     # function must not silently turn that defence off in the traced program.
@@ -310,16 +325,21 @@ def _install() -> None:  # pragma: no cover - runs only inside traced children
         members = getattr(os, capability, None)
         if isinstance(members, set):
             if original_stat in members:
-                members.add(traced_stat)
+                members.add(stat_wrapper)
             if original_lstat in members:
-                members.add(traced_lstat)
+                members.add(lstat_wrapper)
     for capability in ("supports_dir_fd", "supports_effective_ids", "supports_follow_symlinks"):
         members = getattr(os, capability, None)
         if isinstance(members, set) and original_access in members:
-            members.add(traced_access)
-    os.stat = traced_stat
-    os.lstat = traced_lstat
-    os.access = traced_access
+            members.add(access_wrapper)
+    # Install callable objects, not plain functions: a function stored as a
+    # class attribute becomes a bound method. Python 3.10's pathlib keeps
+    # ``stat = os.stat`` on its accessor class, so a function there would be
+    # called with the accessor as an extra first argument and Path.exists()
+    # would raise inside the traced program.
+    os.stat = stat_wrapper
+    os.lstat = lstat_wrapper
+    os.access = access_wrapper
     environ_class.__getitem__ = traced_getitem
     environ_class.__setitem__ = traced_setitem
     environ_class.__delitem__ = traced_delitem

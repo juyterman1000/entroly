@@ -405,3 +405,21 @@ def test_tool_caches_appearing_or_vanishing_do_not_revalidate(tmp_path: Path) ->
         _shutil.rmtree(cache)
     (project / ".pytest_cache").mkdir(exist_ok=True)
     assert _decision(record, project)["decision"] == REUSE
+
+
+def test_tracing_does_not_change_os_functions_stored_on_classes(tmp_path: Path) -> None:
+    """Python 3.10's pathlib keeps ``stat = os.stat`` on a class; a plain
+    function wrapper would bind as a method and break ``Path.exists()``."""
+    _require_native()
+    project = _project(tmp_path / "proj")
+    script = (
+        "import os, pathlib, sys\n"
+        "class Accessor:\n"
+        "    stat = os.stat\n"
+        "    access = os.access\n"
+        "Accessor().stat('.')\n"
+        "Accessor().access('.', os.R_OK)\n"
+        "sys.exit(0 if pathlib.Path('pyproject.toml').exists() else 9)\n"
+    )
+    record, output = _record(project, tmp_path / "work", argv=[sys.executable, "-c", script])
+    assert record["result"]["exit_code"] == 0, output["stderr_tail"]
