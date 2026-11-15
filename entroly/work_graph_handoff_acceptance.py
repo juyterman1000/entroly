@@ -121,6 +121,31 @@ def challenge(root: Path, store: WorkGraphStore, ref: str) -> dict[str, Any]:
     }
 
 
+def _verification_decision(evidence: Any) -> dict[str, Any]:
+    """Compare the host's complete action-input commitments for one prior pass."""
+    fields = {
+        "check_sha256",
+        "prior_pass_sha256",
+        "prior_inputs_sha256",
+        "current_inputs_sha256",
+    }
+    if not isinstance(evidence, dict) or set(evidence) != fields:
+        raise ValueError("invalid host verification evidence")
+    for field, value in evidence.items():
+        if field == "current_inputs_sha256" and value is None:
+            continue
+        if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value):
+            raise ValueError("verification evidence requires canonical SHA-256 digests")
+    current = evidence["current_inputs_sha256"]
+    if current is None:
+        action, reason = "rerun", "inputs_unavailable"
+    elif current != evidence["prior_inputs_sha256"]:
+        action, reason = "rerun", "inputs_changed"
+    else:
+        action, reason = "reuse", "inputs_match"
+    return {**evidence, "action": action, "reason": reason, "authority": "trusted_host"}
+
+
 def accept(
     root: Path, store: WorkGraphStore, ref: str, assertion_path: Path
 ) -> dict[str, Any]:
@@ -152,11 +177,15 @@ def accept(
         expected = challenge(root, store, ref)
         claims = assertion.receipt
         issued_at, expires_at = claims.get("issued_at_ms"), claims.get("expires_at_ms")
+        verification_claim = (
+            {"verification": claims["verification"]} if "verification" in claims else {}
+        )
         if claims != {
             **expected,
             "issuer": issuer,
             "issued_at_ms": issued_at,
             "expires_at_ms": expires_at,
+            **verification_claim,
         }:
             raise ValueError(
                 "host assertion does not match the handoff and current workspace"
@@ -176,6 +205,12 @@ def accept(
             "decision": "accepted",
             "verification_evidence": "revalidate_before_reuse",
         }
+        if verification_claim:
+            result["verification"] = {
+                **_verification_decision(verification_claim["verification"]),
+                "expires_at_ms": expires_at,
+            }
+            result["verification_evidence"] = "host_bound_check_decision"
         if target.exists() or target.is_symlink():
             if _read_object(target, _MAX_ASSERTION_BYTES) != result:
                 raise ValueError(

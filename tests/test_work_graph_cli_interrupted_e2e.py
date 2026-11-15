@@ -215,6 +215,26 @@ def test_host_accepts_only_the_current_refactor_handoff(tmp_path: Path) -> None:
     assert receipt["verification_evidence"] == "revalidate_before_reuse"
     assert accept(winner)[1]["handoff_acceptance"] == receipt
 
+    evidence = {"check_sha256": "a" * 64, "prior_pass_sha256": "b" * 64,
+                "prior_inputs_sha256": "c" * 64, "current_inputs_sha256": "c" * 64}
+    for current, action, reason in (
+        ("c" * 64, "reuse", "inputs_match"),
+        ("d" * 64, "rerun", "inputs_changed"),
+        (None, "rerun", "inputs_unavailable"),
+    ):
+        ref = run("handoff", "--workstream", workstream, "--from-agent", "writer",
+                  "--to-agent", "successor")["handoff_ref"]
+        claims = run("handoff-challenge", "--handoff-ref", ref)["handoff_challenge"]
+        verification = {**evidence, "current_inputs_sha256": current}
+        invalid = sign("invalid-" + reason, verification={**verification, "action": "reuse"})
+        assert accept(invalid)[0] == 1
+        winner = sign("valid-" + reason, verification=verification)
+        code, output = accept(winner)
+        assert code == 0, output
+        decision = output["handoff_acceptance"]["verification"]
+        assert decision["action"] == action and decision["reason"] == reason
+        assert decision["authority"] == "trusted_host"
+
     run("claim", "--agent", "other", "--task", "Refresh graph evidence", "--path", "README.md")
     blocked, detail = accept(winner)
     assert blocked == 1 and "revision is no longer current" in detail["detail"]

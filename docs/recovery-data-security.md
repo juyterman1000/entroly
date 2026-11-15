@@ -86,5 +86,17 @@ trust boundary for this command.
 The acceptance record binds the successor, exact checkout, handoff and
 continuation digests, and current workspace state. A current graph revision
 is required. Unbound source changes require a fresh handoff. The command
-records acceptance and requires revalidation before evidence reuse. Advisory
-leases and existing unsigned handoff and review paths remain independent.
+records acceptance. By default it requires revalidation before evidence reuse.
+A host that has independently checked a prior passing result and can bind the
+complete inputs for the same verification action may include a signed
+`verification` object. It holds four lowercase SHA-256 strings without a
+prefix. Use `check_sha256` for the action identity, `prior_pass_sha256` for its
+immutable passing result, and `prior_inputs_sha256` and
+`current_inputs_sha256` for its complete input manifests. The manifests must
+cover the command, code and transitive dependencies, test configuration,
+toolchain, and relevant environment. Use JSON null for unknown current inputs.
+
+Entroly derives `reuse` only from matching commitments. Missing or changed
+inputs produce `rerun`. This applies to the named check and relies on the host
+to establish manifest completeness. A consumer must revalidate the acceptance
+at the time of use, including its expiry and current workspace. Advisory leases and existing unsigned handoff and review paths remain independent.
