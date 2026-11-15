@@ -6,6 +6,8 @@ import json
 import os
 import subprocess
 import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -144,3 +146,75 @@ def test_new_process_exposes_handoff_and_source_bound_review(tmp_path: Path) -> 
     )
     assert code == 1
     assert "stale" in rejected["detail"]
+
+def test_host_accepts_only_the_current_refactor_handoff(tmp_path: Path) -> None:
+    pytest.importorskip("cryptography")
+    from entroly.receipt_attestation import AttestationKey, AttestationLog
+
+    try:
+        WorkGraph("authentication-probe")
+    except WorkGraphUnavailableError as exc:
+        pytest.skip(str(exc))
+    repo = tmp_path / "refactor"
+    repo.mkdir()
+    _git(repo, "init", "-b", "main")
+    _git(repo, "config", "user.email", "test@example.com")
+    _git(repo, "config", "user.name", "Test")
+    files = {"app.py": "from dependency import VALUE\n", "dependency.py": "VALUE = 1\n",
+             "pytest.ini": "[pytest]\n", "README.md": "Example notes\n"}
+    for path, data in files.items():
+        (repo / path).write_text(data, encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "Initial")
+    key = AttestationKey.generate()
+    env = dict(os.environ, ENTROLY_DIR=str(tmp_path / "state"),
+               ENTROLY_HANDOFF_ISSUER="test-host", ENTROLY_HANDOFF_PUBLIC_KEY=key.public_hex())
+
+    def run(*args):
+        code, payload = _cli(repo, env, *args)
+        assert code == 0, payload
+        return payload
+
+    run("claim", "--agent", "writer", "--task", "Refactor value lookup", "--path", "app.py")
+    workstream = run("state")["unfinished"][0]["node_id"]
+    ref = run("handoff", "--workstream", workstream, "--from-agent", "writer",
+              "--to-agent", "successor")["handoff_ref"]
+    claims = run("handoff-challenge", "--handoff-ref", ref)["handoff_challenge"]
+    now = time.time_ns() // 1_000_000
+
+    def sign(name, signer=key, **updates):
+        body = {**claims, "issuer": "test-host", "issued_at_ms": now,
+                "expires_at_ms": now + 120_000, **updates}
+        path = tmp_path / f"{name}.json"
+        path.write_text(json.dumps(AttestationLog(signer).append(body).to_dict()), encoding="utf-8")
+        return str(path)
+
+    def accept(path, environment=env):
+        return _cli(repo, environment, "accept-handoff", "--handoff-ref", ref, "--assertion", path)
+
+    first = sign("first")
+    assert accept(sign("wrong-key", AttestationKey.generate()))[0] == 1
+    assert accept(sign("wrong-subject", successor_id="another-agent"))[0] == 1
+    assert accept(sign("wrong-audience", audience="other-service"))[0] == 1
+    assert accept(sign("expired", issued_at_ms=now - 2000, expires_at_ms=now - 1000))[0] == 1
+    assert accept(first, {**env, "ENTROLY_HANDOFF_PUBLIC_KEY": ""})[0] == 1
+    for path in files:
+        target = repo / path
+        target.write_text(files[path] + "# changed\n", encoding="utf-8")
+        blocked, detail = accept(first)
+        assert blocked == 1 and "stale" in detail["detail"]
+        target.write_text(files[path], encoding="utf-8")
+
+    second = sign("second", issued_at_ms=now - 1)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(accept, (first, second)))
+    assert sorted(code for code, _ in outcomes) == [0, 1]
+    winner = first if outcomes[0][0] == 0 else second
+    receipt = accept(winner)[1]["handoff_acceptance"]
+    assert receipt["successor_id"] == "successor"
+    assert receipt["verification_evidence"] == "revalidate_before_reuse"
+    assert accept(winner)[1]["handoff_acceptance"] == receipt
+
+    run("claim", "--agent", "other", "--task", "Refresh graph evidence", "--path", "README.md")
+    blocked, detail = accept(winner)
+    assert blocked == 1 and "revision is no longer current" in detail["detail"]

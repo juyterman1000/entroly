@@ -65,3 +65,26 @@ must be reported as unavailable rather than reconstructed from a guess.
 Filesystem deletion does not guarantee forensic erasure on SSDs, snapshots, or
 remote backups. Use your disk-encryption and backup-retention controls where needed.
 See [Privacy](../PRIVACY.md) for network recipients and telemetry withdrawal.
+
+
+## Host-authenticated Work Graph acceptance
+
+A trusted host can use `entroly-work --project <worktree> --json
+handoff-challenge --handoff-ref <ref>` to read the exact claims for a current
+handoff. The host authenticates and authorizes the successor before signing.
+Use the existing Entroly Ed25519 attestation format. Sign the challenge object
+unchanged plus `issuer`, `issued_at_ms`, and `expires_at_ms` as receipt
+fields. The validity interval is at most five minutes.
+
+Run `entroly-work --project <worktree> --json accept-handoff --handoff-ref
+<ref> --assertion <file>` from the trusted host with `ENTROLY_HANDOFF_ISSUER`
+and `ENTROLY_HANDOFF_PUBLIC_KEY` set to its configured issuer and lowercase
+hex Ed25519 public key. Keep key configuration, signing credentials, and the
+Work Graph inbox outside the workload's write access. The host supplies the
+trust boundary for this command.
+
+The acceptance record binds the successor, exact checkout, handoff and
+continuation digests, and current workspace state. A current graph revision
+is required. Unbound source changes require a fresh handoff. The command
+records acceptance and requires revalidation before evidence reuse. Advisory
+leases and existing unsigned handoff and review paths remain independent.

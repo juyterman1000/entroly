@@ -187,6 +187,11 @@ def _human_lines(payload: dict[str, Any]) -> list[str]:
     elif "acknowledged" in payload:
         lines.append("  Status       Recovered work state acknowledged.")
 
+    elif "handoff_acceptance" in payload:
+        accepted = _mapping(payload["handoff_acceptance"])
+        _add_field(lines, "Accepted by", accepted.get("successor_id"))
+        _add_field(lines, "Issuer", accepted.get("issuer"))
+        _add_field(lines, "Verification", accepted.get("verification_evidence"))
     elif "handoff" in payload:
         receipt = _mapping(payload.get("handoff"))
         lines.append("  Status       Handoff sealed to the current Work Graph.")
@@ -408,6 +413,16 @@ def run(args: Any) -> int:
             payload = pending_handoffs(root=project, store=store, to_agent=target_agent)
             payload["project_root"] = str(project)
             payload["repo_id"] = store.repo_id
+        elif action in {"handoff-challenge", "accept-handoff"}:
+            from .work_graph_handoff_acceptance import accept, challenge
+
+            ref = _required_id(args.handoff_ref, "--handoff-ref")
+            store = _store_for_path(project)
+            if action == "accept-handoff":
+                result = accept(project, store, ref, Path(args.assertion))
+                payload = {"status": "ok", "handoff_acceptance": result}
+            else:
+                payload = {"status": "ok", "handoff_challenge": challenge(project, store, ref)}
         elif action == "review":
             reviewer = _required_id(args.reviewer, "--reviewer")
             handoff_ref = _required_id(args.handoff_ref, "--handoff-ref")
@@ -495,6 +510,11 @@ def build_parser() -> argparse.ArgumentParser:
     handoff.add_argument("--to-agent", required=True)
     handoffs = actions.add_parser("handoffs", help="List current and stale handoffs for one agent")
     handoffs.add_argument("--to-agent", required=True)
+    challenge_parser = actions.add_parser("handoff-challenge", help="Print fields for a trusted host to sign")
+    challenge_parser.add_argument("--handoff-ref", required=True)
+    acceptance = actions.add_parser("accept-handoff", help="Record acceptance using a trusted host assertion")
+    acceptance.add_argument("--handoff-ref", required=True)
+    acceptance.add_argument("--assertion", required=True, help="Path to a signed JSON attestation")
     review = actions.add_parser("review", help="Record an independent review of an inbox handoff")
     review.add_argument("--handoff-ref", required=True)
     review.add_argument("--reviewer", required=True)
