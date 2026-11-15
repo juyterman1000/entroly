@@ -20,7 +20,9 @@ import uuid
 from pathlib import Path
 from typing import Any, Mapping
 
+from .binomial_stats import binomial_upper
 from .context_receipts.models import stable_hash
+from .ravs.beta_bounds import beta_cdf
 from .decision_evaluation import (
     DecisionScope,
     JsonFieldProjection,
@@ -249,6 +251,47 @@ def _seal_report(report: dict[str, Any]) -> dict[str, Any]:
     return report
 
 
+def _paired_accuracy(rows: list[tuple[str, bool, bool]]) -> dict[str, Any]:
+    total = len(rows)
+    gains = sum(not full and selected for _, full, selected in rows)
+    losses = sum(full and not selected for _, full, selected in rows)
+    both_correct = sum(full and selected for _, full, selected in rows)
+    report = {
+        "scored_pairs": total,
+        "both_correct": both_correct,
+        "both_incorrect": total - both_correct - gains - losses,
+        "selected_only_correct": gains,
+        "full_only_correct": losses,
+        "selected_minus_full_accuracy": (gains - losses) / total if total else None,
+        "mcnemar_exact_two_sided_p": None,
+        "paired_95pct_interval": None,
+        "inference_status": "no_truth" if not total else "repeated_task_ids",
+    }
+    if not total or len({task for task, _, _ in rows}) != total:
+        return report
+    discordant = gains + losses
+    tail = min(gains, losses)
+    p_value = (
+        1.0
+        if not discordant
+        else min(1.0, 2 * beta_cdf(0.5, discordant - tail, tail + 1))
+    )
+    # Four one-sided bounds, each at error probability 0.0125. The
+    # union bound covers the paired difference even though gains and
+    # losses are mutually exclusive within a task.
+    confidence = 0.9875
+    gain_lo = 1 - binomial_upper(total - gains, total, confidence)
+    gain_hi = binomial_upper(gains, total, confidence)
+    loss_lo = 1 - binomial_upper(total - losses, total, confidence)
+    loss_hi = binomial_upper(losses, total, confidence)
+    report.update(
+        mcnemar_exact_two_sided_p=p_value,
+        paired_95pct_interval=[gain_lo - loss_hi, gain_hi - loss_lo],
+        inference_status="conditional_on_independent_task_pairs",
+    )
+    return report
+
+
 def evaluate(
     manifest: Mapping[str, Any],
     *,
@@ -309,6 +352,7 @@ def evaluate(
     )
     observations: list[dict[str, Any]] = []
     probability_shifts: list[dict[str, Any]] = []
+    paired_accuracy: list[tuple[str, bool, bool]] = []
     for trial in manifest["trials"]:
         parsed = {}
         latencies = {}
@@ -323,6 +367,14 @@ def evaluate(
             latencies[condition] = latency
         usage = {condition: parsed[condition][2] for condition in CONDITIONS}
         truth = trial.get("truth_choice")
+        if truth is not None:
+            paired_accuracy.append(
+                (
+                    trial["task_id"],
+                    parsed["full"][0] == truth,
+                    parsed["selected"][0] == truth,
+                )
+            )
         observation = observe_decisions(
             scope=scope,
             trial_id=trial["trial_id"],
@@ -378,6 +430,7 @@ def evaluate(
             "workload_sha256": workload_sha256,
             "scope_id": scope.scope_id,
             "context_regret": context_regret(observations),
+            "paired_accuracy": _paired_accuracy(paired_accuracy),
             "probability_shift_summary": {
                 "mean_full_selected_js_bits": sum(
                     item["full_selected_js_bits"] for item in probability_shifts

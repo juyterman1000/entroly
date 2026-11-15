@@ -159,7 +159,18 @@ def test_default_policy_can_be_earned_with_forty_clean_pairs() -> None:
     assessment = frontier.assess_candidate(_scope(), "structural-v1")
 
     assert assessment["status"] == "promote"
-    assert assessment["verification"]["wilson_upper_bound"] < 0.10
+    assert assessment["verification"]["regression_upper_bound"] < 0.10
+
+
+def test_promotion_waits_when_the_exact_bound_exceeds_policy() -> None:
+    frontier = VerifiedGranularityFrontier(
+        _policy(min_paired_trials=40, confidence=.95, max_verifier_regression_rate=.067)
+    )
+    frontier.record_many(_observation(i) for i in range(40))
+    assessment = frontier.assess_candidate(_scope(), "structural-v1")
+    assert assessment["verification"]["regression_bound_method"] == "clopper_pearson_one_sided"
+    assert assessment["verification"]["regression_upper_bound"] > .067
+    assert "verifier_regression_bound_exceeds_policy" in assessment["rejection_reasons"]
 
 
 def test_quality_regression_rejects_candidate() -> None:
@@ -444,3 +455,17 @@ def test_non_finite_evaluator_scores_are_rejected() -> None:
             baseline_passed=True,
             candidate_passed=True,
         )
+
+@pytest.mark.parametrize(("total", "probability"), [(20, 0.11916), (40, 0.06336), (60, 0.04315), (100, 0.02635)])
+def test_regression_bound_covers_wilson_undercoverage_examples(total, probability):
+    from math import comb
+    from entroly.binomial_stats import binomial_upper
+
+    coverage = sum(
+        comb(total, k) * probability ** k * (1 - probability) ** (total - k)
+        for k in range(total + 1)
+        if binomial_upper(k, total, .95) >= probability
+    )
+    assert coverage >= .95
+    assert binomial_upper(0, total, .95) == pytest.approx(1 - .05 ** (1 / total))
+    assert binomial_upper(total, total, .95) == 1
