@@ -265,9 +265,71 @@ Known conservative behaviour (a correct but redundant rerun):
 
 ## 7. Results
 
-See `benchmarks/results/handoff_evidence.json` (challenge suite) and
-`benchmarks/results/handoff_evidence_replay.json` (held-out click replay).
-Each file records the exact head it ran on.
+**Challenge suite.** The fixture is synthetic, there is no model, and the
+host is a harness-generated key. The suite has 19 preregistered transitions,
+3 repetitions each, and decisions were identical across repetitions. The
+results below are from `benchmarks/results/handoff_evidence.json` at
+`21799f91`. They were the same at the preregistered-protocol head `4c88d25d`
+(commit `88e909c3`) and before review (`554bb380`).
+
+| Policy | Stale accepted (of the revalidate cases) | Redundant reruns (of 6) | Correct next action (of 19) |
+|---|---|---|---|
+| M0: trust the handoff summary | 13/13 | 0 | 6 |
+| M1: always rerun (full rediscovery) | 0/13 | 6 (12 tests) | 19 |
+| M2: Entroly on `main` (`handoffs` current flag) | 7/13: B2–B5, D1–D3 | 5 (10 tests) | 12 |
+| M3: pytest-testmon 2.3.0 | 6/12: A2, A3, A4, B1, B2, B3 (D2 n/a) | 0 | 12 |
+| **M4: this slice** | **0/13** (one-sided 95% upper bound 20.6%) | 1: C4 (2 tests) | 19 |
+
+Notes:
+
+- testmon's A3 is a comment-only edit, which is stale only under the
+  preregistered input-change rule; the outcome did not change. Its five
+  stale results that did change the outcome are A2, A4, B1, B2 and B3. A
+  tuned testmon `environment_expression` would catch some of these by
+  rerunning everything; that variant was not measured here.
+- Every transition marked consequential failed on rerun, so there were no
+  fixture defects.
+- The 20 authority conformance cases pass as unit tests
+  (`tests/test_handoff_authority.py` `test_01` to `test_20`). Accepting
+  through the CLI took a median of 0.5–0.7 s per case.
+
+**Held-out replay** (`pallets/click`, 40 first-parent transitions to
+`2247b35`, `tests/test_options.py`, 644 tests). No transition changed the
+test outcome, so this replay cannot show stale acceptance in either
+direction.
+
+- *Preregistered run at `4c88d25d`*
+  (`benchmarks/results/handoff_evidence_replay.json`): every policy reran
+  all 40 transitions.
+  - testmon's selection is switched off by click's own `-m 'not stress'`
+    addopts, which it reports as "selection automatically deactivated".
+  - This slice revalidated every time, because directory listings bound
+    `__pycache__`, which the replay's clean checkout removes. That is a
+    defect, found on the held-out data and fixed in `21799f91`.
+- *Post-hoc run at `21799f91`*
+  (`benchmarks/results/handoff_evidence_replay_posthoc.json`; click is no
+  longer held out). This slice reused the result on 13 of 40 transitions and
+  ran 17,555 tests, against 25,947 for every other policy (32% fewer). The
+  other 27 transitions touched files the verification reads, mostly
+  `src/click/*.py`.
+
+**Decision against the preregistered thresholds.**
+
+- **H1 (safety): met on this suite.** There were zero stale acceptances where
+  testmon accepted 6 and `main` 7. This is a finite synthetic suite on one
+  repository, with a 20.6% upper bound.
+- **H2 (efficiency against the strongest runnable baseline): killed.** The
+  slice made 1 redundant rerun against testmon's 0. Against the zero-stale
+  baseline M1 it made 83% fewer, but that comparison is not the
+  preregistered criterion. The claim of algorithmic novelty over a
+  dependency-aware cache is withdrawn. What remains is an integration
+  benefit: the same reuse decision, made safe on configuration, environment,
+  dependency-patch, data-file and shadowing changes, and tied to a handoff.
+- **H3 (authority): met for the 20 cases as specified.** Independent review
+  showed that the specification itself is advisory when the caller chooses
+  the trust file (section 6).
+- **Moat: not established.** There is one synthetic repository, one real
+  repository used post hoc, one runtime, and no live provider or host.
 
 ## 8. Independent review
 

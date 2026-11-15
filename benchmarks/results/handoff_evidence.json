@@ -14,12 +14,12 @@
           "M2": {
             "current": false,
             "decision": "revalidate",
-            "decision_seconds": 0.592
+            "decision_seconds": 0.796
           },
           "M3": {
             "decision": "revalidate",
             "exit_code": 1,
-            "seconds": 0.336,
+            "seconds": 0.323,
             "tests_executed": 2
           },
           "M4": {
@@ -28,7 +28,7 @@
               "src/invoice/tax.py"
             ],
             "decision": "revalidate",
-            "decision_seconds": 0.559,
+            "decision_seconds": 0.613,
             "epoch": 1,
             "reasons": [
               "input-changed"
@@ -37,7 +37,7 @@
         },
         "fixture_defect": false,
         "predecessor": {
-          "offer_digest": "sha256:9ee02faa8479cc30d00e368b09a42348bc18ed80e0d0cad491f4bc74c906e89d",
+          "offer_digest": "sha256:015037fac6cb3339b13770a4e7ddcca97b769df343a4c8870707b103d7c1399e",
           "record": {
             "inputs": {
               "env:none": 42,
@@ -53,8 +53,8 @@
               "probe:project": 45,
               "project-root:none": 1
             },
-            "record_digest": "sha256:fafb6dfa308f7a7fd8fab4dc3f6b533ca8c608515d48fe649f3371d319c137cc",
-            "record_id": "evidence:6f54649a4aaa8c7412bb331e630fbb70",
+            "record_digest": "sha256:956faf3a297eb4f2bb3f8d2a29f2b7a64fc03e1f454f20b46cd6fe43ad857fa2",
+            "record_id": "evidence:e9113b427126d34e203057a510bc7d1a",
             "trace": {
               "complete": true,
               "excluded_outputs": 4,
@@ -69,7 +69,7 @@
         "rerun": {
           "exit_code": 1,
           "passed": false,
-          "seconds": 0.268,
+          "seconds": 0.326,
           "tests": 2
         }
       },
@@ -86,12 +86,12 @@
           "M2": {
             "current": false,
             "decision": "revalidate",
-            "decision_seconds": 0.608
+            "decision_seconds": 0.768
           },
           "M3": {
             "decision": "reuse",
             "exit_code": 0,
-            "seconds": 0.324,
+            "seconds": 0.313,
             "tests_executed": 0
           },
           "M4": {
@@ -100,7 +100,7 @@
               "src/invoice/data/rates.json"
             ],
             "decision": "revalidate",
-            "decision_seconds": 0.686,
+            "decision_seconds": 0.615,
             "epoch": 1,
             "reasons": [
               "input-changed"
@@ -109,7 +109,7 @@
         },
         "fixture_defect": false,
         "predecessor": {
-          "offer_digest": "sha256:cd1d48007bd27ab7303b8f21ce6f59ebd712b9b92d32d2dde877f962f96515f3",
+          "offer_digest": "sha256:cfeb65f393a3022cdd4fca29db22c439bdf802a41069495f8d9dd17d6e1df2db",
           "record": {
             "inputs": {
               "env:none": 42,
@@ -125,8 +125,8 @@
               "probe:project": 45,
               "project-root:none": 1
             },
-            "record_digest": "sha256:f48641a1f91bd63d9cf373b881b1e1bb2dcb97cc938c067e4bff198bccba7264",
-            "record_id": "evidence:9feabed7b1e7531043417704ee7d2f13",
+            "record_digest": "sha256:9a3065e8014798339a4351e6c0f027eda8f603d2fc0dd78bc6903ea67c1af68e",
+            "record_id": "evidence:fcfa591e9d41fa99a16c474dc7d99880",
             "trace": {
               "complete": true,
               "excluded_outputs": 4,
@@ -141,7 +141,7 @@
         "rerun": {
           "exit_code": 1,
           "passed": false,
-          "seconds": 0.312,
+          "seconds": 0.301,
           "tests": 2
         }
       },
@@ -158,12 +158,12 @@
           "M2": {
             "current": false,
             "decision": "revalidate",
-            "decision_seconds": 0.609
+            "decision_seconds": 0.57
           },
           "M3": {
             "decision": "reuse",
             "exit_code": 0,
-            "seconds": 0.277,
+            "seconds": 0.267,
             "tests_executed": 0
           },
           "M4": {
@@ -172,7 +172,7 @@
               "src/invoice/pricing.py"
             ],
             "decision": "revalidate",
-            "decision_seconds": 0.688,
+            "decision_seconds": 0.629,
             "epoch": 1,
             "reasons": [
               "input-changed"
@@ -181,7 +181,7 @@
         },
         "fixture_defect": false,
         "predecessor": {
-          "offer_digest": "sha256:20b46cc0ceb1631edf052c5d1a06ce61c957a6b09b52558a76ac7fc1cb4d4d88",
+          "offer_digest": "sha256:0606817a2b407397a9a7ef7ef1976a688485b7f7fc9b996ba4e272e6685c10a3",
           "record": {
             "inputs": {
               "env:none": 42,
@@ -197,8 +197,8 @@
               "probe:project": 45,
               "project-root:none": 1
             },
-            "record_digest": "sha256:149d336b893b6601cc78a46b8a8797239083ad87908bbfef5541e840e39e16d8",
-            "record_id": "evidence:c994ccdbea9983d3961e2c1c5cfbbeb2",
+            "record_digest": "sha256:22cc383d5adb7cbc313abef8f56fd56a457d77750edaab516e9a18b03656afb9",
+            "record_id": "evidence:5e21bca1071b5afcb2d394ff6dae5e3e",
             "trace": {
               "complete": true,
               "excluded_outputs": 4,
@@ -213,7 +213,7 @@
         "rerun": {
           "exit_code": 0,
           "passed": true,
-          "seconds": 0.252,
+          "seconds": 0.254,
           "tests": 2
         }
       },
@@ -230,12 +230,12 @@
           "M2": {
             "current": false,
             "decision": "revalidate",
-            "decision_seconds": 0.615
+            "decision_seconds": 0.616
           },
           "M3": {
             "decision": "reuse",
             "exit_code": 0,
-            "seconds": 0.293,
+            "seconds": 0.263,
             "tests_executed": 0
           },
           "M4": {
@@ -244,7 +244,7 @@
               "src/invoice"
             ],
             "decision": "revalidate",
-            "decision_seconds": 0.629,
+            "decision_seconds": 0.62,
             "epoch": 1,
             "reasons": [
               "input-changed"
@@ -253,7 +253,7 @@
         },
         "fixture_defect": false,
         "predecessor": {
-          "offer_digest": "sha256:669e8095417e156908df0f85141adee2148f0af7a8f18cd9b4f17188ec2010d1",
+          "offer_digest": "sha256:12ed72cdb602b94762e0fc9b37e3ea676424be318bc5df51ff15844d3c5519c7",
           "record": {
             "inputs": {
               "env:none": 42,
@@ -269,8 +269,8 @@
               "probe:project": 45,
               "project-root:none": 1
             },
-            "record_digest": "sha256:0f9997a8612f1b2e32706193f54d3a9d23062ab0dd71ba74a98f61661eab0a17",
-            "record_id": "evidence:1023a8a63c3ce88799f009a31cb1db7b",
+            "record_digest": "sha256:2778070f685df317f612637d64bbc1c7fdef0656a1969bdd6de35406dd9e7611",
+            "record_id": "evidence:8b22ef0a310e1cedfd9b916f47b3b05e",
             "trace": {
               "complete": true,
               "excluded_outputs": 4,
@@ -285,7 +285,7 @@
         "rerun": {
           "exit_code": 1,
           "passed": false,
-          "seconds": 0.288,
+          "seconds": 0.264,
           "tests": 2
         }
       },
@@ -302,12 +302,12 @@
           "M2": {
             "current": false,
             "decision": "revalidate",
-            "decision_seconds": 0.631
+            "decision_seconds": 0.604
           },
           "M3": {
             "decision": "revalidate",
             "exit_code": 1,
-            "seconds": 0.352,
+            "seconds": 0.333,
             "tests_executed": 2
           },
           "M4": {
@@ -316,7 +316,7 @@
               "tests/conftest.py"
             ],
             "decision": "revalidate",
-            "decision_seconds": 0.549,
+            "decision_seconds": 0.589,
             "epoch": 1,
             "reasons": [
               "input-changed"
@@ -325,7 +325,7 @@
         },
         "fixture_defect": false,
         "predecessor": {
-          "offer_digest": "sha256:9955758665ffb0724fe4126f2e9a3da2b3c5748a7751e173bec4aa228da35c76",
+          "offer_digest": "sha256:6025ed03c13ea04d4670198a9872da3e3183ce8222dc0f22bbaf1403c196aa64",
           "record": {
             "inputs": {
               "env:none": 42,
@@ -341,8 +341,8 @@
               "probe:project": 45,
               "project-root:none": 1
             },
-            "record_digest": "sha256:f9069f24df3bfb6c94514f87692299dabaa44a9744f9735e288d51d9050f2d68",
-            "record_id": "evidence:02c02228648b2df55265715cb4cbd050",
+            "record_digest": "sha256:b0d21b2254d2a80cd5eea74d0382830f8d33c1dda4d5dee73286437896a4697b",
+            "record_id": "evidence:e7a64fd6261ebf70a0ac49599ba98e37",
             "trace": {
               "complete": true,
               "excluded_outputs": 4,
@@ -357,7 +357,7 @@
         "rerun": {
           "exit_code": 1,
           "passed": false,
-          "seconds": 0.258,
+          "seconds": 0.332,
           "tests": 2
         }
       },
@@ -374,12 +374,12 @@
           "M2": {
             "current": false,
             "decision": "revalidate",
-            "decision_seconds": 0.576
+            "decision_seconds": 0.569
           },
           "M3": {
             "decision": "reuse",
             "exit_code": 0,
-            "seconds": 0.279,
+            "seconds": 0.266,
             "tests_executed": 0
           },
           "M4": {
@@ -388,7 +388,7 @@
               "pyproject.toml"
             ],
             "decision": "revalidate",
-            "decision_seconds": 0.711,
+            "decision_seconds": 0.585,
             "epoch": 1,
             "reasons": [
               "input-changed"
@@ -397,7 +397,7 @@
         },
         "fixture_defect": false,
         "predecessor": {
-          "offer_digest": "sha256:d635a4788f24719f44224456dfe6de60a25f1ce7c650c26b58bac7b5c0afb3d2",
+          "offer_digest": "sha256:84ab8749158a44f19f1dc6fbf8be2f87bec2b231fb8dce32892856faf5f2d9d8",
           "record": {
             "inputs": {
               "env:none": 42,
@@ -413,8 +413,80 @@
               "probe:project": 45,
               "project-root:none": 1
             },
-            "record_digest": "sha256:0b1eb352a20135598145a8c1f380a2c9e2e0ddd3bd17547712b4e38311f4396b",
-            "record_id": "evidence:c530afc1bfc0a0cc6b30f88b13d06a7f",
+            "record_digest": "sha256:175a70f70ce921807b65233ffcfcccbf4362549d248b2a7d8b89f9b0b9b0592f",
+            "record_id": "evidence:a32ed48bb0c5258e0e6af0748a3a7191",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "revalidate",
+        "rerun": {
+          "exit_code": 1,
+          "passed": false,
+          "seconds": 0.308,
+          "tests": 2
+        }
+      },
+      {
+        "case": "B2",
+        "consequential": true,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": true,
+            "decision": "reuse",
+            "decision_seconds": 0.636
+          },
+          "M3": {
+            "decision": "reuse",
+            "exit_code": 0,
+            "seconds": 0.284,
+            "tests_executed": 0
+          },
+          "M4": {
+            "applicability": "revalidate",
+            "changed": [
+              "PYTEST_ADDOPTS"
+            ],
+            "decision": "revalidate",
+            "decision_seconds": 0.613,
+            "epoch": 1,
+            "reasons": [
+              "input-changed"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:81a9abba13789f1b360dde4bc7d21f437de4bd8e7cd1a000a6e380fe53095e14",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:4aa4d87dc155326ad0e3279519b1800fb5b540285651fc52b17f023c260c5568",
+            "record_id": "evidence:ab029240c8de9a5678d2df45d0620960",
             "trace": {
               "complete": true,
               "excluded_outputs": 4,
@@ -434,78 +506,6 @@
         }
       },
       {
-        "case": "B2",
-        "consequential": true,
-        "decisions": {
-          "M0": {
-            "decision": "reuse"
-          },
-          "M1": {
-            "decision": "revalidate"
-          },
-          "M2": {
-            "current": true,
-            "decision": "reuse",
-            "decision_seconds": 0.575
-          },
-          "M3": {
-            "decision": "reuse",
-            "exit_code": 0,
-            "seconds": 0.285,
-            "tests_executed": 0
-          },
-          "M4": {
-            "applicability": "revalidate",
-            "changed": [
-              "PYTEST_ADDOPTS"
-            ],
-            "decision": "revalidate",
-            "decision_seconds": 0.562,
-            "epoch": 1,
-            "reasons": [
-              "input-changed"
-            ]
-          }
-        },
-        "fixture_defect": false,
-        "predecessor": {
-          "offer_digest": "sha256:4d971b5b7ccf645fcff4c0115c9eb96316705565cd619e83c5786066cfb37a1d",
-          "record": {
-            "inputs": {
-              "env:none": 42,
-              "executable:none": 1,
-              "file:external": 365,
-              "file:project": 7,
-              "import-listing:external": 36,
-              "import-listing:project": 2,
-              "listing:project": 2,
-              "metadata-listing:external": 4,
-              "metadata-listing:project": 1,
-              "probe:external": 37,
-              "probe:project": 45,
-              "project-root:none": 1
-            },
-            "record_digest": "sha256:cd7a10531b3c248c66f63fae2e62d0004e15b7b633e1e8ad039b7ab0331a5224",
-            "record_id": "evidence:1e987d84b0d8ec8a14a99fbaa5c18274",
-            "trace": {
-              "complete": true,
-              "excluded_outputs": 4,
-              "processes": 1,
-              "reasons": []
-            },
-            "verdict": "passed"
-          },
-          "testmon_seed_passed": true
-        },
-        "required": "revalidate",
-        "rerun": {
-          "exit_code": 1,
-          "passed": false,
-          "seconds": 0.26,
-          "tests": 2
-        }
-      },
-      {
         "case": "B3",
         "consequential": true,
         "decisions": {
@@ -518,23 +518,23 @@
           "M2": {
             "current": true,
             "decision": "reuse",
-            "decision_seconds": 0.548
+            "decision_seconds": 0.631
           },
           "M3": {
             "decision": "reuse",
             "exit_code": 0,
-            "seconds": 0.279,
+            "seconds": 0.262,
             "tests_executed": 0
           },
           "M4": {
             "applicability": "revalidate",
             "changed": [
-              "/home/claude/work/handoff/eval/final/venv312/lib/python3.12/site-packages/ratelib/__init__.py",
-              "/home/claude/work/handoff/eval/final/venv312/lib/python3.12/site-packages",
-              "/home/claude/work/handoff/eval/final/venv312/lib/python3.12/site-packages"
+              "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages/ratelib/__init__.py",
+              "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages",
+              "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages"
             ],
             "decision": "revalidate",
-            "decision_seconds": 0.565,
+            "decision_seconds": 0.67,
             "epoch": 1,
             "reasons": [
               "input-changed"
@@ -543,7 +543,7 @@
         },
         "fixture_defect": false,
         "predecessor": {
-          "offer_digest": "sha256:5d011eda19a7b139e170962efb13399d97eca04185f7da3b2d8d13ca46c977c9",
+          "offer_digest": "sha256:a4146e4b0328073b64b5c071cd6a8361cbd08cb11707ea0cc372b2573dc04c68",
           "record": {
             "inputs": {
               "env:none": 42,
@@ -559,8 +559,8 @@
               "probe:project": 45,
               "project-root:none": 1
             },
-            "record_digest": "sha256:dc12a090e18c08698db76b3158b6a85144f15a62d5bdea667da0bb7b3ec6496b",
-            "record_id": "evidence:c909c2d8d9c493688bd03e60f23e04ca",
+            "record_digest": "sha256:50250165395914b478c8841f0afa007cca4996e421aaa307526260ce8965f167",
+            "record_id": "evidence:26087c51cfc8028f6796f461b6374e0b",
             "trace": {
               "complete": true,
               "excluded_outputs": 4,
@@ -575,7 +575,7 @@
         "rerun": {
           "exit_code": 1,
           "passed": false,
-          "seconds": 0.262,
+          "seconds": 0.279,
           "tests": 2
         }
       },
@@ -592,23 +592,23 @@
           "M2": {
             "current": true,
             "decision": "reuse",
-            "decision_seconds": 0.587
+            "decision_seconds": 0.635
           },
           "M3": {
             "decision": "revalidate",
             "exit_code": 1,
-            "seconds": 0.319,
+            "seconds": 0.349,
             "tests_executed": 2
           },
           "M4": {
             "applicability": "revalidate",
             "changed": [
-              "/home/claude/work/handoff/eval/final/venv312/lib/python3.12/site-packages/ratelib/__init__.py",
-              "/home/claude/work/handoff/eval/final/venv312/lib/python3.12/site-packages",
-              "/home/claude/work/handoff/eval/final/venv312/lib/python3.12/site-packages"
+              "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages/ratelib/__init__.py",
+              "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages",
+              "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages"
             ],
             "decision": "revalidate",
-            "decision_seconds": 0.6,
+            "decision_seconds": 0.567,
             "epoch": 1,
             "reasons": [
               "input-changed"
@@ -617,7 +617,7 @@
         },
         "fixture_defect": false,
         "predecessor": {
-          "offer_digest": "sha256:e6393a44ff23a1efdb2ccd6c04168eaa1e14e90eee4ec0224ee1fab40b74773b",
+          "offer_digest": "sha256:5fa3f06231b17995eaac28c10c131483a5dabeb981f4c691c627f6c5b9357f22",
           "record": {
             "inputs": {
               "env:none": 42,
@@ -633,8 +633,8 @@
               "probe:project": 45,
               "project-root:none": 1
             },
-            "record_digest": "sha256:4e590f6022b97e7db1214a03457aa232e8f4a41d11d0aebc49a515db5edf3295",
-            "record_id": "evidence:3b11d43bb2ac76fe45993a5416932a39",
+            "record_digest": "sha256:1bb14c60d7b50a901865c33d9c25d7436dd8554bd547cc861f68f2c707eb7b04",
+            "record_id": "evidence:ef1eb7a5e450c47f81c594e77ebf97b7",
             "trace": {
               "complete": true,
               "excluded_outputs": 4,
@@ -649,7 +649,7 @@
         "rerun": {
           "exit_code": 1,
           "passed": false,
-          "seconds": 0.282,
+          "seconds": 0.292,
           "tests": 2
         }
       },
@@ -666,12 +666,12 @@
           "M2": {
             "current": true,
             "decision": "reuse",
-            "decision_seconds": 0.54
+            "decision_seconds": 0.557
           },
           "M3": {
             "decision": "revalidate",
             "exit_code": 0,
-            "seconds": 0.362,
+            "seconds": 0.303,
             "tests_executed": 2
           },
           "M4": {
@@ -680,7 +680,7 @@
               "python"
             ],
             "decision": "revalidate",
-            "decision_seconds": 0.609,
+            "decision_seconds": 0.577,
             "epoch": 1,
             "reasons": [
               "input-changed"
@@ -689,7 +689,7 @@
         },
         "fixture_defect": false,
         "predecessor": {
-          "offer_digest": "sha256:1c0a582e2c6c492f25568ee396793ce63d1dc7dbc612df959251df99560d85eb",
+          "offer_digest": "sha256:984baa431f393ea9dc90750b333fe113324df9f89181b796f9bd93346578298b",
           "record": {
             "inputs": {
               "env:none": 42,
@@ -705,8 +705,8 @@
               "probe:project": 45,
               "project-root:none": 1
             },
-            "record_digest": "sha256:5af703c227b65a33f69dbbf1c632588b8f487e9f8a4922c68f47ce9c9096cdcd",
-            "record_id": "evidence:827817c7a09bd0b6c689e266ba13faec",
+            "record_digest": "sha256:7fbd8ac92673a8610cba03143612b5a0fe8a096ed2f62325f7dd4c8ebb8db755",
+            "record_id": "evidence:6c5533547dea3e4a5d6e52fecbd843af",
             "trace": {
               "complete": true,
               "excluded_outputs": 4,
@@ -721,7 +721,7 @@
         "rerun": {
           "exit_code": 0,
           "passed": true,
-          "seconds": 0.331,
+          "seconds": 0.246,
           "tests": 2
         }
       },
@@ -738,19 +738,19 @@
           "M2": {
             "current": false,
             "decision": "revalidate",
-            "decision_seconds": 0.6
+            "decision_seconds": 0.606
           },
           "M3": {
             "decision": "reuse",
             "exit_code": 0,
-            "seconds": 0.327,
+            "seconds": 0.324,
             "tests_executed": 0
           },
           "M4": {
             "applicability": "reuse",
             "changed": [],
             "decision": "reuse",
-            "decision_seconds": 0.591,
+            "decision_seconds": 0.613,
             "epoch": 1,
             "reasons": [
               "all-inputs-unchanged"
@@ -759,7 +759,7 @@
         },
         "fixture_defect": false,
         "predecessor": {
-          "offer_digest": "sha256:8b33a94dadbc90435eef998c6d0d7e06be036ccb4342f86aae55404ddb73da7b",
+          "offer_digest": "sha256:0f7c06a6f1614cad8278868ea0deb8bc5c15366c6a94d3fbb3e3bbdbb5aa84c2",
           "record": {
             "inputs": {
               "env:none": 42,
@@ -775,8 +775,8 @@
               "probe:project": 45,
               "project-root:none": 1
             },
-            "record_digest": "sha256:bbb222611c43eff87e939e2fbde33558199bfb44f269fb35f5730aae8b6353b0",
-            "record_id": "evidence:a1b0175db91603ef70de5d241f4fdddc",
+            "record_digest": "sha256:e5b474733968db8d2f685c2920ca781aa370871ac0e5c124fb09208369b1b432",
+            "record_id": "evidence:bc2e77bedf2dc15050d148d615fdbaeb",
             "trace": {
               "complete": true,
               "excluded_outputs": 4,
@@ -791,7 +791,7 @@
         "rerun": {
           "exit_code": 0,
           "passed": true,
-          "seconds": 0.311,
+          "seconds": 0.254,
           "tests": 2
         }
       },
@@ -808,19 +808,19 @@
           "M2": {
             "current": false,
             "decision": "revalidate",
-            "decision_seconds": 0.549
+            "decision_seconds": 0.614
           },
           "M3": {
             "decision": "reuse",
             "exit_code": 0,
-            "seconds": 0.278,
+            "seconds": 0.285,
             "tests_executed": 0
           },
           "M4": {
             "applicability": "reuse",
             "changed": [],
             "decision": "reuse",
-            "decision_seconds": 0.539,
+            "decision_seconds": 0.626,
             "epoch": 1,
             "reasons": [
               "all-inputs-unchanged"
@@ -829,7 +829,7 @@
         },
         "fixture_defect": false,
         "predecessor": {
-          "offer_digest": "sha256:243c7ea50538b42b8d55141116ab156d4b5e621a5e43c2f91eeb6af7d564bdff",
+          "offer_digest": "sha256:4e3b6119cf2fe4df1c95aedff5a7c2671f7d905131f0dbe32b417bf47cde2323",
           "record": {
             "inputs": {
               "env:none": 42,
@@ -845,8 +845,8 @@
               "probe:project": 45,
               "project-root:none": 1
             },
-            "record_digest": "sha256:a51fad6014e6bed8adab9730ebda3d6009b9e6b61d4cab6f2ecd42e52dbce8ad",
-            "record_id": "evidence:0a23e564d354bb182d426a4ce47e2ece",
+            "record_digest": "sha256:25c4af1df2cb56f8c0415d04c7f11748f3c17dfd72811ec6958d80410be3b4a0",
+            "record_id": "evidence:dbf4a55d887e4be6fc63c344234d64fa",
             "trace": {
               "complete": true,
               "excluded_outputs": 4,
@@ -861,7 +861,7 @@
         "rerun": {
           "exit_code": 0,
           "passed": true,
-          "seconds": 0.329,
+          "seconds": 0.299,
           "tests": 2
         }
       },
@@ -878,19 +878,19 @@
           "M2": {
             "current": false,
             "decision": "revalidate",
-            "decision_seconds": 0.671
+            "decision_seconds": 0.571
           },
           "M3": {
             "decision": "reuse",
             "exit_code": 0,
-            "seconds": 0.306,
+            "seconds": 0.312,
             "tests_executed": 0
           },
           "M4": {
             "applicability": "reuse",
             "changed": [],
             "decision": "reuse",
-            "decision_seconds": 0.699,
+            "decision_seconds": 0.672,
             "epoch": 1,
             "reasons": [
               "all-inputs-unchanged"
@@ -899,7 +899,7 @@
         },
         "fixture_defect": false,
         "predecessor": {
-          "offer_digest": "sha256:a944dedcb5909c41fcaef037cedba9d7becd4e4777b2473cfa37ce011d9055ee",
+          "offer_digest": "sha256:343868dec93ba8b53cca8d6112a0a68a81da159f90cf67508800d03b3806295e",
           "record": {
             "inputs": {
               "env:none": 42,
@@ -915,8 +915,8 @@
               "probe:project": 45,
               "project-root:none": 1
             },
-            "record_digest": "sha256:936b1958f7bf7d48fa9e2086c16addebe8d3ae7819d736fdad883d121a3c1a8a",
-            "record_id": "evidence:ce69e3df4925187e999877a562f1cdb0",
+            "record_digest": "sha256:885984d5026c9eb013d1d944e559443bf7456ed0ed0fd21b1cf89f86a51a83a0",
+            "record_id": "evidence:f60cac9e129cf8c3b21b0192dfac0453",
             "trace": {
               "complete": true,
               "excluded_outputs": 4,
@@ -931,7 +931,7 @@
         "rerun": {
           "exit_code": 0,
           "passed": true,
-          "seconds": 0.313,
+          "seconds": 0.317,
           "tests": 2
         }
       },
@@ -948,12 +948,12 @@
           "M2": {
             "current": false,
             "decision": "revalidate",
-            "decision_seconds": 0.66
+            "decision_seconds": 0.612
           },
           "M3": {
             "decision": "reuse",
             "exit_code": 0,
-            "seconds": 0.259,
+            "seconds": 0.263,
             "tests_executed": 0
           },
           "M4": {
@@ -962,7 +962,7 @@
               "."
             ],
             "decision": "revalidate",
-            "decision_seconds": 0.636,
+            "decision_seconds": 0.613,
             "epoch": 1,
             "reasons": [
               "input-changed"
@@ -971,7 +971,7 @@
         },
         "fixture_defect": false,
         "predecessor": {
-          "offer_digest": "sha256:d4d1d3ef6a405995deced8d4668f907fe7beff89e6e30959c5a56389ffbcffa0",
+          "offer_digest": "sha256:4bba1de864505262b6d9b970dd76aa8b99c06506b6f4504ee777050e3825464a",
           "record": {
             "inputs": {
               "env:none": 42,
@@ -987,8 +987,8 @@
               "probe:project": 45,
               "project-root:none": 1
             },
-            "record_digest": "sha256:04d0511928c393a1a83eb3e004b628385cb3f2394a447729e16004f413b4f7bf",
-            "record_id": "evidence:8d43a5dbb487ea7e3fb997082d8aed75",
+            "record_digest": "sha256:cecf31187e6bbc638641b302337882e31521f9ba080377b47cac7ad9f6a29e98",
+            "record_id": "evidence:ab66665f7477876b84461f023d6f304d",
             "trace": {
               "complete": true,
               "excluded_outputs": 4,
@@ -1003,7 +1003,7 @@
         "rerun": {
           "exit_code": 0,
           "passed": true,
-          "seconds": 0.251,
+          "seconds": 0.284,
           "tests": 2
         }
       },
@@ -1020,19 +1020,19 @@
           "M2": {
             "current": false,
             "decision": "revalidate",
-            "decision_seconds": 0.539
+            "decision_seconds": 0.561
           },
           "M3": {
             "decision": "reuse",
             "exit_code": 0,
-            "seconds": 0.317,
+            "seconds": 0.281,
             "tests_executed": 0
           },
           "M4": {
             "applicability": "reuse",
             "changed": [],
             "decision": "reuse",
-            "decision_seconds": 0.541,
+            "decision_seconds": 0.605,
             "epoch": 1,
             "reasons": [
               "all-inputs-unchanged"
@@ -1041,7 +1041,7 @@
         },
         "fixture_defect": false,
         "predecessor": {
-          "offer_digest": "sha256:c70e2d56884d032a804124dc339c6df108083a6bc3b0118e10bdab1d2f68e9aa",
+          "offer_digest": "sha256:fdf0356bfba9d978a3a96d3cdec0465ea6db48bb6a22d65fa44aec37a44738d8",
           "record": {
             "inputs": {
               "env:none": 42,
@@ -1057,8 +1057,8 @@
               "probe:project": 45,
               "project-root:none": 1
             },
-            "record_digest": "sha256:948872a8df95efad663a7da18fc28f69af7481073d6d08d7c8e4b442106693d0",
-            "record_id": "evidence:d45e70eece810391ffaecf4f3e4b2a39",
+            "record_digest": "sha256:37d48cef0d22756871e26027b258a580fcdaf908a3eaae1254b1feaee2b55abe",
+            "record_id": "evidence:c7e4ff61c7eaa6b3ede0f287ee8f8984",
             "trace": {
               "complete": true,
               "excluded_outputs": 4,
@@ -1073,7 +1073,7 @@
         "rerun": {
           "exit_code": 0,
           "passed": true,
-          "seconds": 0.257,
+          "seconds": 0.263,
           "tests": 2
         }
       },
@@ -1090,19 +1090,19 @@
           "M2": {
             "current": true,
             "decision": "reuse",
-            "decision_seconds": 0.566
+            "decision_seconds": 0.563
           },
           "M3": {
             "decision": "reuse",
             "exit_code": 0,
-            "seconds": 0.297,
+            "seconds": 0.288,
             "tests_executed": 0
           },
           "M4": {
             "applicability": "reuse",
             "changed": [],
             "decision": "reuse",
-            "decision_seconds": 0.599,
+            "decision_seconds": 0.645,
             "epoch": 1,
             "reasons": [
               "all-inputs-unchanged"
@@ -1111,7 +1111,7 @@
         },
         "fixture_defect": false,
         "predecessor": {
-          "offer_digest": "sha256:57a62b88ecf06b2ad113674eb3ce011a3c02c5759e0d3155005dc3d304e995ef",
+          "offer_digest": "sha256:d8a8e0401dcc7253dbcbfffa851c532bea1e29ead2c69c8c330de0c89fa3ddc9",
           "record": {
             "inputs": {
               "env:none": 42,
@@ -1127,8 +1127,8 @@
               "probe:project": 45,
               "project-root:none": 1
             },
-            "record_digest": "sha256:b8ff4b643520ce59a3a187bf6b6cc1d2395177aae221603564700107309255f9",
-            "record_id": "evidence:a37b76bd4e794e0edb4ad6eb9319614a",
+            "record_digest": "sha256:679247bbbd6cd10ae3f90b1dc7fb9c611c270b0cd5d242e60e9dd9282ef9eb7b",
+            "record_id": "evidence:c05f026de2def7e15b679f9938ade2ec",
             "trace": {
               "complete": true,
               "excluded_outputs": 4,
@@ -1143,7 +1143,7 @@
         "rerun": {
           "exit_code": 0,
           "passed": true,
-          "seconds": 0.266,
+          "seconds": 0.344,
           "tests": 2
         }
       },
@@ -1160,20 +1160,20 @@
           "M2": {
             "current": true,
             "decision": "reuse",
-            "decision_seconds": 0.6
+            "decision_seconds": 0.665
           },
           "M3": {
             "decision": "revalidate",
             "exit_code": 0,
             "note": "its evidence (.testmondata) deleted",
-            "seconds": 0.389,
+            "seconds": 0.308,
             "tests_executed": 2
           },
           "M4": {
             "applicability": "unknown",
             "changed": [],
             "decision": "revalidate",
-            "decision_seconds": 0.693,
+            "decision_seconds": 0.813,
             "epoch": 1,
             "reasons": [
               "record-unavailable"
@@ -1182,7 +1182,7 @@
         },
         "fixture_defect": false,
         "predecessor": {
-          "offer_digest": "sha256:e8df2a1750945d10196e55ad6962c3dca20784fb692ca494e3d313c727d29cce",
+          "offer_digest": "sha256:3076c8d2386b809c27c3f37069761d68ab8eaf38d9c4a21d7f089573e52057f8",
           "record": {
             "inputs": {
               "env:none": 42,
@@ -1198,8 +1198,8 @@
               "probe:project": 45,
               "project-root:none": 1
             },
-            "record_digest": "sha256:7be78b9beb95d606cfa3133416329a0a344667c7a4d1ccb321e59fb78dc25aa0",
-            "record_id": "evidence:bebdf83c67bb33f240e6f58f60f81b9a",
+            "record_digest": "sha256:85436fb1d2908f3fea95dc0a91bf1a77f15dc0038335f631ccfef2aa146d2612",
+            "record_id": "evidence:f08609939c753096a795ed72d22fd23a",
             "trace": {
               "complete": true,
               "excluded_outputs": 4,
@@ -1214,7 +1214,7 @@
         "rerun": {
           "exit_code": 0,
           "passed": true,
-          "seconds": 0.272,
+          "seconds": 0.28,
           "tests": 2
         }
       },
@@ -1231,7 +1231,7 @@
           "M2": {
             "current": true,
             "decision": "reuse",
-            "decision_seconds": 0.601
+            "decision_seconds": 0.589
           },
           "M3": {
             "decision": "n/a",
@@ -1241,7 +1241,7 @@
             "applicability": "unknown",
             "changed": [],
             "decision": "revalidate",
-            "decision_seconds": 0.603,
+            "decision_seconds": 0.641,
             "epoch": 1,
             "reasons": [
               "record-not-the-one-handed-off"
@@ -1250,7 +1250,7 @@
         },
         "fixture_defect": false,
         "predecessor": {
-          "offer_digest": "sha256:ee242af8dc2a6e037143aacfc59f2ad77d1550e55494ece8db4b7a7c4e088c9d",
+          "offer_digest": "sha256:80c0c6a0982a682c205fd4e44692c0c0683f344867af372803c56acd56ab9a65",
           "record": {
             "inputs": {
               "env:none": 42,
@@ -1266,8 +1266,8 @@
               "probe:project": 45,
               "project-root:none": 1
             },
-            "record_digest": "sha256:3b775adea4a9dd524487fb612ef5f58fe6112a23b0f1eb0655e6f0901b7030ee",
-            "record_id": "evidence:2ebd521a6f8707c6c0dc5e04ab28483b",
+            "record_digest": "sha256:babffd2548c2f2b38bf3ac1db34ef246d667a9d32105170b60715d14ad2fcd89",
+            "record_id": "evidence:df98a8a7258e79afa408a3c0a7ac8245",
             "trace": {
               "complete": true,
               "excluded_outputs": 4,
@@ -1282,7 +1282,7 @@
         "rerun": {
           "exit_code": 0,
           "passed": true,
-          "seconds": 0.278,
+          "seconds": 0.344,
           "tests": 2
         }
       },
@@ -1299,20 +1299,20 @@
           "M2": {
             "current": true,
             "decision": "reuse",
-            "decision_seconds": 0.662
+            "decision_seconds": 0.582
           },
           "M3": {
             "decision": "revalidate",
             "exit_code": 0,
             "note": "no .testmondata: the predecessor recorded no evidence",
-            "seconds": 0.326,
+            "seconds": 0.387,
             "tests_executed": 2
           },
           "M4": {
             "applicability": "no-evidence",
             "changed": [],
             "decision": "revalidate",
-            "decision_seconds": 0.543,
+            "decision_seconds": 0.579,
             "epoch": 1,
             "reasons": [
               "no evidence handed over"
@@ -1321,7 +1321,7 @@
         },
         "fixture_defect": false,
         "predecessor": {
-          "offer_digest": "sha256:7c6bc2b9d3abb1668a7db61b3780d5f6045078a3f4d4aeabb0a7028f23714c81",
+          "offer_digest": "sha256:e56b7cdf300e6ea7f92621481c337526075f53b79e8696186312de5249480ae1",
           "record": null,
           "testmon_seed_passed": null
         },
@@ -1329,7 +1329,7 @@
         "rerun": {
           "exit_code": 0,
           "passed": true,
-          "seconds": 0.311,
+          "seconds": 0.252,
           "tests": 2
         }
       }
@@ -1348,12 +1348,12 @@
           "M2": {
             "current": false,
             "decision": "revalidate",
-            "decision_seconds": 0.573
+            "decision_seconds": 0.583
           },
           "M3": {
             "decision": "revalidate",
             "exit_code": 1,
-            "seconds": 0.318,
+            "seconds": 0.383,
             "tests_executed": 2
           },
           "M4": {
@@ -1362,7 +1362,7 @@
               "src/invoice/tax.py"
             ],
             "decision": "revalidate",
-            "decision_seconds": 0.587,
+            "decision_seconds": 0.773,
             "epoch": 1,
             "reasons": [
               "input-changed"
@@ -1371,7 +1371,7 @@
         },
         "fixture_defect": false,
         "predecessor": {
-          "offer_digest": "sha256:bb19a32d2d6a5521e97d36f00c51c65a192d3021a029b3a561b9774435855fab",
+          "offer_digest": "sha256:26bf00d2436f05482169e7fe5abfbfe0d968d4e574316167f539eedbb1d03ad8",
           "record": {
             "inputs": {
               "env:none": 42,
@@ -1387,8 +1387,8 @@
               "probe:project": 45,
               "project-root:none": 1
             },
-            "record_digest": "sha256:a8d83b041d3fc4158a47e05bea2f293929512a2ffad153d7ce48153f89578a17",
-            "record_id": "evidence:7c262b002ae28bc37259566ac950ecfa",
+            "record_digest": "sha256:24eb602dcd6ea33339e76bc475225d5717126893e1c191f60f67b94744bff1f3",
+            "record_id": "evidence:baf5caab7b5398f074b5dfb6f8f5be7d",
             "trace": {
               "complete": true,
               "excluded_outputs": 4,
@@ -1403,7 +1403,7 @@
         "rerun": {
           "exit_code": 1,
           "passed": false,
-          "seconds": 0.274,
+          "seconds": 0.28,
           "tests": 2
         }
       },
@@ -1420,12 +1420,12 @@
           "M2": {
             "current": false,
             "decision": "revalidate",
-            "decision_seconds": 0.557
+            "decision_seconds": 0.725
           },
           "M3": {
             "decision": "reuse",
             "exit_code": 0,
-            "seconds": 0.369,
+            "seconds": 0.305,
             "tests_executed": 0
           },
           "M4": {
@@ -1434,7 +1434,7 @@
               "src/invoice/data/rates.json"
             ],
             "decision": "revalidate",
-            "decision_seconds": 0.591,
+            "decision_seconds": 0.658,
             "epoch": 1,
             "reasons": [
               "input-changed"
@@ -1443,7 +1443,7 @@
         },
         "fixture_defect": false,
         "predecessor": {
-          "offer_digest": "sha256:95bb10a6b185468d03af6060f00d581930d90f8a882659e4d6eb7db53d24d5c1",
+          "offer_digest": "sha256:71d066fffda796c580ac9f8412dc848e8b6539df5312fc5ba08a1e089c81d114",
           "record": {
             "inputs": {
               "env:none": 42,
@@ -1459,8 +1459,224 @@
               "probe:project": 45,
               "project-root:none": 1
             },
-            "record_digest": "sha256:078a491dcf7ac34d45e73c995a4403e6a3d65d5b957782918ea3afc73fd227c7",
-            "record_id": "evidence:d9be733043cdaf191bf7c4ffe4bfdbaf",
+            "record_digest": "sha256:6faff8a8045f3df8f99b07835e8c8d2b7c47fc3f7a8c0cdb9a130c2040b0fcb8",
+            "record_id": "evidence:cfed0370c428b2cc8a4f36393c71e531",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "revalidate",
+        "rerun": {
+          "exit_code": 1,
+          "passed": false,
+          "seconds": 0.328,
+          "tests": 2
+        }
+      },
+      {
+        "case": "A3",
+        "consequential": false,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": false,
+            "decision": "revalidate",
+            "decision_seconds": 0.714
+          },
+          "M3": {
+            "decision": "reuse",
+            "exit_code": 0,
+            "seconds": 0.279,
+            "tests_executed": 0
+          },
+          "M4": {
+            "applicability": "revalidate",
+            "changed": [
+              "src/invoice/pricing.py"
+            ],
+            "decision": "revalidate",
+            "decision_seconds": 0.604,
+            "epoch": 1,
+            "reasons": [
+              "input-changed"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:f0c8ca58b2ea1a9bf1e099e0ecccbef599cb08d2e9c37641f8378547ea61536b",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:b0858f4f9747610fe01caeb9283a9cf8af15abbc237f0ba4ce400366ab18e1df",
+            "record_id": "evidence:0a632d8ccd907676b44c2017be0d1660",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "revalidate",
+        "rerun": {
+          "exit_code": 0,
+          "passed": true,
+          "seconds": 0.302,
+          "tests": 2
+        }
+      },
+      {
+        "case": "A4",
+        "consequential": true,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": false,
+            "decision": "revalidate",
+            "decision_seconds": 0.723
+          },
+          "M3": {
+            "decision": "reuse",
+            "exit_code": 0,
+            "seconds": 0.286,
+            "tests_executed": 0
+          },
+          "M4": {
+            "applicability": "revalidate",
+            "changed": [
+              "src/invoice"
+            ],
+            "decision": "revalidate",
+            "decision_seconds": 0.594,
+            "epoch": 1,
+            "reasons": [
+              "input-changed"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:2293ab295b90d20f3a5b1bedd801b2a71b358cd9a6052014fc5c8ad57e2a7fbf",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:e89e22a921f2f8297ebb02aef7cec380cb97455056a3ba1ce428965da426f0f4",
+            "record_id": "evidence:4f0cac88365765e34142380b1ea58d99",
+            "trace": {
+              "complete": true,
+              "excluded_outputs": 4,
+              "processes": 1,
+              "reasons": []
+            },
+            "verdict": "passed"
+          },
+          "testmon_seed_passed": true
+        },
+        "required": "revalidate",
+        "rerun": {
+          "exit_code": 1,
+          "passed": false,
+          "seconds": 0.263,
+          "tests": 2
+        }
+      },
+      {
+        "case": "A5",
+        "consequential": true,
+        "decisions": {
+          "M0": {
+            "decision": "reuse"
+          },
+          "M1": {
+            "decision": "revalidate"
+          },
+          "M2": {
+            "current": false,
+            "decision": "revalidate",
+            "decision_seconds": 0.832
+          },
+          "M3": {
+            "decision": "revalidate",
+            "exit_code": 1,
+            "seconds": 0.446,
+            "tests_executed": 2
+          },
+          "M4": {
+            "applicability": "revalidate",
+            "changed": [
+              "tests/conftest.py"
+            ],
+            "decision": "revalidate",
+            "decision_seconds": 0.708,
+            "epoch": 1,
+            "reasons": [
+              "input-changed"
+            ]
+          }
+        },
+        "fixture_defect": false,
+        "predecessor": {
+          "offer_digest": "sha256:97ef063542e24579c1a3111b7aa40703c24ca906611363c4ed55c9085acba538",
+          "record": {
+            "inputs": {
+              "env:none": 42,
+              "executable:none": 1,
+              "file:external": 365,
+              "file:project": 7,
+              "import-listing:external": 36,
+              "import-listing:project": 2,
+              "listing:project": 2,
+              "metadata-listing:external": 4,
+              "metadata-listing:project": 1,
+              "probe:external": 37,
+              "probe:project": 45,
+              "project-root:none": 1
+            },
+            "record_digest": "sha256:5917e80005c89cb2074dae252d1a8bff1cf8ac5a3ec0fbd26353f65dde7b5c93",
+            "record_id": "evidence:9fdfba956ad6af82a1cc91e8adb4430e",
             "trace": {
               "complete": true,
               "excluded_outputs": 4,
@@ -1480,222 +1696,6 @@
         }
       },
       {
-        "case": "A3",
-        "consequential": false,
-        "decisions": {
-          "M0": {
-            "decision": "reuse"
-          },
-          "M1": {
-            "decision": "revalidate"
-          },
-          "M2": {
-            "current": false,
-            "decision": "revalidate",
-            "decision_seconds": 0.652
-          },
-          "M3": {
-            "decision": "reuse",
-            "exit_code": 0,
-            "seconds": 0.278,
-            "tests_executed": 0
-          },
-          "M4": {
-            "applicability": "revalidate",
-            "changed": [
-              "src/invoice/pricing.py"
-            ],
-            "decision": "revalidate",
-            "decision_seconds": 0.603,
-            "epoch": 1,
-            "reasons": [
-              "input-changed"
-            ]
-          }
-        },
-        "fixture_defect": false,
-        "predecessor": {
-          "offer_digest": "sha256:46582cf1e0d2577afe3b69ec5ef6888d9b12c84e32cfb9b404cb06db475633d8",
-          "record": {
-            "inputs": {
-              "env:none": 42,
-              "executable:none": 1,
-              "file:external": 365,
-              "file:project": 7,
-              "import-listing:external": 36,
-              "import-listing:project": 2,
-              "listing:project": 2,
-              "metadata-listing:external": 4,
-              "metadata-listing:project": 1,
-              "probe:external": 37,
-              "probe:project": 45,
-              "project-root:none": 1
-            },
-            "record_digest": "sha256:a33f4569e811b5f08ef3ef11e897817703c30b7342db98e2e7f899ca3138d152",
-            "record_id": "evidence:070a29d12b4ba08bb5f1eeaa860e38a5",
-            "trace": {
-              "complete": true,
-              "excluded_outputs": 4,
-              "processes": 1,
-              "reasons": []
-            },
-            "verdict": "passed"
-          },
-          "testmon_seed_passed": true
-        },
-        "required": "revalidate",
-        "rerun": {
-          "exit_code": 0,
-          "passed": true,
-          "seconds": 0.332,
-          "tests": 2
-        }
-      },
-      {
-        "case": "A4",
-        "consequential": true,
-        "decisions": {
-          "M0": {
-            "decision": "reuse"
-          },
-          "M1": {
-            "decision": "revalidate"
-          },
-          "M2": {
-            "current": false,
-            "decision": "revalidate",
-            "decision_seconds": 0.781
-          },
-          "M3": {
-            "decision": "reuse",
-            "exit_code": 0,
-            "seconds": 0.278,
-            "tests_executed": 0
-          },
-          "M4": {
-            "applicability": "revalidate",
-            "changed": [
-              "src/invoice"
-            ],
-            "decision": "revalidate",
-            "decision_seconds": 0.658,
-            "epoch": 1,
-            "reasons": [
-              "input-changed"
-            ]
-          }
-        },
-        "fixture_defect": false,
-        "predecessor": {
-          "offer_digest": "sha256:4f04fdbb65ffd91abf9f222e8e6dcd63afa939f5a4d90e7b172696d79a0b80dc",
-          "record": {
-            "inputs": {
-              "env:none": 42,
-              "executable:none": 1,
-              "file:external": 365,
-              "file:project": 7,
-              "import-listing:external": 36,
-              "import-listing:project": 2,
-              "listing:project": 2,
-              "metadata-listing:external": 4,
-              "metadata-listing:project": 1,
-              "probe:external": 37,
-              "probe:project": 45,
-              "project-root:none": 1
-            },
-            "record_digest": "sha256:216278011952f6b801962a82ab97043bf7ee755c5b387d13afd77e44243c2e08",
-            "record_id": "evidence:90c323bb69f67fadf749ea32700dc5e9",
-            "trace": {
-              "complete": true,
-              "excluded_outputs": 4,
-              "processes": 1,
-              "reasons": []
-            },
-            "verdict": "passed"
-          },
-          "testmon_seed_passed": true
-        },
-        "required": "revalidate",
-        "rerun": {
-          "exit_code": 1,
-          "passed": false,
-          "seconds": 0.299,
-          "tests": 2
-        }
-      },
-      {
-        "case": "A5",
-        "consequential": true,
-        "decisions": {
-          "M0": {
-            "decision": "reuse"
-          },
-          "M1": {
-            "decision": "revalidate"
-          },
-          "M2": {
-            "current": false,
-            "decision": "revalidate",
-            "decision_seconds": 0.742
-          },
-          "M3": {
-            "decision": "revalidate",
-            "exit_code": 1,
-            "seconds": 0.347,
-            "tests_executed": 2
-          },
-          "M4": {
-            "applicability": "revalidate",
-            "changed": [
-              "tests/conftest.py"
-            ],
-            "decision": "revalidate",
-            "decision_seconds": 0.582,
-            "epoch": 1,
-            "reasons": [
-              "input-changed"
-            ]
-          }
-        },
-        "fixture_defect": false,
-        "predecessor": {
-          "offer_digest": "sha256:aeccf57cd915a1896f9a4badc7ec7dd156c2e97b3a6207f9239a29cf07699f9b",
-          "record": {
-            "inputs": {
-              "env:none": 42,
-              "executable:none": 1,
-              "file:external": 365,
-              "file:project": 7,
-              "import-listing:external": 36,
-              "import-listing:project": 2,
-              "listing:project": 2,
-              "metadata-listing:external": 4,
-              "metadata-listing:project": 1,
-              "probe:external": 37,
-              "probe:project": 45,
-              "project-root:none": 1
-            },
-            "record_digest": "sha256:56ee7736491e1e2de150f7f6a3810635ed3ec86eed04fdc7af7f474e24a0f3c5",
-            "record_id": "evidence:9c16401bd766f84c45544e740c21de84",
-            "trace": {
-              "complete": true,
-              "excluded_outputs": 4,
-              "processes": 1,
-              "reasons": []
-            },
-            "verdict": "passed"
-          },
-          "testmon_seed_passed": true
-        },
-        "required": "revalidate",
-        "rerun": {
-          "exit_code": 1,
-          "passed": false,
-          "seconds": 0.294,
-          "tests": 2
-        }
-      },
-      {
         "case": "B1",
         "consequential": true,
         "decisions": {
@@ -1708,12 +1708,12 @@
           "M2": {
             "current": false,
             "decision": "revalidate",
-            "decision_seconds": 0.603
+            "decision_seconds": 0.558
           },
           "M3": {
             "decision": "reuse",
             "exit_code": 0,
-            "seconds": 0.313,
+            "seconds": 0.305,
             "tests_executed": 0
           },
           "M4": {
@@ -1722,7 +1722,7 @@
               "pyproject.toml"
             ],
             "decision": "revalidate",
-            "decision_seconds": 0.71,
+            "decision_seconds": 0.616,
             "epoch": 1,
             "reasons": [
               "input-changed"
@@ -1731,7 +1731,7 @@
         },
         "fixture_defect": false,
         "predecessor": {
-          "offer_digest": "sha256:e6d2854378440b491b3cb99f48433bb59dde625856034cc535cf14224eec6a60",
+          "offer_digest": "sha256:72e4bacd07893ce230563fd5dd5b0efb311f3623f019e9e56fb0bab8c8c64c36",
           "record": {
             "inputs": {
               "env:none": 42,
@@ -1747,8 +1747,8 @@
               "probe:project": 45,
               "project-root:none": 1
             },
-            "record_digest": "sha256:222880c4ceccf003217a303db938169399e522b9d59dc8c125bf3774ac943136",
-            "record_id": "evidence:db2d673ad2616b57bde8908aa0761718",
+            "record_digest": "sha256:58b306f45866dfa2ddceaafef421e7f5696db4880e8191e1be8fc7b108f7860d",
+            "record_id": "evidence:87225c28b3b46bf413d74f6b9ae21610",
             "trace": {
               "complete": true,
               "excluded_outputs": 4,
@@ -1763,7 +1763,7 @@
         "rerun": {
           "exit_code": 1,
           "passed": false,
-          "seconds": 0.358,
+          "seconds": 0.312,
           "tests": 2
         }
       },
@@ -1780,12 +1780,12 @@
           "M2": {
             "current": true,
             "decision": "reuse",
-            "decision_seconds": 0.673
+            "decision_seconds": 0.545
           },
           "M3": {
             "decision": "reuse",
             "exit_code": 0,
-            "seconds": 0.28,
+            "seconds": 0.33,
             "tests_executed": 0
           },
           "M4": {
@@ -1794,7 +1794,7 @@
               "PYTEST_ADDOPTS"
             ],
             "decision": "revalidate",
-            "decision_seconds": 0.573,
+            "decision_seconds": 0.618,
             "epoch": 1,
             "reasons": [
               "input-changed"
@@ -1803,7 +1803,7 @@
         },
         "fixture_defect": false,
         "predecessor": {
-          "offer_digest": "sha256:a3aa3c702d51546b1836de16c6cc7d33fcf2261198258ad1e627c4255f7aae39",
+          "offer_digest": "sha256:58a90181680dc229a180391a3bae26dd50f7fa92da35bc9607de48af04a75c80",
           "record": {
             "inputs": {
               "env:none": 42,
@@ -1819,8 +1819,8 @@
               "probe:project": 45,
               "project-root:none": 1
             },
-            "record_digest": "sha256:cf3390bbb0beab478daf29189e6d6ce6f77af1f0d28e9a7232a49a0538273ec2",
-            "record_id": "evidence:536ce04ae4c96abaa940101832d0c515",
+            "record_digest": "sha256:63476ad8810927521ebb26fc888151591b0469f558f3295da21b7bbe9e142536",
+            "record_id": "evidence:237238c5e347a9a3f2f66d5145c27ccf",
             "trace": {
               "complete": true,
               "excluded_outputs": 4,
@@ -1835,7 +1835,7 @@
         "rerun": {
           "exit_code": 1,
           "passed": false,
-          "seconds": 0.277,
+          "seconds": 0.318,
           "tests": 2
         }
       },
@@ -1852,23 +1852,23 @@
           "M2": {
             "current": true,
             "decision": "reuse",
-            "decision_seconds": 0.575
+            "decision_seconds": 0.612
           },
           "M3": {
             "decision": "reuse",
             "exit_code": 0,
-            "seconds": 0.314,
+            "seconds": 0.272,
             "tests_executed": 0
           },
           "M4": {
             "applicability": "revalidate",
             "changed": [
-              "/home/claude/work/handoff/eval/final/venv312/lib/python3.12/site-packages/ratelib/__init__.py",
-              "/home/claude/work/handoff/eval/final/venv312/lib/python3.12/site-packages",
-              "/home/claude/work/handoff/eval/final/venv312/lib/python3.12/site-packages"
+              "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages/ratelib/__init__.py",
+              "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages",
+              "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages"
             ],
             "decision": "revalidate",
-            "decision_seconds": 0.579,
+            "decision_seconds": 0.561,
             "epoch": 1,
             "reasons": [
               "input-changed"
@@ -1877,7 +1877,7 @@
         },
         "fixture_defect": false,
         "predecessor": {
-          "offer_digest": "sha256:9df4515b89016de46a874766d7686b00d49ccaf31c9df338e9a28e79edb136ac",
+          "offer_digest": "sha256:b433fc0553a35a282a19a9b96008af2c26c6df23350f00e22c353c8065d6ec8a",
           "record": {
             "inputs": {
               "env:none": 42,
@@ -1893,8 +1893,8 @@
               "probe:project": 45,
               "project-root:none": 1
             },
-            "record_digest": "sha256:8507d08811a25433e49329e0d987a0c8627846046867a8d3be1b71697e074997",
-            "record_id": "evidence:35f2f07f423dea765401219cfa201e2f",
+            "record_digest": "sha256:27b3529777b6dd1b4bb76b8cac5a61d4a423545e847604e1d450cdf35a569d4b",
+            "record_id": "evidence:4ac72e33e94df11f0e8f4f362fb85632",
             "trace": {
               "complete": true,
               "excluded_outputs": 4,
@@ -1909,7 +1909,7 @@
         "rerun": {
           "exit_code": 1,
           "passed": false,
-          "seconds": 0.298,
+          "seconds": 0.289,
           "tests": 2
         }
       },
@@ -1926,23 +1926,23 @@
           "M2": {
             "current": true,
             "decision": "reuse",
-            "decision_seconds": 0.636
+            "decision_seconds": 0.706
           },
           "M3": {
             "decision": "revalidate",
             "exit_code": 1,
-            "seconds": 0.338,
+            "seconds": 0.322,
             "tests_executed": 2
           },
           "M4": {
             "applicability": "revalidate",
             "changed": [
-              "/home/claude/work/handoff/eval/final/venv312/lib/python3.12/site-packages/ratelib/__init__.py",
-              "/home/claude/work/handoff/eval/final/venv312/lib/python3.12/site-packages",
-              "/home/claude/work/handoff/eval/final/venv312/lib/python3.12/site-packages"
+              "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages/ratelib/__init__.py",
+              "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages",
+              "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages"
             ],
             "decision": "revalidate",
-            "decision_seconds": 0.67,
+            "decision_seconds": 0.577,
             "epoch": 1,
             "reasons": [
               "input-changed"
@@ -1951,7 +1951,7 @@
         },
         "fixture_defect": false,
         "predecessor": {
-          "offer_digest": "sha256:49f276e0928f73e345647bc0c977cb966cd3d0174b7a18aaacb41543e298c5ea",
+          "offer_digest": "sha256:3f0464135d29a01c330e6b1ebc9398a1e1917962a2f97abb75e13ef8b24e98d5",
           "record": {
             "inputs": {
               "env:none": 42,
@@ -1967,8 +1967,8 @@
               "probe:project": 45,
               "project-root:none": 1
             },
-            "record_digest": "sha256:bf41d859ec6b404d3ed90ba6e02bab4c0276a23d7f2a03acda8a51691acc1af8",
-            "record_id": "evidence:5fb527e0ed91f62dc27a91800929e18b",
+            "record_digest": "sha256:9bfa5740194e8b84a5bffa28c47565e4dcbd45bee8b8c9e137948f501ec5099f",
+            "record_id": "evidence:7b0fb340efaff29da5ccf38c164db2a3",
             "trace": {
               "complete": true,
               "excluded_outputs": 4,
@@ -1983,7 +1983,7 @@
         "rerun": {
           "exit_code": 1,
           "passed": false,
-          "seconds": 0.286,
+          "seconds": 0.324,
           "tests": 2
         }
       },
@@ -2000,12 +2000,12 @@
           "M2": {
             "current": true,
             "decision": "reuse",
-            "decision_seconds": 0.544
+            "decision_seconds": 0.595
           },
           "M3": {
             "decision": "revalidate",
             "exit_code": 0,
-            "seconds": 0.346,
+            "seconds": 0.318,
             "tests_executed": 2
           },
           "M4": {
@@ -2014,7 +2014,7 @@
               "python"
             ],
             "decision": "revalidate",
-            "decision_seconds": 0.55,
+            "decision_seconds": 0.556,
             "epoch": 1,
             "reasons": [
               "input-changed"
@@ -2023,7 +2023,7 @@
         },
         "fixture_defect": false,
         "predecessor": {
-          "offer_digest": "sha256:8f9e19a88c223c0f922bc50163253088a70a081cc7ba148e24b6d7867950ed6e",
+          "offer_digest": "sha256:82dabad48ee0f170e9f59be20214027a8e05721f60e5f39ee27710433532909b",
           "record": {
             "inputs": {
               "env:none": 42,
@@ -2039,8 +2039,8 @@
               "probe:project": 45,
               "project-root:none": 1
             },
-            "record_digest": "sha256:d7429d18fca65b1cf198c9c653cc7490e1cb4a6c69455f6bf76cdbf9e97a8599",
-            "record_id": "evidence:c1c5768b4bddd2bbfc2ddb53398b3fe2",
+            "record_digest": "sha256:8e361dfa2c5af3882960f30e8b33839b7cad26e9be1a29d751233ee38fa3a1a7",
+            "record_id": "evidence:1f7f26618b626488a2f00cfc847788fa",
             "trace": {
               "complete": true,
               "excluded_outputs": 4,
@@ -2055,7 +2055,7 @@
         "rerun": {
           "exit_code": 0,
           "passed": true,
-          "seconds": 0.261,
+          "seconds": 0.268,
           "tests": 2
         }
       },
@@ -2072,19 +2072,19 @@
           "M2": {
             "current": false,
             "decision": "revalidate",
-            "decision_seconds": 0.602
+            "decision_seconds": 0.631
           },
           "M3": {
             "decision": "reuse",
             "exit_code": 0,
-            "seconds": 0.315,
+            "seconds": 0.404,
             "tests_executed": 0
           },
           "M4": {
             "applicability": "reuse",
             "changed": [],
             "decision": "reuse",
-            "decision_seconds": 0.592,
+            "decision_seconds": 0.7,
             "epoch": 1,
             "reasons": [
               "all-inputs-unchanged"
@@ -2093,7 +2093,7 @@
         },
         "fixture_defect": false,
         "predecessor": {
-          "offer_digest": "sha256:f02ed2b47419ce94283d9679cf17c4b2696e5f74b25f063f229e8aa5e0fff9a0",
+          "offer_digest": "sha256:e840d138cbd0229e148b7d5d4be3186f5c5ba0ff0d49807724367580f8a61b2a",
           "record": {
             "inputs": {
               "env:none": 42,
@@ -2109,8 +2109,8 @@
               "probe:project": 45,
               "project-root:none": 1
             },
-            "record_digest": "sha256:8270eeab4c0e5db5a1c0b1cb27a31662428f744dfcb348ed49c40439b7b341d3",
-            "record_id": "evidence:9e0bbae813cb1ed36cf819bf656be770",
+            "record_digest": "sha256:6ba34ca276d63f7284472eb84070503c927e07db2f3fa149887d2af7a7036cdd",
+            "record_id": "evidence:0ef9965d57abfd9a302892ce2a65d338",
             "trace": {
               "complete": true,
               "excluded_outputs": 4,
@@ -2125,7 +2125,7 @@
         "rerun": {
           "exit_code": 0,
           "passed": true,
-          "seconds": 0.309,
+          "seconds": 0.295,
           "tests": 2
         }
       },
@@ -2142,19 +2142,19 @@
           "M2": {
             "current": false,
             "decision": "revalidate",
-            "decision_seconds": 0.62
+            "decision_seconds": 0.581
           },
           "M3": {
             "decision": "reuse",
             "exit_code": 0,
-            "seconds": 0.276,
+            "seconds": 0.33,
             "tests_executed": 0
           },
           "M4": {
             "applicability": "reuse",
             "changed": [],
             "decision": "reuse",
-            "decision_seconds": 0.578,
+            "decision_seconds": 0.698,
             "epoch": 1,
             "reasons": [
               "all-inputs-unchanged"
@@ -2163,7 +2163,7 @@
         },
         "fixture_defect": false,
         "predecessor": {
-          "offer_digest": "sha256:ad9f7f9cd41e28d768c7bd48837ac659d14e9a7d5b7ada34a0225f0887ea2772",
+          "offer_digest": "sha256:4bc65ccf63db39167a6abc08116d2e76aa62356e743c87ba77f7cbd7c5186b70",
           "record": {
             "inputs": {
               "env:none": 42,
@@ -2179,8 +2179,8 @@
               "probe:project": 45,
               "project-root:none": 1
             },
-            "record_digest": "sha256:4e2329aca572adcadcf6c94cc4812cb97c8bf8952129419f645e5f07acc3f4bf",
-            "record_id": "evidence:de7c6b3a0665de411c5f58d7dc54481a",
+            "record_digest": "sha256:030a0b1669f52361e11778951c94fa4a851d9ea75daafd5d10ef6738c8ca8169",
+            "record_id": "evidence:0498edc231497e3a8a056770be0361cc",
             "trace": {
               "complete": true,
               "excluded_outputs": 4,
@@ -2195,7 +2195,7 @@
         "rerun": {
           "exit_code": 0,
           "passed": true,
-          "seconds": 0.258,
+          "seconds": 0.331,
           "tests": 2
         }
       },
@@ -2212,19 +2212,19 @@
           "M2": {
             "current": false,
             "decision": "revalidate",
-            "decision_seconds": 0.568
+            "decision_seconds": 0.586
           },
           "M3": {
             "decision": "reuse",
             "exit_code": 0,
-            "seconds": 0.28,
+            "seconds": 0.289,
             "tests_executed": 0
           },
           "M4": {
             "applicability": "reuse",
             "changed": [],
             "decision": "reuse",
-            "decision_seconds": 0.581,
+            "decision_seconds": 0.606,
             "epoch": 1,
             "reasons": [
               "all-inputs-unchanged"
@@ -2233,7 +2233,7 @@
         },
         "fixture_defect": false,
         "predecessor": {
-          "offer_digest": "sha256:ce1f01ae156daa283b12a794df7f0890235c656b98cc93e3ad8ffca020017539",
+          "offer_digest": "sha256:c4b38148547cc409e7c3b10cd20675bcc3563a46fdfd54b140b033f42af3258a",
           "record": {
             "inputs": {
               "env:none": 42,
@@ -2249,8 +2249,8 @@
               "probe:project": 45,
               "project-root:none": 1
             },
-            "record_digest": "sha256:fd937078ddba223e826316c4dfcda69dcddcc6ff6047ee211a56640d5b8a10da",
-            "record_id": "evidence:55def9d203a7804d8acd074183d80664",
+            "record_digest": "sha256:7f48197462cf4fa890cd6bcae5198870443e387d257a8585c9b5d90c1f8f48dd",
+            "record_id": "evidence:3a2cdc5adf3814b35327a17602152fc7",
             "trace": {
               "complete": true,
               "excluded_outputs": 4,
@@ -2265,7 +2265,7 @@
         "rerun": {
           "exit_code": 0,
           "passed": true,
-          "seconds": 0.278,
+          "seconds": 0.363,
           "tests": 2
         }
       },
@@ -2282,12 +2282,12 @@
           "M2": {
             "current": false,
             "decision": "revalidate",
-            "decision_seconds": 0.621
+            "decision_seconds": 0.591
           },
           "M3": {
             "decision": "reuse",
             "exit_code": 0,
-            "seconds": 0.276,
+            "seconds": 0.274,
             "tests_executed": 0
           },
           "M4": {
@@ -2296,7 +2296,7 @@
               "."
             ],
             "decision": "revalidate",
-            "decision_seconds": 0.568,
+            "decision_seconds": 0.636,
             "epoch": 1,
             "reasons": [
               "input-changed"
@@ -2305,7 +2305,7 @@
         },
         "fixture_defect": false,
         "predecessor": {
-          "offer_digest": "sha256:b6edf5676bf54485a15c4bae5189ac098a547f9baef284d2a578b706d3c87d96",
+          "offer_digest": "sha256:8217784012f88f45accc84feb730e2422a48ff09b680ebc4c5e73ead5d0478cb",
           "record": {
             "inputs": {
               "env:none": 42,
@@ -2321,8 +2321,8 @@
               "probe:project": 45,
               "project-root:none": 1
             },
-            "record_digest": "sha256:20c1070bb639c0dc853bf652bc76f9dfb6c7f00550f39b4265d785a5d4bedcce",
-            "record_id": "evidence:8e417c82a5631c221d4d3bc43ff8a934",
+            "record_digest": "sha256:5558fef2c4a4a283347c9fdbf38111969923b8d8cba82a36a960f696c3d63ca8",
+            "record_id": "evidence:f50e9f7016485c2dc9b5dad7dac26e50",
             "trace": {
               "complete": true,
               "excluded_outputs": 4,
@@ -2337,7 +2337,7 @@
         "rerun": {
           "exit_code": 0,
           "passed": true,
-          "seconds": 0.271,
+          "seconds": 0.26,
           "tests": 2
         }
       },
@@ -2354,19 +2354,19 @@
           "M2": {
             "current": false,
             "decision": "revalidate",
-            "decision_seconds": 0.575
+            "decision_seconds": 0.634
           },
           "M3": {
             "decision": "reuse",
             "exit_code": 0,
-            "seconds": 0.352,
+            "seconds": 0.331,
             "tests_executed": 0
           },
           "M4": {
             "applicability": "reuse",
             "changed": [],
             "decision": "reuse",
-            "decision_seconds": 0.628,
+            "decision_seconds": 0.627,
             "epoch": 1,
             "reasons": [
               "all-inputs-unchanged"
@@ -2375,7 +2375,7 @@
         },
         "fixture_defect": false,
         "predecessor": {
-          "offer_digest": "sha256:b4f6da83a82a7b133529aeb49cfa7b4a59f6848082a8926d30f7475675949e0c",
+          "offer_digest": "sha256:b0ff40a1e8a2c24239c8045a11777f39c818913c43bf20d261bfa41a4bcc619d",
           "record": {
             "inputs": {
               "env:none": 42,
@@ -2391,8 +2391,8 @@
               "probe:project": 45,
               "project-root:none": 1
             },
-            "record_digest": "sha256:4fb860f92daa02049d61e785f854a44bb9ed75c34ad67cc6a83c4542cbb4d2d9",
-            "record_id": "evidence:41166be91bc1098586958c144fc32849",
+            "record_digest": "sha256:ff5f3f1576a811fe77e50a82c1f18620149225739009dc2496baf54dd581ebe8",
+            "record_id": "evidence:84f6178398e3e3a0ac28d49d30048169",
             "trace": {
               "complete": true,
               "excluded_outputs": 4,
@@ -2407,7 +2407,7 @@
         "rerun": {
           "exit_code": 0,
           "passed": true,
-          "seconds": 0.297,
+          "seconds": 0.31,
           "tests": 2
         }
       },
@@ -2424,19 +2424,19 @@
           "M2": {
             "current": true,
             "decision": "reuse",
-            "decision_seconds": 0.552
+            "decision_seconds": 0.562
           },
           "M3": {
             "decision": "reuse",
             "exit_code": 0,
-            "seconds": 0.331,
+            "seconds": 0.27,
             "tests_executed": 0
           },
           "M4": {
             "applicability": "reuse",
             "changed": [],
             "decision": "reuse",
-            "decision_seconds": 0.571,
+            "decision_seconds": 0.619,
             "epoch": 1,
             "reasons": [
               "all-inputs-unchanged"
@@ -2445,7 +2445,7 @@
         },
         "fixture_defect": false,
         "predecessor": {
-          "offer_digest": "sha256:d961d38c269f6ec5a6c90a921d32b8910a76f1678933dc3a97f3f4e504e49aca",
+          "offer_digest": "sha256:db8a91a217336acaa9ac2a7f6cbd65a1e05ce848c2dd5a040de7c61921ae7898",
           "record": {
             "inputs": {
               "env:none": 42,
@@ -2461,8 +2461,8 @@
               "probe:project": 45,
               "project-root:none": 1
             },
-            "record_digest": "sha256:9459cb62c7ec4f48e471bb69a4589e64feba68acbfbad7e04ae82203d6010ada",
-            "record_id": "evidence:1a4d45475a394aa8e4f0f37515e9644b",
+            "record_digest": "sha256:95231b421f11e0a53b0ee1fc7b5f7b64dedf4a2d5bd0f61f5c9e41d68edbecc2",
+            "record_id": "evidence:8ba15078f50eac9f2a5bc04dce71a72f",
             "trace": {
               "complete": true,
               "excluded_outputs": 4,
@@ -2477,7 +2477,7 @@
         "rerun": {
           "exit_code": 0,
           "passed": true,
-          "seconds": 0.265,
+          "seconds": 0.252,
           "tests": 2
         }
       },
@@ -2500,14 +2500,14 @@
             "decision": "revalidate",
             "exit_code": 0,
             "note": "its evidence (.testmondata) deleted",
-            "seconds": 0.369,
+            "seconds": 0.376,
             "tests_executed": 2
           },
           "M4": {
             "applicability": "unknown",
             "changed": [],
             "decision": "revalidate",
-            "decision_seconds": 0.581,
+            "decision_seconds": 0.611,
             "epoch": 1,
             "reasons": [
               "record-unavailable"
@@ -2516,7 +2516,7 @@
         },
         "fixture_defect": false,
         "predecessor": {
-          "offer_digest": "sha256:023a8725209c585bfc6c46c149b3fc6d4bcf553e393b17922899fcc74e33e1dd",
+          "offer_digest": "sha256:e8f380aad64d54416ac62a9aafcd9c93d07b6a815a78f03509a21bb8be2a1aff",
           "record": {
             "inputs": {
               "env:none": 42,
@@ -2532,8 +2532,8 @@
               "probe:project": 45,
               "project-root:none": 1
             },
-            "record_digest": "sha256:b5d591fa600979719116cc5769b248a20a1612c5450ddad363eeeec688e4cb6d",
-            "record_id": "evidence:ebefd7bae135b82ec42852527ae7c15e",
+            "record_digest": "sha256:6a2866ef36c509dcc432d8825bf9ad38621863248e0db0779f50e82bb6dbcbd1",
+            "record_id": "evidence:419d7c327e6b70ec973aa38c17c863bc",
             "trace": {
               "complete": true,
               "excluded_outputs": 4,
@@ -2548,7 +2548,7 @@
         "rerun": {
           "exit_code": 0,
           "passed": true,
-          "seconds": 0.256,
+          "seconds": 0.333,
           "tests": 2
         }
       },
@@ -2565,7 +2565,7 @@
           "M2": {
             "current": true,
             "decision": "reuse",
-            "decision_seconds": 0.599
+            "decision_seconds": 0.678
           },
           "M3": {
             "decision": "n/a",
@@ -2575,7 +2575,7 @@
             "applicability": "unknown",
             "changed": [],
             "decision": "revalidate",
-            "decision_seconds": 0.542,
+            "decision_seconds": 0.595,
             "epoch": 1,
             "reasons": [
               "record-not-the-one-handed-off"
@@ -2584,7 +2584,7 @@
         },
         "fixture_defect": false,
         "predecessor": {
-          "offer_digest": "sha256:5cfdd5412bacf5b65abd2d90c3c536acfe5dafc8540b0e33526fee47a6e087fd",
+          "offer_digest": "sha256:cc5394ea5d038aaf4b9e9aea6884d45b4df3fa6263a8e758141ffeadd1f79788",
           "record": {
             "inputs": {
               "env:none": 42,
@@ -2600,8 +2600,8 @@
               "probe:project": 45,
               "project-root:none": 1
             },
-            "record_digest": "sha256:1e9441312cee992735931a17a2e262a2afbc2da0eca95ba89dfb1e210a2c8167",
-            "record_id": "evidence:1a69c1cdf500ed28937484b08fc90d3a",
+            "record_digest": "sha256:719bae9d2b2c509c6920bad63411b4f86d197932569abc3cd9444609f9bb219d",
+            "record_id": "evidence:00ee2f9e8fd5456aad98b179d8938575",
             "trace": {
               "complete": true,
               "excluded_outputs": 4,
@@ -2616,7 +2616,7 @@
         "rerun": {
           "exit_code": 0,
           "passed": true,
-          "seconds": 0.28,
+          "seconds": 0.265,
           "tests": 2
         }
       },
@@ -2633,20 +2633,20 @@
           "M2": {
             "current": true,
             "decision": "reuse",
-            "decision_seconds": 0.594
+            "decision_seconds": 0.572
           },
           "M3": {
             "decision": "revalidate",
             "exit_code": 0,
             "note": "no .testmondata: the predecessor recorded no evidence",
-            "seconds": 0.397,
+            "seconds": 0.329,
             "tests_executed": 2
           },
           "M4": {
             "applicability": "no-evidence",
             "changed": [],
             "decision": "revalidate",
-            "decision_seconds": 0.614,
+            "decision_seconds": 0.542,
             "epoch": 1,
             "reasons": [
               "no evidence handed over"
@@ -2655,7 +2655,7 @@
         },
         "fixture_defect": false,
         "predecessor": {
-          "offer_digest": "sha256:eadb892a6afe9b3cba1affab993e14f59d1ab3f4482506b7e48452c693b588db",
+          "offer_digest": "sha256:d9955957ac33f3c1cd45ce941c1a950b0374a72d9dfdbef7f3e57104f3414c94",
           "record": null,
           "testmon_seed_passed": null
         },
@@ -2663,7 +2663,7 @@
         "rerun": {
           "exit_code": 0,
           "passed": true,
-          "seconds": 0.287,
+          "seconds": 0.268,
           "tests": 2
         }
       }
@@ -2684,12 +2684,12 @@
         "M2": {
           "current": false,
           "decision": "revalidate",
-          "decision_seconds": 0.558
+          "decision_seconds": 0.57
         },
         "M3": {
           "decision": "revalidate",
           "exit_code": 1,
-          "seconds": 0.293,
+          "seconds": 0.319,
           "tests_executed": 2
         },
         "M4": {
@@ -2698,7 +2698,7 @@
             "src/invoice/tax.py"
           ],
           "decision": "revalidate",
-          "decision_seconds": 0.557,
+          "decision_seconds": 0.562,
           "epoch": 1,
           "reasons": [
             "input-changed"
@@ -2707,7 +2707,7 @@
       },
       "fixture_defect": false,
       "predecessor": {
-        "offer_digest": "sha256:c43e0b842091de44a24c9a6b8e050b80d34b138f47949992f61719e9d44d9143",
+        "offer_digest": "sha256:72b1ad9b8baae3468b434cee80003dc37b93924967e426f436dc58dcbc25c429",
         "record": {
           "inputs": {
             "env:none": 42,
@@ -2723,8 +2723,8 @@
             "probe:project": 45,
             "project-root:none": 1
           },
-          "record_digest": "sha256:5832f6bc49dd85225df19e07fe067bc0645167638aa484207748a7ab946ab0c2",
-          "record_id": "evidence:a408f1cfa49f6e13c3b6a4fff43aa75e",
+          "record_digest": "sha256:c7e877b67abc8ccea48bc6b6150f7b5c515531ee9a03cb401b289a35da2727cb",
+          "record_id": "evidence:7f80522d9e1bae71579c28b239e9f3ae",
           "trace": {
             "complete": true,
             "excluded_outputs": 4,
@@ -2739,7 +2739,7 @@
       "rerun": {
         "exit_code": 1,
         "passed": false,
-        "seconds": 0.258,
+        "seconds": 0.346,
         "tests": 2
       }
     },
@@ -2756,12 +2756,12 @@
         "M2": {
           "current": false,
           "decision": "revalidate",
-          "decision_seconds": 0.58
+          "decision_seconds": 0.588
         },
         "M3": {
           "decision": "reuse",
           "exit_code": 0,
-          "seconds": 0.254,
+          "seconds": 0.281,
           "tests_executed": 0
         },
         "M4": {
@@ -2770,7 +2770,7 @@
             "src/invoice/data/rates.json"
           ],
           "decision": "revalidate",
-          "decision_seconds": 0.596,
+          "decision_seconds": 0.691,
           "epoch": 1,
           "reasons": [
             "input-changed"
@@ -2779,7 +2779,7 @@
       },
       "fixture_defect": false,
       "predecessor": {
-        "offer_digest": "sha256:a8b425a84f670d61742c37f3b7665d3827795b5cfa70f33b3567b26b8ad40085",
+        "offer_digest": "sha256:77d517115b653d0024f56a97d562ee027403372c457cbb2c7000ffc98d82b7ba",
         "record": {
           "inputs": {
             "env:none": 42,
@@ -2795,8 +2795,8 @@
             "probe:project": 45,
             "project-root:none": 1
           },
-          "record_digest": "sha256:5951e2f5c4981954ed7f74a1768e9fe025b76deb40a655889d2ce427b29dd974",
-          "record_id": "evidence:fab15aba6cf3d9aac493286356cc6f2f",
+          "record_digest": "sha256:0f4dcc54040a37b0e5d7bd7f82a154585f68f093554e38ca2f9312ddcfaba653",
+          "record_id": "evidence:8547732eb2c1c246ac3dcf21deaef398",
           "trace": {
             "complete": true,
             "excluded_outputs": 4,
@@ -2811,7 +2811,7 @@
       "rerun": {
         "exit_code": 1,
         "passed": false,
-        "seconds": 0.264,
+        "seconds": 0.254,
         "tests": 2
       }
     },
@@ -2828,12 +2828,12 @@
         "M2": {
           "current": false,
           "decision": "revalidate",
-          "decision_seconds": 0.546
+          "decision_seconds": 0.565
         },
         "M3": {
           "decision": "reuse",
           "exit_code": 0,
-          "seconds": 0.255,
+          "seconds": 0.26,
           "tests_executed": 0
         },
         "M4": {
@@ -2842,7 +2842,7 @@
             "src/invoice/pricing.py"
           ],
           "decision": "revalidate",
-          "decision_seconds": 0.585,
+          "decision_seconds": 0.571,
           "epoch": 1,
           "reasons": [
             "input-changed"
@@ -2851,7 +2851,7 @@
       },
       "fixture_defect": false,
       "predecessor": {
-        "offer_digest": "sha256:64f1864908ceea0274851180d3fbfd1d67a66044cf29338601a4a5cc915b4e81",
+        "offer_digest": "sha256:86b2c1f29ef3240b7f0f59aadb29fc4f269cabdd93fca73ea5378a4253919e26",
         "record": {
           "inputs": {
             "env:none": 42,
@@ -2867,8 +2867,8 @@
             "probe:project": 45,
             "project-root:none": 1
           },
-          "record_digest": "sha256:24d6ec280cc5f64f351faba3966a8566891acbd5cc6c4e684d992add6407bba7",
-          "record_id": "evidence:fa4c6253dfa27efecc74cec284ad944f",
+          "record_digest": "sha256:eb96471887f25e045a202edc02cb5e13bc64ea14c2273e8b7baf7385e8c6fd79",
+          "record_id": "evidence:232a2a9f5773fab444c82211cc662d7b",
           "trace": {
             "complete": true,
             "excluded_outputs": 4,
@@ -2883,7 +2883,7 @@
       "rerun": {
         "exit_code": 0,
         "passed": true,
-        "seconds": 0.241,
+        "seconds": 0.273,
         "tests": 2
       }
     },
@@ -2900,12 +2900,12 @@
         "M2": {
           "current": false,
           "decision": "revalidate",
-          "decision_seconds": 0.653
+          "decision_seconds": 0.597
         },
         "M3": {
           "decision": "reuse",
           "exit_code": 0,
-          "seconds": 0.286,
+          "seconds": 0.342,
           "tests_executed": 0
         },
         "M4": {
@@ -2914,7 +2914,7 @@
             "src/invoice"
           ],
           "decision": "revalidate",
-          "decision_seconds": 0.591,
+          "decision_seconds": 0.711,
           "epoch": 1,
           "reasons": [
             "input-changed"
@@ -2923,7 +2923,7 @@
       },
       "fixture_defect": false,
       "predecessor": {
-        "offer_digest": "sha256:aeab7bc3040316089e91a929f72c3766e5f8a48034303a789788e10f725c299e",
+        "offer_digest": "sha256:5328fc9e5b49279bd6f17c25c954d1e57af380ffd4a3891474c25f14d5acaba5",
         "record": {
           "inputs": {
             "env:none": 42,
@@ -2939,8 +2939,8 @@
             "probe:project": 45,
             "project-root:none": 1
           },
-          "record_digest": "sha256:e325899a644818b8d6d08b9d7f5008446321344d1009c8b873d25084f15f7147",
-          "record_id": "evidence:245926a598fe0bfc0368c83439bae745",
+          "record_digest": "sha256:a1f0e98848aff5e6b4a4c1c8521f0564985590c675ebe40ecdcf5758532c473b",
+          "record_id": "evidence:e91a00cccbf54475b87e455fb37e4964",
           "trace": {
             "complete": true,
             "excluded_outputs": 4,
@@ -2955,7 +2955,7 @@
       "rerun": {
         "exit_code": 1,
         "passed": false,
-        "seconds": 0.322,
+        "seconds": 0.352,
         "tests": 2
       }
     },
@@ -2972,12 +2972,12 @@
         "M2": {
           "current": false,
           "decision": "revalidate",
-          "decision_seconds": 0.588
+          "decision_seconds": 0.601
         },
         "M3": {
           "decision": "revalidate",
           "exit_code": 1,
-          "seconds": 0.311,
+          "seconds": 0.397,
           "tests_executed": 2
         },
         "M4": {
@@ -2986,7 +2986,7 @@
             "tests/conftest.py"
           ],
           "decision": "revalidate",
-          "decision_seconds": 0.703,
+          "decision_seconds": 0.747,
           "epoch": 1,
           "reasons": [
             "input-changed"
@@ -2995,7 +2995,7 @@
       },
       "fixture_defect": false,
       "predecessor": {
-        "offer_digest": "sha256:fcd8dbc8660b4965d1614ce0dcea83687e800d93958688f11e108e21bf05bc5c",
+        "offer_digest": "sha256:878669a8dd34a68d41fc1eae684ecdffe4e5f4a8ffd54221b1cebc433556cba8",
         "record": {
           "inputs": {
             "env:none": 42,
@@ -3011,8 +3011,8 @@
             "probe:project": 45,
             "project-root:none": 1
           },
-          "record_digest": "sha256:5ccc87893739e3607bd1876adde188aab972692f613318374f29286579b6f99f",
-          "record_id": "evidence:2d09720ecf3fee4a417e1abd24ade1f7",
+          "record_digest": "sha256:e6e10b874b5aa858eabcecf88751942f94cf124fb56c47db33e0528b230ff97f",
+          "record_id": "evidence:1018f26cba2a484af1a91891d58a78de",
           "trace": {
             "complete": true,
             "excluded_outputs": 4,
@@ -3027,7 +3027,7 @@
       "rerun": {
         "exit_code": 1,
         "passed": false,
-        "seconds": 0.316,
+        "seconds": 0.295,
         "tests": 2
       }
     },
@@ -3044,12 +3044,12 @@
         "M2": {
           "current": false,
           "decision": "revalidate",
-          "decision_seconds": 0.661
+          "decision_seconds": 0.569
         },
         "M3": {
           "decision": "reuse",
           "exit_code": 0,
-          "seconds": 0.303,
+          "seconds": 0.27,
           "tests_executed": 0
         },
         "M4": {
@@ -3058,7 +3058,7 @@
             "pyproject.toml"
           ],
           "decision": "revalidate",
-          "decision_seconds": 0.61,
+          "decision_seconds": 0.56,
           "epoch": 1,
           "reasons": [
             "input-changed"
@@ -3067,7 +3067,7 @@
       },
       "fixture_defect": false,
       "predecessor": {
-        "offer_digest": "sha256:0837c606a14fd7bcf420170051800cb5a1b0266d93896029ddae27316cb5c686",
+        "offer_digest": "sha256:9c06d4918223012c099bc483ba37bb3128f6d0b781f4f9e5c06cbbe172656728",
         "record": {
           "inputs": {
             "env:none": 42,
@@ -3083,8 +3083,8 @@
             "probe:project": 45,
             "project-root:none": 1
           },
-          "record_digest": "sha256:b7bdfea00181ec66fdf578b44109a78652d38d65c3a6765e1f07155e8c81a051",
-          "record_id": "evidence:ce5efebe395730d545dcf911fd317014",
+          "record_digest": "sha256:c149f0789c03a103a63cb30985e211a82ee91d07e1b0773e792b14412cb762b8",
+          "record_id": "evidence:23ca2b3d3f1d472e871e230d8a3f7b2a",
           "trace": {
             "complete": true,
             "excluded_outputs": 4,
@@ -3099,7 +3099,7 @@
       "rerun": {
         "exit_code": 1,
         "passed": false,
-        "seconds": 0.278,
+        "seconds": 0.265,
         "tests": 2
       }
     },
@@ -3116,12 +3116,12 @@
         "M2": {
           "current": true,
           "decision": "reuse",
-          "decision_seconds": 0.659
+          "decision_seconds": 0.743
         },
         "M3": {
           "decision": "reuse",
           "exit_code": 0,
-          "seconds": 0.291,
+          "seconds": 0.369,
           "tests_executed": 0
         },
         "M4": {
@@ -3130,7 +3130,7 @@
             "PYTEST_ADDOPTS"
           ],
           "decision": "revalidate",
-          "decision_seconds": 0.569,
+          "decision_seconds": 0.58,
           "epoch": 1,
           "reasons": [
             "input-changed"
@@ -3139,7 +3139,7 @@
       },
       "fixture_defect": false,
       "predecessor": {
-        "offer_digest": "sha256:ad8329a05c1126d41e6f256f7ec26998376a669302e66f60ce6875ed9d23d34a",
+        "offer_digest": "sha256:30e04c1a4515dc62f789a06fdee2ed4d1df936fcf1cfd147a78299763430bd13",
         "record": {
           "inputs": {
             "env:none": 42,
@@ -3155,8 +3155,8 @@
             "probe:project": 45,
             "project-root:none": 1
           },
-          "record_digest": "sha256:ee1cce533b306442a36b899162bc60ea22103d0b58d1465091ebefac7d863ec8",
-          "record_id": "evidence:a50bdbaf54d790f4075c78a2e9eb459f",
+          "record_digest": "sha256:3bd304eb9d5a319f71ef415912e1452680d02c854201c8f4fc843a226df332e5",
+          "record_id": "evidence:eca1c2962e6692251cd9a2dd2b1e9647",
           "trace": {
             "complete": true,
             "excluded_outputs": 4,
@@ -3171,7 +3171,7 @@
       "rerun": {
         "exit_code": 1,
         "passed": false,
-        "seconds": 0.335,
+        "seconds": 0.345,
         "tests": 2
       }
     },
@@ -3188,23 +3188,23 @@
         "M2": {
           "current": true,
           "decision": "reuse",
-          "decision_seconds": 0.658
+          "decision_seconds": 0.703
         },
         "M3": {
           "decision": "reuse",
           "exit_code": 0,
-          "seconds": 0.305,
+          "seconds": 0.264,
           "tests_executed": 0
         },
         "M4": {
           "applicability": "revalidate",
           "changed": [
-            "/home/claude/work/handoff/eval/final/venv312/lib/python3.12/site-packages/ratelib/__init__.py",
-            "/home/claude/work/handoff/eval/final/venv312/lib/python3.12/site-packages",
-            "/home/claude/work/handoff/eval/final/venv312/lib/python3.12/site-packages"
+            "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages/ratelib/__init__.py",
+            "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages",
+            "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages"
           ],
           "decision": "revalidate",
-          "decision_seconds": 0.578,
+          "decision_seconds": 0.587,
           "epoch": 1,
           "reasons": [
             "input-changed"
@@ -3213,7 +3213,7 @@
       },
       "fixture_defect": false,
       "predecessor": {
-        "offer_digest": "sha256:cedc7b51fd08e082479cbc940b7b2bf266ba112b0ffc1b790db6096a1c84ffca",
+        "offer_digest": "sha256:620ec9d601f102066039ee8b021b498fe8ec0f40c05352ed90b99b329a9bf151",
         "record": {
           "inputs": {
             "env:none": 42,
@@ -3229,8 +3229,8 @@
             "probe:project": 45,
             "project-root:none": 1
           },
-          "record_digest": "sha256:80327d431df62574163935d9b1d8ee38a2db4f573f51e7cd50a613bb4b749877",
-          "record_id": "evidence:961c3ca6dd90dd8ef5828ed8c7b5c4eb",
+          "record_digest": "sha256:ba214146c6ec05b0e335e47761d89937383123d688bd69bbdf90926e85734dcd",
+          "record_id": "evidence:a943820df5b3af8cb579ea23dcba46a7",
           "trace": {
             "complete": true,
             "excluded_outputs": 4,
@@ -3245,7 +3245,7 @@
       "rerun": {
         "exit_code": 1,
         "passed": false,
-        "seconds": 0.321,
+        "seconds": 0.265,
         "tests": 2
       }
     },
@@ -3262,23 +3262,23 @@
         "M2": {
           "current": true,
           "decision": "reuse",
-          "decision_seconds": 0.619
+          "decision_seconds": 0.597
         },
         "M3": {
           "decision": "revalidate",
           "exit_code": 1,
-          "seconds": 0.362,
+          "seconds": 0.38,
           "tests_executed": 2
         },
         "M4": {
           "applicability": "revalidate",
           "changed": [
-            "/home/claude/work/handoff/eval/final/venv312/lib/python3.12/site-packages/ratelib/__init__.py",
-            "/home/claude/work/handoff/eval/final/venv312/lib/python3.12/site-packages",
-            "/home/claude/work/handoff/eval/final/venv312/lib/python3.12/site-packages"
+            "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages/ratelib/__init__.py",
+            "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages",
+            "/home/claude/work/handoff/eval/final2/venv312/lib/python3.12/site-packages"
           ],
           "decision": "revalidate",
-          "decision_seconds": 0.603,
+          "decision_seconds": 0.596,
           "epoch": 1,
           "reasons": [
             "input-changed"
@@ -3287,7 +3287,7 @@
       },
       "fixture_defect": false,
       "predecessor": {
-        "offer_digest": "sha256:9b082c0e8b16370c4e08b877f82ed021107c372becb87a9ebeae7a625d4a36d0",
+        "offer_digest": "sha256:2c90b5d792ae7091a5cd0769eed3be69cf67cee218f95580ceb259d7438a8f2e",
         "record": {
           "inputs": {
             "env:none": 42,
@@ -3303,8 +3303,8 @@
             "probe:project": 45,
             "project-root:none": 1
           },
-          "record_digest": "sha256:a5a7677537bc01cc232adcec6daa6a4c1170e33c570e010f1a164b4bb88b950e",
-          "record_id": "evidence:87085b7a9174676da3795f0d41b32b2f",
+          "record_digest": "sha256:a00d7df4e64874ac8a63f6426c10686d673a9eaf06166b941edfe2e4bb2005d1",
+          "record_id": "evidence:aa845d277c6fc9bc97e7b3feb87cd790",
           "trace": {
             "complete": true,
             "excluded_outputs": 4,
@@ -3319,7 +3319,7 @@
       "rerun": {
         "exit_code": 1,
         "passed": false,
-        "seconds": 0.31,
+        "seconds": 0.314,
         "tests": 2
       }
     },
@@ -3336,12 +3336,12 @@
         "M2": {
           "current": true,
           "decision": "reuse",
-          "decision_seconds": 0.711
+          "decision_seconds": 0.642
         },
         "M3": {
           "decision": "revalidate",
           "exit_code": 0,
-          "seconds": 0.725,
+          "seconds": 0.738,
           "tests_executed": 2
         },
         "M4": {
@@ -3350,7 +3350,7 @@
             "python"
           ],
           "decision": "revalidate",
-          "decision_seconds": 0.567,
+          "decision_seconds": 0.744,
           "epoch": 1,
           "reasons": [
             "input-changed"
@@ -3359,7 +3359,7 @@
       },
       "fixture_defect": false,
       "predecessor": {
-        "offer_digest": "sha256:c9336fe0b8989b877d0adbd6cb4dddf6a7de3c56d26253fb043df2f9d1b9006e",
+        "offer_digest": "sha256:991c5f604e5d5eeb76cd76342bb4f12ba8a9c7abbadfe35a111b184d37361c81",
         "record": {
           "inputs": {
             "env:none": 42,
@@ -3375,8 +3375,8 @@
             "probe:project": 45,
             "project-root:none": 1
           },
-          "record_digest": "sha256:73462dbff8b2cf051ae6e742c1a268bf3bbfbcdc836b237341fd957cf973f083",
-          "record_id": "evidence:1bb47a8487d8041126562ce0dc5e3bbb",
+          "record_digest": "sha256:91b50a878d2f0f168ce70540dec0e89a2c1305844d8a72ee45b95aa17c6abd12",
+          "record_id": "evidence:837298c2c9652295084dab6d777c5a76",
           "trace": {
             "complete": true,
             "excluded_outputs": 4,
@@ -3391,7 +3391,7 @@
       "rerun": {
         "exit_code": 0,
         "passed": true,
-        "seconds": 0.313,
+        "seconds": 0.292,
         "tests": 2
       }
     },
@@ -3408,19 +3408,19 @@
         "M2": {
           "current": false,
           "decision": "revalidate",
-          "decision_seconds": 0.579
+          "decision_seconds": 0.665
         },
         "M3": {
           "decision": "reuse",
           "exit_code": 0,
-          "seconds": 0.38,
+          "seconds": 0.278,
           "tests_executed": 0
         },
         "M4": {
           "applicability": "reuse",
           "changed": [],
           "decision": "reuse",
-          "decision_seconds": 0.669,
+          "decision_seconds": 0.547,
           "epoch": 1,
           "reasons": [
             "all-inputs-unchanged"
@@ -3429,7 +3429,7 @@
       },
       "fixture_defect": false,
       "predecessor": {
-        "offer_digest": "sha256:03077fcd6338ef3c0e8066da46a3f05bd4874696bf111d617de8950e0e20e729",
+        "offer_digest": "sha256:3143ab67794cdc640010bfd6414ff03b43253b551493b066bb1dc6492c094da3",
         "record": {
           "inputs": {
             "env:none": 42,
@@ -3445,8 +3445,8 @@
             "probe:project": 45,
             "project-root:none": 1
           },
-          "record_digest": "sha256:0d7f792c2a9b1e43af21698ad5a9d241fc3cddfcd2ca8a249e2f7aa5a6ffaed0",
-          "record_id": "evidence:aa53b924b4059391a0fe90968752c1b5",
+          "record_digest": "sha256:8396992d4943c04ce4be55edd1491f2cea74d13d583ad5835758df7080d41674",
+          "record_id": "evidence:e0ada2fe7fb1350e24b1693b54e6c739",
           "trace": {
             "complete": true,
             "excluded_outputs": 4,
@@ -3461,7 +3461,7 @@
       "rerun": {
         "exit_code": 0,
         "passed": true,
-        "seconds": 0.248,
+        "seconds": 0.29,
         "tests": 2
       }
     },
@@ -3478,19 +3478,19 @@
         "M2": {
           "current": false,
           "decision": "revalidate",
-          "decision_seconds": 0.638
+          "decision_seconds": 0.6
         },
         "M3": {
           "decision": "reuse",
           "exit_code": 0,
-          "seconds": 0.269,
+          "seconds": 0.288,
           "tests_executed": 0
         },
         "M4": {
           "applicability": "reuse",
           "changed": [],
           "decision": "reuse",
-          "decision_seconds": 0.586,
+          "decision_seconds": 0.627,
           "epoch": 1,
           "reasons": [
             "all-inputs-unchanged"
@@ -3499,7 +3499,7 @@
       },
       "fixture_defect": false,
       "predecessor": {
-        "offer_digest": "sha256:b798bb48ac3ff22fe51127182a2fe84a7352bb07f28d69e77352595329b2f37e",
+        "offer_digest": "sha256:acfbbf5ff79ae23ebfabc1a67168a7604b82b462ae352a96e2451c9d2bd3e9a4",
         "record": {
           "inputs": {
             "env:none": 42,
@@ -3515,8 +3515,8 @@
             "probe:project": 45,
             "project-root:none": 1
           },
-          "record_digest": "sha256:228c61db12e6d9c5377e13aee573ba554c54d6aace4243b77e3711e73f0b5da9",
-          "record_id": "evidence:0e277f32fb10397a9f30872f8700d1a8",
+          "record_digest": "sha256:ba9298a0379ab8a35994ff2b19b70d2691773ed2fed0112215810982d11b5f72",
+          "record_id": "evidence:7e4aa1aee0cb7755202601167d3553c3",
           "trace": {
             "complete": true,
             "excluded_outputs": 4,
@@ -3531,7 +3531,7 @@
       "rerun": {
         "exit_code": 0,
         "passed": true,
-        "seconds": 0.248,
+        "seconds": 0.257,
         "tests": 2
       }
     },
@@ -3548,19 +3548,19 @@
         "M2": {
           "current": false,
           "decision": "revalidate",
-          "decision_seconds": 0.728
+          "decision_seconds": 0.633
         },
         "M3": {
           "decision": "reuse",
           "exit_code": 0,
-          "seconds": 0.277,
+          "seconds": 0.332,
           "tests_executed": 0
         },
         "M4": {
           "applicability": "reuse",
           "changed": [],
           "decision": "reuse",
-          "decision_seconds": 0.603,
+          "decision_seconds": 0.616,
           "epoch": 1,
           "reasons": [
             "all-inputs-unchanged"
@@ -3569,7 +3569,7 @@
       },
       "fixture_defect": false,
       "predecessor": {
-        "offer_digest": "sha256:fe8e439e1d17bb9d52c6b3a50a06256f8940e7270531f889c2dc6eb01628e99b",
+        "offer_digest": "sha256:092e61320bb243734604afb431815b6c654463db49fdb8403facee1d0d850a1f",
         "record": {
           "inputs": {
             "env:none": 42,
@@ -3585,8 +3585,8 @@
             "probe:project": 45,
             "project-root:none": 1
           },
-          "record_digest": "sha256:fc2fb29223fb22953b388b7114777ffacc1e2010359974d88f9d78ea7f3ef81c",
-          "record_id": "evidence:d68f4070098b02e5f20d20b00191763a",
+          "record_digest": "sha256:d47a3bd73526611d068f0b818285282b6b37de6ee0007b280b435940e099e06e",
+          "record_id": "evidence:6051cd96e947dbcf6c2edd4ec1ec6bba",
           "trace": {
             "complete": true,
             "excluded_outputs": 4,
@@ -3601,7 +3601,7 @@
       "rerun": {
         "exit_code": 0,
         "passed": true,
-        "seconds": 0.266,
+        "seconds": 0.26,
         "tests": 2
       }
     },
@@ -3618,12 +3618,12 @@
         "M2": {
           "current": false,
           "decision": "revalidate",
-          "decision_seconds": 0.536
+          "decision_seconds": 0.708
         },
         "M3": {
           "decision": "reuse",
           "exit_code": 0,
-          "seconds": 0.269,
+          "seconds": 0.306,
           "tests_executed": 0
         },
         "M4": {
@@ -3632,7 +3632,7 @@
             "."
           ],
           "decision": "revalidate",
-          "decision_seconds": 0.544,
+          "decision_seconds": 0.635,
           "epoch": 1,
           "reasons": [
             "input-changed"
@@ -3641,7 +3641,7 @@
       },
       "fixture_defect": false,
       "predecessor": {
-        "offer_digest": "sha256:033c6aa1875b138d5e090db1c203238926bc757551e22c743d3f065e8614d885",
+        "offer_digest": "sha256:efad6b958657603ddceec5da84d8478ede58fd71fa67fa1a98ad39b24b62c324",
         "record": {
           "inputs": {
             "env:none": 42,
@@ -3657,8 +3657,8 @@
             "probe:project": 45,
             "project-root:none": 1
           },
-          "record_digest": "sha256:7e243820c811f95971a0b97f65a3aecc58ae565bb53fbcf67a24923f9ff1267a",
-          "record_id": "evidence:ad5d19d25396ade952a47439a9295b4b",
+          "record_digest": "sha256:6dc78a0cbc72165cf597f5025b6b118cf1c125fe49671379923ca854af95d5a5",
+          "record_id": "evidence:a6af967539b4b8abbfdb74fee044358e",
           "trace": {
             "complete": true,
             "excluded_outputs": 4,
@@ -3673,7 +3673,7 @@
       "rerun": {
         "exit_code": 0,
         "passed": true,
-        "seconds": 0.242,
+        "seconds": 0.319,
         "tests": 2
       }
     },
@@ -3690,19 +3690,19 @@
         "M2": {
           "current": false,
           "decision": "revalidate",
-          "decision_seconds": 0.563
+          "decision_seconds": 0.807
         },
         "M3": {
           "decision": "reuse",
           "exit_code": 0,
-          "seconds": 0.289,
+          "seconds": 0.31,
           "tests_executed": 0
         },
         "M4": {
           "applicability": "reuse",
           "changed": [],
           "decision": "reuse",
-          "decision_seconds": 0.566,
+          "decision_seconds": 0.638,
           "epoch": 1,
           "reasons": [
             "all-inputs-unchanged"
@@ -3711,7 +3711,7 @@
       },
       "fixture_defect": false,
       "predecessor": {
-        "offer_digest": "sha256:d9ed7ae80df8d5fc8f175616fcec55ddeafad476dd7a35fc4e138ad580b528ab",
+        "offer_digest": "sha256:018ad6999d03d7749a0ae05556c528f3dba7335ec1ca5e7351732071c3494592",
         "record": {
           "inputs": {
             "env:none": 42,
@@ -3727,8 +3727,78 @@
             "probe:project": 45,
             "project-root:none": 1
           },
-          "record_digest": "sha256:ba20ec6328bdd587e536a8b47ac3beae48ced3ebacc088acba978ac3ad4e3f41",
-          "record_id": "evidence:0c4cc3eaf3c73025f3f3c923def4584e",
+          "record_digest": "sha256:e080f58c0b47140b21ef29d43fcaaa3f2328fd48bcbdd088b7d6da3766e42c2f",
+          "record_id": "evidence:7df72e416b8568d6e1c3d7ddfb74e203",
+          "trace": {
+            "complete": true,
+            "excluded_outputs": 4,
+            "processes": 1,
+            "reasons": []
+          },
+          "verdict": "passed"
+        },
+        "testmon_seed_passed": true
+      },
+      "required": "reuse",
+      "rerun": {
+        "exit_code": 0,
+        "passed": true,
+        "seconds": 0.325,
+        "tests": 2
+      }
+    },
+    {
+      "case": "C6",
+      "consequential": false,
+      "decisions": {
+        "M0": {
+          "decision": "reuse"
+        },
+        "M1": {
+          "decision": "revalidate"
+        },
+        "M2": {
+          "current": true,
+          "decision": "reuse",
+          "decision_seconds": 0.788
+        },
+        "M3": {
+          "decision": "reuse",
+          "exit_code": 0,
+          "seconds": 0.267,
+          "tests_executed": 0
+        },
+        "M4": {
+          "applicability": "reuse",
+          "changed": [],
+          "decision": "reuse",
+          "decision_seconds": 0.743,
+          "epoch": 1,
+          "reasons": [
+            "all-inputs-unchanged"
+          ]
+        }
+      },
+      "fixture_defect": false,
+      "predecessor": {
+        "offer_digest": "sha256:3836272101bf4c5993136c91f3ed8749f6d2f1e1d50209b63e43fa5d420c1ebc",
+        "record": {
+          "inputs": {
+            "env:none": 42,
+            "executable:none": 1,
+            "file:external": 365,
+            "file:project": 7,
+            "import-listing:external": 36,
+            "import-listing:project": 2,
+            "listing:project": 2,
+            "metadata-listing:external": 4,
+            "metadata-listing:project": 1,
+            "probe:external": 37,
+            "probe:project": 45,
+            "project-root:none": 1
+          },
+          "record_digest": "sha256:86a588903975de2fa79800940020cfb77b7fed650d5368299009839e1602289f",
+          "record_id": "evidence:a52e83d0da739ed1cbf876db69d4bbd8",
           "trace": {
             "complete": true,
             "excluded_outputs": 4,
@@ -3748,76 +3818,6 @@
       }
     },
     {
-      "case": "C6",
-      "consequential": false,
-      "decisions": {
-        "M0": {
-          "decision": "reuse"
-        },
-        "M1": {
-          "decision": "revalidate"
-        },
-        "M2": {
-          "current": true,
-          "decision": "reuse",
-          "decision_seconds": 0.532
-        },
-        "M3": {
-          "decision": "reuse",
-          "exit_code": 0,
-          "seconds": 0.249,
-          "tests_executed": 0
-        },
-        "M4": {
-          "applicability": "reuse",
-          "changed": [],
-          "decision": "reuse",
-          "decision_seconds": 0.517,
-          "epoch": 1,
-          "reasons": [
-            "all-inputs-unchanged"
-          ]
-        }
-      },
-      "fixture_defect": false,
-      "predecessor": {
-        "offer_digest": "sha256:dd898fd35773fdc6afbd048f97ce0c40b9d2132ba8124cef4731a10253e011c1",
-        "record": {
-          "inputs": {
-            "env:none": 42,
-            "executable:none": 1,
-            "file:external": 365,
-            "file:project": 7,
-            "import-listing:external": 36,
-            "import-listing:project": 2,
-            "listing:project": 2,
-            "metadata-listing:external": 4,
-            "metadata-listing:project": 1,
-            "probe:external": 37,
-            "probe:project": 45,
-            "project-root:none": 1
-          },
-          "record_digest": "sha256:c458888a00e230eebf9a3ba4a8d0cb3439f5a57638ab2e2225e1999a519decc1",
-          "record_id": "evidence:de4d870f90f3dfcb9908e577a7484926",
-          "trace": {
-            "complete": true,
-            "excluded_outputs": 4,
-            "processes": 1,
-            "reasons": []
-          },
-          "verdict": "passed"
-        },
-        "testmon_seed_passed": true
-      },
-      "required": "reuse",
-      "rerun": {
-        "exit_code": 0,
-        "passed": true,
-        "seconds": 0.249,
-        "tests": 2
-      }
-    },
-    {
       "case": "D1",
       "consequential": false,
       "decisions": {
@@ -3830,20 +3830,20 @@
         "M2": {
           "current": true,
           "decision": "reuse",
-          "decision_seconds": 0.544
+          "decision_seconds": 0.591
         },
         "M3": {
           "decision": "revalidate",
           "exit_code": 0,
           "note": "its evidence (.testmondata) deleted",
-          "seconds": 0.304,
+          "seconds": 0.376,
           "tests_executed": 2
         },
         "M4": {
           "applicability": "unknown",
           "changed": [],
           "decision": "revalidate",
-          "decision_seconds": 0.53,
+          "decision_seconds": 0.608,
           "epoch": 1,
           "reasons": [
             "record-unavailable"
@@ -3852,7 +3852,7 @@
       },
       "fixture_defect": false,
       "predecessor": {
-        "offer_digest": "sha256:4887b3298dee924ea40293239d5edac980a23aa43255f939ab4b10630daf1bb5",
+        "offer_digest": "sha256:dddc99068cfaca32f0c1a978cd88e412bf0be1d14fafd1b1a24b07f4a3998bbd",
         "record": {
           "inputs": {
             "env:none": 42,
@@ -3868,8 +3868,8 @@
             "probe:project": 45,
             "project-root:none": 1
           },
-          "record_digest": "sha256:e66906ea59bef2c0551dd2addcf6f5f99d8e09fc0cd8f969a2c9d95cefdddc75",
-          "record_id": "evidence:8c9120fbc985ad63a832ecb2071d9ec0",
+          "record_digest": "sha256:7bde1af9a64688adf839cf822655cf9a7a9c2db482aef3beeb5470873d62a392",
+          "record_id": "evidence:b24e4389afcabbc7de8e59ab4301bf11",
           "trace": {
             "complete": true,
             "excluded_outputs": 4,
@@ -3884,7 +3884,7 @@
       "rerun": {
         "exit_code": 0,
         "passed": true,
-        "seconds": 0.271,
+        "seconds": 0.291,
         "tests": 2
       }
     },
@@ -3901,7 +3901,7 @@
         "M2": {
           "current": true,
           "decision": "reuse",
-          "decision_seconds": 0.605
+          "decision_seconds": 0.607
         },
         "M3": {
           "decision": "n/a",
@@ -3911,7 +3911,7 @@
           "applicability": "unknown",
           "changed": [],
           "decision": "revalidate",
-          "decision_seconds": 0.564,
+          "decision_seconds": 0.754,
           "epoch": 1,
           "reasons": [
             "record-not-the-one-handed-off"
@@ -3920,7 +3920,7 @@
       },
       "fixture_defect": false,
       "predecessor": {
-        "offer_digest": "sha256:4307aaae6543c66514e2a4de4cf5b7fbce4bae0aa9e950fc54bd1947ea9771af",
+        "offer_digest": "sha256:db177bb89b7a699ac845674455d83237eb8245f8caaf98a18ca28ef52d70b6a8",
         "record": {
           "inputs": {
             "env:none": 42,
@@ -3936,8 +3936,8 @@
             "probe:project": 45,
             "project-root:none": 1
           },
-          "record_digest": "sha256:afb685ffd84601c4e797c7a820218bc81a516a4e740f782197454ab850e298b9",
-          "record_id": "evidence:1a00c66ddc138146fd8f4cb0364c72b4",
+          "record_digest": "sha256:648a6bcb7705be3dbdca11a8b94633754290ed3a9d8087d26148d50b3d602633",
+          "record_id": "evidence:7046bc778cdf42bff927844b05607ed8",
           "trace": {
             "complete": true,
             "excluded_outputs": 4,
@@ -3952,7 +3952,7 @@
       "rerun": {
         "exit_code": 0,
         "passed": true,
-        "seconds": 0.27,
+        "seconds": 0.252,
         "tests": 2
       }
     },
@@ -3969,20 +3969,20 @@
         "M2": {
           "current": true,
           "decision": "reuse",
-          "decision_seconds": 0.588
+          "decision_seconds": 0.587
         },
         "M3": {
           "decision": "revalidate",
           "exit_code": 0,
           "note": "no .testmondata: the predecessor recorded no evidence",
-          "seconds": 0.305,
+          "seconds": 0.336,
           "tests_executed": 2
         },
         "M4": {
           "applicability": "no-evidence",
           "changed": [],
           "decision": "revalidate",
-          "decision_seconds": 0.557,
+          "decision_seconds": 0.554,
           "epoch": 1,
           "reasons": [
             "no evidence handed over"
@@ -3991,7 +3991,7 @@
       },
       "fixture_defect": false,
       "predecessor": {
-        "offer_digest": "sha256:67adbdd9628bff406733026a2063624da94c5bff10ae209502cd0ab8b33056eb",
+        "offer_digest": "sha256:2707fb578ead5aacbbef5575589fa8e1c7f106058c6776ec50d0caabfa684441",
         "record": null,
         "testmon_seed_passed": null
       },
@@ -3999,7 +3999,7 @@
       "rerun": {
         "exit_code": 0,
         "passed": true,
-        "seconds": 0.246,
+        "seconds": 0.275,
         "tests": 2
       }
     }
@@ -4012,7 +4012,7 @@
     "coverage==7.17.3",
     "ratelib (local wheels 1.0.0, 1.0.1, 1.1.0)"
   ],
-  "implementation_head": "4c88d25d80cb16d7b5d36d548f6f9c4bee26886c",
+  "implementation_head": "21799f9113e23983e82db66be5914338a33077c2",
   "labels": {
     "entry_point": "real entry point (entroly-work console scripts)",
     "host": "mock host (harness-generated Ed25519 key)",
@@ -4021,88 +4021,88 @@
   },
   "median_seconds": {
     "M2": {
-      "A1": 0.573,
-      "A2": 0.58,
-      "A3": 0.609,
-      "A4": 0.653,
-      "A5": 0.631,
-      "B1": 0.603,
-      "B2": 0.659,
-      "B3": 0.575,
-      "B4": 0.619,
-      "B5": 0.544,
-      "C1": 0.6,
-      "C2": 0.62,
-      "C3": 0.671,
-      "C4": 0.621,
-      "C5": 0.563,
-      "C6": 0.552,
-      "D1": 0.572,
-      "D2": 0.601,
-      "D3": 0.594
+      "A1": 0.583,
+      "A2": 0.725,
+      "A3": 0.57,
+      "A4": 0.616,
+      "A5": 0.604,
+      "B1": 0.569,
+      "B2": 0.636,
+      "B3": 0.631,
+      "B4": 0.635,
+      "B5": 0.595,
+      "C1": 0.631,
+      "C2": 0.6,
+      "C3": 0.586,
+      "C4": 0.612,
+      "C5": 0.634,
+      "C6": 0.563,
+      "D1": 0.591,
+      "D2": 0.607,
+      "D3": 0.582
     },
     "M3": {
-      "A1": 0.318,
-      "A2": 0.324,
-      "A3": 0.277,
+      "A1": 0.323,
+      "A2": 0.305,
+      "A3": 0.267,
       "A4": 0.286,
-      "A5": 0.347,
-      "B1": 0.303,
-      "B2": 0.285,
-      "B3": 0.305,
-      "B4": 0.338,
-      "B5": 0.362,
-      "C1": 0.327,
-      "C2": 0.276,
-      "C3": 0.28,
-      "C4": 0.269,
-      "C5": 0.317,
-      "C6": 0.297,
-      "D1": 0.369,
+      "A5": 0.397,
+      "B1": 0.27,
+      "B2": 0.33,
+      "B3": 0.264,
+      "B4": 0.349,
+      "B5": 0.318,
+      "C1": 0.324,
+      "C2": 0.288,
+      "C3": 0.312,
+      "C4": 0.274,
+      "C5": 0.31,
+      "C6": 0.27,
+      "D1": 0.376,
       "D2": null,
-      "D3": 0.326
+      "D3": 0.336
     },
     "M4": {
-      "A1": 0.559,
-      "A2": 0.596,
-      "A3": 0.603,
-      "A4": 0.629,
-      "A5": 0.582,
-      "B1": 0.71,
-      "B2": 0.569,
-      "B3": 0.578,
-      "B4": 0.603,
-      "B5": 0.567,
-      "C1": 0.592,
-      "C2": 0.578,
-      "C3": 0.603,
-      "C4": 0.568,
-      "C5": 0.566,
-      "C6": 0.571,
-      "D1": 0.581,
-      "D2": 0.564,
-      "D3": 0.557
+      "A1": 0.613,
+      "A2": 0.658,
+      "A3": 0.604,
+      "A4": 0.62,
+      "A5": 0.708,
+      "B1": 0.585,
+      "B2": 0.613,
+      "B3": 0.587,
+      "B4": 0.577,
+      "B5": 0.577,
+      "C1": 0.613,
+      "C2": 0.627,
+      "C3": 0.616,
+      "C4": 0.635,
+      "C5": 0.627,
+      "C6": 0.645,
+      "D1": 0.611,
+      "D2": 0.641,
+      "D3": 0.554
     },
     "rerun": {
-      "A1": 0.268,
-      "A2": 0.312,
-      "A3": 0.252,
-      "A4": 0.299,
-      "A5": 0.294,
-      "B1": 0.278,
-      "B2": 0.277,
-      "B3": 0.298,
-      "B4": 0.286,
-      "B5": 0.313,
-      "C1": 0.309,
-      "C2": 0.258,
-      "C3": 0.278,
-      "C4": 0.251,
-      "C5": 0.267,
-      "C6": 0.265,
-      "D1": 0.271,
-      "D2": 0.278,
-      "D3": 0.287
+      "A1": 0.326,
+      "A2": 0.301,
+      "A3": 0.273,
+      "A4": 0.264,
+      "A5": 0.332,
+      "B1": 0.308,
+      "B2": 0.318,
+      "B3": 0.279,
+      "B4": 0.314,
+      "B5": 0.268,
+      "C1": 0.29,
+      "C2": 0.299,
+      "C3": 0.317,
+      "C4": 0.284,
+      "C5": 0.31,
+      "C6": 0.267,
+      "D1": 0.291,
+      "D2": 0.265,
+      "D3": 0.268
     }
   },
   "preregistration": "HANDOFF_EVIDENCE_PREREGISTRATION.md",

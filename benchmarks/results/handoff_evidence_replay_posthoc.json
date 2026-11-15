@@ -1,0 +1,1568 @@
+{
+  "benchmark_module": "benchmarks/handoff_evidence_replay.py",
+  "end_commit": "2247b35",
+  "first_commit": "1a994adbb1",
+  "harness_errors": [],
+  "implementation_head": "21799f9113e23983e82db66be5914338a33077c2",
+  "labels": {
+    "provider": "not run",
+    "repository": "real, held out (not used in development)"
+  },
+  "preregistration_sha256": "4f89f3d8dfb5de003918754d281a15c057690203668d95a3f3d734d752ee9b25",
+  "repository": "pallets/click",
+  "rows": [
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 3.827,
+        "tests_executed": 644
+      },
+      "M4": {
+        "applicability": "revalidate",
+        "changed": [
+          "file:src/click/core.py"
+        ],
+        "changed_count": 1,
+        "decision": "revalidate",
+        "reasons": [
+          "input-changed"
+        ],
+        "seconds": 0.699
+      },
+      "files_changed": 6,
+      "from": "1a994adbb1",
+      "index": 0,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 0.977,
+        "tests": 644
+      },
+      "to": "c48021040a"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 4.255,
+        "tests_executed": 644
+      },
+      "M4": {
+        "applicability": "revalidate",
+        "changed": [
+          "listing:.",
+          "probe:CHANGES.rst"
+        ],
+        "changed_count": 2,
+        "decision": "revalidate",
+        "reasons": [
+          "input-changed"
+        ],
+        "seconds": 0.517
+      },
+      "files_changed": 3,
+      "from": "c48021040a",
+      "index": 1,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 1.1,
+        "tests": 644
+      },
+      "to": "4fc0e90e1c"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 4.12,
+        "tests_executed": 644
+      },
+      "M4": {
+        "applicability": "revalidate",
+        "changed": [
+          "file:pyproject.toml",
+          "file:src/click/_compat.py",
+          "file:src/click/core.py",
+          "file:src/click/termui.py",
+          "file:src/click/testing.py",
+          "file:src/click/types.py",
+          "file:src/click/utils.py"
+        ],
+        "changed_count": 7,
+        "decision": "revalidate",
+        "reasons": [
+          "input-changed"
+        ],
+        "seconds": 0.672
+      },
+      "files_changed": 17,
+      "from": "4fc0e90e1c",
+      "index": 2,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 1.093,
+        "tests": 644
+      },
+      "to": "8a1b1a33d7"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 4.578,
+        "tests_executed": 644
+      },
+      "M4": {
+        "applicability": "reuse",
+        "changed": [],
+        "changed_count": 0,
+        "decision": "reuse",
+        "reasons": [
+          "all-inputs-unchanged"
+        ],
+        "seconds": 0.532
+      },
+      "files_changed": 1,
+      "from": "8a1b1a33d7",
+      "index": 3,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 1.084,
+        "tests": 644
+      },
+      "to": "679a7a0ecc"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 4.324,
+        "tests_executed": 644
+      },
+      "M4": {
+        "applicability": "revalidate",
+        "changed": [
+          "file:src/click/core.py",
+          "file:src/click/decorators.py",
+          "file:tests/test_options.py"
+        ],
+        "changed_count": 3,
+        "decision": "revalidate",
+        "reasons": [
+          "input-changed"
+        ],
+        "seconds": 0.535
+      },
+      "files_changed": 6,
+      "from": "679a7a0ecc",
+      "index": 4,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 0.999,
+        "tests": 644
+      },
+      "to": "240603f240"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 3.852,
+        "tests_executed": 644
+      },
+      "M4": {
+        "applicability": "reuse",
+        "changed": [],
+        "changed_count": 0,
+        "decision": "reuse",
+        "reasons": [
+          "all-inputs-unchanged"
+        ],
+        "seconds": 0.605
+      },
+      "files_changed": 2,
+      "from": "240603f240",
+      "index": 5,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 0.991,
+        "tests": 644
+      },
+      "to": "6ec99f8926"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 6.096,
+        "tests_executed": 644
+      },
+      "M4": {
+        "applicability": "revalidate",
+        "changed": [
+          "file:src/click/termui.py"
+        ],
+        "changed_count": 1,
+        "decision": "revalidate",
+        "reasons": [
+          "input-changed"
+        ],
+        "seconds": 0.498
+      },
+      "files_changed": 3,
+      "from": "6ec99f8926",
+      "index": 6,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 1.27,
+        "tests": 644
+      },
+      "to": "fe3ad76e58"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 3.789,
+        "tests_executed": 644
+      },
+      "M4": {
+        "applicability": "revalidate",
+        "changed": [
+          "file:src/click/types.py"
+        ],
+        "changed_count": 1,
+        "decision": "revalidate",
+        "reasons": [
+          "input-changed"
+        ],
+        "seconds": 0.553
+      },
+      "files_changed": 2,
+      "from": "fe3ad76e58",
+      "index": 7,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 0.982,
+        "tests": 644
+      },
+      "to": "16fc00e2f4"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 4.88,
+        "tests_executed": 644
+      },
+      "M4": {
+        "applicability": "revalidate",
+        "changed": [
+          "file:src/click/__init__.py",
+          "file:src/click/decorators.py"
+        ],
+        "changed_count": 2,
+        "decision": "revalidate",
+        "reasons": [
+          "input-changed"
+        ],
+        "seconds": 0.577
+      },
+      "files_changed": 6,
+      "from": "16fc00e2f4",
+      "index": 8,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 1.223,
+        "tests": 644
+      },
+      "to": "94c191ca6c"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 4.651,
+        "tests_executed": 644
+      },
+      "M4": {
+        "applicability": "revalidate",
+        "changed": [
+          "file:src/click/termui.py",
+          "file:src/click/utils.py"
+        ],
+        "changed_count": 2,
+        "decision": "revalidate",
+        "reasons": [
+          "input-changed"
+        ],
+        "seconds": 0.514
+      },
+      "files_changed": 3,
+      "from": "94c191ca6c",
+      "index": 9,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 0.992,
+        "tests": 644
+      },
+      "to": "a44e9f05ed"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 4.107,
+        "tests_executed": 644
+      },
+      "M4": {
+        "applicability": "revalidate",
+        "changed": [
+          "listing:tests",
+          "probe:tests/test_utils.py"
+        ],
+        "changed_count": 2,
+        "decision": "revalidate",
+        "reasons": [
+          "input-changed"
+        ],
+        "seconds": 0.567
+      },
+      "files_changed": 15,
+      "from": "a44e9f05ed",
+      "index": 10,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 1.103,
+        "tests": 644
+      },
+      "to": "7925a3410d"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 4.164,
+        "tests_executed": 644
+      },
+      "M4": {
+        "applicability": "reuse",
+        "changed": [],
+        "changed_count": 0,
+        "decision": "reuse",
+        "reasons": [
+          "all-inputs-unchanged"
+        ],
+        "seconds": 0.562
+      },
+      "files_changed": 1,
+      "from": "7925a3410d",
+      "index": 11,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 1.09,
+        "tests": 644
+      },
+      "to": "8dd4d60eb5"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 4.394,
+        "tests_executed": 644
+      },
+      "M4": {
+        "applicability": "revalidate",
+        "changed": [
+          "file:src/click/termui.py"
+        ],
+        "changed_count": 1,
+        "decision": "revalidate",
+        "reasons": [
+          "input-changed"
+        ],
+        "seconds": 0.599
+      },
+      "files_changed": 3,
+      "from": "8dd4d60eb5",
+      "index": 12,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 1.239,
+        "tests": 644
+      },
+      "to": "8a4ce84256"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 4.282,
+        "tests_executed": 644
+      },
+      "M4": {
+        "applicability": "revalidate",
+        "changed": [
+          "file:src/click/_compat.py"
+        ],
+        "changed_count": 1,
+        "decision": "revalidate",
+        "reasons": [
+          "input-changed"
+        ],
+        "seconds": 0.536
+      },
+      "files_changed": 5,
+      "from": "8a4ce84256",
+      "index": 13,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 1.129,
+        "tests": 644
+      },
+      "to": "8c1a0a7abb"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 4.567,
+        "tests_executed": 646
+      },
+      "M4": {
+        "applicability": "revalidate",
+        "changed": [
+          "file:src/click/core.py",
+          "file:tests/test_options.py"
+        ],
+        "changed_count": 2,
+        "decision": "revalidate",
+        "reasons": [
+          "input-changed"
+        ],
+        "seconds": 0.527
+      },
+      "files_changed": 6,
+      "from": "8c1a0a7abb",
+      "index": 14,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 1.06,
+        "tests": 646
+      },
+      "to": "b67832c216"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 4.342,
+        "tests_executed": 646
+      },
+      "M4": {
+        "applicability": "revalidate",
+        "changed": [
+          "file:src/click/core.py"
+        ],
+        "changed_count": 1,
+        "decision": "revalidate",
+        "reasons": [
+          "input-changed"
+        ],
+        "seconds": 0.594
+      },
+      "files_changed": 2,
+      "from": "b67832c216",
+      "index": 15,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 1.14,
+        "tests": 646
+      },
+      "to": "b551fe8571"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 4.11,
+        "tests_executed": 646
+      },
+      "M4": {
+        "applicability": "reuse",
+        "changed": [],
+        "changed_count": 0,
+        "decision": "reuse",
+        "reasons": [
+          "all-inputs-unchanged"
+        ],
+        "seconds": 0.527
+      },
+      "files_changed": 4,
+      "from": "b551fe8571",
+      "index": 16,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 1.288,
+        "tests": 646
+      },
+      "to": "7df2f82305"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 4.686,
+        "tests_executed": 646
+      },
+      "M4": {
+        "applicability": "revalidate",
+        "changed": [
+          "file:src/click/__init__.py",
+          "file:src/click/core.py",
+          "file:src/click/termui.py",
+          "file:src/click/types.py",
+          "file:src/click/utils.py",
+          "listing:tests"
+        ],
+        "changed_count": 6,
+        "decision": "revalidate",
+        "reasons": [
+          "input-changed"
+        ],
+        "seconds": 0.524
+      },
+      "files_changed": 14,
+      "from": "7df2f82305",
+      "index": 17,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 1.167,
+        "tests": 646
+      },
+      "to": "333c28d79c"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 4.116,
+        "tests_executed": 646
+      },
+      "M4": {
+        "applicability": "revalidate",
+        "changed": [
+          "file:src/click/testing.py"
+        ],
+        "changed_count": 1,
+        "decision": "revalidate",
+        "reasons": [
+          "input-changed"
+        ],
+        "seconds": 0.539
+      },
+      "files_changed": 10,
+      "from": "333c28d79c",
+      "index": 18,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 1.021,
+        "tests": 646
+      },
+      "to": "cfa01eeb78"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 4.655,
+        "tests_executed": 646
+      },
+      "M4": {
+        "applicability": "revalidate",
+        "changed": [
+          "file:src/click/termui.py",
+          "file:src/click/types.py"
+        ],
+        "changed_count": 2,
+        "decision": "revalidate",
+        "reasons": [
+          "input-changed"
+        ],
+        "seconds": 0.619
+      },
+      "files_changed": 6,
+      "from": "cfa01eeb78",
+      "index": 19,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 1.104,
+        "tests": 646
+      },
+      "to": "5e906a8afb"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 4.683,
+        "tests_executed": 646
+      },
+      "M4": {
+        "applicability": "reuse",
+        "changed": [],
+        "changed_count": 0,
+        "decision": "reuse",
+        "reasons": [
+          "all-inputs-unchanged"
+        ],
+        "seconds": 0.521
+      },
+      "files_changed": 1,
+      "from": "5e906a8afb",
+      "index": 20,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 1.142,
+        "tests": 646
+      },
+      "to": "398f915431"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 4.461,
+        "tests_executed": 646
+      },
+      "M4": {
+        "applicability": "revalidate",
+        "changed": [
+          "file:pyproject.toml"
+        ],
+        "changed_count": 1,
+        "decision": "revalidate",
+        "reasons": [
+          "input-changed"
+        ],
+        "seconds": 0.514
+      },
+      "files_changed": 1,
+      "from": "398f915431",
+      "index": 21,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 1.227,
+        "tests": 646
+      },
+      "to": "42235de05e"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 3.864,
+        "tests_executed": 646
+      },
+      "M4": {
+        "applicability": "reuse",
+        "changed": [],
+        "changed_count": 0,
+        "decision": "reuse",
+        "reasons": [
+          "all-inputs-unchanged"
+        ],
+        "seconds": 0.555
+      },
+      "files_changed": 6,
+      "from": "42235de05e",
+      "index": 22,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 1.004,
+        "tests": 646
+      },
+      "to": "5aa8ac4352"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 4.985,
+        "tests_executed": 646
+      },
+      "M4": {
+        "applicability": "revalidate",
+        "changed": [
+          "file:src/click/_compat.py",
+          "file:src/click/core.py",
+          "file:src/click/termui.py",
+          "file:src/click/utils.py"
+        ],
+        "changed_count": 4,
+        "decision": "revalidate",
+        "reasons": [
+          "input-changed"
+        ],
+        "seconds": 0.517
+      },
+      "files_changed": 11,
+      "from": "5aa8ac4352",
+      "index": 23,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 1.093,
+        "tests": 646
+      },
+      "to": "00e592cea7"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 4.175,
+        "tests_executed": 646
+      },
+      "M4": {
+        "applicability": "revalidate",
+        "changed": [
+          "file:src/click/core.py"
+        ],
+        "changed_count": 1,
+        "decision": "revalidate",
+        "reasons": [
+          "input-changed"
+        ],
+        "seconds": 0.601
+      },
+      "files_changed": 3,
+      "from": "00e592cea7",
+      "index": 24,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 1.165,
+        "tests": 646
+      },
+      "to": "9c4dfdaebe"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 4.288,
+        "tests_executed": 646
+      },
+      "M4": {
+        "applicability": "reuse",
+        "changed": [],
+        "changed_count": 0,
+        "decision": "reuse",
+        "reasons": [
+          "all-inputs-unchanged"
+        ],
+        "seconds": 0.511
+      },
+      "files_changed": 3,
+      "from": "9c4dfdaebe",
+      "index": 25,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 1.066,
+        "tests": 646
+      },
+      "to": "8b44edfff7"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 3.951,
+        "tests_executed": 646
+      },
+      "M4": {
+        "applicability": "reuse",
+        "changed": [],
+        "changed_count": 0,
+        "decision": "reuse",
+        "reasons": [
+          "all-inputs-unchanged"
+        ],
+        "seconds": 0.512
+      },
+      "files_changed": 3,
+      "from": "8b44edfff7",
+      "index": 26,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 1.037,
+        "tests": 646
+      },
+      "to": "150d1071d6"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 4.089,
+        "tests_executed": 646
+      },
+      "M4": {
+        "applicability": "reuse",
+        "changed": [],
+        "changed_count": 0,
+        "decision": "reuse",
+        "reasons": [
+          "all-inputs-unchanged"
+        ],
+        "seconds": 0.602
+      },
+      "files_changed": 3,
+      "from": "150d1071d6",
+      "index": 27,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 1.03,
+        "tests": 646
+      },
+      "to": "fc5c7f45da"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 4.167,
+        "tests_executed": 646
+      },
+      "M4": {
+        "applicability": "reuse",
+        "changed": [],
+        "changed_count": 0,
+        "decision": "reuse",
+        "reasons": [
+          "all-inputs-unchanged"
+        ],
+        "seconds": 0.509
+      },
+      "files_changed": 2,
+      "from": "fc5c7f45da",
+      "index": 28,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 1.057,
+        "tests": 646
+      },
+      "to": "cbd7a4109d"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 4.395,
+        "tests_executed": 646
+      },
+      "M4": {
+        "applicability": "revalidate",
+        "changed": [
+          "file:src/click/_compat.py"
+        ],
+        "changed_count": 1,
+        "decision": "revalidate",
+        "reasons": [
+          "input-changed"
+        ],
+        "seconds": 0.541
+      },
+      "files_changed": 5,
+      "from": "cbd7a4109d",
+      "index": 29,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 1.558,
+        "tests": 646
+      },
+      "to": "f36d58bbd7"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 4.171,
+        "tests_executed": 646
+      },
+      "M4": {
+        "applicability": "reuse",
+        "changed": [],
+        "changed_count": 0,
+        "decision": "reuse",
+        "reasons": [
+          "all-inputs-unchanged"
+        ],
+        "seconds": 0.571
+      },
+      "files_changed": 1,
+      "from": "f36d58bbd7",
+      "index": 30,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 1.006,
+        "tests": 646
+      },
+      "to": "61b69e967e"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 4.119,
+        "tests_executed": 646
+      },
+      "M4": {
+        "applicability": "reuse",
+        "changed": [],
+        "changed_count": 0,
+        "decision": "reuse",
+        "reasons": [
+          "all-inputs-unchanged"
+        ],
+        "seconds": 0.562
+      },
+      "files_changed": 3,
+      "from": "61b69e967e",
+      "index": 31,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 1.046,
+        "tests": 646
+      },
+      "to": "2103e15768"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 4.338,
+        "tests_executed": 646
+      },
+      "M4": {
+        "applicability": "revalidate",
+        "changed": [
+          "file:src/click/termui.py"
+        ],
+        "changed_count": 1,
+        "decision": "revalidate",
+        "reasons": [
+          "input-changed"
+        ],
+        "seconds": 0.524
+      },
+      "files_changed": 5,
+      "from": "2103e15768",
+      "index": 32,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 1.084,
+        "tests": 646
+      },
+      "to": "e1fd5946ab"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 4.373,
+        "tests_executed": 646
+      },
+      "M4": {
+        "applicability": "reuse",
+        "changed": [],
+        "changed_count": 0,
+        "decision": "reuse",
+        "reasons": [
+          "all-inputs-unchanged"
+        ],
+        "seconds": 0.594
+      },
+      "files_changed": 1,
+      "from": "e1fd5946ab",
+      "index": 33,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 1.047,
+        "tests": 646
+      },
+      "to": "2c8cd3ac95"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 4.127,
+        "tests_executed": 646
+      },
+      "M4": {
+        "applicability": "revalidate",
+        "changed": [
+          "file:pyproject.toml"
+        ],
+        "changed_count": 1,
+        "decision": "revalidate",
+        "reasons": [
+          "input-changed"
+        ],
+        "seconds": 0.501
+      },
+      "files_changed": 3,
+      "from": "2c8cd3ac95",
+      "index": 34,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 1.208,
+        "tests": 646
+      },
+      "to": "68e7ea7228"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 4.192,
+        "tests_executed": 646
+      },
+      "M4": {
+        "applicability": "revalidate",
+        "changed": [
+          "file:pyproject.toml"
+        ],
+        "changed_count": 1,
+        "decision": "revalidate",
+        "reasons": [
+          "input-changed"
+        ],
+        "seconds": 0.533
+      },
+      "files_changed": 3,
+      "from": "68e7ea7228",
+      "index": 35,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 1.015,
+        "tests": 646
+      },
+      "to": "36baa15ff8"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 3.969,
+        "tests_executed": 664
+      },
+      "M4": {
+        "applicability": "revalidate",
+        "changed": [
+          "file:src/click/_utils.py",
+          "file:src/click/core.py",
+          "file:src/click/termui.py",
+          "file:tests/test_options.py",
+          "listing:tests",
+          "probe:tests/test_types.py"
+        ],
+        "changed_count": 6,
+        "decision": "revalidate",
+        "reasons": [
+          "input-changed"
+        ],
+        "seconds": 0.583
+      },
+      "files_changed": 30,
+      "from": "36baa15ff8",
+      "index": 36,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 1.209,
+        "tests": 664
+      },
+      "to": "6aabf099bf"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 4.317,
+        "tests_executed": 664
+      },
+      "M4": {
+        "applicability": "revalidate",
+        "changed": [
+          "file:src/click/core.py",
+          "file:src/click/types.py",
+          "file:src/click/utils.py"
+        ],
+        "changed_count": 3,
+        "decision": "revalidate",
+        "reasons": [
+          "input-changed"
+        ],
+        "seconds": 0.52
+      },
+      "files_changed": 11,
+      "from": "6aabf099bf",
+      "index": 37,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 1.164,
+        "tests": 664
+      },
+      "to": "3cbaa76b60"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 4.886,
+        "tests_executed": 692
+      },
+      "M4": {
+        "applicability": "revalidate",
+        "changed": [
+          "file:pyproject.toml",
+          "file:src/click/core.py",
+          "file:tests/test_options.py"
+        ],
+        "changed_count": 3,
+        "decision": "revalidate",
+        "reasons": [
+          "input-changed"
+        ],
+        "seconds": 0.519
+      },
+      "files_changed": 8,
+      "from": "3cbaa76b60",
+      "index": 38,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 1.076,
+        "tests": 692
+      },
+      "to": "06b2a67874"
+    },
+    {
+      "M1": {
+        "decision": "revalidate"
+      },
+      "M2": {
+        "decision": "revalidate"
+      },
+      "M3": {
+        "decision": "revalidate",
+        "seconds": 5.754,
+        "tests_executed": 699
+      },
+      "M4": {
+        "applicability": "revalidate",
+        "changed": [
+          "file:src/click/core.py",
+          "file:tests/test_options.py"
+        ],
+        "changed_count": 2,
+        "decision": "revalidate",
+        "reasons": [
+          "input-changed"
+        ],
+        "seconds": 0.87
+      },
+      "files_changed": 7,
+      "from": "06b2a67874",
+      "index": 39,
+      "outcome_changed": false,
+      "record_trace_complete": true,
+      "recorded_verdict": "passed",
+      "rerun": {
+        "exit_code": 0,
+        "failures": [],
+        "seconds": 1.205,
+        "tests": 699
+      },
+      "to": "2247b35ea1"
+    }
+  ],
+  "summary": {
+    "M1": {
+      "command_reruns": 40,
+      "consequential_stale": [],
+      "test_executions": 25947,
+      "transitions": 40
+    },
+    "M2": {
+      "command_reruns": 40,
+      "consequential_stale": [],
+      "test_executions": 25947,
+      "transitions": 40
+    },
+    "M3": {
+      "command_reruns": 40,
+      "consequential_stale": [],
+      "test_executions": 25947,
+      "transitions": 40
+    },
+    "M4": {
+      "command_reruns": 27,
+      "consequential_stale": [],
+      "test_executions": 17555,
+      "transitions": 40
+    }
+  },
+  "transitions_with_outcome_change": []
+}
