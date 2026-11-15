@@ -105,9 +105,11 @@ def main(argv: list[str] | None = None) -> int:
             row["files_changed"] = len(_git(repo, "diff", "--name-only", before, after).split())
             check, seconds = _run([str(entroly), "--project", str(repo), "--json", "evidence", "check",
                                    "--record", record["record_id"]], repo, env("branch"))
-            decision = json.loads(check.stdout)
+            decision = json.loads(check.stdout)  # exit code 3 means "not reuse", not failure
             row["M4"] = {"decision": "reuse" if decision["decision"] == "reuse" else "revalidate",
                          "applicability": decision["decision"], "changed_count": decision.get("changed_count"),
+                         "changed": [f"{c.get('kind')}:{c.get('key')}" for c in decision.get("changed", [])][:20],
+                         "reasons": decision.get("reasons"),
                          "seconds": round(seconds, 3)}
             listed = json.loads(_run([str(main_tool), "--project", str(repo), "--json", "handoffs",
                                       "--to-agent", AGENT_B], repo, env("main"))[0].stdout)
@@ -149,6 +151,7 @@ def main(argv: list[str] | None = None) -> int:
             Path(__file__).with_name("HANDOFF_EVIDENCE_PREREGISTRATION.md").read_bytes()).hexdigest(),
         "repository": "pallets/click", "end_commit": END, "first_commit": commits[0][:10],
         "labels": {"repository": "real, held out (not used in development)", "provider": "not run"},
+        "implementation_head": _git(Path(__file__).resolve().parents[1], "rev-parse", "HEAD").strip(),
         "harness_errors": [r["index"] for r in rows if "harness_error" in r],
         "transitions_with_outcome_change": [r["index"] for r in valid if r["outcome_changed"]],
         "summary": summary,
