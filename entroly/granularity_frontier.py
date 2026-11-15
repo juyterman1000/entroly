@@ -13,7 +13,7 @@ The decision is based on paired outcomes from identical source material.  It
 uses two independent gates:
 
 * a one-sided interval for the paired quality difference; and
-* a Wilson upper bound for verifier regressions (baseline passes while the
+* a one-sided Clopper–Pearson upper bound for verifier regressions (baseline passes while the
   candidate fails).
 
 Catastrophic failures fail closed.  Sparse evidence and insufficient evaluator
@@ -41,8 +41,12 @@ from statistics import NormalDist
 from typing import Any, Iterable, Mapping
 
 
+from .binomial_stats import binomial_upper
+
+
 SCHEMA_VERSION = "entroly.granularity-frontier.v1"
-ALGORITHM_ID = "paired-evidence-resolution-frontier-v1"
+_LEGACY_ALGORITHM_ID = "paired-evidence-resolution-frontier-v1"
+ALGORITHM_ID = "paired-evidence-resolution-frontier-v2"
 _SHA256_HEX_LENGTH = 64
 
 
@@ -409,29 +413,6 @@ def _paired_mean_lower_bound(values: list[float], confidence: float) -> float:
     return max(-1.0, min(1.0, lower))
 
 
-def _wilson_upper_bound(successes: int, trials: int, confidence: float) -> float:
-    """One-sided Wilson upper confidence bound for a Bernoulli rate."""
-
-    if trials <= 0:
-        return 1.0
-    if not 0 <= successes <= trials:
-        raise GranularityFrontierError("successes must be between zero and trials")
-    z = NormalDist().inv_cdf(confidence)
-    z2 = z * z
-    proportion = successes / trials
-    denominator = 1.0 + z2 / trials
-    centre = (proportion + z2 / (2.0 * trials)) / denominator
-    radius = (
-        z
-        / denominator
-        * math.sqrt(
-            proportion * (1.0 - proportion) / trials
-            + z2 / (4.0 * trials * trials)
-        )
-    )
-    return min(1.0, centre + radius)
-
-
 class VerifiedGranularityFrontier:
     """Accumulate matched evaluations and select an earned granularity arm."""
 
@@ -519,7 +500,7 @@ class VerifiedGranularityFrontier:
 
         mean_delta = statistics.fmean(deltas) if deltas else 0.0
         quality_lower = _paired_mean_lower_bound(deltas, self.policy.confidence)
-        regression_upper = _wilson_upper_bound(
+        regression_upper = binomial_upper(
             regressions, n, self.policy.confidence
         )
         mean_savings = (
@@ -600,7 +581,8 @@ class VerifiedGranularityFrontier:
                 "required_baseline_pass_rate": self.policy.min_baseline_pass_rate,
                 "regression_count": regressions,
                 "regression_rate": round(regressions / n, 8) if n else 0.0,
-                "wilson_upper_bound": round(regression_upper, 8),
+                "regression_upper_bound": math.ceil(regression_upper * 1e8) / 1e8,
+                "regression_bound_method": "clopper_pearson_one_sided",
                 "allowed_regression_rate": self.policy.max_verifier_regression_rate,
                 "catastrophic_failure_count": catastrophes,
             },
@@ -694,7 +676,7 @@ class VerifiedGranularityFrontier:
             "assumptions": [
                 "paired trials are independent and representative of the deployment scope",
                 "quality bounds use a one-sided paired Student-t approximation",
-                "verifier regression uses a one-sided Wilson upper bound",
+                "verifier regression uses a one-sided Clopper–Pearson upper bound",
                 "evaluator family labels are declared failure domains, not audited independence",
                 "source and context digests are harness-provided provenance claims",
                 "training-tokenization scaling results are motivation, not validation of context compression",
@@ -781,7 +763,7 @@ def verify_granularity_receipt(receipt: Mapping[str, Any]) -> bool:
     claimed = snapshot.pop("receipt_sha256", None)
     if snapshot.get("schema_version") != SCHEMA_VERSION:
         return False
-    if snapshot.get("algorithm_id") != ALGORITHM_ID:
+    if snapshot.get("algorithm_id") not in (ALGORITHM_ID, _LEGACY_ALGORITHM_ID):
         return False
     if not isinstance(claimed, str) or claimed != _stable_digest(snapshot):
         return False

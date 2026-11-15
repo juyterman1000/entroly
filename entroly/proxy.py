@@ -3665,18 +3665,6 @@ class PromptCompilerProxy:
         except Exception as e:
             logger.debug("Zone budget skipped: %s", e)
 
-        # Rate-Distortion self-correction: shift IOS toward full-resolution
-        # fragments when quality declines (budget stays unchanged).
-        if self._enable_passive_feedback:
-            trend = self._feedback_tracker.quality_trend()
-            if trend == "declining" and hasattr(self.engine, '_rust'):
-                try:
-                    self.engine._rust.update_belief_utilization(0.1, 0.8)
-                    logger.debug(
-                        "Quality declining: R-D rebalance (budget=%d)", token_budget
-                    )
-                except Exception:
-                    pass
         # ── Flat optimization path (original) ──
         # optimize_context already does:
         #   1. Query refinement (py_analyze_query + py_refine_heuristic)

@@ -95,6 +95,10 @@ def test_replay_records_choice_flip_and_independent_probability_control():
     assert report["context_regret"]["decision_divergence_regret"] == 1
     assert report["context_regret"]["model_self_divergence"] == 0
     assert report["context_regret"]["task_context_regret"] == 1
+    assert report["paired_accuracy"]["scored_pairs"] == 1
+    assert report["paired_accuracy"]["full_only_correct"] == 1
+    assert report["paired_accuracy"]["selected_minus_full_accuracy"] == -1
+    assert report["paired_accuracy"]["mcnemar_exact_two_sided_p"] == 1
     assert report["probability_shifts"][0]["full_selected_js_bits"] > 0
     assert report["probability_shifts"][0]["full_repeat_js_bits"] > 0
     assert (
@@ -117,6 +121,7 @@ def test_missing_truth_remains_unavailable():
     del item["trials"][0]["truth_choice"]
     report = evaluate_fixture(manifest_value=item)
     assert report["context_regret"]["task_context_regret"] is None
+    assert report["paired_accuracy"]["inference_status"] == "no_truth"
 
 
 def test_replay_change_gets_a_distinct_scope():
@@ -244,3 +249,17 @@ def test_cli_requires_explicit_egress_and_writes_only_complete_offline_report(
         )
         == 1
     )
+
+
+def test_paired_accuracy_keeps_disagreements_and_reports_exact_inference():
+    from entroly.decisions_trial import _paired_accuracy
+
+    gain = _paired_accuracy([(f"task-{i}", False, True) for i in range(6)])
+    assert gain["selected_minus_full_accuracy"] == 1
+    assert gain["mcnemar_exact_two_sided_p"] == pytest.approx(0.03125)
+    assert gain["paired_95pct_interval"][1] == 1
+    repeated = _paired_accuracy([("same", False, True), ("same", True, False)])
+    assert repeated["scored_pairs"] == 2
+    assert repeated["selected_minus_full_accuracy"] == 0
+    assert repeated["mcnemar_exact_two_sided_p"] is None
+    assert repeated["paired_95pct_interval"] is None

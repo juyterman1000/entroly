@@ -64,8 +64,8 @@ class ImplicitFeedbackTracker:
         self._rephrase_detections = 0
         self._topic_changes = 0
         self._total_assessed = 0
-        # CUSUM-EMA quality drift detector
-        self._drift_detector = _CusumEmaDriftDetector()
+        # Monitor the change in the observed confusion rate.
+        self._drift_detector = _FrozenBaselineDriftDetector()
 
     def assess_response(self, response_text: str) -> float:
         """Assess an LLM response for confusion vs confidence.
@@ -189,7 +189,6 @@ class ImplicitFeedbackTracker:
                 self._confusion_detections += 1
             elif reward > 0.25:
                 self._confidence_detections += 1
-            # Feed dual drift detector
             self._drift_detector.update(reward)
 
     def quality_trend(self) -> str:
@@ -212,99 +211,81 @@ class ImplicitFeedbackTracker:
             }
 
 
-class _CusumEmaDriftDetector:
-    """Dual online quality drift detector: CUSUM + EMA.
+class _FrozenBaselineDriftDetector:
+    """Monitor the confusion heuristic against a fixed startup reference.
 
-    Combines two complementary algorithms from the change-point detection
-    literature -- online kernel CUSUM and EMA trend tracking. Neither is ours;
-    running both against the same stream and requiring agreement before
-    declaring drift is, because a single detector on a noisy quality signal
-    fires often enough that operators stop trusting it:
-
-    1. **EMA** (Exponential Moving Average): Smooth trend tracker.
-       α = 0.15 → emphasizes recent observations. Fast to respond but
-       susceptible to noise.
-
-    2. **Page's CUSUM** (Cumulative Sum): Detects persistent drift in
-       the reward signal. Accumulates deviations from the target mean.
-       More robust than EMA — fires only on sustained degradation.
-
-    Quality trend states:
-      - "stable": Both detectors within bounds
-      - "declining": Either detector flags degradation
-      - "improving": EMA above positive threshold after a decline
-
-    Thread-safety: Caller must hold lock (ImplicitFeedbackTracker._lock).
+    Two complete, non-overlapping windows are needed to signal a material
+    increase. This is a finite-window heuristic, with no claimed false-alarm
+    guarantee for arbitrary correlated traffic. The EMA is diagnostic only.
+    Calls are serialized by ImplicitFeedbackTracker.
     """
 
-    # EMA smoothing factor: 0.15 gives ~13-sample effective window
+    _BASELINE_SIZE = 2048
+    _WINDOW_SIZE = 1024
+    _INCREASE = 0.10
+    _RECOVERY_MARGIN = 0.05
     _ALPHA = 0.15
-    # CUSUM sensitivity: accumulate when reward < this target
-    _TARGET_MEAN = 0.0
-    # CUSUM decision threshold: fire alarm when cumulative sum exceeds this
-    _CUSUM_THRESHOLD = 3.0
-    # EMA threshold for "declining" signal
-    _EMA_DECLINE_THRESHOLD = -0.20
-    # EMA threshold for "improving" signal
-    _EMA_IMPROVE_THRESHOLD = 0.15
-    # Minimum observations before drift detection activates
-    _MIN_OBSERVATIONS = 5
 
-    def __init__(self):
-        self.ema: float = 0.0
-        self.cusum_pos: float = 0.0  # Detect upward shift (quality improving)
-        self.cusum_neg: float = 0.0  # Detect downward shift (quality declining)
-        self.count: int = 0
-        self._was_declining: bool = False
+    def __init__(self) -> None:
+        self.reset()
 
     def update(self, reward: float) -> None:
-        """Feed a new reward observation."""
         self.count += 1
+        self.ema = (
+            reward if self.count == 1 else self.ema + self._ALPHA * (reward - self.ema)
+        )
+        confused = int(reward < -0.25)
+        if self.count <= self._BASELINE_SIZE:
+            self._baseline_confused += confused
+            return
+        self._window_count += 1
+        self._window_confused += confused
+        if self._window_count < self._WINDOW_SIZE:
+            return
 
-        # EMA update
-        if self.count == 1:
-            self.ema = reward
+        self._last_window_rate = self._window_confused / self._WINDOW_SIZE
+        delta = self._last_window_rate - self._baseline_confused / self._BASELINE_SIZE
+        self._window_count = 0
+        self._window_confused = 0
+        if self._trend == "declining":
+            self._consecutive = (
+                self._consecutive + 1 if delta <= self._RECOVERY_MARGIN else 0
+            )
+            if self._consecutive == 2:
+                self._trend = "improving"
+                self._consecutive = 0
         else:
-            self.ema = self._ALPHA * reward + (1.0 - self._ALPHA) * self.ema
-
-        # Page's CUSUM update (two-sided)
-        deviation = reward - self._TARGET_MEAN
-        self.cusum_pos = max(0.0, self.cusum_pos + deviation)
-        self.cusum_neg = max(0.0, self.cusum_neg - deviation)
-
-        # Track state transitions for "improving" detection
-        if self.trend() == "declining":
-            self._was_declining = True
+            if self._trend == "improving":
+                self._trend = "stable"
+            self._consecutive = self._consecutive + 1 if delta >= self._INCREASE else 0
+            if self._consecutive == 2:
+                self._trend = "declining"
+                self._consecutive = 0
 
     def trend(self) -> str:
-        """Return current quality trend."""
-        if self.count < self._MIN_OBSERVATIONS:
-            return "stable"  # Not enough data yet
-
-        # Declining: EMA below threshold OR CUSUM negative alarm
-        if (self.ema < self._EMA_DECLINE_THRESHOLD
-                or self.cusum_neg > self._CUSUM_THRESHOLD):
-            return "declining"
-
-        # Improving: EMA above positive threshold AND recovered from decline
-        if self._was_declining and self.ema > self._EMA_IMPROVE_THRESHOLD:
-            return "improving"
-
-        return "stable"
+        return self._trend
 
     def reset(self) -> None:
-        """Reset detector state (e.g., on session restart)."""
-        self.ema = 0.0
-        self.cusum_pos = 0.0
-        self.cusum_neg = 0.0
         self.count = 0
-        self._was_declining = False
+        self.ema = 0.0
+        self._baseline_confused = 0
+        self._window_count = 0
+        self._window_confused = 0
+        self._last_window_rate: float | None = None
+        self._consecutive = 0
+        self._trend = "stable"
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "method": "frozen_confusion_rate_v1",
             "ema": round(self.ema, 4),
-            "cusum_pos": round(self.cusum_pos, 4),
-            "cusum_neg": round(self.cusum_neg, 4),
             "observations": self.count,
+            "baseline_ready": self.count >= self._BASELINE_SIZE,
+            "baseline_confusion_rate": (
+                self._baseline_confused / self._BASELINE_SIZE
+                if self.count >= self._BASELINE_SIZE
+                else None
+            ),
+            "latest_window_confusion_rate": self._last_window_rate,
             "trend": self.trend(),
         }
