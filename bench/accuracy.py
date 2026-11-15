@@ -134,6 +134,26 @@ class RetentionReport:
     retention: float  # entroly_accuracy / baseline_accuracy
     token_savings_pct: float
     cost_savings_pct: float
+    # Paired comparison on the items both arms answered. The two per-arm
+    # intervals above are computed separately and overlap even when one arm
+    # is clearly worse, so they cannot support a retention claim on their own.
+    paired: dict | None = None
+
+
+def _paired_comparison(baseline: BenchmarkResult, treatment: BenchmarkResult) -> dict | None:
+    """Exact paired comparison over items both arms answered without error."""
+    try:
+        from entroly.trial_statistics import paired_success_comparison
+    except Exception:  # benchmark must still run against an older install
+        return None
+    base = {d["index"]: bool(d["correct"]) for d in baseline.details if "correct" in d}
+    treat = {d["index"]: bool(d["correct"]) for d in treatment.details if "correct" in d}
+    shared = sorted(base.keys() & treat.keys())
+    if not shared:
+        return None
+    result = paired_success_comparison([base[i] for i in shared], [treat[i] for i in shared])
+    result["items_excluded_for_errors"] = max(baseline.samples, treatment.samples) - len(shared)
+    return result
 
 
 # ── LLM Client ────────────────────────────────────────────────────────
@@ -1178,6 +1198,7 @@ def run_benchmark(
         retention=round(retention, 4),
         token_savings_pct=round(token_savings * 100, 1),
         cost_savings_pct=round(cost_savings * 100, 1),
+        paired=_paired_comparison(baseline, treatment),
     )
 
 
@@ -1596,6 +1617,7 @@ Custom OpenAI-compatible providers (Groq, Together, OpenRouter, Ollama, vLLM, ..
                 "baseline_avg_tokens": r.baseline.avg_tokens,
                 "entroly_avg_tokens": r.entroly.avg_tokens,
                 "samples": r.baseline.samples,
+                "paired_comparison": r.paired,
             })
         print(json.dumps(output, indent=2))
     else:
@@ -1622,6 +1644,22 @@ Custom OpenAI-compatible providers (Groq, Together, OpenRouter, Ollama, vLLM, ..
             avg_savings = sum(r.token_savings_pct for r in all_reports) / len(all_reports)
             print(f"  {'AVERAGE':<12} {'':>24} {'':>24} {avg_retention:>9.1%} {avg_savings:>10.1f}%")
         print("=" * 88)
+        paired_rows = [r for r in all_reports if r.paired and r.paired.get("pairs")]
+        if paired_rows:
+            print("  Paired on the same items (accuracy change, compressed minus baseline):")
+            for r in paired_rows:
+                p = r.paired
+                verdict = (
+                    f"drop larger than {p['margin']:.0%} ruled out"
+                    if p["noninferior"]
+                    else f"drop larger than {p['margin']:.0%} NOT ruled out"
+                )
+                print(
+                    f"  {r.benchmark:<12} observed {p['observed_difference']:+.1%}, "
+                    f"at least {p['difference_lower_bound']:+.1%} at {p['confidence']:.0%} "
+                    f"confidence ({p['pairs']} pairs) -- {verdict}"
+                )
+            print("  The per-arm intervals above are separate and cannot support this claim.")
         print()
 
 

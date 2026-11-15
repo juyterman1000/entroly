@@ -510,7 +510,7 @@ entroly find docs/product-surface.md --query "exact source evidence" --json
 entroly response set evidence --scope project
 ```
 
-Trials run one explicitly selected arm at a time so a stateful or paid agent task is never repeated implicitly. Response contracts shape agent instructions; they do not truncate responses or count as measured savings. Browser and command reductions keep exact local recovery handles and pass through when their safety gates cannot be met.
+Trials run one explicitly selected arm at a time so a stateful or paid agent task is never repeated implicitly. With three or more matched runs per arm, `entroly trial --report` adds exact small-sample statistics and says plainly what the runs do and do not support ([method and limits](docs/algorithms/trial-statistics.md)); alternate baseline and optimized runs rather than running each arm as a block. Response contracts shape agent instructions; they do not truncate responses or count as measured savings. Browser and command reductions keep exact local recovery handles and pass through when their safety gates cannot be met.
 
 For teams that need to say who an agent is and what it was allowed to do:
 

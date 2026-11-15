@@ -5,6 +5,18 @@ version-specific notes live in [GitHub Releases](https://github.com/juyterman100
 
 ## Unreleased
 
+- `entroly trial --report` adds `comparison.statistics` once a trial has three
+  or more matched runs per arm: an exact rank-sum test for fewer input tokens
+  and for lower cost (each can come back `supported`, `not-supported` or
+  `contradicted`), lower bounds on the absolute and percentage reduction, a
+  lower bound on the change in evaluated task success, how the arms were
+  ordered, and a `summary` in plain sentences. Results are exact up to 60 runs
+  per arm. Three runs per arm can support "fewer input tokens" at p = 0.05 and
+  nothing stronger; three successes out of three do not show that quality was
+  preserved, and the report says how many runs would. Arms are not assigned at
+  random, so no causal or general savings claim is made. Existing report fields
+  are unchanged. `bench/accuracy.py` adds an exact paired comparison on the
+  items both arms answered. See `docs/algorithms/trial-statistics.md`.
 - `entroly-work evidence run` runs a verification command itself and binds the
   result to digests of what its Python processes read: files, scanned
   directories, probed paths, environment variables, interpreter start-up
