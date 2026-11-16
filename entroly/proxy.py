@@ -1157,7 +1157,9 @@ class PromptCompilerProxy:
 
 
         # Passive implicit feedback — closes the RL loop without IDE cooperation
-        self._feedback_tracker = ImplicitFeedbackTracker()
+        self._feedback_tracker = ImplicitFeedbackTracker(
+            sequential_drift=os.environ.get("ENTROLY_SEQUENTIAL_DRIFT_SHADOW") == "1"
+        )
         self._enable_passive_feedback = (
             os.environ.get("ENTROLY_PASSIVE_FEEDBACK", "1") != "0"
         )
