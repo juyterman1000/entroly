@@ -13,6 +13,7 @@
 | **Cognitive Bus** | ISA inter-agent event routing | [`cognitive_bus.rs`](../../entroly-engine/src/cognitive_bus.rs) | [cognitive-bus.md](cognitive-bus.md) |
 | **Resonance Matrix** | Supermodular pairwise fragment learning | [`resonance.rs`](../../entroly-engine/src/resonance.rs) | [resonance.md](resonance.md) |
 | **System 1 ↔ System 2** | Dual-process proxy ↔ vault coupling | [`coupling.py`](../../entroly/coupling.py) | [system-1-system-2.md](system-1-system-2.md) |
+| **Trial statistics** | What a handful of matched runs does and does not support, exact at small n | [`trial_statistics.py`](../../entroly/trial_statistics.py) | [trial-statistics.md](trial-statistics.md) |
 
 ## Why split out from RESEARCH.md
 

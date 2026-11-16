@@ -220,9 +220,74 @@ def _experiment_dir(experiment: str) -> Path:
     return _state_dir() / "experiments" / experiment
 
 
+_DEFAULT_RECEIPT_STEM = re.compile(r"^(\d{1,24})-(baseline|optimized)$")
+
+
+def _trial_statistics(receipts: list[dict[str, Any]], stems: list[str]) -> dict[str, Any]:
+    """Finite-sample statistics for a comparable set of trial receipts.
+
+    Called only when the arms are matched, balanced, traffic-gated and have at
+    least three runs each. Every figure is exact or conservative at the
+    observed sample size; see :mod:`entroly.trial_statistics`.
+    """
+    from .trial_statistics import compare_arms
+
+    def tokens(arm: str) -> list[float]:
+        return [
+            float(int(row["usage"]["provider_reported_active_input_tokens"]))
+            for row in receipts
+            if row["arm"] == arm
+        ]
+
+    def costs(arm: str) -> list[float] | None:
+        # `cost_usd` is None when the pricing ledger recorded nothing for the
+        # run. A cost comparison over a subset of runs would not be matched.
+        values = [row["economics"].get("cost_usd") for row in receipts if row["arm"] == arm]
+        if any(value is None for value in values):
+            return None
+        return [float(value) for value in values]
+
+    def successes(arm: str) -> list[bool] | None:
+        rows = [row["quality"] for row in receipts if row["arm"] == arm]
+        if any(
+            not isinstance(q.get("task_success"), bool)
+            or not isinstance(q.get("evidence_retained"), bool)
+            for q in rows
+        ):
+            return None
+        return [q["task_success"] and q["evidence_retained"] for q in rows]
+
+    # Run order is recoverable only from default receipt names, which start
+    # with the nanosecond timestamp of the run. A custom --receipt path hides it.
+    order: list[str] | None = None
+    matches = [_DEFAULT_RECEIPT_STEM.fullmatch(stem) for stem in stems]
+    if all(matches) and all(m.group(2) == row["arm"] for m, row in zip(matches, receipts)):
+        timed = sorted((int(m.group(1)), row["arm"]) for m, row in zip(matches, receipts))
+        order = [arm for _, arm in timed]
+
+    result = compare_arms(
+        baseline_measurements=tokens("baseline"),
+        optimized_measurements=tokens("optimized"),
+        baseline_successes=successes("baseline"),
+        optimized_successes=successes("optimized"),
+        baseline_costs=costs("baseline"),
+        optimized_costs=costs("optimized"),
+        order=order,
+    )
+    result["input_tokens"]["measurement"] = (
+        "provider-reported active input tokens per run: uncached + cache-read + cache-write"
+    )
+    result["task_success"]["definition"] = (
+        "a run counts as a success only when the attached evaluation reports both "
+        "task_success and evidence_retained"
+    )
+    return result
+
+
 def _trial_report(experiment: str) -> dict[str, Any]:
     directory = _experiment_dir(experiment)
     receipts: list[dict[str, Any]] = []
+    receipt_stems: list[str] = []
     ignored_receipts = 0
     for path in sorted(directory.glob("*.json")) if directory.is_dir() else ():
         try:
@@ -258,6 +323,7 @@ def _trial_report(experiment: str) -> dict[str, Any]:
                 valid = False
         if valid:
             receipts.append(value)
+            receipt_stems.append(path.stem)
         else:
             ignored_receipts += 1
     arms: dict[str, dict[str, Any]] = {}
@@ -296,6 +362,7 @@ def _trial_report(experiment: str) -> dict[str, Any]:
         and all(row["traffic"]["evidence_gate"] == "passed" for row in receipts)
     )
     enough_for_directional = comparable and arms["baseline"]["runs"] >= 3
+    statistics = _trial_statistics(receipts, receipt_stems) if enough_for_directional else None
     return {
         "schema_version": "entroly.trial-report.v2",
         "experiment": experiment,
@@ -323,9 +390,15 @@ def _trial_report(experiment: str) -> dict[str, Any]:
                 - arms["optimized"]["provider_reported_active_input_tokens"]
                 if enough_for_directional else None
             ),
+            # Same gate as the difference above: statistics about a comparison
+            # must not exist while the status says the comparison is unsupported.
+            "statistics": statistics,
             "claim_boundary": (
                 "Three matched runs permit a directional operational comparison only. "
-                "No statistical significance, causality, or general savings claim is inferred."
+                "`statistics` states what these runs support and the assumptions each "
+                "figure rests on. Arms were not assigned at random, so no causal or "
+                "general savings claim is inferred, and task quality is not demonstrated "
+                "unless `statistics.conclusions.task_success` says so."
             ),
         },
     }
