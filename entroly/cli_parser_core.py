@@ -223,12 +223,17 @@ def _add_core_commands(subparsers) -> None:
         help="Suppress progress output (only emit the snapshot)",
     )
     optimize_parser.add_argument(
-        "--selector", type=str, choices=["auto", "knapsack", "dopt", "qccr"], default="auto",
-        help="Selection objective. auto (default): qccr if task given, else knapsack. knapsack (linear), dopt (BM25 + log-det), qccr (sentence-level query-conditioned extractive + MMR).",
+        "--selector", type=str, choices=["auto", "knapsack", "dopt", "dopt-coverage", "qccr"],
+        default="auto",
+        help=(
+            "Selection objective. auto: qccr with a task, otherwise knapsack. "
+            "dopt: D-opt / file-level BM25. qccr: query-conditioned excerpts. "
+            "dopt-coverage: experimental coverage repair (requires NumPy)."
+        ),
     )
     optimize_parser.add_argument(
         "--exclude", type=str, action="append", default=[],
-        help="Substring to exclude from the fragment source path (repeatable; dopt selector only)",
+        help="Substring to exclude from the fragment source path (repeatable; D-opt and QCCR)",
     )
 
     # entroly ingest

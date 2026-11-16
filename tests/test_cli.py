@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import socket
+import sys
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -17,6 +18,54 @@ from entroly.session_intelligence import (
     SessionReceiptChain,
     allocate_session_turn_budget,
 )
+
+
+@pytest.mark.parametrize("output_format", ["json", "markdown"])
+def test_optimize_coverage_outputs_the_budgeted_fragments(
+    tmp_path, monkeypatch, capsys, output_format
+):
+    from argparse import ArgumentParser
+
+    from entroly.cli_parser_core import _add_core_commands
+
+    source = tmp_path / "caller.py"
+    source.write_text("full unbudgeted file contents", encoding="utf-8")
+    fragments = [
+        {"source": str(source), "fragment_id": "a", "content": "def execute(): ...", "token_count": 5},
+        {"source": str(source), "fragment_id": "b", "content": "execute()\n", "token_count": 3},
+    ]
+    engine = SimpleNamespace(
+        _use_rust=True,
+        _rust=SimpleNamespace(export_fragments=lambda: fragments),
+        advance_turn=lambda: None,
+    )
+    monkeypatch.setattr("entroly.server.EntrolyEngine", lambda: engine)
+    monkeypatch.setattr("entroly.auto_index.auto_index", lambda _engine: {"status": "skipped", "existing_fragments": 2})
+    monkeypatch.setattr(cli, "_resolve_entroly_dir", lambda: tmp_path / ".entroly")
+
+    def select(candidates, *, token_budget, query, coverage_repair):
+        assert coverage_repair is True
+        assert token_budget == 8
+        assert query == "execute"
+        return candidates
+
+    monkeypatch.setitem(sys.modules, "entroly.dopt_selector", SimpleNamespace(select=select, _approx_tokens=len))
+    parser = ArgumentParser()
+    _add_core_commands(parser.add_subparsers())
+    args = parser.parse_args([
+        "optimize", "--task", "execute", "--budget", "8", "--selector", "dopt-coverage",
+        "--format", output_format, "--quiet",
+    ])
+    cli.cmd_optimize(args)
+    emitted = capsys.readouterr().out
+    if output_format == "json":
+        payload = json.loads(emitted)
+        assert payload["tokens_used"] == 8
+        assert [part["content"] for part in payload["fragments"]] == [f["content"] for f in fragments]
+    else:
+        assert "**Files:** 1 | **Tokens:** 8 / 8" in emitted
+        assert "def execute(): ..." in emitted and "execute()\n" in emitted
+        assert "full unbudgeted file contents" not in emitted
 
 
 class _HealthHandler(BaseHTTPRequestHandler):
