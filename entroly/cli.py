@@ -5212,6 +5212,7 @@ def cmd_optimize(args):
 
     engine.advance_turn()
     selector = getattr(args, "selector", "auto")
+    exact_fragments = False
     # "auto" — QCCR when a query is present (sentence-level extractive wins
     # head-to-head in quality_eval on code-retrieval tasks); fall back to
     # knapsack when there's no query to condition on.
@@ -5237,7 +5238,7 @@ def cmd_optimize(args):
                     file=sys.stderr,
                 )
             selector = "knapsack"
-    if selector in ("dopt", "qccr"):
+    if selector in ("dopt", "dopt-coverage", "qccr"):
         if not getattr(engine, "_use_rust", False):
             print(
                 f"  {C.YELLOW}Selector {selector!r} requires the native entroly-core engine; "
@@ -5263,8 +5264,23 @@ def cmd_optimize(args):
                 from entroly.qccr import select as qccr_select
                 selected = qccr_select(candidates, token_budget=budget, query=task)
             else:
-                from entroly.dopt_selector import select as dopt_select
-                selected = dopt_select(candidates, token_budget=budget, query=task)
+                exact_fragments = selector == "dopt-coverage"
+                try:
+                    from entroly.dopt_selector import _approx_tokens
+                    from entroly.dopt_selector import select as dopt_select
+                except ModuleNotFoundError as exc:
+                    if not exact_fragments or exc.name != "numpy":
+                        raise
+                    print("The dopt-coverage selector requires NumPy.", file=sys.stderr)
+                    raise SystemExit(2) from None
+                if exact_fragments:
+                    for candidate in candidates:
+                        candidate["token_count"] = int(
+                            candidate.get("token_count") or _approx_tokens(candidate.get("content") or "")
+                        )
+                selected = dopt_select(
+                    candidates, token_budget=budget, query=task, coverage_repair=exact_fragments
+                )
             opt = {
                 "selected_fragments": selected,
                 "total_tokens": sum(f.get("token_count") or (len(f.get("content", "")) // 4) for f in selected),
@@ -5291,15 +5307,16 @@ def cmd_optimize(args):
         opt = engine.optimize_context(token_budget=budget, query=task)
         selected = opt.get("selected_fragments", []) or opt.get("selected", [])
 
-    # Deduplicate fragments by source path
-    seen_sources = set()
-    deduped = []
-    for f in selected:
-        src = f.get("source", "")
-        if src not in seen_sources:
-            seen_sources.add(src)
-            deduped.append(f)
-    selected = deduped
+    if not exact_fragments:
+        # Existing selectors present at most one fragment per source path.
+        seen_sources = set()
+        deduped = []
+        for f in selected:
+            src = f.get("source", "")
+            if src not in seen_sources:
+                seen_sources.add(src)
+                deduped.append(f)
+        selected = deduped
     # Source of truth for tokens_used is the engine's own accounting
     # (opt["total_tokens"]). It reflects the resolution-aware cost the
     # knapsack actually charged against the budget. Summing per-fragment
@@ -5343,14 +5360,15 @@ def cmd_optimize(args):
         lines.append("")
         if task:
             lines.append(f"**Task:** {task}")
-        lines.append(f"**Files:** {len(selected)} | **Tokens:** {tokens_used:,} / {budget:,}")
+        file_count = len({fragment.get("source", "") for fragment in selected})
+        lines.append(f"**Files:** {file_count} | **Tokens:** {tokens_used:,} / {budget:,}")
         lines.append("")
         for frag in selected:
             source = frag.get("source", "unknown")
             tc = frag.get("token_count", 0)
             content = frag.get("content", "") or frag.get("preview", "")
             # If content is truncated (ends with ...), read full file from disk
-            if content.endswith("...") and source:
+            if not exact_fragments and content.endswith("...") and source:
                 file_path = source.replace("file:", "") if source.startswith("file:") else source
                 resolved = Path(file_path)
                 if not resolved.is_absolute():
@@ -5371,7 +5389,7 @@ def cmd_optimize(args):
             lang = lang_map.get(ext, "")
             lines.append(f"## `{source}` ({tc} tokens)")
             lines.append(f"```{lang}")
-            lines.append(content.rstrip())
+            lines.append(content if exact_fragments else content.rstrip())
             lines.append("```")
             lines.append("")
         print("\n".join(lines))

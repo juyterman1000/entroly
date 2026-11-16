@@ -1,5 +1,10 @@
 """BM25-Submodular Context Packing.
 
+With a query, the public selector packs original fragments in file-level
+BM25 order. The optional coverage repair can admit one fragment within the
+same budget using exact symbol anchors and regularized lexical residuals.
+The background below describes the design behind the log-determinant primitives.
+
 A training-free, embedding-free context selector that combines Normalized
 Compression Distance (NCD) as the query-fragment relevance signal with a
 monotone submodular log-determinant objective for budget-constrained
@@ -58,22 +63,33 @@ high-information fragment alone beats any composition of smaller ones.
 """
 from __future__ import annotations
 
+import hashlib
+import io
 import math
 import re
+import tokenize
+from bisect import bisect_right
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass
+from itertools import accumulate
 
 import numpy as np
 
 # ── Constants ────────────────────────────────────────────────────────────
 _IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
 _CAMEL_RE = re.compile(r"[A-Z]?[a-z]+|[A-Z]+(?=[A-Z]|$)|\d+")
+_SYMBOL_RE = re.compile(r"\b_*[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+_*\b")
 _CONCEPT_DIM = 64
 _PRIOR_STRENGTH = 1e-2
 _STALE_PRECISION_SCALE = 0.1
 _MIN_GAIN = 1e-6
 _BM25_K1 = 1.5
 _BM25_B = 0.75
+_COVERAGE_RIDGE = 0.25
+_COVERAGE_MAX_SELECTED = 128
+_COVERAGE_MAX_OMISSIONS = 256
+_COVERAGE_MAX_CHARS = 8192
 
 # English function-words that appear in every natural-language query.
 # They would otherwise cause any markdown or comment-heavy fragment to
@@ -287,22 +303,219 @@ def _greedy(
     return selected, total_gain
 
 
+def _coverage_direction(terms: frozenset[str], query_terms: frozenset[str]) -> np.ndarray:
+    """Hash query anchors and other identifiers into separate unit-norm blocks."""
+    direction = np.zeros(_CONCEPT_DIM, dtype=np.float64)
+    half = _CONCEPT_DIM // 2
+    for term in terms:
+        code = hashlib.blake2b(term.encode(), digest_size=2).digest()
+        offset = 0 if term in query_terms else half
+        direction[offset + code[0] % half] += 1.0 if code[1] & 1 else -1.0
+    for block in (direction[:half], direction[half:]):
+        norm = np.linalg.norm(block)
+        if norm:
+            block /= norm
+    norm = np.linalg.norm(direction)
+    return direction / norm if norm else direction
+
+
+def _callable_anchors(content: str, anchors: set[str]) -> set[str]:
+    """Recognize definitions and calls in partial Python source fragments."""
+    anchors = anchors.intersection(_SYMBOL_RE.findall(content))
+    if not anchors:
+        return set()
+    # Fragments can start inside a block and later dedent to an unseen level.
+    # Flatten indentation while retaining line endings and quoted strings.
+    source = "".join(line.lstrip(" \t") for line in content.splitlines(keepends=True))
+    found = set()
+    previous_name = ""
+    try:
+        for token in tokenize.generate_tokens(io.StringIO(source).readline):
+            if token.type in (tokenize.NL, tokenize.COMMENT):
+                continue
+            if token.type == tokenize.OP and token.string == "(" and previous_name in anchors:
+                found.add(previous_name)
+            previous_name = token.string if token.type == tokenize.NAME else ""
+    except (IndentationError, tokenize.TokenError):
+        # Keep tokens emitted before the incomplete expression or string.
+        pass
+    return found
+
+
+@dataclass
+class _CoverageCandidate:
+    raw: dict
+    cost: int
+    terms: frozenset[str]
+    direction: np.ndarray
+
+
+def _symbol_repair(
+    selected: list[dict],
+    contents: list[str],
+    selected_terms: list[frozenset[str]],
+    directions: np.ndarray,
+    candidates: list[_CoverageCandidate],
+    cumulative_costs: list[int],
+    token_budget: int,
+    query_terms: frozenset[str],
+    query_anchors: set[str],
+) -> list[dict] | None:
+    if not query_anchors:
+        return None
+    prefix_terms: set[str] = set()
+    prefix_anchors: set[str] = set()
+    prefix_calls: set[str] = set()
+    evidence = [(set(), set(), set())]
+    for content, terms in zip(contents, selected_terms):
+        prefix_terms |= terms & query_terms
+        prefix_anchors |= query_anchors.intersection(_SYMBOL_RE.findall(content))
+        prefix_calls |= _callable_anchors(content, query_anchors)
+        evidence.append((prefix_terms.copy(), prefix_anchors.copy(), prefix_calls.copy()))
+    missing = query_anchors - prefix_calls
+    if not missing:
+        return None
+
+    # A single callable can use up to a third of the budget, or the space
+    # already available through a single tail swap, whichever is greater.
+    reserve = max(token_budget // 3, token_budget - cumulative_costs[-2])
+    offers: dict[int, list[int]] = {}
+    for i, candidate in enumerate(candidates):
+        if candidate.cost > reserve:
+            continue
+        content = candidate.raw["content"]
+        calls = _callable_anchors(content, query_anchors)
+        if calls.isdisjoint(missing):
+            continue
+        keep = bisect_right(cumulative_costs, token_budget - candidate.cost)
+        terms, anchors, retained_calls = evidence[keep]
+        if (
+            keep
+            and prefix_terms <= terms | candidate.terms
+            and prefix_anchors <= anchors.union(_SYMBOL_RE.findall(content))
+            and prefix_calls <= retained_calls | calls
+        ):
+            offers.setdefault(keep, []).append(i)
+    if not offers:
+        return None
+
+    # Compare reservations on the same probes, including any removed suffix.
+    probes = np.vstack((directions, np.stack([candidate.direction for candidate in candidates])))
+    best = (math.inf, 0, 0)
+    for keep, indices in offers.items():
+        prefix = directions[:keep]
+        information = _COVERAGE_RIDGE * np.eye(_CONCEPT_DIM) + prefix.T @ prefix
+        solved = np.linalg.solve(information, probes.T)
+        diagonal = np.einsum("ij,ji->i", probes, solved)
+        columns = len(selected) + np.array(indices)
+        cross = probes @ solved[:, columns]
+        residuals = _COVERAGE_RIDGE * (diagonal[:, None] - cross**2 / (1 + diagonal[columns]))
+        for i, worst in zip(indices, residuals.max(axis=0)):
+            best = min(best, (float(worst), -keep, i))
+    _, negative_keep, index = best
+    return [*selected[: -negative_keep], candidates[index].raw]
+
+
+def _repair_coverage(
+    ranked_fragments: Iterable[dict],
+    selected: list[dict],
+    seen_ids: set,
+    budget_left: int,
+    query_terms: frozenset[str],
+    query_anchors: set[str],
+) -> list[dict]:
+    if not 2 <= len(selected) <= _COVERAGE_MAX_SELECTED:
+        return selected
+
+    contents = [raw.get("content", "") or "" for raw in selected]
+    if any(len(content) > _COVERAGE_MAX_CHARS for content in contents):
+        return selected
+    selected_terms = [frozenset(_tokenize(content)) for content in contents]
+    selected_costs = [int(raw.get("token_count") or _approx_tokens(content))
+                      for raw, content in zip(selected, contents)]
+    if min(selected_costs) <= 0:
+        return selected
+    cumulative_costs = list(accumulate(selected_costs))
+    token_budget = cumulative_costs[-1] + budget_left
+    available = budget_left + selected_costs[-1]
+    max_cost = max(available, token_budget // 3) if query_anchors else available
+    candidates: list[_CoverageCandidate] = []
+    scanned = 0
+    for raw in ranked_fragments:
+        if raw.get("fragment_id", raw.get("id", id(raw))) in seen_ids:
+            continue
+        if scanned == _COVERAGE_MAX_OMISSIONS:
+            break
+        scanned += 1
+        content = raw.get("content", "") or ""
+        cost = int(raw.get("token_count") or _approx_tokens(content))
+        if not 0 < cost <= max_cost or len(content) > _COVERAGE_MAX_CHARS or _is_stale(content):
+            continue
+        terms = frozenset(_tokenize(content))
+        if terms.isdisjoint(query_terms):
+            continue
+        direction = _coverage_direction(terms, query_terms)
+        if direction.any():
+            candidates.append(_CoverageCandidate(raw, cost, terms, direction))
+    if not candidates:
+        return selected
+
+    directions = np.stack([_coverage_direction(terms, query_terms) for terms in selected_terms])
+    anchored = _symbol_repair(selected, contents, selected_terms, directions, candidates,
+                              cumulative_costs, token_budget, query_terms, query_anchors)
+    if anchored is not None:
+        return anchored
+
+    tail_terms = selected_terms[-1]
+    prefix_terms = frozenset().union(*selected_terms[:-1])
+    if (tail_terms & query_terms) - prefix_terms:
+        return selected
+    tail_anchors = query_anchors.intersection(_SYMBOL_RE.findall(contents[-1]))
+    if tail_anchors and not tail_anchors <= {anchor for content in contents[:-1]
+                                             for anchor in _SYMBOL_RE.findall(content)}:
+        return selected
+    tail_calls = _callable_anchors(contents[-1], tail_anchors)
+    if tail_calls and not tail_calls <= set().union(*(_callable_anchors(content, tail_calls)
+                                                       for content in contents[:-1])):
+        return selected
+    candidates = [candidate for candidate in candidates if candidate.cost <= available]
+    if not candidates:
+        return selected
+
+    prefix, tail = directions[:-1], directions[-1]
+    information = _COVERAGE_RIDGE * np.eye(_CONCEPT_DIM) + prefix.T @ prefix
+    # For unit directions p, rho(p) = ridge * p.T @ inv(information) @ p
+    # is the fraction of prior variance left. Each column evaluates the same
+    # reference pool after adding one row via a Sherman–Morrison update.
+    # Column zero is the baseline. Its tail remains in the pool for every swap.
+    probes = np.stack([tail, *(candidate.direction for candidate in candidates)])
+    gram = probes @ np.linalg.solve(information, probes.T)
+    diagonal = np.diag(gram)
+    # The prefix must already explain at least half the tail's prior variance.
+    if not 0 < _COVERAGE_RIDGE * diagonal[0] <= 0.5:
+        return selected
+    residuals = _COVERAGE_RIDGE * (diagonal[:, None] - gram**2 / (1 + diagonal[None, :]))
+    worst = np.max(residuals, axis=0)
+    best = int(np.argmin(worst[1:])) + 1
+    if worst[best] + _MIN_GAIN < worst[0]:
+        return [*selected[:-1], candidates[best - 1].raw]
+    return selected
+
+
 # ── Public entry point ──────────────────────────────────────────────────
 def select(
     fragments: list[dict],
     token_budget: int,
     query: str = "",
+    *,
+    coverage_repair: bool = False,
 ) -> list[dict]:
-    """NCD-weighted D-optimal selection under a token budget.
+    """Select original fragments under the token budget.
 
-    Pipeline:
-      1. Compute C(q) once and NCD(q, f_i) for each fragment via zlib.
-      2. Precisions τ_i and concept directions p_i built from NCD and from
-         the intersection of query and fragment identifiers.
-      3. Khuller–Moss–Naor modified greedy: return best of density-greedy
-         and singleton-best over the log-det submodular objective.
-
-    Empty-query fallback: degrades to substance × freshness weighting.
+    Coverage repair can reserve space for a definition or call to a missing
+    explicit symbol, keeping a contiguous BM25 prefix. Otherwise it swaps a
+    redundant tail only when the worst regularized residual decreases.
+    The residual measures identifier geometry only.
     """
     if not fragments:
         return []
@@ -376,4 +589,8 @@ def select(
             selected_raw.append(raw)
             budget_left -= tc
 
+    if coverage_repair:
+        ranked_fragments = (raw for score, src in file_scores if score > 0 for raw in by_file[src])
+        query_anchors = set(_SYMBOL_RE.findall(query))
+        return _repair_coverage(ranked_fragments, selected_raw, seen_ids, budget_left, q_tokens, query_anchors)
     return selected_raw
