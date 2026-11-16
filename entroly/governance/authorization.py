@@ -143,13 +143,13 @@ class AuthorizationService:
         risk_level: RiskLevel = RiskLevel.LOW,
     ) -> PolicyDecision:
         """Require permission; raise PolicyDeniedError if denied."""
-        return require(
-            self._identity, scope,
-            resource=resource,
-            risk_level=risk_level,
-            policies=self._policies,
-            bus=self._bus,
-        )
+        decision = self.check(scope, resource=resource, risk_level=risk_level)
+        if not decision.allowed:
+            raise PolicyDeniedError(
+                f"Agent {self._identity.agent_id!r} ({self._identity.agent_type}) "
+                f"denied scope {scope!r}: {decision.reason}"
+            )
+        return decision
 
     # ── Tool Authorization ───────────────────────────────────────────
 
