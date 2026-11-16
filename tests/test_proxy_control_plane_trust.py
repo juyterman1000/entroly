@@ -64,6 +64,26 @@ def test_control_plane_hardening_is_active() -> None:
     assert proxy_module._catch_all is _secure_catch_all
 
 
+def test_sequential_drift_opt_in_is_visible_in_proxy_stats(monkeypatch) -> None:
+    monkeypatch.setenv("ENTROLY_SEQUENTIAL_DRIFT_SHADOW", "1")
+    monkeypatch.setenv("ENTROLY_PASSIVE_FEEDBACK", "1")
+    monkeypatch.delenv("ENTROLY_SIDECAR_TOKEN", raising=False)
+    app = proxy_module.create_proxy_app(object(), start_dashboard=False, start_autotune=False)
+    app.state.proxy._feedback_tracker.record_assessment(-0.5)
+
+    async def get_stats() -> httpx.Response:
+        transport = httpx.ASGITransport(app=app, client=("127.0.0.1", 43123))
+        async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1:9377") as client:
+            return await client.get("/stats")
+
+    response = asyncio.run(get_stats())
+    assert response.status_code == 200
+    feedback = response.json()["implicit_feedback"]
+    assert feedback["quality_trend"] == "stable"
+    assert feedback["sequential_drift_shadow"]["observations_at_evaluation"] == 1
+    assert feedback["sequential_drift_shadow"]["production_authority"] is False
+
+
 def test_direct_loopback_same_origin_sidecar_request_is_allowed(monkeypatch) -> None:
     monkeypatch.delenv("ENTROLY_SIDECAR_TOKEN", raising=False)
 
