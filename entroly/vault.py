@@ -34,6 +34,7 @@ import time
 import uuid
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
+from ntpath import splitdrive
 from pathlib import Path
 from typing import Any
 
@@ -977,7 +978,7 @@ class VaultManager:
 
                 matched = False
                 for src in sources:
-                    src_path = Path(src.split(":", 1)[0]).as_posix().lower()
+                    src_path = Path(_source_path(src)).as_posix().lower()
                     src_stem = Path(src_path).stem.lower()
                     if src_path in changed_paths or src_stem in changed_stems:
                         matched = True
@@ -1058,7 +1059,7 @@ class VaultManager:
                 if not frontmatter or frontmatter.get("source_root"):
                     continue
                 sources = [
-                    s.split(":", 1)[0].replace("\\", "/").strip().lstrip("./")
+                    _source_path(s).lstrip("./")
                     for s in _extract_sources(content)
                 ]
                 sources = [s for s in sources if _is_path_like(s)]
@@ -1155,8 +1156,8 @@ class VaultManager:
 
         def _grounded(source: str, source_root: str) -> bool:
             nonlocal suffix_index
-            path_text = source.split(":", 1)[0].replace("\\", "/").strip()
-            if path_text.startswith("/"):
+            path_text = _source_path(source)
+            if path_text.startswith("/") or Path(path_text).is_absolute():
                 # The architecture belief cites the absolute directory it was
                 # compiled from. Stripping "./" below would turn it into a
                 # relative path that no file suffix can match, retracting a
@@ -1390,6 +1391,12 @@ _GROUNDEDNESS_SKIP_DIRS = frozenset({
     ".entroly", ".mypy_cache", ".pytest_cache", ".ruff_cache", "dist", "build",
     ".tmp", "site-packages",
 })
+
+
+def _source_path(citation: str) -> str:
+    """Remove the line reference without splitting a Windows drive or UNC path."""
+    drive, path = splitdrive(citation.strip().replace("\\", "/"))
+    return drive + path.split(":", 1)[0].strip()
 
 
 def _is_path_like(value: str) -> bool:

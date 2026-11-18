@@ -116,9 +116,9 @@ def test_an_exact_count_is_labelled_exact() -> None:
 
 def test_an_estimated_count_is_not_labelled_exact(monkeypatch) -> None:
     """Without the encoder the figure is an estimate and must say so."""
-    import entroly.tool_schema_deferral as module
+    import entroly.tokens as tokens
 
-    monkeypatch.setattr(module, "tokenizer_is_exact", lambda: False)
+    monkeypatch.setattr(tokens, "_encoding", lambda: None)
 
     decision = defer_tool_schemas(
         {"tools": [_tool("keep"), _tool("drop")]}, "keep"
@@ -129,6 +129,19 @@ def test_an_estimated_count_is_not_labelled_exact(monkeypatch) -> None:
         "a caller doing cost arithmetic on this figure must be able to tell "
         "that the encoder was unavailable"
     )
+
+
+def test_both_schema_counts_use_the_heuristic_if_only_one_encoding_fails(monkeypatch) -> None:
+    import entroly.tool_schema_deferral as module
+
+    monkeypatch.setattr(
+        module, "count_tokens_with_accuracy", lambda text: (100, False) if '"drop"' in text else (500, True),
+    )
+    decision = defer_tool_schemas({"tools": [_tool("keep"), _tool("drop")]}, "keep")
+
+    assert decision.changed
+    assert decision.tokens_deferred > 0
+    assert decision.token_accounting == "character_estimate"
 
 
 def test_paths_that_publish_no_figure_claim_no_measurement() -> None:

@@ -171,10 +171,27 @@ def test_budget_uses_rendered_text_and_declares_tokenizer_scope():
 
 
 def test_unavailable_tokenizer_cannot_earn_hard_budget_assurance(monkeypatch):
-    import entroly.context_assurance as assurance
+    import entroly.tokens as tokens
 
     index, receipt, _ = selection_fixture()
-    monkeypatch.setattr(assurance, "_encoding", lambda: None)
+    monkeypatch.setattr(tokens, "_encoding", lambda: None)
+    cert = audit_receipt(index, receipt)
+    assert cert["structural_assurance"]["budget"]["status"] == "unavailable"
+    assert cert["verdict"] == "uncertain"
+
+
+def test_tokenizer_stack_overflow_cannot_earn_hard_budget_assurance(monkeypatch):
+    import entroly.tokens as tokens
+
+    class PanicException(BaseException):
+        __module__ = "pyo3_runtime"
+
+    class FailingEncoder:
+        def encode(self, text):
+            raise PanicException("RuntimeError(StackOverflow)")
+
+    index, receipt, _ = selection_fixture()
+    monkeypatch.setattr(tokens, "_encoding", FailingEncoder)
     cert = audit_receipt(index, receipt)
     assert cert["structural_assurance"]["budget"]["status"] == "unavailable"
     assert cert["verdict"] == "uncertain"

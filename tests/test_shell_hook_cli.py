@@ -81,6 +81,17 @@ def test_uninstall_honours_the_shell_filter(home: Path) -> None:
     assert shell_hook.HOOK_MARKER_START in (home / ".bashrc").read_text(encoding="utf-8")
 
 
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_uninstall_preserves_the_rc_files_original_line_endings(home: Path, newline: str) -> None:
+    rc = home / ".bashrc"
+    original = ORIGINAL.replace("\n", newline).encode()
+    appended = ("\n" + shell_hook.BASH_HOOK).replace("\n", newline).encode()
+    rc.write_bytes(original + appended)
+
+    assert _entroly(home, "uninstall").returncode == 0
+    assert rc.read_bytes() == original
+
+
 def test_install_changes_nothing_and_says_what_works(home: Path) -> None:
     rc = home / ".bashrc"
     rc.write_text(ORIGINAL, encoding="utf-8")

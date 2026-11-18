@@ -244,6 +244,19 @@ def test_an_untraced_child_process_makes_the_record_incomplete(tmp_path: Path) -
     assert _decision(record, project)["decision"] == UNKNOWN
 
 
+def test_reading_and_writing_devnull_is_not_a_changed_input(tmp_path: Path) -> None:
+    _require_native()
+    project = _project(tmp_path / "proj")
+    script = (
+        "import os\n"
+        "with open(os.devnull, 'wb') as sink: sink.write(b'discard')\n"
+        "with open(os.devnull, 'rb') as sink: assert not sink.read()\n"
+    )
+    record, _ = _record(project, tmp_path / "work", argv=[sys.executable, "-c", script])
+    assert record["trace"]["complete"], record["trace"]
+    assert _decision(record, project)["decision"] == REUSE
+
+
 def test_the_resolved_executable_is_bound(tmp_path: Path) -> None:
     """The same argv run by a different interpreter is a different verification."""
     _require_native()

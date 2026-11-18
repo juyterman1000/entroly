@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import uuid
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -51,9 +51,9 @@ def save_handoff(
     name = hashlib.sha256(str(handoff["payload_commitment"]).encode("utf-8")).hexdigest()
     folder = _inbox(store)
     target = folder / f"{name}.json"
-    temporary = folder / f".{name}.{uuid.uuid4().hex}.tmp"
+    fd, temporary_name = tempfile.mkstemp(dir=folder, prefix=".handoff-", suffix=".tmp")
+    temporary = Path(temporary_name)
     try:
-        fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, "wb") as out:
             out.write(encoded)
             out.flush()

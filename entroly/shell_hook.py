@@ -361,7 +361,8 @@ HOOK_MARKER_END = "# End Entroly shell hook"
 
 def _detect_shell_configs() -> list[Path]:
     """Detect available shell config files."""
-    home = Path.home()
+    shell_home = Path(os.environ.get("HOME", ""))
+    home = shell_home if shell_home.is_absolute() else Path.home()
     candidates = [
         home / ".bashrc",
         home / ".bash_profile",
@@ -402,26 +403,29 @@ def uninstall_hook(shell: str | None = None) -> list[str]:
     for config in _detect_shell_configs():
         if not _shell_matches(config, shell):
             continue
-        content = config.read_text(encoding="utf-8")
+        content = config.read_bytes().decode("utf-8")
         if HOOK_MARKER_START not in content:
             continue
 
         new_content = None
         for hook in (BASH_HOOK, ZSH_HOOK, FISH_HOOK):
             appended = "\n" + hook
-            if appended in content:
-                new_content = content.replace(appended, "", 1)
+            for block in (appended, appended.replace("\n", "\r\n")):
+                if block in content:
+                    new_content = content.replace(block, "", 1)
+                    break
+            if new_content is not None:
                 break
         if new_content is None:
-            start = content.find(HOOK_MARKER_START)
-            end = content.find(HOOK_MARKER_END, start)
-            if start < 0 or end < 0:
+            block = re.search(
+                rf"(?ms)^{re.escape(HOOK_MARKER_START)}[^\r\n]*\r?\n"
+                rf".*?^{re.escape(HOOK_MARKER_END)}[ \t]*(?:\r?\n|$)",
+                content,
+            )
+            if block is None:
                 continue
-            end += len(HOOK_MARKER_END)
-            before = content[:start].rstrip("\n")
-            after = content[end:].lstrip("\n")
-            new_content = before + ("\n" if before else "") + after
-        config.write_text(new_content, encoding="utf-8")
+            new_content = content[:block.start()] + content[block.end():]
+        config.write_bytes(new_content.encode("utf-8"))
         modified.append(str(config))
 
     return modified

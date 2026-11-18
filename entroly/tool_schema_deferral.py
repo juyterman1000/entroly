@@ -14,7 +14,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from .tokens import count_tokens, tokenizer_is_exact
+from .tokens import count_tokens_with_accuracy
 
 
 _SAFE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}")
@@ -31,24 +31,17 @@ def _canonical_json(value: object) -> str:
     )
 
 
-def _schema_tokens(value: object) -> int:
-    """Count a schema's tokens with the canonical counter, not by character.
-
-    This used to divide the encoded byte length by four. Measured on realistic
-    tool schemas, that reads about **33% high**: schemas are repetitive English
-    descriptions over repeated JSON keys and tokenize near 5.3 characters per
-    token, not 4. The number it produced is published to the caller in
-    ``X-Entroly-Tool-Schema-Tokens-Deferred``, so the one figure this module
-    exists to report was inflated by a third.
-
-    ``count_tokens`` itself falls back to the same heuristic when the encoder
-    is unavailable, which is why the deferral result carries
-    ``token_accounting`` rather than presenting both cases as a measurement.
-    """
+def _schema_token_delta(before: object, after: object) -> tuple[int, bool]:
+    """Measure both payloads with the same method, or publish an estimate."""
     try:
-        return count_tokens(_canonical_json(value))
+        before_json, after_json = _canonical_json(before), _canonical_json(after)
+        before_tokens, before_exact = count_tokens_with_accuracy(before_json)
+        after_tokens, after_exact = count_tokens_with_accuracy(after_json)
     except Exception:
-        return 0
+        return 0, False
+    if before_exact and after_exact:
+        return before_tokens - after_tokens, True
+    return (len(before_json) + 3) // 4 - (len(after_json) + 3) // 4, False
 
 
 def _active_names(raw: object) -> set[str]:
@@ -191,9 +184,7 @@ def defer_tool_schemas(
             "no_safe_reduction",
         )
 
-    before_tokens = _schema_tokens(tools)
-    after_tokens = _schema_tokens(filtered)
-    deferred = max(0, before_tokens - after_tokens)
+    deferred, exact = _schema_token_delta(tools, filtered)
     if deferred <= 0:
         return ToolSchemaDeferral(
             original,
@@ -216,7 +207,7 @@ def defer_tool_schemas(
         # Only this path publishes a token figure, so only this path needs to
         # say how the figure was obtained. An estimate labelled as a
         # measurement is the overclaim; an estimate labelled as one is useful.
-        "exact_o200k" if tokenizer_is_exact() else "character_estimate",
+        "exact_o200k" if exact else "character_estimate",
     )
 
 
