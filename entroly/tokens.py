@@ -91,29 +91,44 @@ def _encoding():
         return None
 
 
+def _encode(encoder, text: str) -> list[int] | None:
+    if encoder is None:
+        return None
+    try:
+        return encoder.encode(text)
+    except BaseException as exc:
+        # Older tiktoken wheels can panic in the native regex on a long line.
+        # PyO3 exposes this as a BaseException. Propagate all unrelated errors
+        # and control-flow exceptions.
+        kind = type(exc)
+        if (
+            (kind.__module__, kind.__name__) != ("pyo3_runtime", "PanicException")
+            or "StackOverflow" not in str(exc)
+        ):
+            raise
+        return None
+
+
+def count_tokens_with_accuracy(text: str) -> tuple[int, bool]:
+    """Return the count and whether this input was measured by o200k."""
+    if not text:
+        return 0, _encoding() is not None
+    ids = _encode(_encoding(), text)
+    if ids is not None:
+        return len(ids), True
+    return (len(text) + 3) // 4, False
+
+
 def count_tokens(text: str) -> int:
     """Return the o200k count, or a character-count heuristic if unavailable."""
-    if not text:
-        return 0
-    enc = _encoding()
-    if enc is not None:
-        return len(enc.encode(text))
-    return max(1, (len(text) + 3) // 4)
+    return count_tokens_with_accuracy(text)[0] if text else 0
 
 
 def tokenizer_is_exact() -> bool:
-    """True when counts come from the o200k encoder rather than the heuristic.
+    """True when the local o200k encoder is available.
 
-    ``count_tokens`` degrades to a character heuristic when the encoder is
-    unavailable. That is the right behaviour and the wrong thing to hide: a
-    caller publishing a token saving needs to say whether the number was
-    measured or approximated.
-
-    The heuristic's error is neither small nor consistently signed, so the
-    distinction matters. Measured on realistic tool schemas it reads about 33%
-    high, because schemas are repetitive English and repeated JSON keys that
-    tokenize near 5.3 characters per token rather than 4; on dense CJK it reads
-    low for the opposite reason.
+    Use ``count_tokens_with_accuracy`` to report the accuracy of a specific
+    count, since an installed encoder can fail on individual inputs.
     """
     return _encoding() is not None
 
@@ -137,9 +152,9 @@ def truncate_to_tokens(text: str, max_tokens: int) -> str:
     if max_tokens <= 0 or not text:
         return ""
     enc = _encoding()
-    if enc is None:
+    ids = _encode(enc, text)
+    if ids is None:
         return text[: max(1, max_tokens * 4)]
-    ids = enc.encode(text)
     if len(ids) <= max_tokens:
         return text
     # Cutting the id list can split a multi-byte character; tiktoken renders the

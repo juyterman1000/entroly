@@ -482,7 +482,9 @@ def _completeness(
 
 def _classify(path: str, project_real: str, excluded: Sequence[str]) -> tuple[str, str] | None:
     real = os.path.realpath(path)
-    if _is_cache(real):
+    # subprocess.DEVNULL can be opened for reads and writes on Windows.
+    # Its canonical device path names a byte sink, not a mutable file input.
+    if (os.name == "nt" and real.lower() == r"\\.\nul") or _is_cache(real):
         return None
     if _under(real, project_real):
         # The project wins over an excluded root that contains it: a checkout

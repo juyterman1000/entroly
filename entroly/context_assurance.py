@@ -13,7 +13,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Mapping, Sequence
 
 from .context_receipts.models import byte_digest, stable_hash
-from .tokens import _encoding, count_tokens
+from .tokens import _encoding, count_tokens_with_accuracy
 
 ASSURANCE_SCHEMA = "entroly.context-assurance.v1"
 
@@ -77,11 +77,13 @@ def _unverified_reasons(certificate: Mapping[str, Any]) -> list[str]:
                 "budget unverified: no exact tokenizer "
                 f"(pip install tiktoken, then {cache_once})"
             )
-        else:
+        elif _encoding() is None:
             reasons.append(
                 "budget unverified: tiktoken's o200k_base encoding is not cached "
                 f"locally and Entroly never downloads it ({cache_once})"
             )
+        else:
+            reasons.append("budget unverified: o200k_base could not encode the selected text")
     elif budget.get("status") not in (None, "passed"):
         reasons.append(f"budget: {budget.get('status')}")
     joint = certificate.get("joint_omission_diagnostics") or {}
@@ -128,8 +130,7 @@ def _base(query: str) -> dict[str, Any]:
 
 def _budget(texts: Sequence[str], budget: int, recorded: int) -> dict[str, Any]:
     rendered = "\n\n".join(texts)
-    measured = count_tokens(rendered)
-    exact = _encoding() is not None
+    measured, exact = count_tokens_with_accuracy(rendered)
     return {
         "status": "passed"
         if exact and measured <= budget

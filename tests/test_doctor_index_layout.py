@@ -22,6 +22,7 @@ def test_doctor_sees_the_per_project_index(tmp_path, monkeypatch, capsys):
     home.mkdir()
     project.mkdir()
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.delenv("ENTROLY_DIR", raising=False)
     monkeypatch.chdir(project)
 

@@ -310,7 +310,7 @@ def test_readme_compress_example_shrinks_a_nested_api_response(workspace):
     # nested response came back "left unchanged" (42,529 -> 42,530 tokens).
     work, store = workspace
     original = _nested_api_response()
-    (work / "response.json").write_text(original, encoding="utf-8")
+    (work / "response.json").write_bytes(original.encode("utf-8"))
 
     receipt = _compress_json(work, store, "response.json", "--out", "small.json")
 
