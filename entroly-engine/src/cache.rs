@@ -183,10 +183,14 @@ impl CostModel {
     /// Covers: OpenAI, Anthropic, Google, DeepSeek, Meta, Mistral.
     /// Falls back to GPT-4o pricing ($0.000015/token) for unknown models.
     ///
-    /// Prices are output token costs in USD (as of early 2025).
+    /// Prices are output token costs in USD, read from the dated `llm-prices`
+    /// table; the substring table below only covers ids it does not know.
     pub fn for_model(model_name: &str) -> Self {
         let name = model_name.to_lowercase();
-        let cost_per_token = if name.contains("gpt-4o-mini") {
+        let listed = llm_prices::lookup(model_name).and_then(|p| p.output);
+        let cost_per_token = if let Some(per_million) = listed {
+            per_million / 1_000_000.0
+        } else if name.contains("gpt-4o-mini") {
             0.0000006 // $0.60/M output
         } else if name.contains("gpt-4o") {
             0.000015 // $15/M output
@@ -2248,6 +2252,17 @@ mod tests {
             expensive < 10.0,
             "legacy recompute_cost must not override the model"
         );
+    }
+
+    #[test]
+    fn for_model_uses_current_list_prices() {
+        let per_m = |m: &str| CostModel::for_model(m).cost_per_token * 1_000_000.0;
+        assert!((per_m("gpt-4o") - 10.0).abs() < 1e-9);
+        assert!((per_m("gpt-4.1") - 8.0).abs() < 1e-9);
+        assert!((per_m("claude-opus-4-5") - 25.0).abs() < 1e-9);
+        assert!((per_m("gemini-2.5-pro") - 10.0).abs() < 1e-9);
+        // Unknown ids still fall back to the built-in table.
+        assert!((per_m("some-local-model") - 15.0).abs() < 1e-9);
     }
 
     // ── Hit Predictor (Linear Bandit) ──

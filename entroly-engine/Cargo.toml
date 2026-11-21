@@ -27,6 +27,7 @@ md-5 = "0.11"
 flate2 = "1.0"
 rayon = "1.12"
 sha2 = "0.10"
+llm-prices = "1.8.0"
 
 # Deliberately NOT depended on here:
 #

@@ -138,6 +138,7 @@ name = "entroly-engine"
 version = "1.0.91"
 dependencies = [
  "flate2",
+ "llm-prices",
  "md-5",
  "pyo3",
  "rayon",
@@ -226,6 +227,12 @@ name = "linux-raw-sys"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
+
+[[package]]
+name = "llm-prices"
+version = "1.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8687beff4d5ceb2b1a5fc5f242df4f2c107ca92609f47d30fab584591157d9dd"
 
 [[package]]
 name = "md-5"
