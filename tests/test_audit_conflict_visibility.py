@@ -120,9 +120,17 @@ def test_the_record_returned_for_a_conflict_hashes_to_its_own_payload(log):
     """
     _first, second = _flip(log)
 
-    own = hashlib.sha256(
-        f"|{second.event_id}|{_safe_json(dict(second.payload))}".encode()
-    ).hexdigest()
+    # Rebuilt explicitly rather than by calling the log, so a silent change
+    # to the canon still fails here. The commitment covers every identity and
+    # decision field, not just the payload: `allowed` alone being outside it
+    # meant a denial could be rewritten as an approval and still verify.
+    allowed = "" if second.allowed is None else ("true" if second.allowed else "false")
+    canon = "".join((
+        "v2", "", second.event_id, second.event_type, second.agent_id,
+        second.session_id, second.org_id, second.trace_id, allowed,
+        str(int(second.created_at * 1000)), _safe_json(dict(second.payload)),
+    ))
+    own = hashlib.sha256(canon.encode("utf-8")).hexdigest()
     assert second.chain_hash == own, (
         "the returned record does not hash to its own payload, so it is not a "
         "record of anything that happened"

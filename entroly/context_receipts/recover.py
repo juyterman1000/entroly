@@ -5,6 +5,11 @@ checks the stored text against that receipt-owned digest and reports
 ``exact_utf8_bytes`` only when it matches. Older receipts remain readable through
 their normalized-text fingerprint, but are explicitly labeled
 ``legacy_normalized_text`` because that scheme cannot distinguish CRLF from LF.
+
+A requested chunk is resolved against the recovery bundle rather than against
+the receipt's bounded ``omitted_context`` listing, and every outcome is named by
+a status rather than by an empty list. See the addressability note above
+:func:`_attested_digests`.
 """
 
 from __future__ import annotations
@@ -60,6 +65,27 @@ def _chunk_entries(value: object) -> dict[str, dict[str, Any]]:
         if isinstance(entry, Mapping)
     }
 
+# Statuses a caller can branch on. Only the first two ever carry text, and only
+# ``recovered`` ever carries ``verified=True``.
+STATUS_RECOVERED = "recovered"
+STATUS_UNVERIFIED = "recovered_unverified"
+STATUS_UNAVAILABLE = "unavailable"
+STATUS_NOT_ADDRESSABLE = "not_addressable"
+STATUS_NOT_OMITTED = "not_omitted"
+STATUS_NOT_FOUND = "not_found"
+
+RECOVERY_STATUSES = frozenset(
+    {
+        STATUS_RECOVERED,
+        STATUS_UNVERIFIED,
+        STATUS_UNAVAILABLE,
+        STATUS_NOT_ADDRESSABLE,
+        STATUS_NOT_OMITTED,
+        STATUS_NOT_FOUND,
+    }
+)
+
+
 @dataclass
 class RecoveredChunk:
     """One recovered omitted chunk and the assurance level actually checked."""
@@ -69,10 +95,10 @@ class RecoveredChunk:
     section_heading: str | None
     token_count: int
     omission_reason: str
-    text: str | None          # None when the chunk could not be recovered
+    text: str | None          # None unless status is recovered/recovered_unverified
     fingerprint: str          # the chunk fingerprint recorded by the receipt
     verified: bool            # text is provably the exact omitted content
-    status: str               # "recovered" | "recovered_unverified" | "unavailable"
+    status: str               # one of RECOVERY_STATUSES
     note: str | None = None
     verification_level: str = "none"
     byte_start: int = 0
@@ -157,6 +183,152 @@ def _resolve_source(
     return _chunk_entries(_dict_or_empty(loaded).get("chunks", {})) if loaded else {}
 
 
+# ── omission addressability ──────────────────────────────────────────────────
+# ``omitted_context`` is a bounded, score-descending *listing* -- selection.
+# MAX_OMITTED_LISTED caps it at 20 entries in both backends -- not a census. The
+# recovery bundle retains every chunk, and the receipt's own
+# ``source_fingerprints.fragment_bytes`` attests the exact-UTF-8 digest of every
+# chunk in the index, listed or not.
+#
+# Filtering a *requested* chunk_id through that listing therefore turned a
+# disclosed listing cap into an undisclosed recovery cap: on a 280-chunk
+# recoverable receipt, 246 chunks whose bytes, offsets and digests were all
+# present in the 660 KB bundle on disk returned ``[]``, and a fabricated id
+# returned ``[]`` too, so "not addressable", "does not exist" and "nothing was
+# omitted" were indistinguishable. A requested id is now resolved against the
+# bundle, with the digest taken from the receipt's own attestation -- so an
+# unlisted chunk is verified exactly as strongly as a listed one, never more
+# weakly, and the states are distinguishable.
+#
+# ``chunk_id=None`` still returns exactly the receipt's listing. That is the
+# receipt's disclosed scope, and every id in it is individually addressable, so
+# the cap is no longer load-bearing for recovery. The *full* unselected census
+# is owned by ``context_commit.recover_committed_chunks``, which verifies the
+# whole commit against an independently issued anchor before materializing it;
+# ``context_commit.verify_context_commit`` also reconciles its
+# ``omitted_context_recovery`` check against ``len(omitted_context)``.
+def _attested_digests(rec: dict[str, Any]) -> tuple[
+    dict[str, str], dict[str, str], dict[str, str]
+]:
+    """Receipt-owned digests for every chunk: fragment bytes, chunk fp, source."""
+    fingerprints = _dict_or_empty(rec.get("source_fingerprints", {}))
+
+    def _digest_map(key: str) -> dict[str, str]:
+        return {
+            str(k): _str_or_default(v)
+            for k, v in _dict_or_empty(fingerprints.get(key)).items()
+        }
+
+    return (
+        _digest_map("fragment_bytes"),
+        _digest_map("chunks"),
+        _digest_map("source_bytes"),
+    )
+
+
+def _terminal(
+    chunk_id: str,
+    *,
+    status: str,
+    note: str,
+    entry: dict[str, Any] | None = None,
+    fingerprint: str = "",
+) -> RecoveredChunk:
+    """A result that carries a reason instead of text, never an empty list."""
+    known = entry or {}
+    return RecoveredChunk(
+        chunk_id=chunk_id,
+        source_path=_str_or_default(known.get("source_path")),
+        section_heading=_optional_str(known.get("section_heading")),
+        token_count=max(0, _int_or_default(known.get("token_count"))),
+        omission_reason="",
+        text=None,
+        fingerprint=fingerprint,
+        verified=False,
+        status=status,
+        note=note,
+        byte_start=max(0, _int_or_default(known.get("byte_start"))),
+        byte_end=max(0, _int_or_default(known.get("byte_end"))),
+        fragment_sha256=_str_or_default(known.get("fragment_sha256")),
+        source_sha256=_str_or_default(known.get("source_sha256")),
+    )
+
+
+def _resolve_unlisted(
+    chunk_id: str, rec: dict[str, Any], source: dict[str, dict[str, Any]]
+) -> dict[str, Any] | RecoveredChunk:
+    """Resolve an id absent from ``omitted_context`` against the bundle.
+
+    Returns a receipt-attested descriptor the shared verification path can
+    check, or a terminal result naming why the id is not recoverable.
+    """
+    # The bundle retains selected chunks too, so this check has to come first:
+    # a selected id is not an omission, and reporting its bytes as a recovered
+    # omission would be the same category confusion in the other direction.
+    selected = {
+        _str_or_default(item.get("chunk_id"))
+        for item in _list_of_mappings(rec.get("selected_context", []))
+    }
+    if chunk_id in selected:
+        return _terminal(
+            chunk_id,
+            status=STATUS_NOT_OMITTED,
+            note="This chunk was selected, not omitted; its full text is "
+                 "already in the receipt's selected_context.",
+        )
+    if not source:
+        return _terminal(
+            chunk_id,
+            status=STATUS_UNAVAILABLE,
+            note="No recovery data for this chunk. Create the receipt via "
+                 "run_recoverable_pipeline(), or pass index=/bundle=.",
+        )
+    entry = source.get(chunk_id)
+    if entry is None:
+        return _terminal(
+            chunk_id,
+            status=STATUS_NOT_FOUND,
+            note="No chunk with this id exists in the recovery bundle for this "
+                 "receipt, so there is nothing to recover.",
+        )
+
+    attested_fragment, attested_chunk, attested_source = _attested_digests(rec)
+    source_path = _str_or_default(entry.get("source_path"))
+    if chunk_id not in attested_fragment:
+        return _terminal(
+            chunk_id,
+            status=STATUS_NOT_ADDRESSABLE,
+            note="The bundle holds this chunk, but the receipt carries no "
+                 "exact-byte attestation for it, so recovery cannot prove the "
+                 "bytes are the ones this receipt omitted. Re-create the "
+                 "receipt so source_fingerprints.fragment_bytes covers it, or "
+                 "recover against an anchored context commit.",
+            entry=entry,
+            fingerprint=attested_chunk.get(
+                chunk_id, _str_or_default(entry.get("fingerprint"))
+            ),
+        )
+    # Offsets are the bundle's -- the receipt attests digests per chunk, not
+    # offsets, for anything outside its listing -- so the shared range check is
+    # a no-op here. The digest checks that decide `verified` are receipt-owned.
+    return {
+        "chunk_id": chunk_id,
+        "source_path": source_path,
+        "section_heading": _optional_str(entry.get("section_heading")),
+        "token_count": max(0, _int_or_default(entry.get("token_count"))),
+        "omission_reason": "not_selected",
+        "fingerprint": attested_chunk.get(
+            chunk_id, _str_or_default(entry.get("fingerprint"))
+        ),
+        "byte_start": max(0, _int_or_default(entry.get("byte_start"))),
+        "byte_end": max(0, _int_or_default(entry.get("byte_end"))),
+        "fragment_sha256": attested_fragment[chunk_id],
+        "source_sha256": attested_source.get(
+            source_path, _str_or_default(entry.get("source_sha256"))
+        ),
+    }
+
+
 def recover_omitted(
     receipt: dict[str, Any] | ContextReceipt,
     chunk_id: str | None = None,
@@ -165,24 +337,44 @@ def recover_omitted(
     bundle: dict[str, Any] | None = None,
     store_dir: str | Path | None = None,
 ) -> list[dict[str, Any]]:
-    """Recover the full, fingerprint-verified text of omitted chunk(s).
+    """Recover the full, digest-verified text of omitted chunk(s).
 
-    Pass ``chunk_id`` to recover one chunk, or omit it to recover every omitted
-    chunk. Full text is sourced (in priority order) from an explicit ``bundle``,
-    an explicit ``index`` (a ContextIndex dict), or the persisted recovery bundle
-    for this receipt. Returns a list of ``RecoveredChunk`` dicts; ``verified`` is
-    True only when the returned text is provably the exact omitted content.
+    Pass ``chunk_id`` to recover one chunk, or omit it to recover the receipt's
+    listed omissions. Full text is sourced (in priority order) from an explicit
+    ``bundle``, an explicit ``index`` (a ContextIndex dict), or the persisted
+    recovery bundle for this receipt.
+
+    A requested ``chunk_id`` is resolved against the bundle, not against the
+    20-entry ``omitted_context`` listing, so every chunk the bundle retains is
+    addressable. ``verified`` is True only when the recovered bytes match a
+    digest the receipt itself recorded. A single-id request always returns one
+    result whose ``status`` says what happened -- ``recovered``,
+    ``recovered_unverified``, ``not_addressable`` (in the bundle, unattested by
+    this receipt), ``not_omitted`` (selected), ``not_found`` (no such chunk) or
+    ``unavailable`` (no bundle resolved) -- never a bare empty list.
     """
     rec = receipt if isinstance(receipt, dict) else receipt.to_dict()
     receipt_id = _str_or_default(rec.get("receipt_id", ""))
-    omitted = _list_of_mappings(rec.get("omitted_context", []))
-    if chunk_id is not None:
-        omitted = [o for o in omitted if o.get("chunk_id") == chunk_id]
+    listed = _list_of_mappings(rec.get("omitted_context", []))
+    source = _resolve_source(receipt_id, index, bundle, store_dir)
+
+    if chunk_id is None:
+        omitted = listed
+    else:
+        requested_id = _str_or_default(chunk_id)
+        omitted = [
+            item
+            for item in listed
+            if _str_or_default(item.get("chunk_id")) == requested_id
+        ]
+        if not omitted:
+            resolved = _resolve_unlisted(requested_id, rec, source)
+            if isinstance(resolved, RecoveredChunk):
+                return [resolved.to_dict()]
+            omitted = [resolved]
 
     if not omitted:
         return []
-
-    source = _resolve_source(receipt_id, index, bundle, store_dir)
 
     results: list[RecoveredChunk] = []
     for item in omitted:
@@ -207,7 +399,7 @@ def recover_omitted(
         entry = source.get(cid)
         if entry is None:
             results.append(RecoveredChunk(
-                **common, text=None, verified=False, status="unavailable",
+                **common, text=None, verified=False, status=STATUS_UNAVAILABLE,
                 note="No recovery data for this chunk. Create the receipt via "
                      "run_recoverable_pipeline(), or pass index=/bundle=.",
             ))
@@ -267,7 +459,7 @@ def recover_omitted(
             )
         results.append(RecoveredChunk(
             **common, text=text, verified=verified,
-            status="recovered" if verified else "recovered_unverified",
+            status=STATUS_RECOVERED if verified else STATUS_UNVERIFIED,
             note=note,
             verification_level=verification_level,
         ))

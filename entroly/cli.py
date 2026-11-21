@@ -518,19 +518,42 @@ def _detect_ai_tool() -> dict:
     return {"tools": tools, "primary": tools[0] if tools else None}
 
 
-def _generate_mcp_config() -> dict:
-    """Generate the MCP server config for Entroly."""
-    # Use the exact interpreter that is running `entroly wrap cursor`.
-    # Cursor/Windsurf/VS Code launch MCP servers outside the user's shell, so
-    # `"command": "entroly"` can resolve to a stale global console script or a
-    # different virtualenv. `python -m entroly.server` keeps the MCP runtime
-    # bound to the installed package environment, including the `mcp` SDK.
+def _generate_mcp_config(project_dir: str | None = None) -> dict:
+    """Generate Entroly's MCP server config, bound to *project_dir*.
+
+    Interpreter pinning: use the exact interpreter that is running
+    `entroly wrap cursor`. Cursor/Windsurf/VS Code launch MCP servers outside
+    the user's shell, so `"command": "entroly"` can resolve to a stale global
+    console script or a different virtualenv. `python -m entroly.server` keeps
+    the MCP runtime bound to the installed package environment, including the
+    `mcp` SDK.
+
+    Project binding: an MCP host launches the server with its *own* working
+    directory -- an application bundle, `/`, the user's home -- never the
+    repository that was configured. A config carrying neither `cwd` nor
+    `ENTROLY_SOURCE` therefore indexes whatever directory the editor happened
+    to start in, and because walking such a directory still yields files, every
+    emptiness check passes while retrieval answers from the wrong corpus
+    (`server_source_root._source_root_is_suspicious` exists for exactly that
+    failure). `entroly init`/`go` already know the root -- they print its name
+    and its indexable file count -- so pin it on both channels:
+
+    * `cwd`, for hosts that honour it;
+    * `env["ENTROLY_SOURCE"]`, which `server_source_root.resolved_source_root`
+      reads, so the root holds even on a host that ignores `cwd`.
+
+    *project_dir* defaults to the current working directory, which is the root
+    that `_detect_ai_tool` derived the config paths from.
+    """
+    root = str(Path(project_dir or os.getcwd()).resolve())
     return {
         "entroly": {
             "command": sys.executable,
             "args": ["-m", "entroly.server"],
+            "cwd": root,
             "env": {
                 "PYTHONIOENCODING": "utf-8",
+                "ENTROLY_SOURCE": root,
             },
         }
     }
@@ -631,8 +654,15 @@ def _atomic_write_config(config_path: str, value: dict) -> None:
         raise
 
 
-def _write_config(tool: dict, dry_run: bool = False) -> str:
-    """Merge Entroly into an MCP config with backup and atomic replacement."""
+def _write_config(
+    tool: dict, dry_run: bool = False, project_dir: str | None = None
+) -> str:
+    """Merge Entroly into an MCP config with backup and atomic replacement.
+
+    *project_dir* is the repository the generated server entry is pinned to;
+    see :func:`_generate_mcp_config`. It defaults to the current working
+    directory, the same root the caller detected the config path from.
+    """
     config_path = tool["config_path"]
     config_key = tool["config_key"]
     existing = _load_config_object(config_path)
@@ -644,7 +674,7 @@ def _write_config(tool: dict, dry_run: bool = False) -> str:
         existing[config_key] = servers
     if not isinstance(servers, dict):
         raise ValueError(f"{config_key!r} must be a JSON object in {config_path}")
-    entry = _generate_mcp_config()
+    entry = _generate_mcp_config(project_dir)
     if config_key == "servers":
         # VS Code's mcp.json schema names the transport on every server.
         entry = {name: {"type": "stdio", **spec} for name, spec in entry.items()}
@@ -737,14 +767,17 @@ def cmd_init(args):
 
     print()
 
-    # Write configs
+    # Write configs. `_detect_ai_tool` derived every config path from the
+    # current directory, so that is the project the entry must be pinned to --
+    # the MCP host's own working directory never is.
+    project_dir = os.getcwd()
     for tool in tools["tools"]:
         if args.dry_run:
-            config = _write_config(tool, dry_run=True)
+            config = _write_config(tool, dry_run=True, project_dir=project_dir)
             print(f"  {C.GRAY}Would merge into {tool['config_path']}:{C.RESET}")
             print(f"  {config}")
         else:
-            path = _write_config(tool)
+            path = _write_config(tool, project_dir=project_dir)
             print(f"  {C.GREEN}Generated{C.RESET} {path}")
 
     # Count indexable files the way the indexer will actually discover them.
@@ -2244,10 +2277,13 @@ def _wrap_via_mcp(spec: dict, port: int, dry_run: bool = False) -> bool:
         "config_path": config_path,
         "config_key": spec.get("config_key", "mcpServers"),
     }
+    # `_resolve_agent_config_path` resolved `{cwd}` against this directory, so
+    # the server entry is pinned to the same repository the config lands in.
+    project_dir = os.getcwd()
 
     if dry_run:
         try:
-            preview = _write_config(tool, dry_run=True)
+            preview = _write_config(tool, dry_run=True, project_dir=project_dir)
         except (OSError, PermissionError, ValueError) as e:
             print(f"  {C.RED}Could not read {config_path}: {e}{C.RESET}")
             return False
@@ -2258,7 +2294,7 @@ def _wrap_via_mcp(spec: dict, port: int, dry_run: bool = False) -> bool:
         return True
 
     try:
-        written = _write_config(tool)
+        written = _write_config(tool, project_dir=project_dir)
     except (OSError, PermissionError, ValueError) as e:
         print(f"  {C.RED}Could not write {config_path}: {e}{C.RESET}")
         return False
@@ -3103,9 +3139,10 @@ def cmd_go(args):
     # Step 2: Auto-detect AI tools and write configs
     tools = _detect_ai_tool()
     if tools["tools"]:
+        project_dir = os.getcwd()
         for tool in tools["tools"]:
             try:
-                path = _write_config(tool)
+                path = _write_config(tool, project_dir=project_dir)
                 print(f"  {C.GREEN}Registered MCP{C.RESET} for {tool['name']} ({path})")
             except Exception as e:
                 print(f"  {C.YELLOW}Skipped{C.RESET} {tool['name']}: {e}")
@@ -3248,6 +3285,29 @@ def cmd_demo(args):
       {C.CYAN}entroly proxy --quality {recommended}{C.RESET}  Start optimizing
   """)
 
+#: Queries measured when the caller gives no ``--query``.
+#:
+#: These must be keyword-shaped. The previous defaults were phrased as
+#: natural-language questions ("How does the authentication flow work?"), and
+#: question words plus stopwords dilute the lexical score until nothing
+#: discriminates -- selection then fills the budget with everything and scores
+#: ~0% against a fixed baseline. Measured on a 4-file fixture, that phrasing
+#: headlined 1.3% while "authentication login session token" over the identical
+#: corpus headlined 76.0%. The proof-of-value command was understating the
+#: engine by roughly 58x at the moment a new user decides whether to adopt.
+#:
+#: Each topic must also be one that almost any repository actually contains. A
+#: default that reliably finds nothing is worse than no default: it reports the
+#: resulting "take everything" as a near-zero saving. The SQL-injection probe
+#: was dropped for exactly that reason -- `entroly health` already runs SAST.
+#: ``tests/test_simulation_default_queries.py`` pins both properties.
+_DEFAULT_SIMULATION_QUERIES = (
+    "authentication login session token",
+    "error handling exception raise validation",
+    "module imports dependencies package structure",
+)
+
+
 def _simulation_queries(args) -> list[str]:
     queries = getattr(args, "query", None) or []
     if isinstance(queries, str):
@@ -3255,11 +3315,7 @@ def _simulation_queries(args) -> list[str]:
     cleaned = [q.strip() for q in queries if q and q.strip()]
     if cleaned:
         return cleaned
-    return [
-        "How does the authentication flow work?",
-        "Find and fix potential SQL injection vulnerabilities",
-        "Explain the module structure and dependency graph",
-    ]
+    return list(_DEFAULT_SIMULATION_QUERIES)
 
 
 def _indexed_content_tokens(engine, fallback: int) -> int:
@@ -3410,9 +3466,22 @@ def _run_local_simulation(args) -> dict:
     # reports "0.0% fewer; 0 tokens saved". That is arithmetically right and
     # tells a first-time user nothing -- it reads as "this tool does nothing",
     # which is the most common first run and the worst possible first
-    # impression. Say what actually happened, and still demonstrate selection
-    # by squeezing the budget until it binds.
-    fits_entirely = (not explicit_baseline) and total_tokens <= budget
+    # impression. So say what actually happened.
+    #
+    # Deliberately NOT by squeezing the budget until it binds. That was tried
+    # and measured worse: the narrowed budget fell below one fragment plus
+    # per-request overhead, selection returned nothing, and the output degraded
+    # from "0% saved" to "0 fragments, top: none"
+    # (tests/test_simulate_small_project.py records the attempt and pins that
+    # the budget is reported as-is). `budget` below is therefore the budget
+    # every query actually runs at; nothing narrows it.
+    #
+    # This flag records only the fact -- the repository fits in one request --
+    # and `_print_local_simulation` explains it and offers the user an explicit
+    # smaller `--budget` to force selection themselves. It was previously
+    # emitted as `budget_narrowed_to_demonstrate`, a name left over from the
+    # abandoned design, which asserted a narrowing no code performed.
+    fits_in_budget = (not explicit_baseline) and total_tokens <= budget
 
     rows = []
     total_saved = 0
@@ -3453,7 +3522,7 @@ def _run_local_simulation(args) -> dict:
         "files_indexed": files_indexed,
         "repo_tokens_indexed": total_tokens,
         "budget": budget,
-        "budget_narrowed_to_demonstrate": fits_entirely,
+        "project_fits_in_budget": fits_in_budget,
         "max_files": max_files,
         **coverage,
         "baseline_tokens_per_query": baseline,
@@ -3581,7 +3650,13 @@ def _print_local_simulation(report: dict, *, title: str, include_perf: bool) -> 
     # lower-ranked files to skeletons even when nothing has to be dropped.
     # Gating on fit alone printed "there is nothing to save yet" directly under
     # "1,104 tokens saved".
-    nothing_saved = report.get("budget_narrowed_to_demonstrate") and avg <= 0.0
+    # `budget_narrowed_to_demonstrate` is the removed misnomer for this flag,
+    # read here only so a report captured by an older build still renders. No
+    # code path emits it any more, because nothing narrows the budget.
+    fits_in_budget = report.get(
+        "project_fits_in_budget", report.get("budget_narrowed_to_demonstrate")
+    )
+    nothing_saved = bool(fits_in_budget) and avg <= 0.0
     if degraded:
         print(
             f"  {C.YELLOW}{C.BOLD}Average budget difference: {avg:.1f}%{C.RESET} "
@@ -4073,12 +4148,10 @@ def cmd_share(args):
 
     print(f"  {C.GREEN}Indexed {files_indexed} files ({total_tokens_raw:,} tokens){C.RESET}")
 
-    # Run sample queries to compute real stats
-    sample_queries = [
-        "How does the authentication flow work?",
-        "Find and fix potential SQL injection vulnerabilities",
-        "Explain the module structure and dependency graph",
-    ]
+    # Run sample queries to compute real stats. Shared with `simulate` so a
+    # published figure cannot be measured with different, weaker queries than
+    # the ones the proof-of-value command uses.
+    sample_queries = list(_DEFAULT_SIMULATION_QUERIES)
 
     # Honest baseline for *token reduction* (headline only): a 32K "paste matching
     # files until the window fills" dump, capped at what actually exists. Comparing

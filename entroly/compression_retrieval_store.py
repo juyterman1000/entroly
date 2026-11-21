@@ -26,6 +26,8 @@ from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterator
 
+from .local_file_lock import exclusive_file_lock
+
 if TYPE_CHECKING:
     from .optimization_ledger import OptimizationLedger
 
@@ -202,45 +204,9 @@ class CompressionRetrievalStore:
         if lock_path is None:
             yield
             return
-        # First writer usually creates the store directory here; keep it private.
-        lock_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        with lock_path.open("a+b") as handle:
-            # Locking a byte past EOF is supported by both msvcrt and flock.
-            # Do not initialize a sentinel byte before acquiring the lock: on
-            # Windows another process can lock that byte between our write and
-            # flush, turning normal startup contention into PermissionError.
-            handle.seek(0)
-            if os.name == "nt":
-                import msvcrt
-
-                deadline = time.monotonic() + 30.0
-                delay = 0.001
-                while True:
-                    try:
-                        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-                        break
-                    except OSError as error:
-                        if error.errno not in {errno.EACCES, errno.EAGAIN}:
-                            raise
-                        if time.monotonic() >= deadline:
-                            raise TimeoutError(
-                                f"timed out acquiring recovery-store lock {lock_path}"
-                            ) from error
-                        time.sleep(delay)
-                        delay = min(0.05, delay * 1.5)
-                try:
-                    yield
-                finally:
-                    handle.seek(0)
-                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-            else:
-                import fcntl
-
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-                try:
-                    yield
-                finally:
-                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        # exclusive_file_lock creates the store directory 0o700 on first write.
+        with exclusive_file_lock(lock_path):
+            yield
 
     def _refresh_if_changed(self, *, force: bool = False) -> None:
         if self.path is None or not self.path.exists():

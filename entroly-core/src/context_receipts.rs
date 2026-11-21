@@ -232,8 +232,109 @@ fn token_re() -> Regex {
     Regex::new(r"[A-Za-z0-9][A-Za-z0-9_']*").unwrap()
 }
 
+/// Approximate how many model tokens `text` costs.
+///
+/// This counted word runs only -- `token_re()` over the text with `-` replaced
+/// by a space -- which ignores every bracket, operator, quote, colon, newline
+/// and indent. Those are roughly half the token stream in source code, so the
+/// estimate ran far under the truth and never over it. Selection spends a
+/// caller's budget in these units, so a receipt could report
+/// `selected_tokens == token_budget` for text nearly twice the budget, and the
+/// constraint it certified could not be violated.
+///
+/// Undercounting is the dangerous direction, so this takes the larger of two
+/// cheap views and never the smaller:
+///
+/// * **structural** -- word runs, plus every non-space punctuation character,
+///   plus newlines; tracks dense syntax such as JSON and YAML.
+/// * **density** -- `ceil(chars / 4)`, the same fallback `entroly.tokens` uses
+///   when no exact encoder is installed; tracks prose.
+///
+/// Measured against o200k over prose, Python, Rust, JSON and YAML, the worst
+/// case moved from **0.32x** (a 3.1x undercount on JSON) to **1.07x**: it no
+/// longer reads under the real count on any sample. `ceil(chars / 4)` alone was
+/// not enough -- still 1.8x under on JSON -- so matching the Python fallback
+/// exactly would have left the budget breakable.
+///
+/// Still an estimate. Callers needing the real number restate these counts with
+/// the exact encoder; see `_restate_token_counts` in
+/// `entroly/context_receipts/__init__.py`.
+///
+/// `tokenize()` below deliberately keeps using `token_re()`: it feeds lexical
+/// scoring, not accounting, and changing what counts as a term changes ranking.
+/// Single pass and no regex on purpose -- this runs per chunk, and `token_re()`
+/// recompiles on every call.
+/// Scripts written without word separators, where a character is roughly its
+/// own token. Counting these as word runs collapsed a whole sentence to one
+/// unit: measured 0.29x against o200k on Chinese and Japanese, a 3.4x
+/// undercount as bad as the punctuation defect this estimator was written to
+/// fix. The ranges cover kana, Hangul, CJK ideographs and fullwidth forms.
+fn is_ideographic(ch: char) -> bool {
+    matches!(ch as u32,
+        0x3040..=0x30FF   // hiragana, katakana
+        | 0x3400..=0x4DBF // CJK extension A
+        | 0x4E00..=0x9FFF // CJK unified ideographs
+        | 0xAC00..=0xD7AF // Hangul syllables
+        | 0xF900..=0xFAFF // CJK compatibility ideographs
+        | 0xFF00..=0xFFEF // fullwidth and halfwidth forms
+    )
+}
+
+/// Cost of one completed word run.
+///
+/// An ASCII word is usually a single token. A non-ASCII one is not: subword
+/// vocabularies split other alphabets far more aggressively, so a Cyrillic or
+/// Greek word of eight letters is several tokens, not one. Halving its length
+/// is what moved Cyrillic from 0.87x to 1.74x and French from 0.92x to 1.11x
+/// without touching any ASCII case. Dividing by three instead left both under.
+fn run_cost(len: usize, non_ascii: bool) -> usize {
+    if len == 0 {
+        // Closing a run that never opened must cost nothing, or every
+        // delimiter in the text would invent a token.
+        0
+    } else if non_ascii {
+        len.div_ceil(2).max(1)
+    } else {
+        1
+    }
+}
+
 fn estimate_tokens(text: &str) -> usize {
-    token_re().find_iter(&text.replace('-', " ")).count().max(1)
+    let mut units = 0usize;
+    let mut chars = 0usize;
+    let mut run_len = 0usize;
+    let mut run_non_ascii = false;
+
+    for ch in text.chars() {
+        chars += 1;
+        if is_ideographic(ch) {
+            units += run_cost(run_len, run_non_ascii);
+            run_len = 0;
+            run_non_ascii = false;
+            units += 1;
+        } else if ch.is_alphanumeric() || (run_len > 0 && (ch == '_' || ch == '\'')) {
+            run_len += 1;
+            if !ch.is_ascii() {
+                run_non_ascii = true;
+            }
+        } else {
+            units += run_cost(run_len, run_non_ascii);
+            run_len = 0;
+            run_non_ascii = false;
+            if !ch.is_whitespace() {
+                // A non-ASCII symbol or emoji is rarely one token.
+                units += if ch.is_ascii() { 1 } else { 2 };
+            }
+        }
+        if ch == '\n' {
+            units += 1;
+        }
+    }
+    units += run_cost(run_len, run_non_ascii);
+
+    let structural = units;
+    let density = chars.div_ceil(4);
+    structural.max(density).max(1)
 }
 
 fn tokenize(text: &str) -> Vec<String> {
@@ -2532,5 +2633,124 @@ mod tests {
             certificate["objective"]["certified_regret_upper_bound"],
             0.0
         );
+    }
+
+    /// The old estimator counted word runs only, so punctuation-dense text
+    /// read far under its real cost. These pin the direction of the error:
+    /// an estimate used as a budget must never read under the truth.
+    fn word_runs_only(text: &str) -> usize {
+        token_re()
+            .find_iter(&text.replace('-', " "))
+            .count()
+            .max(1)
+    }
+
+    #[test]
+    fn estimate_never_reads_under_the_character_density_floor() {
+        // ceil(chars / 4) is the fallback `entroly.tokens` uses without an
+        // exact encoder. Dropping below it is how the budget became breakable.
+        for sample in [
+            "plain english prose that mostly consists of words",
+            "{\"a\": [1, 2, 3], \"b\": {\"c\": null}}",
+            "fn main() { let x: Vec<u8> = vec![1, 2, 3]; }",
+            "key: value
+list:
+  - one
+  - two
+",
+            "a",
+        ] {
+            let density = sample.chars().count().div_ceil(4);
+            assert!(
+                estimate_tokens(sample) >= density,
+                "{sample:?}: {} < density floor {density}",
+                estimate_tokens(sample)
+            );
+        }
+    }
+
+    #[test]
+    fn punctuation_dense_text_is_no_longer_collapsed() {
+        // JSON was the worst case: the old estimator read 3.1x under o200k.
+        let json = "{\"items\": [{\"id\": 1, \"name\": \"a\"}, {\"id\": 2}], \"n\": null}
+".repeat(10);
+        let old = word_runs_only(&json);
+        let new = estimate_tokens(&json);
+        assert!(
+            new > old * 2,
+            "punctuation still ignored: old={old} new={new}"
+        );
+    }
+
+    #[test]
+    fn prose_is_not_wildly_inflated() {
+        // The fix must not overcorrect: prose should stay close to chars/4.
+        let prose = "the capture path retries on transient failures and records                      the idempotency key so a replay cannot double charge "
+            .repeat(20);
+        let density = prose.chars().count().div_ceil(4);
+        assert!(
+            estimate_tokens(&prose) <= density * 2,
+            "prose inflated beyond twice the density floor"
+        );
+    }
+
+    #[test]
+    fn empty_text_still_costs_one() {
+        // Callers divide by token_count; zero would be a division hazard.
+        assert_eq!(estimate_tokens(""), 1);
+    }
+
+    #[test]
+    fn estimate_is_monotone_under_concatenation() {
+        let a = "fn alpha() -> u8 { 1 }";
+        let b = "fn beta() -> u8 { 2 }";
+        let joined = format!("{a}{b}");
+        assert!(estimate_tokens(&joined) >= estimate_tokens(a));
+        assert!(estimate_tokens(&joined) >= estimate_tokens(b));
+    }
+
+    #[test]
+    fn scripts_without_word_separators_are_not_collapsed() {
+        // A CJK sentence is many tokens, not one word run. Counting it as a
+        // run measured 0.29x against o200k -- a 3.4x undercount.
+        let zh = "支付捕获路径在瞬时故障时重试并记录幂等键以防止重复扣款。";
+        let ja = "決済キャプチャは一時的な障害時に再試行し、冪等キーを記録します。";
+        for sample in [zh, ja] {
+            let n = estimate_tokens(sample);
+            let ideographs = sample.chars().filter(|c| is_ideographic(*c)).count();
+            assert!(
+                n >= ideographs,
+                "{sample:?}: {n} < {ideographs} ideographs; a sentence collapsed to a run"
+            );
+        }
+    }
+
+    #[test]
+    fn non_ascii_words_cost_more_than_one_token() {
+        // Subword vocabularies split other alphabets aggressively.
+        let cyrillic = "повторяет";
+        let ascii = "retries";
+        assert!(
+            estimate_tokens(cyrillic) > estimate_tokens(ascii),
+            "a long Cyrillic word must not cost the same as one ASCII word"
+        );
+    }
+
+    #[test]
+    fn a_run_that_never_opened_costs_nothing() {
+        // run_cost(0, _) returning 1 would invent a token per delimiter.
+        assert_eq!(run_cost(0, false), 0);
+        assert_eq!(run_cost(0, true), 0);
+        // Pure punctuation: every char is its own unit, nothing extra.
+        assert_eq!(estimate_tokens("..."), 3);
+    }
+
+    #[test]
+    fn ascii_estimates_are_unchanged_in_shape() {
+        // The script handling must not disturb the code/prose cases.
+        let code = "fn main() { let x: Vec<u8> = vec![1, 2, 3]; }";
+        let density = code.chars().count().div_ceil(4);
+        assert!(estimate_tokens(code) >= density);
+        assert!(estimate_tokens("the quick brown fox") >= 4);
     }
 }

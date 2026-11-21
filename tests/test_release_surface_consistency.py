@@ -31,6 +31,8 @@ from pathlib import Path
 
 import pytest
 
+from _repo_walk import discover_repo_files
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -143,15 +145,18 @@ def test_install_instructions_do_not_pin_an_older_version() -> None:
     """
     pattern = re.compile(r'entroly[>=~]+=?["\']?(\d+\.\d+\.\d+)')
     offenders: list[str] = []
-    for path in ROOT.rglob("*.md"):
+    # Vendored directories are pruned mid-walk, not filtered out afterwards:
+    # enumerating them at all raises FileNotFoundError on Windows.
+    documents, failures = discover_repo_files(ROOT, ".md")
+    assert not failures, "could not enumerate: " + ", ".join(failures)
+    for path in documents:
         rel = path.relative_to(ROOT).as_posix()
         # `.entroly/` is the engine's own runtime state -- vault beliefs and
         # ledger objects it wrote while indexing this repository. It quotes
         # source text, so it trips this check without being a surface anyone
-        # installs from.
-        if any(part in rel for part in ("node_modules", "docs/releases/",
-                                        "docs/research", "benchmarks/results",
-                                        ".entroly/", ".git/")):
+        # installs from. These are content exclusions, not vendored trees.
+        if any(part in rel for part in ("docs/releases/", "docs/research",
+                                        "benchmarks/results", ".entroly/")):
             continue
         for pinned in pattern.findall(path.read_text(encoding="utf-8", errors="ignore")):
             if tuple(map(int, pinned.split("."))) < tuple(map(int, MASTER.split("."))):

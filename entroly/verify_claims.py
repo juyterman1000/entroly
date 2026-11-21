@@ -25,9 +25,24 @@ from entroly.engine import naive_context_baseline
 from entroly.server import EntrolyEngine
 
 
-def _print_status(ok: bool, name: str, detail: str = "") -> None:
-    label = "PASS" if ok else "FAIL"
-    print(f"  [{label}] {name}")
+#: A counted check lands in exactly one of these. ``DEGRADED`` exists because
+#: "the capability is unavailable" is not "the claim was verified": with the
+#: native engine absent, selection never reads the query, so a check that only
+#: observes that fragments came back has not verified query-conditioned
+#: selection. Counting it as a pass printed ``11/11 checks passed (0 failed)``
+#: on exactly the installs where the core capability is missing -- measured on
+#: a run whose own body said ``relevance ranking is OFF`` and
+#: ``savings=76.0% ... (unearned)`` two sections above the banner.
+#:
+#: Same three-bucket scheme, and the same reason for it, as ``entroly doctor``
+#: (``checks_passed`` / ``checks_failed`` / ``checks_warned``).
+STATUS_PASS = "PASS"
+STATUS_FAIL = "FAIL"
+STATUS_DEGRADED = "DEGRADED"
+
+
+def _print_status(status: str, name: str, detail: str = "") -> None:
+    print(f"  [{status}] {name}")
     if detail:
         print(f"         {detail}")
 
@@ -84,13 +99,31 @@ def _run(output: str | None, max_files: int, outbound: list[str]) -> int:
     cwd = Path.cwd()
     results: list[dict[str, Any]] = []
 
-    def check(claim_id: str, name: str, condition: bool, detail: str = "") -> None:
-        _print_status(condition, name, detail)
+    def check(
+        claim_id: str,
+        name: str,
+        condition: bool,
+        detail: str = "",
+        degraded: bool = False,
+    ) -> None:
+        """Record one counted check.
+
+        ``degraded=True`` means the condition held but the capability the claim
+        stands for was not exercised, so the result is not a pass. A false
+        ``condition`` still wins: a hard failure outranks an unverifiable one.
+        """
+        if not condition:
+            status = STATUS_FAIL
+        elif degraded:
+            status = STATUS_DEGRADED
+        else:
+            status = STATUS_PASS
+        _print_status(status, name, detail)
         results.append(
             {
                 "id": claim_id,
                 "name": name,
-                "status": "PASS" if condition else "FAIL",
+                "status": status,
                 "detail": detail,
             }
         )
@@ -213,12 +246,24 @@ def _run(output: str | None, max_files: int, outbound: list[str]) -> int:
             print(f"  remediation: {remediation}")
 
     check("OPT-1", "Selected context within budget", used <= 8000, f"{used:,}/8,000 tokens")
+    # OPT-2 is the one counted check that stands for *selection*, so it is the
+    # one the dead engine makes unverifiable. Fragments still come back on the
+    # Python fallback -- they are just not query-conditioned -- so the condition
+    # holds while the claim does not. OPT-1 (budget enforcement) and OPT-3
+    # (latency) are measured either way and stay passes.
     check(
         "OPT-2",
         "Optimization returned fragments or explained why not",
         len(selected) > 0 or files == 0 or declared_no_match,
         f"{len(selected)} fragments"
-        + (" (engine declared no match)" if declared_no_match and not selected else ""),
+        + (" (engine declared no match)" if declared_no_match and not selected else "")
+        + (
+            ""
+            if native
+            else " -- selected without relevance ranking, so query-conditioned "
+            "selection is UNVERIFIED on this install"
+        ),
+        degraded=not native,
     )
     # This command is a new-user smoke test, not the release latency benchmark.
     # Full timing comparisons live in bench/. Keep the bound loose enough for
@@ -323,8 +368,13 @@ def _run(output: str | None, max_files: int, outbound: list[str]) -> int:
         else f"{len(outbound)} outbound connection(s): {', '.join(sorted(set(outbound))[:5])}",
     )
 
-    passed = sum(1 for r in results if r["status"] == "PASS")
-    failed = len(results) - passed
+    # Counted per status, not `len(results) - passed`: that expression is what
+    # forced every non-pass into "failed", which is why a third state could not
+    # exist and "unavailable" had to be reported as one of the two.
+    passed = sum(1 for r in results if r["status"] == STATUS_PASS)
+    failed = sum(1 for r in results if r["status"] == STATUS_FAIL)
+    degraded = sum(1 for r in results if r["status"] == STATUS_DEGRADED)
+    verdict = "fail" if failed else ("degraded" if degraded else "pass")
     report = {
         "version": __version__,
         "repository": str(cwd),
@@ -351,6 +401,13 @@ def _run(output: str | None, max_files: int, outbound: list[str]) -> int:
         "savings_basis": "query_conditioned" if native else "unranked_budget_arithmetic",
         "passed": passed,
         "failed": failed,
+        # A machine-readable version of the banner, so a gate does not have to
+        # infer "not a clean pass" from `passed == len(results)` -- which was
+        # true while the engine was dead. `checks_total` is reported because
+        # `passed + failed` is no longer the denominator.
+        "degraded": degraded,
+        "checks_total": len(results),
+        "verdict": verdict,
         "results": results,
     }
 
@@ -375,11 +432,23 @@ def _run(output: str | None, max_files: int, outbound: list[str]) -> int:
         print(f"\nWarning: failed to write report: {exc}", file=sys.stderr)
 
     print("\n" + "=" * 70)
-    print(f"RESULTS: {passed}/{len(results)} checks passed ({failed} failed)")
+    # The headline has to carry the degraded count, not just the failures. It
+    # read `RESULTS: 11/11 checks passed (0 failed)` on a run whose own [3] and
+    # [5] sections said relevance ranking was off -- a new user scanning the
+    # last line read all-green and concluded the product worked.
+    headline = f"RESULTS: {passed}/{len(results)} checks passed"
+    if degraded:
+        headline += f", {degraded} degraded"
+    print(headline + f" ({failed} failed)")
+    if degraded:
+        print(
+            f"VERDICT: DEGRADED -- {degraded} check(s) could not be verified on "
+            "this install. This is not a clean pass."
+        )
     if not native:
-        # The banner is what a first-time user reads. Every check above can pass
-        # on an install where selection ignores the query, so the result has to
-        # say so here, not only in an [INFO] line in section 5.
+        # The banner is what a first-time user reads. Every check above could
+        # pass on an install where selection ignores the query, so the result
+        # has to say so here, not only in an [INFO] line in section 5.
         print(
             "Relevance ranking is OFF: the native engine (entroly-core) is not "
             "installed, so selection ignores your query and the savings figure "
@@ -387,6 +456,18 @@ def _run(output: str | None, max_files: int, outbound: list[str]) -> int:
         )
         print("Fix: python -m pip install -U entroly-core   (then: entroly doctor)")
     print("=" * 70)
+    # Exit code: non-zero for FAIL only, deliberately not for DEGRADED.
+    #
+    # Checked against how the product already signals this rather than chosen:
+    # `entroly doctor` counts an unavailable native engine as a warning and
+    # returns `1 if checks_failed else 0`, "so `entroly doctor` stays usable as
+    # a CI gate without going red on a healthy install" -- the pure-Python
+    # fallback still answers. `docs/product-surface.md` also chains
+    # `verify-claims && simulate && value`, which a non-zero exit would break
+    # for every user who has not installed the engine yet. The degraded state is
+    # therefore reported in the banner and in `verdict`/`degraded` in the JSON
+    # report, which is where a gate should read it, not inferred from an exit
+    # code that has to stay meaning "a check failed".
     return 0 if failed == 0 else 1
 
 

@@ -20,6 +20,58 @@ _PROJECT_ROOT_MARKERS: tuple[str, ...] = (
 )
 
 
+def resolved_source_root() -> str:
+    """The single root this server indexes, reports, and checks.
+
+    Every other reader of ``ENTROLY_SOURCE`` -- seven sites in ``server.py``,
+    plus ``proxy.py``, ``work_graph_mcp.py`` and ``brain_execute.py`` -- already
+    resolves it this way. The indexer did not: ``auto_index`` defaulted to
+    ``os.getcwd()`` and was called with no root, so the variable was inert for
+    the one decision it names. Retrieval then answered from the host's working
+    directory while guidance reported ``ENTROLY_SOURCE`` as the resolved root,
+    and ``_source_root_is_suspicious`` suppressed its own warning because the
+    operator had "chosen" a root that nothing honoured.
+
+    A root that does not exist is ignored rather than fatal -- a typo must not
+    stop the server -- but it is reported, never silently swallowed: callers
+    compare this against the root actually indexed and surface any divergence.
+    """
+    configured = os.environ.get("ENTROLY_SOURCE")
+    if configured:
+        try:
+            candidate = Path(configured).expanduser()
+            if candidate.is_dir():
+                return str(candidate.resolve())
+        except (OSError, ValueError):
+            pass
+    return str(Path(os.getcwd()).resolve())
+
+
+def reported_source_root(engine: Any = None) -> str:
+    """The root to show a user: the one actually indexed whenever it is known.
+
+    Guidance used to re-derive this from the environment, so it could name a
+    root the index was never built from. Preferring the recorded value means
+    the number of fragments and the directory shown beside them describe the
+    same corpus.
+    """
+    indexed = getattr(engine, "_indexed_source_root", None)
+    if indexed:
+        return str(indexed)
+    return resolved_source_root()
+
+
+def source_root_is_configured_but_unusable() -> bool:
+    """True when ``ENTROLY_SOURCE`` is set yet does not name a directory."""
+    configured = os.environ.get("ENTROLY_SOURCE")
+    if not configured:
+        return False
+    try:
+        return not Path(configured).expanduser().is_dir()
+    except (OSError, ValueError):
+        return True
+
+
 @lru_cache(maxsize=64)
 def _root_has_project_marker(source_root: str) -> bool:
     """True when ``source_root`` looks like something a person would index.
@@ -48,9 +100,20 @@ def _source_root_is_suspicious(source_root: str) -> bool:
     Requiring an explicit ``ENTROLY_SOURCE`` would break the legitimate
     "cd into a repo and run" path, so this only fires when the root was both
     inherited *and* carries no project marker.
+
+    Deferring to ``ENTROLY_SOURCE`` is only sound because the indexer now
+    honours it (see :func:`resolved_source_root`). While it did not, this
+    early return suppressed the warning on the strength of a choice that
+    changed nothing -- setting the documented remedy made detection *less*
+    likely, turning a visible failure into a confident wrong answer.
     """
+    if source_root_is_configured_but_unusable():
+        # Set, but not a directory. The server fell back to the inherited root
+        # -- precisely the situation the operator believed they had prevented,
+        # so this must warn rather than defer.
+        return True
     if os.environ.get("ENTROLY_SOURCE"):
-        return False  # explicitly chosen by the operator; their call
+        return False  # explicitly chosen by the operator, and now honoured
     return not _root_has_project_marker(source_root)
 
 

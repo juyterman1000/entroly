@@ -95,7 +95,13 @@ pub fn governance_verify_audit_chain(entries_json: &str) -> Result<String, JsVal
     let entries: Vec<AuditEntry> =
         serde_json::from_str(entries_json).map_err(js_err)?;
     match verify_audit_chain(&entries) {
-        Ok(n) => Ok(format!("{{\"ok\":true,\"verified\":{n}}}")),
+        // `legacy_covered` is reported, never folded into `verified`: an entry
+        // sealed only by the old payload-only hash offers a weaker guarantee
+        // and the caller has to be able to see which it got.
+        Ok(result) => Ok(format!(
+            "{{\"ok\":true,\"verified\":{},\"legacy_covered\":{},\"fully_sealed\":{}}}",
+            result.verified, result.legacy_covered, result.fully_sealed()
+        )),
         Err(msg) => Ok(format!("{{\"ok\":false,\"error\":{}}}", serde_json::json!(msg))),
     }
 }

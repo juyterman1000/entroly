@@ -15,6 +15,8 @@ from pathlib import Path
 
 import pytest
 
+from _repo_walk import discover_repo_files
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -30,14 +32,20 @@ def _serve_launches(path: Path):
             yield name, server
 
 
-_SKIP_DIRS = {"node_modules", ".git", "target", ".venv", "venv", "dist", "build"}
+_CANDIDATES, _WALK_FAILURES = discover_repo_files(ROOT, ".json")
 
-MANIFESTS = sorted(
+MANIFESTS = [
     path
-    for path in ROOT.rglob("*.json")
-    if not _SKIP_DIRS.intersection(path.relative_to(ROOT).parts)
-    and '"serve"' in path.read_text(encoding="utf-8", errors="replace")
-)
+    for path in _CANDIDATES
+    if '"serve"' in path.read_text(encoding="utf-8", errors="replace")
+]
+
+
+def test_every_directory_was_enumerated():
+    """A partial walk cannot support a claim about every shipped manifest."""
+    assert not _WALK_FAILURES, (
+        "could not enumerate: " + ", ".join(_WALK_FAILURES)
+    )
 
 
 def test_the_desktop_bundle_is_among_the_checked_manifests():

@@ -54,13 +54,27 @@ def save_handoff(
     fd, temporary_name = tempfile.mkstemp(dir=folder, prefix=".handoff-", suffix=".tmp")
     temporary = Path(temporary_name)
     try:
-        with os.fdopen(fd, "wb") as out:
+        # os.fdopen only takes ownership of fd once it succeeds. Closing fd by
+        # hand on failure matters on Windows, where unlinking a file that still
+        # has an open descriptor raises PermissionError -- the cleanup below
+        # would then replace the real error with a misleading one.
+        try:
+            stream = os.fdopen(fd, "wb")
+        except BaseException:
+            os.close(fd)
+            raise
+        with stream as out:
             out.write(encoded)
             out.flush()
             os.fsync(out.fileno())
         os.replace(temporary, target)
     finally:
-        temporary.unlink(missing_ok=True)
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            # Best-effort cleanup must never mask the failure that got us here.
+            # A stray .tmp is inert: the inbox only ever reads "*.json".
+            pass
     return f"handoff:{name}"
 
 

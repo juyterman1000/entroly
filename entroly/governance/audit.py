@@ -286,9 +286,69 @@ class GovernanceAuditLog:
             logger.warning("Could not read the audit chain anchor: %s", exc)
             return None
 
+    #: Separator for the chain canon. ``|`` occurs freely inside payload JSON
+    #: and identifiers, so with a printable separator two different field
+    #: splits can serialise to identical bytes and hash the same. The unit
+    #: separator cannot appear in these fields in practice.
+    _CANON_SEP = "\x1f"
+
     def _compute_chain_hash(self, record: AuditRecord) -> str:
-        """Chain hash: SHA-256 of (previous_hash + event_id + payload_json)."""
-        canon = f"{self._prev_hash}|{record.event_id}|{_safe_json(record.payload)}"
+        """Commit to the whole record, not just its payload.
+
+        This hashed ``prev | event_id | payload`` and nothing else, leaving the
+        identity and decision fields outside the commitment. Measured against
+        the verifier, every one of these was accepted as intact after the fact
+        was changed: ``allowed`` false->true (the authorization decision),
+        ``agent_id`` (who acted), ``created_at`` and ``event_type``.
+
+        A log that answers "who did what, and were they allowed" must commit
+        to exactly those fields. Legacy records stay verifiable -- see
+        ``_legacy_chain_hash`` and ``verify_chain`` -- because rejecting every
+        archive written before this would be its own false alarm.
+
+        The timestamp is canonicalised to integer milliseconds so the value
+        hashed does not depend on float formatting.
+        """
+        allowed = "" if record.allowed is None else ("true" if record.allowed else "false")
+        canon = self._CANON_SEP.join((
+            "v2",
+            self._prev_hash,
+            record.event_id,
+            record.event_type,
+            record.agent_id,
+            record.session_id,
+            record.org_id,
+            record.trace_id,
+            allowed,
+            str(int(record.created_at * 1000)),
+            _safe_json(record.payload),
+        ))
+        return hashlib.sha256(canon.encode("utf-8")).hexdigest()
+
+    def _chain_hash_for_stored(self, prev_hash: str, record: dict[str, Any]) -> str:
+        """Full-canon hash for a record read back from the JSONL."""
+        allowed_raw = record.get("allowed")
+        allowed = "" if allowed_raw is None else ("true" if allowed_raw else "false")
+        try:
+            created_ms = str(int(float(record.get("created_at", 0.0)) * 1000))
+        except (TypeError, ValueError):
+            created_ms = "0"
+        return hashlib.sha256(self._CANON_SEP.join((
+            "v2", prev_hash,
+            str(record.get("event_id", "")),
+            str(record.get("event_type", "")),
+            str(record.get("agent_id", "")),
+            str(record.get("session_id", "")),
+            str(record.get("org_id", "")),
+            str(record.get("trace_id", "")),
+            allowed,
+            created_ms,
+            _safe_json(record.get("payload", {})),
+        )).encode("utf-8")).hexdigest()
+
+    def _legacy_chain_hash(self, prev_hash: str, event_id: str, payload: Any) -> str:
+        """The payload-only hash, retained so existing chains still verify."""
+        canon = f"{prev_hash}|{event_id}|{_safe_json(payload)}"
         return hashlib.sha256(canon.encode("utf-8")).hexdigest()
 
     def append(
@@ -326,6 +386,14 @@ class GovernanceAuditLog:
             # exists nowhere.
             prev_hash_before = self._prev_hash
 
+            # Hash the record that is actually stored, not a stand-in.
+            #
+            # This used to hash a stub carrying only event_id, event_type and
+            # payload -- no agent, no decision, and a `created_at` of its own
+            # from the default factory, so the stub's timestamp was not even
+            # the one persisted. Invisible while the canon covered the payload
+            # alone; with the full commitment it means the hash would describe
+            # a record that never existed.
             record = AuditRecord(
                 event_id=event_id,
                 event_type=event_type,
@@ -335,14 +403,8 @@ class GovernanceAuditLog:
                 trace_id=trace_id,
                 allowed=allowed,
                 payload=payload or {},
-                chain_hash=self._compute_chain_hash(
-                    AuditRecord(
-                        event_id=event_id,
-                        event_type=event_type,
-                        payload=payload or {},
-                    )
-                ),
             )
+            record = replace(record, chain_hash=self._compute_chain_hash(record))
             self._prev_hash = record.chain_hash
 
             # Write to SQLite
@@ -623,6 +685,7 @@ class GovernanceAuditLog:
 
         prev_hash = ""
         lines_checked = 0
+        legacy_covered = 0
         seen_event_ids: set[str] = set()
         truncated_by_limit = False
         try:
@@ -631,14 +694,21 @@ class GovernanceAuditLog:
                     if not line.strip():
                         continue
                     record = json.loads(line)
-                    expected = hashlib.sha256(
-                        f"{prev_hash}|{record['event_id']}|{_safe_json(record.get('payload', {}))}".encode()
-                    ).hexdigest()
-                    if expected != record.get("chain_hash", ""):
-                        return False, (
-                            f"Chain broken at event {record.get('event_id')} "
-                            f"(record {lines_checked + 1})"
+                    stored = record.get("chain_hash", "")
+                    # Full commitment first; fall back to the payload-only
+                    # hash so archives written before it still verify. The
+                    # fallback is counted, never silently treated as equal.
+                    expected = self._chain_hash_for_stored(prev_hash, record)
+                    if expected != stored:
+                        legacy = self._legacy_chain_hash(
+                            prev_hash, record["event_id"], record.get("payload", {})
                         )
+                        if legacy != stored:
+                            return False, (
+                                f"Chain broken at event {record.get('event_id')} "
+                                f"(record {lines_checked + 1})"
+                            )
+                        legacy_covered += 1
                     event_id = record["event_id"]
                     if event_id in seen_event_ids:
                         # Every event_id is unique by construction, so a repeat
@@ -673,6 +743,16 @@ class GovernanceAuditLog:
                 "what happened."
             )
 
+        if legacy_covered:
+            # Reported, never folded into the headline count. These records
+            # are sealed only against payload edits; their agent, decision and
+            # timestamp were outside the older commitment, so "intact" here is
+            # a weaker statement than for the rest and has to say so.
+            return True, (
+                f"Chain intact ({lines_checked} records verified; "
+                f"{legacy_covered} predate the full commitment and are sealed "
+                "against payload edits only)"
+            )
         return True, f"Chain intact ({lines_checked} records verified)"
 
     def _db_record_count(self) -> int | None:

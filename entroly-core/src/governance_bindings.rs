@@ -11,7 +11,7 @@
 //! into the typed domain objects in `entroly/governance/`.
 
 use entroly_engine::governance::{
-    compute_audit_chain_hash, compute_risk, evaluate_policy, scan_tool_schema,
+    compute_audit_chain_hash, compute_audit_chain_hash_v2, compute_risk, evaluate_policy, scan_tool_schema,
     standard_risk_signals, verify_audit_chain, AgentIdentity, AgentIdentityPayload,
     AuditEntry, ChangeRiskInput, GovernancePolicy, ProvenanceNode, RiskLevel, RiskSignal,
 };
@@ -132,6 +132,20 @@ pub(crate) fn governance_compute_audit_chain_hash(
     compute_audit_chain_hash(prev_chain_hash, event_id, payload_json)
 }
 
+/// Compute the full chain hash for an audit entry supplied as JSON.
+///
+/// Covers every identity and decision field, not just the payload. Writers
+/// should use this; `governance_compute_audit_chain_hash` is kept so existing
+/// callers and archives keep verifying.
+#[pyfunction]
+pub(crate) fn governance_compute_audit_chain_hash_v2(
+    prev_chain_hash: &str,
+    entry_json: &str,
+) -> PyResult<String> {
+    let entry: AuditEntry = serde_json::from_str(entry_json).map_err(py_err)?;
+    Ok(compute_audit_chain_hash_v2(prev_chain_hash, &entry))
+}
+
 /// Verify an audit chain from a JSON array of AuditEntry objects.
 ///
 /// Returns: `{"ok": true, "verified": N}` or `{"ok": false, "error": "..."}`.
@@ -140,7 +154,13 @@ pub(crate) fn governance_verify_audit_chain(entries_json: &str) -> PyResult<Stri
     let entries: Vec<AuditEntry> =
         serde_json::from_str(entries_json).map_err(py_err)?;
     match verify_audit_chain(&entries) {
-        Ok(n) => Ok(format!("{{\"ok\":true,\"verified\":{n}}}")),
+        // `legacy_covered` is reported, never folded into `verified`: an entry
+        // sealed only by the old payload-only hash offers a weaker guarantee
+        // and the caller has to be able to see which it got.
+        Ok(result) => Ok(format!(
+            "{{\"ok\":true,\"verified\":{},\"legacy_covered\":{},\"fully_sealed\":{}}}",
+            result.verified, result.legacy_covered, result.fully_sealed()
+        )),
         Err(msg) => Ok(format!("{{\"ok\":false,\"error\":{}}}", serde_json::json!(msg))),
     }
 }
@@ -206,6 +226,7 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(governance_compute_risk, m)?)?;
     m.add_function(wrap_pyfunction!(governance_standard_risk_signals, m)?)?;
     m.add_function(wrap_pyfunction!(governance_compute_audit_chain_hash, m)?)?;
+    m.add_function(wrap_pyfunction!(governance_compute_audit_chain_hash_v2, m)?)?;
     m.add_function(wrap_pyfunction!(governance_verify_audit_chain, m)?)?;
     m.add_function(wrap_pyfunction!(governance_provenance_node_id, m)?)?;
     m.add_function(wrap_pyfunction!(governance_scan_tool_schema, m)?)?;
