@@ -897,24 +897,101 @@ pub fn compute_audit_chain_hash(
     format!("{digest:x}")
 }
 
-/// Verify an audit chain slice. Returns `Ok(n)` (entries verified) or `Err(bad_entry_id)`.
-pub fn verify_audit_chain(entries: &[AuditEntry]) -> Result<usize, String> {
+/// Chain hash covering the whole entry, not just its payload.
+///
+/// `compute_audit_chain_hash` commits to `prev | event_id | payload_json` and
+/// nothing else, so seven of the eleven fields on an `AuditEntry` were outside
+/// the commitment. Measured against the shipped verifier, each of these was
+/// accepted as intact after the fact was changed:
+///
+/// * `allowed: false -> true` — the authorization decision itself;
+/// * `agent_id` — who performed the action;
+/// * `created_at_ms` and `event_type` — when it happened and what it was.
+///
+/// For a log whose purpose is answering "who did what, and were they allowed",
+/// a commitment that covers none of those three is not an audit trail.
+///
+/// The separator is `\u{1f}` (ASCII unit separator) rather than `|`, because
+/// `|` occurs freely inside `payload_json` and in identifiers: with a printable
+/// separator, two different field splits can serialise to the same bytes and
+/// hash identically. The leading `v2` tag keeps this domain-separated from the
+/// legacy hash so one can never be mistaken for the other.
+pub fn compute_audit_chain_hash_v2(prev_chain_hash: &str, entry: &AuditEntry) -> String {
+    const SEP: char = '\u{1f}';
+    let prev = &prev_chain_hash[..prev_chain_hash.len().min(MAX_AUDIT_CHAIN_PREV_LEN)];
+    // Tri-state: a recorded allow, a recorded deny, and "no decision taken"
+    // must hash differently, or a denial could be erased into an absence.
+    let allowed = match entry.allowed {
+        Some(true) => "true",
+        Some(false) => "false",
+        None => "",
+    };
+    let input = format!(
+        "v2{SEP}{prev}{SEP}{event_id}{SEP}{event_type}{SEP}{agent_id}{SEP}{session_id}\
+         {SEP}{org_id}{SEP}{trace_id}{SEP}{allowed}{SEP}{created_at_ms}{SEP}{payload}",
+        event_id = entry.event_id,
+        event_type = entry.event_type,
+        agent_id = entry.agent_id,
+        session_id = entry.session_id,
+        org_id = entry.org_id,
+        trace_id = entry.trace_id,
+        created_at_ms = entry.created_at_ms,
+        payload = entry.payload_json,
+    );
+    let digest = Sha256::digest(input.as_bytes());
+    format!("{digest:x}")
+}
+
+/// What a chain walk established.
+///
+/// `verified` counts entries whose whole record is committed; `legacy_covered`
+/// counts entries that only match the older payload-only hash. The split is
+/// the point: a caller must be able to tell "this history is sealed" from
+/// "this history predates the full commitment and only its payloads are
+/// sealed". Collapsing both into one number is how the weaker guarantee gets
+/// read as the stronger one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AuditChainVerification {
+    pub verified: usize,
+    pub legacy_covered: usize,
+}
+
+impl AuditChainVerification {
+    /// True when every entry is covered by the full commitment.
+    pub fn fully_sealed(&self) -> bool {
+        self.legacy_covered == 0
+    }
+}
+
+/// Verify an audit chain slice.
+///
+/// Accepts the full v2 commitment, and falls back to the legacy payload-only
+/// hash for entries written before it existed — reported separately, never
+/// silently. Rejecting legacy entries outright would turn every archive
+/// written to date into "tampered", which is its own false alarm.
+pub fn verify_audit_chain(entries: &[AuditEntry]) -> Result<AuditChainVerification, String> {
     let mut prev_hash = String::new();
+    let mut legacy_covered = 0usize;
     for (i, entry) in entries.iter().enumerate() {
-        let expected = compute_audit_chain_hash(
-            &prev_hash,
-            &entry.event_id,
-            &entry.payload_json,
-        );
-        if expected != entry.chain_hash {
-            return Err(format!(
-                "chain broken at entry {} (event_id={:?}, record {})",
-                entry.event_id, entry.event_id, i + 1
-            ));
+        let full = compute_audit_chain_hash_v2(&prev_hash, entry);
+        if full != entry.chain_hash {
+            let legacy =
+                compute_audit_chain_hash(&prev_hash, &entry.event_id, &entry.payload_json);
+            if legacy != entry.chain_hash {
+                return Err(format!(
+                    "chain broken at record {} (event_id={:?})",
+                    i + 1,
+                    entry.event_id
+                ));
+            }
+            legacy_covered += 1;
         }
         prev_hash = entry.chain_hash.clone();
     }
-    Ok(entries.len())
+    Ok(AuditChainVerification {
+        verified: entries.len(),
+        legacy_covered,
+    })
 }
 
 // ── Provenance DAG ────────────────────────────────────────────────────────────
@@ -1395,8 +1472,100 @@ mod tests {
             });
             prev = chain_hash;
         }
-        let result = verify_audit_chain(&entries);
-        assert_eq!(result, Ok(5));
+        // Legacy-hashed entries still verify -- an archive written before the
+        // full commitment must not start reading as tampered -- but they are
+        // reported as legacy-covered rather than sealed.
+        let result = verify_audit_chain(&entries).expect("legacy chain verifies");
+        assert_eq!(result.verified, 5);
+        assert_eq!(result.legacy_covered, 5);
+        assert!(!result.fully_sealed());
+    }
+
+    /// Build a chain sealed with the full commitment.
+    fn sealed_chain() -> Vec<AuditEntry> {
+        let mut prev = String::new();
+        let mut entries = Vec::new();
+        for i in 0..3 {
+            let mut entry = AuditEntry {
+                event_id: format!("evt-{i}"),
+                event_type: "tool_call".into(),
+                agent_id: "agent:alice".into(),
+                session_id: "s1".into(),
+                org_id: "acme".into(),
+                trace_id: "t1".into(),
+                allowed: Some(false),
+                payload_json: format!("{{\"tool\":\"delete_prod_db\",\"i\":{i}}}"),
+                chain_hash: String::new(),
+                prev_chain_hash: prev.clone(),
+                created_at_ms: 1_700_000_000_000 + i as u64,
+            };
+            entry.chain_hash = compute_audit_chain_hash_v2(&prev, &entry);
+            prev = entry.chain_hash.clone();
+            entries.push(entry);
+        }
+        entries
+    }
+
+    #[test]
+    fn a_sealed_chain_reports_no_legacy_entries() {
+        let result = verify_audit_chain(&sealed_chain()).expect("sealed chain verifies");
+        assert_eq!(result.verified, 3);
+        assert_eq!(result.legacy_covered, 0);
+        assert!(result.fully_sealed());
+    }
+
+    #[test]
+    fn flipping_the_authorization_decision_breaks_the_chain() {
+        // The headline defect: `allowed` was outside the commitment, so a
+        // denial could be rewritten into an approval and still verify.
+        let mut entries = sealed_chain();
+        entries[0].allowed = Some(true);
+        assert!(
+            verify_audit_chain(&entries).is_err(),
+            "a denial rewritten as an approval was accepted as intact"
+        );
+    }
+
+    #[test]
+    fn rewriting_the_actor_or_the_clock_breaks_the_chain() {
+        for mutate in [
+            (|e: &mut AuditEntry| e.agent_id = "agent:someone_else".into())
+                as fn(&mut AuditEntry),
+            |e: &mut AuditEntry| e.created_at_ms = 1,
+            |e: &mut AuditEntry| e.event_type = "login".into(),
+            |e: &mut AuditEntry| e.session_id = "other".into(),
+            |e: &mut AuditEntry| e.org_id = "other".into(),
+            |e: &mut AuditEntry| e.trace_id = "other".into(),
+        ] {
+            let mut entries = sealed_chain();
+            mutate(&mut entries[0]);
+            assert!(
+                verify_audit_chain(&entries).is_err(),
+                "an identity or timing field was left outside the commitment"
+            );
+        }
+    }
+
+    #[test]
+    fn an_absent_decision_is_not_the_same_as_a_denial() {
+        // Erasing a recorded "denied" to "no decision" must not verify.
+        let mut entries = sealed_chain();
+        entries[0].allowed = None;
+        assert!(verify_audit_chain(&entries).is_err());
+    }
+
+    #[test]
+    fn field_boundaries_cannot_be_shifted_between_fields() {
+        // With a printable separator, moving text across a boundary can hash
+        // identically. The unit separator is why this must differ.
+        let mut a = sealed_chain();
+        a[0].agent_id = "x".into();
+        a[0].session_id = "y".into();
+        a[0].chain_hash = compute_audit_chain_hash_v2("", &a[0]);
+        let mut b = a.clone();
+        b[0].agent_id = "x\u{1f}y".into();
+        b[0].session_id = String::new();
+        assert_ne!(a[0].chain_hash, compute_audit_chain_hash_v2("", &b[0]));
     }
 
     #[test]

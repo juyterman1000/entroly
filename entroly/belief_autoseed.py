@@ -61,6 +61,52 @@ def _vault_base() -> Path:
     return Path(root) / "vault"
 
 
+#: Vendored or generated trees that never hold beliefs worth compiling.
+_PRUNED_DIR_NAMES = frozenset({
+    ".entroly", ".git", ".venv", "__pycache__", "node_modules", "target",
+})
+
+_SOURCE_SUFFIXES = frozenset({".py", ".rs", ".ts", ".js"})
+
+
+def _candidate_files(directory: Path) -> tuple[list[Path], int]:
+    """Source files under *directory*, never descending into pruned trees.
+
+    Returns the files and the number of directories that could not be read.
+
+    This used to be ``sorted(directory.rglob("*"))`` with the exclusions applied
+    to each yielded path. ``rglob`` must enumerate a directory to yield from it,
+    and ``sorted`` drains the whole generator before any filter runs, so
+    excluding ``node_modules`` afterwards excluded nothing. On Windows a
+    vendored pnpm tree exceeds the 260-character path limit, and the resulting
+    ``FileNotFoundError`` came out of ``rglob`` itself -- past the
+    ``except OSError`` that guards ``path.stat()`` -- killing the autoseed
+    thread with a raw traceback on the server's stderr.
+
+    Enumeration failures are counted and reported rather than raised. A
+    fingerprint over a slightly smaller tree costs one stale belief until the
+    next change, which is the exposure this module already documents accepting;
+    losing belief compilation for the life of the process is not.
+    """
+    found: list[Path] = []
+    failures = 0
+
+    def _count(_error: OSError) -> None:
+        nonlocal failures
+        failures += 1
+
+    for current, dirnames, filenames in os.walk(
+        directory, followlinks=False, onerror=_count
+    ):
+        # Prune in place, before descending. This is the whole fix.
+        dirnames[:] = [name for name in dirnames if name not in _PRUNED_DIR_NAMES]
+        base = Path(current)
+        for filename in filenames:
+            if Path(filename).suffix.lower() in _SOURCE_SUFFIXES:
+                found.append(base / filename)
+    return found, failures
+
+
 def _tree_signature(directory: Path, max_files: int) -> str:
     """A cheap fingerprint of what would be compiled.
 
@@ -77,12 +123,14 @@ def _tree_signature(directory: Path, max_files: int) -> str:
     # permanently -- not "until the next change", which is the exposure this
     # was documented as accepting. The cap belongs on what gets compiled, not
     # on what gets noticed; stat() is cheap enough to run over the whole tree.
-    for path in sorted(directory.rglob("*")):
-        if path.suffix.lower() not in {".py", ".rs", ".ts", ".js"}:
-            continue
-        if any(part in {".git", "node_modules", "__pycache__", ".venv", "target",
-                        ".entroly"} for part in path.parts):
-            continue
+    candidates, unreadable = _candidate_files(directory)
+    if unreadable:
+        logger.warning(
+            "belief autoseed could not enumerate %d director%s under %s; its "
+            "fingerprint covers the rest",
+            unreadable, "y" if unreadable == 1 else "ies", directory,
+        )
+    for path in sorted(candidates):
         try:
             stat = path.stat()
         except OSError:
@@ -204,7 +252,21 @@ def start_autoseed(directory: str | os.PathLike[str] | None = None,
         _started.add(target)
 
     def run() -> None:
-        summary = compile_now(target, max_files)
+        try:
+            summary = compile_now(target, max_files)
+        except Exception:
+            # Background convenience must not take its thread down with an
+            # unattributed traceback on the server's stderr. Releasing the
+            # directory matters as much: ``_started`` is marked before the
+            # thread launches, so a death left it latched and autoseed never
+            # ran again for the life of the process.
+            logger.warning(
+                "Belief autoseed failed for %s; it will be retried on the next "
+                "index pass", target, exc_info=True,
+            )
+            with _lock:
+                _started.discard(target)
+            return
         if summary.get("status") == "compiled":
             logger.info(
                 "Seeded %s belief(s) from %s file(s)",

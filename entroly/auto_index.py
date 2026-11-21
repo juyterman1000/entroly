@@ -20,6 +20,7 @@ import os
 import signal
 import subprocess
 import tempfile
+import threading
 import time
 from hashlib import sha256
 from pathlib import Path
@@ -964,6 +965,492 @@ def _ledger_representative_is_live(
     ).digest()
 
 
+# ── Index freshness ───────────────────────────────────────────────────────
+#
+# A loaded index is a cache of bytes that were on disk at ingest time, and
+# nothing on the retrieval path re-checks disk. Measured on a two-file tree:
+# index, edit one file, then query the same long-lived engine -- it served the
+# pre-edit body and reported query_coverage 1.0 and residual_risk 0.0, with no
+# field anywhere named freshness, age or mtime. The background reconciliation
+# thread does notice, up to `interval_s` later, but reported only to
+# `logger.info` / `logger.warning`, which nothing reads on a stdio transport.
+# Staleness was therefore unobservable in returned data.
+#
+# This ledger records the stat signature (size + mtime) and content digest of
+# every file whose bytes were ingested, so `index_freshness()` can answer
+# "which indexed sources no longer match disk?" with one stat() per tracked
+# file and no re-read.
+#
+# Known blind spot of the cheap check: a filesystem with coarse mtime
+# granularity can let an edit that preserves byte length go unnoticed. That is
+# why the digest is stored too, and why `index_freshness(verify_content=True)`
+# exists -- it costs a read per tracked file and is the only mode that can
+# prove freshness rather than fail to disprove it. `method` in the report says
+# which one ran, so a caller is never left guessing how strong the claim is.
+_FRESHNESS_LEDGER_SCHEMA_VERSION = 1
+_FRESHNESS_LEDGER_NAME = "index_freshness.json"
+
+
+def _freshness_ledger_path(engine: EntrolyEngine) -> Path | None:
+    checkpoint_dir = getattr(getattr(engine, "config", None), "checkpoint_dir", None)
+    if not checkpoint_dir:
+        return None
+    return Path(checkpoint_dir) / _FRESHNESS_LEDGER_NAME
+
+
+def _stat_signature(
+    project_dir: str,
+    rel_path: str,
+) -> tuple[dict[str, int] | None, str | None]:
+    """One stat() for a tracked file: ``(signature, could_not_check_reason)``.
+
+    ``"missing"`` is returned as its own reason rather than folded into the
+    general failure case: a tracked path that is gone from disk is proof the
+    index is stale, while a stat that was refused proves only that we could not
+    look. Collapsing those two would let an unreadable file read as settled.
+    """
+    abs_path = _resolve_project_file(project_dir, _logical_rel_path(rel_path))
+    if abs_path is None:
+        return None, "outside_project"
+    try:
+        info = os.stat(abs_path)
+    except FileNotFoundError:
+        return None, "missing"
+    except OSError as exc:
+        return None, f"stat_failed:{type(exc).__name__}"
+    return {"size_bytes": int(info.st_size), "mtime_ns": int(info.st_mtime_ns)}, None
+
+
+def _stat_signatures(
+    project_dir: str,
+    rel_paths: list[str],
+) -> dict[str, dict[str, int] | None]:
+    """Signatures for index candidates, captured BEFORE their bytes are read.
+
+    Stat-before-read is deliberate. If a file is edited during the read window
+    the recorded signature is the older one, so the file is later reported
+    stale rather than fresh. A freshness surface has to prefer that direction:
+    a spurious "check this" costs a re-read, a spurious "all current" is the
+    silent failure this ledger exists to remove.
+    """
+    signatures: dict[str, dict[str, int] | None] = {}
+    for raw_path in rel_paths:
+        rel_path = _canonical_rel_path(_logical_rel_path(raw_path))
+        if rel_path in signatures:
+            continue
+        signature, _reason = _stat_signature(project_dir, rel_path)
+        signatures[rel_path] = signature
+    return signatures
+
+
+def _valid_signature_entry(entry: object) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    if not isinstance(entry.get("size_bytes"), int):
+        return False
+    if not isinstance(entry.get("mtime_ns"), int):
+        return False
+    digest = entry.get("content_sha256")
+    return digest is None or _valid_sha256(digest)
+
+
+def _load_freshness_ledger(
+    engine: EntrolyEngine,
+) -> tuple[dict[str, dict[str, object]], dict[str, object]]:
+    """Load recorded ingest signatures and say whether the record is usable.
+
+    The metadata never reports a usable record it does not have. An absent,
+    corrupt or wrong-schema ledger yields ``{}`` with a status that is not
+    ``"loaded"``, which `index_freshness` turns into ``"unavailable"`` instead
+    of an empty, reassuring "nothing is stale".
+    """
+    path = _freshness_ledger_path(engine)
+    if path is None:
+        return {}, {"status": "disabled", "reason": "no_state_directory"}
+    if not path.exists():
+        return {}, {"status": "missing", "reason": "never_recorded", "path": str(path)}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return {}, {
+            "status": "unreadable",
+            "reason": f"{type(exc).__name__}: {exc}",
+            "path": str(path),
+        }
+    if not isinstance(data, dict):
+        return {}, {"status": "unreadable", "reason": "not_an_object", "path": str(path)}
+    if data.get("schema_version") != _FRESHNESS_LEDGER_SCHEMA_VERSION:
+        return {}, {
+            "status": "schema_mismatch",
+            "reason": f"found {data.get('schema_version')!r}",
+            "path": str(path),
+        }
+    raw_entries = data.get("entries")
+    if not isinstance(raw_entries, dict):
+        return {}, {"status": "unreadable", "reason": "malformed_entries", "path": str(path)}
+
+    entries: dict[str, dict[str, object]] = {}
+    dropped = 0
+    for rel_path, entry in raw_entries.items():
+        if not isinstance(rel_path, str) or not rel_path:
+            dropped += 1
+            continue
+        if not _valid_signature_entry(entry):
+            dropped += 1
+            continue
+        entries[rel_path] = dict(entry)
+
+    coverage = data.get("coverage")
+    meta: dict[str, object] = {
+        "status": "loaded",
+        "path": str(path),
+        "recorded_at": data.get("recorded_at"),
+        "project_dir": data.get("project_dir"),
+        "entries": len(entries),
+        "malformed_entries_dropped": dropped,
+        "coverage": coverage if isinstance(coverage, dict) else {"status": "unknown"},
+    }
+    return entries, meta
+
+
+def _save_freshness_ledger(
+    engine: EntrolyEngine,
+    entries: dict[str, dict[str, object]],
+    *,
+    project_dir: str,
+    coverage: dict[str, object],
+) -> dict[str, object]:
+    """Persist the freshness ledger atomically and report the outcome."""
+    path = _freshness_ledger_path(engine)
+    if path is None:
+        return {"status": "disabled", "reason": "no_state_directory"}
+    tmp_path: Path | None = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "schema_version": _FRESHNESS_LEDGER_SCHEMA_VERSION,
+            "project_dir": project_dir,
+            "recorded_at": time.time(),
+            "coverage": coverage,
+            "entries": entries,
+        }
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as tmp:
+            json.dump(payload, tmp, sort_keys=True, separators=(",", ":"))
+            tmp.flush()
+            os.fsync(tmp.fileno())
+            tmp_path = Path(tmp.name)
+        os.replace(tmp_path, path)
+        tmp_path = None
+        return {
+            "status": "persisted",
+            "entries": len(entries),
+            "schema_version": _FRESHNESS_LEDGER_SCHEMA_VERSION,
+            "coverage": coverage,
+        }
+    except OSError as exc:
+        logger.warning("Failed to persist index freshness ledger %s: %s", path, exc)
+        return {"status": "error", "error": f"{type(exc).__name__}: {exc}"}
+    finally:
+        if tmp_path is not None:
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
+def _signature_entry(
+    signature: dict[str, int] | None,
+    digest: str | None,
+) -> dict[str, object] | None:
+    if signature is None:
+        return None
+    entry: dict[str, object] = {
+        "size_bytes": int(signature["size_bytes"]),
+        "mtime_ns": int(signature["mtime_ns"]),
+    }
+    if digest:
+        entry["content_sha256"] = digest
+    return entry
+
+
+def _logical_source_count(grouped: dict[str, list[dict]]) -> int:
+    """Distinct files behind a source map, collapsing `path#N` chunk parts."""
+    return len({_logical_rel_path(source) for source in grouped})
+
+
+def _record_index_signatures(
+    engine: EntrolyEngine,
+    project_dir: str,
+    *,
+    signatures: dict[str, dict[str, int] | None],
+    digests: dict[str, str],
+    tracked_paths: set[str],
+    indexed_sources: int | None,
+    base_entries: dict[str, dict[str, object]] | None = None,
+) -> dict[str, object]:
+    """Write the signatures of files whose bytes are now in the index.
+
+    Only ``tracked_paths`` -- files whose indexed content was proved equal to
+    disk on this pass -- get a new entry. A pending, rejected or rolled-back
+    change deliberately gets none: recording its current signature would mark
+    it fresh while the index still holds the older bytes, which is precisely
+    the confidently-stale answer this is meant to expose.
+    """
+    entries: dict[str, dict[str, object]] = dict(base_entries or {})
+    unrecordable: list[str] = []
+    for rel_path in sorted(tracked_paths):
+        entry = _signature_entry(signatures.get(rel_path), digests.get(rel_path))
+        if entry is None:
+            # No signature means the stat failed, so there is nothing we can
+            # honestly assert about this file. Drop any stale prior entry so it
+            # surfaces as untracked rather than as a claim we cannot support.
+            entries.pop(rel_path, None)
+            unrecordable.append(rel_path)
+            continue
+        entries[rel_path] = entry
+
+    tracked = len(entries)
+    if indexed_sources is None:
+        coverage: dict[str, object] = {
+            "status": "unknown",
+            "tracked": tracked,
+            "reason": "index_source_count_unavailable",
+        }
+    else:
+        untracked = max(0, int(indexed_sources) - tracked)
+        coverage = {
+            "status": "complete" if untracked == 0 else "partial",
+            "tracked": tracked,
+            "indexed_sources": int(indexed_sources),
+            "untracked": untracked,
+        }
+    if unrecordable:
+        coverage["unrecordable_paths"] = unrecordable[:20]
+        coverage["unrecordable"] = len(unrecordable)
+    result = _save_freshness_ledger(
+        engine,
+        entries,
+        project_dir=project_dir,
+        coverage=coverage,
+    )
+    return result
+
+
+# The watcher's findings used to live only in log records. A caller on a stdio
+# transport cannot read those, so the last reconciliation outcome is kept here
+# where it can be returned.
+_watcher_state_lock = threading.Lock()
+_last_incremental_scan: dict[str, object] = {"status": "not_started"}
+
+
+def last_incremental_scan() -> dict[str, object]:
+    """The most recent background reconciliation outcome, as data.
+
+    ``status`` is ``"not_started"`` before the watcher runs, ``"failed"`` when
+    a scan raised, and otherwise the reconciliation's own status
+    (``"current"``, ``"updated"`` or ``"partial"``). ``errors`` and the
+    added/replaced/removed counters that used to reach only ``logger`` are
+    carried through verbatim.
+    """
+    with _watcher_state_lock:
+        return dict(_last_incremental_scan)
+
+
+def _publish_incremental_scan(outcome: dict[str, object]) -> None:
+    global _last_incremental_scan
+    with _watcher_state_lock:
+        _last_incremental_scan = dict(outcome)
+
+
+def index_freshness(
+    engine: EntrolyEngine,
+    project_dir: str | None = None,
+    *,
+    verify_content: bool = False,
+) -> dict:
+    """Report which indexed sources no longer match the files on disk.
+
+    This is the surface that was missing: retrieval reports relevance and risk
+    for content it never re-checked, so an edit made after indexing was served
+    as current. One stat() per tracked file is enough to say otherwise.
+
+    ``status`` separates the four outcomes a trust boundary must not merge:
+
+    ``"fresh"``
+        Every tracked source was checked and matches disk.
+    ``"stale"``
+        Every tracked source was checked and at least one no longer matches.
+    ``"partial"``
+        The check ran but could not cover everything -- some sources could not
+        be inspected, or the ledger covers fewer files than the index holds.
+        ``stale_count`` is still authoritative for what *was* checked.
+    ``"unavailable"``
+        There is no usable record to check against, so nothing can be claimed.
+        Never reported as ``"fresh"``: "I could not check" and "nothing is
+        stale" are different answers.
+    ``"failed"``
+        The check itself could not complete.
+
+    Set ``verify_content`` to read and digest each tracked file. That is the
+    only mode that can *prove* freshness; the default stat comparison can only
+    fail to disprove it, and cannot see an edit that preserved both byte length
+    and mtime tick.
+    """
+    started = time.perf_counter()
+    project_dir = os.path.abspath(project_dir or os.getcwd())
+    report: dict[str, object] = {
+        "status": "failed",
+        "project_dir": project_dir,
+        "schema_version": _FRESHNESS_LEDGER_SCHEMA_VERSION,
+        "method": "content" if verify_content else "stat",
+        "sources_tracked": 0,
+        "fresh_count": 0,
+        "stale_count": 0,
+        "unknown_count": 0,
+        "stale_sources": [],
+        "stale_paths": [],
+        "unknown_sources": [],
+        "unknown_paths": [],
+        "not_fresh_paths": [],
+        "ledger": {"status": "unknown"},
+        "coverage": {"status": "unknown"},
+        "watcher": last_incremental_scan(),
+        "checked_at": time.time(),
+        "duration_s": 0.0,
+    }
+    try:
+        entries, ledger_meta = _load_freshness_ledger(engine)
+        report["ledger"] = ledger_meta
+        report["sources_tracked"] = len(entries)
+        coverage = ledger_meta.get("coverage")
+        report["coverage"] = coverage if isinstance(coverage, dict) else {"status": "unknown"}
+
+        if ledger_meta.get("status") != "loaded":
+            report["status"] = "unavailable"
+            report["reason"] = str(ledger_meta.get("reason") or ledger_meta.get("status"))
+            return report
+        if not entries:
+            # A loaded-but-empty record cannot certify anything. Saying "0 stale"
+            # here would be the original defect wearing a new field name.
+            report["status"] = "unavailable"
+            report["reason"] = "no_tracked_sources"
+            return report
+
+        stale: list[dict[str, object]] = []
+        unknown: list[dict[str, object]] = []
+        fresh = 0
+        for rel_path in sorted(entries):
+            entry = entries[rel_path]
+            recorded = {
+                "size_bytes": entry.get("size_bytes"),
+                "mtime_ns": entry.get("mtime_ns"),
+                "content_sha256": entry.get("content_sha256"),
+            }
+            observed, reason = _stat_signature(project_dir, rel_path)
+            if observed is None:
+                record = {
+                    "path": rel_path,
+                    "source": f"file:{rel_path}",
+                    "indexed": recorded,
+                    "observed": None,
+                }
+                if reason == "missing":
+                    # The index holds bytes for a path that is no longer on
+                    # disk. That is proof of staleness, not a failed check.
+                    record["reason"] = "missing"
+                    stale.append(record)
+                else:
+                    record["reason"] = reason or "could_not_check"
+                    unknown.append(record)
+                continue
+
+            size_changed = observed["size_bytes"] != recorded["size_bytes"]
+            mtime_changed = observed["mtime_ns"] != recorded["mtime_ns"]
+            if size_changed or mtime_changed:
+                stale.append({
+                    "path": rel_path,
+                    "source": f"file:{rel_path}",
+                    "reason": (
+                        "size_and_mtime_changed"
+                        if size_changed and mtime_changed
+                        else "size_changed" if size_changed else "mtime_changed"
+                    ),
+                    "indexed": recorded,
+                    "observed": observed,
+                })
+                continue
+
+            if verify_content:
+                expected = recorded.get("content_sha256")
+                if not expected:
+                    unknown.append({
+                        "path": rel_path,
+                        "source": f"file:{rel_path}",
+                        "reason": "no_recorded_digest",
+                        "indexed": recorded,
+                        "observed": observed,
+                    })
+                    continue
+                content, _size, read_reason = _read_index_file(project_dir, rel_path)
+                if content is None and read_reason and read_reason.startswith("too_large:"):
+                    content = _read_oversized_source(project_dir, rel_path) or None
+                if content is None:
+                    unknown.append({
+                        "path": rel_path,
+                        "source": f"file:{rel_path}",
+                        "reason": f"could_not_read:{read_reason or 'unknown'}",
+                        "indexed": recorded,
+                        "observed": observed,
+                    })
+                    continue
+                if sha256(content.encode("utf-8")).hexdigest() != expected:
+                    stale.append({
+                        "path": rel_path,
+                        "source": f"file:{rel_path}",
+                        "reason": "content_changed",
+                        "indexed": recorded,
+                        "observed": observed,
+                    })
+                    continue
+            fresh += 1
+
+        report["fresh_count"] = fresh
+        report["stale_count"] = len(stale)
+        report["unknown_count"] = len(unknown)
+        report["stale_sources"] = stale
+        report["stale_paths"] = [str(item["path"]) for item in stale]
+        report["unknown_sources"] = unknown
+        report["unknown_paths"] = [str(item["path"]) for item in unknown]
+        report["not_fresh_paths"] = sorted(
+            {*report["stale_paths"], *report["unknown_paths"]}
+        )
+
+        incomplete_coverage = (
+            isinstance(coverage, dict)
+            and coverage.get("status") in {"partial", "unknown"}
+        )
+        if unknown or incomplete_coverage:
+            report["status"] = "partial"
+        elif stale:
+            report["status"] = "stale"
+        else:
+            report["status"] = "fresh"
+        return report
+    except Exception as exc:  # a trust surface must degrade, never claim fresh
+        report["status"] = "failed"
+        report["reason"] = f"{type(exc).__name__}: {exc}"
+        return report
+    finally:
+        report["duration_s"] = round(time.perf_counter() - started, 4)
+
+
 def reconcile_index(
     engine: EntrolyEngine,
     project_dir: str | None = None,
@@ -1029,6 +1516,10 @@ def _reconcile_index(
 
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
+    # Signatures first, bytes second -- see `_stat_signatures` for why the
+    # order is load-bearing.
+    pre_read_signatures = _stat_signatures(project_dir, candidates)
+
     reads: dict[str, tuple[str | None, int, str | None]] = {}
     max_workers = min(16, (os.cpu_count() or 4) * 2)
     with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="reconcile") as pool:
@@ -1068,6 +1559,9 @@ def _reconcile_index(
     unavailable: dict[str, str] = {}
     unchanged = 0
     ledger_skipped = 0
+    # Paths whose indexed bytes were proved equal to disk on this pass. Only
+    # these earn a freshness signature; anything merely attempted does not.
+    verified_paths: set[str] = set()
     for rel_path in candidates:
         source = f"file:{rel_path}"
         content, _size, reason = reads[rel_path]
@@ -1095,6 +1589,7 @@ def _reconcile_index(
         # even when one copy happens to match current disk content.
         if len(prior) == 1 and current_digest in prior_digests:
             unchanged += 1
+            verified_paths.add(rel_path)
             continue
         # An oversized source is stored as an ordered chunk group, so it never
         # has exactly one fragment and the check above can never clear it. Left
@@ -1113,6 +1608,7 @@ def _reconcile_index(
             ]
             if stored and stored == fresh:
                 unchanged += 1
+                verified_paths.add(rel_path)
                 continue
         ledger_entry = duplicate_ledger.get(source)
         if (
@@ -1129,6 +1625,7 @@ def _reconcile_index(
         ):
             unchanged += 1
             ledger_skipped += 1
+            verified_paths.add(rel_path)
             continue
         changed.append((source, content, _estimate_tokens(content), bool(prior)))
 
@@ -1363,6 +1860,47 @@ def _reconcile_index(
                 refreshed_ledger,
             )
 
+    # ── Freshness signatures ──────────────────────────────────────────────
+    # Record the on-disk signature of every file this pass proved the index
+    # matches, so `index_freshness` can later report which indexed sources
+    # drifted. A file whose change was deferred by `max_changes`, rejected by
+    # ingest, or undone by a rollback gets no new signature: the index still
+    # holds its older bytes, and that is exactly what must stay visible.
+    freshness_record: dict[str, object] = {"status": "unchanged"}
+    if not rolled_back:
+        prior_entries, prior_meta = _load_freshness_ledger(engine)
+        base_entries = {
+            rel_path: entry
+            for rel_path, entry in prior_entries.items()
+            if rel_path in current_paths
+            and f"file:{rel_path}" not in removal_reasons
+            and f"file:{rel_path}" not in unavailable
+        }
+        applied_paths = {
+            _canonical_rel_path(_logical_rel_path(source[5:]))
+            for source in (*added_sources, *replaced_sources, *duplicate_sources)
+            if source.startswith("file:")
+        }
+        tracked_paths = (verified_paths | applied_paths) & current_paths
+        digests_by_path = {
+            _canonical_rel_path(_logical_rel_path(source[5:])): digest
+            for source, digest in current_digests.items()
+            if source.startswith("file:")
+        }
+        freshness_record = _record_index_signatures(
+            engine,
+            project_dir,
+            signatures=pre_read_signatures,
+            digests=digests_by_path,
+            tracked_paths=tracked_paths,
+            indexed_sources=_logical_source_count(live_fragments),
+            base_entries=base_entries,
+        )
+        if prior_meta.get("status") not in {"loaded", "missing"}:
+            # An unusable prior record is not an error, but a caller that sees
+            # only the new write would never learn the old one was discarded.
+            freshness_record["prior_ledger"] = prior_meta
+
     pending = max(0, len(removal_reasons) + len(additions) - len(ordered_mutations) - len(additions_to_apply))
     status = "partial" if errors or pending else "updated" if mutated else "current"
     return {
@@ -1388,6 +1926,7 @@ def _reconcile_index(
         "dependency_refresh": dependency_refresh,
         "persistence": persistence,
         "duplicate_ledger": duplicate_ledger_status,
+        "freshness_record": freshness_record,
         "rolled_back": rolled_back,
         "errors": errors,
         "duration_s": round(time.perf_counter() - started, 3),
@@ -1560,6 +2099,11 @@ def _auto_index(
                     else len(engine._fragments)
                 ),
                 "reconciliation": reconciliation,
+                # Hoisted out of `reconciliation` so the cache path advertises
+                # freshness at the same depth as the fresh-index path.
+                "freshness_record": reconciliation.get(
+                    "freshness_record", {"status": "unknown"}
+                ),
             }
 
     t0 = time.perf_counter()
@@ -1605,6 +2149,10 @@ def _auto_index(
     # the log line readable on chatty repos.
     skipped_size_paths: list[tuple[str, int, int]] = []
     chunked_large = 0
+
+    # Signatures first, bytes second -- see `_stat_signatures` for why the
+    # order is load-bearing.
+    pre_read_signatures = _stat_signatures(project_dir, indexable)
 
     # 16 threads: double the I/O workers vs old code — most time is disk wait
     max_workers = min(16, (os.cpu_count() or 4) * 2)
@@ -1869,6 +2417,40 @@ def _auto_index(
                 total_tokens = 0
                 beliefs_attached = 0
 
+    # ── Freshness signatures ──────────────────────────────────────────────
+    # This path builds the index from scratch (no prior fragments, or `force`
+    # removed them all), so the files in `batch` define the whole tracked set
+    # and the prior ledger is replaced rather than merged. Nothing is recorded
+    # when nothing was ingested: an empty write would claim we had checked a
+    # tree we never indexed.
+    freshness_record: dict[str, object] = {"status": "unchanged"}
+    if indexed and persistence.get("status") != "error":
+        batch_digests: dict[str, object] = {}
+        for _content, _source, _ in batch:
+            _rel = _canonical_rel_path(
+                _logical_rel_path(_source[5:] if _source.startswith("file:") else _source)
+            )
+            # A chunked file contributes its parts consecutively and in order,
+            # and chunking preserves bytes exactly, so folding them in sequence
+            # yields the digest of the file as read.
+            _digest = batch_digests.get(_rel)
+            if _digest is None:
+                _digest = sha256()
+                batch_digests[_rel] = _digest
+            _digest.update(_content.encode("utf-8"))
+        freshness_record = _record_index_signatures(
+            engine,
+            project_dir,
+            signatures=pre_read_signatures,
+            digests={
+                rel_path: digest.hexdigest()
+                for rel_path, digest in batch_digests.items()
+            },
+            tracked_paths=set(batch_digests),
+            indexed_sources=len(batch_digests),
+            base_entries=None,
+        )
+
     return {
         "status": "error" if persistence.get("status") == "error" else "indexed",
         "files_indexed": indexed,
@@ -1887,21 +2469,83 @@ def _auto_index(
         "persistence": persistence,
         "force_removal": force_removal,
         "dependency_refresh": dependency_refresh,
+        "freshness_record": freshness_record,
     }
+
+
+def _summarize_incremental_scan(result: dict) -> dict[str, object]:
+    """Turn one reconciliation receipt into the watcher's readable outcome.
+
+    Carries through exactly the counters and error strings that previously only
+    reached ``logger``: a caller on a stdio transport sees no log records, so
+    "Incremental reconciliation incomplete" was unobservable in practice.
+    """
+    errors = list(result.get("errors") or [])
+    persistence = result.get("persistence")
+    return {
+        "status": str(result.get("status") or "unknown"),
+        "incomplete": bool(errors) or bool(result.get("pending_changes")),
+        "files_added": int(result.get("files_added", 0) or 0),
+        "files_replaced": int(result.get("files_replaced", 0) or 0),
+        "files_removed": int(result.get("files_removed", 0) or 0),
+        "files_unchanged": int(result.get("files_unchanged", 0) or 0),
+        "pending_changes": int(result.get("pending_changes", 0) or 0),
+        "rolled_back": bool(result.get("rolled_back")),
+        "errors": errors,
+        "stale_sources": list(result.get("stale_sources") or []),
+        "unavailable_sources": dict(result.get("unavailable_sources") or {}),
+        "persistence": (
+            persistence.get("status") if isinstance(persistence, dict) else None
+        ),
+        "freshness_record": result.get("freshness_record", {"status": "unknown"}),
+        "project_dir": result.get("project_dir"),
+        "duration_s": result.get("duration_s"),
+        "completed_at": time.time(),
+    }
+
+
+class IncrementalWatcher:
+    """Handle for the background reconciliation thread.
+
+    Returned instead of ``None`` so the thread's findings are reachable as
+    data. ``last_scan()`` is the same payload `last_incremental_scan()`
+    returns; the handle form is for a caller that holds one engine among
+    several, the module function for callers that discard the handle.
+    """
+
+    def __init__(self, thread: threading.Thread, project_dir: str, interval_s: int):
+        self._thread = thread
+        self.project_dir = project_dir
+        self.interval_s = interval_s
+
+    def is_alive(self) -> bool:
+        return self._thread.is_alive()
+
+    def last_scan(self) -> dict[str, object]:
+        return last_incremental_scan()
+
+    def __repr__(self) -> str:  # pragma: no cover - diagnostics only
+        return (
+            f"IncrementalWatcher(project_dir={self.project_dir!r}, "
+            f"interval_s={self.interval_s}, alive={self.is_alive()})"
+        )
 
 
 def start_incremental_watcher(
     engine: EntrolyEngine,
     project_dir: str | None = None,
     interval_s: int = 120,
-) -> None:
+) -> IncrementalWatcher:
     """Start a background thread that periodically re-scans for new/modified files.
 
     Addresses the stale-index problem: files created or modified during a session
     are picked up without restarting the server.
-    """
-    import threading
 
+    The poll leaves a window in which the index is behind disk, which is why
+    the scan outcome is now published to `last_incremental_scan()` and the
+    handle's ``last_scan()`` rather than only logged. Use `index_freshness()`
+    to ask about that window directly instead of waiting for the next poll.
+    """
     project_dir = project_dir or os.getcwd()
     project_dir = os.path.abspath(project_dir)
 
@@ -1912,9 +2556,19 @@ def start_incremental_watcher(
                 _incremental_scan()
             except Exception as e:
                 logger.warning("Incremental re-index failed: %s", e)
+                # A scan that raised is "failed", not "nothing to report". The
+                # previous state would otherwise stand as the latest word.
+                _publish_incremental_scan({
+                    "status": "failed",
+                    "incomplete": True,
+                    "errors": [f"{type(e).__name__}: {e}"],
+                    "project_dir": project_dir,
+                    "completed_at": time.time(),
+                })
 
     def _incremental_scan():
         result = reconcile_index(engine, project_dir, max_changes=100)
+        _publish_incremental_scan(_summarize_incremental_scan(result))
         changed = result["files_added"] + result["files_replaced"] + result["files_removed"]
         if changed:
             logger.info(
@@ -1934,3 +2588,4 @@ def start_incremental_watcher(
     t = threading.Thread(target=_scan_loop, daemon=True, name="entroly-watcher")
     t.start()
     logger.info(f"File watcher started (re-scan every {interval_s}s)")
+    return IncrementalWatcher(t, project_dir, interval_s)

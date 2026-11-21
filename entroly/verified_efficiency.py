@@ -808,6 +808,11 @@ class VerifiedEfficiencyLayer:
             recovery_scope = "committed_unselected_chunks"
         else:
             # Do not manufacture a full anchor while loading old state.
+            listed_ids = {item["chunk_id"] for item in receipt.get("omitted_context", [])}
+            if chunk_id is not None and chunk_id not in listed_ids:
+                raise RecoveryIntegrityError(
+                    f"chunk {chunk_id!r} is not listed as omitted by {prepared.commit_id}"
+                )
             recovered = recover_omitted(
                 receipt, chunk_id, bundle=dict(commit.get("recovery_bundle", {})),
             )

@@ -293,10 +293,8 @@ def test_rust_pipeline_receives_sanitized_numeric_options(
 
     class FakeCore:
         @staticmethod
-        def context_receipts_run(
-            docs, query, token_budget, chunk_tokens, overlap_tokens
-        ):
-            calls["run"] = (token_budget, chunk_tokens, overlap_tokens)
+        def context_receipts_select(index_json, query, token_budget):
+            calls["select"] = (query, token_budget)
             return json.dumps(
                 {
                     "schema_version": "context-receipt.v1",
@@ -340,7 +338,9 @@ def test_rust_pipeline_receives_sanitized_numeric_options(
         overlap_tokens=float("nan"),
     )
 
-    assert calls["run"] == (0, 360, 32)
+    # The sanitized budget now reaches the engine through select, because the
+    # pipeline ingests, restates the token accounting, then selects.
+    assert calls["select"] == ("change control", 0)
     assert calls["ingest"] == (360, 32)
     assert receipt["token_budget"] == 0
 
@@ -352,10 +352,8 @@ def test_public_pipeline_clamps_negative_chunk_tokens_for_rust_boundary(
 
     class FakeCore:
         @staticmethod
-        def context_receipts_run(
-            docs, query, token_budget, chunk_tokens, overlap_tokens
-        ):
-            calls["run"] = (query, token_budget, chunk_tokens, overlap_tokens)
+        def context_receipts_select(index_json, query, token_budget):
+            calls["select"] = (query, token_budget)
             return json.dumps(
                 {
                     "schema_version": "context-receipt.v1",
@@ -399,7 +397,7 @@ def test_public_pipeline_clamps_negative_chunk_tokens_for_rust_boundary(
         overlap_tokens=-5,
     )
 
-    assert calls["run"] == ("", 0, 40, 0)
+    assert calls["select"] == ("", 0)
     assert calls["ingest"] == (40, 0)
     assert receipt["query"] == ""
 
@@ -411,10 +409,8 @@ def test_public_pipeline_clamps_overlap_below_chunk_tokens_for_rust_boundary(
 
     class FakeCore:
         @staticmethod
-        def context_receipts_run(
-            docs, query, token_budget, chunk_tokens, overlap_tokens
-        ):
-            calls["run"] = (chunk_tokens, overlap_tokens)
+        def context_receipts_select(index_json, query, token_budget):
+            calls["select"] = (query, token_budget)
             return json.dumps(
                 {
                     "schema_version": "context-receipt.v1",
@@ -458,7 +454,8 @@ def test_public_pipeline_clamps_overlap_below_chunk_tokens_for_rust_boundary(
         overlap_tokens=99,
     )
 
-    assert calls["run"] == (40, 39)
+    # Overlap is clamped below chunk_tokens at the ingest boundary, which is
+    # the call that performs the chunking.
     assert calls["ingest"] == (40, 39)
 
 

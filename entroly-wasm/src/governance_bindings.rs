@@ -5,9 +5,10 @@
 //! The JS orchestration layer in `js/governance.js` parses the JSON.
 
 use entroly_engine::governance::{
-    compute_audit_chain_hash, compute_risk, evaluate_policy, scan_tool_schema,
-    standard_risk_signals, verify_audit_chain, AgentIdentity, AgentIdentityPayload,
-    AuditEntry, ChangeRiskInput, GovernancePolicy, ProvenanceNode, RiskLevel, RiskSignal,
+    compute_audit_chain_hash, compute_audit_chain_hash_v2, compute_risk, evaluate_policy,
+    scan_tool_schema, standard_risk_signals, verify_audit_chain, AgentIdentity,
+    AgentIdentityPayload, AuditEntry, ChangeRiskInput, GovernancePolicy, ProvenanceNode,
+    RiskLevel, RiskSignal,
 };
 use wasm_bindgen::prelude::*;
 
@@ -90,12 +91,37 @@ pub fn governance_compute_audit_chain_hash_js(
     compute_audit_chain_hash(prev_chain_hash, event_id, payload_json)
 }
 
+/// Compute the full chain hash for an audit entry supplied as JSON.
+///
+/// Mirrors the PyO3 `governance_compute_audit_chain_hash_v2`, and calls the
+/// same engine function, so a chain written from Node and one written from
+/// Python verify identically.
+///
+/// Writers should use this. `governanceComputeAuditChainHash` commits to the
+/// payload alone, leaving the acting agent, the timestamp and `allowed` -- the
+/// authorization decision itself -- outside the commitment; it is kept only so
+/// existing archives keep verifying.
+#[wasm_bindgen(js_name = governanceComputeAuditChainHashV2)]
+pub fn governance_compute_audit_chain_hash_v2_js(
+    prev_chain_hash: &str,
+    entry_json: &str,
+) -> Result<String, JsValue> {
+    let entry: AuditEntry = serde_json::from_str(entry_json).map_err(js_err)?;
+    Ok(compute_audit_chain_hash_v2(prev_chain_hash, &entry))
+}
+
 #[wasm_bindgen(js_name = governanceVerifyAuditChain)]
 pub fn governance_verify_audit_chain(entries_json: &str) -> Result<String, JsValue> {
     let entries: Vec<AuditEntry> =
         serde_json::from_str(entries_json).map_err(js_err)?;
     match verify_audit_chain(&entries) {
-        Ok(n) => Ok(format!("{{\"ok\":true,\"verified\":{n}}}")),
+        // `legacy_covered` is reported, never folded into `verified`: an entry
+        // sealed only by the old payload-only hash offers a weaker guarantee
+        // and the caller has to be able to see which it got.
+        Ok(result) => Ok(format!(
+            "{{\"ok\":true,\"verified\":{},\"legacy_covered\":{},\"fully_sealed\":{}}}",
+            result.verified, result.legacy_covered, result.fully_sealed()
+        )),
         Err(msg) => Ok(format!("{{\"ok\":false,\"error\":{}}}", serde_json::json!(msg))),
     }
 }

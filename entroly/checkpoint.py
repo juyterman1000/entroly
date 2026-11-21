@@ -53,6 +53,7 @@ import os
 import re
 import socket
 import tempfile
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -390,7 +391,7 @@ class CheckpointManager:
 
         Returns the checkpoint file path.
         """
-        checkpoint_id = f"ckpt_{self.instance_id}_{int(time.time())}_{self._total_checkpoints_created}"
+        checkpoint_id = self._next_checkpoint_id()
 
         previous = self._load_latest_for_instance()
         meta = merge_checkpoint_metadata(
@@ -918,7 +919,53 @@ class CheckpointManager:
     # caller-supplied id (e.g. "prod_2") would make an arbitrary field be probed
     # as a pid, and a low number is very likely a live unrelated process — or
     # worse, a dead one, deleting a running peer's state.
+    #: Minted once per process, not once per manager.
+    #:
+    #: The id was ``ckpt_{instance_id}_{unix_seconds}_{per_manager_counter}``
+    #: and ``instance_id`` is host+pid, so two CheckpointManagers in ONE
+    #: process shared the instance id *and* each started its own counter at
+    #: zero. Two saves in the same second produced the same filename, and the
+    #: second silently overwrote the first: measured as two saves leaving one
+    #: file on disk, with the first manager's fragments gone and no error,
+    #: no warning and no hint in the returned path. A process-wide sequence
+    #: makes that impossible regardless of how many managers exist.
+    _id_sequence = 0
+    _id_sequence_lock = threading.Lock()
+
     _AUTO_ID_RE = re.compile(r"^ckpt_([0-9a-f]{12})_(\d+)_")
+
+    def _next_checkpoint_id(self) -> str:
+        """A checkpoint id no other manager in this process can also mint.
+
+        Two defences, because they cover different causes:
+
+        * a process-wide sequence, so two managers sharing this process (and
+          therefore the same host+pid ``instance_id``) cannot both emit
+          counter ``0`` in the same second;
+        * a filesystem check, which also covers a reused pid, a manager
+          constructed with an explicit ``instance_id``, and a clock that
+          steps backwards -- none of which a counter alone would catch.
+
+        The shape stays ``ckpt_{host}_{pid}_...`` so ``_AUTO_ID_RE``,
+        ``_peer_pid`` and the per-instance globs keep working: they anchor on
+        the prefix and never read the trailing segments.
+        """
+        with CheckpointManager._id_sequence_lock:
+            CheckpointManager._id_sequence += 1
+            sequence = CheckpointManager._id_sequence
+        base = f"ckpt_{self.instance_id}_{int(time.time())}_{sequence}"
+        candidate = base
+        attempt = 0
+        while True:
+            try:
+                if not (self.checkpoint_dir / f"{candidate}.json.gz").exists():
+                    return candidate
+            except OSError:
+                # Cannot inspect the directory; the sequence alone still makes
+                # this unique within the process, which is the measured defect.
+                return candidate
+            attempt += 1
+            candidate = f"{base}-{attempt}"
 
     @classmethod
     def _checkpoint_owner(cls, name: str) -> tuple[str, str, int] | None:

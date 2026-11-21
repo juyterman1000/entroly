@@ -17,12 +17,12 @@ def test_passive_background_services_skip_autonomous_work(monkeypatch):
     monkeypatch.setattr(
         auto_index_module,
         "auto_index",
-        lambda _engine: calls.append("index"),
+        lambda _engine, _root=None: calls.append("index"),
     )
     monkeypatch.setattr(
         auto_index_module,
         "start_incremental_watcher",
-        lambda _engine: calls.append("watcher"),
+        lambda _engine, _root=None: calls.append("watcher"),
     )
     monkeypatch.setattr(
         server,
@@ -112,7 +112,7 @@ def test_background_services_do_not_block_mcp_startup(monkeypatch):
     watcher_started = threading.Event()
     autotune_started = threading.Event()
 
-    def _blocking_auto_index(_engine):
+    def _blocking_auto_index(_engine, _root=None):
         index_started.set()
         assert allow_index_to_finish.wait(timeout=2)
         return {
@@ -126,7 +126,7 @@ def test_background_services_do_not_block_mcp_startup(monkeypatch):
     monkeypatch.setattr(
         auto_index_module,
         "start_incremental_watcher",
-        lambda _engine: watcher_started.set(),
+        lambda _engine, _root=None: watcher_started.set(),
     )
     monkeypatch.setattr(
         server,
@@ -152,7 +152,7 @@ def test_background_services_do_not_block_mcp_startup(monkeypatch):
 def test_background_services_start_autotune_after_index_failure(monkeypatch):
     autotune_started = threading.Event()
 
-    def _failing_auto_index(_engine):
+    def _failing_auto_index(_engine, _root=None):
         raise RuntimeError("index failed")
 
     monkeypatch.setattr(auto_index_module, "auto_index", _failing_auto_index)

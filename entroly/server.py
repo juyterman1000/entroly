@@ -30,7 +30,11 @@ try:
 except ImportError:  # pragma: no cover - create_mcp_server reports the install error
     MCPContext = Any  # type: ignore[misc,assignment]
 
-from .server_source_root import _empty_context_guidance, _ingested_fragment_count
+from .server_source_root import (
+    _empty_context_guidance,
+    _ingested_fragment_count,
+    reported_source_root,
+)
 from .adaptive_pruner import EntrolyPruner, FragmentGuard
 from .autotune import ComponentFeedbackBus, DreamingLoop, FeedbackJournal, TaskProfileOptimizer
 from .online_learner import OnlinePrism, compute_implicit_reward, compute_contributions
@@ -743,7 +747,7 @@ def _recall_relevant_payload(
     # a repository that genuinely lacks the code.
     guidance = _empty_context_guidance(
         _ingested_fragment_count(engine),
-        os.environ.get("ENTROLY_SOURCE", os.getcwd()),
+        reported_source_root(engine),
         tool="recall_relevant",
     )
     if guidance is not None:
@@ -1682,7 +1686,7 @@ def create_mcp_server(
         # to fix it instead of returning a silent empty selection.
         _guidance = _empty_context_guidance(
             _ingested_fragment_count(engine),
-            os.environ.get("ENTROLY_SOURCE", os.getcwd()),
+            reported_source_root(engine),
             tool="optimize_context",
         )
         if _guidance is not None:
@@ -5106,14 +5110,41 @@ def _start_background_services(engine: EntrolyEngine) -> threading.Thread:
         # reflects the files already ingested by the first pass.
         try:
             from entroly.auto_index import auto_index, start_incremental_watcher
+            from entroly.server_source_root import (
+                resolved_source_root,
+                source_root_is_configured_but_unusable,
+            )
 
-            result = auto_index(engine)
+            # Pass the root explicitly. Omitting it let auto_index fall back to
+            # os.getcwd(), so ENTROLY_SOURCE never reached the indexer while
+            # every other surface reported it as the resolved root.
+            source_root = resolved_source_root()
+            if source_root_is_configured_but_unusable():
+                logger.warning(
+                    "ENTROLY_SOURCE=%r is not a directory; indexing %s instead",
+                    os.environ.get("ENTROLY_SOURCE"), source_root,
+                )
+            result = auto_index(engine, source_root)
+            # Record what was actually indexed so guidance can compare it with
+            # the configured root instead of assuming they agree. Bookkeeping
+            # must never decide whether the rest of startup runs: an engine
+            # that refuses attribute assignment used to raise here and take
+            # the incremental watcher down with it.
+            indexed_root = str(result.get("project_dir") or source_root)
+            try:
+                engine._indexed_source_root = indexed_root
+            except AttributeError:
+                logger.debug("engine does not accept an indexed-root marker")
             if result["status"] == "indexed":
                 logger.info(
                     f"Auto-indexed {result['files_indexed']} files "
-                    f"({result['total_tokens']:,} tokens) in {result['duration_s']}s"
+                    f"({result['total_tokens']:,} tokens) in {result['duration_s']}s "
+                    f"from {indexed_root}"
                 )
-            start_incremental_watcher(engine)
+            # Same root, explicitly. The watcher defaults to os.getcwd() too,
+            # so leaving it implicit would reconcile a different tree than the
+            # one just indexed.
+            start_incremental_watcher(engine, source_root)
         except Exception as e:
             logger.warning(f"Auto-index failed (non-fatal): {e}")
 

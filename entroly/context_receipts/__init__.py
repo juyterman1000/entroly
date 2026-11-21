@@ -122,6 +122,55 @@ def _is_rust_report_safe(receipt: Mapping[str, Any]) -> bool:
     )
 
 
+def _restate_token_counts(index: dict[str, Any]) -> dict[str, Any]:
+    """Replace the engine's word-run estimate with the real token count.
+
+    The native ingest sizes chunks and reports ``token_count`` with
+    ``estimate_tokens``, which counts matches of ``[A-Za-z0-9][A-Za-z0-9_']*``
+    and so ignores every bracket, operator, quote, newline and indent -- about
+    half the token stream in source code. Selection then spends the caller's
+    budget in those private units, so a receipt could report
+    ``selected_tokens == token_budget`` for text that was nearly twice the
+    budget, and the budget constraint it certified could not fail. Measured on
+    this repository: 1,200 claimed against 2,311 real o200k tokens (1.93x);
+    the undercount is content-dependent, so no constant could correct it.
+
+    The Python ingest already counts with the real tokenizer, so restating here
+    makes the two paths agree rather than inventing a third convention. Only
+    the accounting is restated -- chunk boundaries, byte offsets and digests
+    are the engine's and are left untouched, so recovery stays byte-exact.
+
+    Cost is marginal: exact counting runs around 4 MB/s once the encoder is
+    warm, against ~90ms for the native ingest of the same corpus.
+
+    When no exact tokenizer is installed the shared counter returns its
+    heuristic. That is still far closer than counting word runs, and it is the
+    same number the Python path would have produced, so the two paths continue
+    to agree.
+    """
+    from entroly.tokens import count_tokens_with_accuracy
+
+    chunks = index.get("chunks")
+    if not isinstance(chunks, list):
+        return index
+
+    # token_start/token_end are a per-document running sum in the Python path;
+    # recompute them from the restated counts so they stay in the same unit as
+    # token_count instead of silently keeping the estimator's.
+    running: dict[Any, int] = {}
+    for chunk in chunks:
+        if not isinstance(chunk, dict):
+            continue
+        count, _exact = count_tokens_with_accuracy(str(chunk.get("text") or ""))
+        document_id = chunk.get("document_id")
+        start = running.get(document_id, 0)
+        chunk["token_count"] = count
+        chunk["token_start"] = start
+        chunk["token_end"] = start + count
+        running[document_id] = start + count
+    return index
+
+
 def ingest_documents(
     documents: Iterable[tuple[str, str]],
     *,
@@ -137,8 +186,12 @@ def ingest_documents(
         overlap_tokens, chunk_tokens=chunk_token_count
     )
     if prefer_rust and (core := _rust_core("context_receipts_ingest")) is not None:
-        return json.loads(
-            core.context_receipts_ingest(docs, chunk_token_count, overlap_token_count)
+        return _restate_token_counts(
+            json.loads(
+                core.context_receipts_ingest(
+                    docs, chunk_token_count, overlap_token_count
+                )
+            )
         )
     index = _py_ingest_documents(
         docs, chunk_tokens=chunk_token_count, overlap_tokens=overlap_token_count
@@ -190,27 +243,31 @@ def run_receipt_pipeline(
     overlap_token_count = _overlap_tokens_or_default(
         overlap_tokens, chunk_tokens=chunk_token_count
     )
-    if (
-        prefer_rust
-        and (
-            core := _rust_core(
-                "context_receipts_run",
-                "context_receipts_ingest",
+    if prefer_rust and (core := _rust_core("context_receipts_ingest")) is not None:
+        # Ingest, restate the token accounting, then select against it.
+        #
+        # The one-shot `context_receipts_run` selected inside the engine using
+        # its own word-run estimate, so the budget was spent in units nothing
+        # outside the engine could reconcile -- a receipt could report
+        # `selected_tokens == token_budget` while carrying nearly twice that.
+        # Restating the index between ingest and selection makes the budget the
+        # engine enforces the same one the receipt reports, instead of only
+        # correcting the number after the fact.
+        #
+        # Selection stays native: `context_receipts_select` scores against
+        # `chunk.token_count`, which is now the real count. This is also one
+        # native call fewer than before, which ran the whole pipeline and then
+        # re-ingested purely to build the assurance payload.
+        rust_index = _restate_token_counts(
+            json.loads(
+                core.context_receipts_ingest(
+                    docs, chunk_token_count, overlap_token_count
+                )
             )
         )
-        is not None
-    ):
-        safe_query = _str_or_default(query)
-        raw = core.context_receipts_run(
-            docs, safe_query, budget, chunk_token_count, overlap_token_count
+        return select_from_index(
+            rust_index, query=query, token_budget=budget, prefer_rust=True
         )
-        receipt = json.loads(raw)
-        rust_index = json.loads(
-            core.context_receipts_ingest(docs, chunk_token_count, overlap_token_count)
-        )
-        from ..context_assurance import attach_receipt_assurance
-
-        return attach_receipt_assurance(rust_index, _attach_novelty_frontier(receipt, rust_index))
     index = _py_ingest_documents(
         docs, chunk_tokens=chunk_token_count, overlap_tokens=overlap_token_count
     )

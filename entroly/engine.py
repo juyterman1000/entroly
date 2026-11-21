@@ -1064,6 +1064,73 @@ def _cap_native_tokens_saved(result: dict) -> None:
         result["tokens_saved_this_call"] = saved
 
 
+_VERSION_DECLARATION = re.compile(
+    r"^__version__\s*=\s*[\"']([^\"']+)[\"']", re.MULTILINE
+)
+# A package __init__ is a source file; anything larger is not one we can trust
+# to scan on every stats call, so report it as unreadable instead.
+_VERSION_SOURCE_MAX_BYTES = 1_048_576
+
+VERSION_SKEW_NONE = "none"
+VERSION_SKEW_PRESENT = "skew"
+VERSION_SKEW_UNKNOWN = "unknown"
+
+
+def read_declared_version_from_disk(init_path: Any) -> str:
+    """Read the product version from the package source currently on disk.
+
+    The build stamp used to report ``entroly.__version__`` straight off the
+    imported module object. That attribute binds once, when the interpreter
+    first imports the package, and a long-lived server then serves that same
+    value for its whole lifetime -- a repeat ``import`` is a ``sys.modules``
+    cache hit and never consults the filesystem again. An in-place upgrade
+    therefore left a running server reporting the release it had started on
+    while the package on disk had moved on several versions, and the stamp
+    presented the stale number as current with nothing marking it stale.
+
+    Reading the declaration out of the file bypasses the module cache, so the
+    two can be compared. Every failure returns ``"unknown"``: a version that
+    could not be read has to stay distinguishable from one that was read and
+    agreed.
+    """
+    if not init_path:
+        return VERSION_SKEW_UNKNOWN
+    try:
+        source = Path(init_path)
+        if not source.is_file():
+            return VERSION_SKEW_UNKNOWN
+        if source.stat().st_size > _VERSION_SOURCE_MAX_BYTES:
+            return VERSION_SKEW_UNKNOWN
+        text = source.read_text(encoding="utf-8", errors="replace")
+    except (OSError, ValueError):
+        return VERSION_SKEW_UNKNOWN
+    match = _VERSION_DECLARATION.search(text)
+    if match is None:
+        return VERSION_SKEW_UNKNOWN
+    return match.group(1).strip() or VERSION_SKEW_UNKNOWN
+
+
+def classify_version_skew(serving: Any, installed: Any) -> str:
+    """Compare serving and on-disk versions into a closed set of states.
+
+    Deliberately a level, not a boolean. ``"unknown"`` has to stay distinct
+    from ``"none"``, and a level keeps the unreadable case failing safe under a
+    plain truthiness test: ``if stamp["version_skew"]:`` is true for both
+    ``"skew"`` and ``"unknown"``, so "I could not check" raises attention
+    instead of reading as "the two agree". Claiming agreement is only possible
+    by comparing against ``"none"`` explicitly.
+    """
+    if not isinstance(serving, str) or not isinstance(installed, str):
+        return VERSION_SKEW_UNKNOWN
+    if not serving or not installed:
+        return VERSION_SKEW_UNKNOWN
+    if serving == VERSION_SKEW_UNKNOWN or installed == VERSION_SKEW_UNKNOWN:
+        return VERSION_SKEW_UNKNOWN
+    if serving == installed:
+        return VERSION_SKEW_NONE
+    return VERSION_SKEW_PRESENT
+
+
 class EntrolyEngine:
     """
     Orchestrates all subsystems. Delegates math to Rust when available.
@@ -1233,6 +1300,98 @@ class EntrolyEngine:
         # untouched: a library must not freeze, disable, enable, or collect
         # objects owned by the embedding application or its other threads.
 
+    @property
+    def _index_owner_path(self) -> str:
+        """Sidecar recording which root the persisted index was built from."""
+        return str(Path(self.config.checkpoint_dir) / "index_owner.json")
+
+    def _recorded_index_root(self) -> tuple[str | None, str]:
+        """The root the persisted index belongs to, and how we know.
+
+        Returns ``(root, basis)`` where basis is ``"stamp"``, ``"freshness"``,
+        ``"absent"`` or ``"unreadable"``. ``None`` means provenance could not be
+        established -- which is deliberately distinct from "it does not match",
+        because the two call for different actions.
+
+        The index file itself is written by the native ``persist_index``, whose
+        format is shared with other distributions; a sidecar keeps provenance
+        under Python's control without a cross-version schema change.
+        """
+        try:
+            owner = Path(self._index_owner_path)
+            if owner.is_file():
+                recorded = json.loads(owner.read_text(encoding="utf-8"))
+                root = recorded.get("source_root")
+                if isinstance(root, str) and root:
+                    return root, "stamp"
+            # Written on every index pass by the freshness ledger, so an index
+            # from a current build is identifiable even without a stamp.
+            ledger = Path(self.config.checkpoint_dir) / "index_freshness.json"
+            if ledger.is_file():
+                recorded = json.loads(ledger.read_text(encoding="utf-8"))
+                root = recorded.get("project_dir")
+                if isinstance(root, str) and root:
+                    return root, "freshness"
+        except (OSError, ValueError, TypeError):
+            return None, "unreadable"
+        return None, "absent"
+
+    def _stamp_index_owner(self, source_root: str) -> None:
+        """Record the root this index was built from. Best effort by design."""
+        try:
+            path = Path(self._index_owner_path)
+            path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            temporary = path.with_suffix(f".{os.getpid()}.tmp")
+            temporary.write_text(
+                json.dumps({"schema_version": 1, "source_root": source_root},
+                           sort_keys=True),
+                encoding="utf-8",
+            )
+            os.replace(temporary, path)
+        except OSError as exc:
+            logger.debug("index owner stamp not written: %s", exc)
+
+    def _warm_start_is_permitted(self) -> bool:
+        """Whether the persisted index belongs to the root we intend to serve.
+
+        A persisted index carries no corpus identity of its own, so warm-start
+        used to restore whatever the state directory last held. Two projects
+        sharing an ``ENTROLY_DIR`` -- the normal result of setting it globally
+        or pinning it in a host config -- meant one project's engine could
+        answer from the other's source with no warning at all.
+
+        Refuses on a known mismatch. Unknown provenance is allowed through once,
+        loudly, and stamped so the next session can decide properly: every index
+        written before this check existed is unstamped, and refusing them all
+        would turn a confidentiality fix into a cache wipe for every upgrade.
+        """
+        from .server_source_root import resolved_source_root
+
+        intended = resolved_source_root()
+        recorded, basis = self._recorded_index_root()
+        if recorded is None:
+            if basis != "absent":
+                logger.warning(
+                    "Warm-start index provenance could not be read (%s); "
+                    "restoring it anyway and recording this root", basis,
+                )
+            self._stamp_index_owner(intended)
+            return True
+        try:
+            same = Path(recorded).resolve() == Path(intended).resolve()
+        except (OSError, ValueError):
+            same = str(recorded) == str(intended)
+        if not same:
+            logger.warning(
+                "Refusing the warm-start index: it was built from %s but this "
+                "server serves %s. Sharing one ENTROLY_DIR across projects "
+                "would otherwise answer from the wrong repository. Indexing "
+                "fresh; set a separate ENTROLY_DIR per project to keep both.",
+                recorded, intended,
+            )
+            return False
+        return True
+
     def _ensure_index_loaded(self) -> None:
         """Lazily load the persistent warm-start index on first use.
 
@@ -1245,6 +1404,11 @@ class EntrolyEngine:
             return
         with self._index_load_lock:
             if self._index_loaded:
+                return
+            # Checked inside the lock and before any read: a refusal must mark
+            # the engine loaded-and-empty, or every later call retries it.
+            if not self._warm_start_is_permitted():
+                self._index_loaded = True
                 return
             try:
                 if not self._use_rust:
@@ -2532,6 +2696,13 @@ class EntrolyEngine:
             else self._python_index_state()
         )
         self._write_gzip_index(self._index_path, state)
+        # Stamp the root alongside the bytes, so the next session can tell
+        # whose index this is instead of assuming it is its own.
+        from .server_source_root import resolved_source_root
+
+        self._stamp_index_owner(
+            str(getattr(self, "_indexed_source_root", "") or resolved_source_root())
+        )
         return {
             "status": "persisted",
             "path": self._index_path,
@@ -2683,6 +2854,16 @@ class EntrolyEngine:
         actually live. Dogfooding otherwise had to cross-check the server
         process start time against the compiled core's mtime by hand; expose the
         engine version, whether the native core is active, and its build time.
+
+        Reporting one version number was not enough to answer that question.
+        The number came off the imported module object, bound at process start,
+        so a server that kept running across an upgrade reported the release it
+        had booted on and nothing compared it to what was actually installed; a
+        user who upgraded went on being served the old behaviour with no
+        signal. The stamp now re-reads the version from disk and publishes the
+        comparison as ``version_skew``. ``entroly_version`` keeps its original
+        meaning -- the version this process is serving -- because callers
+        already read it.
         """
         import datetime
         import os
@@ -2692,11 +2873,30 @@ class EntrolyEngine:
             "native_engine": bool(self._use_rust),
             "python": platform.python_version(),
         }
+        serving: Any = VERSION_SKEW_UNKNOWN
+        init_path: Any = None
         try:
             import entroly
-            stamp["entroly_version"] = getattr(entroly, "__version__", "unknown")
+            serving = getattr(entroly, "__version__", "unknown")
+            stamp["entroly_version"] = serving
+            init_path = getattr(entroly, "__file__", None)
         except Exception:
             pass
+        installed = read_declared_version_from_disk(init_path)
+        skew = classify_version_skew(serving, installed)
+        stamp["entroly_version_serving"] = serving
+        stamp["entroly_version_installed"] = installed
+        stamp["version_skew"] = skew
+        if skew == VERSION_SKEW_PRESENT:
+            stamp["version_skew_detail"] = (
+                f"this process is serving {serving} but {installed} is installed "
+                "on disk; restart to pick up the installed version"
+            )
+        elif skew == VERSION_SKEW_UNKNOWN:
+            stamp["version_skew_detail"] = (
+                "could not read the installed version from disk; this is not a "
+                "statement that the serving and installed versions agree"
+            )
         try:
             import entroly_core
             core_file = getattr(entroly_core, "__file__", None)
