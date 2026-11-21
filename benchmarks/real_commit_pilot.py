@@ -223,7 +223,8 @@ def _prompt(context: str, task: dict[str, Any]) -> str:
 
 _ARMS_V1 = ("raw", "selected", "raw_repeat")
 _ARMS_V2 = ("raw", "selected", "raw_repeat", "null")
-_SCORED_OUTCOMES = {"passed", "test_failure", "unusable_patch", "selection_error"}
+# Exhausting the oracle's test budget is a failed attempt, not a transport error.
+_SCORED_OUTCOMES = {"passed", "test_failure", "timeout", "unusable_patch", "selection_error"}
 _PAIR_LABELS = {
     (True, True): "both_passed",
     (False, True): "selected_only_passed",
@@ -309,34 +310,43 @@ def _run_arm(
     repo: Path, task: dict[str, Any], *, arm: str, context: str,
     context_details: dict[str, Any], model: str, base_url: str, seed: int,
     model_timeout: float, test_timeout: int, output_tokens: int, context_window: int,
+    preserve_execution_receipt: bool = False,
 ) -> dict[str, Any]:
-    with _task_worktree(repo, task) as root:
-        prompt = _prompt(context, task)
-        generation = call_model(
-            base_url=base_url, model=model, prompt=prompt,
-            seed=seed, timeout=model_timeout, max_output_tokens=output_tokens,
-            context_window=context_window,
-        )
-        row = {
-            "task_id": task["sha"], "arm": arm, "context": context_details,
-            "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
-            "input_tokens": generation["input_tokens"],
-            "output_tokens": generation["output_tokens"],
-            "latency_s": generation["latency_s"],
-            "response_sha256": hashlib.sha256(generation["text"].encode()).hexdigest(),
-        }
-        try:
-            patch_hash, patch = _apply_patch(root, generation["text"], task["source_files"])
-        except (ValueError, RuntimeError) as exc:
-            return {
-                **row, "outcome": "unusable_patch", "patch_error": str(exc),
-                "model_output": generation["text"],
+    row = None
+    try:
+        with _task_worktree(repo, task) as root:
+            prompt = _prompt(context, task)
+            generation = call_model(
+                base_url=base_url, model=model, prompt=prompt,
+                seed=seed, timeout=model_timeout, max_output_tokens=output_tokens,
+                context_window=context_window,
+            )
+            row = {
+                "task_id": task["sha"], "arm": arm, "context": context_details,
+                "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+                "input_tokens": generation["input_tokens"],
+                "output_tokens": generation["output_tokens"],
+                "latency_s": generation["latency_s"],
+                "response_sha256": hashlib.sha256(generation["text"].encode()).hexdigest(),
             }
-        outcome, oracle_tail = _oracle(root, task, test_timeout)
-        return {
-            **row, "outcome": outcome, "patch_sha256": patch_hash,
-            "model_patch": patch, "oracle_tail": oracle_tail,
-        }
+            try:
+                patch_hash, patch = _apply_patch(root, generation["text"], task["source_files"])
+            except (ValueError, RuntimeError) as exc:
+                row.update(
+                    outcome="unusable_patch", patch_error=str(exc),
+                    model_output=generation["text"],
+                )
+                return row
+            row.update(patch_sha256=patch_hash, model_patch=patch)
+            outcome, oracle_tail = _oracle(root, task, test_timeout)
+            row.update(outcome=outcome, oracle_tail=oracle_tail)
+            return row
+    except (RuntimeError, OSError) as exc:
+        if not preserve_execution_receipt or row is None:
+            raise
+        # Cleanup can fail while returning: retain the receipt accumulated so far.
+        row.update(outcome="execution_error", detail=str(exc))
+        return row
 
 
 def run(protocol_path: Path, tasks_path: Path, repo: Path, output: Path, base_url: str) -> dict[str, Any]:
@@ -462,6 +472,7 @@ def run(protocol_path: Path, tasks_path: Path, repo: Path, output: Path, base_ur
                         test_timeout=protocol["test_timeout_s"],
                         output_tokens=protocol["max_output_tokens"],
                         context_window=protocol["context_window"],
+                        preserve_execution_receipt=(version == 2),
                     )
                 except (RuntimeError, OSError) as exc:
                     if version == 1:

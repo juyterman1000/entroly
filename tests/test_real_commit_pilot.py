@@ -3,7 +3,7 @@
 import json
 import hashlib
 import subprocess
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from types import SimpleNamespace
 
 import pytest
@@ -150,6 +150,104 @@ def test_summary_keeps_losses_errors_exclusions_and_missing_arms():
         summarize([*rows, rows[0]], ["loss", "error", "excluded", "missing"], ("raw", "selected"))
 
 
+@pytest.mark.parametrize("selected_outcome", ["timeout", "execution_error"])
+def test_summary_scores_oracle_timeout_but_not_execution_error(selected_outcome):
+    result = summarize([
+        {"task_id": "task", "arm": "raw", "outcome": "passed"},
+        {"task_id": "task", "arm": "selected", "outcome": selected_outcome},
+    ], ["task"], ("raw", "selected"))
+    assert result["frozen_tasks"] == 1
+    assert result["comparisons_to_selected"]["raw"] == {
+        "both_passed": 0, "selected_only_passed": 0,
+        "baseline_only_passed": int(selected_outcome == "timeout"),
+        "both_failed": 0, "excluded_tasks": 0,
+        "incomplete_or_infrastructure_error": int(selected_outcome == "execution_error"),
+    }
+
+
+@pytest.mark.parametrize("failure_stage", ["oracle", "cleanup"])
+@pytest.mark.parametrize("error_type", [OSError, RuntimeError])
+@pytest.mark.parametrize("preserve_receipt", [False, True])
+def test_run_arm_retains_receipt_on_post_generation_error(
+    tmp_path, monkeypatch, failure_stage, error_type, preserve_receipt,
+):
+    import benchmarks.real_commit_pilot as pilot
+
+    task = {"sha": "a" * 40, "source_files": ["solver.py"], "test_files": ["test_solver.py"]}
+    context_details = {"arm": "selected", "included_sources": ["solver.py"]}
+    context = "def solve(): return 0"
+    response = "--- a/solver.py\n+++ b/solver.py\n@@ -1 +1 @@\n-old\n+new\n"
+    patch_hash = hashlib.sha256(response.encode("utf-8")).hexdigest()
+    error = error_type(f"{failure_stage} failed after generation")
+    calls = []
+
+    @contextmanager
+    def worktree(*args):
+        yield tmp_path
+        if failure_stage == "cleanup":
+            raise error
+
+    def generate(**options):
+        calls.append(options)
+        return {"text": response, "input_tokens": 100, "output_tokens": 25, "latency_s": 1.25}
+
+    def oracle(*args):
+        if failure_stage == "oracle":
+            raise error
+        return "passed", "1 passed"
+
+    monkeypatch.setattr(pilot, "_task_worktree", worktree)
+    monkeypatch.setattr(pilot, "call_model", generate)
+    monkeypatch.setattr(pilot, "_apply_patch", lambda *args: (patch_hash, response))
+    monkeypatch.setattr(pilot, "_oracle", oracle)
+    options = dict(
+        arm="selected", context=context, context_details=context_details,
+        model="local-model", base_url="http://localhost:11434", seed=17,
+        model_timeout=5, test_timeout=5, output_tokens=32, context_window=1024,
+    )
+    if not preserve_receipt:
+        # Omitting the option exercises the default v1 error-raising behavior.
+        with pytest.raises(error_type) as raised:
+            pilot._run_arm(tmp_path, task, **options)
+        assert raised.value is error
+        assert len(calls) == 1
+        return
+
+    row = pilot._run_arm(tmp_path, task, **options, preserve_execution_receipt=True)
+    assert len(calls) == 1
+    assert row == {
+        "task_id": task["sha"], "arm": "selected", "context": context_details,
+        "input_tokens": 100, "output_tokens": 25, "latency_s": 1.25,
+        "prompt_sha256": hashlib.sha256(calls[0]["prompt"].encode("utf-8")).hexdigest(),
+        "response_sha256": hashlib.sha256(response.encode("utf-8")).hexdigest(),
+        "patch_sha256": patch_hash, "model_patch": response,
+        "outcome": "execution_error", "detail": str(error),
+        **({"oracle_tail": "1 passed"} if failure_stage == "cleanup" else {}),
+    }
+
+
+@pytest.mark.parametrize("error_type", [OSError, RuntimeError])
+def test_run_arm_reraises_generation_errors_without_a_receipt(tmp_path, monkeypatch, error_type):
+    import benchmarks.real_commit_pilot as pilot
+
+    task = {"sha": "a" * 40, "source_files": ["solver.py"], "test_files": ["test_solver.py"]}
+    error = error_type("generation failed before receipt")
+
+    def generate(**options):
+        raise error
+
+    monkeypatch.setattr(pilot, "_task_worktree", lambda *args: nullcontext(tmp_path))
+    monkeypatch.setattr(pilot, "call_model", generate)
+    with pytest.raises(error_type) as raised:
+        pilot._run_arm(
+            tmp_path, task, arm="selected", context="", context_details={},
+            model="local-model", base_url="http://localhost:11434", seed=17,
+            model_timeout=5, test_timeout=5, output_tokens=32, context_window=1024,
+            preserve_execution_receipt=True,
+        )
+    assert raised.value is error
+
+
 @pytest.mark.parametrize("version", [1, 2])
 def test_runner_protocol_preserves_v1_and_exercises_v2_controls(tmp_path, monkeypatch, version):
     import entroly
@@ -215,6 +313,7 @@ def test_runner_protocol_preserves_v1_and_exercises_v2_controls(tmp_path, monkey
             _arm_order(version, tasks.index(task), 17)
         )
         for options in task_calls:
+            assert options["preserve_execution_receipt"] is (version == 2)
             assert (options["model"], options["seed"], options["output_tokens"],
                     options["context_window"], options["model_timeout"]) == (
                         "local-model", 17, 32, 1024, 5
