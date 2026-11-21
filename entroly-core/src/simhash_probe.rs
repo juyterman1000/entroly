@@ -27,6 +27,12 @@
 //! family `simhash` uses, so ground truth cannot inherit its collision
 //! structure.
 //!
+//! These are lexical measurements, not semantic duplicate labels. Edited
+//! fragments may change behaviour, and random pairs may contain duplicates.
+//! Neither candidate capture nor high cosine establishes safe hard-drop.
+//! Corpora come from the current working tree; record its revision and local
+//! changes with results. The probe itself is excluded from the code corpus.
+//!
 //! Run:
 //!   cargo test --manifest-path entroly-core/Cargo.toml --lib simhash_probe \
 //!       -- --ignored --nocapture --test-threads=1
@@ -38,14 +44,9 @@ use std::path::{Path, PathBuf};
 const NUM_BANDS: usize = 4;
 const BITS_PER_BAND: usize = 16;
 
-/// Production dedup threshold (`lib.rs`: `hamming_threshold=8`).
-///
-/// Was 3. Arm 8 swept d over this corpus: unrelated pairs have min 14 and
-/// p1 23, so 3 sat far below the empty band between true near-duplicates
-/// (d 5-13) and unrelated content, costing recall for nothing. At 8 the
-/// identifier-rename class merges 12.0% against 1.2%, with zero false
-/// merges in 49,962 unrelated pairs.
-const PROD_THRESHOLD: u32 = 8;
+/// Baseline production threshold. The sweep explores alternatives without
+/// recommending a production change or asserting semantic safety.
+const PROD_THRESHOLD: u32 = 3;
 
 /// Fingerprint width.
 const BITS: f64 = 64.0;
@@ -158,8 +159,8 @@ fn cosine_tf(a: &[(u64, u32)], b: &[(u64, u32)]) -> f64 {
     }
 }
 
-/// Jaccard over the DISTINCT trigrams. Used only to label "is this pair really
-/// a near-duplicate", which is a set question, not a TF question.
+/// Jaccard over DISTINCT trigrams: lexical overlap, not a semantic label or
+/// proof of byte equality.
 fn jaccard_distinct(a: &[(u64, u32)], b: &[(u64, u32)]) -> f64 {
     if a.is_empty() || b.is_empty() {
         return 0.0;
@@ -283,6 +284,8 @@ fn build_corpus() -> Vec<Fragment> {
     let mut files = Vec::new();
     collect_sources(&manifest.join("src"), &mut files);
     collect_sources(&repo_root.join("entroly"), &mut files);
+    // Editing the measurement code must not alter its own input fragments.
+    files.retain(|path| path != &manifest.join("src/simhash_probe.rs"));
 
     let mut frags = Vec::new();
     for path in files {
@@ -420,10 +423,11 @@ fn probe_estimator_calibration() {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// Arm 2 — controlled near-duplicates (dedup recall).
+// Arm 2 — lexical candidate capture on controlled fragment edits.
 // ════════════════════════════════════════════════════════════════════
 
-/// Rename the most frequent identifier-like token, simulating a refactor.
+/// Replace the most frequent identifier-like token as a lexical perturbation.
+/// This is a substring replacement, not a scope-aware, semantics-preserving refactor.
 fn rename_identifier(text: &str) -> String {
     let mut counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
     for w in text.split_whitespace() {
@@ -444,7 +448,7 @@ fn probe_controlled_near_duplicates() {
     let frags = build_corpus();
     assert!(frags.len() > 200, "corpus too small: {}", frags.len());
 
-    /// (label, perturbation) — a named way of producing a near-duplicate.
+    /// (label, perturbation) — edits with no semantic equivalence guarantee.
     type Perturbation<'a> = (&'a str, Box<dyn Fn(&str) -> String>);
 
     let classes: Vec<Perturbation> = vec![
@@ -475,11 +479,11 @@ fn probe_controlled_near_duplicates() {
         ),
     ];
 
-    println!("\n=== ARM 2: near-duplicate recall ===");
+    println!("\n=== ARM 2: lexical candidate capture on edited fragments ===");
     println!("base fragments: {}\n", frags.len());
     println!(
         "{:<26} {:>6} {:>8} {:>8} {:>7} {:>9} {:>9}",
-        "perturbation", "pairs", "jaccard", "cos", "mean d", "banded%", "MERGED%"
+        "perturbation", "pairs", "jaccard", "cos", "mean d", "banded%", "GATED%"
     );
 
     for (label, gen) in &classes {
@@ -525,10 +529,10 @@ fn probe_controlled_near_duplicates() {
     }
 
     println!(
-        "\n'MERGED%' is what DedupIndex::insert actually collapses at d<={} (band gate AND\n\
-         threshold), excluding the exact-content-hash short circuit. MERGED% <= banded%\n\
-         always, and banded% does not depend on the threshold — so raising the threshold\n\
-         cannot lift recall past the band-gate ceiling.\n",
+        "\n'GATED%' measures band match AND d<={}; it does not replay insertion.\n\
+         Gated capture cannot exceed banded capture. Edited fragments may change\n\
+         behaviour, so these rates are lexical capture, not semantic recall or\n\
+         evidence that either fragment can safely be discarded.\n",
         PROD_THRESHOLD
     );
 }
@@ -899,28 +903,23 @@ fn probe_selection_set_size_bias() {
 // ════════════════════════════════════════════════════════════════════
 // Arm 6 — can anything beat the band-gate ceiling at 64 bits?
 //
-// Arm 2 measured the binding constraint: banded% falls to ~17% once an edit
-// drops TF-cosine to ~0.68, and it does not depend on the merge threshold,
-// so no amount of tuning lifts it. Arm 1 measured the other half: the
-// angular estimator already sits at the orthogonality noise floor (sd 0.196
-// at 64 bits), so better arithmetic cannot help either. Only the hash family
-// or the band geometry can.
+// Compare lexical candidate capture across hash families and band geometries.
+// The band gate and the distance threshold are separate filters; neither
+// establishes that an edited fragment is interchangeable with its original.
 //
 // This arm holds the budget at 64 bits and varies both, over the same corpus
 // and the same perturbations Arm 2 uses:
 //
 //   A. SimHash 4x16  — production, the control.
-//   B. SimHash 8x8   — same bits, same family, finer bands. Costs no storage
-//                      and no migration, so it is the bar a family change
-//                      has to clear.
+//   B. SimHash 8x8   — same signature bits and family, finer bands; index and
+//                      lookup costs are measured separately.
 //   C. b=2 MinHash, k=32, 8 bands x 4 rows.
 //   D. b=1 MinHash, k=64, 16 bands x 4 rows.
 //
-// Recall alone would be a misleading score: a scheme that bands everything
-// reaches 100% and destroys the index, because DedupIndex collapsing two
-// distinct fragments silently discards one. Every scheme is therefore also
-// measured on random unrelated pairs, and the two numbers are reported
-// together.
+// Candidate capture alone does not measure precision. Random pairs are also
+// sampled, but remain unlabelled: some may be duplicates and others may differ
+// in behaviour despite high lexical similarity. Report hit rates, not a
+// false-positive rate or a hard-drop safety conclusion.
 //
 // MinHash estimates Jaccard over distinct trigrams; jaccard_distinct above is
 // the matching oracle. SimHash estimates TF-cosine. They are different
@@ -967,7 +966,11 @@ fn minhash_shares_band(a: &[u64], b: &[u64], rows: usize) -> bool {
 fn simhash_shares_band_at(a: u64, b: u64, bands: usize, bits: usize) -> bool {
     (0..bands).any(|i| {
         let shift = (i * bits) as u32;
-        let mask = if bits >= 64 { u64::MAX } else { (1u64 << bits) - 1 };
+        let mask = if bits >= 64 {
+            u64::MAX
+        } else {
+            (1u64 << bits) - 1
+        };
         ((a >> shift) & mask) == ((b >> shift) & mask)
     })
 }
@@ -1005,6 +1008,7 @@ fn probe_band_gate_alternatives() {
 
     println!("\n=== ARM 6: band-gate alternatives at a fixed 64-bit budget ===");
     println!("base fragments: {}\n", frags.len());
+    println!("Lexical candidate capture on edited fragments (not semantic duplicate recall):");
     println!(
         "{:<26} {:>6} {:>7} {:>7} {:>9} {:>9} {:>9} {:>9}",
         "perturbation", "pairs", "jacc", "cos", "SH 4x16", "SH 8x8", "MH b2k32", "MH b1k64"
@@ -1055,10 +1059,7 @@ fn probe_band_gate_alternatives() {
         );
     }
 
-    // Precision control. This is the number that decides whether higher
-    // recall is worth anything: a banded unrelated pair is a candidate the
-    // distance threshold must then reject, and if it does not, DedupIndex
-    // discards a distinct fragment.
+    // Unlabelled random-pair candidate hit rate, not a precision control.
     let mut rng = Rng(0x5EED_1234_ABCD_0001);
     let (mut n, mut sj, mut sc) = (0usize, 0.0f64, 0.0f64);
     let (mut a, mut b, mut c, mut d) = (0usize, 0usize, 0usize, 0usize);
@@ -1088,7 +1089,7 @@ fn probe_band_gate_alternatives() {
     let q = n as f64;
     println!(
         "\n{:<26} {:>6} {:>7.3} {:>7.3} {:>8.2}% {:>8.2}% {:>8.2}% {:>8.2}%",
-        "UNRELATED (false cand.)",
+        "RANDOM (unlabelled)",
         n,
         sj / q,
         sc / q,
@@ -1099,42 +1100,36 @@ fn probe_band_gate_alternatives() {
     );
 
     println!(
-        "\nRead the last row first. Recall above it is worth only what precision\n\
-         here allows: a false candidate that also passes the distance threshold\n\
-         makes DedupIndex discard a distinct fragment, which is strictly worse\n\
-         than missing a duplicate. 8x8 costs no storage and no migration, so a\n\
-         MinHash family change is justified only if it beats that column on\n\
-         recall WITHOUT losing on this row. jacc and cos are printed together\n\
-         because MinHash estimates Jaccard over distinct trigrams while SimHash\n\
-         estimates TF-cosine; a family change silently redefines what similar\n\
-         means for term-frequency-weighted code.\n"
+        "\nColumns measure lexical candidate capture, not semantic duplicate recall.\n\
+         Random pairs are unlabelled, so their hit rate is not a false-positive\n\
+         rate. Jaccard and TF-cosine describe different lexical feature metrics.\n\
+         These measurements do not establish safe hard-drop or justify shipping\n\
+         a hash-family, geometry, or threshold change.\n"
     );
 }
 
 // ════════════════════════════════════════════════════════════════════
-// Arm 7 — the two numbers that decide whether 8x8 can ship.
+// Arm 7 — gated lexical capture and candidate-set sizes for 8x8.
 //
-// Arm 6 showed 8x8 lifts worst-case candidate recall from 17.9% to 76.1%
-// on the same 64 bits, at a false-candidate rate of 3.22% against 0.01%.
-// Candidate recall is not the shipped behaviour, and a 300x rise in false
-// candidates is not free. Two things still have to hold:
+// Candidate capture and index work are measured separately on this snapshot:
 //
-//   1. MERGED% — banded AND d <= PROD_THRESHOLD, which is what DedupIndex
-//      actually collapses. Recall that the threshold rejects is worthless,
-//      and a false candidate the threshold ACCEPTS is a distinct fragment
-//      silently discarded. Both directions are measured here.
+//   1. GATED% — banded AND d <= PROD_THRESHOLD. This evaluates only those two
+//      predicates, not a full DedupIndex insertion or semantic correctness.
 //
 //   2. Candidate-set size — the mean number of fragments sharing at least
 //      one band with a given fragment, over the real corpus. This is the
-//      per-lookup work the band gate exists to bound, so it is the latency
-//      cost of the finer geometry.
+//      proxy for index work, not a latency measurement or shipping gate.
 // ════════════════════════════════════════════════════════════════════
 
 use std::collections::{HashMap, HashSet};
 
 /// Band keys at an arbitrary geometry, mirroring `extract_bands`.
 fn bands_at(fp: u64, bands: usize, bits: usize) -> Vec<u64> {
-    let mask = if bits >= 64 { u64::MAX } else { (1u64 << bits) - 1 };
+    let mask = if bits >= 64 {
+        u64::MAX
+    } else {
+        (1u64 << bits) - 1
+    };
     (0..bands)
         .map(|i| (fp >> ((i * bits) as u32)) & mask)
         .collect()
@@ -1143,7 +1138,8 @@ fn bands_at(fp: u64, bands: usize, bits: usize) -> Vec<u64> {
 /// Mean and p99 of the candidate set a band index would return per fragment.
 ///
 /// Counts distinct other fragments sharing at least one band, which is
-/// exactly the set `DedupIndex` would hand to the Hamming check.
+/// a static full-corpus candidate-count proxy, not the result of replaying
+/// production insertions or measuring their latency.
 fn candidate_set_stats(frags: &[Fragment], bands: usize, bits: usize) -> (f64, usize, usize) {
     let mut buckets: HashMap<(usize, u64), Vec<usize>> = HashMap::new();
     for (idx, f) in frags.iter().enumerate() {
@@ -1175,7 +1171,7 @@ fn candidate_set_stats(frags: &[Fragment], bands: usize, bits: usize) -> (f64, u
 
 #[test]
 #[ignore = "measurement probe; run explicitly with --ignored --nocapture"]
-fn probe_band_geometry_shipping_gates() {
+fn probe_band_geometry_capture_and_candidate_counts() {
     let frags = build_corpus();
     assert!(frags.len() > 200, "corpus too small: {}", frags.len());
 
@@ -1204,11 +1200,15 @@ fn probe_band_geometry_shipping_gates() {
         ),
     ];
 
-    println!("\n=== ARM 7: shipping gates for 8x8 ===");
-    println!("corpus: {} fragments, threshold d <= {}\n", frags.len(), PROD_THRESHOLD);
+    println!("\n=== ARM 7: gated lexical capture and candidate counts for 8x8 ===");
+    println!(
+        "corpus: {} fragments, threshold d <= {}\n",
+        frags.len(),
+        PROD_THRESHOLD
+    );
 
-    // ── Gate 1: what actually merges ──
-    println!("GATE 1 — MERGED% (banded AND d <= {})", PROD_THRESHOLD);
+    // Lexical predicate capture; edited pairs are not semantic positives.
+    println!("EDITED PAIRS — GATED% (banded AND d <= {})", PROD_THRESHOLD);
     println!(
         "{:<26} {:>6} {:>10} {:>10}",
         "perturbation", "pairs", "4x16", "8x8"
@@ -1246,11 +1246,7 @@ fn probe_band_geometry_shipping_gates() {
         );
     }
 
-    // ── Gate 1b: the harm direction ──
-    //
-    // A false MERGE, not a false candidate. This is the number that would
-    // make 8x8 unsafe: an unrelated pair that bands AND passes the Hamming
-    // threshold causes a distinct fragment to be discarded.
+    // Unlabelled random pairs may include duplicates; hits are not false merges.
     let mut rng = Rng(0xC0FF_EE00_1234_5678);
     let (mut n, mut f4, mut f8, mut c4, mut c8) = (0usize, 0usize, 0usize, 0usize, 0usize);
     for _ in 0..50_000usize {
@@ -1279,9 +1275,9 @@ fn probe_band_geometry_shipping_gates() {
     }
     let q = n as f64;
     println!(
-        "\nGATE 1b — unrelated pairs ({} sampled)\n  \
-         false candidates : 4x16 {:.2}%   8x8 {:.2}%\n  \
-         FALSE MERGES     : 4x16 {} ({:.4}%)   8x8 {} ({:.4}%)",
+        "\nRANDOM PAIRS — unlabelled ({} sampled)\n  \
+         band hits  : 4x16 {:.2}%   8x8 {:.2}%\n  \
+         gated hits : 4x16 {} ({:.4}%)   8x8 {} ({:.4}%)",
         n,
         100.0 * c4 as f64 / q,
         100.0 * c8 as f64 / q,
@@ -1291,11 +1287,11 @@ fn probe_band_geometry_shipping_gates() {
         100.0 * f8 as f64 / q
     );
 
-    // ── Gate 2: per-lookup work ──
+    // Static full-corpus candidate counts, not measured lookup latency.
     let (m4, p99_4, max4) = candidate_set_stats(&frags, NUM_BANDS, BITS_PER_BAND);
     let (m8, p99_8, max8) = candidate_set_stats(&frags, 8, 8);
     println!(
-        "\nGATE 2 — candidate set per fragment (corpus of {})\n  \
+        "\nCANDIDATE COUNTS — static set per fragment (corpus of {})\n  \
          4x16 : mean {:.2}  p99 {}  max {}\n  \
          8x8  : mean {:.2}  p99 {}  max {}\n  \
          ratio: mean {:.1}x",
@@ -1310,38 +1306,22 @@ fn probe_band_geometry_shipping_gates() {
     );
 
     println!(
-        "\n8x8 ships only if GATE 1 shows MERGED% strictly improved, GATE 1b shows\n\
-         false merges not materially worse, and GATE 2 shows the candidate set\n\
-         still bounded — the band gate exists to keep the Hamming check off the\n\
-         whole corpus, and a geometry that returns everything has no value even\n\
-         at perfect recall.\n"
+        "\nGated lexical capture and candidate counts describe this corpus only.\n\
+         Random-pair hits are unlabelled, and counts do not measure latency.\n\
+         Semantic duplicate labels and behaviour-changing negative controls\n\
+         are required before making precision or hard-drop safety claims.\n"
     );
 }
 
 // ════════════════════════════════════════════════════════════════════
 // Arm 8 — the threshold sweep, over two corpora.
 //
-// Arm 7 established that the band gate is not the binding constraint:
-// 8x8 lifted candidate recall 17.9% -> 76.1% and moved MERGED% by zero,
-// because production merged at d <= 3 while an identifier rename sits at
-// d ~ 12.6. Every extra candidate was rejected by the Hamming check.
-//
-// So the question is the threshold, not the geometry. This sweeps d and
-// reports, at each value:
-//
-//   * MERGED% per perturbation class — the true positives gained.
-//   * FALSE MERGE% on unrelated pairs — the cost, and the thing that
-//     actually breaks the index, since a false merge silently discards a
-//     distinct fragment.
-//
-// A threshold is only safe below the left tail of the unrelated-pair
-// distance distribution, so that distribution is printed too.
-//
-// One corpus cannot establish this. The code corpus is `.rs`/`.py`; the
-// prose corpus is Markdown, which has a smaller trigram alphabet, shorter
-// fragments, and far more shared boilerplate — exactly where the gap
-// between near-duplicates and unrelated content should be narrowest.
-// Both are swept by the same function so the numbers are comparable.
+// Sweep the band-plus-distance predicates on edited fragments and unlabelled
+// random pairs. Gated capture is lexical, not true-positive recall; random-pair
+// hit rates are not false-merge rates. Even a flat hit rate or a large sampled
+// minimum cannot establish safety for behaviour-changing near neighbours.
+// Both corpora are drawn from the current repository working tree, not an
+// independent holdout. No historical percentages are embedded as conclusions.
 // ════════════════════════════════════════════════════════════════════
 
 fn collect_sources_ext(root: &Path, out: &mut Vec<PathBuf>, exts: &[&str]) {
@@ -1395,8 +1375,7 @@ fn chunk_prose(text: &str, origin: &str) -> Vec<(String, String)> {
         if e.saturating_sub(s) < 3 {
             continue;
         }
-        let body = lines[s..e].join("
-");
+        let body = lines[s..e].join("\n");
         if body.split_whitespace().count() < 20 {
             continue;
         }
@@ -1405,17 +1384,22 @@ fn chunk_prose(text: &str, origin: &str) -> Vec<(String, String)> {
     out
 }
 
+/// Root recursion already includes docs; visit each Markdown filename once.
+fn prose_source_paths(repo_root: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    collect_sources_ext(repo_root, &mut files, &["md"]);
+    files.sort();
+    files.dedup();
+    files
+}
+
 /// Markdown corpus: prose, short fragments, heavy boilerplate.
 fn build_prose_corpus() -> Vec<Fragment> {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let repo_root = manifest.parent().unwrap_or(&manifest).to_path_buf();
 
-    let mut files = Vec::new();
-    collect_sources_ext(&repo_root.join("docs"), &mut files, &["md"]);
-    collect_sources_ext(&repo_root, &mut files, &["md"]);
-
     let mut frags = Vec::new();
-    for path in files {
+    for path in prose_source_paths(&repo_root) {
         if frags.len() >= MAX_FRAGMENTS {
             break;
         }
@@ -1444,6 +1428,75 @@ fn build_prose_corpus() -> Vec<Fragment> {
         }
     }
     frags
+}
+
+#[test]
+fn corpus_origins_are_unique_and_probe_is_excluded() {
+    for frags in [build_corpus(), build_prose_corpus()] {
+        assert!(!frags.is_empty());
+        let mut origins = HashSet::new();
+        for frag in &frags {
+            assert!(
+                origins.insert(&frag.origin),
+                "repeated origin: {}",
+                frag.origin
+            );
+            assert!(!frag
+                .origin
+                .starts_with("entroly-core/src/simhash_probe.rs:"));
+        }
+    }
+}
+
+#[test]
+fn prose_filenames_include_nested_docs_once() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(root.path().join("docs/nested")).unwrap();
+    let expected = vec![
+        root.path().join("README.md"),
+        root.path().join("docs/guide.md"),
+        root.path().join("docs/nested/details.md"),
+    ];
+    for path in &expected {
+        std::fs::write(path, "# Documentation\n").unwrap();
+    }
+    std::fs::write(root.path().join("docs/ignored.txt"), "not Markdown").unwrap();
+    assert_eq!(prose_source_paths(root.path()), expected);
+}
+
+#[test]
+fn prose_chunking_splits_headings_and_preserves_text_and_origins() {
+    let first = "# First section\nThese words provide enough content for the first documentation section.\nAnother line describes the expected result with useful detail for readers.";
+    let second = "## Second section\nThese words provide enough content for the second documentation section.\nAnother line describes a different result with useful detail for readers.";
+    let text = format!("{}\n{}\n", first, second);
+    assert_eq!(
+        chunk_prose(&text, "guide.md"),
+        vec![
+            ("guide.md:1".into(), first.into()),
+            ("guide.md:4".into(), second.into())
+        ],
+    );
+}
+
+#[test]
+fn prose_chunking_falls_back_to_fixed_windows_without_headings() {
+    let lines: Vec<String> = (0..85)
+        .map(|i| {
+            format!(
+                "Line {} provides several words of flat documentation content.",
+                i
+            )
+        })
+        .collect();
+    assert_eq!(
+        chunk_prose(&lines.join("\n"), "flat.md"),
+        vec![
+            ("flat.md:1".into(), lines[..40].join("\n")),
+            ("flat.md:41".into(), lines[40..80].join("\n")),
+            ("flat.md:81".into(), lines[80..].join("\n")),
+        ],
+    );
+    assert!(chunk_prose("", "empty.md").is_empty());
 }
 
 /// The sweep itself. Shared so both corpora are measured identically.
@@ -1498,7 +1551,7 @@ fn run_threshold_sweep(frags: &[Fragment], corpus_label: &str) {
     }
 
     let mut rng = Rng(0xD15C_0FFE_E5EE_D001);
-    let mut unrelated: Vec<(u32, bool)> = Vec::new();
+    let mut random_pairs: Vec<(u32, bool)> = Vec::new();
     for _ in 0..50_000usize {
         let i = rng.below(frags.len());
         let j = rng.below(frags.len());
@@ -1506,7 +1559,7 @@ fn run_threshold_sweep(frags: &[Fragment], corpus_label: &str) {
             continue;
         }
         let (x, y) = (&frags[i], &frags[j]);
-        unrelated.push((
+        random_pairs.push((
             hamming_distance(x.fingerprint, y.fingerprint),
             shares_band(x.fingerprint, y.fingerprint),
         ));
@@ -1524,30 +1577,31 @@ fn run_threshold_sweep(frags: &[Fragment], corpus_label: &str) {
     };
 
     println!(
-        "\n--- {} : {} fragments, {} unrelated pairs ---",
+        "\n--- {} : {} fragments, {} unlabelled random pairs ---",
         corpus_label,
         frags.len(),
-        unrelated.len()
+        random_pairs.len()
     );
+    println!("Edited columns: lexical gated capture; RANDOM GATED: unlabelled pair hit rate.");
     print!("{:>3}", "d");
     for (label, _) in &per_class {
         print!(" {:>14}", &label[..label.len().min(14)]);
     }
-    println!(" {:>12}", "FALSE MERGE");
+    println!(" {:>12}", "RANDOM GATED");
 
     for d in [1u32, 2, 3, 4, 6, 8, 10, 12, 14, 16, 20] {
         print!("{:>3}", d);
         for (_, rows) in &per_class {
             print!(" {:>13.1}%", pct(rows, d, true));
         }
-        println!(" {:>11.4}%", pct(&unrelated, d, true));
+        println!(" {:>11.4}%", pct(&random_pairs, d, true));
     }
 
-    let mut dists: Vec<u32> = unrelated.iter().map(|(d, _)| *d).collect();
+    let mut dists: Vec<u32> = random_pairs.iter().map(|(d, _)| *d).collect();
     dists.sort_unstable();
     let q = |p: usize| dists[(dists.len() * p / 100).min(dists.len().saturating_sub(1))];
     println!(
-        "unrelated-pair distance: min {} p1 {} p5 {} p50 {}   <- safe thresholds live below min",
+        "unlabelled random-pair distance: min {} p1 {} p5 {} p50 {} (not a safety bound)",
         dists.first().copied().unwrap_or(0),
         q(1),
         q(5),
@@ -1577,20 +1631,20 @@ fn probe_dedup_threshold_sweep() {
     }
 
     println!(
-        "\nA threshold generalises only if the unrelated-pair minimum stays above\n\
-         it on BOTH corpora. Prose has a smaller trigram alphabet and more shared\n\
-         boilerplate than code, so its unrelated pairs sit closer together; that\n\
-         is the corpus that decides the ceiling, not the code one.\n"
+        "\nThese are lexical predicate-capture rates on two repository corpora.\n\
+         Edited pairs may change behaviour; random pairs have no semantic labels.\n\
+         Their distance minima and gated rates do not bound false merges or\n\
+         establish a safe production threshold.\n"
     );
 }
 #[test]
 #[ignore = "measurement probe; run explicitly with --ignored --nocapture"]
-fn probe_prose_zero_distance_pairs_are_real_duplicates() {
+fn probe_prose_gated_pair_diagnostics() {
     let frags = build_prose_corpus();
     assert!(frags.len() > 100);
     let mut rng = Rng(0xD15C_0FFE_E5EE_D001);
-    let (mut checked, mut close, mut truly_similar) = (0usize, 0usize, 0usize);
-    let mut examples: Vec<(f64, f64, String, String)> = Vec::new();
+    let (mut checked, mut close, mut byte_identical) = (0usize, 0usize, 0usize);
+    let mut examples: Vec<(f64, f64, bool, String, String)> = Vec::new();
     for _ in 0..50_000usize {
         let i = rng.below(frags.len());
         let j = rng.below(frags.len());
@@ -1605,22 +1659,30 @@ fn probe_prose_zero_distance_pairs_are_real_duplicates() {
             close += 1;
             let c = cosine_tf(&x.tf, &y.tf);
             let jc = jaccard_distinct(&x.tf, &y.tf);
-            if c > 0.8 {
-                truly_similar += 1;
+            let same_bytes = x.body == y.body;
+            if same_bytes {
+                byte_identical += 1;
             }
             if examples.len() < 5 {
-                examples.push((c, jc, x.origin.clone(), y.origin.clone()));
+                examples.push((c, jc, same_bytes, x.origin.clone(), y.origin.clone()));
             }
         }
     }
-    println!("\n=== prose pairs that WOULD merge at d <= {} ===", PROD_THRESHOLD);
-    println!("sampled {checked}, would-merge {close}, of which cosine > 0.8: {truly_similar}");
-    for (c, j, a, b) in &examples {
-        println!("  cos {:.3}  jacc {:.3}   {}  <->  {}", c, j, a, b);
+    println!(
+        "\n=== unlabelled prose pairs passing band and d <= {} ===",
+        PROD_THRESHOLD
+    );
+    println!("sampled {checked}, gated {close}, of which byte-identical: {byte_identical}");
+    for (c, j, same_bytes, a, b) in &examples {
+        println!(
+            "  cos {:.3}  jacc {:.3}  same_bytes {}   {}  <->  {}",
+            c, j, same_bytes, a, b
+        );
     }
     println!(
-        "\nIf cosine is high these are genuine duplicate prose (shared boilerplate\n\
-         across documents), so collapsing them is correct behaviour and the rate\n\
-         is not a false-merge rate. If cosine is low they are real errors.\n"
+        "\nByte equality is checked directly on the chunked text. High cosine or\n\
+         Jaccard alone proves neither byte equality nor semantic equivalence.\n\
+         Non-identical gated pairs require independent labels; this diagnostic\n\
+         does not establish that hard-dropping either fragment is safe.\n"
     );
 }

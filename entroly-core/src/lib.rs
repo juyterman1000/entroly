@@ -362,7 +362,7 @@ impl EntrolyEngine {
     #[pyo3(signature = (
         w_recency=0.30, w_frequency=0.25, w_semantic=0.25, w_entropy=0.20,
         decay_half_life=15, min_relevance=0.05,
-        hamming_threshold=8, exploration_rate=0.0, max_fragments=10000,
+        hamming_threshold=3, exploration_rate=0.0, max_fragments=10000,
         enable_ios=true, enable_ios_diversity=true, enable_ios_multi_resolution=true,
         ios_skeleton_info_factor=0.70, ios_belief_info_factor=0.50, ios_reference_info_factor=0.15, ios_diversity_floor=0.10
     ))]
@@ -470,11 +470,7 @@ impl EntrolyEngine {
             // Fragment Consolidation
             total_consolidations: 0,
             consolidation_tokens_saved: 0,
-            // Equal to dedup since dedup moved 3 -> 8. It was deliberately
-            // wider than dedup's 3 to catch near-dupes dedup let through;
-            // that gap is now closed, so this pass currently adds nothing and
-            // wants its own measurement rather than a guessed larger number.
-            consolidation_hamming_threshold: 8,
+            consolidation_hamming_threshold: 8, // wider than dedup (3) to catch near-dupes
             // Causal Context Graph
             causal_graph: CausalContextGraph::new(),
             enable_causal: true,
