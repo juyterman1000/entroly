@@ -27,6 +27,12 @@
 //! family `simhash` uses, so ground truth cannot inherit its collision
 //! structure.
 //!
+//! These are lexical measurements, not semantic duplicate labels. Edited
+//! fragments may change behaviour, and random pairs may contain duplicates.
+//! Neither candidate capture nor high cosine establishes safe hard-drop.
+//! Corpora come from the current working tree; record its revision and local
+//! changes with results. The probe itself is excluded from the code corpus.
+//!
 //! Run:
 //!   cargo test --manifest-path entroly-core/Cargo.toml --lib simhash_probe \
 //!       -- --ignored --nocapture --test-threads=1
@@ -38,7 +44,8 @@ use std::path::{Path, PathBuf};
 const NUM_BANDS: usize = 4;
 const BITS_PER_BAND: usize = 16;
 
-/// Production dedup threshold (`lib.rs`: `hamming_threshold=3`).
+/// Baseline production threshold. The sweep explores alternatives without
+/// recommending a production change or asserting semantic safety.
 const PROD_THRESHOLD: u32 = 3;
 
 /// Fingerprint width.
@@ -152,8 +159,8 @@ fn cosine_tf(a: &[(u64, u32)], b: &[(u64, u32)]) -> f64 {
     }
 }
 
-/// Jaccard over the DISTINCT trigrams. Used only to label "is this pair really
-/// a near-duplicate", which is a set question, not a TF question.
+/// Jaccard over DISTINCT trigrams: lexical overlap, not a semantic label or
+/// proof of byte equality.
 fn jaccard_distinct(a: &[(u64, u32)], b: &[(u64, u32)]) -> f64 {
     if a.is_empty() || b.is_empty() {
         return 0.0;
@@ -277,6 +284,8 @@ fn build_corpus() -> Vec<Fragment> {
     let mut files = Vec::new();
     collect_sources(&manifest.join("src"), &mut files);
     collect_sources(&repo_root.join("entroly"), &mut files);
+    // Editing the measurement code must not alter its own input fragments.
+    files.retain(|path| path != &manifest.join("src/simhash_probe.rs"));
 
     let mut frags = Vec::new();
     for path in files {
@@ -414,10 +423,11 @@ fn probe_estimator_calibration() {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// Arm 2 — controlled near-duplicates (dedup recall).
+// Arm 2 — lexical candidate capture on controlled fragment edits.
 // ════════════════════════════════════════════════════════════════════
 
-/// Rename the most frequent identifier-like token, simulating a refactor.
+/// Replace the most frequent identifier-like token as a lexical perturbation.
+/// This is a substring replacement, not a scope-aware, semantics-preserving refactor.
 fn rename_identifier(text: &str) -> String {
     let mut counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
     for w in text.split_whitespace() {
@@ -438,7 +448,7 @@ fn probe_controlled_near_duplicates() {
     let frags = build_corpus();
     assert!(frags.len() > 200, "corpus too small: {}", frags.len());
 
-    /// (label, perturbation) — a named way of producing a near-duplicate.
+    /// (label, perturbation) — edits with no semantic equivalence guarantee.
     type Perturbation<'a> = (&'a str, Box<dyn Fn(&str) -> String>);
 
     let classes: Vec<Perturbation> = vec![
@@ -469,11 +479,11 @@ fn probe_controlled_near_duplicates() {
         ),
     ];
 
-    println!("\n=== ARM 2: near-duplicate recall ===");
+    println!("\n=== ARM 2: lexical candidate capture on edited fragments ===");
     println!("base fragments: {}\n", frags.len());
     println!(
         "{:<26} {:>6} {:>8} {:>8} {:>7} {:>9} {:>9}",
-        "perturbation", "pairs", "jaccard", "cos", "mean d", "banded%", "MERGED%"
+        "perturbation", "pairs", "jaccard", "cos", "mean d", "banded%", "GATED%"
     );
 
     for (label, gen) in &classes {
@@ -519,10 +529,10 @@ fn probe_controlled_near_duplicates() {
     }
 
     println!(
-        "\n'MERGED%' is what DedupIndex::insert actually collapses at d<={} (band gate AND\n\
-         threshold), excluding the exact-content-hash short circuit. MERGED% <= banded%\n\
-         always, and banded% does not depend on the threshold — so raising the threshold\n\
-         cannot lift recall past the band-gate ceiling.\n",
+        "\n'GATED%' measures band match AND d<={}; it does not replay insertion.\n\
+         Gated capture cannot exceed banded capture. Edited fragments may change\n\
+         behaviour, so these rates are lexical capture, not semantic recall or\n\
+         evidence that either fragment can safely be discarded.\n",
         PROD_THRESHOLD
     );
 }
@@ -888,4 +898,791 @@ fn probe_selection_set_size_bias() {
     }
     println!("\n(diversity mult 1.0 = no penalty; 0.10 = floor. A usable bound must");
     println!(" keep real duplicates well below 1.0 while leaving unrelated at 1.0.)\n");
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Arm 6 — can anything beat the band-gate ceiling at 64 bits?
+//
+// Compare lexical candidate capture across hash families and band geometries.
+// The band gate and the distance threshold are separate filters; neither
+// establishes that an edited fragment is interchangeable with its original.
+//
+// This arm holds the budget at 64 bits and varies both, over the same corpus
+// and the same perturbations Arm 2 uses:
+//
+//   A. SimHash 4x16  — production, the control.
+//   B. SimHash 8x8   — same signature bits and family, finer bands; index and
+//                      lookup costs are measured separately.
+//   C. b=2 MinHash, k=32, 8 bands x 4 rows.
+//   D. b=1 MinHash, k=64, 16 bands x 4 rows.
+//
+// Candidate capture alone does not measure precision. Random pairs are also
+// sampled, but remain unlabelled: some may be duplicates and others may differ
+// in behaviour despite high lexical similarity. Report hit rates, not a
+// false-positive rate or a hard-drop safety conclusion.
+//
+// MinHash estimates Jaccard over distinct trigrams; jaccard_distinct above is
+// the matching oracle. SimHash estimates TF-cosine. They are different
+// quantities, so the table prints both: a family change silently redefines
+// what "similar" means for term-frequency-weighted code.
+// ════════════════════════════════════════════════════════════════════
+
+/// Odd multipliers for universal hashing; odd keeps multiply-shift bijective.
+fn minhash_params(i: usize) -> (u64, u64) {
+    let a = (i as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
+    let b = (i as u64).wrapping_mul(0xBF58_476D_1CE4_E5B9) | 1;
+    (a, b)
+}
+
+/// k-permutation MinHash over the *distinct* trigrams, truncated to `b` bits.
+///
+/// Distinct rather than TF-weighted, so the signature estimates the same
+/// quantity `jaccard_distinct` computes. Returns one value per permutation;
+/// only the low `b` bits of each are ever compared.
+fn minhash_bbit(tf: &[(u64, u32)], k: usize, b: u32) -> Vec<u64> {
+    let mask = if b >= 64 { u64::MAX } else { (1u64 << b) - 1 };
+    let mut sig = vec![u64::MAX; k];
+    for &(term, _count) in tf {
+        for (i, slot) in sig.iter_mut().enumerate() {
+            let (a, c) = minhash_params(i);
+            let h = term.wrapping_mul(a) ^ c;
+            if h < *slot {
+                *slot = h;
+            }
+        }
+    }
+    sig.iter().map(|h| h & mask).collect()
+}
+
+/// True when any band of `rows` consecutive signature entries matches exactly.
+fn minhash_shares_band(a: &[u64], b: &[u64], rows: usize) -> bool {
+    a.chunks(rows)
+        .zip(b.chunks(rows))
+        .any(|(x, y)| x.len() == rows && x == y)
+}
+
+/// SimHash band gate at an arbitrary geometry, so 8x8 can be compared with
+/// the production 4x16 without touching `dedup.rs`.
+fn simhash_shares_band_at(a: u64, b: u64, bands: usize, bits: usize) -> bool {
+    (0..bands).any(|i| {
+        let shift = (i * bits) as u32;
+        let mask = if bits >= 64 {
+            u64::MAX
+        } else {
+            (1u64 << bits) - 1
+        };
+        ((a >> shift) & mask) == ((b >> shift) & mask)
+    })
+}
+
+#[test]
+#[ignore = "measurement probe; run explicitly with --ignored --nocapture"]
+fn probe_band_gate_alternatives() {
+    let frags = build_corpus();
+    assert!(frags.len() > 200, "corpus too small: {}", frags.len());
+
+    type Perturbation<'a> = (&'a str, Box<dyn Fn(&str) -> String>);
+    let classes: Vec<Perturbation> = vec![
+        (
+            "comment prepended",
+            Box::new(|t: &str| format!("// NOTE: reviewed for correctness.\n{}", t)),
+        ),
+        (
+            "one line changed",
+            Box::new(|t: &str| {
+                let mut lines: Vec<String> = t.lines().map(String::from).collect();
+                let mid = lines.len() / 2;
+                lines[mid] = "    let adjusted_value = compute_replacement_here();".into();
+                lines.join("\n")
+            }),
+        ),
+        ("identifier renamed", Box::new(rename_identifier)),
+        (
+            "overlapping window (75%)",
+            Box::new(|t: &str| {
+                let lines: Vec<&str> = t.lines().collect();
+                lines[lines.len() / 4..].join("\n")
+            }),
+        ),
+    ];
+
+    println!("\n=== ARM 6: band-gate alternatives at a fixed 64-bit budget ===");
+    println!("base fragments: {}\n", frags.len());
+    println!("Lexical candidate capture on edited fragments (not semantic duplicate recall):");
+    println!(
+        "{:<26} {:>6} {:>7} {:>7} {:>9} {:>9} {:>9} {:>9}",
+        "perturbation", "pairs", "jacc", "cos", "SH 4x16", "SH 8x8", "MH b2k32", "MH b1k64"
+    );
+
+    for (label, gen) in &classes {
+        let (mut n, mut sj, mut sc) = (0usize, 0.0f64, 0.0f64);
+        let (mut a, mut b, mut c, mut d) = (0usize, 0usize, 0usize, 0usize);
+
+        for f in frags.iter() {
+            let twin = gen(&f.body);
+            let tf = trigram_tf(&twin);
+            if tf.len() < 5 {
+                continue;
+            }
+            let fp = simhash(&twin);
+            n += 1;
+            sj += jaccard_distinct(&f.tf, &tf);
+            sc += cosine_tf(&f.tf, &tf);
+
+            if simhash_shares_band_at(f.fingerprint, fp, NUM_BANDS, BITS_PER_BAND) {
+                a += 1;
+            }
+            if simhash_shares_band_at(f.fingerprint, fp, 8, 8) {
+                b += 1;
+            }
+            if minhash_shares_band(&minhash_bbit(&f.tf, 32, 2), &minhash_bbit(&tf, 32, 2), 4) {
+                c += 1;
+            }
+            if minhash_shares_band(&minhash_bbit(&f.tf, 64, 1), &minhash_bbit(&tf, 64, 1), 4) {
+                d += 1;
+            }
+        }
+        if n == 0 {
+            continue;
+        }
+        let q = n as f64;
+        println!(
+            "{:<26} {:>6} {:>7.3} {:>7.3} {:>8.1}% {:>8.1}% {:>8.1}% {:>8.1}%",
+            label,
+            n,
+            sj / q,
+            sc / q,
+            100.0 * a as f64 / q,
+            100.0 * b as f64 / q,
+            100.0 * c as f64 / q,
+            100.0 * d as f64 / q
+        );
+    }
+
+    // Unlabelled random-pair candidate hit rate, not a precision control.
+    let mut rng = Rng(0x5EED_1234_ABCD_0001);
+    let (mut n, mut sj, mut sc) = (0usize, 0.0f64, 0.0f64);
+    let (mut a, mut b, mut c, mut d) = (0usize, 0usize, 0usize, 0usize);
+    for _ in 0..20_000usize {
+        let i = rng.below(frags.len());
+        let j = rng.below(frags.len());
+        if i == j {
+            continue;
+        }
+        let (x, y) = (&frags[i], &frags[j]);
+        n += 1;
+        sj += jaccard_distinct(&x.tf, &y.tf);
+        sc += cosine_tf(&x.tf, &y.tf);
+        if simhash_shares_band_at(x.fingerprint, y.fingerprint, NUM_BANDS, BITS_PER_BAND) {
+            a += 1;
+        }
+        if simhash_shares_band_at(x.fingerprint, y.fingerprint, 8, 8) {
+            b += 1;
+        }
+        if minhash_shares_band(&minhash_bbit(&x.tf, 32, 2), &minhash_bbit(&y.tf, 32, 2), 4) {
+            c += 1;
+        }
+        if minhash_shares_band(&minhash_bbit(&x.tf, 64, 1), &minhash_bbit(&y.tf, 64, 1), 4) {
+            d += 1;
+        }
+    }
+    let q = n as f64;
+    println!(
+        "\n{:<26} {:>6} {:>7.3} {:>7.3} {:>8.2}% {:>8.2}% {:>8.2}% {:>8.2}%",
+        "RANDOM (unlabelled)",
+        n,
+        sj / q,
+        sc / q,
+        100.0 * a as f64 / q,
+        100.0 * b as f64 / q,
+        100.0 * c as f64 / q,
+        100.0 * d as f64 / q
+    );
+
+    println!(
+        "\nColumns measure lexical candidate capture, not semantic duplicate recall.\n\
+         Random pairs are unlabelled, so their hit rate is not a false-positive\n\
+         rate. Jaccard and TF-cosine describe different lexical feature metrics.\n\
+         These measurements do not establish safe hard-drop or justify shipping\n\
+         a hash-family, geometry, or threshold change.\n"
+    );
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Arm 7 — gated lexical capture and candidate-set sizes for 8x8.
+//
+// Candidate capture and index work are measured separately on this snapshot:
+//
+//   1. GATED% — banded AND d <= PROD_THRESHOLD. This evaluates only those two
+//      predicates, not a full DedupIndex insertion or semantic correctness.
+//
+//   2. Candidate-set size — the mean number of fragments sharing at least
+//      one band with a given fragment, over the real corpus. This is the
+//      proxy for index work, not a latency measurement or shipping gate.
+// ════════════════════════════════════════════════════════════════════
+
+use std::collections::{HashMap, HashSet};
+
+/// Band keys at an arbitrary geometry, mirroring `extract_bands`.
+fn bands_at(fp: u64, bands: usize, bits: usize) -> Vec<u64> {
+    let mask = if bits >= 64 {
+        u64::MAX
+    } else {
+        (1u64 << bits) - 1
+    };
+    (0..bands)
+        .map(|i| (fp >> ((i * bits) as u32)) & mask)
+        .collect()
+}
+
+/// Mean and p99 of the candidate set a band index would return per fragment.
+///
+/// Counts distinct other fragments sharing at least one band, which is
+/// a static full-corpus candidate-count proxy, not the result of replaying
+/// production insertions or measuring their latency.
+fn candidate_set_stats(frags: &[Fragment], bands: usize, bits: usize) -> (f64, usize, usize) {
+    let mut buckets: HashMap<(usize, u64), Vec<usize>> = HashMap::new();
+    for (idx, f) in frags.iter().enumerate() {
+        for (b, key) in bands_at(f.fingerprint, bands, bits).into_iter().enumerate() {
+            buckets.entry((b, key)).or_default().push(idx);
+        }
+    }
+
+    let mut sizes: Vec<usize> = Vec::with_capacity(frags.len());
+    for (idx, f) in frags.iter().enumerate() {
+        let mut seen: HashSet<usize> = HashSet::new();
+        for (b, key) in bands_at(f.fingerprint, bands, bits).into_iter().enumerate() {
+            if let Some(ids) = buckets.get(&(b, key)) {
+                for &other in ids {
+                    if other != idx {
+                        seen.insert(other);
+                    }
+                }
+            }
+        }
+        sizes.push(seen.len());
+    }
+    sizes.sort_unstable();
+    let mean = sizes.iter().sum::<usize>() as f64 / sizes.len().max(1) as f64;
+    let p99 = sizes[(sizes.len() * 99 / 100).min(sizes.len() - 1)];
+    let max = *sizes.last().unwrap_or(&0);
+    (mean, p99, max)
+}
+
+#[test]
+#[ignore = "measurement probe; run explicitly with --ignored --nocapture"]
+fn probe_band_geometry_capture_and_candidate_counts() {
+    let frags = build_corpus();
+    assert!(frags.len() > 200, "corpus too small: {}", frags.len());
+
+    type Perturbation<'a> = (&'a str, Box<dyn Fn(&str) -> String>);
+    let classes: Vec<Perturbation> = vec![
+        (
+            "comment prepended",
+            Box::new(|t: &str| format!("// NOTE: reviewed for correctness.\n{}", t)),
+        ),
+        (
+            "one line changed",
+            Box::new(|t: &str| {
+                let mut lines: Vec<String> = t.lines().map(String::from).collect();
+                let mid = lines.len() / 2;
+                lines[mid] = "    let adjusted_value = compute_replacement_here();".into();
+                lines.join("\n")
+            }),
+        ),
+        ("identifier renamed", Box::new(rename_identifier)),
+        (
+            "overlapping window (75%)",
+            Box::new(|t: &str| {
+                let lines: Vec<&str> = t.lines().collect();
+                lines[lines.len() / 4..].join("\n")
+            }),
+        ),
+    ];
+
+    println!("\n=== ARM 7: gated lexical capture and candidate counts for 8x8 ===");
+    println!(
+        "corpus: {} fragments, threshold d <= {}\n",
+        frags.len(),
+        PROD_THRESHOLD
+    );
+
+    // Lexical predicate capture; edited pairs are not semantic positives.
+    println!("EDITED PAIRS — GATED% (banded AND d <= {})", PROD_THRESHOLD);
+    println!(
+        "{:<26} {:>6} {:>10} {:>10}",
+        "perturbation", "pairs", "4x16", "8x8"
+    );
+    for (label, gen) in &classes {
+        let (mut n, mut m4, mut m8) = (0usize, 0usize, 0usize);
+        for f in frags.iter() {
+            let twin = gen(&f.body);
+            let tf = trigram_tf(&twin);
+            if tf.len() < 5 {
+                continue;
+            }
+            let fp = simhash(&twin);
+            let d = hamming_distance(f.fingerprint, fp);
+            n += 1;
+            if d <= PROD_THRESHOLD {
+                if simhash_shares_band_at(f.fingerprint, fp, NUM_BANDS, BITS_PER_BAND) {
+                    m4 += 1;
+                }
+                if simhash_shares_band_at(f.fingerprint, fp, 8, 8) {
+                    m8 += 1;
+                }
+            }
+        }
+        if n == 0 {
+            continue;
+        }
+        let q = n as f64;
+        println!(
+            "{:<26} {:>6} {:>9.1}% {:>9.1}%",
+            label,
+            n,
+            100.0 * m4 as f64 / q,
+            100.0 * m8 as f64 / q
+        );
+    }
+
+    // Unlabelled random pairs may include duplicates; hits are not false merges.
+    let mut rng = Rng(0xC0FF_EE00_1234_5678);
+    let (mut n, mut f4, mut f8, mut c4, mut c8) = (0usize, 0usize, 0usize, 0usize, 0usize);
+    for _ in 0..50_000usize {
+        let i = rng.below(frags.len());
+        let j = rng.below(frags.len());
+        if i == j {
+            continue;
+        }
+        let (x, y) = (&frags[i], &frags[j]);
+        let d = hamming_distance(x.fingerprint, y.fingerprint);
+        n += 1;
+        let b4 = simhash_shares_band_at(x.fingerprint, y.fingerprint, NUM_BANDS, BITS_PER_BAND);
+        let b8 = simhash_shares_band_at(x.fingerprint, y.fingerprint, 8, 8);
+        if b4 {
+            c4 += 1;
+            if d <= PROD_THRESHOLD {
+                f4 += 1;
+            }
+        }
+        if b8 {
+            c8 += 1;
+            if d <= PROD_THRESHOLD {
+                f8 += 1;
+            }
+        }
+    }
+    let q = n as f64;
+    println!(
+        "\nRANDOM PAIRS — unlabelled ({} sampled)\n  \
+         band hits  : 4x16 {:.2}%   8x8 {:.2}%\n  \
+         gated hits : 4x16 {} ({:.4}%)   8x8 {} ({:.4}%)",
+        n,
+        100.0 * c4 as f64 / q,
+        100.0 * c8 as f64 / q,
+        f4,
+        100.0 * f4 as f64 / q,
+        f8,
+        100.0 * f8 as f64 / q
+    );
+
+    // Static full-corpus candidate counts, not measured lookup latency.
+    let (m4, p99_4, max4) = candidate_set_stats(&frags, NUM_BANDS, BITS_PER_BAND);
+    let (m8, p99_8, max8) = candidate_set_stats(&frags, 8, 8);
+    println!(
+        "\nCANDIDATE COUNTS — static set per fragment (corpus of {})\n  \
+         4x16 : mean {:.2}  p99 {}  max {}\n  \
+         8x8  : mean {:.2}  p99 {}  max {}\n  \
+         ratio: mean {:.1}x",
+        frags.len(),
+        m4,
+        p99_4,
+        max4,
+        m8,
+        p99_8,
+        max8,
+        if m4 > 0.0 { m8 / m4 } else { f64::INFINITY }
+    );
+
+    println!(
+        "\nGated lexical capture and candidate counts describe this corpus only.\n\
+         Random-pair hits are unlabelled, and counts do not measure latency.\n\
+         Semantic duplicate labels and behaviour-changing negative controls\n\
+         are required before making precision or hard-drop safety claims.\n"
+    );
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Arm 8 — the threshold sweep, over two corpora.
+//
+// Sweep the band-plus-distance predicates on edited fragments and unlabelled
+// random pairs. Gated capture is lexical, not true-positive recall; random-pair
+// hit rates are not false-merge rates. Even a flat hit rate or a large sampled
+// minimum cannot establish safety for behaviour-changing near neighbours.
+// Both corpora are drawn from the current repository working tree, not an
+// independent holdout. No historical percentages are embedded as conclusions.
+// ════════════════════════════════════════════════════════════════════
+
+fn collect_sources_ext(root: &Path, out: &mut Vec<PathBuf>, exts: &[&str]) {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return;
+    };
+    let mut paths: Vec<PathBuf> = entries.filter_map(|e| e.ok()).map(|e| e.path()).collect();
+    paths.sort();
+    for p in paths {
+        let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if name.starts_with('.') || name == "target" || name == "node_modules" {
+            continue;
+        }
+        if p.is_dir() {
+            collect_sources_ext(&p, out, exts);
+        } else if p
+            .extension()
+            .and_then(|x| x.to_str())
+            .map(|e| exts.contains(&e))
+            .unwrap_or(false)
+        {
+            out.push(p);
+        }
+    }
+}
+
+/// Chunk prose on Markdown headings, falling back to fixed line windows.
+///
+/// `chunk_source` splits on `fn`/`def`/`class`, which Markdown does not
+/// contain, so it returned 4 fragments for 153 documents -- only the code
+/// blocks embedded in them. A prose corpus needs a prose chunker or the
+/// second corpus silently is not measured.
+fn chunk_prose(text: &str, origin: &str) -> Vec<(String, String)> {
+    let lines: Vec<&str> = text.lines().collect();
+    let mut starts: Vec<usize> = (0..lines.len())
+        .filter(|&i| lines[i].trim_start().starts_with('#'))
+        .collect();
+    if starts.len() < 2 {
+        // No headings: fixed 40-line windows so long flat documents still
+        // contribute rather than being dropped.
+        starts = (0..lines.len()).step_by(40).collect();
+    }
+    if starts.is_empty() {
+        return Vec::new();
+    }
+    starts.push(lines.len());
+
+    let mut out = Vec::new();
+    for w in starts.windows(2) {
+        let (s, e) = (w[0], w[1].min(w[0] + 200));
+        if e.saturating_sub(s) < 3 {
+            continue;
+        }
+        let body = lines[s..e].join("\n");
+        if body.split_whitespace().count() < 20 {
+            continue;
+        }
+        out.push((format!("{}:{}", origin, s + 1), body));
+    }
+    out
+}
+
+/// Root recursion already includes docs; visit each Markdown filename once.
+fn prose_source_paths(repo_root: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    collect_sources_ext(repo_root, &mut files, &["md"]);
+    files.sort();
+    files.dedup();
+    files
+}
+
+/// Markdown corpus: prose, short fragments, heavy boilerplate.
+fn build_prose_corpus() -> Vec<Fragment> {
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let repo_root = manifest.parent().unwrap_or(&manifest).to_path_buf();
+
+    let mut frags = Vec::new();
+    for path in prose_source_paths(&repo_root) {
+        if frags.len() >= MAX_FRAGMENTS {
+            break;
+        }
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let origin = path
+            .strip_prefix(&repo_root)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        for (id, body) in chunk_prose(&text, &origin) {
+            if frags.len() >= MAX_FRAGMENTS {
+                break;
+            }
+            let tf = trigram_tf(&body);
+            if tf.len() < 5 {
+                continue;
+            }
+            frags.push(Fragment {
+                origin: id,
+                fingerprint: simhash(&body),
+                tf,
+                body,
+            });
+        }
+    }
+    frags
+}
+
+#[test]
+fn corpus_origins_are_unique_and_probe_is_excluded() {
+    for frags in [build_corpus(), build_prose_corpus()] {
+        assert!(!frags.is_empty());
+        let mut origins = HashSet::new();
+        for frag in &frags {
+            assert!(
+                origins.insert(&frag.origin),
+                "repeated origin: {}",
+                frag.origin
+            );
+            assert!(!frag
+                .origin
+                .starts_with("entroly-core/src/simhash_probe.rs:"));
+        }
+    }
+}
+
+#[test]
+fn prose_filenames_include_nested_docs_once() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(root.path().join("docs/nested")).unwrap();
+    let expected = vec![
+        root.path().join("README.md"),
+        root.path().join("docs/guide.md"),
+        root.path().join("docs/nested/details.md"),
+    ];
+    for path in &expected {
+        std::fs::write(path, "# Documentation\n").unwrap();
+    }
+    std::fs::write(root.path().join("docs/ignored.txt"), "not Markdown").unwrap();
+    assert_eq!(prose_source_paths(root.path()), expected);
+}
+
+#[test]
+fn prose_chunking_splits_headings_and_preserves_text_and_origins() {
+    let first = "# First section\nThese words provide enough content for the first documentation section.\nAnother line describes the expected result with useful detail for readers.";
+    let second = "## Second section\nThese words provide enough content for the second documentation section.\nAnother line describes a different result with useful detail for readers.";
+    let text = format!("{}\n{}\n", first, second);
+    assert_eq!(
+        chunk_prose(&text, "guide.md"),
+        vec![
+            ("guide.md:1".into(), first.into()),
+            ("guide.md:4".into(), second.into())
+        ],
+    );
+}
+
+#[test]
+fn prose_chunking_falls_back_to_fixed_windows_without_headings() {
+    let lines: Vec<String> = (0..85)
+        .map(|i| {
+            format!(
+                "Line {} provides several words of flat documentation content.",
+                i
+            )
+        })
+        .collect();
+    assert_eq!(
+        chunk_prose(&lines.join("\n"), "flat.md"),
+        vec![
+            ("flat.md:1".into(), lines[..40].join("\n")),
+            ("flat.md:41".into(), lines[40..80].join("\n")),
+            ("flat.md:81".into(), lines[80..].join("\n")),
+        ],
+    );
+    assert!(chunk_prose("", "empty.md").is_empty());
+}
+
+/// The sweep itself. Shared so both corpora are measured identically.
+fn run_threshold_sweep(frags: &[Fragment], corpus_label: &str) {
+    type Perturbation<'a> = (&'a str, Box<dyn Fn(&str) -> String>);
+    let classes: Vec<Perturbation> = vec![
+        (
+            "comment prepended",
+            Box::new(|t: &str| format!("// NOTE: reviewed for correctness.\n{}", t)),
+        ),
+        (
+            "one line changed",
+            Box::new(|t: &str| {
+                let mut lines: Vec<String> = t.lines().map(String::from).collect();
+                if lines.is_empty() {
+                    return t.to_string();
+                }
+                let mid = lines.len() / 2;
+                lines[mid] = "    let adjusted_value = compute_replacement_here();".into();
+                lines.join("\n")
+            }),
+        ),
+        ("identifier renamed", Box::new(rename_identifier)),
+        (
+            "overlapping window (75%)",
+            Box::new(|t: &str| {
+                let lines: Vec<&str> = t.lines().collect();
+                if lines.len() < 4 {
+                    return t.to_string();
+                }
+                lines[lines.len() / 4..].join("\n")
+            }),
+        ),
+    ];
+
+    let mut per_class: Vec<(&str, Vec<(u32, bool)>)> = Vec::new();
+    for (label, gen) in &classes {
+        let mut rows = Vec::new();
+        for f in frags.iter() {
+            let twin = gen(&f.body);
+            let tf = trigram_tf(&twin);
+            if tf.len() < 5 {
+                continue;
+            }
+            let fp = simhash(&twin);
+            rows.push((
+                hamming_distance(f.fingerprint, fp),
+                shares_band(f.fingerprint, fp),
+            ));
+        }
+        per_class.push((label, rows));
+    }
+
+    let mut rng = Rng(0xD15C_0FFE_E5EE_D001);
+    let mut random_pairs: Vec<(u32, bool)> = Vec::new();
+    for _ in 0..50_000usize {
+        let i = rng.below(frags.len());
+        let j = rng.below(frags.len());
+        if i == j {
+            continue;
+        }
+        let (x, y) = (&frags[i], &frags[j]);
+        random_pairs.push((
+            hamming_distance(x.fingerprint, y.fingerprint),
+            shares_band(x.fingerprint, y.fingerprint),
+        ));
+    }
+
+    let pct = |rows: &[(u32, bool)], d: u32, gated: bool| -> f64 {
+        if rows.is_empty() {
+            return 0.0;
+        }
+        let hits = rows
+            .iter()
+            .filter(|(dist, banded)| *dist <= d && (!gated || *banded))
+            .count();
+        100.0 * hits as f64 / rows.len() as f64
+    };
+
+    println!(
+        "\n--- {} : {} fragments, {} unlabelled random pairs ---",
+        corpus_label,
+        frags.len(),
+        random_pairs.len()
+    );
+    println!("Edited columns: lexical gated capture; RANDOM GATED: unlabelled pair hit rate.");
+    print!("{:>3}", "d");
+    for (label, _) in &per_class {
+        print!(" {:>14}", &label[..label.len().min(14)]);
+    }
+    println!(" {:>12}", "RANDOM GATED");
+
+    for d in [1u32, 2, 3, 4, 6, 8, 10, 12, 14, 16, 20] {
+        print!("{:>3}", d);
+        for (_, rows) in &per_class {
+            print!(" {:>13.1}%", pct(rows, d, true));
+        }
+        println!(" {:>11.4}%", pct(&random_pairs, d, true));
+    }
+
+    let mut dists: Vec<u32> = random_pairs.iter().map(|(d, _)| *d).collect();
+    dists.sort_unstable();
+    let q = |p: usize| dists[(dists.len() * p / 100).min(dists.len().saturating_sub(1))];
+    println!(
+        "unlabelled random-pair distance: min {} p1 {} p5 {} p50 {} (not a safety bound)",
+        dists.first().copied().unwrap_or(0),
+        q(1),
+        q(5),
+        q(50)
+    );
+}
+
+#[test]
+#[ignore = "measurement probe; run explicitly with --ignored --nocapture"]
+fn probe_dedup_threshold_sweep() {
+    let code = build_corpus();
+    assert!(code.len() > 200, "code corpus too small: {}", code.len());
+    let prose = build_prose_corpus();
+
+    println!("\n=== ARM 8: dedup threshold sweep (4x16 band gate, production geometry) ===");
+    println!("current PROD_THRESHOLD = {}", PROD_THRESHOLD);
+
+    run_threshold_sweep(&code, "CODE corpus (.rs/.py)");
+
+    if prose.len() < 100 {
+        println!(
+            "\n--- PROSE corpus: only {} fragments, too small to sweep ---",
+            prose.len()
+        );
+    } else {
+        run_threshold_sweep(&prose, "PROSE corpus (.md)");
+    }
+
+    println!(
+        "\nThese are lexical predicate-capture rates on two repository corpora.\n\
+         Edited pairs may change behaviour; random pairs have no semantic labels.\n\
+         Their distance minima and gated rates do not bound false merges or\n\
+         establish a safe production threshold.\n"
+    );
+}
+#[test]
+#[ignore = "measurement probe; run explicitly with --ignored --nocapture"]
+fn probe_prose_gated_pair_diagnostics() {
+    let frags = build_prose_corpus();
+    assert!(frags.len() > 100);
+    let mut rng = Rng(0xD15C_0FFE_E5EE_D001);
+    let (mut checked, mut close, mut byte_identical) = (0usize, 0usize, 0usize);
+    let mut examples: Vec<(f64, f64, bool, String, String)> = Vec::new();
+    for _ in 0..50_000usize {
+        let i = rng.below(frags.len());
+        let j = rng.below(frags.len());
+        if i == j {
+            continue;
+        }
+        checked += 1;
+        let (x, y) = (&frags[i], &frags[j]);
+        if hamming_distance(x.fingerprint, y.fingerprint) <= PROD_THRESHOLD
+            && shares_band(x.fingerprint, y.fingerprint)
+        {
+            close += 1;
+            let c = cosine_tf(&x.tf, &y.tf);
+            let jc = jaccard_distinct(&x.tf, &y.tf);
+            let same_bytes = x.body == y.body;
+            if same_bytes {
+                byte_identical += 1;
+            }
+            if examples.len() < 5 {
+                examples.push((c, jc, same_bytes, x.origin.clone(), y.origin.clone()));
+            }
+        }
+    }
+    println!(
+        "\n=== unlabelled prose pairs passing band and d <= {} ===",
+        PROD_THRESHOLD
+    );
+    println!("sampled {checked}, gated {close}, of which byte-identical: {byte_identical}");
+    for (c, j, same_bytes, a, b) in &examples {
+        println!(
+            "  cos {:.3}  jacc {:.3}  same_bytes {}   {}  <->  {}",
+            c, j, same_bytes, a, b
+        );
+    }
+    println!(
+        "\nByte equality is checked directly on the chunked text. High cosine or\n\
+         Jaccard alone proves neither byte equality nor semantic equivalence.\n\
+         Non-identical gated pairs require independent labels; this diagnostic\n\
+         does not establish that hard-dropping either fragment is safe.\n"
+    );
 }
