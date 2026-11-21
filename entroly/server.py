@@ -5417,7 +5417,7 @@ def main():
     try:
         from entroly import __version__ as _version
     except Exception:
-        _version = "1.0.90"
+        _version = "1.0.91"
     logger.info(f"Starting Entroly MCP server v{_version} ({engine_type} engine)")
 
     # Graceful shutdown: persist learned state on exit, and stop promptly on

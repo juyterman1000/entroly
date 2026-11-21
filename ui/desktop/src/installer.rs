@@ -56,7 +56,7 @@ fn parse_args() -> InstallConfig {
 
 fn print_installer_help() {
     println!(
-        r#"Entroly Desktop & CLI Installer [Version 1.0.90]
+        r#"Entroly Desktop & CLI Installer [Version 1.0.91]
 
 Usage: EntrolySetup.exe [OPTIONS]
 
