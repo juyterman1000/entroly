@@ -25,7 +25,11 @@ def git(repo: Path, *args: str) -> str:
     ).strip()
 
 
-def prepare(manifest: dict, repo: Path, outdir: Path) -> tuple[Path, Path]:
+def prepare(
+    manifest: dict, repo: Path, outdir: Path, *, evaluation_version: int = 1
+) -> tuple[Path, Path]:
+    if evaluation_version not in (1, 2):
+        raise ValueError("evaluation version must be 1 or 2")
     if manifest.get("schema") != "entroly.real-commit-pilot-plan.v1":
         raise ValueError("unknown protocol plan")
     shas = manifest.get("candidate_shas")
@@ -56,7 +60,7 @@ def prepare(manifest: dict, repo: Path, outdir: Path) -> tuple[Path, Path]:
         "model_timeout_s", "test_timeout_s",
     )}
     protocol.update(
-        schema="entroly.real-commit-pilot.v1",
+        schema=f"entroly.real-commit-pilot.v{evaluation_version}",
         source_sha=git(repo, "rev-parse", "HEAD"),
         tasks_sha256=hashlib.sha256(tasks_path.read_bytes()).hexdigest(),
         baseline=baseline,
@@ -72,6 +76,8 @@ def main() -> int:
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--repo", type=Path, required=True)
     parser.add_argument("--outdir", type=Path, required=True)
+    parser.add_argument("--evaluation-version", type=int, choices=(1, 2), default=1,
+                        help="2 uses task-conditioned selection, a null control, and rotating arm order")
     args = parser.parse_args()
     repo = args.repo.resolve()
     output = args.outdir.resolve()
@@ -80,11 +86,11 @@ def main() -> int:
     if os.environ.get("ENTROLY_REAL_COMMIT_SANDBOX") != "1":
         raise RuntimeError("real repository model trials require sandboxed pytest")
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
-    protocol, tasks = prepare(manifest, repo, output)
+    protocol, tasks = prepare(manifest, repo, output, evaluation_version=args.evaluation_version)
     result = run(protocol, tasks, repo, output / "real-commit-model-results.json",
                  base_url="http://127.0.0.1:11434")
     rows = result["rows"]
-    modeled = [x for x in rows if x.get("arm") in ("raw", "selected", "raw_repeat")
+    modeled = [x for x in rows if x.get("arm") in ("raw", "selected", "raw_repeat", "null")
                and isinstance(x.get("input_tokens"), int)]
     outcomes = {}
     for row in rows:
@@ -98,7 +104,11 @@ def main() -> int:
         "model_reported_input_tokens": sum(x["input_tokens"] for x in modeled),
         "model_reported_output_tokens": sum(x["output_tokens"] for x in modeled if isinstance(x.get("output_tokens"), int)),
         "outcome_counts": outcomes,
-        "baseline_comparison": "raw vs selected vs raw-repeat, not closed loop",
+        "paired_outcomes": result["summary"],
+        "baseline_comparison": (
+            "raw vs selected vs raw-repeat vs null"
+            if args.evaluation_version == 2 else "raw vs selected vs raw-repeat, not closed loop"
+        ),
         "quality_claim_allowed": False,
         "invoice_reconciliation": "NOT_EXECUTED",
         "cross_repository_holdout": "NOT_EXECUTED",
