@@ -86,7 +86,7 @@ def _simulate(cwd: Path, *extra: str) -> dict:
 def test_small_project_is_flagged_rather_than_reported_as_zero(tiny_project: Path):
     report = _simulate(tiny_project)
     assert report["files_indexed"] == 2
-    assert report["budget_narrowed_to_demonstrate"] is True, (
+    assert report["project_fits_in_budget"] is True, (
         "a project smaller than the budget must be flagged, so the CLI can "
         "explain the 0% instead of printing it bare"
     )
@@ -113,7 +113,7 @@ def test_forcing_a_smaller_budget_demonstrates_selection(tiny_project: Path):
         "--query",
         "def login user pw token verify_password issue_session_token",
     )
-    assert report["budget_narrowed_to_demonstrate"] is False
+    assert report["project_fits_in_budget"] is False
     assert report["average_budget_difference_pct"] > 0, report
     if report["query_conditioned_selection"]:
         assert report["average_reduction_pct"] > 0, report

@@ -284,17 +284,34 @@ def test_audit_risk_mode_does_not_disable_security_block(tmp_path):
     assert not list(layer.commits_dir.glob("*.json"))
 
 
-def test_standalone_receipt_recovery_remains_preview_owned(tmp_path):
+def test_standalone_receipt_recovery_lists_preview_and_addresses_attested_ids(tmp_path):
     _, prepared, commit, target_id = _prepare(tmp_path)
     listed = {item["chunk_id"] for item in prepared.receipt["omitted_context"]}
     assert target_id not in listed
     bundle = commit["recovery_bundle"]
-    assert recover_omitted(prepared.receipt, target_id, bundle=bundle) == []
-    assert recover_omitted(prepared.receipt, "missing-chunk", bundle=bundle) == []
+    targeted = recover_omitted(prepared.receipt, target_id, bundle=bundle)
+    assert len(targeted) == 1
+    _assert_exact(targeted[0], target_id, commit)
+    missing = recover_omitted(prepared.receipt, "missing-chunk", bundle=bundle)
+    assert len(missing) == 1
+    assert missing[0]["status"] == "not_found"
+    assert missing[0]["verified"] is False
+    assert missing[0]["text"] is None
     recovered = recover_omitted(prepared.receipt, bundle=bundle)
     assert {item["chunk_id"] for item in recovered} == listed
     for item in recovered:
         _assert_exact(item, item["chunk_id"], commit)
+
+
+def test_standalone_unlisted_recovery_requires_receipt_owned_attestation(tmp_path):
+    _, prepared, commit, target_id = _prepare(tmp_path)
+    receipt = copy.deepcopy(prepared.receipt)
+    del receipt["source_fingerprints"]["fragment_bytes"][target_id]
+    result = recover_omitted(receipt, target_id, bundle=commit["recovery_bundle"])
+    assert len(result) == 1
+    assert result[0]["status"] == "not_addressable"
+    assert result[0]["verified"] is False
+    assert result[0]["text"] is None
 
 
 def test_preparation_signs_full_commit_anchor_in_audit_receipt(tmp_path):
