@@ -101,13 +101,18 @@ function standardRiskSignals(changeInput) {
 // ── Audit Chain ───────────────────────────────────────────────────────────────
 
 /**
- * Compute the chain hash for a new audit entry.
- * Deterministic across Python, Node, and Rust.
+ * Compute the legacy chain hash, which commits to the payload alone.
+ *
+ * Retained so archives written before `computeAuditChainHashV2` keep
+ * verifying. Do not use it for new entries: it leaves the acting agent, the
+ * timestamp and `allowed` — the authorization decision itself — outside the
+ * commitment, so those fields can be rewritten and the chain still verifies.
  *
  * @param {string} prevChainHash - Previous chain hash (empty for first entry)
  * @param {string} eventId       - Event ID
  * @param {string} payloadJson   - Canonical JSON of the event payload
  * @returns {string} SHA-256 chain hash
+ * @deprecated Use {@link computeAuditChainHashV2} for new entries.
  */
 function computeAuditChainHash(prevChainHash, eventId, payloadJson) {
   const wasm = ensureWasm();
@@ -115,10 +120,32 @@ function computeAuditChainHash(prevChainHash, eventId, payloadJson) {
 }
 
 /**
+ * Compute the chain hash covering the whole entry.
+ *
+ * Commits to every identity and decision field, not just the payload.
+ * Deterministic across Python, Node and Rust: all three call one engine
+ * function, so a chain written from Node verifies in Python unchanged.
+ *
+ * @param {string} prevChainHash - Previous chain hash (empty for first entry)
+ * @param {object} entry         - The audit entry about to be stored
+ * @returns {string} SHA-256 chain hash
+ */
+function computeAuditChainHashV2(prevChainHash, entry) {
+  const wasm = ensureWasm();
+  return wasm.governanceComputeAuditChainHashV2(prevChainHash, JSON.stringify(entry));
+}
+
+/**
  * Verify an audit chain.
  *
+ * `legacy_covered` counts entries sealed only by the older payload-only hash.
+ * It is reported separately rather than folded into `verified`, because those
+ * entries carry a weaker guarantee: check `fully_sealed` before treating a
+ * chain as proof of what happened.
+ *
  * @param {Array<object>} entries - Audit entries
- * @returns {{ ok: boolean, verified?: number, error?: string }}
+ * @returns {{ ok: boolean, verified?: number, legacy_covered?: number,
+ *             fully_sealed?: boolean, error?: string }}
  */
 function verifyAuditChain(entries) {
   const wasm = ensureWasm();
@@ -187,6 +214,7 @@ module.exports = {
   computeRisk,
   standardRiskSignals,
   computeAuditChainHash,
+  computeAuditChainHashV2,
   verifyAuditChain,
   provenanceNodeId,
   scanToolSchema,
