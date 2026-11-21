@@ -15,12 +15,12 @@ from scripts._release_artifacts import MCPB_BUNDLE, MCPB_MANIFEST, rebuild_mcpb
 
 ROOT = Path(__file__).resolve().parents[1]
 RELEASE_VERSION = "1.0.91"
-HOMEBREW_FORMULA_VERSION = "1.0.90"
+HOMEBREW_FORMULA_VERSION = "1.0.91"
 HOMEBREW_FORMULA_URL = (
-    "https://files.pythonhosted.org/packages/d0/cd/0840106998027f074c98bc03cb"
-    "d5fa9c2efd4bb468d0c877313eb94c653f/entroly-1.0.90.tar.gz"
+    "https://files.pythonhosted.org/packages/56/35/33de8bd8f0c0ea8dbf711df24c"
+    "f60b7cc3da37232623c4b33add4ff8f97e/entroly-1.0.91.tar.gz"
 )
-HOMEBREW_FORMULA_SHA256 = "9e098caed628841440cde50e91012c5a1ca72b0665540bb8fc9436d7cd476e46"
+HOMEBREW_FORMULA_SHA256 = "84d7ac46745539bf39341c14bbb92af89707e6c368b2872acf37d4fa3988ad0c"
 SCOOP_MANIFEST_VERSION = "1.0.88"
 SCOOP_MANIFEST_SHA256 = "ed1576b9c88c29affe38352ff61a9a008944ec14b239245afc3e4d17c7c54916"
 CANONICAL_MCP_NAME = "io.github.juyterman1000/entroly"
