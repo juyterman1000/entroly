@@ -38,8 +38,14 @@ use std::path::{Path, PathBuf};
 const NUM_BANDS: usize = 4;
 const BITS_PER_BAND: usize = 16;
 
-/// Production dedup threshold (`lib.rs`: `hamming_threshold=3`).
-const PROD_THRESHOLD: u32 = 3;
+/// Production dedup threshold (`lib.rs`: `hamming_threshold=8`).
+///
+/// Was 3. Arm 8 swept d over this corpus: unrelated pairs have min 14 and
+/// p1 23, so 3 sat far below the empty band between true near-duplicates
+/// (d 5-13) and unrelated content, costing recall for nothing. At 8 the
+/// identifier-rename class merges 12.0% against 1.2%, with zero false
+/// merges in 49,962 unrelated pairs.
+const PROD_THRESHOLD: u32 = 8;
 
 /// Fingerprint width.
 const BITS: f64 = 64.0;
@@ -888,4 +894,733 @@ fn probe_selection_set_size_bias() {
     }
     println!("\n(diversity mult 1.0 = no penalty; 0.10 = floor. A usable bound must");
     println!(" keep real duplicates well below 1.0 while leaving unrelated at 1.0.)\n");
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Arm 6 — can anything beat the band-gate ceiling at 64 bits?
+//
+// Arm 2 measured the binding constraint: banded% falls to ~17% once an edit
+// drops TF-cosine to ~0.68, and it does not depend on the merge threshold,
+// so no amount of tuning lifts it. Arm 1 measured the other half: the
+// angular estimator already sits at the orthogonality noise floor (sd 0.196
+// at 64 bits), so better arithmetic cannot help either. Only the hash family
+// or the band geometry can.
+//
+// This arm holds the budget at 64 bits and varies both, over the same corpus
+// and the same perturbations Arm 2 uses:
+//
+//   A. SimHash 4x16  — production, the control.
+//   B. SimHash 8x8   — same bits, same family, finer bands. Costs no storage
+//                      and no migration, so it is the bar a family change
+//                      has to clear.
+//   C. b=2 MinHash, k=32, 8 bands x 4 rows.
+//   D. b=1 MinHash, k=64, 16 bands x 4 rows.
+//
+// Recall alone would be a misleading score: a scheme that bands everything
+// reaches 100% and destroys the index, because DedupIndex collapsing two
+// distinct fragments silently discards one. Every scheme is therefore also
+// measured on random unrelated pairs, and the two numbers are reported
+// together.
+//
+// MinHash estimates Jaccard over distinct trigrams; jaccard_distinct above is
+// the matching oracle. SimHash estimates TF-cosine. They are different
+// quantities, so the table prints both: a family change silently redefines
+// what "similar" means for term-frequency-weighted code.
+// ════════════════════════════════════════════════════════════════════
+
+/// Odd multipliers for universal hashing; odd keeps multiply-shift bijective.
+fn minhash_params(i: usize) -> (u64, u64) {
+    let a = (i as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
+    let b = (i as u64).wrapping_mul(0xBF58_476D_1CE4_E5B9) | 1;
+    (a, b)
+}
+
+/// k-permutation MinHash over the *distinct* trigrams, truncated to `b` bits.
+///
+/// Distinct rather than TF-weighted, so the signature estimates the same
+/// quantity `jaccard_distinct` computes. Returns one value per permutation;
+/// only the low `b` bits of each are ever compared.
+fn minhash_bbit(tf: &[(u64, u32)], k: usize, b: u32) -> Vec<u64> {
+    let mask = if b >= 64 { u64::MAX } else { (1u64 << b) - 1 };
+    let mut sig = vec![u64::MAX; k];
+    for &(term, _count) in tf {
+        for (i, slot) in sig.iter_mut().enumerate() {
+            let (a, c) = minhash_params(i);
+            let h = term.wrapping_mul(a) ^ c;
+            if h < *slot {
+                *slot = h;
+            }
+        }
+    }
+    sig.iter().map(|h| h & mask).collect()
+}
+
+/// True when any band of `rows` consecutive signature entries matches exactly.
+fn minhash_shares_band(a: &[u64], b: &[u64], rows: usize) -> bool {
+    a.chunks(rows)
+        .zip(b.chunks(rows))
+        .any(|(x, y)| x.len() == rows && x == y)
+}
+
+/// SimHash band gate at an arbitrary geometry, so 8x8 can be compared with
+/// the production 4x16 without touching `dedup.rs`.
+fn simhash_shares_band_at(a: u64, b: u64, bands: usize, bits: usize) -> bool {
+    (0..bands).any(|i| {
+        let shift = (i * bits) as u32;
+        let mask = if bits >= 64 { u64::MAX } else { (1u64 << bits) - 1 };
+        ((a >> shift) & mask) == ((b >> shift) & mask)
+    })
+}
+
+#[test]
+#[ignore = "measurement probe; run explicitly with --ignored --nocapture"]
+fn probe_band_gate_alternatives() {
+    let frags = build_corpus();
+    assert!(frags.len() > 200, "corpus too small: {}", frags.len());
+
+    type Perturbation<'a> = (&'a str, Box<dyn Fn(&str) -> String>);
+    let classes: Vec<Perturbation> = vec![
+        (
+            "comment prepended",
+            Box::new(|t: &str| format!("// NOTE: reviewed for correctness.\n{}", t)),
+        ),
+        (
+            "one line changed",
+            Box::new(|t: &str| {
+                let mut lines: Vec<String> = t.lines().map(String::from).collect();
+                let mid = lines.len() / 2;
+                lines[mid] = "    let adjusted_value = compute_replacement_here();".into();
+                lines.join("\n")
+            }),
+        ),
+        ("identifier renamed", Box::new(rename_identifier)),
+        (
+            "overlapping window (75%)",
+            Box::new(|t: &str| {
+                let lines: Vec<&str> = t.lines().collect();
+                lines[lines.len() / 4..].join("\n")
+            }),
+        ),
+    ];
+
+    println!("\n=== ARM 6: band-gate alternatives at a fixed 64-bit budget ===");
+    println!("base fragments: {}\n", frags.len());
+    println!(
+        "{:<26} {:>6} {:>7} {:>7} {:>9} {:>9} {:>9} {:>9}",
+        "perturbation", "pairs", "jacc", "cos", "SH 4x16", "SH 8x8", "MH b2k32", "MH b1k64"
+    );
+
+    for (label, gen) in &classes {
+        let (mut n, mut sj, mut sc) = (0usize, 0.0f64, 0.0f64);
+        let (mut a, mut b, mut c, mut d) = (0usize, 0usize, 0usize, 0usize);
+
+        for f in frags.iter() {
+            let twin = gen(&f.body);
+            let tf = trigram_tf(&twin);
+            if tf.len() < 5 {
+                continue;
+            }
+            let fp = simhash(&twin);
+            n += 1;
+            sj += jaccard_distinct(&f.tf, &tf);
+            sc += cosine_tf(&f.tf, &tf);
+
+            if simhash_shares_band_at(f.fingerprint, fp, NUM_BANDS, BITS_PER_BAND) {
+                a += 1;
+            }
+            if simhash_shares_band_at(f.fingerprint, fp, 8, 8) {
+                b += 1;
+            }
+            if minhash_shares_band(&minhash_bbit(&f.tf, 32, 2), &minhash_bbit(&tf, 32, 2), 4) {
+                c += 1;
+            }
+            if minhash_shares_band(&minhash_bbit(&f.tf, 64, 1), &minhash_bbit(&tf, 64, 1), 4) {
+                d += 1;
+            }
+        }
+        if n == 0 {
+            continue;
+        }
+        let q = n as f64;
+        println!(
+            "{:<26} {:>6} {:>7.3} {:>7.3} {:>8.1}% {:>8.1}% {:>8.1}% {:>8.1}%",
+            label,
+            n,
+            sj / q,
+            sc / q,
+            100.0 * a as f64 / q,
+            100.0 * b as f64 / q,
+            100.0 * c as f64 / q,
+            100.0 * d as f64 / q
+        );
+    }
+
+    // Precision control. This is the number that decides whether higher
+    // recall is worth anything: a banded unrelated pair is a candidate the
+    // distance threshold must then reject, and if it does not, DedupIndex
+    // discards a distinct fragment.
+    let mut rng = Rng(0x5EED_1234_ABCD_0001);
+    let (mut n, mut sj, mut sc) = (0usize, 0.0f64, 0.0f64);
+    let (mut a, mut b, mut c, mut d) = (0usize, 0usize, 0usize, 0usize);
+    for _ in 0..20_000usize {
+        let i = rng.below(frags.len());
+        let j = rng.below(frags.len());
+        if i == j {
+            continue;
+        }
+        let (x, y) = (&frags[i], &frags[j]);
+        n += 1;
+        sj += jaccard_distinct(&x.tf, &y.tf);
+        sc += cosine_tf(&x.tf, &y.tf);
+        if simhash_shares_band_at(x.fingerprint, y.fingerprint, NUM_BANDS, BITS_PER_BAND) {
+            a += 1;
+        }
+        if simhash_shares_band_at(x.fingerprint, y.fingerprint, 8, 8) {
+            b += 1;
+        }
+        if minhash_shares_band(&minhash_bbit(&x.tf, 32, 2), &minhash_bbit(&y.tf, 32, 2), 4) {
+            c += 1;
+        }
+        if minhash_shares_band(&minhash_bbit(&x.tf, 64, 1), &minhash_bbit(&y.tf, 64, 1), 4) {
+            d += 1;
+        }
+    }
+    let q = n as f64;
+    println!(
+        "\n{:<26} {:>6} {:>7.3} {:>7.3} {:>8.2}% {:>8.2}% {:>8.2}% {:>8.2}%",
+        "UNRELATED (false cand.)",
+        n,
+        sj / q,
+        sc / q,
+        100.0 * a as f64 / q,
+        100.0 * b as f64 / q,
+        100.0 * c as f64 / q,
+        100.0 * d as f64 / q
+    );
+
+    println!(
+        "\nRead the last row first. Recall above it is worth only what precision\n\
+         here allows: a false candidate that also passes the distance threshold\n\
+         makes DedupIndex discard a distinct fragment, which is strictly worse\n\
+         than missing a duplicate. 8x8 costs no storage and no migration, so a\n\
+         MinHash family change is justified only if it beats that column on\n\
+         recall WITHOUT losing on this row. jacc and cos are printed together\n\
+         because MinHash estimates Jaccard over distinct trigrams while SimHash\n\
+         estimates TF-cosine; a family change silently redefines what similar\n\
+         means for term-frequency-weighted code.\n"
+    );
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Arm 7 — the two numbers that decide whether 8x8 can ship.
+//
+// Arm 6 showed 8x8 lifts worst-case candidate recall from 17.9% to 76.1%
+// on the same 64 bits, at a false-candidate rate of 3.22% against 0.01%.
+// Candidate recall is not the shipped behaviour, and a 300x rise in false
+// candidates is not free. Two things still have to hold:
+//
+//   1. MERGED% — banded AND d <= PROD_THRESHOLD, which is what DedupIndex
+//      actually collapses. Recall that the threshold rejects is worthless,
+//      and a false candidate the threshold ACCEPTS is a distinct fragment
+//      silently discarded. Both directions are measured here.
+//
+//   2. Candidate-set size — the mean number of fragments sharing at least
+//      one band with a given fragment, over the real corpus. This is the
+//      per-lookup work the band gate exists to bound, so it is the latency
+//      cost of the finer geometry.
+// ════════════════════════════════════════════════════════════════════
+
+use std::collections::{HashMap, HashSet};
+
+/// Band keys at an arbitrary geometry, mirroring `extract_bands`.
+fn bands_at(fp: u64, bands: usize, bits: usize) -> Vec<u64> {
+    let mask = if bits >= 64 { u64::MAX } else { (1u64 << bits) - 1 };
+    (0..bands)
+        .map(|i| (fp >> ((i * bits) as u32)) & mask)
+        .collect()
+}
+
+/// Mean and p99 of the candidate set a band index would return per fragment.
+///
+/// Counts distinct other fragments sharing at least one band, which is
+/// exactly the set `DedupIndex` would hand to the Hamming check.
+fn candidate_set_stats(frags: &[Fragment], bands: usize, bits: usize) -> (f64, usize, usize) {
+    let mut buckets: HashMap<(usize, u64), Vec<usize>> = HashMap::new();
+    for (idx, f) in frags.iter().enumerate() {
+        for (b, key) in bands_at(f.fingerprint, bands, bits).into_iter().enumerate() {
+            buckets.entry((b, key)).or_default().push(idx);
+        }
+    }
+
+    let mut sizes: Vec<usize> = Vec::with_capacity(frags.len());
+    for (idx, f) in frags.iter().enumerate() {
+        let mut seen: HashSet<usize> = HashSet::new();
+        for (b, key) in bands_at(f.fingerprint, bands, bits).into_iter().enumerate() {
+            if let Some(ids) = buckets.get(&(b, key)) {
+                for &other in ids {
+                    if other != idx {
+                        seen.insert(other);
+                    }
+                }
+            }
+        }
+        sizes.push(seen.len());
+    }
+    sizes.sort_unstable();
+    let mean = sizes.iter().sum::<usize>() as f64 / sizes.len().max(1) as f64;
+    let p99 = sizes[(sizes.len() * 99 / 100).min(sizes.len() - 1)];
+    let max = *sizes.last().unwrap_or(&0);
+    (mean, p99, max)
+}
+
+#[test]
+#[ignore = "measurement probe; run explicitly with --ignored --nocapture"]
+fn probe_band_geometry_shipping_gates() {
+    let frags = build_corpus();
+    assert!(frags.len() > 200, "corpus too small: {}", frags.len());
+
+    type Perturbation<'a> = (&'a str, Box<dyn Fn(&str) -> String>);
+    let classes: Vec<Perturbation> = vec![
+        (
+            "comment prepended",
+            Box::new(|t: &str| format!("// NOTE: reviewed for correctness.\n{}", t)),
+        ),
+        (
+            "one line changed",
+            Box::new(|t: &str| {
+                let mut lines: Vec<String> = t.lines().map(String::from).collect();
+                let mid = lines.len() / 2;
+                lines[mid] = "    let adjusted_value = compute_replacement_here();".into();
+                lines.join("\n")
+            }),
+        ),
+        ("identifier renamed", Box::new(rename_identifier)),
+        (
+            "overlapping window (75%)",
+            Box::new(|t: &str| {
+                let lines: Vec<&str> = t.lines().collect();
+                lines[lines.len() / 4..].join("\n")
+            }),
+        ),
+    ];
+
+    println!("\n=== ARM 7: shipping gates for 8x8 ===");
+    println!("corpus: {} fragments, threshold d <= {}\n", frags.len(), PROD_THRESHOLD);
+
+    // ── Gate 1: what actually merges ──
+    println!("GATE 1 — MERGED% (banded AND d <= {})", PROD_THRESHOLD);
+    println!(
+        "{:<26} {:>6} {:>10} {:>10}",
+        "perturbation", "pairs", "4x16", "8x8"
+    );
+    for (label, gen) in &classes {
+        let (mut n, mut m4, mut m8) = (0usize, 0usize, 0usize);
+        for f in frags.iter() {
+            let twin = gen(&f.body);
+            let tf = trigram_tf(&twin);
+            if tf.len() < 5 {
+                continue;
+            }
+            let fp = simhash(&twin);
+            let d = hamming_distance(f.fingerprint, fp);
+            n += 1;
+            if d <= PROD_THRESHOLD {
+                if simhash_shares_band_at(f.fingerprint, fp, NUM_BANDS, BITS_PER_BAND) {
+                    m4 += 1;
+                }
+                if simhash_shares_band_at(f.fingerprint, fp, 8, 8) {
+                    m8 += 1;
+                }
+            }
+        }
+        if n == 0 {
+            continue;
+        }
+        let q = n as f64;
+        println!(
+            "{:<26} {:>6} {:>9.1}% {:>9.1}%",
+            label,
+            n,
+            100.0 * m4 as f64 / q,
+            100.0 * m8 as f64 / q
+        );
+    }
+
+    // ── Gate 1b: the harm direction ──
+    //
+    // A false MERGE, not a false candidate. This is the number that would
+    // make 8x8 unsafe: an unrelated pair that bands AND passes the Hamming
+    // threshold causes a distinct fragment to be discarded.
+    let mut rng = Rng(0xC0FF_EE00_1234_5678);
+    let (mut n, mut f4, mut f8, mut c4, mut c8) = (0usize, 0usize, 0usize, 0usize, 0usize);
+    for _ in 0..50_000usize {
+        let i = rng.below(frags.len());
+        let j = rng.below(frags.len());
+        if i == j {
+            continue;
+        }
+        let (x, y) = (&frags[i], &frags[j]);
+        let d = hamming_distance(x.fingerprint, y.fingerprint);
+        n += 1;
+        let b4 = simhash_shares_band_at(x.fingerprint, y.fingerprint, NUM_BANDS, BITS_PER_BAND);
+        let b8 = simhash_shares_band_at(x.fingerprint, y.fingerprint, 8, 8);
+        if b4 {
+            c4 += 1;
+            if d <= PROD_THRESHOLD {
+                f4 += 1;
+            }
+        }
+        if b8 {
+            c8 += 1;
+            if d <= PROD_THRESHOLD {
+                f8 += 1;
+            }
+        }
+    }
+    let q = n as f64;
+    println!(
+        "\nGATE 1b — unrelated pairs ({} sampled)\n  \
+         false candidates : 4x16 {:.2}%   8x8 {:.2}%\n  \
+         FALSE MERGES     : 4x16 {} ({:.4}%)   8x8 {} ({:.4}%)",
+        n,
+        100.0 * c4 as f64 / q,
+        100.0 * c8 as f64 / q,
+        f4,
+        100.0 * f4 as f64 / q,
+        f8,
+        100.0 * f8 as f64 / q
+    );
+
+    // ── Gate 2: per-lookup work ──
+    let (m4, p99_4, max4) = candidate_set_stats(&frags, NUM_BANDS, BITS_PER_BAND);
+    let (m8, p99_8, max8) = candidate_set_stats(&frags, 8, 8);
+    println!(
+        "\nGATE 2 — candidate set per fragment (corpus of {})\n  \
+         4x16 : mean {:.2}  p99 {}  max {}\n  \
+         8x8  : mean {:.2}  p99 {}  max {}\n  \
+         ratio: mean {:.1}x",
+        frags.len(),
+        m4,
+        p99_4,
+        max4,
+        m8,
+        p99_8,
+        max8,
+        if m4 > 0.0 { m8 / m4 } else { f64::INFINITY }
+    );
+
+    println!(
+        "\n8x8 ships only if GATE 1 shows MERGED% strictly improved, GATE 1b shows\n\
+         false merges not materially worse, and GATE 2 shows the candidate set\n\
+         still bounded — the band gate exists to keep the Hamming check off the\n\
+         whole corpus, and a geometry that returns everything has no value even\n\
+         at perfect recall.\n"
+    );
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Arm 8 — the threshold sweep, over two corpora.
+//
+// Arm 7 established that the band gate is not the binding constraint:
+// 8x8 lifted candidate recall 17.9% -> 76.1% and moved MERGED% by zero,
+// because production merged at d <= 3 while an identifier rename sits at
+// d ~ 12.6. Every extra candidate was rejected by the Hamming check.
+//
+// So the question is the threshold, not the geometry. This sweeps d and
+// reports, at each value:
+//
+//   * MERGED% per perturbation class — the true positives gained.
+//   * FALSE MERGE% on unrelated pairs — the cost, and the thing that
+//     actually breaks the index, since a false merge silently discards a
+//     distinct fragment.
+//
+// A threshold is only safe below the left tail of the unrelated-pair
+// distance distribution, so that distribution is printed too.
+//
+// One corpus cannot establish this. The code corpus is `.rs`/`.py`; the
+// prose corpus is Markdown, which has a smaller trigram alphabet, shorter
+// fragments, and far more shared boilerplate — exactly where the gap
+// between near-duplicates and unrelated content should be narrowest.
+// Both are swept by the same function so the numbers are comparable.
+// ════════════════════════════════════════════════════════════════════
+
+fn collect_sources_ext(root: &Path, out: &mut Vec<PathBuf>, exts: &[&str]) {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return;
+    };
+    let mut paths: Vec<PathBuf> = entries.filter_map(|e| e.ok()).map(|e| e.path()).collect();
+    paths.sort();
+    for p in paths {
+        let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if name.starts_with('.') || name == "target" || name == "node_modules" {
+            continue;
+        }
+        if p.is_dir() {
+            collect_sources_ext(&p, out, exts);
+        } else if p
+            .extension()
+            .and_then(|x| x.to_str())
+            .map(|e| exts.contains(&e))
+            .unwrap_or(false)
+        {
+            out.push(p);
+        }
+    }
+}
+
+/// Chunk prose on Markdown headings, falling back to fixed line windows.
+///
+/// `chunk_source` splits on `fn`/`def`/`class`, which Markdown does not
+/// contain, so it returned 4 fragments for 153 documents -- only the code
+/// blocks embedded in them. A prose corpus needs a prose chunker or the
+/// second corpus silently is not measured.
+fn chunk_prose(text: &str, origin: &str) -> Vec<(String, String)> {
+    let lines: Vec<&str> = text.lines().collect();
+    let mut starts: Vec<usize> = (0..lines.len())
+        .filter(|&i| lines[i].trim_start().starts_with('#'))
+        .collect();
+    if starts.len() < 2 {
+        // No headings: fixed 40-line windows so long flat documents still
+        // contribute rather than being dropped.
+        starts = (0..lines.len()).step_by(40).collect();
+    }
+    if starts.is_empty() {
+        return Vec::new();
+    }
+    starts.push(lines.len());
+
+    let mut out = Vec::new();
+    for w in starts.windows(2) {
+        let (s, e) = (w[0], w[1].min(w[0] + 200));
+        if e.saturating_sub(s) < 3 {
+            continue;
+        }
+        let body = lines[s..e].join("
+");
+        if body.split_whitespace().count() < 20 {
+            continue;
+        }
+        out.push((format!("{}:{}", origin, s + 1), body));
+    }
+    out
+}
+
+/// Markdown corpus: prose, short fragments, heavy boilerplate.
+fn build_prose_corpus() -> Vec<Fragment> {
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let repo_root = manifest.parent().unwrap_or(&manifest).to_path_buf();
+
+    let mut files = Vec::new();
+    collect_sources_ext(&repo_root.join("docs"), &mut files, &["md"]);
+    collect_sources_ext(&repo_root, &mut files, &["md"]);
+
+    let mut frags = Vec::new();
+    for path in files {
+        if frags.len() >= MAX_FRAGMENTS {
+            break;
+        }
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let origin = path
+            .strip_prefix(&repo_root)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        for (id, body) in chunk_prose(&text, &origin) {
+            if frags.len() >= MAX_FRAGMENTS {
+                break;
+            }
+            let tf = trigram_tf(&body);
+            if tf.len() < 5 {
+                continue;
+            }
+            frags.push(Fragment {
+                origin: id,
+                fingerprint: simhash(&body),
+                tf,
+                body,
+            });
+        }
+    }
+    frags
+}
+
+/// The sweep itself. Shared so both corpora are measured identically.
+fn run_threshold_sweep(frags: &[Fragment], corpus_label: &str) {
+    type Perturbation<'a> = (&'a str, Box<dyn Fn(&str) -> String>);
+    let classes: Vec<Perturbation> = vec![
+        (
+            "comment prepended",
+            Box::new(|t: &str| format!("// NOTE: reviewed for correctness.\n{}", t)),
+        ),
+        (
+            "one line changed",
+            Box::new(|t: &str| {
+                let mut lines: Vec<String> = t.lines().map(String::from).collect();
+                if lines.is_empty() {
+                    return t.to_string();
+                }
+                let mid = lines.len() / 2;
+                lines[mid] = "    let adjusted_value = compute_replacement_here();".into();
+                lines.join("\n")
+            }),
+        ),
+        ("identifier renamed", Box::new(rename_identifier)),
+        (
+            "overlapping window (75%)",
+            Box::new(|t: &str| {
+                let lines: Vec<&str> = t.lines().collect();
+                if lines.len() < 4 {
+                    return t.to_string();
+                }
+                lines[lines.len() / 4..].join("\n")
+            }),
+        ),
+    ];
+
+    let mut per_class: Vec<(&str, Vec<(u32, bool)>)> = Vec::new();
+    for (label, gen) in &classes {
+        let mut rows = Vec::new();
+        for f in frags.iter() {
+            let twin = gen(&f.body);
+            let tf = trigram_tf(&twin);
+            if tf.len() < 5 {
+                continue;
+            }
+            let fp = simhash(&twin);
+            rows.push((
+                hamming_distance(f.fingerprint, fp),
+                shares_band(f.fingerprint, fp),
+            ));
+        }
+        per_class.push((label, rows));
+    }
+
+    let mut rng = Rng(0xD15C_0FFE_E5EE_D001);
+    let mut unrelated: Vec<(u32, bool)> = Vec::new();
+    for _ in 0..50_000usize {
+        let i = rng.below(frags.len());
+        let j = rng.below(frags.len());
+        if i == j {
+            continue;
+        }
+        let (x, y) = (&frags[i], &frags[j]);
+        unrelated.push((
+            hamming_distance(x.fingerprint, y.fingerprint),
+            shares_band(x.fingerprint, y.fingerprint),
+        ));
+    }
+
+    let pct = |rows: &[(u32, bool)], d: u32, gated: bool| -> f64 {
+        if rows.is_empty() {
+            return 0.0;
+        }
+        let hits = rows
+            .iter()
+            .filter(|(dist, banded)| *dist <= d && (!gated || *banded))
+            .count();
+        100.0 * hits as f64 / rows.len() as f64
+    };
+
+    println!(
+        "\n--- {} : {} fragments, {} unrelated pairs ---",
+        corpus_label,
+        frags.len(),
+        unrelated.len()
+    );
+    print!("{:>3}", "d");
+    for (label, _) in &per_class {
+        print!(" {:>14}", &label[..label.len().min(14)]);
+    }
+    println!(" {:>12}", "FALSE MERGE");
+
+    for d in [1u32, 2, 3, 4, 6, 8, 10, 12, 14, 16, 20] {
+        print!("{:>3}", d);
+        for (_, rows) in &per_class {
+            print!(" {:>13.1}%", pct(rows, d, true));
+        }
+        println!(" {:>11.4}%", pct(&unrelated, d, true));
+    }
+
+    let mut dists: Vec<u32> = unrelated.iter().map(|(d, _)| *d).collect();
+    dists.sort_unstable();
+    let q = |p: usize| dists[(dists.len() * p / 100).min(dists.len().saturating_sub(1))];
+    println!(
+        "unrelated-pair distance: min {} p1 {} p5 {} p50 {}   <- safe thresholds live below min",
+        dists.first().copied().unwrap_or(0),
+        q(1),
+        q(5),
+        q(50)
+    );
+}
+
+#[test]
+#[ignore = "measurement probe; run explicitly with --ignored --nocapture"]
+fn probe_dedup_threshold_sweep() {
+    let code = build_corpus();
+    assert!(code.len() > 200, "code corpus too small: {}", code.len());
+    let prose = build_prose_corpus();
+
+    println!("\n=== ARM 8: dedup threshold sweep (4x16 band gate, production geometry) ===");
+    println!("current PROD_THRESHOLD = {}", PROD_THRESHOLD);
+
+    run_threshold_sweep(&code, "CODE corpus (.rs/.py)");
+
+    if prose.len() < 100 {
+        println!(
+            "\n--- PROSE corpus: only {} fragments, too small to sweep ---",
+            prose.len()
+        );
+    } else {
+        run_threshold_sweep(&prose, "PROSE corpus (.md)");
+    }
+
+    println!(
+        "\nA threshold generalises only if the unrelated-pair minimum stays above\n\
+         it on BOTH corpora. Prose has a smaller trigram alphabet and more shared\n\
+         boilerplate than code, so its unrelated pairs sit closer together; that\n\
+         is the corpus that decides the ceiling, not the code one.\n"
+    );
+}
+#[test]
+#[ignore = "measurement probe; run explicitly with --ignored --nocapture"]
+fn probe_prose_zero_distance_pairs_are_real_duplicates() {
+    let frags = build_prose_corpus();
+    assert!(frags.len() > 100);
+    let mut rng = Rng(0xD15C_0FFE_E5EE_D001);
+    let (mut checked, mut close, mut truly_similar) = (0usize, 0usize, 0usize);
+    let mut examples: Vec<(f64, f64, String, String)> = Vec::new();
+    for _ in 0..50_000usize {
+        let i = rng.below(frags.len());
+        let j = rng.below(frags.len());
+        if i == j {
+            continue;
+        }
+        checked += 1;
+        let (x, y) = (&frags[i], &frags[j]);
+        if hamming_distance(x.fingerprint, y.fingerprint) <= PROD_THRESHOLD
+            && shares_band(x.fingerprint, y.fingerprint)
+        {
+            close += 1;
+            let c = cosine_tf(&x.tf, &y.tf);
+            let jc = jaccard_distinct(&x.tf, &y.tf);
+            if c > 0.8 {
+                truly_similar += 1;
+            }
+            if examples.len() < 5 {
+                examples.push((c, jc, x.origin.clone(), y.origin.clone()));
+            }
+        }
+    }
+    println!("\n=== prose pairs that WOULD merge at d <= {} ===", PROD_THRESHOLD);
+    println!("sampled {checked}, would-merge {close}, of which cosine > 0.8: {truly_similar}");
+    for (c, j, a, b) in &examples {
+        println!("  cos {:.3}  jacc {:.3}   {}  <->  {}", c, j, a, b);
+    }
+    println!(
+        "\nIf cosine is high these are genuine duplicate prose (shared boilerplate\n\
+         across documents), so collapsing them is correct behaviour and the rate\n\
+         is not a false-merge rate. If cosine is low they are real errors.\n"
+    );
 }
