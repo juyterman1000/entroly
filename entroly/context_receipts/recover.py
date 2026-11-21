@@ -356,6 +356,15 @@ def recover_omitted(
     rec = receipt if isinstance(receipt, dict) else receipt.to_dict()
     receipt_id = _str_or_default(rec.get("receipt_id", ""))
     listed = _list_of_mappings(rec.get("omitted_context", []))
+
+    # Nothing omitted and no specific chunk requested: there is nothing to
+    # recover, so never reach for a store. Resolving unconditionally made a
+    # receipt that omitted nothing fail on its own identity instead of
+    # returning an empty list. The identity check in `recovery_path` is a
+    # path-safety control and stays strict for real recovery attempts.
+    if chunk_id is None and not listed:
+        return []
+
     source = _resolve_source(receipt_id, index, bundle, store_dir)
 
     if chunk_id is None:
