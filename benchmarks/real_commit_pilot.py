@@ -8,6 +8,7 @@ context size. Results are written outside the repository by default.
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import hashlib
 import json
 import os
@@ -220,6 +221,76 @@ def _prompt(context: str, task: dict[str, Any]) -> str:
     )
 
 
+_ARMS_V1 = ("raw", "selected", "raw_repeat")
+_ARMS_V2 = ("raw", "selected", "raw_repeat", "null")
+# Exhausting the oracle's test budget is a failed attempt, not a transport error.
+_SCORED_OUTCOMES = {"passed", "test_failure", "timeout", "unusable_patch", "selection_error"}
+_PAIR_LABELS = {
+    (True, True): "both_passed",
+    (False, True): "selected_only_passed",
+    (True, False): "baseline_only_passed",
+    (False, False): "both_failed",
+}
+
+
+def _arm_order(version: int, index: int, seed: int) -> tuple[str, ...]:
+    if version == 1:
+        return _ARMS_V1
+    offset = (index + seed) % len(_ARMS_V2)
+    return _ARMS_V2[offset:] + _ARMS_V2[:offset]
+
+
+def summarize(rows: list[dict[str, Any]], task_ids: list[str], arms: tuple[str, ...]) -> dict:
+    """Keep the frozen denominator and report incomplete comparisons explicitly."""
+    grouped: dict[str, dict[str, dict]] = {task_id: {} for task_id in task_ids}
+    excluded: dict[str, str] = {}
+    for row in rows:
+        task_id = row["task_id"]
+        if task_id not in grouped:
+            raise ValueError("result contains a task outside the frozen candidate list")
+        arm = row.get("arm")
+        if arm is None:
+            if task_id in excluded or grouped[task_id]:
+                raise ValueError("duplicate or mixed task exclusion")
+            excluded[task_id] = row["outcome"]
+        else:
+            if arm not in arms or arm in grouped[task_id] or task_id in excluded:
+                raise ValueError("duplicate or unexpected task arm")
+            grouped[task_id][arm] = row
+    comparisons = {}
+    for baseline in ("raw", "raw_repeat", "null"):
+        if baseline not in arms:
+            continue
+        counts = Counter()
+        for task_id, values in grouped.items():
+            if task_id in excluded:
+                counts["excluded_tasks"] += 1
+                continue
+            pair = [values.get(name, {}).get("outcome") for name in (baseline, "selected")]
+            if any(outcome not in _SCORED_OUTCOMES for outcome in pair):
+                counts["incomplete_or_infrastructure_error"] += 1
+                continue
+            base_ok, selected_ok = [outcome == "passed" for outcome in pair]
+            counts[_PAIR_LABELS[base_ok, selected_ok]] += 1
+        comparisons[baseline] = {
+            name: counts[name] for name in (
+                "both_passed", "selected_only_passed", "baseline_only_passed",
+                "both_failed", "excluded_tasks", "incomplete_or_infrastructure_error",
+            )
+        }
+    return {
+        "frozen_tasks": len(task_ids),
+        "excluded_tasks": dict(sorted(excluded.items())),
+        "outcomes_by_arm": {
+            arm: dict(sorted(Counter(row["outcome"] for row in rows if row.get("arm") == arm).items()))
+            for arm in arms
+        },
+        "comparisons_to_selected": comparisons,
+        "quality_claim_allowed": False,
+        "scope": "observed outcomes on frozen development tasks",
+    }
+
+
 def _local_model_digest(base_url: str, model: str) -> str:
     parsed = urllib.parse.urlparse(base_url)
     if (parsed.scheme != "http" or parsed.hostname not in {"localhost", "127.0.0.1", "::1"}
@@ -239,32 +310,43 @@ def _run_arm(
     repo: Path, task: dict[str, Any], *, arm: str, context: str,
     context_details: dict[str, Any], model: str, base_url: str, seed: int,
     model_timeout: float, test_timeout: int, output_tokens: int, context_window: int,
+    preserve_execution_receipt: bool = False,
 ) -> dict[str, Any]:
-    with _task_worktree(repo, task) as root:
-        generation = call_model(
-            base_url=base_url, model=model, prompt=_prompt(context, task),
-            seed=seed, timeout=model_timeout, max_output_tokens=output_tokens,
-            context_window=context_window,
-        )
-        row = {
-            "task_id": task["sha"], "arm": arm, "context": context_details,
-            "input_tokens": generation["input_tokens"],
-            "output_tokens": generation["output_tokens"],
-            "latency_s": generation["latency_s"],
-            "response_sha256": hashlib.sha256(generation["text"].encode()).hexdigest(),
-        }
-        try:
-            patch_hash, patch = _apply_patch(root, generation["text"], task["source_files"])
-        except (ValueError, RuntimeError) as exc:
-            return {
-                **row, "outcome": "unusable_patch", "patch_error": str(exc),
-                "model_output": generation["text"],
+    row = None
+    try:
+        with _task_worktree(repo, task) as root:
+            prompt = _prompt(context, task)
+            generation = call_model(
+                base_url=base_url, model=model, prompt=prompt,
+                seed=seed, timeout=model_timeout, max_output_tokens=output_tokens,
+                context_window=context_window,
+            )
+            row = {
+                "task_id": task["sha"], "arm": arm, "context": context_details,
+                "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+                "input_tokens": generation["input_tokens"],
+                "output_tokens": generation["output_tokens"],
+                "latency_s": generation["latency_s"],
+                "response_sha256": hashlib.sha256(generation["text"].encode()).hexdigest(),
             }
-        outcome, oracle_tail = _oracle(root, task, test_timeout)
-        return {
-            **row, "outcome": outcome, "patch_sha256": patch_hash,
-            "model_patch": patch, "oracle_tail": oracle_tail,
-        }
+            try:
+                patch_hash, patch = _apply_patch(root, generation["text"], task["source_files"])
+            except (ValueError, RuntimeError) as exc:
+                row.update(
+                    outcome="unusable_patch", patch_error=str(exc),
+                    model_output=generation["text"],
+                )
+                return row
+            row.update(patch_sha256=patch_hash, model_patch=patch)
+            outcome, oracle_tail = _oracle(root, task, test_timeout)
+            row.update(outcome=outcome, oracle_tail=oracle_tail)
+            return row
+    except (RuntimeError, OSError) as exc:
+        if not preserve_execution_receipt or row is None:
+            raise
+        # Cleanup can fail while returning: retain the receipt accumulated so far.
+        row.update(outcome="execution_error", detail=str(exc))
+        return row
 
 
 def run(protocol_path: Path, tasks_path: Path, repo: Path, output: Path, base_url: str) -> dict[str, Any]:
@@ -273,8 +355,13 @@ def run(protocol_path: Path, tasks_path: Path, repo: Path, output: Path, base_ur
     if output.exists():
         raise ValueError("refusing to overwrite an existing pilot artifact")
     protocol = json.loads(protocol_path.read_text(encoding="utf-8"))
-    if protocol["schema"] != "entroly.real-commit-pilot.v1":
+    schemas = {"entroly.real-commit-pilot.v1": 1, "entroly.real-commit-pilot.v2": 2}
+    if protocol["schema"] not in schemas:
         raise ValueError("unsupported pilot protocol")
+    version = schemas[protocol["schema"]]
+    arms = _ARMS_V1 if version == 1 else _ARMS_V2
+    if version == 2 and type(protocol["seed"]) is not int:
+        raise ValueError("seed must be an integer")
     if not protocol["candidate_shas"] or len(set(protocol["candidate_shas"])) != len(protocol["candidate_shas"]):
         raise ValueError("frozen candidate list must be nonempty and unique")
     for field in ("max_corpus_bytes", "selection_budget", "model_timeout_s", "test_timeout_s", "max_output_tokens", "context_window"):
@@ -297,13 +384,15 @@ def run(protocol_path: Path, tasks_path: Path, repo: Path, output: Path, base_ur
         if not engine.ok:
             raise RuntimeError("pilot requires the current native engine")
         artifact = {
-            "schema": "entroly.real-commit-pilot-result.v1",
+            "schema": f"entroly.real-commit-pilot-result.v{version}",
             "status": "in_progress",
             "protocol_sha256": hashlib.sha256(protocol_path.read_bytes()).hexdigest(),
             "tasks_sha256": tasks_digest,
             "source_sha": protocol["source_sha"],
             "engine": {"native_active": engine.ok, "version": engine.version},
             "model": protocol["model"], "model_digest": model_digest,
+            "selection_query_policy": "legacy_generic" if version == 1 else "task_prompt",
+            "arm_order_policy": "fixed" if version == 1 else "rotating_by_frozen_task_index",
             "rows": [],
             "limitations": (
                 "Development pilot on one repository, no independent holdout, "
@@ -314,6 +403,7 @@ def run(protocol_path: Path, tasks_path: Path, repo: Path, output: Path, base_ur
         }
 
         def checkpoint() -> None:
+            artifact["summary"] = summarize(artifact["rows"], protocol["candidate_shas"], arms)
             output.parent.mkdir(parents=True, exist_ok=True)
             temporary = output.with_name(output.name + ".tmp")
             temporary.write_text(json.dumps(artifact, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -324,7 +414,7 @@ def run(protocol_path: Path, tasks_path: Path, repo: Path, output: Path, base_ur
             checkpoint()
 
         checkpoint()
-        for task in tasks:
+        for task_index, task in enumerate(tasks):
             fragments = _fragments(repo, task)
             corpus_bytes = sum(len(fragment.content.encode("utf-8")) for fragment in fragments)
             if corpus_bytes > protocol["max_corpus_bytes"]:
@@ -348,14 +438,21 @@ def run(protocol_path: Path, tasks_path: Path, repo: Path, output: Path, base_ur
             raw = build_raw(fragments)
             try:
                 selected = build_compressed(
-                    fragments, query="make the touched tests pass", budget=protocol["selection_budget"],
+                    fragments,
+                    query="make the touched tests pass" if version == 1 else _prompt("", task),
+                    budget=protocol["selection_budget"],
                     optimize_fn=optimize,
                 )
                 selection_error = None
             except (RuntimeError, ValueError, KeyError, TypeError) as exc:
                 selected = None
                 selection_error = str(exc)
-            for arm, built in (("raw", raw), ("selected", selected), ("raw_repeat", raw)):
+            contexts = {"raw": raw, "selected": selected, "raw_repeat": raw}
+            if version == 2:
+                contexts["null"] = build_raw([])
+                contexts["null"].notes = ["no candidate source or test content"]
+            for arm in _arm_order(version, task_index, protocol["seed"]):
+                built = contexts[arm]
                 if built is None:
                     record({
                         "task_id": task["sha"], "arm": arm,
@@ -363,15 +460,25 @@ def run(protocol_path: Path, tasks_path: Path, repo: Path, output: Path, base_ur
                         "corpus_bytes": corpus_bytes,
                     })
                     continue
-                row = _run_arm(
-                    repo, task, arm=arm, context=built.text,
-                    context_details=built.to_dict(), model=protocol["model"],
-                    base_url=base_url, seed=protocol["seed"],
-                    model_timeout=protocol["model_timeout_s"],
-                    test_timeout=protocol["test_timeout_s"],
-                    output_tokens=protocol["max_output_tokens"],
-                    context_window=protocol["context_window"],
-                )
+                try:
+                    row = _run_arm(
+                        repo, task, arm=arm, context=built.text,
+                        context_details=(
+                            {**built.to_dict(), "arm": arm} if version == 2 else built.to_dict()
+                        ),
+                        model=protocol["model"],
+                        base_url=base_url, seed=protocol["seed"],
+                        model_timeout=protocol["model_timeout_s"],
+                        test_timeout=protocol["test_timeout_s"],
+                        output_tokens=protocol["max_output_tokens"],
+                        context_window=protocol["context_window"],
+                        preserve_execution_receipt=(version == 2),
+                    )
+                except (RuntimeError, OSError) as exc:
+                    if version == 1:
+                        raise
+                    row = {"task_id": task["sha"], "arm": arm, "outcome": "execution_error",
+                           "detail": str(exc)}
                 record({**row, "corpus_bytes": corpus_bytes})
                 print(f"{task['sha'][:12]} {arm}: {row['outcome']}", flush=True)
         artifact["status"] = "complete"
