@@ -660,7 +660,12 @@ impl EntrolyEngine {
                         // inconsistency inside a single function is what hid
                         // it. Pinned by
                         // `consolidation_must_not_evict_a_protected_fragment`.
-                        f.is_pinned || f.is_protected,
+                        //
+                        // `superseded_by` joins them for a different reason:
+                        // losers are no longer deleted, so without this a pass
+                        // would re-group the same fragment every five turns and
+                        // re-credit its access count to the winner forever.
+                        f.is_pinned || f.is_protected || f.superseded_by.is_some(),
                         f.token_count,
                     )
                 })
@@ -684,14 +689,47 @@ impl EntrolyEngine {
                     winner.access_count += total_access;
                 }
 
-                // Evict losers
+                // Mark the losers superseded. Do not delete them.
+                //
+                // Consolidation groups on Hamming distance alone -- no band
+                // gate, and no source-file scope, since the grouping input
+                // carries no path. A one-token edit moves the same number of
+                // trigrams whether or not the token carries meaning, so this
+                // signal cannot tell a behaviour-changing revision from a
+                // rename. Measured on this repository at threshold 8, 426 of
+                // 590 comparison-flipped pairs fall inside the group radius.
+                // Deleting on that evidence discarded real content, and a
+                // delete is not recoverable while a mark is.
+                //
+                // Nothing of the finding is lost: the winner still absorbs the
+                // access counts and the loser records who superseded it, so the
+                // judgement is queryable instead of enacted destructively.
+                //
+                // The honest cost of this change: a superseded fragment is
+                // still a selection candidate, so the context-budget pressure
+                // this pass was meant to relieve is not relieved here. The IOS
+                // lane penalises near-duplicates through its diversity term,
+                // but that lane is the fallback rather than the primary
+                // selector, so this should not be read as "redundancy is
+                // handled elsewhere" without measuring the primary path.
+                // Trading an unmeasured budget saving for a measured stop to
+                // permanent data loss is the right side of that trade, and the
+                // remaining work is to suppress superseded fragments at
+                // selection time, where a mistake is reversible.
                 for loser_id in &group.consolidated_ids {
-                    self.fragments.remove(loser_id);
-                    self.dedup_index.remove(loser_id);
+                    if let Some(loser) = self.fragments.get_mut(loser_id) {
+                        loser.superseded_by = Some(group.winner_id.clone());
+                    }
                 }
 
                 self.total_consolidations += group.consolidated_ids.len() as u64;
-                self.consolidation_tokens_saved += group.tokens_saved as u64;
+                // `consolidation_tokens_saved` is deliberately NOT incremented
+                // here any more. Nothing is freed at this point: the fragment
+                // is still indexed and still addressable. Counting its tokens
+                // as saved would report a reduction that did not happen, which
+                // is the same defect as crediting a dropped duplicate to
+                // `total_tokens_saved`. The saving, if any, now materialises in
+                // selection -- where it can be measured rather than asserted.
             }
 
             // Rebuild LSH index if any consolidation occurred
@@ -7544,6 +7582,130 @@ mod tests {
             "a protected fragment was evicted by consolidation; \
              {} consolidations ran",
             engine.total_consolidations
+        );
+    }
+
+
+    /// Consolidation must record its judgement, not enact it by deletion.
+    ///
+    /// The pass groups on Hamming distance with no band gate and no
+    /// source-file scope, and that signal cannot separate a behaviour-changing
+    /// revision from a rename: a one-token edit moves the same number of
+    /// trigrams either way. Deleting the loser on that evidence destroyed
+    /// content permanently; marking it keeps the finding and keeps the bytes.
+    ///
+    /// Asserts all four properties the change depends on: the loser survives,
+    /// it names its winner, the winner absorbs the access count, and the
+    /// token-saved counter does *not* move — because nothing was freed, and
+    /// claiming otherwise would repeat the defect where a discarded fragment
+    /// was credited as a saving.
+    #[test]
+    fn consolidation_marks_superseded_instead_of_deleting() {
+        use crate::dedup::simhash;
+
+        let mut engine = EntrolyEngine::new(
+            0.30, 0.25, 0.25, 0.20, 15, 0.05, 3, 0.0, 10_000, true, true, true, 0.70, 0.50, 0.15,
+            0.10,
+        );
+
+        for i in 0..12 {
+            let content = format!("fn filler_{i}() {{ let unique_marker_{i} = {i} * 31; }}");
+            let id = format!("filler{i}");
+            let mut frag = ContextFragment::new(id.clone(), content.clone(), 20, format!("f{i}.rs"));
+            frag.simhash = simhash(&content);
+            frag.has_simhash = true;
+            frag.recency_score = 0.99;
+            let slot = engine.fragment_slot_ids.len();
+            engine.fragments.insert(id.clone(), frag.clone());
+            engine.fragment_slot_ids.push(id);
+            engine.lsh_index.insert(frag.simhash, slot);
+        }
+
+        // A behaviour-changing one-token revision, which is exactly the case
+        // the distance signal cannot distinguish from a cosmetic edit.
+        let keep = "fn allow(order: &Order) -> bool { if order.flagged { return false; } true }";
+        let revised = "fn allow(order: &Order) -> bool { if order.flagged { return false; } false }";
+
+        for (id, text, tokens, feedback) in [
+            ("winner", keep, 10u32, 1.0f64),
+            ("loser", revised, 40u32, 0.0f64),
+        ] {
+            let mut frag =
+                ContextFragment::new(id.to_string(), text.to_string(), tokens, format!("{id}.rs"));
+            frag.simhash = simhash(text);
+            frag.has_simhash = true;
+            frag.recency_score = 0.99;
+            frag.access_count = 7;
+            let _ = feedback;
+            let slot = engine.fragment_slot_ids.len();
+            engine.fragments.insert(id.to_string(), frag.clone());
+            engine.fragment_slot_ids.push(id.to_string());
+            engine.lsh_index.insert(frag.simhash, slot);
+        }
+
+        let distance =
+            crate::dedup::hamming_distance(simhash(keep), simhash(revised));
+        assert!(
+            distance > 0 && distance <= engine.consolidation_hamming_threshold,
+            "fixture must be groupable and non-identical: d={distance}"
+        );
+
+        let saved_before = engine.consolidation_tokens_saved;
+
+        for _ in 0..5 {
+            engine.advance_turn();
+        }
+
+        assert!(
+            engine.total_consolidations > 0,
+            "the pass must actually have grouped this pair, or the test proves nothing"
+        );
+
+        // Both survive. This is the property that used to fail.
+        assert!(engine.fragments.contains_key("winner"), "winner must survive");
+        assert!(
+            engine.fragments.contains_key("loser"),
+            "the superseded fragment must NOT be deleted"
+        );
+
+        // Exactly one of the pair is marked, and it names the other.
+        let marked: Vec<&String> = ["winner", "loser"]
+            .iter()
+            .filter_map(|id| engine.fragments.get(*id))
+            .filter(|f| f.superseded_by.is_some())
+            .map(|f| &f.fragment_id)
+            .collect();
+        assert_eq!(marked.len(), 1, "exactly one of the pair is superseded");
+        let loser_id = marked[0].clone();
+        let winner_id = engine.fragments[&loser_id]
+            .superseded_by
+            .clone()
+            .expect("marked fragment names its winner");
+        assert_ne!(winner_id, loser_id, "a fragment cannot supersede itself");
+        assert!(
+            engine.fragments.contains_key(&winner_id),
+            "the named winner must still exist"
+        );
+
+        // The winner absorbed the loser's access count (7 each, so 14).
+        assert_eq!(
+            engine.fragments[&winner_id].access_count, 14,
+            "winner must absorb the superseded fragment's access count"
+        );
+
+        // Nothing was freed, so nothing may be claimed as freed.
+        assert_eq!(
+            engine.consolidation_tokens_saved, saved_before,
+            "marking frees no tokens; counting them as saved would be fabricated"
+        );
+
+        // Idempotent: further passes must not re-credit the same access count.
+        for _ in 0..5 {
+            engine.advance_turn();
+        }
+        assert_eq!(
+            engine.fragments[&winner_id].access_count, 14,
+            "a superseded fragment must be excluded from later grouping"
         );
     }
 
