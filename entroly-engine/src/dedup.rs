@@ -372,14 +372,45 @@ impl DedupIndex {
             }
         }
 
-        // Verify with Hamming distance
+        // Conclusive duplicates only.
+        //
+        // This used to also drop on `hamming_distance <= threshold`, and that
+        // was unsound. `d_H` is a sufficient statistic for the angle between
+        // two trigram-TF vectors, and a one-token edit changes exactly 3 of
+        // the ~n trigrams whether that token carries meaning or not. So
+        // `limit < 42` vs `limit > 42` and `tmp` vs `temp` sit at the *same*
+        // distance: the statistic cannot separate a semantic edit from a
+        // cosmetic one, and no threshold, width, band geometry or hash family
+        // changes that. Widening was measured directly -- 64 -> 1024 bits at
+        // matched d/B left false merges flat and made capture worse, because
+        // width cuts variance (~1/sqrt(B)) while the signal stays O(1/n).
+        //
+        // The losses are not symmetric. A false merge discards a fragment
+        // permanently; a missed merge costs tokens and is then penalised
+        // downstream anyway by the IOS diversity term. Worse, the callers
+        // credit `total_tokens_saved` when this returns Some, so a false merge
+        // reported destroyed content as a saving.
+        //
+        // Measured on this repository, enumerating every pair of 1500
+        // fragments per corpus: the Hamming branch contributed 3 merges out of
+        // 2.25M pairs (0 of 1.12M on code), and all 3 were NOT byte-identical
+        // -- precisely the lossy case. It carried the entire false-merge risk
+        // for no recall.
+        //
+        // Near neighbours are still observable, non-destructively, via
+        // `nearest_within_threshold`, and fragment consolidation (a wider
+        // threshold, merge-with-transfer rather than a drop) already exists to
+        // act on them without discarding anything.
+        //
+        // Exact-duplicate recall is unchanged and provably so: identical text
+        // yields an identical fingerprint, which shares all four bands, so the
+        // match is always among `candidates`. Whitespace-only differences
+        // tokenize identically, so the fingerprint and the normalized content
+        // hash agree.
         for cid in &candidates {
-            if let Some(&existing_fp) = self.fingerprints.get(cid) {
-                let same_content = self.content_hashes.get(cid).copied() == Some(content_hash);
-                if same_content || hamming_distance(fp, existing_fp) <= self.hamming_threshold {
-                    self.duplicates_detected += 1;
-                    return Some(cid.clone());
-                }
+            if self.content_hashes.get(cid).copied() == Some(content_hash) {
+                self.duplicates_detected += 1;
+                return Some(cid.clone());
             }
         }
 
@@ -395,6 +426,45 @@ impl DedupIndex {
         }
 
         None
+    }
+
+    /// Nearest indexed fragment within the Hamming threshold, and its
+    /// distance. Read-only: nothing is inserted, dropped or counted.
+    ///
+    /// This is the non-destructive half of what `insert` used to do. The
+    /// distance is real information and worth having — it is a good predictor
+    /// of *lexical* near-duplication, which is what consolidation and ranking
+    /// want. What it cannot support is a hard drop, because it does not
+    /// distinguish a semantic edit from a cosmetic one (see `insert`).
+    ///
+    /// Returns the closest candidate, not an arbitrary one, so a caller that
+    /// acts on it is acting on the strongest available evidence.
+    pub fn nearest_within_threshold(&self, text: &str) -> Option<(String, u32)> {
+        let fp = simhash(text);
+        let bands = self.extract_bands(fp);
+        let mut best: Option<(String, u32)> = None;
+        let mut seen: HashSet<&str> = HashSet::new();
+
+        for (b, &band_hash) in bands.iter().enumerate() {
+            let Some(ids) = self.buckets[b].get(&band_hash) else {
+                continue;
+            };
+            for id in ids {
+                if !seen.insert(id.as_str()) {
+                    continue;
+                }
+                let Some(&existing) = self.fingerprints.get(id) else {
+                    continue;
+                };
+                let distance = hamming_distance(fp, existing);
+                if distance <= self.hamming_threshold
+                    && best.as_ref().is_none_or(|(_, b)| distance < *b)
+                {
+                    best = Some((id.clone(), distance));
+                }
+            }
+        }
+        best
     }
 
     /// Remove a fragment from the index.
@@ -486,23 +556,85 @@ mod tests {
         assert_eq!(idx.insert("f2", text), Some("f1".to_string()));
     }
 
+    /// A payment prompt and a refund prompt are not duplicates.
+    ///
+    /// This test asserted the opposite until now — that `insert` should return
+    /// `Some` for these two — which encoded the false-merge defect as intent.
+    /// The strings differ in one token and denote different operations;
+    /// collapsing them discards one permanently at ingest, and the caller then
+    /// credits the discarded bytes to `total_tokens_saved`.
+    ///
+    /// The distance is unchanged and still observable. What changed is that a
+    /// near neighbour is now *reported* rather than *dropped*, so a caller may
+    /// consolidate reversibly instead of losing content.
     #[test]
-    fn test_candidate_gate_accepts_near_duplicate() {
+    fn a_near_duplicate_is_reported_but_never_dropped() {
         let original = "validate user session token before processing payment request";
         let revised = "validate user session token before processing refund request";
         let distance = hamming_distance(simhash(original), simhash(revised));
-        let mut idx = DedupIndex::new(distance);
+        assert!(distance > 0, "the two texts must differ as fingerprints");
 
+        // Threshold set to exactly their distance: the most favourable case
+        // for merging them, so this is not passing by falling outside a gate.
+        let mut idx = DedupIndex::new(distance);
         assert!(idx.insert("original", original).is_none());
-        // Candidate generation is intentionally probabilistic. Force one shared
-        // band here so this test isolates the full-fingerprint verification gate.
-        let revised_fp = simhash(revised);
-        let revised_band = idx.extract_bands(revised_fp)[0];
+
+        // Candidate generation is probabilistic; force a shared band so this
+        // isolates the verification gate rather than the band lottery.
+        let revised_band = idx.extract_bands(simhash(revised))[0];
         idx.buckets[0]
             .entry(revised_band)
             .or_default()
             .push("original".to_string());
-        assert_eq!(idx.insert("revised", revised), Some("original".to_string()));
+
+        // Queried before inserting `revised`, since the query matches on text
+        // and would otherwise find `revised` itself at distance 0.
+        assert_eq!(
+            idx.nearest_within_threshold(revised),
+            Some(("original".to_string(), distance)),
+            "the near neighbour must remain observable, with its distance"
+        );
+        assert!(
+            idx.insert("revised", revised).is_none(),
+            "a one-token semantic difference must not be hard-dropped"
+        );
+    }
+
+    /// The conclusive case must still be caught, at any threshold.
+    ///
+    /// Restricting the hard drop to content equality is only safe if exact
+    /// duplicates are still found. They are, structurally: identical text
+    /// yields an identical fingerprint, which shares all four bands, so the
+    /// match is always a candidate. Threshold 0 pins that the drop no longer
+    /// depends on the Hamming gate at all.
+    #[test]
+    fn exact_duplicates_are_still_dropped_at_every_threshold() {
+        let text = "fn settle(amount: u64) -> Receipt { ledger.commit(amount) }";
+        for threshold in [0u32, 3, 5, 12] {
+            let mut idx = DedupIndex::new(threshold);
+            assert!(idx.insert("first", text).is_none());
+            assert_eq!(
+                idx.insert("second", text).as_deref(),
+                Some("first"),
+                "an exact duplicate must be caught at threshold {threshold}"
+            );
+        }
+    }
+
+    /// Whitespace-only differences are still conclusive duplicates.
+    ///
+    /// `normalized_content_hash` collapses whitespace and `simhash` splits on
+    /// it, so the two agree. If they ever diverge, the hard drop would start
+    /// missing reformatted-but-identical text.
+    #[test]
+    fn whitespace_only_differences_are_still_dropped() {
+        let mut idx = DedupIndex::new(0);
+        assert!(idx.insert("tight", "alpha beta gamma delta").is_none());
+        assert_eq!(
+            idx.insert("loose", "alpha   beta\n\tgamma  delta").as_deref(),
+            Some("tight"),
+            "whitespace reformatting must still count as a duplicate"
+        );
     }
 
     #[test]
