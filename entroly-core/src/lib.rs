@@ -362,7 +362,7 @@ impl EntrolyEngine {
     #[pyo3(signature = (
         w_recency=0.30, w_frequency=0.25, w_semantic=0.25, w_entropy=0.20,
         decay_half_life=15, min_relevance=0.05,
-        hamming_threshold=3, exploration_rate=0.0, max_fragments=10000,
+        hamming_threshold=5, exploration_rate=0.0, max_fragments=10000,
         enable_ios=true, enable_ios_diversity=true, enable_ios_multi_resolution=true,
         ios_skeleton_info_factor=0.70, ios_belief_info_factor=0.50, ios_reference_info_factor=0.15, ios_diversity_floor=0.10
     ))]
@@ -470,7 +470,9 @@ impl EntrolyEngine {
             // Fragment Consolidation
             total_consolidations: 0,
             consolidation_tokens_saved: 0,
-            consolidation_hamming_threshold: 8, // wider than dedup (3) to catch near-dupes
+            // Still wider than dedup, which moved 3 -> 5: this pass exists to
+            // catch near-duplicates the hard drop deliberately lets through.
+            consolidation_hamming_threshold: 8,
             // Causal Context Graph
             causal_graph: CausalContextGraph::new(),
             enable_causal: true,
