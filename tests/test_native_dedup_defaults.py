@@ -25,11 +25,27 @@ def test_default_native_dedup_preserves_refund_decision_change():
     assert decisions == [True, False]
     assert (core.py_simhash(original) ^ core.py_simhash(revised)).bit_count() == 6
 
-    # The experimental wider threshold loses a meaningful revision despite
-    # strong lexical similarity. Keep this negative control beside the default.
+    # This pair is the reason the hard drop no longer consults distance.
+    #
+    # d = 6 sits inside even the widest threshold tried, and the two functions
+    # return different answers for the same order, so a distance rule merged
+    # them and discarded a real behaviour change. It could not do otherwise:
+    # a one-token edit moves the same number of trigrams whether or not the
+    # token carries meaning, so no threshold separates this from a rename.
+    #
+    # Dropping now requires content equality, so the revision survives at
+    # every threshold -- asserted at 8 because that was the value that lost it.
     wider = core.PyDedupIndex(8)
     assert wider.insert("original", original) is None
-    assert wider.insert("revised", revised) == "original"
+    assert wider.insert("revised", revised) is None
+
+    # The distance is still available, just not as grounds for deletion.
+    # Querying by text, so "revised" matches itself at 0; "original" is the
+    # nearest *other* fragment and must be reported with its true distance.
+    probe = core.PyDedupIndex(8)
+    assert probe.insert("original", original) is None
+    nearest = probe.nearest_within_threshold(revised)
+    assert nearest == ("original", 6), f"expected ('original', 6), got {nearest}"
 
     engine = core.EntrolyEngine()
     assert engine.ingest(original, "refund.py", 0, False)["status"] == "ingested"

@@ -6615,9 +6615,28 @@ impl PyDedupIndex {
         }
     }
 
-    /// Insert a fragment. Returns the ID of the duplicate if one was found, else None.
+    /// Insert a fragment. Returns the ID of the duplicate if one was found,
+    /// else None.
+    ///
+    /// A duplicate here means *conclusively* duplicate: text identical modulo
+    /// whitespace. Lexical nearness alone no longer drops a fragment, because
+    /// Hamming distance cannot separate a semantic edit from a cosmetic one.
+    /// Use `nearest_within_threshold` to see near neighbours instead.
     fn insert(&mut self, fragment_id: &str, text: &str) -> Option<String> {
         self.inner.insert(fragment_id, text)
+    }
+
+    /// Nearest indexed fragment within the threshold, as `(id, distance)`.
+    ///
+    /// The non-destructive counterpart to `insert`. Exposed here because the
+    /// distance is real information that callers legitimately want — for
+    /// consolidation and ranking — and a capability nothing can reach is a
+    /// capability that does not exist.
+    ///
+    /// Matches on text, so querying a fragment already inserted finds that
+    /// fragment at distance 0.
+    fn nearest_within_threshold(&self, text: &str) -> Option<(String, u32)> {
+        self.inner.nearest_within_threshold(text)
     }
 
     /// Remove a fragment by ID.
