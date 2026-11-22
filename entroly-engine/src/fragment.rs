@@ -91,6 +91,25 @@ pub struct ContextFragment {
     /// `None` until conditioning first touches the fragment.
     #[serde(default)]
     pub entropy_pre_belief: Option<f64>,
+
+    /// Id of the fragment that consolidation judged to supersede this one.
+    ///
+    /// Consolidation used to express that judgement by deleting the loser. It
+    /// cannot: it groups on Hamming distance, and a one-token edit moves the
+    /// same number of trigrams whether or not the token carries meaning, so a
+    /// behaviour-changing revision and a rename are indistinguishable to it.
+    /// Deleting on that signal discarded real content permanently.
+    ///
+    /// Marking instead keeps the fragment addressable and recoverable while
+    /// still recording the finding, and the redundancy it was meant to remove
+    /// is already handled reversibly downstream by the selection diversity
+    /// term. `None` means no consolidation pass has superseded this fragment.
+    ///
+    /// Also the idempotency guard: a superseded fragment is excluded from
+    /// later grouping, so a pass cannot keep re-crediting its access count to
+    /// the same winner every five turns.
+    #[serde(default)]
+    pub superseded_by: Option<String>,
 }
 
 impl ContextFragment {
@@ -127,6 +146,7 @@ impl ContextFragment {
             language: String::new(),
             eligibility_trace: 0.0,
             entropy_pre_belief: None,
+            superseded_by: None,
         }
     }
 }
