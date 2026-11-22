@@ -652,4 +652,48 @@ mod tests {
             .insert("b", "kubernetes docker container orchestration")
             .is_none());
     }
+
+    /// Templated text differing by one token must survive the hard drop.
+    ///
+    /// Dedup discards the later fragment outright, so a false merge loses
+    /// content permanently. Long templated strings -- i18n catalogues, config
+    /// blocks, policy text -- sit far closer in Hamming space than ordinary
+    /// code: measured over 1,770 pairs of one-word-apart locale strings the
+    /// minimum distance is 6, against 16 for distinct code fragments.
+    ///
+    /// These exact pairs measure d=7 and d=8, so they collapse at a threshold
+    /// of 8 and survive at 5. That is why the production default is 5 rather
+    /// than the 8 a code-and-prose corpus alone appeared to allow: neither of
+    /// those corpora contains a templated catalogue, so this class was absent
+    /// from the evidence rather than shown to be safe.
+    ///
+    /// Pins the content class, not the constant. Widening the threshold past
+    /// this shape fails here instead of silently discarding a translation.
+    #[test]
+    fn one_word_differences_in_templated_text_are_not_merged() {
+        const PRODUCTION_THRESHOLD: u32 = 5;
+        let line = |verb: &str, subject: &str| {
+            format!(
+                "\"confirm.{verb}\": \"Are you sure you want to {verb} this {subject}?                  This action cannot be undone.\""
+            )
+        };
+        // Measured at 64-bit SimHash: archive user/group d=7, duplicate
+        // user/workspace d=7, user/team d=8, workspace/webhook d=8.
+        let cases = [
+            ("archive-user", line("archive", "user")),
+            ("archive-group", line("archive", "group")),
+            ("duplicate-user", line("duplicate", "user")),
+            ("duplicate-workspace", line("duplicate", "workspace")),
+            ("duplicate-team", line("duplicate", "team")),
+            ("duplicate-webhook", line("duplicate", "webhook")),
+        ];
+
+        let mut idx = DedupIndex::new(PRODUCTION_THRESHOLD);
+        for (id, text) in &cases {
+            assert!(
+                idx.insert(id, text).is_none(),
+                "{id} was collapsed into an earlier locale string; a distinct                  translation would have been discarded at ingest"
+            );
+        }
+    }
 }

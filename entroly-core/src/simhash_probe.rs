@@ -8,7 +8,7 @@
 //! +/-1 vector per word trigram and taking the sign of each accumulator. Two
 //! consumers read it, with different failure modes:
 //!
-//!   1. `DedupIndex` (threshold 3) makes a HARD DROP decision, gated behind an
+//!   1. `DedupIndex` (threshold 5) makes a HARD DROP decision, gated behind an
 //!      exact 16-bit band match. A false merge silently discards a distinct
 //!      fragment; a missed candidate leaks a duplicate through.
 //!
@@ -46,7 +46,7 @@ const BITS_PER_BAND: usize = 16;
 
 /// Baseline production threshold. The sweep explores alternatives without
 /// recommending a production change or asserting semantic safety.
-const PROD_THRESHOLD: u32 = 3;
+const PROD_THRESHOLD: u32 = 5;
 
 /// Fingerprint width.
 const BITS: f64 = 64.0;
