@@ -166,7 +166,7 @@ impl Default for LshIndex {
 
 /// Context-weighted composite scorer for fragment recall.
 ///
-/// Combines similarity (Hamming-based), recency (Ebbinghaus decay), and
+/// Combines similarity (Hamming-based), recency (exponential decay), and
 /// entropy (information density) into a single relevance score.
 ///
 /// Adapted for entroly-core's 64-bit SimHash and existing score fields.
@@ -176,7 +176,7 @@ impl Default for LshIndex {
 pub struct ContextScorer {
     /// Weight for SimHash similarity [0..1]. Default: 0.45
     pub w_similarity: f64,
-    /// Weight for recency (Ebbinghaus decay). Default: 0.25
+    /// Weight for recency (exponential decay). Default: 0.25
     pub w_recency: f64,
     /// Weight for entropy (information density). Default: 0.20
     pub w_entropy: f64,
@@ -199,7 +199,7 @@ impl ContextScorer {
     /// Compute a composite relevance score for a candidate fragment.
     ///
     /// - `hamming`: Hamming distance between query fingerprint and fragment (0–64).
-    /// - `recency_score`:   Pre-computed Ebbinghaus decay [0, 1].
+    /// - `recency_score`:   Pre-computed exponential decay [0, 1].
     /// - `entropy_score`:   Information density [0, 1].
     /// - `frequency_score`: Normalized access count [0, 1].
     /// - `feedback_mult`:   Wilson-score feedback multiplier [0.5, 2.0].

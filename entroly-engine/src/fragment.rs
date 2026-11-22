@@ -226,12 +226,12 @@ pub fn softcap(x: f64, cap: f64) -> f64 {
     cap * (x / cap).tanh()
 }
 
-/// Apply Ebbinghaus forgetting curve decay to all fragments.
+/// Apply exponential forgetting-curve decay to all fragments.
 ///
 ///   recency(t) = exp(-λ · Δt)
 ///   where λ = ln(2) / half_life
 ///
-/// Standard Ebbinghaus forgetting curve implementation.
+/// Standard exponential forgetting-curve implementation.
 pub fn apply_ebbinghaus_decay(
     fragments: &mut [ContextFragment],
     current_turn: u32,

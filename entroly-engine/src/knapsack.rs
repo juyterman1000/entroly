@@ -38,8 +38,9 @@
 //! greedy alone does not earn that bound. This is NOT (1-1/e), which requires
 //! a submodular
 //! objective. If redundancy/diversity terms are added to the score (making
-//! it submodular), Sviridenko's partial-enumeration variant would be needed
-//! to recover the (1-1/e - ε) bound; this file does not do that.
+//! it submodular), recovering the (1-1/e - ε) bound would additionally
+//! require enumerating small subsets as greedy seeds; this file does not do
+//! that, so ½ is the bound that applies.
 //!
 //! # Hard DP fallback (τ < 0.05)
 //!

@@ -1,7 +1,7 @@
 //! Hierarchical Memory Manager — Brain-Inspired 3-Tier Cognitive Memory
 //!
 //! Upgraded from simple HashMap to ebbiforge-class architecture:
-//!   - Hippocampal ring buffer (fast episodic write, Ebbinghaus decay)
+//!   - Hippocampal ring buffer (fast episodic write, exponential decay)
 //!   - Kanerva SDM neocortex (permanent semantic recall, O(1) via POPCNT)
 //!   - Multi-probe LSH index (O(1) recall instead of O(N) scan)
 //!   - CLS sleep-replay consolidation (hippocampus → neocortex graduation)
@@ -11,11 +11,16 @@
 //!
 //! PyO3 API stays identical to the original for drop-in replacement.
 //!
-//! References:
-//!   - Park et al. (2023): Generative Agents — memory architecture
-//!   - Ebbinghaus (1885): Forgetting curve — e^(-age / salience)
-//!   - Kanerva (1988): Sparse Distributed Memory
-//!   - ebbiforge-core: HippocampusEngine, Kanerva SDM, LSH Index
+//! Mechanisms, and why each is here:
+//!
+//!   - Salience-weighted exponential decay, e^(-age / salience). Retention
+//!     half-life scales with judged importance, so a high-salience memory
+//!     survives many more turns than a routine one and forgetting is graded
+//!     rather than a fixed window.
+//!   - High-dimensional sparse addressing. Items are stored against sparse
+//!     codes and retrieved by nearest-address match, so recall degrades
+//!     gracefully under a partial cue instead of missing outright.
+//!   - LSH over those codes, for sublinear candidate lookup.
 
 pub mod consolidation;
 pub mod episode;
@@ -95,7 +100,7 @@ pub struct MemoryManager {
 impl MemoryManager {
     #[new]
     #[pyo3(signature = (l1_budget = 4096, l2_budget = 16384, l3_budget = 65536, half_life = 50.0))]
-    #[allow(unused_variables)] // half_life reserved for upcoming Ebbinghaus decay tuning
+    #[allow(unused_variables)] // half_life reserved for upcoming exponential decay tuning
     pub fn new(l1_budget: u32, l2_budget: u32, l3_budget: u32, half_life: f64) -> Self {
         let capacity = 500_000; // 500K episodes default
         MemoryManager {

@@ -7,16 +7,16 @@
 //! MATHEMATICAL FOUNDATION — see research_findings.md §SCHIPC
 //! ═══════════════════════════════════════════════════════════════════════════════
 //!
-//! ## 1. Shannon Conditional Entropy (Shannon, 1948)
+//! ## 1. Conditional entropy
 //!
 //!   H(m | Sᵢ) = -Σₓ P(m=x | Sᵢ) log P(m=x | Sᵢ)
 //!
-//! ## 2. Charikar (2002) SimHash Collision Probability
+//! ## 2. SimHash collision probability
 //!
 //!   Pr[h(u) = h(v)] = 1 - arccos(sim(u,v)) / π
 //!   ⟹  d_H / 64 ≈ arccos(sim) / π    (per-bit independently)
 //!
-//! ## 3. Softcapped Novelty (autoresearch/train.py insight)
+//! ## 3. Softcapped novelty
 //!
 //!   novelty = CAP · tanh(d_H / CAP)    [CAP = 8.0 bits]
 //!
@@ -56,8 +56,6 @@
 //!   - 100,000 agents → 206 MB   (acceptable)
 //!
 //! References:
-//!   - Charikar (2002): Similarity Estimation Techniques from Rounding Algorithms
-//!   - Shannon (1948): A Mathematical Theory of Communication
 //!   - autoresearch `train.py`: logit softcap → novelty softcap pattern
 
 use std::collections::HashMap;
@@ -398,7 +396,7 @@ impl IpcBus {
 //  Produces a 64-bit fingerprint where each bit = weighted sign of projections.
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/// 64-bit SimHash fingerprint (Charikar, 2002).
+/// 64-bit SimHash fingerprint.
 ///
 /// Algorithm:
 ///   1. Slide a 3-byte window over `content`.
@@ -407,7 +405,7 @@ impl IpcBus {
 ///   4. Fingerprint bit b = (scores[b] > 0).
 ///
 /// The resulting fingerprint approximates the cosine-similarity-sensitive LSH
-/// described by Charikar, with collision probability 1 - arccos(sim)/π.
+/// with collision probability 1 - arccos(sim)/π.
 #[inline(always)]
 pub fn simhash(content: &[u8]) -> u64 {
     if content.is_empty() {

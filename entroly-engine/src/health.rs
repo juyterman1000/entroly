@@ -371,8 +371,12 @@ fn is_generic_symbol(sym: &str) -> bool {
 // ═══════════════════════════════════════════════════════════════════
 // God File Detection — reverse-dep count outliers (μ + 2σ)
 ///
-/// Rationale (2026 "AI-friendly code" paper): High coupling → low CodeHealth → harder
-/// for LLMs to contextualize. God files should be split along cohesion lines.
+/// Rationale: a file with many reverse dependencies cannot be understood or
+/// changed without pulling in much of what depends on it, so it both inflates
+/// the context an agent needs and widens the blast radius of any edit. Those
+/// are the two costs this tool exists to surface, which is why high coupling
+/// is scored as a health problem rather than a style preference. Such files
+/// are best split along cohesion lines.
 ///
 /// Algorithm: Compute the population mean and standard deviation of reverse-dep counts.
 /// Flag any fragment > μ + 2σ (approximately the top 2.3% by coupling).

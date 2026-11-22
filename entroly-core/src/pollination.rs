@@ -13,7 +13,9 @@
 //!   AMP resolution success     →  Pollination reward +1  →  V(share) increases
 //!
 //! References:
-//!   - Sutton & Barto (2018): TD(0) temporal-difference learning
+//!   - TD(0) temporal-difference learning: bootstrap each estimate from
+//!     the next one rather than waiting for a final outcome, so credit
+//!     propagates without storing whole trajectories.
 //!   - ebbiforge-core: swarm/pollination.rs, intel/pollination.rs
 
 use crate::PyObject;

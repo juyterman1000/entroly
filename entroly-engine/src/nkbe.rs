@@ -1,6 +1,6 @@
 //! NKBE — Nash-KKT Budgetary Equilibrium Allocator
 //!
-//! Multi-agent token budget allocation using Arrow-Debreu Walrasian economics
+//! Multi-agent token budget allocation via competitive-equilibrium pricing
 //! with Nash Bargaining refinement.
 //!
 //! Given N agents sharing a global token budget B, finds the optimal split:
@@ -18,10 +18,16 @@
 //! REINFORCE gradient (RL weight learning) adjusts agent priorities
 //! based on outcome quality.
 //!
-//! References:
-//!   - Nash (1950), "The Bargaining Problem"
-//!   - Arrow & Debreu (1954), "Existence of Equilibrium for a Competitive Economy"
-//!   - Patel et al., "Fair Scheduling for LLM Serving", arXiv:2401.00588
+//! Why this allocation rule and not a simpler one:
+//!
+//!   - Maximising the product of gains, rather than their sum, makes the
+//!     split invariant to how each agent scales its own utility and refuses
+//!     to zero anyone out — a sum-maximiser will starve a low-throughput
+//!     agent entirely, which is the failure mode budget sharing must avoid.
+//!   - Prices clear only when every agent's demand is simultaneously
+//!     satisfiable, so the budget is treated as a market-clearing problem
+//!     rather than a priority queue; that is what makes the result
+//!     Pareto-optimal instead of merely proportional.
 
 use std::collections::HashMap;
 

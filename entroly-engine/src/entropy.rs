@@ -74,9 +74,11 @@ pub fn compressed_size(text: &str) -> usize {
 ///
 /// NCD(x, y) = (C(x⊕y) - min(C(x), C(y))) / max(C(x), C(y))
 ///
-/// Approximates the normalized information distance (Li & Vitányi, 2004
-/// "The Similarity Metric"), which is provably the optimal metric for
-/// all computable similarities.
+/// This approximates normalized information distance, the quantity that is
+/// optimal over all computable similarity measures. It is only an
+/// approximation because a real compressor stands in for Kolmogorov
+/// complexity, which is not computable — so the metric properties hold only
+/// as well as the compressor approximates it.
 ///
 /// Returns [0.0, 1.0] as SIMILARITY (1 - NCD distance):
 ///   1.0 = identical information content

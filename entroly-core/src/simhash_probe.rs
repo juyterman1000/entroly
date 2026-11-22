@@ -142,7 +142,7 @@ fn trigram_tf(text: &str) -> Vec<(u64, u32)> {
 }
 
 /// TF-weighted cosine over the trigram multiset — the quantity SimHash
-/// estimates. Charikar (2002): P(bit differs) = theta/pi.
+/// estimates: for random-hyperplane hashing, P(bit differs) = theta/pi.
 fn cosine_tf(a: &[(u64, u32)], b: &[(u64, u32)]) -> f64 {
     if a.is_empty() || b.is_empty() {
         return 0.0;

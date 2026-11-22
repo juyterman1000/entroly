@@ -30,8 +30,9 @@
 //! Approximation note: the objective as formulated (Σ per-block weights) is
 //! linear/modular, not strictly submodular. On a knapsack, density-greedy on
 //! a modular objective achieves ½-approximation; the (1 - 1/e) bound requires
-//! a genuinely submodular objective (Feige 1998 for cardinality, Sviridenko
-//! 2004 for knapsack). If forward_value() is refactored to capture actual
+//! a genuinely submodular objective, and on a knapsack even then it needs a
+//! partial-enumeration seeding step. If forward_value() is refactored to
+//! capture actual
 //! diminishing returns (e.g., via mutual-information-with-selected-set), the
 //! objective becomes submodular and stronger bounds apply. Until then, treat
 //! the theoretical bound as ½.
@@ -53,7 +54,7 @@
 //! - forward_value: mutual information I(v; Y_future) — approximated by
 //!   bigram overlap with all subsequent blocks
 //! - ref_density: |{u : (v,u) ∈ E}| / |V| — normalized forward degree
-//! - recency: exp(-λ·(t_now - t_v)) — Ebbinghaus decay
+//! - recency: exp(-λ·(t_now - t_v)) — exponential decay
 //! - kind_shield: type-based protection (user=0.95, system=1.0, thinking=0.10)
 //!
 //! # Progressive Compression (always-on mode)
@@ -366,7 +367,7 @@ fn score_block(
     let fwd_count = *forward_refs.get(&block_pos).unwrap_or(&0) as f64;
     let ref_density = (fwd_count / n.max(1.0)).min(1.0);
 
-    // 3. Recency: Ebbinghaus exponential decay from latest timestamp.
+    // 3. Recency: exponential decay from the latest timestamp.
     let age = (now - block.timestamp).max(0.0);
     let recency = (-decay_lambda * age).exp();
 
@@ -731,7 +732,7 @@ pub fn compress_block(block: &ConvBlock, resolution: Resolution) -> String {
 /// # Parameters
 /// - `blocks`: conversation blocks in chronological order
 /// - `token_budget`: maximum total tokens after pruning
-/// - `decay_lambda`: Ebbinghaus recency decay rate (0.1=slow, 1.0=fast)
+/// - `decay_lambda`: exponential recency decay rate (0.1=slow, 1.0=fast)
 /// - `protect_last`: number of recent blocks to protect (default: 6)
 pub fn prune_conversation(
     blocks: &[ConvBlock],

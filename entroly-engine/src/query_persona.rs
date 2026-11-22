@@ -54,7 +54,7 @@ const MAX_ARCHETYPES: usize = 8;
 /// MMD² threshold for fusion — archetypes closer than this get merged.
 const DEFAULT_FUSION_THRESHOLD: f32 = 0.02;
 
-/// Ebbinghaus decay rate for archetype health.
+/// Exponential decay rate for archetype health.
 const DECAY_LAMBDA: f32 = 0.005;
 
 /// Health threshold below which an archetype dies.
@@ -285,7 +285,7 @@ pub struct QueryArchetype {
     pub born_at: u64,
     /// Last assignment tick.
     pub last_used: u64,
-    /// Health (Ebbinghaus decay).
+    /// Health (exponential decay).
     pub health: f32,
     /// Total successful optimizations using this archetype's weights.
     pub successes: u64,
@@ -542,11 +542,11 @@ impl QueryPersonaManifold {
             .unwrap_or(self.default_weights)
     }
 
-    /// Lifecycle tick: Ebbinghaus decay + death + MMD fusion.
+    /// Lifecycle tick: exponential decay + death + MMD fusion.
     pub fn lifecycle_tick(&mut self) {
         self.current_tick += 1;
 
-        // Ebbinghaus decay
+        // exponential decay
         for a in &mut self.archetypes {
             let dt = (self.current_tick - a.last_used) as f32;
             a.health *= (-DECAY_LAMBDA * dt).exp();
@@ -794,7 +794,7 @@ mod tests {
         for _ in 0..1000 {
             m.lifecycle_tick();
         }
-        assert_eq!(m.population(), 0, "Should die from Ebbinghaus decay");
+        assert_eq!(m.population(), 0, "Should die from exponential decay");
     }
 
     #[test]

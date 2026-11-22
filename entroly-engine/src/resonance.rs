@@ -49,7 +49,7 @@
 //! 0 to the typical feedback_multiplier range [0.5, 2.0].
 //!
 //! The per-turn decay (0.98) gives a half-life of ~34 turns, matching
-//! the Ebbinghaus decay but slower (pairwise patterns are more stable
+//! the exponential decay but slower (pairwise patterns are more stable
 //! than individual recency).
 
 use serde::{Deserialize, Serialize};

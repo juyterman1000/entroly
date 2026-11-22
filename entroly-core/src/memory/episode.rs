@@ -1,4 +1,4 @@
-//! Episode — a single memory trace with Ebbinghaus-governed retention.
+//! Episode — a single memory trace with exponentially decaying retention.
 //!
 //! Ported from ebbiforge-core/src/memory/episode.rs with adaptations
 //! for agentOS multi-agent context.
@@ -111,7 +111,7 @@ pub struct Episode {
 }
 
 impl Episode {
-    /// Ebbinghaus retention at a given tick.
+    /// exponential retention at a given tick.
     ///   R(t) = e^(-(current_tick - created_at) / salience)
     #[inline]
     pub fn retention(&self, current_tick: f64) -> f32 {

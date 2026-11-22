@@ -150,7 +150,7 @@ pub const SIMHASH_BITS: f64 = 64.0;
 /// fingerprints.
 ///
 /// This is the *only* correct way to turn a SimHash Hamming distance into a
-/// similarity. Charikar (2002): for random-hyperplane hashing the probability
+/// similarity. For random-hyperplane hashing, the probability
 /// that a bit differs is `theta / pi`, so
 ///
 /// ```text
@@ -177,9 +177,9 @@ pub fn simhash_cosine(a: u64, b: u64) -> f64 {
 
 /// Upper-tail standard normal quantile: returns z with P(Z > z) = q.
 ///
-/// Abramowitz & Stegun 26.2.23 rational approximation, |error| < 4.5e-4 —
-/// far tighter than the sampling noise of a 64-bit fingerprint, so it is not
-/// the limiting term here.
+/// A rational approximation with |error| < 4.5e-4 — far tighter than the
+/// sampling noise of a 64-bit fingerprint, so the approximation is not the
+/// limiting term in anything built on it.
 fn normal_upper_quantile(q: f64) -> f64 {
     let q = q.clamp(1e-12, 0.5);
     let t = (-2.0 * q.ln()).sqrt();
