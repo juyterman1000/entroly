@@ -643,7 +643,24 @@ impl EntrolyEngine {
                         f.fragment_id.clone(),
                         f.simhash,
                         fm,
-                        f.is_pinned,
+                        // Protection, not just pinning.
+                        //
+                        // `find_consolidation_groups` treats this field as
+                        // "never touch", and consolidation *deletes* the
+                        // losers it selects -- it transfers `access_count` to
+                        // a winner and then removes the fragment. Passing only
+                        // `is_pinned` therefore exposed exactly the fragments
+                        // the pin/protection split exists to safeguard:
+                        // `migrate_pin_semantics` sets `is_pinned = false` at
+                        // the same moment it sets `is_protected = true`, so a
+                        // safety-critical fragment arrived here unguarded.
+                        //
+                        // The relevance-eviction path a few lines above
+                        // already checks both flags. This one did not, and the
+                        // inconsistency inside a single function is what hid
+                        // it. Pinned by
+                        // `consolidation_must_not_evict_a_protected_fragment`.
+                        f.is_pinned || f.is_protected,
                         f.token_count,
                     )
                 })
@@ -7411,6 +7428,99 @@ mod tests {
         assert_eq!(
             fragments["frag-a"].simhash, sentinel,
             "a matching version must leave stored fingerprints alone"
+        );
+    }
+
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Consolidation must honour protection
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// A protected fragment must survive consolidation.
+    ///
+    /// `advance_turn` evicts on two independent paths. The relevance path
+    /// checks both flags (`!f.is_pinned && !f.is_protected`). The
+    /// consolidation path passes only `f.is_pinned` into
+    /// `find_consolidation_groups`, whose single guard is that field.
+    ///
+    /// That gap is load-bearing because `migrate_pin_semantics` deliberately
+    /// moves safety-critical fragments *off* `is_pinned` and onto
+    /// `is_protected` — it sets `is_pinned = false` as it sets
+    /// `is_protected = true`. So exactly the fragments the split was
+    /// introduced to safeguard became eligible for consolidation eviction,
+    /// and consolidation deletes content: it transfers `access_count` to a
+    /// winner and then calls `fragments.remove(loser_id)`.
+    ///
+    /// The protected fragment here is built to lose: zero feedback and a
+    /// larger token count, so winner selection cannot rescue it by accident.
+    #[test]
+    fn consolidation_must_not_evict_a_protected_fragment() {
+        use crate::dedup::simhash;
+
+        let mut engine = EntrolyEngine::new(
+            0.30, 0.25, 0.25, 0.20, 15, 0.05, 3, 0.0, 10_000, true, true, true, 0.70, 0.50, 0.15,
+            0.10,
+        );
+
+        // Consolidation only runs with more than 10 fragments, so pad with
+        // mutually distant filler that cannot group with anything.
+        for i in 0..12 {
+            let content = format!("fn filler_{i}() {{ let unique_marker_{i} = {i} * 31; }}");
+            let id = format!("filler{i}");
+            let mut frag = ContextFragment::new(id.clone(), content.clone(), 20, format!("f{i}.rs"));
+            frag.simhash = simhash(&content);
+            frag.has_simhash = true;
+            // Keep recency above min_relevance so the *other* eviction path in
+            // advance_turn cannot remove these and confound the result.
+            frag.recency_score = 0.99;
+            let slot = engine.fragment_slot_ids.len();
+            engine.fragments.insert(id.clone(), frag.clone());
+            engine.fragment_slot_ids.push(id);
+            engine.lsh_index.insert(frag.simhash, slot);
+        }
+
+        // A near-duplicate pair within the consolidation threshold.
+        let base = "fn settle_invoice(amount: u64) -> bool { ledger.commit(amount) }";
+        let twin = "fn settle_invoice(amount: u64) -> bool { ledger.commit(amount) } // ok";
+
+        let mut protected =
+            ContextFragment::new("protected".into(), base.to_string(), 90, "safety.rs".into());
+        protected.simhash = simhash(base);
+        protected.has_simhash = true;
+        protected.recency_score = 0.99;
+        protected.is_pinned = false; // exactly what migrate_pin_semantics leaves
+        protected.is_protected = true;
+
+        let mut rival =
+            ContextFragment::new("rival".into(), twin.to_string(), 10, "scratch.rs".into());
+        rival.simhash = simhash(twin);
+        rival.has_simhash = true;
+        rival.recency_score = 0.99;
+
+        let distance = crate::dedup::hamming_distance(protected.simhash, rival.simhash);
+        assert!(
+            distance <= engine.consolidation_hamming_threshold,
+            "fixture must actually be consolidation-eligible: d={distance} > {}",
+            engine.consolidation_hamming_threshold
+        );
+
+        for (id, frag) in [("protected", protected), ("rival", rival)] {
+            let slot = engine.fragment_slot_ids.len();
+            engine.fragments.insert(id.to_string(), frag.clone());
+            engine.fragment_slot_ids.push(id.to_string());
+            engine.lsh_index.insert(frag.simhash, slot);
+        }
+
+        // Consolidation fires on turns divisible by 5.
+        for _ in 0..5 {
+            engine.advance_turn();
+        }
+
+        assert!(
+            engine.fragments.contains_key("protected"),
+            "a protected fragment was evicted by consolidation; \
+             {} consolidations ran",
+            engine.total_consolidations
         );
     }
 
