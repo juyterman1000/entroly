@@ -333,7 +333,8 @@ pub struct ConsolidationResult {
 /// 1. Group fragments by SimHash similarity (Hamming distance ≤ threshold)
 /// 2. Within each group, pick the "winner" — the fragment with the highest
 ///    feedback multiplier (proven useful by RL outcomes)
-/// 3. The losers are evicted, their access counts transferred to the winner
+/// 3. The losers are *marked superseded*, their access counts transferred to
+///    the winner. They are not deleted — see below.
 ///
 /// # Why this works
 ///
@@ -343,11 +344,14 @@ pub struct ConsolidationResult {
 ///
 /// # What this costs, stated plainly
 ///
-/// This is a destructive pass. "Evicted" means `fragments.remove(loser_id)`:
-/// only `access_count` moves to the winner, never content. So a wrong group
-/// loses a fragment permanently.
+/// This pass used to be destructive: "evicted" meant
+/// `fragments.remove(loser_id)`, with only `access_count` moving to the
+/// winner and never content, so a wrong group lost a fragment permanently.
+/// The caller now sets `superseded_by` instead, which keeps the judgement
+/// while keeping the bytes — but the grouping below is unchanged, so every
+/// caveat that follows still describes which pairs it will group.
 ///
-/// Two properties make that risk larger than it looks, and neither is
+/// Two properties make the grouping looser than it looks, and neither is
 /// obvious from the call site:
 ///
 ///   * There is **no band gate**. `DedupIndex` required a shared LSH band
@@ -360,9 +364,9 @@ pub struct ConsolidationResult {
 /// one: a one-token change alters exactly 3 of the ~n trigrams either way, so
 /// `a < b` vs `a > b` sits at the same distance as `tmp` vs `temp`. Measured
 /// on this repository at threshold 8, 426 of 590 comparison-flipped pairs
-/// fall inside it. The `is_pinned || is_protected` guard at the call site and
-/// the outcome-based winner choice are the only things standing between that
-/// and data loss.
+/// fall inside it. That rate is why the caller stopped deleting on this
+/// signal, and why widening this threshold is not a safety dial: a wider
+/// radius groups more behaviour-changing revisions, not fewer.
 ///
 /// By consolidating based on *outcome* (which version led to better LLM
 /// outputs), we're doing Maxwell's Demon: reducing entropy by keeping the
