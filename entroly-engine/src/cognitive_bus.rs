@@ -28,9 +28,15 @@
 //! Welford Spike Detection (online, no windowing):
 //!   is_spike = (x − μ̄) > k·σ    // k=3, immediate broadcast, bypass queue
 //!
-//! References:
-//!   - Jaques et al., "Social Influence as Intrinsic Motivation", ICML 2019
-//!   - McClelland et al., "Complementary Learning Systems", Psych Review 1995
+//! Two ideas this leans on, stated as mechanisms:
+//!
+//!   - An agent is rewarded for messages that *change another agent's
+//!     behaviour*, not merely for emitting them. Influence, not volume, is
+//!     what makes a channel worth its tokens.
+//!   - Fast and slow stores are kept separate and reconciled: the fast one
+//!     absorbs new observations immediately, the slow one consolidates only
+//!     what repeats, so a single surprising event cannot overwrite settled
+//!     structure.
 
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, VecDeque};

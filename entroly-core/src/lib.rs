@@ -184,7 +184,7 @@ static INSTANCE_SEED: AtomicU64 = AtomicU64::new(1);
 ///
 /// Pipeline:
 ///   ingest → SimHash → dedup check → entropy score → store
-///   optimize → Ebbinghaus decay → knapsack DP → ranked results
+///   optimize → exponential decay → knapsack DP → ranked results
 #[pyclass]
 pub struct EntrolyEngine {
     fragments: HashMap<String, ContextFragment>,
@@ -224,7 +224,7 @@ pub struct EntrolyEngine {
     /// Controls λ_reg decay: more feedback → less prior influence.
     n_feedback_events: u64,
 
-    // Ebbinghaus
+    // exponential decay
     decay_half_life: u32,
     min_relevance: f64,
 
@@ -575,7 +575,7 @@ impl EntrolyEngine {
         adjusted
     }
 
-    /// Advance the turn counter and apply Ebbinghaus decay.
+    /// Advance the turn counter and apply exponential decay.
     pub fn advance_turn(&mut self) {
         self.current_turn += 1;
 
@@ -606,7 +606,7 @@ impl EntrolyEngine {
         // This is O(N) but eviction is infrequent (happens once per turn).
         self.rebuild_lsh_index();
 
-        // Query persona manifold lifecycle: Ebbinghaus decay + death + fusion
+        // Query persona manifold lifecycle: exponential decay + death + fusion
         if self.enable_query_personas {
             self.query_manifold.lifecycle_tick();
         }
@@ -618,7 +618,7 @@ impl EntrolyEngine {
         self.egsc_cache.gc(0.15);
 
         // ── Context Resonance: decay pairwise interaction strengths ──
-        // Half-life ~34 turns (0.98^34 ≈ 0.50). Slower than Ebbinghaus
+        // Half-life ~34 turns (0.98^34 ≈ 0.50). Slower than exponential decay
         // fragment decay (15 turns) because pairwise patterns are more
         // stable than individual recency.
         if self.enable_resonance {
@@ -1184,7 +1184,9 @@ impl EntrolyEngine {
                     let has_safety = has_safety_signal(&content);
                     // Single Kolmogorov entropy pass: ONE O(N) compression replacing
                     // TWO separate scans (normalized_entropy + boilerplate_ratio).
-                    // Grounded in Kolmogorov (1965): K(x) ≤ len(compress(x)).
+                    // A real compressor upper-bounds description length:
+                    // K(x) <= len(compress(x)), so compressed size is a
+                    // computable stand-in for incompressible information.
                     let kolmo = crate::entropy::kolmogorov_entropy(&content);
 
                     // ── TPSE Phase A: Speculative Skeleton Token Estimation ──
@@ -1699,7 +1701,7 @@ impl EntrolyEngine {
                 // ═══════════════════════════════════════════════════════
                 //
                 // Novel retrieval algorithm combining ideas from:
-                //   • BM25F field decomposition (Robertson et al., SIGIR)
+                //   • BM25F field decomposition
                 //   • Dempster-Shafer evidence theory (precision-prioritized fusion)
                 //   • Lexicographic multi-objective optimization
                 //   • PageRank hub-node dampening (Brin & Page, 1998)
@@ -1776,9 +1778,11 @@ impl EntrolyEngine {
                 //   df_path ≈ 35/2000 → Path-IDF ≈ 3.3 (rare, high!)
                 //   filter-query-encoding.ts IS about filtering
                 //
-                // This distinction was first formalized by Salton (1975) for
-                // term discrimination in structured documents, but has not
-                // been applied to code file retrieval where path = title.
+                // This is the standard distinction between how a term
+                // discriminates in a structured document's title versus its
+                // body. What is specific here is treating the file path as
+                // the title: a term that is common in file content can still
+                // be rare, and therefore highly discriminative, in paths.
                 //
                 // Algorithm:
                 //   1. Compute Path-IDF: for each query term, count how many
@@ -6362,7 +6366,7 @@ fn py_cross_fragment_redundancy(text: &str, others: Vec<String>) -> f64 {
     cross_fragment_redundancy(text, &refs)
 }
 
-/// Apply Ebbinghaus decay in-place to a list of ContextFragments.
+/// Apply exponential decay in-place to a list of ContextFragments.
 /// Mutates recency_score based on turns elapsed since turn_last_accessed.
 #[pyfunction]
 fn py_apply_ebbinghaus_decay(
@@ -6714,7 +6718,7 @@ fn entroly_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_shared_memory_fingerprint, m)?)?;
     m.add_function(wrap_pyfunction!(py_shared_memory_is_near_duplicate, m)?)?;
     m.add_function(wrap_pyfunction!(py_conditional_information_score, m)?)?;
-    // ── Knapsack / Ebbinghaus
+    // ── Knapsack / exponential decay
     m.add_function(wrap_pyfunction!(py_knapsack_optimize, m)?)?;
     m.add_function(wrap_pyfunction!(py_apply_ebbinghaus_decay, m)?)?;
     m.add_function(wrap_pyfunction!(py_witness_analyze, m)?)?;

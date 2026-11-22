@@ -56,7 +56,7 @@ const BM25F_B_PATH: f64 = 0.5;
 /// buried it under 50 injected terms.
 ///
 /// This is the standard remedy for query expansion: keep the recall benefit,
-/// but score expansion terms below the original query (Rocchio 1971; Salton &
+/// but score expansion terms below the original query (classic relevance-feedback expansion;
 /// Buckley 1990 give the alpha/beta form). 0.35 is a starting value chosen to
 /// keep a full expansion-term match worth clearly less than a real query-term
 /// match while still breaking ties among documents that match neither; it is

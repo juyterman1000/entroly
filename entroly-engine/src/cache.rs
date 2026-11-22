@@ -322,7 +322,11 @@ impl Default for EntropySketch {
 /// Used for TinyLFU-style admission gating:
 ///   admit(new) iff freq(new) > freq(victim)
 ///
-/// Reference: Cormode & Muthukrishnan (2005) — "An Improved Data Stream Summary"
+/// Read by taking the minimum across the four rows. A hash collision can only
+/// inflate a row, never deflate one, so the minimum is one-sided: it may
+/// over-report a key's frequency but never under-report it. That is the
+/// direction admission needs — a collision can cost a cold key its eviction,
+/// but cannot starve a genuinely hot key out of the cache.
 #[derive(Clone, Debug)]
 pub struct FrequencySketch {
     counters: [[u8; 256]; 4],
@@ -453,7 +457,11 @@ impl Default for FrequencySketch {
 ///   2. Softens the posterior gate (explore more)
 ///   3. Temporarily widens admission
 ///
-/// Reference: Page (1954) — "Continuous inspection schemes"
+/// The trigger is a running sum of deviations, not any single sample: a small
+/// but persistent drop in hit rate accumulates into a signal, while one
+/// unlucky lookup does not move it. That property is what makes it safe to
+/// tie the three reactions above to this detector — each of them widens
+/// admission, so firing on noise would degrade the cache it protects.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ShiftDetector {
     /// Running EMA of hit rate.
@@ -1178,7 +1186,8 @@ impl Default for EgscConfig {
 /// Captures all entries (sorted by value for predictive warming),
 /// all learned parameters, and all stats. Indices are rebuilt on import.
 ///
-/// Reference: Predictive Cache Warming (2025) — ML-based pre-loading.
+/// Entries are stored value-ordered so a warm start can index the most
+/// valuable ones first and begin serving before the whole snapshot is read.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CacheSnapshot {
     pub entries: Vec<(u64, CacheEntry)>,
@@ -1842,9 +1851,9 @@ impl EgscCache {
     /// semantic_index) are NOT serialized — they are rebuilt from entries
     /// on import. This keeps snapshots compact and forward-compatible.
     ///
-    /// Design: Following predictive cache warming (2025) — entries are
-    /// ordered by `hit_count * quality_score` so the most valuable entries
-    /// are deserialized and indexed first on warm start.
+    /// Entries are ordered by `hit_count * quality_score`, so the most
+    /// valuable ones are deserialized and indexed first on a warm start and
+    /// the cache is useful before the tail of the snapshot has been read.
     pub fn export_cache(&self) -> Result<String, String> {
         let snapshot = CacheSnapshot {
             entries: {
