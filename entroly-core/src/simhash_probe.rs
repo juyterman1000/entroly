@@ -93,15 +93,33 @@ fn hash_trigram(s: &str) -> u64 {
     h
 }
 
-/// Word-trigram term frequencies, tokenized exactly as `dedup::simhash` does:
-/// split on whitespace, trim non-alphanumeric (keeping `_`), drop empties,
-/// join adjacent triples, lowercase the joined feature.
-fn trigram_tf(text: &str) -> Vec<(u64, u32)> {
-    let words: Vec<&str> = text
-        .split_whitespace()
-        .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric() && c != '_'))
+/// Tokenize exactly as `dedup::simhash` does.
+///
+/// This is a replica, and a replica that drifts is worse than no replica: it
+/// reports confident numbers about a function it no longer models. It drifted
+/// once already — the operator-retention fix landed in `dedup::simhash` while
+/// this copy kept dropping standalone operator tokens — so
+/// `tokenization_replica_still_matches_production` now pins the two together.
+fn tokenize_like_production(text: &str) -> Vec<&str> {
+    text.split_whitespace()
+        .map(|w| {
+            let trimmed = w.trim_matches(|c: char| !c.is_alphanumeric() && c != '_');
+            // Keep the raw token when trimming would erase it: a standalone
+            // operator is all punctuation and must not vanish.
+            if trimmed.is_empty() {
+                w
+            } else {
+                trimmed
+            }
+        })
         .filter(|w| !w.is_empty())
-        .collect();
+        .collect()
+}
+
+/// Word-trigram term frequencies over [`tokenize_like_production`], joining
+/// adjacent triples and lowercasing the joined feature.
+fn trigram_tf(text: &str) -> Vec<(u64, u32)> {
+    let words = tokenize_like_production(text);
 
     if words.len() < 3 {
         return Vec::new();
@@ -1791,7 +1809,24 @@ fn probe_dedup_threshold_sweep() {
 #[test]
 #[ignore = "measurement probe; run explicitly with --ignored --nocapture"]
 fn probe_prose_gated_pair_diagnostics() {
-    let frags = build_prose_corpus();
+    for (label, frags) in [
+        ("PROSE (.md)", build_prose_corpus()),
+        ("CODE (.rs/.py)", build_corpus()),
+    ] {
+        println!("\n######## corpus: {label} ########");
+        gated_pair_diagnostics(&frags);
+    }
+}
+
+/// What does the Hamming branch of `insert` add over the exact
+/// normalized-content short circuit?
+///
+/// `insert` hard-drops on `same_content || hamming <= threshold`. The first
+/// disjunct is exact modulo whitespace and is safe; the second is the one Arm
+/// 9 showed merging labelled-distinct pairs. Splitting the gated set by byte
+/// equality says what the risky disjunct actually buys, because every gated
+/// pair that is already byte-identical would still be caught without it.
+fn gated_pair_diagnostics(frags: &[Fragment]) {
     assert!(frags.len() > 100);
     // Enumerated, not sampled. This diagnostic hunts for the pairs that pass
     // the gate, which are rare: sampling 50_000 of C(n,2) index pairs with
@@ -2297,5 +2332,240 @@ fn pair_distances_are_exact_over_every_pair() {
     assert!(
         (dist.rate_at(64, false) - 100.0).abs() < 1e-9,
         "every pair is within distance 64"
+    );
+}
+
+/// The replica above must keep matching `dedup::simhash`.
+///
+/// It did not, once: PR #620 taught production to retain standalone operator
+/// tokens and left this copy dropping them, so the probe modelled a function
+/// that no longer existed while still printing confident numbers about it.
+///
+/// Direction matters. Equal token streams produce equal trigrams and therefore
+/// *must* produce equal fingerprints; the converse is not true, because two
+/// different token streams may still collide in 64 bits. So the implication
+/// checked here is the sound one, and it is exactly the one that fails when
+/// the tokenizers disagree about operators.
+#[test]
+fn tokenization_replica_still_matches_production() {
+    let cases = [
+        ("if limit < 42 { go(); }", "if limit > 42 { go(); }"),
+        ("a == b", "a != b"),
+        ("value = compute(x);", "value = compute(x)"),
+        ("alpha beta gamma", "alpha beta gamma"),
+    ];
+    for (left, right) in cases {
+        if trigram_tf(left) == trigram_tf(right) {
+            assert_eq!(
+                simhash(left),
+                simhash(right),
+                "replica says {left:?} and {right:?} have identical features, but \
+                 production disagrees -- tokenize_like_production has drifted"
+            );
+        }
+    }
+    // And the specific drift that happened: operators must survive tokenization.
+    assert!(
+        tokenize_like_production("if a < b").contains(&"<"),
+        "a standalone operator token must not be dropped"
+    );
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Arm 10 — does fingerprint WIDTH fix what the threshold cannot?
+//
+// Arm 9 falsified every tau in [3, 12]: a one-token semantic change in a long
+// fragment moves too few of 64 bits to be told apart from a true duplicate at
+// any threshold. That is a resolution limit, so the only remaining knob is
+// width.
+//
+// Why this needs its own fingerprint rather than `simhash_wide::fingerprint`:
+// that function is width-parameterised but tokenizes into *unigrams* with no
+// punctuation handling. A one-token edit moves 1 of n unigram features but 3
+// of n trigram features, and unigrams are order-blind entirely. Measuring
+// width on unigrams would confound a width change with a feature-space
+// downgrade, so this mirrors production's trigram features at arbitrary width.
+// The hash family differs from production's MD5, which is fine: only the
+// relative behaviour ACROSS widths is read here, never the absolute rate.
+//
+// Both directions are measured, because removing false merges is trivial if
+// you are allowed to push everything apart — that also destroys the duplicate
+// capture dedup exists for. A width only wins if false merges fall WHILE
+// near-duplicate capture holds.
+//
+// Thresholds are scaled to hold d/B constant: tau_B = tau_64 * B / 64. Band
+// gating is deliberately omitted; it only ever removes merges, so an ungated
+// count is an upper bound on what the gated production path would do, and the
+// band geometry for a wider fingerprint is a separate design choice.
+// ════════════════════════════════════════════════════════════════════
+
+fn hash_feature_limb(feature: &str, limb: usize) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325 ^ (limb as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    for byte in feature.as_bytes() {
+        h ^= *byte as u64;
+        h = h.wrapping_mul(0x1000_0000_01b3);
+    }
+    h
+}
+
+/// Production's trigram features at an arbitrary width.
+fn wide_trigram_fingerprint(text: &str, bits: usize) -> Vec<u64> {
+    let limbs = bits.div_ceil(64);
+    let words = tokenize_like_production(text);
+    let features: Vec<String> = if words.len() >= 3 {
+        words
+            .windows(3)
+            .map(|w| format!("{} {} {}", w[0], w[1], w[2]).to_lowercase())
+            .collect()
+    } else {
+        words.iter().map(|w| w.to_lowercase()).collect()
+    };
+
+    let mut acc = vec![0i32; bits];
+    for feature in &features {
+        for limb in 0..limbs {
+            let h = hash_feature_limb(feature, limb);
+            for bit in 0..64 {
+                let index = limb * 64 + bit;
+                if index >= bits {
+                    break;
+                }
+                acc[index] += if (h >> bit) & 1 == 1 { 1 } else { -1 };
+            }
+        }
+    }
+
+    let mut out = vec![0u64; limbs];
+    for (index, sum) in acc.into_iter().enumerate() {
+        if sum > 0 {
+            out[index / 64] |= 1u64 << (index % 64);
+        }
+    }
+    out
+}
+
+fn wide_hamming(a: &[u64], b: &[u64]) -> u32 {
+    a.iter()
+        .zip(b.iter())
+        .map(|(x, y)| (x ^ y).count_ones())
+        .sum()
+}
+
+#[test]
+#[ignore = "measurement probe; run explicitly with --ignored --nocapture"]
+fn probe_fingerprint_width_sweep() {
+    let frags = build_corpus();
+    assert!(frags.len() > 200, "code corpus too small: {}", frags.len());
+
+    const WIDTHS: [usize; 3] = [64, 256, 1024];
+    const BASE_TAUS: [u32; 3] = [3, 5, 8];
+
+    type Gen = fn(&str) -> Option<String>;
+    // Distinct by construction — a merge here is a false merge.
+    let negatives: [(&str, Gen); 3] = [
+        ("comparison flipped", flip_comparison),
+        ("integer literal changed", change_integer_literal),
+        ("returned boolean inverted", invert_boolean),
+    ];
+    // Near-duplicates — a merge here is the behaviour dedup exists for.
+    type Perturb = fn(&str) -> String;
+    let positives: [(&str, Perturb); 2] = [
+        ("comment prepended", |t: &str| {
+            format!("// NOTE: reviewed for correctness.\n{t}")
+        }),
+        ("one line changed", |t: &str| {
+            let mut lines: Vec<String> = t.lines().map(String::from).collect();
+            if lines.is_empty() {
+                return t.to_string();
+            }
+            let mid = lines.len() / 2;
+            lines[mid] = "    let adjusted_value = compute_replacement_here();".into();
+            lines.join("\n")
+        }),
+    ];
+
+    println!("\n=== ARM 10: fingerprint width sweep (trigram features, ungated) ===");
+    println!(
+        "tau scaled to hold d/B constant: tau_B = tau_64 * B/64.\n\
+         FALSE = labelled-distinct pairs merged (want down).\n\
+         CAPTURE = near-duplicate pairs merged (want held).\n\
+         Ungated: band gating only removes merges, so FALSE is an upper bound.\n"
+    );
+
+    for bits in WIDTHS {
+        // Distance distributions, computed once per width.
+        let mut neg: Vec<(&str, Vec<u32>)> = Vec::new();
+        for (label, gen) in negatives {
+            let mut rows = Vec::new();
+            for f in frags.iter() {
+                let Some(edited) = gen(&f.body) else { continue };
+                if edited == f.body {
+                    continue;
+                }
+                rows.push(wide_hamming(
+                    &wide_trigram_fingerprint(&f.body, bits),
+                    &wide_trigram_fingerprint(&edited, bits),
+                ));
+            }
+            neg.push((label, rows));
+        }
+        let mut pos: Vec<(&str, Vec<u32>)> = Vec::new();
+        for (label, gen) in positives {
+            let mut rows = Vec::new();
+            for f in frags.iter() {
+                let twin = gen(&f.body);
+                rows.push(wide_hamming(
+                    &wide_trigram_fingerprint(&f.body, bits),
+                    &wide_trigram_fingerprint(&twin, bits),
+                ));
+            }
+            pos.push((label, rows));
+        }
+
+        let pct = |rows: &[u32], tau: u32| -> f64 {
+            if rows.is_empty() {
+                return 0.0;
+            }
+            100.0 * rows.iter().filter(|&&d| d <= tau).count() as f64 / rows.len() as f64
+        };
+        let count = |rows: &[u32], tau: u32| rows.iter().filter(|&&d| d <= tau).count();
+        let min = |rows: &[u32]| rows.iter().copied().min().unwrap_or(0);
+
+        println!(
+            "--- {bits} bits (noise floor {:.4}) ---",
+            std::f64::consts::PI / (2.0 * (bits as f64).sqrt())
+        );
+        print!("{:<28} {:>6}", "class", "min");
+        for t in BASE_TAUS {
+            print!(" {:>12}", format!("tau64={t}"));
+        }
+        println!();
+
+        for (label, rows) in &neg {
+            print!("{:<28} {:>6}", format!("FALSE {label}"), min(rows));
+            for t in BASE_TAUS {
+                let tau = t * bits as u32 / 64;
+                print!(" {:>12}", count(rows, tau));
+            }
+            println!();
+        }
+        for (label, rows) in &pos {
+            print!("{:<28} {:>6}", format!("CAPTURE {label}"), min(rows));
+            for t in BASE_TAUS {
+                let tau = t * bits as u32 / 64;
+                print!(" {:>11.1}%", pct(rows, tau));
+            }
+            println!();
+        }
+        println!();
+    }
+
+    println!(
+        "Width wins only if FALSE counts fall while CAPTURE holds. If FALSE\n\
+         falls and CAPTURE falls with it, the fingerprint merely pushed every\n\
+         pair apart, which any width-independent threshold cut would also do\n\
+         and which removes the duplicate detection dedup exists to provide.\n\
+         Absolute rates are not comparable to Arm 9: the hash family differs\n\
+         and no band gate is applied here. Read the trend across widths only.\n"
     );
 }
