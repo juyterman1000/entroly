@@ -338,9 +338,31 @@ pub struct ConsolidationResult {
 /// # Why this works
 ///
 /// Over time, a codebase accumulates multiple versions of the same function
-/// (pre-refactor, post-refactor, test fixture, etc.). The existing dedup
-/// catches exact matches (Hamming ≤ 3), but near-duplicates (Hamming 4-8)
-/// slip through. These waste context budget and dilute the knapsack signal.
+/// (pre-refactor, post-refactor, test fixture, etc.). These waste context
+/// budget and dilute the knapsack signal.
+///
+/// # What this costs, stated plainly
+///
+/// This is a destructive pass. "Evicted" means `fragments.remove(loser_id)`:
+/// only `access_count` moves to the winner, never content. So a wrong group
+/// loses a fragment permanently.
+///
+/// Two properties make that risk larger than it looks, and neither is
+/// obvious from the call site:
+///
+///   * There is **no band gate**. `DedupIndex` required a shared LSH band
+///     *and* a distance check; this is raw pairwise Hamming, so it considers
+///     pairs dedup would never surface as candidates.
+///   * There is **no source-file scope**. The input tuple carries no path,
+///     so fragments from unrelated files group together purely by distance.
+///
+/// Hamming distance also cannot distinguish a semantic edit from a cosmetic
+/// one: a one-token change alters exactly 3 of the ~n trigrams either way, so
+/// `a < b` vs `a > b` sits at the same distance as `tmp` vs `temp`. Measured
+/// on this repository at threshold 8, 426 of 590 comparison-flipped pairs
+/// fall inside it. The `is_pinned || is_protected` guard at the call site and
+/// the outcome-based winner choice are the only things standing between that
+/// and data loss.
 ///
 /// By consolidating based on *outcome* (which version led to better LLM
 /// outputs), we're doing Maxwell's Demon: reducing entropy by keeping the
