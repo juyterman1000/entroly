@@ -215,6 +215,157 @@ impl Rng {
     }
 }
 
+/// Cap above which the pairwise distribution is sampled rather than enumerated.
+/// `MAX_FRAGMENTS` yields C(1500,2) = 1_124_250 pairs, so every corpus this
+/// probe can build stays far below it and is measured exactly.
+const EXHAUSTIVE_PAIR_CAP: u64 = 50_000_000;
+
+/// The pairwise Hamming distance distribution, held as a histogram.
+///
+/// The arms below previously drew 50_000 index pairs *with replacement* and
+/// printed the resulting minimum. Two things were wrong with that. A sampled
+/// minimum is an upper bound on the true minimum and never an estimate of it,
+/// so the closest pair in the corpus was very likely never examined: 50_000
+/// draws cover under 5% of C(1500,2), and with replacement fewer still. And
+/// the statistic the threshold question actually needs — how many distinct
+/// pairs sit in the near region — is *rare*, which is precisely where
+/// sampling the bulk wastes almost every draw.
+///
+/// 65 counters and one popcount per pair make the whole distribution exact,
+/// so the statistic stops being something that would need a confidence
+/// interval. Memory is constant in the number of pairs, which is why the cap
+/// can be this generous.
+///
+/// Exactness fixes the *statistics* only. It says nothing about semantics: an
+/// exact minimum over this corpus is still an exact minimum over this corpus.
+/// `probe_labelled_hard_negatives` is the arm that carries labels.
+struct PairDistances {
+    /// Pairs at each Hamming distance 0..=64.
+    all: [u64; 65],
+    /// Same, restricted to pairs the band gate would surface as candidates.
+    banded: [u64; 65],
+    /// False when the cap forced sampling, so no caller can report a sampled
+    /// minimum as though it were enumerated.
+    exhaustive: bool,
+}
+
+impl PairDistances {
+    fn new() -> Self {
+        Self {
+            all: [0; 65],
+            banded: [0; 65],
+            exhaustive: true,
+        }
+    }
+
+    fn record(&mut self, a: u64, b: u64) {
+        let d = (hamming_distance(a, b) as usize).min(64);
+        self.all[d] += 1;
+        if shares_band(a, b) {
+            self.banded[d] += 1;
+        }
+    }
+
+    /// Every unordered pair when the corpus is small enough, a reproducible
+    /// sample otherwise.
+    fn over(frags: &[Fragment]) -> Self {
+        let n = frags.len() as u64;
+        let pairs = n.saturating_mul(n.saturating_sub(1)) / 2;
+        let mut out = Self::new();
+
+        if pairs <= EXHAUSTIVE_PAIR_CAP {
+            for i in 0..frags.len() {
+                for j in (i + 1)..frags.len() {
+                    out.record(frags[i].fingerprint, frags[j].fingerprint);
+                }
+            }
+            return out;
+        }
+
+        out.exhaustive = false;
+        let mut rng = Rng(0xD15C_0FFE_E5EE_D001);
+        let mut drawn = 0usize;
+        while drawn < 2_000_000 {
+            let i = rng.below(frags.len());
+            let j = rng.below(frags.len());
+            if i == j {
+                continue;
+            }
+            out.record(frags[i].fingerprint, frags[j].fingerprint);
+            drawn += 1;
+        }
+        out
+    }
+
+    fn total(&self) -> u64 {
+        self.all.iter().sum()
+    }
+
+    /// Smallest distance at which any pair exists; exact when `exhaustive`.
+    fn min(&self) -> Option<u32> {
+        self.all.iter().position(|&c| c > 0).map(|d| d as u32)
+    }
+
+    /// Smallest distance among pairs the band gate would actually surface.
+    /// Pairs below this are unreachable by `DedupIndex` whatever the
+    /// threshold, so this — not `min` — is the band-gated floor.
+    fn min_banded(&self) -> Option<u32> {
+        self.banded.iter().position(|&c| c > 0).map(|d| d as u32)
+    }
+
+    /// Share of all pairs at distance <= d, as a percentage. `gated`
+    /// restricts the numerator to band-gate candidates; the denominator stays
+    /// the full pair count either way, so the two columns are comparable.
+    fn rate_at(&self, d: u32, gated: bool) -> f64 {
+        let total = self.total();
+        if total == 0 {
+            return 0.0;
+        }
+        let src = if gated { &self.banded } else { &self.all };
+        let hits: u64 = src[..=(d as usize).min(64)].iter().sum();
+        100.0 * hits as f64 / total as f64
+    }
+
+    fn quantile(&self, p: f64) -> u32 {
+        let total = self.total();
+        if total == 0 {
+            return 0;
+        }
+        let target = ((total as f64) * p / 100.0).ceil().max(1.0) as u64;
+        let mut seen = 0u64;
+        for (d, &c) in self.all.iter().enumerate() {
+            seen += c;
+            if seen >= target {
+                return d as u32;
+            }
+        }
+        64
+    }
+
+    fn basis(&self) -> &'static str {
+        if self.exhaustive {
+            "exact over every pair"
+        } else {
+            "SAMPLED — minimum is an upper bound only"
+        }
+    }
+}
+
+/// Independent O(n^2) recomputation, used only to check `PairDistances`.
+#[cfg(test)]
+fn brute_force_min_distance(fps: &[u64]) -> Option<u32> {
+    let mut best: Option<u32> = None;
+    for i in 0..fps.len() {
+        for j in (i + 1)..fps.len() {
+            let d = hamming_distance(fps[i], fps[j]);
+            if best.is_none_or(|b| d < b) {
+                best = Some(d);
+            }
+        }
+    }
+    best
+}
+
 fn chunk_source(text: &str, origin: &str) -> Vec<(String, String)> {
     let lines: Vec<&str> = text.lines().collect();
     let is_def_start = |l: &str| {
@@ -1246,36 +1397,38 @@ fn probe_band_geometry_capture_and_candidate_counts() {
         );
     }
 
-    // Unlabelled random pairs may include duplicates; hits are not false merges.
-    let mut rng = Rng(0xC0FF_EE00_1234_5678);
+    // Unlabelled pairs may include duplicates; hits are not false merges.
+    //
+    // Enumerated rather than sampled. Both geometries are needed here, so this
+    // does not go through `PairDistances` (which models the production 4x16
+    // gate only) and keeps its own counters. The gated counts are small
+    // absolute numbers, which is exactly the regime where a 5%-coverage sample
+    // of C(n,2) reports a different answer run to run.
     let (mut n, mut f4, mut f8, mut c4, mut c8) = (0usize, 0usize, 0usize, 0usize, 0usize);
-    for _ in 0..50_000usize {
-        let i = rng.below(frags.len());
-        let j = rng.below(frags.len());
-        if i == j {
-            continue;
-        }
-        let (x, y) = (&frags[i], &frags[j]);
-        let d = hamming_distance(x.fingerprint, y.fingerprint);
-        n += 1;
-        let b4 = simhash_shares_band_at(x.fingerprint, y.fingerprint, NUM_BANDS, BITS_PER_BAND);
-        let b8 = simhash_shares_band_at(x.fingerprint, y.fingerprint, 8, 8);
-        if b4 {
-            c4 += 1;
-            if d <= PROD_THRESHOLD {
-                f4 += 1;
+    for i in 0..frags.len() {
+        for j in (i + 1)..frags.len() {
+            let (x, y) = (&frags[i], &frags[j]);
+            let d = hamming_distance(x.fingerprint, y.fingerprint);
+            n += 1;
+            let b4 = simhash_shares_band_at(x.fingerprint, y.fingerprint, NUM_BANDS, BITS_PER_BAND);
+            let b8 = simhash_shares_band_at(x.fingerprint, y.fingerprint, 8, 8);
+            if b4 {
+                c4 += 1;
+                if d <= PROD_THRESHOLD {
+                    f4 += 1;
+                }
             }
-        }
-        if b8 {
-            c8 += 1;
-            if d <= PROD_THRESHOLD {
-                f8 += 1;
+            if b8 {
+                c8 += 1;
+                if d <= PROD_THRESHOLD {
+                    f8 += 1;
+                }
             }
         }
     }
-    let q = n as f64;
+    let q = n.max(1) as f64;
     println!(
-        "\nRANDOM PAIRS — unlabelled ({} sampled)\n  \
+        "\nUNLABELLED PAIRS — all {} enumerated\n  \
          band hits  : 4x16 {:.2}%   8x8 {:.2}%\n  \
          gated hits : 4x16 {} ({:.4}%)   8x8 {} ({:.4}%)",
         n,
@@ -1550,20 +1703,7 @@ fn run_threshold_sweep(frags: &[Fragment], corpus_label: &str) {
         per_class.push((label, rows));
     }
 
-    let mut rng = Rng(0xD15C_0FFE_E5EE_D001);
-    let mut random_pairs: Vec<(u32, bool)> = Vec::new();
-    for _ in 0..50_000usize {
-        let i = rng.below(frags.len());
-        let j = rng.below(frags.len());
-        if i == j {
-            continue;
-        }
-        let (x, y) = (&frags[i], &frags[j]);
-        random_pairs.push((
-            hamming_distance(x.fingerprint, y.fingerprint),
-            shares_band(x.fingerprint, y.fingerprint),
-        ));
-    }
+    let corpus_pairs = PairDistances::over(frags);
 
     let pct = |rows: &[(u32, bool)], d: u32, gated: bool| -> f64 {
         if rows.is_empty() {
@@ -1577,35 +1717,46 @@ fn run_threshold_sweep(frags: &[Fragment], corpus_label: &str) {
     };
 
     println!(
-        "\n--- {} : {} fragments, {} unlabelled random pairs ---",
+        "\n--- {} : {} fragments, {} unlabelled pairs ({}) ---",
         corpus_label,
         frags.len(),
-        random_pairs.len()
+        corpus_pairs.total(),
+        corpus_pairs.basis()
     );
-    println!("Edited columns: lexical gated capture; RANDOM GATED: unlabelled pair hit rate.");
+    println!("Edited columns: lexical gated capture; CORPUS GATED: unlabelled pair hit rate.");
     print!("{:>3}", "d");
     for (label, _) in &per_class {
         print!(" {:>14}", &label[..label.len().min(14)]);
     }
-    println!(" {:>12}", "RANDOM GATED");
+    println!(" {:>12}", "CORPUS GATED");
 
     for d in [1u32, 2, 3, 4, 6, 8, 10, 12, 14, 16, 20] {
         print!("{:>3}", d);
         for (_, rows) in &per_class {
             print!(" {:>13.1}%", pct(rows, d, true));
         }
-        println!(" {:>11.4}%", pct(&random_pairs, d, true));
+        println!(" {:>11.4}%", corpus_pairs.rate_at(d, true));
     }
 
-    let mut dists: Vec<u32> = random_pairs.iter().map(|(d, _)| *d).collect();
-    dists.sort_unstable();
-    let q = |p: usize| dists[(dists.len() * p / 100).min(dists.len().saturating_sub(1))];
     println!(
-        "unlabelled random-pair distance: min {} p1 {} p5 {} p50 {} (not a safety bound)",
-        dists.first().copied().unwrap_or(0),
-        q(1),
-        q(5),
-        q(50)
+        "unlabelled pair distance: min {} (band-gated min {}) p1 {} p5 {} p50 {}",
+        corpus_pairs
+            .min()
+            .map_or("-".into(), |d| d.to_string()),
+        corpus_pairs
+            .min_banded()
+            .map_or("none reachable".into(), |d| d.to_string()),
+        corpus_pairs.quantile(1.0),
+        corpus_pairs.quantile(5.0),
+        corpus_pairs.quantile(50.0)
+    );
+    println!(
+        "These minima are now exact rather than sampled, which removes the\n\
+         sampling error and nothing else. An exact minimum over this corpus is\n\
+         still an exact minimum over THIS corpus, the pairs carry no semantic\n\
+         labels, and a pair at small distance may be a true duplicate that\n\
+         dedup exists to collapse. This is not a false-merge rate and not a\n\
+         safety bound. See probe_labelled_hard_negatives for labelled pairs."
     );
 }
 
@@ -1642,29 +1793,31 @@ fn probe_dedup_threshold_sweep() {
 fn probe_prose_gated_pair_diagnostics() {
     let frags = build_prose_corpus();
     assert!(frags.len() > 100);
-    let mut rng = Rng(0xD15C_0FFE_E5EE_D001);
+    // Enumerated, not sampled. This diagnostic hunts for the pairs that pass
+    // the gate, which are rare: sampling 50_000 of C(n,2) index pairs with
+    // replacement examined under 5% of them, so it missed roughly 95% of the
+    // only thing it was looking for and under-reported `close` accordingly.
+    // Searching for a rare event is the case where sampling the bulk is
+    // maximally wasteful.
     let (mut checked, mut close, mut byte_identical) = (0usize, 0usize, 0usize);
     let mut examples: Vec<(f64, f64, bool, String, String)> = Vec::new();
-    for _ in 0..50_000usize {
-        let i = rng.below(frags.len());
-        let j = rng.below(frags.len());
-        if i == j {
-            continue;
-        }
-        checked += 1;
-        let (x, y) = (&frags[i], &frags[j]);
-        if hamming_distance(x.fingerprint, y.fingerprint) <= PROD_THRESHOLD
-            && shares_band(x.fingerprint, y.fingerprint)
-        {
-            close += 1;
-            let c = cosine_tf(&x.tf, &y.tf);
-            let jc = jaccard_distinct(&x.tf, &y.tf);
-            let same_bytes = x.body == y.body;
-            if same_bytes {
-                byte_identical += 1;
-            }
-            if examples.len() < 5 {
-                examples.push((c, jc, same_bytes, x.origin.clone(), y.origin.clone()));
+    for i in 0..frags.len() {
+        for j in (i + 1)..frags.len() {
+            checked += 1;
+            let (x, y) = (&frags[i], &frags[j]);
+            if hamming_distance(x.fingerprint, y.fingerprint) <= PROD_THRESHOLD
+                && shares_band(x.fingerprint, y.fingerprint)
+            {
+                close += 1;
+                let c = cosine_tf(&x.tf, &y.tf);
+                let jc = jaccard_distinct(&x.tf, &y.tf);
+                let same_bytes = x.body == y.body;
+                if same_bytes {
+                    byte_identical += 1;
+                }
+                if examples.len() < 5 {
+                    examples.push((c, jc, same_bytes, x.origin.clone(), y.origin.clone()));
+                }
             }
         }
     }
@@ -1672,7 +1825,9 @@ fn probe_prose_gated_pair_diagnostics() {
         "\n=== unlabelled prose pairs passing band and d <= {} ===",
         PROD_THRESHOLD
     );
-    println!("sampled {checked}, gated {close}, of which byte-identical: {byte_identical}");
+    println!(
+        "enumerated {checked} pairs, gated {close}, of which byte-identical: {byte_identical}"
+    );
     for (c, j, same_bytes, a, b) in &examples {
         println!(
             "  cos {:.3}  jacc {:.3}  same_bytes {}   {}  <->  {}",
@@ -1684,5 +1839,463 @@ fn probe_prose_gated_pair_diagnostics() {
          Jaccard alone proves neither byte equality nor semantic equivalence.\n\
          Non-identical gated pairs require independent labels; this diagnostic\n\
          does not establish that hard-dropping either fragment is safe.\n"
+    );
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Arm 9 — labelled hard negatives.
+//
+// Every arm above measures unlabelled pairs and then says, correctly, that
+// unlabelled hits are not false merges. None of them supplies the labels the
+// hard-drop question needs. This arm does, by construction rather than by
+// judgement after the fact.
+//
+// Construction: take a real fragment and apply one minimal edit that changes
+// what the text MEANS while leaving nearly all of its trigrams intact — flip
+// a comparison, change an integer literal, invert a returned boolean — or
+// synthesize a templated catalogue entry differing in one subject noun. The
+// pair is then a hard negative: distinct by construction, and as similar as
+// the generator can make it.
+//
+// Why this is the right instrument, and what it still cannot do:
+//
+//   * Unlabelled random pairs sample the BULK of the distance distribution.
+//     The threshold lives in its far-left tail. Hard negatives sample that
+//     tail directly, which is why a few thousand of them carry more
+//     information about a threshold than every pair in the corpus does.
+//
+//   * The asymmetry is the whole point. ONE distinct pair that shares a band
+//     at d <= tau proves tau unsafe — an existence proof, needing no
+//     sampling guarantee whatsoever. Finding none proves nothing, because
+//     these generators are not exhaustive over the ways two fragments can
+//     differ by one semantic token.
+//
+//     So: this arm can FALSIFY a threshold. It cannot CERTIFY one. Reading a
+//     clean run as evidence of safety is exactly the inference the arms above
+//     already warn against.
+//
+//   * "Distinct by construction" is a property of the generator, not a proof
+//     about the strings. Each class therefore carries its rationale in code
+//     so the claim can be audited rather than trusted.
+//
+//   * A no-op edit would make this arm silently vacuous — measuring identical
+//     text and reporting d = 0 as though it were a false merge. That is the
+//     failure that made an earlier version of the templated regression test
+//     worthless, so no-ops are counted, excluded, and gated by a test that is
+//     not #[ignore]d.
+// ════════════════════════════════════════════════════════════════════
+
+/// Replace the first occurrence of `from` with `to`; `None` when absent.
+fn replace_first(text: &str, from: &str, to: &str) -> Option<String> {
+    let at = text.find(from)?;
+    let mut out = String::with_capacity(text.len() + to.len());
+    out.push_str(&text[..at]);
+    out.push_str(to);
+    out.push_str(&text[at + from.len()..]);
+    Some(out)
+}
+
+/// Flip the first comparison operator.
+///
+/// The spaces are load-bearing: without them `<` matches inside a generic
+/// parameter list such as `Vec<T>`, which would rewrite a type rather than a
+/// predicate and produce a pair that is not distinct in the intended way.
+fn flip_comparison(text: &str) -> Option<String> {
+    replace_first(text, " <= ", " >= ")
+        .or_else(|| replace_first(text, " >= ", " <= "))
+        .or_else(|| replace_first(text, " == ", " != "))
+        .or_else(|| replace_first(text, " < ", " > "))
+        .or_else(|| replace_first(text, " > ", " < "))
+}
+
+/// Invert the first returned boolean — the opposite verdict from the same
+/// function.
+fn invert_boolean(text: &str) -> Option<String> {
+    replace_first(text, "return true", "return false")
+        .or_else(|| replace_first(text, "return false", "return true"))
+        .or_else(|| replace_first(text, "return True", "return False"))
+        .or_else(|| replace_first(text, "return False", "return True"))
+}
+
+/// Change the first standalone integer literal.
+///
+/// Digits are mapped 7 <-> 3 and everything else to 7, so the replacement has
+/// the same number of characters as the original. Equal width keeps the
+/// surrounding trigrams aligned, which makes this a *hard* negative rather
+/// than one that is easy to separate because the text got longer.
+fn change_integer_literal(text: &str) -> Option<String> {
+    let b = text.as_bytes();
+    let boundary = |c: u8| !(c.is_ascii_alphanumeric() || c == b'_' || c == b'.');
+    let mut i = 0;
+    while i < b.len() {
+        if !b[i].is_ascii_digit() {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < b.len() && b[i].is_ascii_digit() {
+            i += 1;
+        }
+        let before_ok = start == 0 || boundary(b[start - 1]);
+        let after_ok = i >= b.len() || boundary(b[i]);
+        if before_ok && after_ok {
+            let orig = &text[start..i];
+            let swapped: String = orig
+                .chars()
+                .map(|c| if c == '7' { '3' } else { '7' })
+                .collect();
+            if swapped != orig {
+                let mut out = String::with_capacity(text.len());
+                out.push_str(&text[..start]);
+                out.push_str(&swapped);
+                out.push_str(&text[i..]);
+                return Some(out);
+            }
+        }
+    }
+    None
+}
+
+/// Templated catalogue entries differing in exactly one subject noun.
+///
+/// This is the shape the earlier corpora contained no example of: a long
+/// identical template around a single distinguishing word. Distinctness is not
+/// subtle — a prompt about archiving a user is not a prompt about archiving a
+/// workspace, and dedup is a hard drop, so collapsing them loses a string the
+/// product still needs to render.
+fn templated_negative_pairs() -> Vec<(String, String)> {
+    let subjects = [
+        "user",
+        "group",
+        "project",
+        "workspace",
+        "team",
+        "webhook",
+        "channel",
+        "invoice",
+    ];
+    let verbs = ["delete", "archive", "duplicate", "restore", "export"];
+    let mut out = Vec::new();
+    for verb in verbs {
+        let line = |s: &str| {
+            format!(
+                "\"confirm.{verb}\": \"Are you sure you want to {verb} this {s}? \
+                 This action cannot be undone and any members will immediately \
+                 lose access to its contents.\""
+            )
+        };
+        for pair in subjects.windows(2) {
+            out.push((line(pair[0]), line(pair[1])));
+        }
+    }
+    out
+}
+
+/// Distance distribution for one labelled class, plus the bookkeeping that
+/// keeps the class from being vacuous.
+struct NegativeClass {
+    label: &'static str,
+    rationale: &'static str,
+    all: [u64; 65],
+    banded: [u64; 65],
+    /// Edits that returned text identical to the input. Excluded from the
+    /// histograms: an unchanged pair is not a negative at all.
+    noop: usize,
+}
+
+impl NegativeClass {
+    fn new(label: &'static str, rationale: &'static str) -> Self {
+        Self {
+            label,
+            rationale,
+            all: [0; 65],
+            banded: [0; 65],
+            noop: 0,
+        }
+    }
+
+    fn record(&mut self, a: u64, b: u64) {
+        let d = (hamming_distance(a, b) as usize).min(64);
+        self.all[d] += 1;
+        if shares_band(a, b) {
+            self.banded[d] += 1;
+        }
+    }
+
+    fn pairs(&self) -> u64 {
+        self.all.iter().sum()
+    }
+
+    fn min(&self) -> Option<u32> {
+        self.all.iter().position(|&c| c > 0).map(|d| d as u32)
+    }
+
+    /// Smallest distance among pairs `DedupIndex` would actually consider.
+    fn min_gated(&self) -> Option<u32> {
+        self.banded.iter().position(|&c| c > 0).map(|d| d as u32)
+    }
+
+    /// Pairs this class proves would be merged at `tau`: band-shared AND
+    /// within the threshold, which is exactly `DedupIndex::insert`.
+    fn merged_at(&self, tau: u32) -> u64 {
+        self.banded[..=(tau as usize).min(64)].iter().sum()
+    }
+
+    /// Distinct text that collided to the same fingerprint. Unreachable by
+    /// raising or lowering a threshold, so it is reported separately.
+    fn fingerprint_collisions(&self) -> u64 {
+        self.all[0]
+    }
+}
+
+#[test]
+#[ignore = "measurement probe; run explicitly with --ignored --nocapture"]
+fn probe_labelled_hard_negatives() {
+    let frags = build_corpus();
+    assert!(frags.len() > 200, "code corpus too small: {}", frags.len());
+
+    type Gen = fn(&str) -> Option<String>;
+    let edits: [(&'static str, &'static str, Gen); 3] = [
+        (
+            "comparison flipped",
+            "`a < b` and `a > b` are different predicates",
+            flip_comparison,
+        ),
+        (
+            "integer literal changed",
+            "a different constant is a different program",
+            change_integer_literal,
+        ),
+        (
+            "returned boolean inverted",
+            "the opposite verdict from the same function",
+            invert_boolean,
+        ),
+    ];
+
+    let mut classes: Vec<NegativeClass> = Vec::new();
+
+    for (label, rationale, gen) in edits {
+        let mut class = NegativeClass::new(label, rationale);
+        for f in frags.iter() {
+            let Some(edited) = gen(&f.body) else {
+                continue;
+            };
+            if edited == f.body {
+                class.noop += 1;
+                continue;
+            }
+            let tf = trigram_tf(&edited);
+            if tf.len() < 5 {
+                continue;
+            }
+            class.record(f.fingerprint, simhash(&edited));
+        }
+        classes.push(class);
+    }
+
+    let mut templated = NegativeClass::new(
+        "templated subject swapped",
+        "a prompt about a user is not a prompt about a workspace",
+    );
+    for (a, b) in templated_negative_pairs() {
+        if a == b {
+            templated.noop += 1;
+            continue;
+        }
+        templated.record(simhash(&a), simhash(&b));
+    }
+    classes.push(templated);
+
+    const TAUS: [u32; 4] = [3, 5, 8, 12];
+
+    println!("\n=== ARM 9: labelled hard negatives (production 4x16 band gate) ===");
+    println!("current PROD_THRESHOLD = {PROD_THRESHOLD}");
+    println!(
+        "\nEach pair below is semantically distinct BY CONSTRUCTION, so a merge\n\
+         is a true false merge rather than an unlabelled hit. MERGED@tau counts\n\
+         pairs that share a band and sit within tau — the exact DedupIndex\n\
+         predicate.\n"
+    );
+
+    print!("{:<28} {:>6} {:>5} {:>7} {:>6}", "class", "pairs", "min", "minGate", "fpCol");
+    for tau in TAUS {
+        print!(" {:>9}", format!("MERGED@{tau}"));
+    }
+    println!();
+
+    let mut falsified: Vec<(u32, &'static str, u64)> = Vec::new();
+    for c in &classes {
+        print!(
+            "{:<28} {:>6} {:>5} {:>7} {:>6}",
+            c.label,
+            c.pairs(),
+            c.min().map_or("-".to_string(), |d| d.to_string()),
+            c.min_gated().map_or("-".to_string(), |d| d.to_string()),
+            c.fingerprint_collisions()
+        );
+        for tau in TAUS {
+            let m = c.merged_at(tau);
+            print!(" {:>9}", m);
+            if m > 0 {
+                falsified.push((tau, c.label, m));
+            }
+        }
+        println!();
+    }
+
+    println!("\nrationale per class (the basis for calling these pairs distinct):");
+    for c in &classes {
+        println!(
+            "  {:<28} {}   [{} no-op edits excluded]",
+            c.label, c.rationale, c.noop
+        );
+    }
+
+    println!("\nFALSIFICATION SUMMARY");
+    let mut any = false;
+    for tau in TAUS {
+        let total: u64 = falsified
+            .iter()
+            .filter(|(t, _, _)| *t == tau)
+            .map(|(_, _, m)| *m)
+            .sum();
+        if total > 0 {
+            any = true;
+            let worst = falsified
+                .iter()
+                .filter(|(t, _, _)| *t == tau)
+                .max_by_key(|(_, _, m)| *m)
+                .map(|(_, label, _)| *label)
+                .unwrap_or("?");
+            println!(
+                "  tau = {tau:>2}: UNSAFE — {total} distinct pair(s) merge, worst class \"{worst}\""
+            );
+        } else {
+            println!("  tau = {tau:>2}: not falsified by these generators");
+        }
+    }
+    if !any {
+        println!("  (no class merged at any tau tried)");
+    }
+
+    println!(
+        "\nRead this one way only. A tau marked UNSAFE is falsified: a pair of\n\
+         distinct strings demonstrably collapses, and dedup is a hard drop, so\n\
+         one of them is discarded at ingest. A tau \"not falsified\" is NOT\n\
+         shown safe — these four generators cover a handful of the ways two\n\
+         fragments can differ by one semantic token, and absence of a\n\
+         counterexample from them is not evidence of absence. Certifying a\n\
+         threshold needs labelled near-duplicates from an independent holdout,\n\
+         which this repository does not contain.\n"
+    );
+}
+
+/// The arm is worthless if its generators return the input unchanged: it would
+/// then compare identical text, report distance 0, and present that as a false
+/// merge. An earlier version of the templated regression test failed exactly
+/// this way — it passed at every threshold because the strings it picked did
+/// not actually collide, so it asserted nothing.
+///
+/// Not #[ignore]d: this runs in CI so the probe cannot rot into vacuity.
+#[test]
+fn every_hard_negative_generator_changes_the_text() {
+    let code = "fn pick(limit: usize) -> bool {\n    if limit < 42 {\n        return true;\n    }\n    return false;\n}";
+
+    let flipped = flip_comparison(code).expect("comparison present");
+    assert_ne!(flipped, code, "flip_comparison returned the input unchanged");
+    assert!(
+        flipped.contains(" > 42"),
+        "expected the predicate to invert, got: {flipped}"
+    );
+
+    let renumbered = change_integer_literal(code).expect("integer literal present");
+    assert_ne!(
+        renumbered, code,
+        "change_integer_literal returned the input unchanged"
+    );
+    assert!(
+        renumbered.contains("77"),
+        "expected 42 -> 77 (equal width), got: {renumbered}"
+    );
+    assert_eq!(
+        renumbered.len(),
+        code.len(),
+        "replacement must preserve width so trigrams stay aligned"
+    );
+
+    let inverted = invert_boolean(code).expect("boolean return present");
+    assert_ne!(inverted, code, "invert_boolean returned the input unchanged");
+
+    // A literal inside an identifier is not a standalone literal.
+    assert!(
+        change_integer_literal("let sha256_digest = hash();").is_none(),
+        "digits inside an identifier must not be treated as a literal"
+    );
+    // A generic parameter list is not a comparison.
+    assert!(
+        flip_comparison("let v: Vec<String> = Vec::new();").is_none(),
+        "generic brackets must not be read as a comparison operator"
+    );
+
+    for (a, b) in templated_negative_pairs() {
+        assert_ne!(a, b, "templated pair generator produced identical strings");
+    }
+}
+
+/// `PairDistances` replaced a 50_000-draw sample, so the thing worth pinning
+/// is that it agrees with an independent O(n^2) recomputation — otherwise the
+/// arms would report an exact-looking number that is simply wrong.
+#[test]
+fn pair_distances_are_exact_over_every_pair() {
+    let fingerprints: Vec<u64> = vec![
+        0x0000_0000_0000_0000,
+        0x0000_0000_0000_0001, // d = 1 from the first
+        0xFFFF_FFFF_FFFF_FFFF,
+        0x0F0F_0F0F_0F0F_0F0F,
+        0x0000_0000_0000_0003,
+    ];
+    let frags: Vec<Fragment> = fingerprints
+        .iter()
+        .enumerate()
+        .map(|(i, &fp)| Fragment {
+            origin: format!("synthetic:{i}"),
+            body: String::new(),
+            fingerprint: fp,
+            tf: Vec::new(),
+        })
+        .collect();
+
+    let dist = PairDistances::over(&frags);
+    let n = frags.len() as u64;
+
+    assert!(dist.exhaustive, "a 5-fragment corpus must be enumerated");
+    assert_eq!(
+        dist.total(),
+        n * (n - 1) / 2,
+        "every unordered pair must be counted exactly once"
+    );
+    assert_eq!(
+        dist.min(),
+        brute_force_min_distance(&fingerprints),
+        "histogram minimum must match the independent recomputation"
+    );
+    assert_eq!(dist.min(), Some(1), "0x0 and 0x1 differ in one bit");
+
+    // The band-gated floor cannot sit below the ungated floor.
+    if let (Some(lo), Some(gated)) = (dist.min(), dist.min_banded()) {
+        assert!(gated >= lo, "gated minimum {gated} below ungated {lo}");
+    }
+
+    // rate_at is monotone in d and reaches 100% of pairs ungated.
+    let mut prev = 0.0;
+    for d in 0..=64u32 {
+        let r = dist.rate_at(d, false);
+        assert!(r >= prev - f64::EPSILON, "rate_at not monotone at d={d}");
+        prev = r;
+    }
+    assert!(
+        (dist.rate_at(64, false) - 100.0).abs() < 1e-9,
+        "every pair is within distance 64"
     );
 }

@@ -33,6 +33,26 @@ fn normalized_content_hash(text: &str) -> u64 {
     hash_token(&normalized)
 }
 
+/// Tokenization/feature revision of this module's 64-bit [`simhash`].
+///
+/// Distinct from [`crate::simhash_wide::FINGERPRINT_VERSION`], which versions
+/// the width-parameterised MD5 scheme in that module. This one versions how
+/// *this* function tokenizes text; the two move independently.
+///
+/// Fingerprints are persisted (see `EntrolyEngine::persist_index`) and then
+/// compared against freshly computed ones, so any change to tokenization or
+/// feature extraction silently invalidates stored values: a Hamming distance
+/// between a v1 and a v2 fingerprint is meaningless, and nothing in the data
+/// said which revision produced it.
+///
+/// Bump this whenever [`simhash`] would return a different value for the same
+/// input. Readers persist it alongside the fingerprints and recompute when it
+/// does not match, which turns a silent wrong answer into a rebuild.
+///
+/// * v1 — original; dropped standalone operator tokens.
+/// * v2 — retains operator tokens, so comparisons no longer collide at 0.
+pub const SIMHASH_TOKENIZATION_VERSION: u32 = 2;
+
 /// Compute the 64-bit SimHash fingerprint of a text.
 ///
 /// Algorithm:
@@ -40,6 +60,8 @@ fn normalized_content_hash(text: &str) -> u64 {
 ///   2. Hash each feature → 64-bit
 ///   3. For each bit: feature hash bit=1 → +1, bit=0 → -1
 ///   4. Final bit = 1 if sum > 0, else 0
+///
+/// Changing any of that requires bumping [`SIMHASH_TOKENIZATION_VERSION`].
 pub fn simhash(text: &str) -> u64 {
     if text.is_empty() {
         return 0;
@@ -47,7 +69,29 @@ pub fn simhash(text: &str) -> u64 {
 
     let words: Vec<&str> = text
         .split_whitespace()
-        .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric() && c != '_'))
+        .map(|w| {
+            let trimmed = w.trim_matches(|c: char| !c.is_alphanumeric() && c != '_');
+            // Keep the raw token when trimming would erase it entirely.
+            //
+            // The trim exists to turn `foo();` into `foo`. But a *standalone*
+            // operator token — `<`, `>`, `==`, `!=` — is all punctuation, so it
+            // trimmed to the empty string and was then dropped by the filter
+            // below. That made the fingerprint blind to every operator:
+            // `limit < 42` and `limit > 42` both tokenized to `[limit, 42]`,
+            // produced identical trigrams, and collided at Hamming distance 0.
+            //
+            // Distance 0 defeats the threshold entirely, because `insert`
+            // merges on `same_content || hamming <= threshold` — so inverting a
+            // comparison was treated as a duplicate at *every* threshold,
+            // including 0, and one of the two fragments was hard-dropped at
+            // ingest. Measured on this repository before this fix: 588 of 588
+            // comparison-flipped pairs collided at distance 0.
+            if trimmed.is_empty() {
+                w
+            } else {
+                trimmed
+            }
+        })
         .filter(|w| !w.is_empty())
         .collect();
 
@@ -695,5 +739,77 @@ mod tests {
                 "{id} was collapsed into an earlier locale string; a distinct                  translation would have been discarded at ingest"
             );
         }
+    }
+
+    /// Inverting an operator must move the fingerprint and must not merge.
+    ///
+    /// `simhash` trims non-alphanumerics from each whitespace-separated word to
+    /// turn `foo();` into `foo`. A *standalone* operator token is all
+    /// punctuation, so it trimmed to the empty string and was dropped:
+    /// `limit < 42` and `limit > 42` both tokenized to `[limit, 42]` and
+    /// collided at Hamming distance 0. Measured on this repository, 588 of 588
+    /// comparison-flipped pairs collided that way.
+    ///
+    /// Distance 0 is not a threshold problem, which is why this test pins
+    /// threshold 0 as well: `insert` merges on
+    /// `same_content || hamming <= threshold`, so a 0-distance pair merged at
+    /// every threshold and one side was hard-dropped at ingest. No choice of
+    /// threshold could have recovered it.
+    #[test]
+    fn operator_only_differences_are_distinguished() {
+        let less = "if limit < 42 { return true; }";
+        let greater = "if limit > 42 { return true; }";
+        assert_ne!(less, greater, "the inputs must differ as text");
+
+        assert_ne!(
+            simhash(less),
+            simhash(greater),
+            "a flipped comparison must change the fingerprint"
+        );
+
+        // Through the real index at the production threshold.
+        let mut idx = DedupIndex::new(5);
+        assert!(idx.insert("less-than", less).is_none());
+        assert!(
+            idx.insert("greater-than", greater).is_none(),
+            "inverting a comparison must not be treated as a duplicate"
+        );
+
+        // Threshold 0: a 0-distance collision would merge here whatever the
+        // production threshold is, so this is the assertion that proves the
+        // tokenizer — not the threshold — carries the separation.
+        let mut strict = DedupIndex::new(0);
+        assert!(strict.insert("less-than", less).is_none());
+        assert!(
+            strict.insert("greater-than", greater).is_none(),
+            "fingerprints must differ, so even threshold 0 keeps them apart"
+        );
+
+        // Equality and inequality are likewise different predicates.
+        assert_ne!(
+            simhash("if a == b { run(); }"),
+            simhash("if a != b { run(); }"),
+            "== and != must not share a fingerprint"
+        );
+    }
+
+    /// The trim still does the job it was added for.
+    ///
+    /// The fix keeps the raw token only when trimming would erase it, so
+    /// ordinary trailing punctuation must behave exactly as before — otherwise
+    /// `foo()` and `foo();` would stop matching and every near-duplicate
+    /// measurement in the probe would shift for an unrelated reason.
+    #[test]
+    fn trailing_punctuation_is_still_trimmed() {
+        assert_eq!(
+            simhash("let value = compute(input);"),
+            simhash("let value = compute(input)"),
+            "a trailing semicolon must still be trimmed away"
+        );
+        assert_eq!(
+            simhash("call(alpha, beta)"),
+            simhash("call(alpha, beta),"),
+            "a trailing comma must still be trimmed away"
+        );
     }
 }
