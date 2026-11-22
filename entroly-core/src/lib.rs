@@ -131,6 +131,46 @@ fn migrate_pin_semantics(fragments: &mut HashMap<String, ContextFragment>) -> us
     migrated
 }
 
+/// Recompute stored fingerprints when a snapshot predates the current
+/// [`dedup::SIMHASH_TOKENIZATION_VERSION`]. Returns how many were rewritten.
+///
+/// `load_index` rebuilds `dedup_index` from `content`, so that structure is
+/// always current. `ContextFragment::simhash` is different: it is persisted
+/// verbatim, and `rebuild_lsh_from_slot_ids` seeds the LSH index straight from
+/// it. A snapshot written by an older revision therefore produced a mixed
+/// state — stale per-fragment fingerprints and a stale LSH index, compared
+/// against freshly computed query fingerprints — and `hamming_distance`
+/// across two revisions is not an approximation of anything. Retrieval gets
+/// worse with no error surfaced anywhere, which is the specific failure this
+/// removes.
+///
+/// Idempotent: callers record the current version on write, so a
+/// matching snapshot does no work and a rewritten one converges after a
+/// single pass.
+fn refresh_stale_fingerprints(
+    fragments: &mut HashMap<String, ContextFragment>,
+    snapshot_version: u32,
+) -> usize {
+    if snapshot_version == dedup::SIMHASH_TOKENIZATION_VERSION {
+        return 0;
+    }
+    let mut refreshed = 0usize;
+    for frag in fragments.values_mut() {
+        // Dependency stubs carry `has_simhash = false` and a sentinel value
+        // that deliberately excludes them from every similarity operation.
+        // Recomputing one would quietly readmit it.
+        if !frag.has_simhash {
+            continue;
+        }
+        let current = simhash(&frag.content);
+        if current != frag.simhash {
+            frag.simhash = current;
+            refreshed += 1;
+        }
+    }
+    refreshed
+}
+
 use prism::PrismOptimizer5D;
 use query_persona::QueryPersonaManifold;
 use resonance::ResonanceMatrix;
@@ -4066,6 +4106,11 @@ impl EntrolyEngine {
         use std::io::Write;
         #[derive(Serialize)]
         struct IndexSnapshot<'a> {
+            /// Revision of the fingerprint function that produced
+            /// `fragments[..].simhash`. Without it a reader cannot tell a
+            /// stale fingerprint from a current one, and a Hamming distance
+            /// across revisions is meaningless rather than merely imprecise.
+            fingerprint_version: u32,
             fragments: &'a HashMap<String, ContextFragment>,
             fragment_slot_ids: &'a Vec<String>,
             w_recency: f64,
@@ -4080,6 +4125,7 @@ impl EntrolyEngine {
             gradient_norm_ema: f64,
         }
         let snapshot = IndexSnapshot {
+            fingerprint_version: dedup::SIMHASH_TOKENIZATION_VERSION,
             fragments: &self.fragments,
             fragment_slot_ids: &self.fragment_slot_ids,
             w_recency: self.w_recency,
@@ -4128,6 +4174,11 @@ impl EntrolyEngine {
     pub fn load_index(&mut self, py: Python<'_>, path: &str) -> PyResult<usize> {
         #[derive(Deserialize)]
         struct IndexSnapshot {
+            /// Absent in indexes written before fingerprints were versioned,
+            /// which defaults it to 0 — never equal to a real revision, so
+            /// those indexes take the recompute path below.
+            #[serde(default)]
+            fingerprint_version: u32,
             fragments: HashMap<String, ContextFragment>,
             fragment_slot_ids: Vec<String>,
             w_recency: f64,
@@ -4182,6 +4233,11 @@ impl EntrolyEngine {
         let n = snapshot.fragments.len();
         self.fragments = snapshot.fragments;
         migrate_pin_semantics(&mut self.fragments);
+
+        // Must run before the LSH rebuild below, which seeds itself from
+        // `ContextFragment::simhash`.
+        refresh_stale_fingerprints(&mut self.fragments, snapshot.fingerprint_version);
+
         self.fragment_slot_ids = snapshot.fragment_slot_ids;
         self.w_recency = snapshot.w_recency;
         self.w_frequency = snapshot.w_frequency;
@@ -7260,4 +7316,102 @@ mod tests {
         assert!((restored.w_prior_semantic - 0.25).abs() < 1e-9);
         assert!((restored.w_prior_entropy - 0.25).abs() < 1e-9);
     }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Fingerprint revision migration
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// A snapshot from an older fingerprint revision must have its stored
+    /// fingerprints rewritten on load.
+    ///
+    /// `ContextFragment::simhash` is persisted verbatim and seeds the LSH
+    /// index, while query fingerprints are always computed fresh. Leaving a
+    /// stale value in place means `hamming_distance` compares two different
+    /// revisions, which is not an approximation of anything — retrieval just
+    /// degrades with nothing reported. Versions are compared rather than
+    /// fingerprints precisely because a stale value is indistinguishable from
+    /// a current one by inspection.
+    #[test]
+    fn stale_fingerprints_are_recomputed_when_the_revision_changed() {
+        use crate::dedup::simhash;
+
+        let content = "fn gate(limit: usize) -> bool { limit < 42 }";
+        let mut fragments: HashMap<String, ContextFragment> = HashMap::new();
+
+        let mut frag = ContextFragment::new(
+            "frag-a".to_string(),
+            content.to_string(),
+            20,
+            "gate.rs".to_string(),
+        );
+        // Stand in for a value written by an earlier revision of `simhash`.
+        frag.simhash = 0xDEAD_BEEF_DEAD_BEEF;
+        frag.has_simhash = true;
+        fragments.insert("frag-a".to_string(), frag);
+
+        // A dependency stub: excluded from similarity by `has_simhash = false`,
+        // with a sentinel fingerprint that must survive untouched. Recomputing
+        // it would quietly readmit the stub to every similarity operation.
+        let mut stub = ContextFragment::new(
+            "stub-b".to_string(),
+            "mod other;".to_string(),
+            4,
+            "other.rs".to_string(),
+        );
+        stub.simhash = 0;
+        stub.has_simhash = false;
+        fragments.insert("stub-b".to_string(), stub);
+
+        let refreshed = refresh_stale_fingerprints(&mut fragments, 0);
+        assert_eq!(refreshed, 1, "exactly the one real fragment is rewritten");
+        assert_eq!(
+            fragments["frag-a"].simhash,
+            simhash(content),
+            "the stored fingerprint must match what the current revision computes"
+        );
+        assert_eq!(
+            fragments["stub-b"].simhash, 0,
+            "a stub's sentinel fingerprint must not be recomputed"
+        );
+        assert!(!fragments["stub-b"].has_simhash, "stub stays excluded");
+
+        // Idempotent: a second pass at the same (stale) version finds nothing
+        // left to do, so a repeated load cannot thrash the LSH index.
+        assert_eq!(
+            refresh_stale_fingerprints(&mut fragments, 0),
+            0,
+            "migration must converge after one pass"
+        );
+    }
+
+    /// A current snapshot must not be touched at all.
+    ///
+    /// This is the hot path — every warm start — so it has to short-circuit on
+    /// the version rather than recompute a fingerprint per fragment to
+    /// discover there was nothing to do.
+    #[test]
+    fn current_fingerprint_revision_skips_the_migration() {
+        let mut fragments: HashMap<String, ContextFragment> = HashMap::new();
+        let mut frag = ContextFragment::new(
+            "frag-a".to_string(),
+            "fn noop() {}".to_string(),
+            8,
+            "noop.rs".to_string(),
+        );
+        // Deliberately wrong for the content: proof the function short-circuits
+        // on the version and does not silently "repair" a matching snapshot.
+        let sentinel = 0x1234_5678_9ABC_DEF0;
+        frag.simhash = sentinel;
+        frag.has_simhash = true;
+        fragments.insert("frag-a".to_string(), frag);
+
+        let refreshed =
+            refresh_stale_fingerprints(&mut fragments, crate::dedup::SIMHASH_TOKENIZATION_VERSION);
+        assert_eq!(refreshed, 0, "a current snapshot needs no work");
+        assert_eq!(
+            fragments["frag-a"].simhash, sentinel,
+            "a matching version must leave stored fingerprints alone"
+        );
+    }
+
 }
