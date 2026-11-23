@@ -365,11 +365,15 @@ pub fn allocate_budget(total_budget: u32, n_files: usize, mean_entropy: f64) -> 
 ///
 /// The objective f(S) = Σ_{f ∈ S} relevance(f) / (1 + |same-module(f, S\{f})|)
 /// is monotone submodular (diminishing returns per module cluster).
-/// Plain greedy on this under a *cardinality* constraint achieves (1 - 1/e).
-/// Under a *knapsack* constraint it does not: density-greedy alone gives ½,
-/// and recovering (1 - 1/e - ε) requires enumerating small subsets as seeds
-/// before the greedy fill. This function does not do that enumeration, so ½
-/// is the bound that applies here and (1 - 1/e) must not be claimed for it.
+/// Plain greedy on this under a *cardinality* constraint achieves (1 - 1/e)
+/// (Nemhauser, Wolsey & Fisher 1978). Under a *knapsack* constraint it does
+/// not: density-greedy alone gives ½, and recovering (1 - 1/e - ε) requires
+/// Sviridenko's partial-enumeration variant (2004) — enumerating small
+/// subsets as seeds before the greedy fill. This function does not do that
+/// enumeration, so ½ is the bound that applies here and (1 - 1/e) must not be
+/// claimed for it. Both papers are worth having open before changing the
+/// schedule; which bound you are entitled to depends on the constraint, and
+/// that is the step that is easy to get wrong.
 pub fn submodular_marginal_gain(
     candidate_source: &str,
     candidate_relevance: f64,
