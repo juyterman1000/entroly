@@ -63,6 +63,39 @@ impl Fingerprint {
     pub fn noise_floor(bits: u16) -> f64 {
         std::f64::consts::PI / (2.0 * (bits as f64).sqrt())
     }
+
+    /// Lower confidence bound on cosine similarity, union-corrected over
+    /// `comparisons`, at this fingerprint's width.
+    ///
+    /// Same arithmetic as the 64-bit path — `dedup::cosine_lcb_from_hamming` is
+    /// shared rather than restated, so the two widths cannot disagree about the
+    /// bound, only about how tight it is.
+    ///
+    /// Width is the entire reason this exists. A caller that *drops* on
+    /// similarity is limited by the bound, not the point estimate, and the bound
+    /// narrows as `1/sqrt(bits)`: the noise floor falls 0.196 -> 0.098 going
+    /// from 64 to 256 bits. At 64 bits the union correction erodes the bound
+    /// fast enough that an exact fingerprint match stops clearing 0.95 once ~16
+    /// comparisons are in play, which makes a safe threshold useless and a
+    /// useful threshold unsafe. More bits buy back exactly that margin.
+    ///
+    /// `None` when the fingerprints are not comparable — different width,
+    /// different scheme version, or a truncated persisted record. That must read
+    /// as "no claim", never as "not similar".
+    pub fn cosine_lcb(
+        &self,
+        other: &Fingerprint,
+        comparisons: usize,
+        alpha: f64,
+    ) -> Option<f64> {
+        let distance = self.hamming(other)?;
+        Some(crate::dedup::cosine_lcb_from_hamming(
+            distance,
+            u32::from(self.bits),
+            comparisons,
+            alpha,
+        ))
+    }
 }
 
 fn token_hash(token: &str, limb: usize) -> u64 {

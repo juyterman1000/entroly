@@ -275,23 +275,89 @@ fn normal_upper_quantile(q: f64) -> f64 {
 /// positive bias (measured: +0.079 on orthogonal pairs), which is precisely
 /// what compounds under a maximum.
 pub fn simhash_cosine_lcb(a: u64, b: u64, comparisons: usize, alpha: f64) -> f64 {
-    let p_hat = hamming_distance(a, b) as f64 / SIMHASH_BITS;
+    cosine_lcb_from_hamming(hamming_distance(a, b), SIMHASH_BITS as u32, comparisons, alpha)
+}
+
+/// The bound itself, parameterised by fingerprint width.
+///
+/// Extracted so a wider fingerprint reuses this arithmetic rather than
+/// restating it. A second copy of a Wilson-plus-union-bound derivation is the
+/// kind of replica that drifts silently: it would keep returning confident
+/// numbers after this one was corrected, and nothing would compare them.
+/// `simhash_cosine_lcb` is this at `bits = 64`; `simhash_wide::Fingerprint`
+/// calls it at its own width.
+///
+/// Width enters only as `n`, which is correct and is the whole point: `d/n` is
+/// the estimated disagreement rate either way, and widening shrinks the
+/// interval around it as `1/sqrt(n)` without changing what is being estimated.
+pub fn cosine_lcb_from_hamming(
+    hamming: u32,
+    bits: u32,
+    comparisons: usize,
+    alpha: f64,
+) -> f64 {
+    cosine_lcb_with_z(hamming, bits, union_z(comparisons, alpha))
+}
+
+/// The union-corrected normal quantile, which depends only on the comparison
+/// count and alpha — never on the pair being compared.
+///
+/// Split out so callers that compare one candidate against k selected items
+/// compute it once instead of k times. It costs a `ln`, a `sqrt` and a rational
+/// evaluation, and it sat in the innermost loop of an O(N*K) selection.
+#[inline]
+pub fn union_z(comparisons: usize, alpha: f64) -> f64 {
     let k = comparisons.max(1) as f64;
-    let z = normal_upper_quantile(alpha.clamp(1e-9, 0.5) / k);
+    normal_upper_quantile(alpha.clamp(1e-9, 0.5) / k)
+}
+
+/// Largest Hamming distance whose bound still reaches `target`, or `None` when
+/// even an exact match does not.
+///
+/// The bound is monotone decreasing in distance — more observed disagreement
+/// cannot raise a lower bound on similarity — so a threshold comparison
+/// `lcb(d) >= target` is equivalent to the integer test `d <= this`. Inverting
+/// once per comparison count turns an inner loop of transcendental arithmetic
+/// into a popcount and an integer compare, which matters because the caller
+/// runs it O(N*K) times per selection.
+///
+/// Exact, not an approximation: binary search over a monotone integer-indexed
+/// function, and the equivalence is asserted against the float path in tests.
+pub fn max_hamming_within_bound(bits: u32, comparisons: usize, alpha: f64, target: f64) -> Option<u32> {
+    let z = union_z(comparisons, alpha);
+    if cosine_lcb_with_z(0, bits, z) < target {
+        return None;
+    }
+    let (mut lo, mut hi) = (0u32, bits);
+    while lo < hi {
+        let mid = lo + (hi - lo).div_ceil(2);
+        if cosine_lcb_with_z(mid, bits, z) >= target {
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    Some(lo)
+}
+
+/// The Wilson arithmetic, with the quantile supplied by the caller.
+#[inline]
+pub fn cosine_lcb_with_z(hamming: u32, bits: u32, z: f64) -> f64 {
+    let n = f64::from(bits.max(1));
+    let p_hat = f64::from(hamming) / n;
     // Wilson score upper bound, not Wald.
     //
     // The Wald form `p_hat + z * sqrt(p(1-p)/n)` has zero width at p_hat = 0,
     // so two fragments whose fingerprints matched exactly received a lower
     // bound of exactly 1.000000 -- at every alpha and every comparison count.
-    // Observing zero disagreements in 64 bits does not establish p = 0: by the
-    // rule of three the true rate can be near 3/64, which is a similarity
-    // around 0.989. Claiming certainty is worst precisely where it matters,
-    // since a fingerprint match is when the index decides "duplicate" and drops
-    // a fragment.
+    // Observing zero disagreements in n bits does not establish p = 0: by the
+    // rule of three the true rate can be near 3/n, which at 64 bits is a
+    // similarity around 0.989. Claiming certainty is worst precisely where it
+    // matters, since a fingerprint match is when a caller decides "duplicate"
+    // and drops a fragment.
     //
     // Wilson stays non-degenerate at both boundaries and needs no extra
     // machinery: at p_hat = 0 it reduces to (z^2/n) / (1 + z^2/n) > 0.
-    let n = SIMHASH_BITS;
     let z2 = z * z;
     let denom = 1.0 + z2 / n;
     let center = p_hat + z2 / (2.0 * n);
@@ -945,5 +1011,72 @@ mod tests {
             simhash("call(alpha, beta),"),
             "a trailing comma must still be trimmed away"
         );
+    }
+
+    // ── Bound inversion (the selector's hot path depends on these) ──
+
+    #[test]
+    fn the_bound_is_monotone_decreasing_in_hamming_distance() {
+        // `max_hamming_within_bound` replaces a per-pair float comparison with
+        // an integer threshold, and that substitution is only valid if the
+        // bound never rises as observed disagreement grows. Asserted rather
+        // than assumed: if this ever failed, the selector's admission gate
+        // would silently start excluding the wrong fragments.
+        for &bits in &[64u32, 256, 1024] {
+            for &k in &[1usize, 4, 32, 256] {
+                let mut previous = f64::INFINITY;
+                for d in 0..=bits {
+                    let value = cosine_lcb_from_hamming(d, bits, k, 0.05);
+                    assert!(
+                        value <= previous + 1e-12,
+                        "bound rose at bits={bits} k={k} d={d}: {previous} -> {value}"
+                    );
+                    previous = value;
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn integer_threshold_matches_the_float_comparison_exactly() {
+        // The equivalence the optimisation trades on, checked across widths,
+        // comparison counts and targets: `d <= max_hamming_within_bound(..)`
+        // must agree with `cosine_lcb_from_hamming(d, ..) >= target` for every
+        // distance, with no off-by-one at the boundary.
+        for &bits in &[64u32, 256] {
+            for &k in &[1usize, 8, 64] {
+                for &target in &[0.70_f64, 0.90, 0.95, 0.99] {
+                    let threshold = max_hamming_within_bound(bits, k, 0.05, target);
+                    for d in 0..=bits {
+                        let by_float = cosine_lcb_from_hamming(d, bits, k, 0.05) >= target;
+                        let by_int = threshold.is_some_and(|max_d| d <= max_d);
+                        assert_eq!(
+                            by_float, by_int,
+                            "disagreement at bits={bits} k={k} target={target} d={d}                              (threshold={threshold:?})"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn an_unreachable_target_inverts_to_none_rather_than_zero() {
+        // `None` and `Some(0)` are different claims and the gate reads them
+        // differently: `Some(0)` would still exclude an exact match, while
+        // `None` means no distance clears the target. Returning 0 here would
+        // turn an impossible gate into a fingerprint-equality gate.
+        // A bound on 64 bits never reaches certainty: an exact match tops out
+        // at 0.99189 for one comparison, by the rule of three. So 1.0 and even
+        // 0.995 are unreachable at that width, while 0.99 is not -- which is
+        // the useful fact here, since it is the width that decides whether a
+        // demanding gate is expressible at all.
+        assert_eq!(max_hamming_within_bound(64, 1, 0.05, 1.0), None);
+        assert_eq!(max_hamming_within_bound(64, 1, 0.05, 0.995), None);
+        assert_eq!(max_hamming_within_bound(64, 1, 0.05, 0.99), Some(0));
+        // 256 bits reaches 0.99946 on an exact match, so it can express a gate
+        // that 64 bits cannot, and still distinguishes one differing bit.
+        assert_eq!(max_hamming_within_bound(256, 1, 0.05, 0.999), Some(0));
+        assert_eq!(max_hamming_within_bound(256, 1, 0.05, 1.0), None);
     }
 }

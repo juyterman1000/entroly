@@ -756,6 +756,8 @@ fn probe_selection_effect() {
         &InfoFactors::default(),
         0.10,
         0.0,
+        // Probe production behaviour, not a private configuration of it.
+        entroly_engine::knapsack_sds::DEFAULT_REDUNDANCY_GATE,
     );
 
     println!("\n=== ARM 4: effect on real ios_select ===");

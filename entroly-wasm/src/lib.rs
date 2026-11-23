@@ -877,6 +877,12 @@ impl WasmEntrolyEngine {
                 &info_factors,
                 self.ios_diversity_floor,
                 self.min_relevance,
+                // The shared constant, not a literal. This runtime has no
+                // `ios_redundancy_gate` field of its own, and the `parity` job
+                // requires Rust, Python and Node to select alike — passing the
+                // constant makes that agreement structural rather than a number
+                // somebody has to keep in step by hand.
+                knapsack_sds::DEFAULT_REDUNDANCY_GATE,
             );
 
             final_indices = Vec::new();
