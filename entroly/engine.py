@@ -538,6 +538,7 @@ def _build_rust_engine(config: EntrolyConfig):
         ios_skeleton_info_factor=getattr(config, "ios_skeleton_info_factor", 0.70),
         ios_reference_info_factor=getattr(config, "ios_reference_info_factor", 0.15),
         ios_diversity_floor=getattr(config, "ios_diversity_floor", 0.10),
+        ios_redundancy_gate=getattr(config, "ios_redundancy_gate", 0.95),
     )
     try:
         return RustEngine(**base, **extra)

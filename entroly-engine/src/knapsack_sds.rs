@@ -30,6 +30,43 @@ use crate::dedup::{simhash_cosine, simhash_cosine_lcb};
 /// information, since an unjustified penalty discards evidence while an
 /// unjustified reprieve only costs tokens.
 const DIVERSITY_ALPHA: f64 = 0.05;
+
+/// Default admission gate: the confidence-bounded similarity at which a
+/// candidate is refused rather than merely discounted.
+///
+/// 0.95 is deliberately conservative, and the honest description of it at 64
+/// bits is **narrow to the point of rarely firing**. Measured, not assumed.
+///
+/// At 64 bits with `DIVERSITY_ALPHA = 0.05`, `simhash_cosine_lcb` reports 0.992
+/// at Hamming 0 and 0.978 at Hamming 1 for a single comparison — but the union
+/// correction erodes the bound as the selected set grows, to 0.930 and 0.896 by
+/// k=32. So even an *exact fingerprint match* stops clearing 0.95 once roughly
+/// 16 fragments are selected: the gate is effective early in a selection and
+/// inert later, which is backwards from where duplicates accumulate. That is
+/// not a defect in the bound. More comparisons genuinely mean more chances of a
+/// false positive, and this gate destroys evidence, so the protection is wanted.
+///
+/// On both corpora measured by `bench/redundancy.py` it changed nothing at 0.95:
+/// redundant token fraction stayed at 0.2381 on the planted corpus and 0.0000 on
+/// `bench/cases.json`. Loosening to 0.70 cut planted redundancy to 0.1426 and
+/// drove false suppression there to 0.000 — but **doubled** false suppression on
+/// `cases.json` (0.0208 -> 0.0417) while using fewer tokens. On a corpus with no
+/// duplicates to remove, a loose gate only destroys. That asymmetry is why this
+/// ships narrow.
+///
+/// The binding constraint is fingerprint width, and this gate is the one place
+/// in the selector where widening is the right tool. The merge decision cannot
+/// be fixed by width (`dedup.rs` measured that directly), and the diversity
+/// *discount* changes no admission decision at all — but this is a drop driven
+/// by the bound, so a tighter bound buys a threshold that is simultaneously safe
+/// and useful. At 256 bits the noise floor halves (0.196 -> 0.098) and an exact
+/// match stays near 1.0 at large k. See `simhash_wide`.
+///
+/// Raising it to 1.0 disables the gate. Do not lower it without re-running
+/// `python -m bench.redundancy` against **both** a corpus with planted
+/// duplicates and one without. The second is where a loose gate does its damage,
+/// and the first alone will make any loosening look free.
+pub const DEFAULT_REDUNDANCY_GATE: f64 = 0.95;
 use crate::fragment::{compute_relevance, ContextFragment};
 use std::collections::HashMap;
 
@@ -247,11 +284,25 @@ pub struct SelectionCurvature {
 ///   0.0 = maximum estimated similarity penalty
 #[inline]
 fn diversity_factor(candidate_hash: Option<u64>, selected_hashes: &[u64]) -> f64 {
-    let Some(candidate_hash) = candidate_hash else {
-        return 1.0;
-    };
+    // Derived from the same quantity the admission gate reads, so the discount
+    // and the drop can never disagree about how similar a candidate is. A
+    // second similarity path here would be a replica free to drift.
+    1.0 - max_lcb_similarity(candidate_hash, selected_hashes).unwrap_or(0.0)
+}
+
+/// Greatest confidence-bounded similarity between a candidate and the selected
+/// set, or `None` when no such claim can be made.
+///
+/// `None` means "no evidence", not "zero similarity", and the two must not be
+/// conflated: a missing fingerprint is the case where penalising — or worse,
+/// dropping — would discard information on absent evidence. Callers get `None`
+/// when the candidate has no fingerprint or nothing is selected yet, and must
+/// treat it as a reprieve.
+#[inline]
+fn max_lcb_similarity(candidate_hash: Option<u64>, selected_hashes: &[u64]) -> Option<f64> {
+    let candidate_hash = candidate_hash?;
     if selected_hashes.is_empty() {
-        return 1.0;
+        return None;
     }
 
     // Union-bounded over the k comparisons being maximised. Without this, the
@@ -259,15 +310,12 @@ fn diversity_factor(candidate_hash: Option<u64>, selected_hashes: &[u64]) -> f64
     // the penalty grows with how much has already been selected rather than
     // with actual redundancy. See `dedup::simhash_cosine_lcb`.
     let comparisons = selected_hashes.len();
-    let max_sim = selected_hashes
-        .iter()
-        .map(|&h| simhash_cosine_lcb(candidate_hash, h, comparisons, DIVERSITY_ALPHA))
-        .fold(0.0_f64, f64::max);
-
-    // Diversity = 1 - max_similarity
-    // The caller clamps this to `diversity_floor` — even similar fragments
-    // carry SOME new information.
-    1.0 - max_sim
+    Some(
+        selected_hashes
+            .iter()
+            .map(|&h| simhash_cosine_lcb(candidate_hash, h, comparisons, DIVERSITY_ALPHA))
+            .fold(0.0_f64, f64::max),
+    )
 }
 
 /// Compute average pairwise diversity from SimHash fingerprints.
@@ -367,6 +415,7 @@ fn compute_stable_rank(hashes: &[u64]) -> f64 {
 ///   1. Generate candidates: each fragment × {full, skeleton, reference}
 ///   2. Separate pinned fragments (always full resolution, always included)
 ///   3. Greedy loop (greedy-by-density with diversity penalty):
+///      - skip candidates at or above `redundancy_gate` similarity
 ///      - compute marginal_value = base_value × diversity_factor(hash)
 ///      - select candidate with highest marginal_value / token_cost
 ///      - remove all other resolutions of the same fragment
@@ -374,6 +423,17 @@ fn compute_stable_rank(hashes: &[u64]) -> f64 {
 ///
 /// Complexity: O(N × K) where N = candidates, K = selected count
 /// Typically K << N, so this is effectively O(N log N) after initial sort.
+///
+/// `redundancy_gate` is the step the diversity *penalty* cannot perform.
+/// The penalty discounts a candidate's value; it never excludes one, because
+/// the loop below admits anything with positive density that still fits and
+/// stops only when nothing fits. So with budget to spare every near-duplicate
+/// was admitted regardless of how redundant it was measured to be — the
+/// penalty changed the order of admission, not its membership. Measured on a
+/// planted corpus before this gate: 23.8% of selected tokens were
+/// near-duplicates (exact TF-cosine >= 0.80 to an earlier selection), and that
+/// figure was identical at every `diversity_floor` from 0.00 to 0.40 and at
+/// every budget from 0.2x to 1.0x. See `bench/redundancy.py --sweep-floor`.
 #[allow(clippy::too_many_arguments)]
 pub fn ios_select(
     fragments: &[ContextFragment],
@@ -388,6 +448,7 @@ pub fn ios_select(
     info_factors: &InfoFactors,
     diversity_floor: f64,
     min_candidate_value: f64,
+    redundancy_gate: f64,
 ) -> SdsResult {
     if fragments.is_empty() {
         return SdsResult {
@@ -660,8 +721,35 @@ pub fn ios_select(
                 .sum();
             let mut fast_hashes: Vec<u64> = pinned_hashes.clone();
 
+            // The admission gate has to run on this exit too.
+            //
+            // This path used to push every full-resolution candidate
+            // unconditionally, never consulting similarity at all — so in the
+            // regime it exists for, a budget with room to spare, two fragments
+            // with identical fingerprints were both selected. The greedy exit
+            // below at least discounts a duplicate's value; this one did not
+            // look. That made `dedup.rs`'s justification for dropping its
+            // Hamming merge arm — a missed merge "is then penalised downstream
+            // anyway by the IOS diversity term" — unmet exactly when there is
+            // budget for the duplicate, which is when it costs most.
+            //
+            // `order_by_relevance` below carries the same warning for the same
+            // reason: "Both exits of `ios_select` must apply this." Ordering was
+            // guarded on both exits; admission was guarded on one.
+            //
+            // This reintroduces the O(N×K) similarity work the fast path exists
+            // to avoid. That is the intended trade: K is the accepted count and
+            // this path's stated audience is small codebases, so N is small, and
+            // admitting a known duplicate is not a saving worth having.
             for c in &candidates {
                 if c.resolution == Resolution::Full {
+                    if enable_diversity && redundancy_gate < 1.0 {
+                        if let Some(sim) = max_lcb_similarity(c.simhash, &fast_hashes) {
+                            if sim >= redundancy_gate {
+                                continue;
+                            }
+                        }
+                    }
                     selections.push((c.frag_idx, Resolution::Full));
                     fast_tokens += c.token_cost;
                     fast_value += c.base_value;
@@ -796,6 +884,30 @@ pub fn ios_select(
             // because it carries strictly more information.
             if cand.resolution != Resolution::Full && full_fits[cand.frag_idx] {
                 continue;
+            }
+            // Admission gate: refuse a candidate whose similarity to something
+            // already selected is established at the gate level.
+            //
+            // Three properties make this safe to act on where the raw cosine
+            // would not be. The quantity is `simhash_cosine_lcb`, a lower
+            // confidence bound union-corrected over the k comparisons being
+            // maximised, so it under-states similarity and the error it makes
+            // is a reprieve. `None` — no fingerprint, or nothing selected yet —
+            // never gates, so absent evidence cannot cost a fragment. And the
+            // bound is strict, so a gate of 1.0 disables the mechanism rather
+            // than dropping everything at a fingerprint match.
+            //
+            // This is a *drop*, which is the asymmetric risk: a missed merge
+            // costs tokens, a wrong drop destroys evidence permanently (see
+            // `dedup.rs` on why the Hamming merge arm was removed). Hence the
+            // confidence bound rather than the point estimate, and hence the
+            // default sits where only a near-identical fingerprint qualifies.
+            if enable_diversity && redundancy_gate < 1.0 {
+                if let Some(sim) = max_lcb_similarity(cand.simhash, &selected_hashes) {
+                    if sim >= redundancy_gate {
+                        continue;
+                    }
+                }
             }
 
             let div = if enable_diversity {
@@ -947,6 +1059,7 @@ mod tests {
                     &default_factors(),
                     DEFAULT_DIV_FLOOR,
                     DEFAULT_MIN_CANDIDATE_VALUE,
+                    DEFAULT_REDUNDANCY_GATE,
                 );
 
                 assert!(
@@ -1062,6 +1175,7 @@ mod tests {
             &default_factors(),
             DEFAULT_DIV_FLOOR,
             DEFAULT_MIN_CANDIDATE_VALUE,
+            DEFAULT_REDUNDANCY_GATE,
         );
 
         assert_eq!(
@@ -1096,6 +1210,7 @@ mod tests {
             &default_factors(),
             DEFAULT_DIV_FLOOR,
             DEFAULT_MIN_CANDIDATE_VALUE,
+            DEFAULT_REDUNDANCY_GATE,
         );
         assert!(result.selections.is_empty());
         assert_eq!(result.total_tokens, 0);
@@ -1117,6 +1232,7 @@ mod tests {
             &default_factors(),
             DEFAULT_DIV_FLOOR,
             DEFAULT_MIN_CANDIDATE_VALUE,
+            DEFAULT_REDUNDANCY_GATE,
         );
         assert_eq!(result.selections.len(), 1);
         assert_eq!(result.selections[0], (0, Resolution::Full));
@@ -1144,6 +1260,7 @@ mod tests {
             &default_factors(),
             DEFAULT_DIV_FLOOR,
             DEFAULT_MIN_CANDIDATE_VALUE,
+            DEFAULT_REDUNDANCY_GATE,
         );
         let selected_indices: Vec<usize> = result.selections.iter().map(|s| s.0).collect();
         assert!(
@@ -1190,6 +1307,7 @@ mod tests {
             &default_factors(),
             DEFAULT_DIV_FLOOR,
             DEFAULT_MIN_CANDIDATE_VALUE,
+            DEFAULT_REDUNDANCY_GATE,
         );
         let _div_indices: Vec<usize> = result_div.selections.iter().map(|s| s.0).collect();
 
@@ -1207,6 +1325,7 @@ mod tests {
             &default_factors(),
             DEFAULT_DIV_FLOOR,
             DEFAULT_MIN_CANDIDATE_VALUE,
+            DEFAULT_REDUNDANCY_GATE,
         );
 
         // With diversity enabled, we should have higher diversity score
@@ -1246,6 +1365,7 @@ mod tests {
             &default_factors(),
             DEFAULT_DIV_FLOOR,
             DEFAULT_MIN_CANDIDATE_VALUE,
+            DEFAULT_REDUNDANCY_GATE,
         );
         let result_no_mr = ios_select(
             &frags,
@@ -1260,6 +1380,7 @@ mod tests {
             &default_factors(),
             DEFAULT_DIV_FLOOR,
             DEFAULT_MIN_CANDIDATE_VALUE,
+            DEFAULT_REDUNDANCY_GATE,
         );
 
         // Multi-resolution should cover more fragments
@@ -1305,6 +1426,7 @@ mod tests {
             &default_factors(),
             DEFAULT_DIV_FLOOR,
             DEFAULT_MIN_CANDIDATE_VALUE,
+            DEFAULT_REDUNDANCY_GATE,
         );
         assert!(
             result.total_tokens <= 500,
@@ -1343,6 +1465,7 @@ mod tests {
             &default_factors(),
             DEFAULT_DIV_FLOOR,
             DEFAULT_MIN_CANDIDATE_VALUE,
+            DEFAULT_REDUNDANCY_GATE,
         );
         let selected_indices: Vec<usize> = result.selections.iter().map(|s| s.0).collect();
 
@@ -1377,6 +1500,7 @@ mod tests {
             &default_factors(),
             DEFAULT_DIV_FLOOR,
             DEFAULT_MIN_CANDIDATE_VALUE,
+            DEFAULT_REDUNDANCY_GATE,
         );
         if !result.selections.is_empty() {
             assert_eq!(
@@ -1413,6 +1537,7 @@ mod tests {
             &default_factors(),
             DEFAULT_DIV_FLOOR,
             DEFAULT_MIN_CANDIDATE_VALUE,
+            DEFAULT_REDUNDANCY_GATE,
         );
         assert!(
             result.diversity_score >= 0.0 && result.diversity_score <= 1.0,
@@ -1457,6 +1582,7 @@ mod tests {
             &default_factors(),
             DEFAULT_DIV_FLOOR,
             DEFAULT_MIN_CANDIDATE_VALUE,
+            DEFAULT_REDUNDANCY_GATE,
         );
         let full_count_big = result_big
             .selections
@@ -1478,6 +1604,7 @@ mod tests {
             &default_factors(),
             DEFAULT_DIV_FLOOR,
             DEFAULT_MIN_CANDIDATE_VALUE,
+            DEFAULT_REDUNDANCY_GATE,
         );
         let full_count_tight = result_tight
             .selections
@@ -1514,6 +1641,7 @@ mod tests {
             &default_factors(),
             DEFAULT_DIV_FLOOR,
             DEFAULT_MIN_CANDIDATE_VALUE,
+            DEFAULT_REDUNDANCY_GATE,
         );
 
         assert_eq!(result.selections.len(), 3, "Fast path should select all 3");
@@ -1547,6 +1675,7 @@ mod tests {
             &default_factors(),
             DEFAULT_DIV_FLOOR,
             DEFAULT_MIN_CANDIDATE_VALUE,
+            DEFAULT_REDUNDANCY_GATE,
         );
 
         assert!(result.curvature.steps > 0, "greedy loop must have run");
@@ -1583,6 +1712,7 @@ mod tests {
             &default_factors(),
             DEFAULT_DIV_FLOOR,
             DEFAULT_MIN_CANDIDATE_VALUE,
+            DEFAULT_REDUNDANCY_GATE,
         );
         assert_eq!(result.curvature.alpha, 0.0, "no curvature when everything fits");
         assert_eq!(result.curvature.max_penalty, 0.0);
@@ -1705,6 +1835,7 @@ mod tests {
             &default_factors(),
             DEFAULT_DIV_FLOOR,
             DEFAULT_MIN_CANDIDATE_VALUE,
+            DEFAULT_REDUNDANCY_GATE,
         );
 
         assert_eq!(
@@ -1751,6 +1882,7 @@ mod tests {
             &default_factors(),
             DEFAULT_DIV_FLOOR,
             DEFAULT_MIN_CANDIDATE_VALUE,
+            DEFAULT_REDUNDANCY_GATE,
         );
 
         assert_eq!(
@@ -1779,6 +1911,7 @@ mod tests {
             &default_factors(),
             DEFAULT_DIV_FLOOR,
             DEFAULT_MIN_CANDIDATE_VALUE,
+            DEFAULT_REDUNDANCY_GATE,
         );
         let c = &result.curvature;
         assert!(
@@ -1790,6 +1923,131 @@ mod tests {
             "stable_rank {} out of {} is outside [1, m]",
             c.stable_rank,
             c.fingerprinted_count
+        );
+    }
+    // ── Admission gate ──────────────────────────────────────────────
+    //
+    // The gate is the one part of this selector that *destroys* evidence, so
+    // each test below pins one half of its contract: that it fires when the
+    // bound is met, and that every path where the bound cannot be established
+    // is a reprieve rather than a drop.
+
+    /// Two fragments whose fingerprints are identical but whose text is not.
+    /// `insert`'s content-hash short circuit cannot catch this pair, which is
+    /// exactly the case the gate exists for.
+    fn gate_pair() -> Vec<ContextFragment> {
+        let a = "fn alpha(limit: u32) -> u32 { limit + 1 }";
+        let b = "fn alpha(limit: u32) -> u32 { limit + 2 }";
+        let mut frags = vec![
+            make_frag("a", a, 40, "a.rs"),
+            make_frag("b", b, 40, "b.rs"),
+        ];
+        // Pin the premise rather than hope for it: assert the pair really is
+        // fingerprint-identical, or the test proves nothing about the gate.
+        frags[1].simhash = frags[0].simhash;
+        assert_eq!(
+            crate::dedup::hamming_distance(frags[0].simhash, frags[1].simhash),
+            0,
+            "fixture premise: the pair must be fingerprint-identical"
+        );
+        assert_ne!(
+            frags[0].content, frags[1].content,
+            "fixture premise: content must differ, or the content-hash path \
+             would catch this and the gate would be untested"
+        );
+        frags
+    }
+
+    fn run_with_gate(frags: &[ContextFragment], budget: u32, gate: f64) -> SdsResult {
+        ios_select(
+            frags,
+            budget,
+            0.3,
+            0.25,
+            0.25,
+            0.2,
+            &empty_feedback(),
+            true,
+            false,
+            &default_factors(),
+            DEFAULT_DIV_FLOOR,
+            DEFAULT_MIN_CANDIDATE_VALUE,
+            gate,
+        )
+    }
+
+    #[test]
+    fn gate_excludes_a_fingerprint_identical_duplicate_with_budget_to_spare() {
+        let frags = gate_pair();
+        // Budget is ample: both fragments fit comfortably. Before the gate this
+        // was precisely the regime where the diversity penalty changed nothing,
+        // because the greedy admits whatever fits.
+        let gated = run_with_gate(&frags, 10_000, DEFAULT_REDUNDANCY_GATE);
+        assert_eq!(
+            gated.selections.len(),
+            1,
+            "gate must exclude the duplicate even when the budget has room"
+        );
+    }
+
+    #[test]
+    fn gate_at_one_reproduces_the_ungated_selection() {
+        let frags = gate_pair();
+        let ungated = run_with_gate(&frags, 10_000, 1.0);
+        assert_eq!(
+            ungated.selections.len(),
+            2,
+            "a gate of 1.0 must disable the mechanism, not drop at a \
+             fingerprint match — the comparison is strict for this reason"
+        );
+    }
+
+    #[test]
+    fn gate_never_drops_a_fragment_without_a_fingerprint() {
+        // Two stubs with no content-derived fingerprint. `max_lcb_similarity`
+        // returns None for them, which must read as "no evidence" and never as
+        // "similarity 0" or, worse, grounds to drop.
+        let frags = vec![
+            make_stub("s1", "fn one() {}", 40, "one.rs"),
+            make_stub("s2", "fn two() {}", 40, "two.rs"),
+        ];
+        let result = run_with_gate(&frags, 10_000, 0.0);
+        assert_eq!(
+            result.selections.len(),
+            2,
+            "a gate of 0.0 is the most aggressive setting possible, and must \
+             still not touch fingerprint-less fragments"
+        );
+    }
+
+    #[test]
+    fn gate_never_drops_the_first_selection() {
+        // Nothing is selected yet when the first candidate is scored, so there
+        // is nothing for it to duplicate. Even at the most aggressive gate the
+        // selector must return something rather than starve.
+        let frags = gate_pair();
+        let result = run_with_gate(&frags, 10_000, 0.0);
+        assert_eq!(
+            result.selections.len(),
+            1,
+            "the first candidate has an empty selected set and must survive \
+             any gate; only the second is a duplicate of anything"
+        );
+    }
+
+    #[test]
+    fn gate_leaves_distinct_fragments_untouched() {
+        // The false-suppression direction. These share no trigrams, so no
+        // confidence bound over 64 bits can place them near the gate.
+        let frags = vec![
+            make_frag("p", "fn parse_header(buf: &[u8]) -> Header { todo!() }", 40, "p.rs"),
+            make_frag("q", "struct Retry { attempts: u32, backoff_ms: u64 }", 40, "q.rs"),
+        ];
+        let result = run_with_gate(&frags, 10_000, DEFAULT_REDUNDANCY_GATE);
+        assert_eq!(
+            result.selections.len(),
+            2,
+            "distinct fragments must both survive the default gate"
         );
     }
 }
