@@ -234,6 +234,245 @@ def synthetic_corpus(seed: int = 20261122) -> dict[str, Any]:
     }
 
 
+# ── Hard negatives: similar but carrying distinct information ────────────
+#
+# The case that actually constrains the admission gate, and the one the two
+# corpora above cannot exercise. `synthetic_graded_redundancy` contains planted
+# duplicates, so a looser gate always looks better on it. `cases.json` contains
+# no duplicates, so a looser gate costs nothing there. Neither contains a pair
+# that is *lexically* near-identical and *semantically* different, which is the
+# only pair a drop can get wrong.
+#
+# These four transformation classes are ported from Arm 9 of
+# `entroly-core/src/simhash_probe.rs`, deliberately rather than invented here,
+# so the Python gate measurement and the Rust distance probe argue about the
+# same population. Each carries a load-bearing detail:
+#
+#   * operators are matched *with surrounding spaces*, or `<` rewrites a generic
+#     parameter list such as `Vec<T>` and the pair stops being a predicate
+#     inversion;
+#   * the integer swap maps 7<->3 and everything else to 7, keeping the
+#     replacement the same width, because equal width keeps the surrounding
+#     trigrams aligned — a longer replacement would be an easy negative;
+#   * the templated class is a long identical sentence around one differing
+#     subject noun, the shape where overlap is highest and the distinction is
+#     nonetheless total.
+
+_SUBJECTS = ("user", "group", "project", "workspace", "team", "webhook",
+             "channel", "invoice")
+_CONFIRM_VERBS = ("delete", "archive", "duplicate", "restore", "export")
+
+
+def _replace_first(text: str, old: str, new: str) -> str | None:
+    at = text.find(old)
+    return None if at < 0 else text[:at] + new + text[at + len(old):]
+
+
+def flip_comparison(text: str) -> str | None:
+    """Invert the first comparison — the opposite predicate, same tokens."""
+    for old, new in ((" <= ", " >= "), (" >= ", " <= "), (" == ", " != "),
+                     (" < ", " > "), (" > ", " < ")):
+        out = _replace_first(text, old, new)
+        if out is not None:
+            return out
+    return None
+
+
+def invert_boolean(text: str) -> str | None:
+    """Invert the first returned boolean — the opposite verdict."""
+    for old, new in (("return true", "return false"), ("return false", "return true"),
+                     ("return True", "return False"), ("return False", "return True")):
+        out = _replace_first(text, old, new)
+        if out is not None:
+            return out
+    return None
+
+
+def change_integer_literal(text: str) -> str | None:
+    """Change the first standalone integer, preserving its width."""
+    for match in re.finditer(r"\d+", text):
+        start, end = match.span()
+        before_ok = start == 0 or not (text[start - 1].isalnum()
+                                       or text[start - 1] in "_.")
+        after_ok = end >= len(text) or not (text[end].isalnum()
+                                            or text[end] in "_.")
+        if not (before_ok and after_ok):
+            continue
+        original = match.group()
+        swapped = "".join("3" if c == "7" else "7" for c in original)
+        if swapped != original:
+            return text[:start] + swapped + text[end:]
+    return None
+
+
+def templated_negative_pairs() -> list[tuple[str, str]]:
+    """Catalogue entries differing in exactly one subject noun."""
+    out: list[tuple[str, str]] = []
+    for verb in _CONFIRM_VERBS:
+        def line(subject: str, verb: str = verb) -> str:
+            return (f'"confirm.{verb}": "Are you sure you want to {verb} this '
+                    f'{subject}? This action cannot be undone and any members '
+                    f'will immediately lose access to its contents."')
+        for left, right in zip(_SUBJECTS, _SUBJECTS[1:]):
+            out.append((line(left), line(right)))
+    return out
+
+
+_HARD_NEGATIVE_SEEDS = (
+    "fn pick(limit: usize) -> bool {\n    if limit < 42 {\n        return true;\n    }\n    return false;\n}",
+    "def retry(attempts, ceiling):\n    if attempts >= 7:\n        return False\n    return True",
+    "fn admit(score: f64, floor: f64) -> bool {\n    score > floor\n}",
+    "def is_stale(age_turns):\n    return age_turns == 15",
+)
+
+
+def hard_negative_corpus() -> dict:
+    """Pairs distinct *by construction*, as lexically close as the edit allows.
+
+    Every fragment here should survive selection. A gate that drops either
+    member of any pair has destroyed information, so the correct score on this
+    corpus is exactly 0.0 — unlike the other two, where the right answer is a
+    trade-off.
+    """
+    frags: list[dict] = []
+    pairs: list[tuple[str, str]] = []
+    labels: dict[tuple[str, str], str] = {}
+    source_of: dict[str, str] = {}
+
+    def intern(content: str, label: str, idx: int, side: str) -> str:
+        """One fragment per distinct content, shared across pairs.
+
+        Interning is required, not tidiness. A seed feeds three transformations
+        and a subject appears in more than one templated pair, so adding a
+        fragment per pair member would enter the *same text* under several
+        source names. Those are exact duplicates, dedup removes them correctly,
+        and the corpus would then measure its own construction defect rather
+        than the gate: before interning this reported 0.84 suppression with the
+        gate fully disabled.
+        """
+        if content in source_of:
+            return source_of[content]
+        src = f"hardneg/{label}_{idx}_{side}"
+        source_of[content] = src
+        frags.append({"content": content, "source": src,
+                      "token_count": max(1, len(content) // 4),
+                      "expected_selected": True})
+        return src
+
+    def add_pair(label: str, idx: int, left: str, right: str) -> None:
+        # Non-vacuity, per pair: an edit that returned its input is not a
+        # negative at all, and a corpus of them would score a perfect 0.0 while
+        # testing nothing. The Rust arm learned this the hard way — its
+        # `every_hard_negative_generator_changes_the_text` guard exists because
+        # a no-op generator once made a regression test worthless.
+        assert left != right, f"{label}[{idx}] generator returned its input unchanged"
+        la = intern(left, label, idx, "a")
+        lb = intern(right, label, idx, "b")
+        pairs.append((la, lb))
+        labels[(la, lb)] = label
+
+    for idx, seed in enumerate(_HARD_NEGATIVE_SEEDS):
+        for label, fn in (("flipped_comparison", flip_comparison),
+                          ("inverted_boolean", invert_boolean),
+                          ("changed_integer", change_integer_literal)):
+            edited = fn(seed)
+            if edited is not None:
+                add_pair(label, idx, seed, edited)
+
+    for idx, (left, right) in enumerate(templated_negative_pairs()):
+        add_pair("templated_subject", idx, left, right)
+
+    # Every fragment must be textually unique, or dedup removes it and the
+    # resulting drop is wrongly attributed to the gate.
+    contents = [f["content"] for f in frags]
+    assert len(contents) == len(set(contents)), (
+        "hard-negative corpus contains duplicate content; dedup would remove it "
+        "and the suppression measured would be the fixture's, not the gate's"
+    )
+
+    # Non-vacuity, corpus-wide: these must actually be *hard*. If no pair is
+    # lexically close, no gate would ever touch them and a clean score would
+    # mean nothing. Require that the population reaches into the range where
+    # gates live, rather than hoping it does.
+    close = sum(1 for a, b in pairs
+                if true_cosine(
+                    next(f["content"] for f in frags if f["source"] == a),
+                    next(f["content"] for f in frags if f["source"] == b),
+                ) >= 0.70)
+    if close == 0:
+        raise SystemExit(
+            "hard-negative corpus contains no lexically close pair; a gate "
+            "would never act on it and a score of 0.0 would be vacuous"
+        )
+
+    return {
+        "id": "hard_negatives_similar_but_distinct",
+        "query": "return limit score",
+        "fragments": frags,
+        # Generous: every fragment must fit, so a dropped one was dropped by
+        # the gate and not by the budget.
+        "token_budget": sum(f["token_count"] for f in frags) + 200,
+        "planted_pairs": pairs,
+        "pair_labels": labels,
+        "close_pairs": close,
+    }
+
+
+def selected_sources(case: dict, engine_factory) -> set[str]:
+    """Sources surviving selection for this case, under this configuration."""
+    engine = engine_factory()
+    for frag in case["fragments"]:
+        engine.ingest(frag["content"], frag["source"],
+                      frag.get("token_count", 0), False)
+    result = dict(engine.optimize(case["token_budget"], case.get("query", "")))
+    return {dict(s).get("source", "") for s in result.get("selected", [])}
+
+
+def hard_negative_report(case: dict, engine_factory, baseline: set[str]) -> dict:
+    """Pairs the gate breaks that survived *without* it.
+
+    Differential on purpose. A fragment can go unselected for reasons that have
+    nothing to do with the gate: measured here, three score exactly zero
+    relevance to the query, and the greedy requires `density > 0` to admit
+    anything, so they are never selected at any gate setting. Reporting raw
+    survival would charge the gate 0.1136 before it does anything at all.
+
+    `baseline` is the surviving set with the gate disabled. Only pairs intact
+    there and broken here are attributable, and the correct value for that is
+    exactly 0.0 — every pair is distinct by construction, so any attributable
+    loss is the gate destroying information. Broken out by class to show *which*
+    distinction it cannot see.
+    """
+    chosen = selected_sources(case, engine_factory)
+
+    per_class: dict[str, list[int]] = {}
+    casualties: list[str] = []
+    for pair in case["planted_pairs"]:
+        label = case["pair_labels"][pair]
+        intact_before = pair[0] in baseline and pair[1] in baseline
+        if not intact_before:
+            continue  # not attributable to the gate
+        lost = not (pair[0] in chosen and pair[1] in chosen)
+        per_class.setdefault(label, []).append(1 if lost else 0)
+        if lost:
+            casualties.extend(s for s in pair if s not in chosen)
+
+    total = [v for vs in per_class.values() for v in vs]
+    if not total:
+        raise SystemExit(
+            "no hard-negative pair survived the gate-off baseline, so nothing "
+            "is attributable and this measurement is vacuous"
+        )
+    return {
+        "case_id": case["id"],
+        "attributable_pairs": len(total),
+        "close_pairs": case["close_pairs"],
+        "gate_induced_suppression": round(sum(total) / len(total), 4),
+        "by_class": {k: round(sum(v) / len(v), 4) for k, v in sorted(per_class.items())},
+        "casualties": sorted(set(casualties))[:8],
+    }
+
+
 # ── Measurement ──────────────────────────────────────────────────────────
 
 def estimator_report(fragments: Sequence[dict], simhash, hamming) -> dict:

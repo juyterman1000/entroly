@@ -409,7 +409,7 @@ impl EntrolyEngine {
         hamming_threshold=5, exploration_rate=0.0, max_fragments=10000,
         enable_ios=true, enable_ios_diversity=true, enable_ios_multi_resolution=true,
         ios_skeleton_info_factor=0.70, ios_belief_info_factor=0.50, ios_reference_info_factor=0.15, ios_diversity_floor=0.10,
-        ios_redundancy_gate=0.90
+        ios_redundancy_gate=1.0
     ))]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -6959,7 +6959,7 @@ mod tests {
     fn test_sufficiency_full() {
         let mut engine = EntrolyEngine::new(
             0.30, 0.25, 0.25, 0.20, 15, 0.05, 3, 0.1, 10_000, true, true, true, 0.70, 0.50, 0.15,
-            0.10, 0.90,
+            0.10, 1.0,
         );
 
         // Register a symbol in the dep graph
@@ -7011,7 +7011,7 @@ mod tests {
     fn test_exploration_rate_bounds() {
         let mut engine = EntrolyEngine::new(
             0.30, 0.25, 0.25, 0.20, 15, 0.05, 3, 0.1, 10_000, true, true, true, 0.70, 0.50, 0.15,
-            0.10, 0.90,
+            0.10, 1.0,
         );
         engine.set_exploration_rate(1.5);
         assert!((engine.exploration_rate - 1.0).abs() < 0.001);
@@ -7056,7 +7056,7 @@ mod tests {
         use crate::dedup::simhash;
         let mut engine = EntrolyEngine::new(
             0.30, 0.25, 0.25, 0.20, 15, 0.05, 3, 0.0, 10_000, true, true, true, 0.70, 0.50, 0.15,
-            0.10, 0.90,
+            0.10, 1.0,
         );
 
         // Target: database code
@@ -7131,7 +7131,7 @@ mod tests {
 
         let mut engine = EntrolyEngine::new(
             0.30, 0.25, 0.25, 0.20, 15, 0.05, 3, 0.0, 10_000, true, true, true, 0.70, 0.50, 0.15,
-            0.10, 0.90,
+            0.10, 1.0,
         );
         let query_fp = simhash(query);
 
@@ -7252,7 +7252,7 @@ mod tests {
     fn bayesian_test_engine() -> EntrolyEngine {
         EntrolyEngine::new(
             0.25, 0.25, 0.25, 0.25, 15, 0.05, 3, 0.1, 10_000, true, true, true, 0.70, 0.50, 0.15,
-            0.10, 0.90,
+            0.10, 1.0,
         )
     }
 
@@ -7528,7 +7528,7 @@ mod tests {
 
         let mut engine = EntrolyEngine::new(
             0.30, 0.25, 0.25, 0.20, 15, 0.05, 3, 0.0, 10_000, true, true, true, 0.70, 0.50, 0.15,
-            0.10, 0.90,
+            0.10, 1.0,
         );
 
         // Consolidation only runs with more than 10 fragments, so pad with
@@ -7613,7 +7613,7 @@ mod tests {
 
         let mut engine = EntrolyEngine::new(
             0.30, 0.25, 0.25, 0.20, 15, 0.05, 3, 0.0, 10_000, true, true, true, 0.70, 0.50, 0.15,
-            0.10, 0.90,
+            0.10, 1.0,
         );
 
         for i in 0..12 {

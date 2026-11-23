@@ -166,22 +166,28 @@ class EntrolyConfig:
     ios_diversity_floor: float = 0.10
     """Minimum submodular-diversity weight in IOS selection."""
 
-    ios_redundancy_gate: float = 0.90
+    ios_redundancy_gate: float = 1.0
     """Confidence-bounded similarity at which a candidate is refused outright.
+
+    **1.0 disables this.** The mechanism is wired and tested, but no threshold
+    at the fingerprint width it uses is both safe and useful, so it ships off.
 
     Distinct from ``ios_diversity_floor``, which only bounds how far a
     candidate's value may be *discounted*. A discount cannot exclude anything:
     IOS admits whatever fits the remaining budget, so before this gate existed
-    a fingerprint-identical duplicate was selected whenever there was room for
-    it. This is the threshold at which the selector stops discounting and
-    declines.
+    a fingerprint-identical duplicate was selected whenever there was room.
 
-    The quantity compared is a union-corrected lower confidence bound on
-    cosine similarity, so it under-states similarity and errs toward keeping.
-    At 0.90, with the 256-bit fingerprint the gate uses, this cut redundant
-    selected tokens by 74% at no measured cost on a duplicate-free corpus. Set
-    to 1.0 to disable. Lowering it trades token savings against dropping
-    genuinely distinct fragments; measure both with
+    Why it is off: on pairs that are distinct *by construction* -- an inverted
+    comparison, a changed integer literal, one differing subject noun in an
+    otherwise identical string -- the bound reaches 0.93 to 0.96. A gate at 0.90
+    drops them. The region above that is safe and was measured inert, so the
+    safe-and-useful window is empty. The cause is not tuning: Hamming distance
+    over trigram features separates edits by fragment *length*, not by
+    significance, so it cannot tell a redundant copy from a semantic inversion
+    at any width (see ``entroly-engine/src/dedup.rs``).
+
+    Enable it only if you know your duplicates are exact, and keep it above
+    ``knapsack_sds::HARD_NEGATIVE_CEILING``. Measure both directions with
     ``python -m bench.redundancy``."""
 
     # ── Predictive Pre-fetch ────────────────────────────────────────────
