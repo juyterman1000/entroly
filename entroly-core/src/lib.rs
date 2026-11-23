@@ -268,6 +268,10 @@ pub struct EntrolyEngine {
     ios_belief_info_factor: f64,
     ios_reference_info_factor: f64,
     ios_diversity_floor: f64,
+    /// Confidence-bounded similarity at which a candidate is refused rather
+    /// than discounted. 1.0 disables the gate. See
+    /// `knapsack_sds::DEFAULT_REDUNDANCY_GATE` for why the default sits at 0.95.
+    ios_redundancy_gate: f64,
 
     // Differentiable soft-selector temperature for gradient-based weight learning.
     // Controls sigmoid sharpness: high τ = soft (smooth gradients), low τ = hard (sharp selection).
@@ -404,7 +408,8 @@ impl EntrolyEngine {
         decay_half_life=15, min_relevance=0.05,
         hamming_threshold=5, exploration_rate=0.0, max_fragments=10000,
         enable_ios=true, enable_ios_diversity=true, enable_ios_multi_resolution=true,
-        ios_skeleton_info_factor=0.70, ios_belief_info_factor=0.50, ios_reference_info_factor=0.15, ios_diversity_floor=0.10
+        ios_skeleton_info_factor=0.70, ios_belief_info_factor=0.50, ios_reference_info_factor=0.15, ios_diversity_floor=0.10,
+        ios_redundancy_gate=0.95
     ))]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -424,6 +429,7 @@ impl EntrolyEngine {
         ios_belief_info_factor: f64,
         ios_reference_info_factor: f64,
         ios_diversity_floor: f64,
+        ios_redundancy_gate: f64,
     ) -> Self {
         // Derive per-instance ID using xorshift64 on the global seed.
         // Each engine gets a unique instance_id, so fragment IDs are
@@ -479,6 +485,7 @@ impl EntrolyEngine {
             ios_belief_info_factor: ios_belief_info_factor.clamp(0.01, 0.99),
             ios_reference_info_factor: ios_reference_info_factor.clamp(0.01, 0.99),
             ios_diversity_floor: ios_diversity_floor.clamp(0.0, 1.0),
+            ios_redundancy_gate: ios_redundancy_gate.clamp(0.0, 1.0),
             gradient_temperature: 2.0,
             last_lambda_star: 0.0,
             last_dual_gap: 0.0,
@@ -2511,6 +2518,7 @@ impl EntrolyEngine {
                     &info_factors,
                     self.ios_diversity_floor,
                     self.min_relevance,
+                    self.ios_redundancy_gate,
                 );
 
                 final_indices = Vec::new();
@@ -6951,7 +6959,7 @@ mod tests {
     fn test_sufficiency_full() {
         let mut engine = EntrolyEngine::new(
             0.30, 0.25, 0.25, 0.20, 15, 0.05, 3, 0.1, 10_000, true, true, true, 0.70, 0.50, 0.15,
-            0.10,
+            0.10, 0.95,
         );
 
         // Register a symbol in the dep graph
@@ -7003,7 +7011,7 @@ mod tests {
     fn test_exploration_rate_bounds() {
         let mut engine = EntrolyEngine::new(
             0.30, 0.25, 0.25, 0.20, 15, 0.05, 3, 0.1, 10_000, true, true, true, 0.70, 0.50, 0.15,
-            0.10,
+            0.10, 0.95,
         );
         engine.set_exploration_rate(1.5);
         assert!((engine.exploration_rate - 1.0).abs() < 0.001);
@@ -7048,7 +7056,7 @@ mod tests {
         use crate::dedup::simhash;
         let mut engine = EntrolyEngine::new(
             0.30, 0.25, 0.25, 0.20, 15, 0.05, 3, 0.0, 10_000, true, true, true, 0.70, 0.50, 0.15,
-            0.10,
+            0.10, 0.95,
         );
 
         // Target: database code
@@ -7123,7 +7131,7 @@ mod tests {
 
         let mut engine = EntrolyEngine::new(
             0.30, 0.25, 0.25, 0.20, 15, 0.05, 3, 0.0, 10_000, true, true, true, 0.70, 0.50, 0.15,
-            0.10,
+            0.10, 0.95,
         );
         let query_fp = simhash(query);
 
@@ -7244,7 +7252,7 @@ mod tests {
     fn bayesian_test_engine() -> EntrolyEngine {
         EntrolyEngine::new(
             0.25, 0.25, 0.25, 0.25, 15, 0.05, 3, 0.1, 10_000, true, true, true, 0.70, 0.50, 0.15,
-            0.10,
+            0.10, 0.95,
         )
     }
 
@@ -7520,7 +7528,7 @@ mod tests {
 
         let mut engine = EntrolyEngine::new(
             0.30, 0.25, 0.25, 0.20, 15, 0.05, 3, 0.0, 10_000, true, true, true, 0.70, 0.50, 0.15,
-            0.10,
+            0.10, 0.95,
         );
 
         // Consolidation only runs with more than 10 fragments, so pad with
@@ -7605,7 +7613,7 @@ mod tests {
 
         let mut engine = EntrolyEngine::new(
             0.30, 0.25, 0.25, 0.20, 15, 0.05, 3, 0.0, 10_000, true, true, true, 0.70, 0.50, 0.15,
-            0.10,
+            0.10, 0.95,
         );
 
         for i in 0..12 {
