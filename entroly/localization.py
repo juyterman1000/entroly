@@ -382,6 +382,13 @@ class Tier0Localizer:
     # Σ 1/rankᵢ² — parameter-FREE (no k), top-heavy so a precise signal
     # at rank-1 dominates (rank1=1.0, r2=0.25, r3=0.11), the regime our
     # S1/S2/S5 signals are in. NOT tuned on any benchmark.
+    #
+    # Top-heavy is the opposite trade from the k=60 reciprocal-rank
+    # fusion in hybrid_retriever.py, and the choice is deliberate per
+    # caller: there, breadth of agreement should win because no single
+    # retriever is trusted; here, S1/S2/S5 produce an exact match or
+    # nothing, so a rank-1 hit is near-certain and must not be outvoted
+    # by two signals that each placed the true file mid-list.
 
     @staticmethod
     def _isr(rankings: list[list[str]]) -> dict[str, float]:

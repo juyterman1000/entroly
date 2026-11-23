@@ -1223,8 +1223,11 @@ impl EntrolyEngine {
                     // Single Kolmogorov entropy pass: ONE O(N) compression replacing
                     // TWO separate scans (normalized_entropy + boilerplate_ratio).
                     // A real compressor upper-bounds description length:
-                    // K(x) <= len(compress(x)), so compressed size is a
-                    // computable stand-in for incompressible information.
+                    // K(x) <= len(compress(x)) — Kolmogorov (1965) — so
+                    // compressed size is a computable stand-in for
+                    // incompressible information. The inequality is one-way:
+                    // it bounds K from above only, so a high compressed size
+                    // does not prove high complexity.
                     let kolmo = crate::entropy::kolmogorov_entropy(&content);
 
                     // ── TPSE Phase A: Speculative Skeleton Token Estimation ──
@@ -1739,7 +1742,7 @@ impl EntrolyEngine {
                 // ═══════════════════════════════════════════════════════
                 //
                 // Novel retrieval algorithm combining ideas from:
-                //   • BM25F field decomposition
+                //   • BM25F field decomposition (Robertson et al., SIGIR)
                 //   • Dempster-Shafer evidence theory (precision-prioritized fusion)
                 //   • Lexicographic multi-objective optimization
                 //   • PageRank hub-node dampening (Brin & Page, 1998)
@@ -1818,8 +1821,10 @@ impl EntrolyEngine {
                 //
                 // This is the standard distinction between how a term
                 // discriminates in a structured document's title versus its
-                // body. What is specific here is treating the file path as
-                // the title: a term that is common in file content can still
+                // body, formalized for term discrimination in structured
+                // documents by Salton (1975). What is specific here is
+                // treating the file path as the title: a term that is common
+                // in file content can still
                 // be rare, and therefore highly discriminative, in paths.
                 //
                 // Algorithm:

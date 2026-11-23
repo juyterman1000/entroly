@@ -322,6 +322,13 @@ impl Default for EntropySketch {
 /// Used for TinyLFU-style admission gating:
 ///   admit(new) iff freq(new) > freq(victim)
 ///
+/// This is a Count-Min Sketch — Cormode & Muthukrishnan (2005), "An Improved
+/// Data Stream Summary". The `[[u8; 256]; 4]` below is depth 4 × width 256,
+/// and that paper is where the error bound those two dimensions buy is
+/// stated. Consult it before changing either: the overestimate probability
+/// falls with depth and the overestimate magnitude falls with width, so they
+/// are not interchangeable and neither is arbitrary.
+///
 /// Read by taking the minimum across the four rows. A hash collision can only
 /// inflate a row, never deflate one, so the minimum is one-sided: it may
 /// over-report a key's frequency but never under-report it. That is the
@@ -456,6 +463,13 @@ impl Default for FrequencySketch {
 ///   1. Halves the frequency sketch (forget old frequencies)
 ///   2. Softens the posterior gate (explore more)
 ///   3. Temporarily widens admission
+///
+/// This is a CUSUM detector — Page (1954), "Continuous inspection schemes".
+/// Go there for the threshold-vs-average-run-length trade-off: `allowance`
+/// (the slack absorbed before the sum moves) and `threshold` together decide
+/// how long a real shift takes to catch and how often noise trips it. Neither
+/// is tunable by intuition — raising `threshold` to quieten false positives
+/// also delays every true detection, and that trade is quantified there.
 ///
 /// The trigger is a running sum of deviations, not any single sample: a small
 /// but persistent drop in hit rate accumulates into a signal, while one

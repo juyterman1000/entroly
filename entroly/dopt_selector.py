@@ -47,19 +47,32 @@ actually covers *for this query*), we solve
     s.t.      Σ_{i ∈ C} t_i ≤ B.
 
 This is the Bayesian D-optimal experimental-design objective (Fedorov
-1972) specialized to rank-1 Gaussian observations. It is monotone
+1972) specialized to rank-1 Gaussian observations. log det is monotone
 submodular in C (Krause–Guestrin 2005): adding a fragment whose
 direction p_i is already well-covered yields diminishing returns, and
-the gain is zero in directions already at the prior's limit. This is
-the anti-redundancy property a linear ∑ s_i score fundamentally lacks.
+the gain is zero in directions already at the prior's limit. That
+diminishing-returns property is the anti-redundancy a linear ∑ s_i score
+fundamentally lacks.
 
 **Solver.**  Submodular maximization under a knapsack constraint is
-NP-hard. Khuller–Moss–Naor (1999) give a modified greedy with provable
-(1 − 1/√e) ≈ 0.39 approximation ratio: return whichever is better, the
-density-greedy schedule (argmax Δ / t at each step) or the singleton
-champion (argmax_i f({i}) subject to t_i ≤ B). Density-greedy is near
-optimal when fragments have similar size; singleton dominates when one
+NP-hard. The solver returns whichever is better, the density-greedy
+schedule (argmax Δ / t at each step) or the singleton champion
+(argmax_i f({i}) subject to t_i ≤ B). The better-of-two rule is what
+earns a constant factor at all: density-greedy alone has none, because a
+low-value high-density item can block a high-value budget-filling one,
+and the singleton champion is exactly the case that covers. The
+(1 − 1/√e) ≈ 0.39 ratio is a property of this better-of-two schedule on
+a monotone submodular objective under a knapsack — it must not be quoted
+for density-greedy by itself. Density-greedy is near optimal when
+fragments have similar size; singleton dominates when one
 high-information fragment alone beats any composition of smaller ones.
+
+The ratio is Khuller–Moss–Naor (1999). Read it before touching the
+schedule: that paper states more than one bound, and the one that
+applies depends on which variant is implemented here. ``engine.py``
+documents a different constant for its own selector because its
+objective is modular rather than submodular — the two are not in
+conflict, and neither number may be moved to the other call site.
 """
 from __future__ import annotations
 

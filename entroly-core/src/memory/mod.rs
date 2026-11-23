@@ -17,9 +17,14 @@
 //!     half-life scales with judged importance, so a high-salience memory
 //!     survives many more turns than a routine one and forgetting is graded
 //!     rather than a fixed window.
-//!   - High-dimensional sparse addressing. Items are stored against sparse
-//!     codes and retrieved by nearest-address match, so recall degrades
-//!     gracefully under a partial cue instead of missing outright.
+//!   - High-dimensional sparse addressing — Sparse Distributed Memory,
+//!     Kanerva (1988), implemented in `kanerva.rs`. Items are stored against
+//!     sparse codes and retrieved by nearest-address match, so recall
+//!     degrades gracefully under a partial cue instead of missing outright.
+//!     `n_locations` and `activation_radius` are load-bearing for that
+//!     property — the radius sets how much of a cue may be missing before
+//!     recall fails, against a 1024-bit address space — so consult the
+//!     source before changing either.
 //!   - LSH over those codes, for sublinear candidate lookup.
 
 pub mod consolidation;
