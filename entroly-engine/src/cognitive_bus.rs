@@ -28,15 +28,19 @@
 //! Welford Spike Detection (online, no windowing):
 //!   is_spike = (x − μ̄) > k·σ    // k=3, immediate broadcast, bypass queue
 //!
-//! Two ideas this leans on, stated as mechanisms:
+//! Two ideas this leans on, stated as mechanisms, with where each is from:
 //!
 //!   - An agent is rewarded for messages that *change another agent's
 //!     behaviour*, not merely for emitting them. Influence, not volume, is
-//!     what makes a channel worth its tokens.
+//!     what makes a channel worth its tokens. This is the influence reward
+//!     of Jaques et al., "Social Influence as Intrinsic Motivation",
+//!     ICML 2019 — see it for how the counterfactual baseline is formed,
+//!     which is the part that decides whether the reward means anything.
 //!   - Fast and slow stores are kept separate and reconciled: the fast one
 //!     absorbs new observations immediately, the slow one consolidates only
 //!     what repeats, so a single surprising event cannot overwrite settled
-//!     structure.
+//!     structure. This is Complementary Learning Systems, McClelland et al.,
+//!     Psych Review 1995.
 
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, VecDeque};

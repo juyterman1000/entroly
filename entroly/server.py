@@ -1186,7 +1186,7 @@ def create_mcp_server(
         """Select a high-value context subset for a token budget.
 
         Uses 0/1 Knapsack dynamic programming to maximize relevance within
-        the budget. Scores fragments on four dimensions: recency (Ebbinghaus
+        the budget. Scores fragments on four dimensions: recency (exponential
         decay), access frequency (spaced repetition), semantic similarity
         (SimHash), and information density (Shannon entropy).
 
@@ -2711,7 +2711,7 @@ def create_mcp_server(
             },
             "🔒 safety": {
                 "duplicates_blocked": dupes,
-                "stale_fragments_deprioritized": "Ebbinghaus decay active (half-life: 15 turns)",
+                "stale_fragments_deprioritized": "exponential recency decay active (half-life: 15 turns)",
                 "persistent_index": "active" if hasattr(engine, '_index_path') else "disabled",
                 "checkpoints": checkpoint.get("total_checkpoints", 0),
             },
@@ -4778,8 +4778,8 @@ def create_mcp_server(
     ) -> str:
         """Traverse the deterministic entity-relationship memory graph.
 
-        Implements associative recall (HippoRAG 2). Returns reachable memory IDs,
-        entity paths, and Merkle traversal receipts.
+        Associative recall over entities rather than query text. Returns
+        reachable memory IDs, entity paths, and Merkle traversal receipts.
         """
         # Use the server's already-populated graph (written by TaskDreamer /
         # MemoryFabric.remember) instead of constructing a fresh empty one.

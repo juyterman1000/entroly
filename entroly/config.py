@@ -139,7 +139,7 @@ class EntrolyConfig:
     selection is reproducible; autotune or explicit config may opt into
     non-zero exploration."""
 
-    # ── Ebbinghaus Decay ────────────────────────────────────────────────
+    # ── Exponential Recency Decay ───────────────────────────────────────
     decay_half_life_turns: int = 15
     """Number of turns for a fragment's relevance to halve."""
 
@@ -238,7 +238,7 @@ def resolve_tuning_kwargs(cfg: dict) -> dict:
     value falls back to the ``EntrolyConfig`` default (never raises).
 
     Only the six fields the runtime engine actually consumes are mapped (the
-    four knapsack weights + the two Ebbinghaus-decay params). ``knapsack`` /
+    four knapsack weights + the two recency-decay params). ``knapsack`` /
     ``ios`` / ``dedup`` tuning keys have no corresponding runtime-engine wiring
     yet, so they are intentionally ignored here rather than mis-mapped.
     """

@@ -321,22 +321,33 @@ def _py_knapsack_optimize(
             used_tokens += frag.token_count
             total_relevance += rel
 
-    # Khuller–Moss–Naor (1999) singleton champion. Pure density-greedy
-    # has NO constant-factor guarantee: a low-value high-density item
-    # can block a high-value budget-filling item (measured by
+    # Khuller–Moss–Naor (1999) singleton champion. Pure density-greedy has NO constant-factor
+    # guarantee: a low-value high-density item can block a high-value
+    # budget-filling item (measured by
     # tests/test_compression_contract.py against brute-force OPT —
     # greedy hit 30% of optimal on the adversarial fixtures). Take the
-    # better of {density-greedy, pinned ∪ best single feasible item}.
+    # better of {density-greedy, pinned ∪ best single feasible item};
+    # the single item is exactly the case density-greedy loses.
     #
     # What that provably buys, precisely: this objective is MODULAR
     # (_py_compute_relevance scores each fragment independently, so
     # value is a plain sum with no co-selection term). For a modular
     # objective under a knapsack, better-of-{density-greedy, best
-    # singleton} is the classic Dantzig/LP-rounding ½. It is NOT
-    # (1 − 1/e): that needs a monotone SUBMODULAR objective, and under a
-    # knapsack rather than a cardinality constraint it further needs
-    # Sviridenko (2004) partial enumeration. KMN's own better-of-two
-    # result is ½(1 − 1/e) ≈ 0.32, for submodular coverage.
+    # singleton} earns the classic Dantzig/LP-rounding ½ — the LP
+    # relaxation has at most one fractional item, so dropping it costs
+    # at most the better of the two halves.
+    # It is NOT (1 − 1/e): that bound needs a monotone SUBMODULAR
+    # objective, and under a knapsack rather than a cardinality
+    # constraint it further needs Sviridenko (2004) partial enumeration
+    # (enumerate every feasible subset up to a fixed size, then greedily
+    # extend each), which this function does not perform. ½ is the bound
+    # that applies here and the only one that may be claimed.
+    #
+    # KMN's own better-of-two result is ½(1 − 1/e) ≈ 0.32 for submodular
+    # coverage. dopt_selector.py cites (1 − 1/√e) ≈ 0.39 from the same
+    # paper for its own selector, whose objective IS submodular. Both
+    # are in KMN; which one applies is decided by the objective, so
+    # check the objective before reusing either number.
     # This better-of-two rule is within ½ of the true modular optimum on its
     # own; it does not rely on any Rust path being exact.
     cand_budget = token_budget - pinned_tokens
@@ -428,7 +439,12 @@ def _py_apply_ebbinghaus_decay(
     current_turn: int,
     half_life: int,
 ) -> None:
-    """Apply Ebbinghaus forgetting curve to fragment recency scores (in-place)."""
+    """Decay fragment recency scores exponentially, in-place.
+
+    Parameterised by half-life rather than a raw rate because half-life is the
+    unit the config exposes and the one a reader can reason about: 15 turns
+    means a fragment untouched for 15 turns is worth half as much.
+    """
     import math as _m
     if half_life <= 0:
         return
@@ -1462,7 +1478,7 @@ class EntrolyEngine:
         return True
 
     def advance_turn(self) -> None:
-        """Advance the turn counter and apply Ebbinghaus decay."""
+        """Advance the turn counter and apply exponential recency decay."""
         if self._use_rust:
             self._rust.advance_turn()
         else:

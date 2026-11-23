@@ -354,7 +354,7 @@ try:
 except ImportError:
     pass
 
-# CMWP — Causal Memory is handled by hippocampus LTM + Ebbinghaus decay.
+# CMWP — Causal Memory is handled by hippocampus LTM + exponential recency decay.
 # See entroly/long_term_memory.py and entroly/checkpoint.py.
 
 # WVH — Witness-Verified Handoff.

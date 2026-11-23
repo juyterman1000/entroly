@@ -295,7 +295,8 @@ class LongTermMemory:
                 "insight": (
                     f"Long-term memory active: {self._total_remembered} fragments remembered, "
                     f"{self._total_recalled} recalled across sessions. "
-                    f"Powered by hippocampus-sharp-memory (Kanerva SDM + LSH)."
+                    f"Powered by hippocampus-sharp-memory "
+                    f"(sparse distributed memory + LSH)."
                 ),
             }
         except Exception as e:

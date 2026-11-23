@@ -18,11 +18,24 @@ Architecture
                           ▼
               Budget-aware selection + receipt
 
-References
-----------
-- Cormack et al. (2009): Reciprocal Rank Fusion outperforms individual
-  retrieval methods and learned fusion with minimal tuning
-- HippoRAG 2 (2025): graph-augmented associative retrieval
+Why rank fusion rather than score fusion
+----------------------------------------
+The three signals produce scores on incomparable scales — BM25 is unbounded
+and corpus-dependent, graph traversal is a hop count, embedding similarity is
+a bounded cosine. Summing them requires a normalisation that has to be
+re-tuned whenever the corpus or the embedding model changes, and a single
+signal with a wide range silently dominates the others. Fusing on *rank*
+discards magnitude, which is the part that is not comparable, and keeps
+order, which is. The cost is real and worth stating: rank fusion cannot
+express confidence, so a signal that is certain about its top hit is given no
+more weight than one that is guessing. With the k below, that trade is
+deliberately pushed further — agreement across signals outranks a single
+signal's top hit.
+
+The fusion rule and its k=60 default are Reciprocal Rank Fusion, Cormack et
+al. (2009), which reports it beating both individual retrievers and learned
+fusion without per-corpus tuning. That "without tuning" is the reason it is
+used here: Entroly cannot re-fit a fusion weight per user repository.
 """
 
 from __future__ import annotations
@@ -108,7 +121,16 @@ def _reciprocal_rank_fusion(
     where rank_i is the 1-indexed rank in the i-th ranking list.
     Items not present in a list are assigned rank = infinity (contribute 0).
 
-    k=60 is the standard from the original paper.
+    k=60 is the standard value from the original RRF paper (Cormack et al.
+    2009). It is large relative to the rank range this runs on, which flattens the
+    curve deliberately: rank 1 contributes 1/61 and rank 10 contributes 1/70,
+    so position within a list barely matters while each additional list a
+    document appears in adds a near-full term. The effect is that breadth of
+    agreement dominates depth of conviction — a document ranked 30th by all
+    three signals (3/90 ≈ 0.033) outranks one ranked 1st by a single signal
+    and missing from the rest (1/61 ≈ 0.016). Lower k inverts that. Do not
+    change it without re-checking which behaviour the caller wants; a
+    top-heavy alternative already exists as the ISR fusion in localization.py.
     """
     scores: dict[str, float] = {}
     for ranking in rankings:

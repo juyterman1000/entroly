@@ -1560,7 +1560,9 @@ class HCCEngine:
     what else was selected -- so the objective is modular, not submodular,
     and the (1 - 1/e) bound does not apply. This is a multiple-choice
     knapsack (one of 3 levels per fragment under a shared budget); greedy on
-    it is Dantzig-style rounding, i.e. ½ at best.
+    it is Dantzig-style rounding, i.e. ½ at best -- the same bound
+    `entroly-engine/src/knapsack.rs` names and asserts against in its
+    brute-force comparison test, so keep the two phrased alike.
 
     Two further gaps between this code and the LP greedy it resembles:
     upgrade candidates are ranked by gain measured from the *Reference*

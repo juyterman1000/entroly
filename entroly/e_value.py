@@ -3,8 +3,10 @@
 Conservative right-tail ranks include calibration ties. For exchangeable null
 calibration/test scores from a fixed scorer, p is super-uniform. The fixed
 power calibrator e(p)=0.5/sqrt(p) has integral one, so E[e] <= 1. Clipping it
-down preserves this property. See Vovk and Wang, Sections 2-4:
-https://arxiv.org/abs/1912.06116
+down preserves this property: an upper bound on the mean survives any
+pointwise decrease, which is why the clip is safe to apply unconditionally.
+For the validity proof and the admissibility of this calibrator family, see
+Vovk and Wang, Sections 2-4: https://arxiv.org/abs/1912.06116
 
 The arithmetic mean of a fixed family of valid same-null e-values is valid
 under arbitrary dependence. Their product is NOT valid from marginal
