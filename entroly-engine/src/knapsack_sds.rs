@@ -34,39 +34,49 @@ const DIVERSITY_ALPHA: f64 = 0.05;
 /// Default admission gate: the confidence-bounded similarity at which a
 /// candidate is refused rather than merely discounted.
 ///
-/// 0.95 is deliberately conservative, and the honest description of it at 64
-/// bits is **narrow to the point of rarely firing**. Measured, not assumed.
+/// 0.90, chosen from a deterministic sweep over both corpora in
+/// `bench/redundancy.py` at the `GATE_FINGERPRINT_BITS` width:
 ///
-/// At 64 bits with `DIVERSITY_ALPHA = 0.05`, `simhash_cosine_lcb` reports 0.992
-/// at Hamming 0 and 0.978 at Hamming 1 for a single comparison — but the union
-/// correction erodes the bound as the selected set grows, to 0.930 and 0.896 by
-/// k=32. So even an *exact fingerprint match* stops clearing 0.95 once roughly
-/// 16 fragments are selected: the gate is effective early in a selection and
-/// inert later, which is backwards from where duplicates accumulate. That is
-/// not a defect in the bound. More comparisons genuinely mean more chances of a
-/// false positive, and this gate destroys evidence, so the protection is wanted.
+/// ```text
+///   gate | planted redundancy | planted false-supp | clean false-supp
+///   1.00 |             0.2381 |             0.1250 |           0.0417
+///   0.95 |             0.2381 |             0.1250 |           0.0417
+///   0.90 |             0.0622 |             0.1250 |           0.0417
+///   0.80 |             0.0622 |             0.1250 |           0.0417
+///   0.70 |             0.0000 |             0.0000 |           0.0417
+/// ```
 ///
-/// On both corpora measured by `bench/redundancy.py` it changed nothing at 0.95:
-/// redundant token fraction stayed at 0.2381 on the planted corpus and 0.0000 on
-/// `bench/cases.json`. Loosening to 0.70 cut planted redundancy to 0.1426 and
-/// drove false suppression there to 0.000 — but **doubled** false suppression on
-/// `cases.json` (0.0208 -> 0.0417) while using fewer tokens. On a corpus with no
-/// duplicates to remove, a loose gate only destroys. That asymmetry is why this
-/// ships narrow.
+/// 0.90 cuts redundant selected tokens by 74% and costs nothing measurable on
+/// `bench/cases.json`, which contains no duplicates to remove and is therefore
+/// the corpus where a loose gate would do its damage. 0.95 is inert: the planted
+/// pairs sit at true cosine 0.857-0.984, and a 95%-confidence bound demands
+/// near-identity.
 ///
-/// The binding constraint is fingerprint width, and this gate is the one place
-/// in the selector where widening is the right tool. The merge decision cannot
-/// be fixed by width (`dedup.rs` measured that directly), and the diversity
-/// *discount* changes no admission decision at all — but this is a drop driven
-/// by the bound, so a tighter bound buys a threshold that is simultaneously safe
-/// and useful. At 256 bits the noise floor halves (0.196 -> 0.098) and an exact
-/// match stays near 1.0 at large k. See `simhash_wide`.
+/// 0.70 scores better still on the planted corpus and is deliberately not the
+/// default. Neither corpus contains the case that actually constrains this knob
+/// -- fragments that are similar but carry distinct information -- so the clean
+/// corpus cannot license a loose gate, only fail to condemn it. The last 6% of
+/// waste is not worth widening exposure to an untested regime, given a wrong
+/// drop destroys evidence permanently (see `dedup.rs` on the asymmetry).
 ///
-/// Raising it to 1.0 disables the gate. Do not lower it without re-running
-/// `python -m bench.redundancy` against **both** a corpus with planted
-/// duplicates and one without. The second is where a loose gate does its damage,
-/// and the first alone will make any loosening look free.
-pub const DEFAULT_REDUNDANCY_GATE: f64 = 0.95;
+/// Width is what makes 0.90 viable, and this gate is the one place in the
+/// selector where widening is the right tool. At 64 bits the union correction
+/// erodes the bound so fast that even an exact fingerprint match stops clearing
+/// 0.95 past ~16 comparisons (0.992 at k=1 -> 0.930 at k=32), leaving no
+/// threshold both safe and effective. At 256 bits the noise floor halves and an
+/// exact match holds ~0.995 at k=32. Merging cannot be fixed by width
+/// (`dedup.rs` measured that), and the diversity *discount* changes no admission
+/// decision -- but a drop driven by a bound improves directly as the bound
+/// tightens.
+///
+/// Raising it to 1.0 disables the gate. Before changing it, re-run
+/// `python -m bench.redundancy --sweep-floor` and read its note on exploration:
+/// the harness forces `exploration_rate = 0` because the shipped bench config
+/// sets 0.1, under which a fixed configuration returned false suppression of
+/// 0.0208 / 0.0417 / 0.0347 across three trials. An earlier version of this
+/// comment claimed 0.70 doubled false suppression on `cases.json`; that was two
+/// single draws from that spread, not an effect.
+pub const DEFAULT_REDUNDANCY_GATE: f64 = 0.90;
 use crate::fragment::{compute_relevance, ContextFragment};
 use std::collections::HashMap;
 
@@ -288,6 +298,58 @@ fn diversity_factor(candidate_hash: Option<u64>, selected_hashes: &[u64]) -> f64
     // and the drop can never disagree about how similar a candidate is. A
     // second similarity path here would be a replica free to drift.
     1.0 - max_lcb_similarity(candidate_hash, selected_hashes).unwrap_or(0.0)
+}
+
+/// Fingerprint width used by the admission gate.
+///
+/// 256, not 64, and not configurable. The gate drops evidence, so it is limited
+/// by the *bound* rather than the point estimate, and the bound tightens as
+/// `1/sqrt(bits)`. 64 bits was measured to leave no workable threshold: safe
+/// settings never fired and firing settings dropped distinct fragments. 1024 is
+/// also supported by `simhash_wide` but buys a further 2x at 4x the hashing
+/// cost, which nothing has shown to be needed. Kept a constant because
+/// `simhash_wide::fingerprint` asserts on unsupported widths — a config value
+/// would turn a typo into a panic in the selection path.
+const GATE_FINGERPRINT_BITS: u16 = 256;
+
+/// Greatest confidence-bounded similarity between a candidate and the selected
+/// set at the gate's width, or `None` when no such claim can be made.
+///
+/// Deliberately separate from `max_lcb_similarity`, and the two are allowed to
+/// disagree. That is a documented asymmetry rather than drift:
+///
+///   * This governs a **drop**, so it must be as tight as affordable.
+///   * `max_lcb_similarity` feeds the value **discount**, whose magnitude was
+///     measured to change no admission decision — the greedy admits whatever
+///     fits regardless. Widening it would buy nothing and would perturb every
+///     existing diversity assertion for no measured gain.
+///
+/// Both call one shared bound (`dedup::cosine_lcb_from_hamming`), so they can
+/// differ only in tightness, never in what they estimate. When they disagree,
+/// this one is the authority on exclusion and that one on value.
+/// Does any selected fingerprint sit within `max_hamming` of the candidate?
+///
+/// The threshold form rather than "compute the max bound and compare" because
+/// the bound is monotone in distance, so the two are equivalent and this one is
+/// integer work. The caller inverts the bound once per comparison count via
+/// `dedup::max_hamming_within_bound`; here the per-pair cost is a popcount over
+/// four words and a compare, with an early exit on the first hit.
+///
+/// This sits in the innermost loop of an O(N*K) selection, and the float form
+/// cost 334ms on the 1000-fragment performance contract — a `ln` and a `sqrt`
+/// per pair, recomputing a quantile that depends only on k.
+#[inline]
+fn any_selected_within(
+    candidate: Option<&crate::simhash_wide::Fingerprint>,
+    selected: &[crate::simhash_wide::Fingerprint],
+    max_hamming: u32,
+) -> bool {
+    let Some(candidate) = candidate else {
+        return false;
+    };
+    selected
+        .iter()
+        .any(|other| candidate.hamming(other).is_some_and(|d| d <= max_hamming))
 }
 
 /// Greatest confidence-bounded similarity between a candidate and the selected
@@ -549,6 +611,49 @@ pub fn ios_select(
 
     let remaining_budget = token_budget.saturating_sub(pinned_tokens);
 
+    // ── Wide fingerprints for the admission gate ──────────────────────
+    //
+    // Computed here, from content, and never stored. The gate is the only
+    // consumer, so this deliberately does NOT add a field to
+    // `ContextFragment`: that struct is persisted in `IndexSnapshot` and seeds
+    // the LSH on warm start, so a new fingerprint field would be a versioned
+    // byte-contract change with a migration and a prompt-prefix cache-stability
+    // risk. An ephemeral value costs a pass over the content and nothing else.
+    //
+    // Only fragments with `has_simhash` qualify, matching the rule the rest of
+    // this selector uses: a fragment with no content-derived fingerprint has no
+    // evidence against it, and the gate drops things.
+    //
+    // Width is why the gate is worth having at all. At 64 bits the union
+    // correction erodes the bound so fast that an exact fingerprint match stops
+    // clearing 0.95 past ~16 comparisons, which leaves no threshold that is both
+    // safe and effective. At 256 bits the noise floor halves (0.196 -> 0.098).
+    // Skipped entirely when the gate is off, so the cost is opt-in.
+    let gate_active = enable_diversity && redundancy_gate < 1.0;
+    let wide_fps: Vec<Option<crate::simhash_wide::Fingerprint>> = if gate_active {
+        fragments
+            .iter()
+            .map(|f| {
+                f.has_simhash.then(|| {
+                    crate::simhash_wide::fingerprint(&f.content, GATE_FINGERPRINT_BITS)
+                })
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let wide_of = |idx: usize| -> Option<&crate::simhash_wide::Fingerprint> {
+        wide_fps.get(idx).and_then(|o| o.as_ref())
+    };
+    let mut pinned_wide: Vec<crate::simhash_wide::Fingerprint> = Vec::new();
+    if gate_active {
+        for &(i, _) in &pinned {
+            if let Some(fp) = wide_of(i) {
+                pinned_wide.push(fp.clone());
+            }
+        }
+    }
+
     // ── Phase 2: Generate candidates ──
     // Demoted pinned fragments enter as candidates with a 5x relevance boost.
     // This ensures they're strongly preferred without being unconditional.
@@ -720,6 +825,7 @@ pub fn ios_select(
                 })
                 .sum();
             let mut fast_hashes: Vec<u64> = pinned_hashes.clone();
+            let mut fast_wide = pinned_wide.clone();
 
             // The admission gate has to run on this exit too.
             //
@@ -737,15 +843,21 @@ pub fn ios_select(
             // reason: "Both exits of `ios_select` must apply this." Ordering was
             // guarded on both exits; admission was guarded on one.
             //
-            // This reintroduces the O(N×K) similarity work the fast path exists
-            // to avoid. That is the intended trade: K is the accepted count and
-            // this path's stated audience is small codebases, so N is small, and
-            // admitting a known duplicate is not a saving worth having.
+            // This reintroduces O(N×K) similarity work the fast path exists to
+            // avoid, so the comparison is kept to a popcount: the bound is
+            // inverted to a distance threshold once per accepted count, not
+            // evaluated per pair.
             for c in &candidates {
                 if c.resolution == Resolution::Full {
-                    if enable_diversity && redundancy_gate < 1.0 {
-                        if let Some(sim) = max_lcb_similarity(c.simhash, &fast_hashes) {
-                            if sim >= redundancy_gate {
+                    if gate_active {
+                        let max_d = crate::dedup::max_hamming_within_bound(
+                            u32::from(GATE_FINGERPRINT_BITS),
+                            fast_wide.len().max(1),
+                            DIVERSITY_ALPHA,
+                            redundancy_gate,
+                        );
+                        if let Some(max_d) = max_d {
+                            if any_selected_within(wide_of(c.frag_idx), &fast_wide, max_d) {
                                 continue;
                             }
                         }
@@ -755,6 +867,11 @@ pub fn ios_select(
                     fast_value += c.base_value;
                     if let Some(fp) = c.simhash {
                         fast_hashes.push(fp);
+                    }
+                    if gate_active {
+                        if let Some(fp) = wide_of(c.frag_idx) {
+                            fast_wide.push(fp.clone());
+                        }
                     }
                 }
             }
@@ -793,6 +910,7 @@ pub fn ios_select(
     let pinned_len = pinned.len();
     let mut selected: Vec<(usize, Resolution)> = pinned;
     let mut selected_hashes: Vec<u64> = pinned_hashes;
+    let mut selected_wide = pinned_wide;
     let mut selected_frags: Vec<bool> = vec![false; fragments.len()]; // Track which fragment_idx is selected
     let mut budget_used = pinned_tokens;
     let mut _total_value: f64 = selected
@@ -856,6 +974,22 @@ pub fn ios_select(
         }
 
         // Find the best candidate considering diversity
+        // Invert the bound once per iteration. It depends only on the width,
+        // the comparison count and the gate — never on the candidate — so
+        // computing it here rather than per pair takes a `ln` and a `sqrt` out
+        // of an O(N*K) inner loop. `None` means the gate is unreachable at this
+        // comparison count, i.e. not even an exact match would clear it.
+        let gate_max_hamming = if gate_active {
+            crate::dedup::max_hamming_within_bound(
+                u32::from(GATE_FINGERPRINT_BITS),
+                selected_wide.len().max(1),
+                DIVERSITY_ALPHA,
+                redundancy_gate,
+            )
+        } else {
+            None
+        };
+
         let mut best_density = 0.0_f64;
         let mut best_idx: Option<usize> = None;
 
@@ -902,11 +1036,9 @@ pub fn ios_select(
             // `dedup.rs` on why the Hamming merge arm was removed). Hence the
             // confidence bound rather than the point estimate, and hence the
             // default sits where only a near-identical fingerprint qualifies.
-            if enable_diversity && redundancy_gate < 1.0 {
-                if let Some(sim) = max_lcb_similarity(cand.simhash, &selected_hashes) {
-                    if sim >= redundancy_gate {
-                        continue;
-                    }
+            if let Some(max_d) = gate_max_hamming {
+                if any_selected_within(wide_of(cand.frag_idx), &selected_wide, max_d) {
+                    continue;
                 }
             }
 
@@ -946,6 +1078,11 @@ pub fn ios_select(
                 selected.push((cand.frag_idx, cand.resolution));
                 if let Some(fp) = cand.simhash {
                     selected_hashes.push(fp);
+                }
+                if gate_active {
+                    if let Some(fp) = wide_of(cand.frag_idx) {
+                        selected_wide.push(fp.clone());
+                    }
                 }
                 selected_frags[cand.frag_idx] = true;
                 budget_used += cand.token_cost;
@@ -1936,24 +2073,40 @@ mod tests {
     /// `insert`'s content-hash short circuit cannot catch this pair, which is
     /// exactly the case the gate exists for.
     fn gate_pair() -> Vec<ContextFragment> {
-        let a = "fn alpha(limit: u32) -> u32 { limit + 1 }";
-        let b = "fn alpha(limit: u32) -> u32 { limit + 2 }";
-        let mut frags = vec![
-            make_frag("a", a, 40, "a.rs"),
-            make_frag("b", b, 40, "b.rs"),
+        // A long body with a single token changed. The gate reads the 256-bit
+        // fingerprint of the *content*, so the fixture has to be a duplicate at
+        // that width — forcing a 64-bit collision proves nothing about it, and
+        // in fact 256 bits correctly separates such a pair (pinned below by
+        // `width_resolves_a_64_bit_collision_the_gate_must_not_act_on`).
+        let body: String = (0..60)
+            .map(|i| format!("step_{i}(ctx, {i});"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let a = format!("fn pipeline(ctx: &Ctx) {{ {body} }}");
+        let b = a.replace("step_59(ctx, 59);", "step_59(ctx, 590);");
+        let frags = vec![
+            make_frag("a", &a, 120, "a.rs"),
+            make_frag("b", &b, 120, "b.rs"),
         ];
-        // Pin the premise rather than hope for it: assert the pair really is
-        // fingerprint-identical, or the test proves nothing about the gate.
-        frags[1].simhash = frags[0].simhash;
-        assert_eq!(
-            crate::dedup::hamming_distance(frags[0].simhash, frags[1].simhash),
-            0,
-            "fixture premise: the pair must be fingerprint-identical"
-        );
+
+        // Pin the premise on the exact quantity the gate consults, rather than
+        // hoping the fixture is similar enough. Without this the test could
+        // pass for the wrong reason, or silently stop testing the gate if the
+        // width or the bound changed.
         assert_ne!(
             frags[0].content, frags[1].content,
-            "fixture premise: content must differ, or the content-hash path \
-             would catch this and the gate would be untested"
+            "fixture premise: content must differ"
+        );
+        let fa = crate::simhash_wide::fingerprint(&frags[0].content, GATE_FINGERPRINT_BITS);
+        let fb = crate::simhash_wide::fingerprint(&frags[1].content, GATE_FINGERPRINT_BITS);
+        let bound = fa
+            .cosine_lcb(&fb, 1, DIVERSITY_ALPHA)
+            .expect("same width and version must be comparable");
+        assert!(
+            bound >= DEFAULT_REDUNDANCY_GATE,
+            "fixture premise: the pair must clear the gate at {GATE_FINGERPRINT_BITS} \
+             bits, got a bound of {bound:.4} against a gate of \
+             {DEFAULT_REDUNDANCY_GATE}"
         );
         frags
     }
@@ -2032,6 +2185,42 @@ mod tests {
             1,
             "the first candidate has an empty selected set and must survive \
              any gate; only the second is a duplicate of anything"
+        );
+    }
+
+    #[test]
+    fn width_resolves_a_64_bit_collision_the_gate_must_not_act_on() {
+        // Two genuinely distinct fragments that collide at 64 bits. This is the
+        // regime the 64-bit path cannot serve: `d_H = 0` there is indistinguish-
+        // able from a real duplicate, and a gate acting on it would destroy
+        // evidence. At 256 bits the pair separates, so both must survive.
+        //
+        // This is the whole reason the gate reads a wider fingerprint than the
+        // discount does.
+        let a = "fn alpha(limit: u32) -> u32 { limit + 1 }";
+        let b = "fn alpha(limit: u32) -> u32 { limit + 2 }";
+        let mut frags = vec![make_frag("a", a, 40, "a.rs"), make_frag("b", b, 40, "b.rs")];
+        frags[1].simhash = frags[0].simhash;
+        assert_eq!(
+            crate::dedup::hamming_distance(frags[0].simhash, frags[1].simhash),
+            0,
+            "fixture premise: the pair must collide at 64 bits"
+        );
+
+        let fa = crate::simhash_wide::fingerprint(a, GATE_FINGERPRINT_BITS);
+        let fb = crate::simhash_wide::fingerprint(b, GATE_FINGERPRINT_BITS);
+        let bound = fa.cosine_lcb(&fb, 1, DIVERSITY_ALPHA).expect("comparable");
+        assert!(
+            bound < DEFAULT_REDUNDANCY_GATE,
+            "256 bits should separate this pair, but the bound is {bound:.4}"
+        );
+
+        let result = run_with_gate(&frags, 10_000, DEFAULT_REDUNDANCY_GATE);
+        assert_eq!(
+            result.selections.len(),
+            2,
+            "a 64-bit collision between distinct contents must not cost a \
+             fragment once the gate reads a wider fingerprint"
         );
     }
 

@@ -481,6 +481,21 @@ def main() -> int:
     with contextlib.redirect_stdout(sys.stderr):
         config = load_tuning_config(None)
 
+    # Exploration must be off for this harness to measure anything.
+    #
+    # bench/evaluate.py's default tuning config sets `exploration_rate = 0.1`,
+    # an epsilon-greedy term that promotes a lower-ranked fragment one time in
+    # ten. That is a legitimate production knob -- `EntrolyConfig`'s own shipped
+    # default is 0 precisely "so selection is reproducible" -- but against a
+    # measurement harness it is fatal. Measured here across three trials at a
+    # FIXED configuration on bench/cases.json, mean false suppression came out
+    # 0.0208, 0.0417, 0.0347. Any two single runs can therefore differ by 2x
+    # from noise alone, which is larger than the effects this harness exists to
+    # detect, and a before/after comparison would attribute that spread to
+    # whatever was changed in between. I made exactly that mistake before
+    # pinning it here.
+    config.setdefault("knapsack", {})["exploration_rate"] = 0.0
+
     synthetic = synthetic_corpus()
     cases = [synthetic]
     if args.cases:
