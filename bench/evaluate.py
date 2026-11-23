@@ -242,7 +242,7 @@ def create_engine_from_config(config: dict):
         ios_skeleton_info_factor=ios.get("skeleton_info_factor", 0.70),
         ios_reference_info_factor=ios.get("reference_info_factor", 0.15),
         ios_diversity_floor=ios.get("diversity_floor", 0.10),
-        ios_redundancy_gate=ios.get("redundancy_gate", 0.95),
+        ios_redundancy_gate=ios.get("redundancy_gate", 0.90),
     )
 
 
