@@ -253,7 +253,13 @@ class MemoryEntry:
     entities: list[str] = field(default_factory=list)  # extracted entity names
 
     def retention(self, now_tick: float) -> float:
-        """Ebbinghaus-style retention R(t)=exp(-age/salience)."""
+        """Exponential retention R(t)=exp(-age/salience).
+
+        Salience is the time constant, not a multiplier: it sets how long the
+        memory takes to decay rather than how high it starts. R(0)=1 for every
+        memory, so a newly written low-salience entry is not penalised at write
+        time — it simply falls away sooner.
+        """
         if self.tier == "semantic":
             return 1.0
         age = max(0.0, now_tick - self.created_at)

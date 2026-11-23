@@ -6,8 +6,18 @@ PyO3. Python owns only two things: config-driven weight overrides, and feeding
 in the engine_s6 edit-target localizer reorder (a separate module) as a
 preferred file order. Rust mandatory — no pure-Python fallback.
 
-References: Robertson & Zaragoza (2009) BM25/BM25F; Carbonell & Goldstein (1998)
-MMR. See entroly-qccr/src/lib.rs for the implementation.
+Ranking is BM25F — per-field term weighting with length normalisation, so a
+match in a short identifier is not drowned out by a long body — and selection
+is marginal-relevance, scoring each candidate against the query *minus* its
+similarity to what is already selected. The second part is what makes this
+query-conditioned rather than a ranked list: relevance alone will happily
+return five near-identical fragments, and a token budget spent that way buys
+one fact.
+
+The two algorithms are BM25/BM25F (Robertson & Zaragoza 2009) and Maximal
+Marginal Relevance (Carbonell & Goldstein 1998); the weight semantics and the
+MMR lambda trade-off are defined there. See entroly-qccr/src/lib.rs for the
+implementation.
 """
 from __future__ import annotations
 

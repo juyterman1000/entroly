@@ -3673,7 +3673,7 @@ class PromptCompilerProxy:
         #   2. LTM recall (cross-session memories)
         #   3. Knapsack optimization (Rust)
         #   4. SSSL filtering
-        #   5. Ebbinghaus decay bookkeeping
+        #   5. Exponential recency-decay bookkeeping
         self.engine._turn_counter += 1
         self.engine.advance_turn()
 

@@ -206,7 +206,7 @@ r(f) = (w_rec · recency + w_freq · frequency + w_sem · semantic + w_ent · en
 
 Default weights: recency 0.30, frequency 0.25, semantic 0.25, entropy 0.20.
 
-- **Recency**: Ebbinghaus forgetting curve — `exp(-ln(2) × Δt / half_life)`, half_life = 15 turns
+- **Recency**: Exponential decay — `exp(-ln(2) × Δt / half_life)`, half_life = 15 turns
 - **Frequency**: Normalized access count (spaced repetition boost)
 - **Semantic similarity**: SimHash Hamming distance to query, normalized to [0, 1]
 - **Information density**: Shannon entropy + boilerplate + redundancy (see below)
@@ -280,7 +280,7 @@ EntrolyConfig(
     weight_frequency=0.25,
     weight_semantic_sim=0.25,
     weight_entropy=0.20,
-    decay_half_life_turns=15,         # Ebbinghaus half-life
+    decay_half_life_turns=15,         # recency-decay half-life, in turns
     min_relevance_threshold=0.05,     # auto-evict below this
     dedup_similarity_threshold=0.92,
     prefetch_depth=2,
@@ -289,18 +289,29 @@ EntrolyConfig(
 )
 ```
 
-## References
+## Mechanisms and what each one relies on
 
-- Shannon (1948) — Information Theory
-- Charikar (2002) — SimHash
-- Ebbinghaus (1885) — Forgetting Curve
-- Dantzig (1957) — Greedy Knapsack Approximation
-- Wilson (1927) — Score Confidence Intervals
-- ICPC (arXiv 2025) — In-context Prompt Compression
-- Proximity (arXiv 2026) — LSH-bucketed Semantic Caching
-- RCC (ICLR 2025) — Recurrent Context Compression
-- ILRe (ICLR 2026) — Intermediate Layer Retrieval
-- Agentic Plan Caching (arXiv 2025)
+- **Shannon entropy** — information density per token. Scores content by how
+  much it says, not how long it is, so boilerplate does not buy budget.
+- **SimHash** — a similarity-preserving fingerprint, so near-duplicates land
+  at a small Hamming distance and can be found by comparing hashes instead of
+  comparing texts. The fingerprint is lossy in both directions: distinct
+  fragments can collide, so a drop decision needs more than the distance.
+- **Exponential recency decay** — `exp(-ln(2) × Δt / half_life)`. Depends only
+  on the gap since last access, so a fragment that stays in use never decays;
+  half-life is the exposed unit because it is the one a reader can reason about.
+- **Better-of-two greedy knapsack** — density-greedy or the best single
+  feasible item, whichever scores higher. Earns ½ of optimal on a modular
+  objective; the singleton covers exactly the case density-greedy loses, where
+  a high-density low-value item blocks a budget-filling one. `(1 - 1/e)` is a
+  different bound for a different objective and is not claimed here.
+- **Wilson score interval** — a confidence interval that stays inside [0, 1]
+  and stays sane at small n, where the normal approximation returns bounds
+  below zero and would report false confidence on a handful of observations.
+- **Prompt-prefix stability** — selection output is byte-stable unless inputs
+  change, which is what lets an upstream provider's cache hit.
+- **LSH-bucketed lookup** — candidate generation in sub-linear time by probing
+  only buckets a query could fall in, trading exhaustive recall for latency.
 
 
 

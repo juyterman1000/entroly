@@ -222,8 +222,14 @@ def _extract_definitions_from_content(content: str, source: str) -> list[str]:
 # ═══════════════════════════════════════════════════════════════════════
 #
 # Different tasks benefit from different scaffold emphasis.
-# Based on S2LPP (2025): task classification is transferable across
-# model sizes — if a strategy helps Opus, it helps Haiku more.
+#
+# The table is keyed by task rather than by model on purpose: which
+# structure a task needs is a property of the task, so one table can serve
+# every model instead of needing a variant per model. A smaller model gains
+# at least as much from the right scaffold as a larger one, since the
+# scaffold supplies structure the model would otherwise have to infer — so
+# a strategy tuned on the strongest model is a safe floor for weaker ones,
+# not something to re-tune downward.
 
 _TASK_SCAFFOLD_STRATEGY = {
     "BugFix": {

@@ -256,7 +256,9 @@ def _release_file_lock(lock_file: Any) -> None:
     lock_file.close()
 
 
-# Ebbinghaus decay constant
+# Exponential decay rate per elapsed turn, in health points per turn.
+# NOTE: the identifier still carries a researcher's surname; renaming it is an
+# API change and is deliberately left to its own commit.
 _EBBINGHAUS_LAMBDA = 0.01
 
 
@@ -584,9 +586,12 @@ class CheckpointManager:
     def apply_ebbinghaus_decay(
         self, fragments: list[dict[str, Any]], current_tick: int
     ) -> list[dict[str, Any]]:
-        """Apply Ebbinghaus forgetting curve to fragment health scores.
+        """Decay fragment health exponentially in turns since last access.
 
-        Applies Ebbinghaus forgetting curve decay.
+        health = exp(-lambda * turns_since_access), so health depends only on
+        the gap since the fragment was last touched, not on its age or its
+        original score: a fragment read every turn never decays, and one
+        written long ago but read recently is as healthy as a new one.
         Fragments with health < 0.05 are evicted.
         """
         result = []

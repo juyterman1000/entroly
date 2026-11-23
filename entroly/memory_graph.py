@@ -11,7 +11,7 @@ adjacency structure that:
 
 1. Extracts entities from memory entries (using memory.py's _extract_entities)
 2. Creates edges between entities that co-occur in the same memory
-3. Supports multi-hop traversal for associative recall (à la HippoRAG)
+3. Supports multi-hop traversal for associative recall
 4. Attaches a receipt to every edge linking to the source memory ID
 
 The graph is stored as a JSON adjacency list under .entroly/memory_graph/.
@@ -22,11 +22,19 @@ Provenance and Auditability
 Entroly's graph memory is receipt-backed: every edge can be traced to the exact
 memory entry that created it, supporting audit, supersession tracking, and exact recovery.
 
-References
-----------
-- HippoRAG (2024–2025): biologically-inspired associative graph memory
-- GroundedKG-RAG (2026): every graph node points to original source sentences
-- "Governed Shared Memory" (2026): temporal supersession in multi-agent graphs
+Design properties this relies on
+--------------------------------
+- Associative recall: an entity reached by traversal can surface a memory that
+  shares no query terms with the request, which is the case a lexical index
+  structurally cannot serve.
+- Node-to-source grounding: every node points back at the originating memory
+  entry, so a graph answer is recoverable to the text it came from rather than
+  asserted by the graph itself. A graph that cannot do this turns traversal
+  into an unfalsifiable claim.
+- Temporal supersession: an edge is superseded rather than deleted, so a stale
+  belief and the belief that replaced it are both still visible. Deleting the
+  old edge would make the graph internally consistent and silently wrong about
+  its own history, which is the failure mode multi-agent writes produce.
 """
 
 from __future__ import annotations
@@ -238,8 +246,10 @@ class MemoryGraph:
         """Multi-hop traversal from seed entities.
 
         Returns all memory IDs reachable within max_hops, with full audit trail.
-        This implements associative recall à la HippoRAG — given a query's
-        entities, discover related memories via the entity graph.
+        Associative recall: given a query's entities, discover related memories
+        by traversing the entity graph rather than by matching query text, so a
+        memory that shares an entity but no wording with the query is still
+        reachable.
         """
         seeds = [e.lower() for e in seed_entities if e.lower() in self._nodes]
         if not seeds:

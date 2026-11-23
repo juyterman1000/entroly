@@ -1,7 +1,19 @@
 """Held-out statistical assessment of fixed cascade decisions.
 
-Implements the exact-binomial/Bonferroni construction from Learn then Test,
-Section 3.2 (https://arxiv.org/abs/2110.01052). Under IID observations within
+A candidate is supported only when the exact binomial lower tail
+P(X <= errors) under p = risk_limit falls at or below error_level divided by
+the number of candidates. Each half of that is deliberate. The tail is
+computed in exact integer arithmetic rather than a normal approximation,
+which is anti-conservative at the small per-profile selected counts this
+runs on, and would otherwise support a candidate the data does not support.
+The division is a Bonferroni correction, which holds under arbitrary
+dependence between candidates, so the guarantee survives candidates that
+share a profile or a scorer -- the usual case here, since one profile's
+samples are reused across every policy tested on it. The resulting statement
+is therefore family-wise, not per-pair. This is the exact-binomial/Bonferroni
+construction of Learn then Test, Section 3.2 (https://arxiv.org/abs/2110.01052);
+consult it before changing the test or the correction, since the guarantee
+below is its theorem, not ours. Under IID observations within
 each profile, correct labels, an independently fixed policy/scorer/profile
 family, and matching future distributions, the probability that any supported
 pair has population selective error above risk_limit is at most error_level.
