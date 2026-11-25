@@ -321,6 +321,7 @@ def call_model(
     *, base_url: str, model: str, prompt: str, seed: int, timeout: float,
     max_output_tokens: int = 512,
     context_window: int | None = None,
+    local_only: bool = False,
 ) -> dict[str, Any]:
     """One generation. Raises rather than returning a placeholder."""
     options = {"temperature": 0, "seed": seed, "num_predict": max_output_tokens}
@@ -334,6 +335,11 @@ def call_model(
         # generation parameters.
         "options": options,
     }
+    open_request = urllib.request.urlopen
+    if local_only:
+        from benchmarks.pilot_runtime_identity import local_ollama_opener
+
+        open_request = local_ollama_opener(base_url).open
     request = urllib.request.Request(
         f"{base_url.rstrip('/')}/api/generate",
         data=json.dumps(payload).encode("utf-8"),
@@ -342,7 +348,7 @@ def call_model(
     )
     started = time.perf_counter()
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with open_request(request, timeout=timeout) as response:
             body = json.loads(response.read().decode("utf-8"))
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"model call failed: {exc}") from exc

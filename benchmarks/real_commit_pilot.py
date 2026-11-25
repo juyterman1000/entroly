@@ -17,7 +17,7 @@ import subprocess
 import sys
 import tempfile
 import urllib.parse
-import urllib.request
+import uuid
 from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterator
@@ -44,7 +44,7 @@ def _git(repo: Path, *args: str, input_text: str | None = None) -> str:
 
 def _digest(value: Any) -> str:
     return hashlib.sha256(
-        json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
     ).hexdigest()
 
 
@@ -157,9 +157,17 @@ def _apply_patch(root: Path, response: str, allowed: list[str]) -> tuple[str, st
     return patch_hash, patch
 
 
-def _oracle(root: Path, task: dict[str, Any], timeout: int) -> tuple[str, str]:
+def _oracle(
+    root: Path, task: dict[str, Any], timeout: int, image_id: str | None = None,
+) -> tuple[str, str]:
     env = os.environ.copy()
     env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
+    if image_id is not None and (
+        env.get("ENTROLY_REAL_COMMIT_SANDBOX") != "1"
+        or not re.fullmatch(r"sha256:[0-9a-f]{64}", image_id)
+    ):
+        raise ValueError("a pinned oracle requires a sandboxed immutable image ID")
+    container = f"entroly-pilot-{uuid.uuid4().hex}" if image_id is not None else None
     if env.get("ENTROLY_REAL_COMMIT_SANDBOX") == "1":
         # Historical and model-generated Python execute ONLY in an isolated
         # container. The checkout is mounted read-only, no host credentials,
@@ -178,10 +186,12 @@ def _oracle(root: Path, task: dict[str, Any], timeout: int) -> tuple[str, str]:
             "--env=PYTHONPATH=/task",
             "--env=PYTHONDONTWRITEBYTECODE=1",
             "--env=PYTEST_DISABLE_PLUGIN_AUTOLOAD=1",
-            "entroly-dogfood-real-oracle:py312",
+            image_id or "entroly-dogfood-real-oracle:py312",
             "python", "-m", "pytest", *task["test_files"],
             "-x", "-q", "--tb=short", "-p", "no:cacheprovider",
         ]
+        if container is not None:
+            command[3:3] = ["--name", container]
     else:
         # Legacy trusted unit-test behavior only. Production model trials set
         # ENTROLY_REAL_COMMIT_SANDBOX=1 and fail if Docker is unavailable.
@@ -198,6 +208,14 @@ def _oracle(root: Path, task: dict[str, Any], timeout: int) -> tuple[str, str]:
         )
     except subprocess.TimeoutExpired:
         return "timeout", ""
+    finally:
+        if container is not None:
+            # Killing a Docker client does not stop its container. Only remove
+            # the unique container owned by this attempt, including on timeout.
+            subprocess.run(
+                ["docker", "rm", "--force", container], capture_output=True,
+                timeout=10, check=False,
+            )
     output = result.stdout + "\n" + result.stderr
     if env.get("ENTROLY_REAL_COMMIT_SANDBOX") == "1" and result.returncode in (125, 126, 127):
         return "infrastructure_error", output[-500:]
@@ -238,6 +256,115 @@ def _arm_order(version: int, index: int, seed: int) -> tuple[str, ...]:
         return _ARMS_V1
     offset = (index + seed) % len(_ARMS_V2)
     return _ARMS_V2[offset:] + _ARMS_V2[:offset]
+
+
+def _artifact_digest(artifact: dict) -> str:
+    # An integrity checksum, not authentication of a model answer or oracle.
+    return _digest({key: value for key, value in artifact.items() if key != "artifact_sha256"})
+
+
+def _next_arm(rows: list[dict], task_ids: list[str], seed: int) -> tuple[int, int]:
+    task_index = arm_index = 0
+    outcomes = _SCORED_OUTCOMES | {
+        "execution_error", "infrastructure_error", "unknown_failure", "interrupted_unknown",
+    }
+    for row in rows:
+        if task_index >= len(task_ids) or row.get("task_id") != task_ids[task_index]:
+            raise ValueError("continuation rows are not a prefix of the frozen task order")
+        arm = row.get("arm")
+        if arm is None:
+            if arm_index or row.get("outcome") not in {
+                "ineligible_context_size", "ineligible_oracle_drift",
+            }:
+                raise ValueError("invalid continuation exclusion")
+            task_index += 1
+            continue
+        if arm != _arm_order(2, task_index, seed)[arm_index] or row.get("outcome") not in outcomes:
+            raise ValueError("invalid continuation arm order or outcome")
+        for field in ("input_tokens", "output_tokens"):
+            value = row.get(field)
+            if value is not None and (type(value) is not int or value < 0):
+                raise ValueError("invalid continuation token usage")
+        arm_index += 1
+        if arm_index == len(_ARMS_V2):
+            task_index += 1
+            arm_index = 0
+    return task_index, arm_index
+
+
+def _read_continuation(path: Path, expected: dict, protocol: dict, runtime: dict) -> dict:
+    data = path.read_bytes()
+    parent = json.loads(data)
+    if not isinstance(parent, dict) or parent.get("artifact_sha256") != _artifact_digest(parent):
+        raise ValueError("continuation artifact integrity checksum differs")
+    if parent.get("status") not in {"in_progress", "call_limit_reached"}:
+        raise ValueError("continuation requires an incomplete artifact")
+    if any(parent.get(key) != value for key, value in expected.items()):
+        raise ValueError("continuation differs from the frozen protocol, source, tasks or model")
+    contract = parent.get("continuation", {})
+    if contract.get("schema") != "entroly.pilot-continuation.v1" or contract.get("runtime") != runtime:
+        raise ValueError("continuation runtime identity differs or is unavailable")
+    rows = parent.get("rows")
+    if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+        raise ValueError("invalid continuation rows")
+    task_index, arm_index = _next_arm(rows, protocol["candidate_shas"], protocol["seed"])
+    if parent.get("summary") != summarize(rows, protocol["candidate_shas"], _ARMS_V2):
+        raise ValueError("continuation summary differs from its observations")
+    total = contract.get("total_arm_attempts")
+    started = contract.get("new_arm_attempts")
+    limit = contract.get("max_model_calls")
+    if (type(total) is not int or type(started) is not int or not 0 <= started <= total
+            or (limit is not None and (type(limit) is not int or not 0 < limit or started > limit))):
+        raise ValueError("invalid continuation attempt accounting")
+    plans = contract.get("task_plans")
+    if not isinstance(plans, dict) or set(plans) - set(protocol["candidate_shas"]):
+        raise ValueError("invalid continuation context plans")
+    allowed = set(protocol["candidate_shas"][:task_index + 1])
+    if set(plans) - allowed:
+        raise ValueError("continuation contains context plans for future tasks")
+    for plan in plans.values():
+        if (not isinstance(plan, dict) or set(plan.get("arms", {})) != set(_ARMS_V2)
+                or not isinstance(plan.get("corpus_sha256"), str)
+                or not re.fullmatch(r"[0-9a-f]{64}", plan["corpus_sha256"])):
+            raise ValueError("invalid continuation context plan")
+        for arm, arm_plan in plan["arms"].items():
+            if (not isinstance(arm_plan, dict)
+                    or (arm_plan == {"selection_error": True} and arm != "selected")
+                    or (arm_plan != {"selection_error": True} and (
+                        not isinstance(arm_plan.get("prompt_sha256"), str)
+                        or not re.fullmatch(r"[0-9a-f]{64}", arm_plan["prompt_sha256"])
+                    ))):
+                raise ValueError("invalid continuation arm plan")
+    for row in rows:
+        if row.get("arm") is None:
+            continue
+        plan = plans.get(row["task_id"], {}).get("arms", {}).get(row["arm"])
+        if not isinstance(plan, dict) or row.get("plan_sha256") != _digest(plan):
+            raise ValueError("continuation row differs from its context plan")
+        if (row["outcome"] == "selection_error") != (plan == {"selection_error": True}):
+            raise ValueError("continuation selection outcome differs from its context plan")
+        if row.get("prompt_sha256") is not None and row["prompt_sha256"] != plan.get("prompt_sha256"):
+            raise ValueError("continuation observed prompt differs from its plan")
+        if row["outcome"] in {"passed", "test_failure", "timeout", "infrastructure_error", "unknown_failure"}:
+            for field in ("prompt_sha256", "response_sha256", "patch_sha256"):
+                if not isinstance(row.get(field), str) or not re.fullmatch(r"[0-9a-f]{64}", row[field]):
+                    raise ValueError("continuation oracle outcome lacks its generation and patch receipt")
+    pending = contract.get("pending_arm")
+    if pending is not None:
+        if task_index >= len(protocol["candidate_shas"]) or pending != {
+            "task_id": protocol["candidate_shas"][task_index],
+            "arm": _arm_order(2, task_index, protocol["seed"])[arm_index],
+        } or not started:
+            raise ValueError("invalid continuation pending attempt")
+        plan = plans.get(pending["task_id"], {}).get("arms", {}).get(pending["arm"])
+        if not isinstance(plan, dict):
+            raise ValueError("continuation pending attempt lacks its context plan")
+        if plan == {"selection_error": True}:
+            raise ValueError("continuation pending attempt has no model prompt")
+    attempts = sum(row.get("arm") is not None and row["outcome"] != "selection_error" for row in rows)
+    if total != attempts + int(pending is not None):
+        raise ValueError("continuation attempt accounting differs from its observations")
+    return {"artifact": parent, "sha256": hashlib.sha256(data).hexdigest()}
 
 
 def summarize(rows: list[dict[str, Any]], task_ids: list[str], arms: tuple[str, ...]) -> dict:
@@ -292,13 +419,15 @@ def summarize(rows: list[dict[str, Any]], task_ids: list[str], arms: tuple[str, 
 
 
 def _local_model_digest(base_url: str, model: str) -> str:
+    from benchmarks.pilot_runtime_identity import local_ollama_opener
+
     parsed = urllib.parse.urlparse(base_url)
     if (parsed.scheme != "http" or parsed.hostname not in {"localhost", "127.0.0.1", "::1"}
             or parsed.username is not None or parsed.password is not None
             or parsed.path not in ("", "/") or parsed.query or parsed.fragment
             or parsed.port is None):
         raise ValueError("pilot requires a local Ollama HTTP endpoint")
-    with urllib.request.urlopen(f"{base_url.rstrip('/')}/api/tags", timeout=10) as response:
+    with local_ollama_opener(base_url).open(f"{base_url.rstrip('/')}/api/tags", timeout=10) as response:
         tags = json.loads(response.read().decode("utf-8"))
     matches = [item for item in tags.get("models", []) if item.get("name") == model]
     if len(matches) != 1 or not matches[0].get("digest"):
@@ -311,6 +440,7 @@ def _run_arm(
     context_details: dict[str, Any], model: str, base_url: str, seed: int,
     model_timeout: float, test_timeout: int, output_tokens: int, context_window: int,
     preserve_execution_receipt: bool = False,
+    oracle_image: str | None = None,
 ) -> dict[str, Any]:
     row = None
     try:
@@ -320,6 +450,7 @@ def _run_arm(
                 base_url=base_url, model=model, prompt=prompt,
                 seed=seed, timeout=model_timeout, max_output_tokens=output_tokens,
                 context_window=context_window,
+                local_only=True,
             )
             row = {
                 "task_id": task["sha"], "arm": arm, "context": context_details,
@@ -338,10 +469,13 @@ def _run_arm(
                 )
                 return row
             row.update(patch_sha256=patch_hash, model_patch=patch)
-            outcome, oracle_tail = _oracle(root, task, test_timeout)
+            outcome, oracle_tail = (
+                _oracle(root, task, test_timeout, oracle_image) if oracle_image is not None
+                else _oracle(root, task, test_timeout)
+            )
             row.update(outcome=outcome, oracle_tail=oracle_tail)
             return row
-    except (RuntimeError, OSError) as exc:
+    except (RuntimeError, OSError, subprocess.SubprocessError) as exc:
         if not preserve_execution_receipt or row is None:
             raise
         # Cleanup can fail while returning: retain the receipt accumulated so far.
@@ -349,16 +483,24 @@ def _run_arm(
         return row
 
 
-def run(protocol_path: Path, tasks_path: Path, repo: Path, output: Path, base_url: str) -> dict[str, Any]:
+def run(
+    protocol_path: Path, tasks_path: Path, repo: Path, output: Path, base_url: str,
+    *, max_model_calls: int | None = None, continue_from: Path | None = None,
+) -> dict[str, Any]:
     if output.resolve().is_relative_to(repo.resolve()):
         raise ValueError("development result artifact must be outside the repository")
-    if output.exists():
+    if output.exists() or output.is_symlink():
         raise ValueError("refusing to overwrite an existing pilot artifact")
     protocol = json.loads(protocol_path.read_text(encoding="utf-8"))
     schemas = {"entroly.real-commit-pilot.v1": 1, "entroly.real-commit-pilot.v2": 2}
     if protocol["schema"] not in schemas:
         raise ValueError("unsupported pilot protocol")
     version = schemas[protocol["schema"]]
+    bounded = max_model_calls is not None or continue_from is not None
+    if bounded and version != 2:
+        raise ValueError("bounded continuations require evaluation version 2")
+    if max_model_calls is not None and (type(max_model_calls) is not int or max_model_calls <= 0):
+        raise ValueError("max_model_calls must be a positive integer")
     arms = _ARMS_V1 if version == 1 else _ARMS_V2
     if version == 2 and type(protocol["seed"]) is not int:
         raise ValueError("seed must be an integer")
@@ -401,20 +543,100 @@ def run(protocol_path: Path, tasks_path: Path, repo: Path, output: Path, base_ur
                 "do not establish causal context attribution."
             ),
         }
+        if bounded:
+            from benchmarks.pilot_runtime_identity import runtime_identity
+
+            artifact["limitations"] += (
+                " Continuation fingerprints do not establish identical hardware load or model RNG state."
+                " Stop the earlier process before continuing; an in-flight arm is recorded as unknown,"
+                " never automatically retried. Artifact checksums detect edits but do not authenticate outcomes."
+            )
+            runtime = runtime_identity(repo, engine, base_url)
+            expected = {key: artifact[key] for key in (
+                "schema", "protocol_sha256", "tasks_sha256", "source_sha", "engine",
+                "model", "model_digest", "selection_query_policy", "arm_order_policy",
+            )}
+            parent = _read_continuation(continue_from, expected, protocol, runtime) if continue_from else None
+            inherited = parent["artifact"]["continuation"] if parent else {}
+            artifact["rows"] = parent["artifact"]["rows"] if parent else []
+            artifact["continuation"] = {
+                "schema": "entroly.pilot-continuation.v1", "runtime": runtime,
+                "parent_sha256": parent["sha256"] if parent else None,
+                "new_arm_attempts": 0,
+                "total_arm_attempts": inherited.get("total_arm_attempts", 0),
+                "max_model_calls": max_model_calls,
+                "task_plans": inherited.get("task_plans", {}), "pending_arm": None,
+            }
+
+        output_created = False
 
         def checkpoint() -> None:
+            nonlocal output_created
             artifact["summary"] = summarize(artifact["rows"], protocol["candidate_shas"], arms)
+            if bounded:
+                artifact["artifact_sha256"] = _artifact_digest(artifact)
             output.parent.mkdir(parents=True, exist_ok=True)
-            temporary = output.with_name(output.name + ".tmp")
-            temporary.write_text(json.dumps(artifact, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-            temporary.replace(output)
+            serialized = json.dumps(artifact, indent=2, sort_keys=True, allow_nan=False) + "\n"
+            if not output_created:
+                # Claim the new output exclusively: two invocations passing the
+                # initial exists check must not replace each other's artifacts.
+                with output.open("x", encoding="utf-8") as handle:
+                    handle.write(serialized)
+                    if bounded:
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                output_created = True
+                return
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=output.parent, prefix=output.name + ".",
+                suffix=".tmp", delete=False,
+            ) as handle:
+                handle.write(serialized)
+                if bounded:
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                temporary = Path(handle.name)
+            try:
+                temporary.replace(output)
+            finally:
+                temporary.unlink(missing_ok=True)
 
         def record(row: dict[str, Any]) -> None:
+            if bounded and row.get("arm") is not None:
+                plan = artifact["continuation"]["task_plans"][row["task_id"]]["arms"][row["arm"]]
+                if row.get("prompt_sha256") is not None and row["prompt_sha256"] != plan.get("prompt_sha256"):
+                    raise ValueError("observed prompt differs from the frozen arm plan")
+                row["plan_sha256"] = _digest(plan)
             artifact["rows"].append(row)
             checkpoint()
 
-        checkpoint()
+        if bounded and parent and inherited.get("pending_arm") is not None:
+            # A process may die after a request was sent but before its receipt
+            # was saved. Retain that unknown attempt instead of replaying it.
+            record({**inherited["pending_arm"], "outcome": "interrupted_unknown"})
+        else:
+            checkpoint()
+        done = {
+            task_id for task_id in protocol["candidate_shas"]
+            if any(row["task_id"] == task_id and row.get("arm") is None for row in artifact["rows"])
+            or {row.get("arm") for row in artifact["rows"] if row["task_id"] == task_id} == set(arms)
+        }
+
+        def at_limit() -> bool:
+            return bounded and max_model_calls is not None and (
+                artifact["continuation"]["new_arm_attempts"] >= max_model_calls
+            )
+
+        def stopped() -> dict:
+            artifact["status"] = "call_limit_reached"
+            checkpoint()
+            return artifact
+
         for task_index, task in enumerate(tasks):
+            if task["sha"] in done:
+                continue
+            if at_limit():
+                return stopped()
             fragments = _fragments(repo, task)
             corpus_bytes = sum(len(fragment.content.encode("utf-8")) for fragment in fragments)
             if corpus_bytes > protocol["max_corpus_bytes"]:
@@ -423,18 +645,21 @@ def run(protocol_path: Path, tasks_path: Path, repo: Path, output: Path, base_ur
                     "corpus_bytes": corpus_bytes, "limit_bytes": protocol["max_corpus_bytes"],
                 })
                 continue
-            with _task_worktree(repo, task) as baseline_root:
-                baseline_outcome, baseline_tail = _oracle(
-                    baseline_root, task, protocol["test_timeout_s"]
-                )
-            if baseline_outcome != "test_failure":
-                record({
-                    "task_id": task["sha"], "outcome": "ineligible_oracle_drift",
-                    "baseline_outcome": baseline_outcome,
-                    "baseline_tail": baseline_tail,
-                    "corpus_bytes": corpus_bytes,
-                })
-                continue
+            plans = artifact["continuation"]["task_plans"] if bounded else {}
+            if task["sha"] not in plans:
+                with _task_worktree(repo, task) as baseline_root:
+                    baseline_outcome, baseline_tail = (
+                        _oracle(baseline_root, task, protocol["test_timeout_s"], runtime["oracle_image"])
+                        if bounded else _oracle(baseline_root, task, protocol["test_timeout_s"])
+                    )
+                if baseline_outcome != "test_failure":
+                    record({
+                        "task_id": task["sha"], "outcome": "ineligible_oracle_drift",
+                        "baseline_outcome": baseline_outcome,
+                        "baseline_tail": baseline_tail,
+                        "corpus_bytes": corpus_bytes,
+                    })
+                    continue
             raw = build_raw(fragments)
             try:
                 selected = build_compressed(
@@ -451,7 +676,24 @@ def run(protocol_path: Path, tasks_path: Path, repo: Path, output: Path, base_ur
             if version == 2:
                 contexts["null"] = build_raw([])
                 contexts["null"].notes = ["no candidate source or test content"]
+            if bounded:
+                plan = {
+                    "corpus_sha256": _digest([(f.source, f.digest) for f in fragments]),
+                    "arms": {
+                        arm: {"selection_error": True} if built is None else {
+                            "prompt_sha256": hashlib.sha256(_prompt(built.text, task).encode("utf-8")).hexdigest(),
+                            "context": {**built.to_dict(), "arm": arm},
+                        }
+                        for arm, built in contexts.items()
+                    },
+                }
+                if task["sha"] in plans and plans[task["sha"]] != plan:
+                    raise ValueError("continuation context selection differs from the frozen arm plan")
+                plans[task["sha"]] = plan
+                checkpoint()
             for arm in _arm_order(version, task_index, protocol["seed"]):
+                if any(row["task_id"] == task["sha"] and row.get("arm") == arm for row in artifact["rows"]):
+                    continue
                 built = contexts[arm]
                 if built is None:
                     record({
@@ -460,6 +702,14 @@ def run(protocol_path: Path, tasks_path: Path, repo: Path, output: Path, base_ur
                         "corpus_bytes": corpus_bytes,
                     })
                     continue
+                if at_limit():
+                    return stopped()
+                if bounded:
+                    progress = artifact["continuation"]
+                    progress["new_arm_attempts"] += 1
+                    progress["total_arm_attempts"] += 1
+                    progress["pending_arm"] = {"task_id": task["sha"], "arm": arm}
+                    checkpoint()
                 try:
                     row = _run_arm(
                         repo, task, arm=arm, context=built.text,
@@ -473,12 +723,15 @@ def run(protocol_path: Path, tasks_path: Path, repo: Path, output: Path, base_ur
                         output_tokens=protocol["max_output_tokens"],
                         context_window=protocol["context_window"],
                         preserve_execution_receipt=(version == 2),
+                        **({"oracle_image": runtime["oracle_image"]} if bounded else {}),
                     )
-                except (RuntimeError, OSError) as exc:
+                except (RuntimeError, OSError, subprocess.SubprocessError) as exc:
                     if version == 1:
                         raise
                     row = {"task_id": task["sha"], "arm": arm, "outcome": "execution_error",
                            "detail": str(exc)}
+                if bounded:
+                    artifact["continuation"]["pending_arm"] = None
                 record({**row, "corpus_bytes": corpus_bytes})
                 print(f"{task['sha'][:12]} {arm}: {row['outcome']}", flush=True)
         artifact["status"] = "complete"
@@ -493,8 +746,11 @@ def main() -> int:
     parser.add_argument("--repo", required=True, type=Path)
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--base-url", default="http://localhost:11434")
+    parser.add_argument("--max-model-calls", type=int, help="v2 cap on new model-generating arm attempts")
+    parser.add_argument("--continue-from", type=Path, help="v2 incomplete artifact; write continuation to a new --out")
     args = parser.parse_args()
-    run(args.protocol, args.tasks, args.repo.resolve(), args.out, args.base_url)
+    run(args.protocol, args.tasks, args.repo.resolve(), args.out, args.base_url,
+        max_model_calls=args.max_model_calls, continue_from=args.continue_from)
     return 0
 
 
