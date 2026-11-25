@@ -69,10 +69,8 @@ def prepare(
         tasks.append(task)
     outdir.mkdir(parents=True, exist_ok=True)
     tasks_path = outdir / "frozen-validated-tasks.jsonl"
-    tasks_path.write_text(
-        "".join(json.dumps(asdict(item), sort_keys=True) + "\n" for item in tasks),
-        encoding="utf-8",
-    )
+    with tasks_path.open("x", encoding="utf-8") as stream:
+        stream.write("".join(json.dumps(asdict(item), sort_keys=True) + "\n" for item in tasks))
     protocol = {k: manifest[k] for k in (
         "candidate_shas", "model", "model_digest", "seed", "max_corpus_bytes",
         "selection_budget", "max_output_tokens", "context_window",
@@ -87,8 +85,8 @@ def prepare(
     if evaluation_version == 2:
         protocol["manifest_sha256"] = _manifest_sha256(manifest)
     protocol_path = outdir / "effective-frozen-protocol.json"
-    protocol_path.write_text(json.dumps(protocol, indent=2, sort_keys=True) + "\n",
-                             encoding="utf-8")
+    with protocol_path.open("x", encoding="utf-8") as stream:
+        stream.write(json.dumps(protocol, indent=2, sort_keys=True) + "\n")
     return protocol_path, tasks_path
 
 
@@ -217,9 +215,8 @@ def main() -> int:
         stats.update({key: result["continuation"][key] for key in (
             "new_arm_attempts", "total_arm_attempts",
         )})
-    (output / "real-commit-summary.json").write_text(
-        json.dumps(stats, indent=2) + "\n", encoding="utf-8",
-    )
+    with (output / "real-commit-summary.json").open("x", encoding="utf-8") as stream:
+        stream.write(json.dumps(stats, indent=2) + "\n")
     print(json.dumps(stats, sort_keys=True), flush=True)
     if result["status"] == "call_limit_reached":
         return 0

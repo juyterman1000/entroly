@@ -385,3 +385,33 @@ def test_failed_preflight_does_not_mine_or_create_outputs(monkeypatch, campaign)
     with pytest.raises(RuntimeError, match="oracle image unavailable"):
         _invoke(monkeypatch, campaign, "--evaluation-version", "2", "--max-model-calls", "1")
     assert not campaign.output.exists()
+
+
+@pytest.mark.parametrize("name", OUTPUT_NAMES[:2])
+def test_prepare_never_replaces_input_created_during_validation(monkeypatch, campaign, name):
+    @dataclass
+    class Task:
+        sha: str
+
+    def validate(*args, **kwargs):
+        campaign.output.mkdir()
+        (campaign.output / name).write_bytes(b"another preparation owns this file")
+        return Task("c" * 40)
+
+    monkeypatch.setattr(cli.subprocess, "run", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cli, "discover", lambda *args, **kwargs: [Task("c" * 40)])
+    monkeypatch.setattr(cli, "validate", validate)
+    with pytest.raises(FileExistsError):
+        _prepare(campaign.manifest, campaign.repo, campaign.output, evaluation_version=2)
+    assert (campaign.output / name).read_bytes() == b"another preparation owns this file"
+
+
+def test_summary_never_replaces_file_created_during_execution(monkeypatch, campaign, parent):
+    def run(*args, **kwargs):
+        (campaign.output / OUTPUT_NAMES[3]).write_bytes(b"another report owns this file")
+        return _result()
+
+    monkeypatch.setattr(cli, "run", run)
+    with pytest.raises(FileExistsError):
+        _invoke(monkeypatch, campaign, "--evaluation-version", "2", "--continue-from", parent)
+    assert (campaign.output / OUTPUT_NAMES[3]).read_bytes() == b"another report owns this file"
