@@ -16,9 +16,10 @@
 
 from __future__ import annotations
 
-import os
-import sys
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 from entroly import cli
 from entroly.eicv import EICVAnalyzer
@@ -55,6 +56,26 @@ def test_unrelated_non_plugin_directory_is_not_walked_up(tmp_path, monkeypatch):
     assert Path(resolved_source_root()) == app_bundle.resolve()
 
 
+def test_nested_plugin_layout_uses_nearest_workspace_boundary(tmp_path, monkeypatch):
+    outer = tmp_path / "outer"
+    (outer / ".git").mkdir(parents=True)
+    workspace = outer / ".cache" / "plugins" / "checkout"
+    (workspace / ".git").mkdir(parents=True)
+    plugin = workspace / ".agents" / "plugins" / "entroly"
+    plugin.mkdir(parents=True)
+    monkeypatch.delenv("ENTROLY_SOURCE", raising=False)
+    monkeypatch.chdir(plugin)
+
+    assert Path(resolved_source_root()) == workspace.resolve()
+    assert _project_path(str(workspace)) == workspace.resolve()
+    with pytest.raises(ValueError):
+        _project_path(str(outer))
+
+    # An operator's explicit choice still overrides automatic discovery.
+    monkeypatch.setenv("ENTROLY_SOURCE", str(outer))
+    assert Path(resolved_source_root()) == outer.resolve()
+
+
 def test_prohibitive_verb_matches_grammatical_negation_without_false_contradiction():
     evidence = (
         "External and untrusted observations can never enter or be promoted to "
@@ -86,21 +107,45 @@ def test_word_ending_in_no_does_not_trigger_substring_negation():
     assert _has_negation_before("there was no recital today", "recital") is True
 
 
-def test_windows_pe_shim_embedded_shebang_resolves_package_dir(tmp_path):
-    # Simulate a 120 KB Windows distlib PE .exe wrapper embedding `#!"<python.exe>"`
-    # past the initial 4 KB header, followed by zip payload bytes.
+@pytest.mark.parametrize("contraction,expanded", [
+    ("won't", "will not"), ("can't", "cannot"), ("shan't", "shall not"),
+    ("won’t", "will not"), ("can’t", "cannot"), ("isn't", "is not"),
+    ("doesn't", "does not"), ("wouldn't", "would not"),
+])
+def test_contractions_preserve_polarity(contraction, expanded):
+    negative = f"Agents {contraction} expose private keys."
+    equivalent = f"Agents {expanded} expose private keys."
+    positive = "Agents expose private keys."
+    assert _has_negation_before(negative.lower(), "expose") is True
+    assert _contradiction_score(negative, positive) == 1.0
+    assert _contradiction_score(positive, negative) == 1.0
+    assert _contradiction_score(negative, equivalent) == 0.0
+
+
+def test_windows_pe_shim_embedded_shebang_resolves_package_dir(tmp_path, monkeypatch):
+    # Exercise PE parsing on every platform, without depending on whichever
+    # editable install the test interpreter finds outside this checkout.
     fake_exe = tmp_path / "Scripts" / "entroly.exe"
     fake_exe.parent.mkdir(parents=True)
-    py_exe = Path(sys.executable)
-    # Only exercise execution when sys.executable ends with .exe or create a .exe symlink/shim check:
-    if os.name == "nt":
-        pe_stub = b"MZ" + (b"\x00" * 80_000)
-        shebang = f'#!"{py_exe}"\r\nPK\x03\x04'.encode("utf-8")
-        fake_exe.write_bytes(pe_stub + shebang)
-        resolved = cli._launcher_package_dir(str(fake_exe))
-        expected = Path(cli.__file__).resolve().parent
-        assert resolved == expected
-    else:
-        # On POSIX, verify binary regex extraction doesn't crash on non-.exe binary stubs.
-        fake_exe.write_bytes(b"MZ" + (b"\x00" * 10_000))
-        assert cli._launcher_package_dir(str(fake_exe)) is None
+    py_exe = tmp_path / "Python with spaces" / "python.exe"
+    expected = tmp_path / "other-install" / "site-packages" / "entroly"
+    fake_exe.write_bytes(b"MZ" + b"\x00" * 80_000 + f'#!"{py_exe}"\r\nPK\x03\x04'.encode())
+    calls = []
+
+    def probe(argv, **kwargs):
+        calls.append(argv)
+        assert argv[:2] == [str(py_exe), "-c"]
+        assert kwargs["cwd"] == str(fake_exe.parent)
+        assert kwargs["timeout"] == 10
+        return SimpleNamespace(returncode=0, stdout=str(expected) + "\n")
+
+    monkeypatch.setattr(cli.subprocess, "run", probe)
+    assert cli._launcher_package_dir(str(fake_exe)) == expected.resolve()
+    assert len(calls) == 1
+
+
+def test_binary_without_embedded_interpreter_is_not_executed(tmp_path, monkeypatch):
+    launcher = tmp_path / "entroly.exe"
+    launcher.write_bytes(b"MZ" + b"\x00" * 10_000)
+    monkeypatch.setattr(cli.subprocess, "run", lambda *a, **kw: pytest.fail("unexpected execution"))
+    assert cli._launcher_package_dir(str(launcher)) is None

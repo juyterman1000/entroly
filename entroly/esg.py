@@ -143,7 +143,7 @@ _STOPWORDS = frozenset(
 _NEGATION_WINDOW_RE = re.compile(
     r"(?:"
     r"\b(?:not|never|no|none|neither|nor|without|cannot)\b"
-    r"|\b(?:is|are|was|were|do|does|did|has|have|had|will|would|can|could|should|must)n't\b"
+    r"|\b(?:is|are|was|were|do|does|did|has|have|had|wo|would|ca|could|sha|should|must)n['’]t\b"
     r"|\b(?:block(?:s|ed|ing)?|prohibit(?:s|ed|ing)?|prevent(?:s|ed|ing)?|bar(?:s|red|ring)?"
     r"|forbid(?:s|den|ding)?|disallow(?:s|ed|ing)?|exclud(?:es|ed|ing)?|stop(?:s|ped|ping)?"
     r"|ban(?:s|ned|ning)?)\s+from\b"

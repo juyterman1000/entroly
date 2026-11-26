@@ -31,7 +31,10 @@ def _enclosing_workspace_from_plugin_dir(cwd: Path) -> Path | None:
     path when the enclosing directory carries a project marker.
     """
     parts = cwd.parts
-    for idx in range(1, len(parts) - 2):
+    # A checkout can itself live inside another host's plugin/cache tree.
+    # Resolve the nearest wrapper first so an outer project cannot widen the
+    # indexing and tool-access boundary of that checkout.
+    for idx in reversed(range(1, len(parts) - 2)):
         seg = parts[idx]
         if seg.startswith(".") and seg not in (".", "..") and parts[idx + 1].lower() == "plugins":
             enclosing = Path(*parts[:idx])
