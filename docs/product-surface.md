@@ -281,7 +281,8 @@ Entroly's self-improvement surfaces are deliberately guarded. They adapt from ev
 | Component | Role |
 |---|---|
 | `FeedbackJournal` / `autotune.py` | Stores results and evaluates configuration mutations against benchmark cases |
-| `OnlinePrism` | Bayesian online weight adaptation from reward and contribution signals |
+| `OnlinePrism` | Adapts the four base selection weights from observed reward and contributions. |
+| Rust PRISM 5D | Uses spectral preconditioning for the resonance update when resonance is enabled. |
 | `RAVS` | Collects honest outcomes from tests, commands, CI, retries, edits, and verification |
 | `OutcomeBridge` | Corrects PRISM posterior weights with delayed honest outcomes |
 | `VerifiedDreamController` | Learns real state/action/next-state transitions, runs uncertainty-bounded proposal rollouts, and keeps dreams in a separate hash-chained ledger |
@@ -290,9 +291,18 @@ Entroly's self-improvement surfaces are deliberately guarded. They adapt from ev
 | `RewardCrystallizer` | Turns statistically repeated wins into candidate reusable skills |
 | `SkillEngine` | Synthesizes skills; retains code/test/evaluator-bound benchmark evidence; requires caller-held-out validation before promotion |
 | `EvolutionDaemon` | Orchestrates structural synthesis, idle dreaming, archetype-aware evolution, and optional federation |
-| `PromotionGate` | Promotes shadow policies only when non-inferior and supports rollback |
+| `PromotionGate` | Provides shadow policy evaluation and rollback checks for callers that supply outcomes. |
 | `ValueTracker` | Classifies provider-bound, local-only, and legacy evidence so optional evolution is funded only by provider-classified cost avoidance |
 | `ArchetypeOptimizer` | Detects project shape and loads project-appropriate weight priors |
+
+Inspect recent autotune decisions with `entroly learning-history --limit 20`.
+The project-local history holds configuration fingerprints, aggregate benchmark
+metrics, and decision reasons. On an exact match of workload, evaluator,
+native engine, and incumbent, prior rejections can change proposal order.
+Every candidate still receives a fresh evaluation before it can change
+runtime tuning. The fixed fixture benchmark measures retrieval of expected
+full fragments and local token estimates. It uses the source checkout's
+`bench/cases.json`.
 
 The intended loop:
 

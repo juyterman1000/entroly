@@ -29,6 +29,7 @@ Single-file mutation discipline:
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import logging
 import math
@@ -101,9 +102,9 @@ def load_cases() -> list[dict[str, Any]]:
         return json.load(f)
 
 
-def runtime_config_path() -> Path:
+def runtime_config_path(*, read_only: bool = False) -> Path:
     """Return the project-local state file used by runtime learning."""
-    return writable_tuning_config_path().with_name("learning_tuning_config.json")
+    return writable_tuning_config_path(read_only=read_only).with_name("learning_tuning_config.json")
 
 
 def _default_runtime_config() -> dict[str, Any]:
@@ -234,19 +235,13 @@ def evaluate(
             case_seed = int.from_bytes(digest[:8], "big") or 1
             set_benchmark_seed(case_seed)
 
-        frag_id_map: dict[str, str] = {}
         for frag_data in case["fragments"]:
-            result = engine.ingest(
+            engine.ingest(
                 frag_data["content"],
                 frag_data["source"],
                 frag_data["token_count"],
                 False,
             )
-            if hasattr(result, '__getitem__'):
-                fid = result.get("fragment_id", result.get("duplicate_of", ""))
-            else:
-                fid = str(result)
-            frag_id_map[frag_data["source"]] = fid
 
         t0 = time.perf_counter()
         opt_result = engine.optimize(case["token_budget"], case["query"])
@@ -264,14 +259,18 @@ def evaluate(
 
         wall_times.append(wall_ms)
 
-        selected_sources: set = set()
-        if hasattr(opt_result, '__getitem__'):
-            selected_list = opt_result.get("selected", [])
-            for item in selected_list:
-                if hasattr(item, '__getitem__'):
-                    src = item.get("source", "")
-                    if src:
-                        selected_sources.add(src)
+        selected = opt_result["selected"]
+        case_tokens = 0
+        selected_sources: set[str] = set()
+        for item in selected:
+            tokens = item["token_count"]
+            if type(tokens) is not int or tokens < 0:
+                raise ValueError("autotune received an invalid selected token count")
+            case_tokens += tokens
+            # A pointer or partial representation can save context, but its
+            # source label alone does not prove the expected evidence was kept.
+            if item["variant"] == "full":
+                selected_sources.add(item["source"])
 
         expected_sources = {
             f["source"] for f in case["fragments"] if f.get("expected_selected")
@@ -279,15 +278,7 @@ def evaluate(
         hits = len(selected_sources & expected_sources)
         total_expected += len(expected_sources)
         correct_selections += hits
-
-        case_tokens = sum(
-            f["token_count"] for f in case["fragments"]
-            if f["source"] in selected_sources
-        )
-        case_info = sum(
-            1.0 for f in case["fragments"]
-            if f["source"] in selected_sources and f.get("expected_selected")
-        )
+        case_info = float(hits)
         total_tokens_used += case_tokens
         total_information += case_info
 
@@ -296,7 +287,7 @@ def evaluate(
             "recall": hits / len(expected_sources) if expected_sources else 1.0,
             "tokens_used": case_tokens,
             "wall_ms": round(wall_ms, 2),
-            "selected": list(selected_sources),
+            "selected": sorted(selected_sources),
         })
 
     ctx_eff = total_information / max(total_tokens_used, 1)
@@ -311,6 +302,36 @@ def evaluate(
         total_information=total_information,
         per_case=per_case,
     )
+
+
+def _benchmark_rejection(
+    candidate: BenchResult, incumbent: BenchResult, cases: list[dict[str, Any]],
+) -> str | None:
+    """Validate the paired observations and preserve previously retrieved evidence."""
+    baseline = {row.get("case_id"): row for row in incumbent.per_case}
+    proposed = {row.get("case_id"): row for row in candidate.per_case}
+    expected_ids = {case["id"] for case in cases}
+    for result, observations in ((incumbent, baseline), (candidate, proposed)):
+        if any(row.get("status") == "timeout" for row in result.per_case):
+            return "benchmark_timeout"
+        if (len(observations) != len(result.per_case)
+                or len(expected_ids) != len(cases)
+                or observations.keys() != expected_ids):
+            return "incomplete_benchmark"
+
+    for case in cases:
+        before, after = baseline[case["id"]], proposed[case["id"]]
+        required = {frag["source"] for frag in case["fragments"] if frag.get("expected_selected")}
+        for row in (before, after):
+            if not (isinstance(row.get("selected"), list)
+                    and all(isinstance(source, str) for source in row["selected"])
+                    and type(row.get("tokens_used")) is int and row["tokens_used"] >= 0):
+                return "incomplete_benchmark"
+            if row["tokens_used"] > case["token_budget"]:
+                return "benchmark_budget_exceeded"
+        if not (required.intersection(before["selected"]) <= set(after["selected"])):
+            return "benchmark_evidence_lost"
+    return None
 
 
 def mutate_config(config: dict[str, Any]) -> dict[str, Any]:
@@ -369,6 +390,133 @@ def composite_score(result: BenchResult, config: dict[str, Any] | None = None,
         drift = (drift_sq / count) ** 0.5
         return base - drift_weight * drift * drift * 100
     return base
+
+
+def _history_config(config: dict[str, Any]) -> dict[str, Any]:
+    """Only the benchmark's parameter surface belongs in local history."""
+    return {key: config[key] for key in TUNABLE_PARAMS if key in config}
+
+
+def _history_metrics(result: BenchResult) -> dict[str, Any]:
+    return {
+        "recall_accuracy": float(result.recall_accuracy),
+        "context_efficiency": float(result.context_efficiency),
+        "avg_wall_time_ms": float(result.avg_wall_time_ms),
+        "total_tokens_used": result.total_tokens_used,
+        "timed_out": any(case.get("status") == "timeout" for case in result.per_case),
+    }
+
+
+def _native_history_fingerprint() -> str:
+    """Commit to loaded native bytes, including package extension modules."""
+    from .improvement_history import digest
+    from .native_status import native_status
+
+    status = native_status()
+    paths: set[Path] = set()
+    if status.path:
+        module_path = Path(status.path)
+        paths.add(module_path)
+        if module_path.name == "__init__.py":
+            paths.update(path for path in module_path.parent.rglob("*")
+                         if path.suffix.lower() in {".pyd", ".so"})
+    if status.module is not None:
+        for value in vars(status.module).values():
+            path = getattr(value, "__file__", None)
+            if isinstance(path, str) and Path(path).suffix.lower() in {".pyd", ".so"}:
+                paths.add(Path(path))
+    # Paths and source never leave this function; only byte commitments persist.
+    return digest({
+        "available": status.available,
+        "version": status.version,
+        "import_failed": status.import_failed,
+        "files": sorted(hashlib.sha256(path.read_bytes()).hexdigest() for path in paths),
+    })
+
+
+class _BenchmarkHistory:
+    """Best-effort proposal memory, never authority to promote a config.
+
+    These records describe benchmark gates, not activation or semantic quality.
+    A failed history operation disables avoidance for this session and is visible.
+    """
+
+    def __init__(self, config_path: Path, cases: list[dict[str, Any]],
+                 objective: str, time_budget: float,
+                 defaults: dict[str, Any] | None = None):
+        self.error: str | None = None
+        self._history = None
+        self.scope: dict[str, Any] = {}
+        try:
+            from .improvement_history import ImprovementHistory, digest
+
+            self.scope = {
+                "cases_sha256": digest(cases),
+                "evaluator_sha256": digest({
+                    "autotune_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                    "evaluate_sha256": hashlib.sha256(
+                        inspect.getsource(evaluate).encode("utf-8")
+                    ).hexdigest(),
+                    "time_budget": time_budget,
+                    "defaults": _history_config(defaults or {}),
+                }),
+                "native_sha256": _native_history_fingerprint(),
+                "seed": AUTOTUNE_BENCHMARK_SEED,
+                "objective": objective,
+            }
+            self._history = ImprovementHistory(Path(config_path).parent)
+        except Exception as exc:
+            self._failed("initialize", exc)
+
+    def _failed(self, operation: str, exc: Exception) -> None:
+        self.error = f"history_{operation}_{type(exc).__name__}"
+        self._history = None
+        logger.warning("autotune improvement history unavailable: %s", self.error)
+
+    def rejected(self, incumbent: dict[str, Any]) -> set[str]:
+        if self._history is None:
+            return set()
+        try:
+            return self._history.rejected_candidates(
+                scope=self.scope, incumbent=_history_config(incumbent),
+            )
+        except Exception as exc:
+            self._failed("read", exc)
+            return set()
+
+    def fresh(self, candidate: dict[str, Any], rejected: set[str]) -> bool:
+        if not rejected:
+            return True
+        try:
+            from .improvement_history import digest
+
+            return digest(_history_config(candidate)) not in rejected
+        except Exception as exc:
+            self._failed("digest", exc)
+            return True
+
+    def record(self, incumbent: dict[str, Any], candidate: dict[str, Any],
+               incumbent_result: BenchResult, candidate_result: BenchResult | None,
+               improved: bool, *, kind: str = "mutation", rejection: str | None = None) -> None:
+        if self._history is None:
+            return
+        try:
+            self._history.record(
+                scope=self.scope,
+                incumbent=_history_config(incumbent),
+                candidate=_history_config(candidate),
+                incumbent_metrics=_history_metrics(incumbent_result),
+                candidate_metrics=(None if candidate_result is None
+                                   else _history_metrics(candidate_result)),
+                decision=("evaluation_error" if candidate_result is None else
+                          "improved" if improved else "rejected"),
+                reason=("benchmark_evaluation_error" if candidate_result is None else
+                        "benchmark_gate_passed" if improved else rejection or "benchmark_gate_rejected"),
+                prediction=None,
+                kind=kind,
+            )
+        except Exception as exc:
+            self._failed("record", exc)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -474,6 +622,9 @@ def run_autotune(iterations: int = 100,
         time_budget,
         benchmark_seed=AUTOTUNE_BENCHMARK_SEED,
     )
+    invalid_baseline = _benchmark_rejection(baseline, baseline, cases)
+    if invalid_baseline is not None:
+        raise RuntimeError(f"autotune baseline failed: {invalid_baseline}")
     baseline_score = composite_score(baseline)
     _log(f"Baseline score: {baseline_score:.4f} "
          f"(recall={baseline.recall_accuracy:.3f}, "
@@ -503,22 +654,51 @@ def run_autotune(iterations: int = 100,
     # Base alpha = 0.3 (cautious). Doubles when improvement > 5% of score.
     ema_base_alpha = 0.3
 
+    history = _BenchmarkHistory(
+        config_path, cases, "composite_drift.v1", time_budget, defaults,
+    )
+
+    def evaluate_proposal(candidate: dict[str, Any], kind: str) -> tuple[BenchResult, float]:
+        try:
+            result = evaluate(
+                candidate, cases, time_budget,
+                benchmark_seed=AUTOTUNE_BENCHMARK_SEED,
+            )
+        except Exception:
+            history.record(best_config, candidate, best_result, None, False, kind=kind)
+            raise
+        rejection = _benchmark_rejection(result, best_result, cases)
+        score = composite_score(result, candidate, defaults) if rejection is None else float("-inf")
+        if kind == "polyak_average":
+            improved = score >= best_score
+        else:
+            improved = score > best_score or (
+                score == best_score and result.avg_wall_time_ms < best_result.avg_wall_time_ms
+            )
+        history.record(best_config, candidate, best_result, result, improved,
+                       kind=kind, rejection=rejection)
+        return result, score
+
     _log(f"\n--- Starting {iterations} experiments (cautious updates) ---")
     _log("(EMA blending + Polyak averaging + drift penalty)\n")
 
     for i in range(1, iterations + 1):
+        rejected = history.rejected(best_config)
         candidate = mutate_config(best_config)
+        # History only changes proposal order. With no fresh proposal after
+        # eight bounded retries, validate the original fallback again.
+        fallback = candidate
+        for _ in range(8):
+            if history.fresh(candidate, rejected):
+                break
+            candidate = mutate_config(best_config)
+        if not history.fresh(candidate, rejected):
+            candidate = fallback
         mutated_param = candidate.pop("_mutated_param", "unknown")
         old_val = best_config.get(mutated_param)
         new_val = candidate.get(mutated_param)
 
-        result = evaluate(
-            candidate,
-            cases,
-            time_budget,
-            benchmark_seed=AUTOTUNE_BENCHMARK_SEED,
-        )
-        score = composite_score(result, candidate, defaults)
+        result, score = evaluate_proposal(candidate, "mutation")
 
         if score > best_score:
             # ── Cautious update: EMA blend instead of full replacement ──
@@ -536,14 +716,8 @@ def run_autotune(iterations: int = 100,
         if alpha is not None:
             blended = _ema_blend(best_config, candidate, alpha)
             if blended != candidate:
-                result = evaluate(
-                    blended,
-                    cases,
-                    time_budget,
-                    benchmark_seed=AUTOTUNE_BENCHMARK_SEED,
-                )
+                result, score = evaluate_proposal(blended, "ema_blend")
             candidate = blended
-            score = composite_score(result, candidate, defaults)
             new_val = candidate.get(mutated_param)
 
         if (score > best_score or
@@ -576,13 +750,7 @@ def run_autotune(iterations: int = 100,
     # ── Final: evaluate Polyak average ──
     if polyak_count > 2:
         _log(f"\n--- Evaluating Polyak average ({polyak_count} samples) ---")
-        polyak_result = evaluate(
-            polyak_avg,
-            cases,
-            time_budget,
-            benchmark_seed=AUTOTUNE_BENCHMARK_SEED,
-        )
-        polyak_score = composite_score(polyak_result, polyak_avg, defaults)
+        polyak_result, polyak_score = evaluate_proposal(polyak_avg, "polyak_average")
         _log(f"Polyak score: {polyak_score:.4f} vs best: {best_score:.4f}")
 
         if polyak_score >= best_score:
@@ -872,6 +1040,7 @@ class FeedbackJournal:
         self.journal_path = self.journal_dir / "feedback_journal.jsonl"
         self._cache: list | None = None
         self._lock = threading.RLock()
+        self._improvement_history_directories: set[Path] = set()
 
     def log(self, *, weights: dict[str, float], reward: float,
             selected_count: int = 0, query: str = "",
@@ -923,6 +1092,19 @@ class FeedbackJournal:
 
     def prune(self, max_age: float = JOURNAL_MAX_AGE_S) -> bool:
         """Atomically remove episodes older than max_age."""
+        # History uses the runtime config's directory, which need not be the
+        # feedback directory. Keep the existing bool contract on any failure.
+        try:
+            from .improvement_history import ImprovementHistory
+
+            directories = self._improvement_history_directories | {runtime_config_path().parent}
+            for directory in directories:
+                try:
+                    ImprovementHistory(directory).prune()
+                except Exception as exc:
+                    logger.warning("improvement history prune failed: %s", type(exc).__name__)
+        except Exception as exc:
+            logger.warning("improvement history prune unavailable: %s", type(exc).__name__)
         with self._lock:
             self._cache = None
             kept = self.load(max_age)
@@ -1302,6 +1484,9 @@ class DreamingLoop:
     ):
         self._journal = journal
         self._config_path = config_path or runtime_config_path()
+        if isinstance(journal, FeedbackJournal):
+            journal._improvement_history_directories.add(Path(self._config_path).parent)
+        self._history: _BenchmarkHistory | None = None
         self._max_iterations = max_iterations
         self._cooldown_s = cooldown_s
         self._last_activity: float = time.time()
@@ -1698,11 +1883,21 @@ class DreamingLoop:
                 time_budget=DEFAULT_TIME_BUDGET_SECS,
                 benchmark_seed=AUTOTUNE_BENCHMARK_SEED,
             )
+            invalid_baseline = _benchmark_rejection(baseline, baseline, cases)
+            if invalid_baseline is not None:
+                result = {"status": "invalid_baseline", "reason": invalid_baseline}
+                self._last_dream_result = dict(result)
+                return result
             current_result = baseline
             self._best_efficiency = baseline.context_efficiency
+            self._history = _BenchmarkHistory(
+                Path(self._config_path), cases, "pareto_recall_efficiency.v1",
+                DEFAULT_TIME_BUDGET_SECS,
+            )
 
             improvements = 0
             experiments = 0
+            evaluation_errors = 0
             experiment_scenarios = self.generate_experiment_scenarios()
             scenarios_evaluated: list[dict[str, Any]] = []
 
@@ -1741,9 +1936,22 @@ class DreamingLoop:
                     )
                     for _candidate in range(candidate_count)
                 ]
+                rejected = self._history.rejected(current_config)
+                fresh = [candidate for candidate in candidates
+                         if self._history.fresh(candidate, rejected)]
+                # Reuse the existing pool. Ordinary dreaming only expands it
+                # when an exact rejection matched; exhausted pools fall back.
+                if not fresh and rejected:
+                    for candidate_index in range(candidate_count, DREAMING_CANDIDATE_POOL + 1):
+                        candidate = self._mutate_dream_config(
+                            current_config, scenario, candidate_index=candidate_index,
+                        )
+                        if self._history.fresh(candidate, rejected):
+                            fresh.append(candidate)
+                            break
                 mutated_config = self._select_dream_candidate(
                     current_config,
-                    candidates,
+                    fresh or candidates,
                 )
 
                 # Evaluate the mutation
@@ -1754,19 +1962,28 @@ class DreamingLoop:
                         time_budget=DEFAULT_TIME_BUDGET_SECS,
                         benchmark_seed=AUTOTUNE_BENCHMARK_SEED,
                     )
-                except Exception:
+                except Exception as exc:
+                    evaluation_errors += 1
+                    self._history.record(
+                        current_config, mutated_config, current_result, None, False,
+                    )
+                    logger.warning("dream benchmark evaluation failed: %s", type(exc).__name__)
                     continue
 
-                self._record_real_benchmark_transition(
-                    current_config,
-                    mutated_config,
-                    current_result,
-                    result,
+                rejection = _benchmark_rejection(result, current_result, cases)
+                improved = rejection is None and self._is_pareto_improvement(result, current_result)
+                self._history.record(
+                    current_config, mutated_config, current_result, result, improved,
+                    rejection=rejection,
                 )
+                if rejection is None:
+                    self._record_real_benchmark_transition(
+                        current_config, mutated_config, current_result, result,
+                    )
 
                 # Context policies must Pareto-improve the real harness:
                 # savings can never purchase lower evidence recall.
-                if self._is_pareto_improvement(result, current_result):
+                if improved:
                     self._best_efficiency = result.context_efficiency
                     config = mutated_config
                     current_result = result
@@ -1816,6 +2033,8 @@ class DreamingLoop:
                 "dream_id": self._total_dreams,
                 "experiments": experiments,
                 "improvements": improvements,
+                "evaluation_errors": evaluation_errors,
+                "history_error": self._history.error,
                 "baseline_efficiency": baseline.context_efficiency,
                 "best_efficiency": self._best_efficiency,
                 "wall_seconds": round(wall_seconds, 2),
@@ -1880,6 +2099,7 @@ class DreamingLoop:
             "last_wall_seconds": last_wall_seconds,
             "last_improvements": last_improvements,
             "last_error": last_error,
+            "history_error": self._history.error if self._history is not None else None,
             "world_model_guided_experiments": self._world_model_guided_experiments,
             "world_model_real_transitions": self._world_model_real_transitions,
             "world_model_dream_proposals": self._world_model_dream_proposals,

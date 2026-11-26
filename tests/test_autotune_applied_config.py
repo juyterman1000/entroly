@@ -20,7 +20,7 @@ def harness(tmp_path, monkeypatch):
     path = tmp_path / "learning_tuning_config.json"
     results_path = tmp_path / "results.tsv"
     autotune.save_config(initial, path)
-    cases = [{"id": "mock-case"}]
+    cases = [{"id": "mock-case", "fragments": [], "token_budget": 100}]
     state = SimpleNamespace(
         initial=initial, path=path, results_path=results_path,
         evaluated=[], saved=[], logged=[], mutation_inputs=[],
@@ -64,7 +64,7 @@ def harness(tmp_path, monkeypatch):
                 context_efficiency=(score + penalty - 0.3) / 40,
                 recall_accuracy=0.5, avg_wall_time_ms=latency,
                 total_tokens_used=100, total_information=1,
-                per_case=[{"case_id": "mock-case", "recall": 0.5}],
+                per_case=[{"case_id": "mock-case", "recall": 0.5, "selected": [], "tokens_used": 100}],
             )
             state.evaluated.append((dict(config), result))
             return result

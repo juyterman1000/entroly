@@ -11,6 +11,7 @@ Commands:
     entroly dashboard   Show live value metrics
     entroly health      Analyze codebase health (A-F grade)
     entroly autotune    Optimize hyperparameters
+    entroly learning-history Inspect local learning experiments
     entroly benchmark   Run competitive comparison
     entroly ingest      Ingest docs for Context Receipts
     entroly select      Select context and write a Context Receipt
@@ -96,7 +97,7 @@ class C:
     RESET = "\033[0m" if _COLOR_ENABLED else ""
 
 
-def _resolve_entroly_dir() -> Path:
+def _resolve_entroly_dir(*, read_only: bool = False) -> Path:
     """Return a writable Entroly data directory.
 
     MCP hosts, containers, and managed IDE runtimes can expose a read-only
@@ -106,12 +107,12 @@ def _resolve_entroly_dir() -> Path:
     from entroly.private_temp import writable_data_dir
 
     explicit = os.environ.get("ENTROLY_DIR")
-    return writable_data_dir(
-        Path(explicit).expanduser() if explicit else Path.home() / ".entroly"
-    )
+    preferred = Path(explicit).expanduser() if explicit else Path.home() / ".entroly"
+    return preferred if read_only else writable_data_dir(preferred)
 
 
-_ENTROLY_DIR = _resolve_entroly_dir()
+# History inspection must not create storage or probe it for write access.
+_ENTROLY_DIR = _resolve_entroly_dir(read_only=sys.argv[1:2] == ["learning-history"])
 _FIRST_RUN_MARKER = _ENTROLY_DIR / ".welcome_shown"
 
 
@@ -7333,6 +7334,27 @@ def cmd_ravs(args):
         print(format_report_text(report))
 
 
+def cmd_learning_history(args):
+    """Inspect local learning experiments without running or changing them."""
+    if type(args.limit) is not int or not 1 <= args.limit <= 128:
+        print(json.dumps({"error": "limit must be an integer from 1 to 128"}))
+        return 1
+    try:
+        from entroly.autotune import runtime_config_path
+        from entroly.improvement_history import ImprovementHistory, ImprovementHistoryError
+    except ImportError:
+        print(json.dumps({"error": "local learning history is unavailable"}))
+        return 1
+    try:
+        report = ImprovementHistory(runtime_config_path(read_only=True).parent).summary(limit=args.limit)
+        output = json.dumps(report, indent=2, sort_keys=True)
+    except (ImprovementHistoryError, OSError, ValueError, TypeError):
+        print(json.dumps({"error": "local learning history is unavailable"}))
+        return 1
+    print(output)
+    return 0
+
+
 def main():
     """Main CLI entry point."""
     from .cli_parser import build_cli_parser
@@ -7345,7 +7367,6 @@ def main():
         surface_options=_EXIT_SURFACE_OPTIONS,
         duration_options=_EXIT_DURATION_OPTIONS,
     )
-
     args = parser.parse_args()
 
     # First-run output would corrupt the stdio JSON-RPC stream used by an
@@ -7362,6 +7383,7 @@ def main():
         or (args.command == "trial" and getattr(args, "report", None))
         or args.command == "shrink"
         or args.command == "proof"
+        or args.command == "learning-history"
     )
     lifecycle_exit = args.command == "uninstall"
     if not internal_attach_serve and not machine_readable and not lifecycle_exit:
@@ -7400,6 +7422,7 @@ def main():
         "activation": cmd_activation,
         "health": cmd_health,
         "autotune": cmd_autotune,
+        "learning-history": cmd_learning_history,
         "proxy": cmd_proxy,
         "benchmark": cmd_benchmark,
         "simulate": cmd_simulate,
@@ -7486,7 +7509,7 @@ def main():
 
     if rc not in {0, 130}:
         telemetry_result = "error"
-    if handler:
+    if handler and args.command != "learning-history":
         try:
             from entroly.product_telemetry import capture_cli_result, flush
 

@@ -70,7 +70,8 @@ def _runtime_dir() -> Path:
     )
 
 
-_PULL_CACHE_FILE = _runtime_dir() / ".last_pull.json"
+# Resolve the writable cache only for actual Docker pulls.
+_PULL_CACHE_FILE: Path | None = None
 _DEFAULT_PULL_TTL = 3600  # 1 hour
 
 
@@ -124,7 +125,8 @@ def _image_exists_locally(image: str) -> bool:
 def _read_pull_cache() -> dict[str, Any] | None:
     """Read the image-scoped pull cache; legacy/corrupt state is a cache miss."""
     try:
-        payload = json.loads(_PULL_CACHE_FILE.read_text(encoding="utf-8"))
+        cache_file = _PULL_CACHE_FILE or _runtime_dir() / ".last_pull.json"
+        payload = json.loads(cache_file.read_text(encoding="utf-8"))
     except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError):
         return None
     if not isinstance(payload, dict):
@@ -139,10 +141,11 @@ def _read_pull_cache() -> dict[str, Any] | None:
 def _write_pull_cache(image: str) -> None:
     """Atomically record a successful pull for one exact image reference."""
     try:
-        _PULL_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        cache_file = _PULL_CACHE_FILE or _runtime_dir() / ".last_pull.json"
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
         fd, raw_path = tempfile.mkstemp(
-            dir=_PULL_CACHE_FILE.parent,
-            prefix=f".{_PULL_CACHE_FILE.name}.",
+            dir=cache_file.parent,
+            prefix=f".{cache_file.name}.",
             suffix=".tmp",
         )
         tmp_path = Path(raw_path)
@@ -156,7 +159,7 @@ def _write_pull_cache(image: str) -> None:
                 )
                 handle.flush()
                 os.fsync(handle.fileno())
-            os.replace(tmp_path, _PULL_CACHE_FILE)
+            os.replace(tmp_path, cache_file)
         finally:
             tmp_path.unlink(missing_ok=True)
     except OSError:
