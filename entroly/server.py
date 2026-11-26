@@ -2049,7 +2049,6 @@ def create_mcp_server(
     def record_command_exit(
         request_id: str,
         exit_code: int,
-        command: str = "",
     ) -> str:
         """Record the exit code of a command that was generated and executed.
 
@@ -2059,14 +2058,13 @@ def create_mcp_server(
         Args:
             request_id: the "request_id" field from the optimize_context response
             exit_code: subprocess exit code; 0 = success
-            command: optional short representation of what was run
         """
         return _record_honest(
             request_id=request_id,
             event_type="command_exit",
             value="success" if exit_code == 0 else "failure",
             source="mcp_record_command_exit",
-            metadata={"exit_code": int(exit_code), "command": command[:240]},
+            metadata={"exit_code": int(exit_code)},
         )
 
     @mcp.tool()
@@ -4647,8 +4645,8 @@ def create_mcp_server(
         """Scan content for prompt injection attacks and security threats.
 
         Detects:
-          - Direct instruction overrides ("ignore previous instructions")
-          - Role reassignment attempts ("you are now a...")
+          - Direct instruction override attempts
+          - Role reassignment attempts
           - Unicode steganography (zero-width chars, directional overrides)
           - Base64-encoded instruction payloads
           - Repetition flooding (context window domination)
@@ -4904,12 +4902,11 @@ def create_mcp_server(
     @mcp.tool()
     async def compress_shell(
         text: str,
-        command: str = "",
         max_lines: int = 50,
     ) -> str:
         """Compress CLI output (git, npm, cargo, pytest, etc.) preserving errors and key info."""
         from .shell_hook import compress_shell_output
-        compressed, orig, comp, handle = compress_shell_output(text, command, max_lines)
+        compressed, orig, comp, handle = compress_shell_output(text, None, max_lines)
         return json.dumps({
             "compressed": compressed,
             "original_lines": orig,
