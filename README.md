@@ -49,11 +49,12 @@ against source, and pick up work in another agent.</p>
 
 ## What is Entroly? (in plain English)
 
-Entroly provides context assurance for AI coding tools and LLM apps. It selects
-evidence within a token budget and records what was kept, what was omitted, and
-why. A receipt provides a handle to recover the exact original bytes while the
-referenced local store and source bytes remain available. You can try reversible
-compression on your own repository and keep your existing model and agent setup.
+Entroly provides context assurance and token-efficiency tooling for AI coding
+agents and LLM apps. It selects evidence within a token budget and records what
+was kept, what was omitted, and why. A receipt provides a handle to recover the
+exact original bytes from content-addressed evidence while the referenced local
+store and source bytes remain available. You can try recoverable context compression
+on your own repository and keep your existing model and agent setup.
 
 <p align="center">
   <img src="docs/assets/entroly-demo.svg" alt="Entroly context selection and receipt workflow illustration" width="820">
