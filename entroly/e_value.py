@@ -388,3 +388,155 @@ def build_certificate(
         alpha=alpha,
         worst_case=worst_case,
     )
+
+
+# ── Anytime-valid betting e-process (Ville's inequality) ──────────────
+
+
+@dataclass(slots=True)
+class BettingStepRecord:
+    """Audit record for one sequential observation in ``BettingEProcess``."""
+
+    step: int
+    loss: float
+    bet_lambda: float
+    multiplier: float
+    wealth: float
+    max_wealth: float
+    anytime_p: float
+    rejected: bool
+
+
+class BettingEProcess:
+    """Predictable-betting test supermartingale for anytime-valid sequential risk monitoring.
+
+    Tests the sequential null hypothesis
+        ``H_0: E[loss_t | F_{t-1}] <= null_risk`` for all ``t >= 1``,
+    where each observed loss lies in ``[0, 1]``.
+
+    At step ``t``:
+    - The betting fraction ``lambda_t in [0, max_bet]`` (with ``max_bet < 1 / null_risk``)
+      is computed **strictly from past losses** ``loss_1, ..., loss_{t-1}`` (predictable).
+    - Wealth updates as ``M_t = M_{t-1} * (1 + lambda_t * (loss_t - null_risk))``.
+
+    Because each factor is nonnegative and has conditional expectation at most 1
+    under ``H_0``, ``(M_t)`` is a nonnegative test supermartingale starting at
+    ``M_0 = 1``. By Ville's inequality, for any data-dependent stopping time
+    ``tau``:
+        ``P_{H_0}(exists t >= 1 : M_t >= 1 / delta) <= delta``.
+
+    Scope: valid for sequential optional stopping on bounded ``[0, 1]`` losses
+    under the stated conditional-mean null. Does not establish distribution
+    stationarity or answer correctness on its own.
+    """
+
+    def __init__(
+        self,
+        *,
+        null_risk: float = 0.10,
+        delta: float = 0.05,
+        prior_strength: float = 2.0,
+        max_bet_fraction: float = 0.85,
+    ) -> None:
+        self.null_risk = _alpha(null_risk)
+        self.delta = _alpha(delta)
+        self.prior_strength = _finite(prior_strength, "prior_strength")
+        if self.prior_strength <= 0.0:
+            raise ValueError("prior_strength must be positive")
+        frac = _finite(max_bet_fraction, "max_bet_fraction")
+        if not 0.0 < frac < 1.0:
+            raise ValueError("max_bet_fraction must be within (0, 1)")
+        # Keep 1 + lambda * (loss - null_risk) > 0 even when loss == 0.
+        self.max_bet = frac / self.null_risk
+        self.threshold = 1.0 / self.delta
+
+        self._wealth: float = 1.0
+        self._max_wealth: float = 1.0
+        self._steps: int = 0
+        self._loss_sum: float = 0.0
+        self._sq_excess_sum: float = 0.0
+        self._history: list[BettingStepRecord] = []
+
+    def next_bet(self) -> float:
+        """Predictable betting fraction ``lambda_t`` computed strictly from history ``< t``."""
+        if self._steps == 0:
+            return 0.0
+        # Shrunk empirical excess mean over variance proxy (Kelly-style damped bet).
+        shrunk_mean = (self._loss_sum + self.prior_strength * self.null_risk) / (
+            self._steps + self.prior_strength
+        )
+        excess = shrunk_mean - self.null_risk
+        if excess <= 0.0:
+            return 0.0
+        var_proxy = (self._sq_excess_sum + self.prior_strength * 0.25) / (
+            self._steps + self.prior_strength
+        )
+        raw_bet = 0.5 * excess / max(var_proxy, 1e-6)
+        return max(0.0, min(self.max_bet, raw_bet))
+
+    def update(self, loss: float) -> BettingStepRecord:
+        """Ingest one bounded loss in ``[0, 1]`` and update the test supermartingale."""
+        val = _finite(loss, "loss")
+        if not 0.0 <= val <= 1.0:
+            raise ValueError("loss must be within [0, 1]")
+
+        lam = self.next_bet()
+        excess = val - self.null_risk
+        multiplier = max(0.0, 1.0 + lam * excess)
+        self._wealth = min(1e300, self._wealth * multiplier)
+        if self._wealth > self._max_wealth:
+            self._max_wealth = self._wealth
+
+        # History updated AFTER applying predictable bet lam.
+        self._steps += 1
+        self._loss_sum += val
+        self._sq_excess_sum += excess * excess
+
+        rec = BettingStepRecord(
+            step=self._steps,
+            loss=val,
+            bet_lambda=lam,
+            multiplier=multiplier,
+            wealth=self._wealth,
+            max_wealth=self._max_wealth,
+            anytime_p=min(1.0, 1.0 / max(self._max_wealth, 1.0)),
+            rejected=self._max_wealth >= self.threshold,
+        )
+        self._history.append(rec)
+        return rec
+
+    @property
+    def wealth(self) -> float:
+        return self._wealth
+
+    @property
+    def max_wealth(self) -> float:
+        return self._max_wealth
+
+    @property
+    def anytime_p(self) -> float:
+        return min(1.0, 1.0 / max(self._max_wealth, 1.0))
+
+    @property
+    def rejected(self) -> bool:
+        return self._max_wealth >= self.threshold
+
+    @property
+    def steps(self) -> int:
+        return self._steps
+
+    def summary(self) -> dict[str, object]:
+        mean_loss = self._loss_sum / self._steps if self._steps else 0.0
+        return {
+            "steps": self._steps,
+            "null_risk": self.null_risk,
+            "delta": self.delta,
+            "threshold": self.threshold,
+            "wealth": self._wealth,
+            "max_wealth": self._max_wealth,
+            "anytime_p": self.anytime_p,
+            "rejected": self.rejected,
+            "empirical_loss_mean": round(mean_loss, 6),
+            "next_bet": round(self.next_bet(), 6),
+            "method": "predictable-betting-test-supermartingale-ville",
+        }

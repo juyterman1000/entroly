@@ -266,3 +266,37 @@ def _add_agent_and_governance_commands(
     hook_uninstall = hook_sub.add_parser("uninstall", help="Remove a hook block an earlier version added")
     hook_uninstall.add_argument("--shell", choices=["bash", "zsh", "fish"], help="Target shell")
     hook_sub.add_parser("status", help="Show which shell configs still contain a hook block")
+
+    # entroly prompt
+    prompt_parser = subparsers.add_parser(
+        "prompt",
+        help="Render a cache-prefix-aligned persona master prompt with runtime trust policy",
+    )
+    prompt_parser.add_argument(
+        "--persona", "-p", default="auto",
+        help="Persona id (debugger, architect, security, reviewer, handoff, researcher, or auto)",
+    )
+    prompt_parser.add_argument(
+        "--query", "-q", default="",
+        help="Task query used for auto-routing and dynamic task tail",
+    )
+    prompt_parser.add_argument(
+        "--budget", type=int, default=None,
+        help="Override active token budget in the dynamic tail",
+    )
+    prompt_parser.add_argument(
+        "--repo", default="",
+        help="Workspace path to include in the dynamic task tail",
+    )
+    prompt_parser.add_argument(
+        "--workstream", default="",
+        help="Optional workstream id to include in the dynamic task tail",
+    )
+    prompt_parser.add_argument(
+        "--list", dest="list_personas", action="store_true",
+        help="List all available personas and their trust/budget policies",
+    )
+    prompt_parser.add_argument(
+        "--format", choices=["markdown", "json"], default="markdown",
+        help="Output format (default: markdown)",
+    )

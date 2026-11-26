@@ -5101,6 +5101,39 @@ def cmd_migrate(args):
         pass
 
 
+def cmd_prompt(args):
+    """entroly prompt — render cache-prefix-aligned persona master prompts."""
+    from .persona_prompts import list_personas, render_master_prompt
+
+    fmt = getattr(args, "format", "markdown")
+    if getattr(args, "list_personas", False):
+        profiles = [p.as_dict() for p in list_personas()]
+        if fmt == "json":
+            print(json.dumps({"personas": profiles}, indent=2, sort_keys=True))
+            return 0
+        for p in list_personas():
+            roles = ", ".join(p.allowed_memory_roles)
+            print(
+                f"{p.id:12s} | budget={p.default_token_budget:<6d} "
+                f"| min_auth={p.min_memory_authority:<18s} "
+                f"| roles=[{roles}] | {p.title}"
+            )
+        return 0
+
+    rendered = render_master_prompt(
+        getattr(args, "persona", "auto"),
+        query=getattr(args, "query", "") or "",
+        repo=getattr(args, "repo", "") or "",
+        token_budget=getattr(args, "budget", None),
+        workstream=getattr(args, "workstream", "") or "",
+    )
+    if fmt == "json":
+        print(json.dumps(rendered.as_dict(), indent=2, sort_keys=True, ensure_ascii=False))
+    else:
+        print(rendered.full_prompt, end="")
+    return 0
+
+
 def cmd_role(args):
     """entroly role — role-based weight presets for different developer types (Gap #49)."""
     print(f"\n{C.CYAN}{C.BOLD}  Entroly Role Presets{C.RESET}\n")
@@ -7356,6 +7389,7 @@ def main():
         or (args.command == "trial" and getattr(args, "report", None))
         or args.command == "shrink"
         or args.command == "proof"
+        or args.command == "prompt"
     )
     lifecycle_exit = args.command == "uninstall"
     if not internal_attach_serve and not machine_readable and not lifecycle_exit:
@@ -7424,6 +7458,7 @@ def main():
         "digest": cmd_digest,
         "migrate": cmd_migrate,
         "role": cmd_role,
+        "prompt": cmd_prompt,
         "completions": cmd_completions,
         "compile": cmd_compile,
         "verify": cmd_verify,
