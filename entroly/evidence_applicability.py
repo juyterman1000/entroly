@@ -308,7 +308,17 @@ def _excluded_roots(trace_dir: Path, extra: Sequence[Path]) -> list[str]:
     return roots
 
 
+def _is_windows_device(real: str) -> bool:
+    if os.name != "nt":
+        return False
+    lower = real.lower()
+    return lower in (r"\\.\nul", r"\\.\con") or lower.startswith(r"\\.\pipe\\")
+
+
 def _under(path: str, root: str) -> bool:
+    if os.name == "nt":
+        path = os.path.normcase(path)
+        root = os.path.normcase(root)
     return path == root or path.startswith(root.rstrip(os.sep) + os.sep)
 
 
@@ -484,7 +494,7 @@ def _classify(path: str, project_real: str, excluded: Sequence[str]) -> tuple[st
     real = os.path.realpath(path)
     # subprocess.DEVNULL can be opened for reads and writes on Windows.
     # Its canonical device path names a byte sink, not a mutable file input.
-    if (os.name == "nt" and real.lower() == r"\\.\nul") or _is_cache(real):
+    if _is_windows_device(real) or _is_cache(real):
         return None
     if _under(real, project_real):
         # The project wins over an excluded root that contains it: a checkout

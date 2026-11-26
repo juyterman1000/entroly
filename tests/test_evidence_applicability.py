@@ -436,3 +436,27 @@ def test_tracing_does_not_change_os_functions_stored_on_classes(tmp_path: Path) 
     )
     record, output = _record(project, tmp_path / "work", argv=[sys.executable, "-c", script])
     assert record["result"]["exit_code"] == 0, output["stderr_tail"]
+
+
+def test_stdlib_win32_ver_probe_does_not_mark_trace_incomplete(tmp_path: Path) -> None:
+    """Windows startup probes via ``platform.win32_ver()`` must stay reusable."""
+    _require_native()
+    if os.name != "nt":  # pragma: no cover
+        pytest.skip("Windows-specific stdlib platform.win32_ver probe")
+    project = _project(tmp_path / "proj")
+    script = "import platform\nplatform.win32_ver()\n"
+    record, _ = _record(project, tmp_path / "work", argv=[sys.executable, "-c", script])
+    assert _decision(record, project)["decision"] == REUSE
+
+
+def test_direct_cmd_ver_subprocess_still_marks_trace_incomplete(tmp_path: Path) -> None:
+    """User code spawning ``cmd.exe /c "ver"`` directly must stay fail-closed."""
+    _require_native()
+    if os.name != "nt":  # pragma: no cover
+        pytest.skip("Windows-specific cmd.exe subprocess check")
+    project = _project(tmp_path / "proj")
+    script = 'import subprocess\nsubprocess.check_output(\'cmd.exe /c "ver"\', shell=True)\n'
+    record, _ = _record(project, tmp_path / "work", argv=[sys.executable, "-c", script])
+    decision = _decision(record, project)
+    assert decision["decision"] == UNKNOWN
+    assert "untraced-subprocess" in decision["reasons"]
