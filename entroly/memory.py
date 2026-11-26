@@ -20,6 +20,7 @@ the user-facing API.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -33,6 +34,22 @@ from typing import Iterable, Literal
 
 MemoryTier = Literal["working", "episodic", "semantic"]
 SafetyPolicy = Literal["block", "redact", "allow"]
+MemoryAuthority = Literal[
+    "untrusted",
+    "external",
+    "agent_inferred",
+    "verified_evidence",
+    "user_direct",
+    "host_attested",
+]
+MemoryRole = Literal[
+    "observation",
+    "inference",
+    "evidence",
+    "directive",
+    "preference",
+]
+ActionRisk = Literal["read_only", "low", "medium", "high", "critical"]
 TemporalClass = Literal[
     "current_state",   # Ongoing truth (e.g. "user lives in SF")
     "past_event",      # Completed occurrence (e.g. "deployed v2 yesterday")
@@ -42,7 +59,32 @@ TemporalClass = Literal[
     "unclassified",    # Default: no temporal signal detected
 ]
 
-_SCHEMA_VERSION = "memory-os.v3"
+AUTHORITY_ORDER: dict[str, int] = {
+    "untrusted": 0,
+    "external": 1,
+    "agent_inferred": 2,
+    "verified_evidence": 3,
+    "user_direct": 4,
+    "host_attested": 5,
+}
+_RANK_TO_AUTHORITY: dict[int, MemoryAuthority] = {
+    0: "untrusted",
+    1: "external",
+    2: "agent_inferred",
+    3: "verified_evidence",
+    4: "user_direct",
+    5: "host_attested",
+}
+_VALID_ROLES = frozenset({"observation", "inference", "evidence", "directive", "preference"})
+ACTION_RISK_MIN_AUTHORITY: dict[str, MemoryAuthority] = {
+    "read_only": "untrusted",
+    "low": "external",
+    "medium": "agent_inferred",
+    "high": "verified_evidence",
+    "critical": "user_direct",
+}
+
+_SCHEMA_VERSION = "memory-os.v4"
 _TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{1,}")
 
 _SECRET_PATTERNS: list[tuple[str, re.Pattern[str], str]] = [
@@ -169,6 +211,103 @@ def _safe_tier(tier: str) -> MemoryTier:
     return "working"
 
 
+def _safe_authority(value: str) -> MemoryAuthority:
+    if value in AUTHORITY_ORDER:
+        return value  # type: ignore[return-value]
+    raise ValueError(f"unknown memory authority: {value!r}")
+
+
+def _safe_role(value: str) -> MemoryRole:
+    if value in _VALID_ROLES:
+        return value  # type: ignore[return-value]
+    raise ValueError(f"unknown memory role: {value!r}")
+
+
+def infer_authority(source: str) -> MemoryAuthority:
+    """Conservatively map a source label to a monotonic authority level.
+
+    External and unknown sources never default to ``user_direct`` so
+    untrusted observations cannot silently launder themselves into trusted
+    directives or permanent semantic memory.
+    """
+    norm = (source or "").strip().lower()
+    if not norm:
+        return "untrusted"
+    if norm in ("untrusted", "third_party", "scrape", "scraped", "email", "webhook") or norm.startswith(
+        ("untrusted:", "third_party:", "scrape:", "email:", "webhook:")
+    ):
+        return "untrusted"
+    if norm in ("web", "http", "https", "url", "external", "tool_output", "mcp", "browser", "fetch") or norm.startswith(
+        ("web:", "http://", "https://", "url:", "external:", "tool:", "tool_output:", "mcp:", "browser:", "fetch:")
+    ):
+        return "external"
+    if norm in ("host", "host_attested", "system_attested") or norm.startswith(("host:", "attested:")):
+        return "host_attested"
+    if norm in ("manual", "user", "human", "operator", "cli") or norm.startswith(("user:", "manual:", "operator:")):
+        return "user_direct"
+    if norm in ("evidence", "test", "verifier", "ci", "witness", "trace") or norm.startswith(
+        ("evidence:", "test:", "verifier:", "ci:", "witness:", "trace:")
+    ):
+        return "verified_evidence"
+    return "agent_inferred"
+
+
+def min_authority_level(*levels: MemoryAuthority) -> MemoryAuthority:
+    """Return the lowest authority in *levels* (monotonic non-amplification)."""
+    if not levels:
+        return "untrusted"
+    return _RANK_TO_AUTHORITY[min(AUTHORITY_ORDER[lvl] for lvl in levels)]
+
+
+def infer_memory_role(authority: MemoryAuthority, temporal_class: TemporalClass) -> MemoryRole:
+    """Choose a role consistent with *authority* without role-collapse."""
+    if authority in ("untrusted", "external"):
+        return "observation"
+    if authority == "agent_inferred":
+        return "preference" if temporal_class == "preference" else "inference"
+    if temporal_class == "preference":
+        return "preference"
+    return "evidence"
+
+
+def _validate_role_for_authority(role: MemoryRole, authority: MemoryAuthority) -> None:
+    """Prevent provenance-role collapse: low-authority entries cannot claim directive/evidence roles."""
+    rank = AUTHORITY_ORDER[authority]
+    if role == "directive" and rank < AUTHORITY_ORDER["user_direct"]:
+        raise ValueError(
+            f"memory authority {authority!r} cannot claim role 'directive' "
+            "(requires 'user_direct' or 'host_attested')"
+        )
+    if role == "evidence" and rank < AUTHORITY_ORDER["verified_evidence"]:
+        raise ValueError(
+            f"memory authority {authority!r} cannot claim role 'evidence' "
+            "(requires 'verified_evidence' or higher)"
+        )
+
+
+def _compute_origin_digest(
+    *,
+    content: str,
+    source: str,
+    authority: MemoryAuthority,
+    memory_role: MemoryRole,
+    derived_from: list[str],
+) -> str:
+    payload = json.dumps(
+        {
+            "authority": authority,
+            "content": content,
+            "derived_from": sorted(derived_from),
+            "memory_role": memory_role,
+            "source": source,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return "sha256:" + hashlib.sha256(payload).hexdigest()
+
+
 def _atomic_write_json(path: Path, payload: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd = -1
@@ -251,6 +390,12 @@ class MemoryEntry:
     supersedes: str | None = None      # ID of the memory this supersedes
     superseded_by: str | None = None   # ID of the memory that superseded this
     entities: list[str] = field(default_factory=list)  # extracted entity names
+    # ── Provenance & non-amplification firewall ────────────────────────
+    authority: MemoryAuthority = "agent_inferred"
+    memory_role: MemoryRole = "observation"
+    derived_from: list[str] = field(default_factory=list)
+    origin_digest: str = ""
+    blocked_supersedes: str | None = None
 
     def retention(self, now_tick: float) -> float:
         """Exponential retention R(t)=exp(-age/salience).
@@ -284,6 +429,8 @@ class SelectedMemory:
     retention: float
     reason: str
     tags: list[str] = field(default_factory=list)
+    authority: MemoryAuthority = "agent_inferred"
+    memory_role: MemoryRole = "observation"
 
 
 @dataclass(slots=True)
@@ -296,6 +443,26 @@ class OmittedMemory:
     retention: float
     reason: str
     tags: list[str] = field(default_factory=list)
+    authority: MemoryAuthority = "agent_inferred"
+    memory_role: MemoryRole = "observation"
+
+
+@dataclass(slots=True)
+class ActionAuthorizationDecision:
+    """Fail-closed result of checking memory provenance against an action risk level."""
+
+    allowed: bool
+    risk_level: str
+    required_authority: MemoryAuthority | None
+    effective_authority: MemoryAuthority | None
+    checked_ids: list[str] = field(default_factory=list)
+    blocking_ids: list[str] = field(default_factory=list)
+    superseded_ids: list[str] = field(default_factory=list)
+    missing_ids: list[str] = field(default_factory=list)
+    reason: str = ""
+
+    def as_dict(self) -> dict[str, object]:
+        return asdict(self)
 
 
 @dataclass(slots=True)
@@ -401,13 +568,22 @@ class MemoryOS:
         safety_policy: SafetyPolicy | None = None,
         temporal_class: TemporalClass | None = None,
         supersedes: str | None = None,
+        authority: MemoryAuthority | None = None,
+        memory_role: MemoryRole | None = None,
+        derived_from: Iterable[str] | None = None,
     ) -> str:
         """Store a memory and return its ID.
 
-        Identical content for the same agent/source is deduplicated and
-        reinforced instead of duplicated. By default, unsafe memory is blocked.
-        Pass ``safety_policy='redact'`` to store a redacted copy, or ``'allow'``
-        only for trusted offline test fixtures.
+        Identical content for the same agent/source/authority/role is
+        deduplicated and reinforced instead of duplicated. By default, unsafe
+        memory is blocked.
+
+        Provenance non-amplification invariants:
+        - ``derived_from`` clamps effective authority to the minimum authority
+          across all parent entries (or ``untrusted`` if any parent is missing).
+        - ``untrusted`` and ``external`` memories cannot be stored directly in
+          permanent ``semantic`` tier or claim ``directive``/``evidence`` roles.
+        - A lower-authority memory cannot supersede a higher-authority memory.
         """
         safe_content = str(content or "").strip()
         if not safe_content:
@@ -425,14 +601,49 @@ class MemoryOS:
         safe_tier = _safe_tier(str(tier))
         importance = _clamp01(importance)
         tag_list = [str(t) for t in (tags or [])]
+        parent_ids = [str(pid) for pid in (derived_from or []) if str(pid)]
+
+        requested_authority: MemoryAuthority = (
+            _safe_authority(str(authority)) if authority is not None else infer_authority(safe_source)
+        )
 
         with self._lock:
-            # Deduplicate exact repeats for the same agent/source/content.
+            # Non-amplification across derivation: effective authority can never
+            # exceed the minimum authority of its parent entries. Unknown parent
+            # IDs fail closed to 'untrusted'.
+            effective_authority: MemoryAuthority = requested_authority
+            if parent_ids:
+                parent_authorities: list[MemoryAuthority] = [requested_authority]
+                for pid in parent_ids:
+                    parent = self._entries.get(pid)
+                    if parent is None:
+                        parent_authorities.append("untrusted")
+                    else:
+                        parent_authorities.append(parent.authority)
+                effective_authority = min_authority_level(*parent_authorities)
+
+            # Temporal reasoning: auto-classify if not provided.
+            effective_temporal = temporal_class or _classify_temporal(safe_content)
+            effective_role: MemoryRole = (
+                _safe_role(str(memory_role))
+                if memory_role is not None
+                else infer_memory_role(effective_authority, effective_temporal)
+            )
+            _validate_role_for_authority(effective_role, effective_authority)
+
+            # Low-authority external/untrusted observations cannot bypass decay
+            # by entering permanent semantic memory directly.
+            if safe_tier == "semantic" and AUTHORITY_ORDER[effective_authority] < AUTHORITY_ORDER["agent_inferred"]:
+                safe_tier = "working"
+
+            # Deduplicate exact repeats for the same agent/source/authority/role/content.
             for entry in self._entries.values():
                 if (
                     entry.agent_id == safe_agent
                     and entry.source == safe_source
                     and entry.content == safe_content
+                    and entry.authority == effective_authority
+                    and entry.memory_role == effective_role
                 ):
                     entry.importance = max(entry.importance, importance)
                     entry.reinforce(self._tick)
@@ -455,9 +666,14 @@ class MemoryOS:
             if safe_tier == "semantic":
                 salience = 10_000.0
 
-            # Temporal reasoning: auto-classify if not provided.
-            effective_temporal = temporal_class or _classify_temporal(safe_content)
             extracted_entities = _extract_entities(safe_content)
+            origin_digest = _compute_origin_digest(
+                content=safe_content,
+                source=safe_source,
+                authority=effective_authority,
+                memory_role=effective_role,
+                derived_from=parent_ids,
+            )
 
             entry = MemoryEntry(
                 id=mem_id,
@@ -474,14 +690,23 @@ class MemoryOS:
                 temporal_class=effective_temporal,
                 valid_from=time.time(),
                 entities=extracted_entities,
+                authority=effective_authority,
+                memory_role=effective_role,
+                derived_from=parent_ids,
+                origin_digest=origin_digest,
             )
 
-            # Supersession tracking: mark the old memory as superseded.
+            # Supersession tracking with non-amplification: a lower-authority
+            # memory may not overwrite a higher-authority memory; it is stored
+            # as a competing claim with blocked_supersedes recorded instead.
             if supersedes and supersedes in self._entries:
                 old = self._entries[supersedes]
-                old.superseded_by = mem_id
-                old.valid_until = time.time()
-                entry.supersedes = supersedes
+                if AUTHORITY_ORDER[effective_authority] >= AUTHORITY_ORDER[old.authority]:
+                    old.superseded_by = mem_id
+                    old.valid_until = time.time()
+                    entry.supersedes = supersedes
+                else:
+                    entry.blocked_supersedes = supersedes
 
             self._entries[mem_id] = entry
             self._prune_to_capacity_locked()
@@ -496,6 +721,8 @@ class MemoryOS:
         tier: MemoryTier | None = None,
         include_shared: bool = True,
         temporal_filter: TemporalClass | None = None,
+        min_authority: MemoryAuthority | None = None,
+        allowed_roles: Iterable[MemoryRole] | None = None,
     ) -> MemoryContext:
         """Recall memories for an agent under a token budget.
 
@@ -504,12 +731,27 @@ class MemoryOS:
         - Otherwise, the query text is analysed for temporal intent. Memories
           matching the intent receive a score boost; superseded memories that
           conflict with the intent are penalised.
+
+        Provenance scoping:
+        - *min_authority* omits any entry strictly below that authority level.
+        - *allowed_roles* omits any entry whose typed ``memory_role`` is not in
+          the allowed set.
         """
         safe_budget = max(1, int(budget or self.default_budget))
         safe_agent = str(agent_id or "default")
         query_terms = _tokens(query)
         tier_filter = _safe_tier(str(tier)) if tier is not None else None
         temporal_intent = temporal_filter or _detect_temporal_intent(query)
+        min_auth_rank = (
+            AUTHORITY_ORDER[_safe_authority(str(min_authority))]
+            if min_authority is not None
+            else None
+        )
+        role_set = (
+            {_safe_role(str(r)) for r in allowed_roles}
+            if allowed_roles is not None
+            else None
+        )
 
         with self._lock:
             candidates: list[tuple[MemoryEntry, float, float, str]] = []
@@ -522,6 +764,14 @@ class MemoryOS:
                 retention = entry.retention(self._tick)
                 if entry.tier != "semantic" and retention < self.death_threshold:
                     candidates.append((entry, 0.0, retention, "below_retention_threshold"))
+                    continue
+
+                if min_auth_rank is not None and AUTHORITY_ORDER[entry.authority] < min_auth_rank:
+                    candidates.append((entry, 0.0, retention, "below_min_authority"))
+                    continue
+
+                if role_set is not None and entry.memory_role not in role_set:
+                    candidates.append((entry, 0.0, retention, "role_filtered"))
                     continue
 
                 # ── Temporal filtering ──────────────────────────────────
@@ -569,7 +819,18 @@ class MemoryOS:
             for entry, score, retention, reason in candidates:
                 if score <= 0.0:
                     omitted.append(
-                        OmittedMemory(entry.id, entry.source, entry.tier, entry.token_cost, round(score, 6), round(retention, 6), reason, list(entry.tags))
+                        OmittedMemory(
+                            entry.id,
+                            entry.source,
+                            entry.tier,
+                            entry.token_cost,
+                            round(score, 6),
+                            round(retention, 6),
+                            reason,
+                            list(entry.tags),
+                            entry.authority,
+                            entry.memory_role,
+                        )
                     )
                     continue
                 if used + entry.token_cost <= safe_budget:
@@ -584,6 +845,8 @@ class MemoryOS:
                             round(retention, 6),
                             reason,
                             list(entry.tags),
+                            entry.authority,
+                            entry.memory_role,
                         )
                     )
                     used += entry.token_cost
@@ -599,9 +862,14 @@ class MemoryOS:
                             round(retention, 6),
                             "over_budget",
                             list(entry.tags),
+                            entry.authority,
+                            entry.memory_role,
                         )
                     )
 
+            min_selected_auth = (
+                min_authority_level(*(m.authority for m in selected)) if selected else None
+            )
             risk = {
                 "selected_count": len(selected),
                 "omitted_count": len(omitted),
@@ -612,10 +880,119 @@ class MemoryOS:
                 "over_budget_omitted": sum(1 for m in omitted if m.reason == "over_budget"),
                 "superseded_omitted": sum(1 for m in omitted if m.reason == "superseded"),
                 "temporal_filter_omitted": sum(1 for m in omitted if m.reason == "temporal_filter_miss"),
+                "authority_filtered_omitted": sum(1 for m in omitted if m.reason == "below_min_authority"),
+                "role_filtered_omitted": sum(1 for m in omitted if m.reason == "role_filtered"),
+                "min_selected_authority": min_selected_auth,
                 "temporal_intent": temporal_intent,
                 "query_terms": sorted(query_terms)[:12],
             }
             return MemoryContext(selected=selected, omitted=omitted, budget=safe_budget, used_tokens=used, risk=risk)
+
+    def authorize_action(
+        self,
+        risk_level: ActionRisk,
+        memory_ids: Iterable[str],
+        *,
+        allow_superseded: bool = False,
+    ) -> ActionAuthorizationDecision:
+        """Fail-closed non-amplification firewall for memory-backed actions.
+
+        Walks *memory_ids* and their transitive ``derived_from`` lineage and
+        refuses if any memory is missing, superseded (unless allowed), or
+        carries authority below the threshold for *risk_level*.
+        """
+        ids = [str(mid) for mid in memory_ids if str(mid)]
+        required = ACTION_RISK_MIN_AUTHORITY.get(str(risk_level))
+        if required is None:
+            return ActionAuthorizationDecision(
+                allowed=False,
+                risk_level=str(risk_level),
+                required_authority=None,
+                effective_authority=None,
+                checked_ids=ids,
+                reason="unknown_risk_level",
+            )
+        if not ids:
+            return ActionAuthorizationDecision(
+                allowed=False,
+                risk_level=str(risk_level),
+                required_authority=required,
+                effective_authority=None,
+                reason="no_supporting_memories",
+            )
+
+        required_rank = AUTHORITY_ORDER[required]
+        with self._lock:
+            missing: list[str] = []
+            superseded: list[str] = []
+            blocking: list[str] = []
+            visited: list[str] = []
+            seen: set[str] = set()
+            authorities: list[MemoryAuthority] = []
+
+            stack = list(ids)
+            while stack:
+                mid = stack.pop(0)
+                if mid in seen:
+                    continue
+                seen.add(mid)
+                visited.append(mid)
+                entry = self._entries.get(mid)
+                if entry is None:
+                    missing.append(mid)
+                    authorities.append("untrusted")
+                    continue
+                authorities.append(entry.authority)
+                if AUTHORITY_ORDER[entry.authority] < required_rank:
+                    blocking.append(mid)
+                if mid in ids and entry.superseded_by and not allow_superseded:
+                    superseded.append(mid)
+                for parent_id in entry.derived_from:
+                    if parent_id not in seen:
+                        stack.append(parent_id)
+
+        effective = min_authority_level(*authorities) if authorities else None
+        if missing:
+            return ActionAuthorizationDecision(
+                allowed=False,
+                risk_level=str(risk_level),
+                required_authority=required,
+                effective_authority=effective,
+                checked_ids=visited,
+                blocking_ids=blocking,
+                superseded_ids=superseded,
+                missing_ids=missing,
+                reason="missing_memory_provenance",
+            )
+        if superseded:
+            return ActionAuthorizationDecision(
+                allowed=False,
+                risk_level=str(risk_level),
+                required_authority=required,
+                effective_authority=effective,
+                checked_ids=visited,
+                blocking_ids=blocking,
+                superseded_ids=superseded,
+                reason="superseded_memory_in_basis",
+            )
+        if blocking:
+            return ActionAuthorizationDecision(
+                allowed=False,
+                risk_level=str(risk_level),
+                required_authority=required,
+                effective_authority=effective,
+                checked_ids=visited,
+                blocking_ids=blocking,
+                reason="insufficient_memory_authority",
+            )
+        return ActionAuthorizationDecision(
+            allowed=True,
+            risk_level=str(risk_level),
+            required_authority=required,
+            effective_authority=effective,
+            checked_ids=visited,
+            reason="authorized",
+        )
 
     def tick(self, count: int = 1) -> None:
         """Advance memory time and run opportunistic consolidation."""
@@ -737,13 +1114,40 @@ class MemoryOS:
             raw_temporal = "unclassified"
         raw_entities = raw.get("entities", [])
         entities = [str(e) for e in raw_entities] if isinstance(raw_entities, list) else []
+        source = str(raw.get("source", "manual"))
+        raw_authority = raw.get("authority")
+        if isinstance(raw_authority, str) and raw_authority in AUTHORITY_ORDER:
+            authority: MemoryAuthority = raw_authority  # type: ignore[assignment]
+        else:
+            authority = infer_authority(source)
+        raw_role = raw.get("memory_role")
+        if isinstance(raw_role, str) and raw_role in _VALID_ROLES:
+            memory_role: MemoryRole = raw_role  # type: ignore[assignment]
+            try:
+                _validate_role_for_authority(memory_role, authority)
+            except ValueError:
+                memory_role = infer_memory_role(authority, raw_temporal)  # type: ignore[arg-type]
+        else:
+            memory_role = infer_memory_role(authority, raw_temporal)  # type: ignore[arg-type]
+        raw_derived = raw.get("derived_from", [])
+        derived_from = [str(p) for p in raw_derived] if isinstance(raw_derived, list) else []
+        origin_digest = str(raw.get("origin_digest", "")) or _compute_origin_digest(
+            content=content,
+            source=source,
+            authority=authority,
+            memory_role=memory_role,
+            derived_from=derived_from,
+        )
+        tier = _safe_tier(str(raw.get("tier", "working")))
+        if tier == "semantic" and AUTHORITY_ORDER[authority] < AUTHORITY_ORDER["agent_inferred"]:
+            tier = "working"
         return MemoryEntry(
             id=str(raw.get("id", f"mem_{self._next_id:06d}")),
             agent_id=str(raw.get("agent_id", "default")),
             content=content,
             importance=_clamp01(float(raw.get("importance", 0.5))),
-            tier=_safe_tier(str(raw.get("tier", "working"))),
-            source=str(raw.get("source", "manual")),
+            tier=tier,
+            source=source,
             tags=[str(t) for t in raw.get("tags", [])] if isinstance(raw.get("tags", []), list) else [],
             created_at=float(raw.get("created_at", 0.0)),
             last_recalled_at=float(raw.get("last_recalled_at", 0.0)),
@@ -757,12 +1161,21 @@ class MemoryOS:
             supersedes=str(raw["supersedes"]) if raw.get("supersedes") else None,
             superseded_by=str(raw["superseded_by"]) if raw.get("superseded_by") else None,
             entities=entities,
+            authority=authority,
+            memory_role=memory_role,
+            derived_from=derived_from,
+            origin_digest=origin_digest,
+            blocked_supersedes=str(raw["blocked_supersedes"]) if raw.get("blocked_supersedes") else None,
         )
 
     def _consolidate_locked(self) -> int:
         promoted = 0
         for entry in self._entries.values():
             if entry.tier == "semantic":
+                continue
+            # Non-amplification firewall: untrusted and external observations
+            # must never be promoted into permanent, non-decaying semantic memory.
+            if AUTHORITY_ORDER[entry.authority] < AUTHORITY_ORDER["agent_inferred"]:
                 continue
             if (
                 entry.retention(self._tick) >= self.consolidation_retention
@@ -808,12 +1221,21 @@ class MemoryOS:
 
 
 __all__ = [
-    "MemoryOS",
-    "MemoryEntry",
+    "ACTION_RISK_MIN_AUTHORITY",
+    "AUTHORITY_ORDER",
+    "ActionAuthorizationDecision",
+    "ActionRisk",
+    "MemoryAuthority",
     "MemoryContext",
+    "MemoryEntry",
+    "MemoryOS",
+    "MemoryRole",
     "MemorySafetyFinding",
     "MemorySafetyResult",
-    "SelectedMemory",
     "OmittedMemory",
+    "SelectedMemory",
     "TemporalClass",
+    "infer_authority",
+    "infer_memory_role",
+    "min_authority_level",
 ]
