@@ -98,9 +98,46 @@ def _install() -> None:  # pragma: no cover - runs only inside traced children
     written_env: set[str] = set()
     getcwd = os.getcwd
     abspath = os.path.abspath
+    normcase = os.path.normcase
     fsdecode = os.fsdecode
     write = os.write
     dumps = json.dumps
+    comspec_ver = (
+        f'{os.environ.get("COMSPEC", "cmd.exe").strip().lower()} /c "ver"'
+        if os.name == "nt"
+        else ""
+    )
+
+    def is_stdlib_win32_ver(event_args) -> bool:
+        """Allow only stdlib ``platform._syscmd_ver``'s read-only ``ver`` probe.
+
+        On Windows, packages like ``pyreadline3`` invoke ``platform.win32_ver()``
+        during interpreter/pytest startup, spawning ``cmd.exe /c "ver"``.
+        Checking both the exact command and the ``platform.py:_syscmd_ver``
+        caller frame keeps user subprocesses fail-closed as ``untraced-subprocess``.
+        """
+        if os.name != "nt" or len(event_args) < 2:
+            return False
+        executable, cmd = event_args[0], event_args[1]
+        if executable is not None or not isinstance(cmd, str):
+            return False
+        platform_mod = sys.modules.get("platform")
+        platform_file = getattr(platform_mod, "__file__", None)
+        if not isinstance(platform_file, str):
+            return False
+        norm_cmd = cmd.strip().lower()
+        if norm_cmd not in (comspec_ver, 'cmd.exe /c "ver"', 'cmd /c "ver"'):
+            return False
+        target_file = normcase(abspath(platform_file))
+        frame = sys._getframe(1)
+        steps = 0
+        while frame is not None and steps < 10:
+            code = frame.f_code
+            if code.co_name == "_syscmd_ver" and normcase(abspath(code.co_filename)) == target_file:
+                return True
+            frame = frame.f_back
+            steps += 1
+        return False
 
     def emit(record: dict) -> None:
         try:
@@ -189,6 +226,8 @@ def _install() -> None:  # pragma: no cover - runs only inside traced children
                 if isinstance(name, str) and once("import", name):
                     emit({"t": "import", "m": name})
             elif event in _SPAWN_EVENTS:
+                if event == "subprocess.Popen" and is_stdlib_win32_ver(args):
+                    return
                 emit({"t": "spawn", "e": event})
         except Exception:
             lost[0] = True

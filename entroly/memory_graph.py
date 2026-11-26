@@ -43,6 +43,7 @@ import hashlib
 import json
 import logging
 import os
+import tempfile
 import time
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
@@ -130,9 +131,42 @@ class MemoryGraph:
         graph.save()
     """
 
+    @staticmethod
+    def _default_root() -> Path:
+        """Return a writable state root without letting a bad HOME crash startup.
+
+        Honors ``ENTROLY_DIR``. Otherwise probes ``~/.entroly`` then the OS temp
+        directory, mirroring ``ValueTracker._default_dir`` so the MCP server can
+        still answer ``initialize`` when HOME is missing or not a directory.
+        Never creates directories on construction.
+        """
+        explicit = os.environ.get("ENTROLY_DIR")
+        if explicit:
+            return Path(explicit).expanduser()
+        candidates: list[Path] = []
+        try:
+            candidates.append(Path.home() / ".entroly")
+        except (RuntimeError, KeyError, OSError):
+            pass
+        candidates.append(Path(tempfile.gettempdir()) / "entroly")
+        for candidate in candidates:
+            try:
+                if candidate.exists() and not candidate.is_dir():
+                    continue
+                parent = candidate.parent
+                if parent.exists() and not parent.is_dir():
+                    continue
+                if os.access(parent if not candidate.exists() else candidate, os.W_OK):
+                    return candidate
+                if not candidate.exists() and not parent.exists():
+                    return candidate
+            except OSError:
+                continue
+        return Path(tempfile.gettempdir()) / "entroly"
+
     def __init__(self, root: str | Path | None = None):
         if root is None:
-            root = Path(os.environ.get("ENTROLY_DIR", str(Path.home() / ".entroly")))
+            root = self._default_root()
         self._root = Path(root) / "memory_graph"
         # Created on first save(), never at construction: the MCP server builds
         # a graph at startup, and a read-only or unusable HOME must not crash it.

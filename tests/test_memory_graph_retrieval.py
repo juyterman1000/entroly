@@ -435,3 +435,33 @@ class TestHybridRetriever:
         retriever = HybridRetriever(mem)
         results = retriever.recall("anything", agent_id="test")
         assert len(results) == 0
+
+
+# ── Default state root ─────────────────────────────────────────────────
+
+class TestMemoryGraphDefaultRoot:
+    def test_unusable_home_falls_back_to_temp(self, tmp_path, monkeypatch):
+        """A HOME that is a file must not crash MCP startup."""
+        from pathlib import Path
+        from entroly.memory_graph import MemoryGraph
+
+        fake_home = tmp_path / "home-is-a-file"
+        fake_home.write_text("not a directory", encoding="utf-8")
+        temp_root = tmp_path / "tmp"
+        temp_root.mkdir()
+        monkeypatch.delenv("ENTROLY_DIR", raising=False)
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(temp_root))
+
+        graph = MemoryGraph()
+        assert graph._root == temp_root / "entroly" / "memory_graph"
+        assert not graph._root.exists()
+        graph.save()
+        assert graph._root.is_dir()
+
+    def test_entroly_dir_is_honored(self, tmp_path, monkeypatch):
+        from entroly.memory_graph import MemoryGraph
+
+        monkeypatch.setenv("ENTROLY_DIR", str(tmp_path / "state"))
+        graph = MemoryGraph()
+        assert graph._root == tmp_path / "state" / "memory_graph"
