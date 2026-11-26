@@ -490,6 +490,7 @@ def run_autotune(iterations: int = 100,
         return
 
     best_score = baseline_score
+    best_result = baseline
     best_config = dict(config)
     defaults = dict(config)  # Original config for drift penalty
     improvements = 0
@@ -526,23 +527,40 @@ def run_autotune(iterations: int = 100,
             delta_pct = (score - best_score) / max(best_score, 0.001)
             alpha = min(1.0, ema_base_alpha * (1.0 + delta_pct * 10.0))
 
-            status = "keep"
-            improvements += 1
-            best_score = score
-            best_config = _ema_blend(best_config, candidate, alpha)
-            save_config(best_config, config_path)
-
-            # Update Polyak average
-            polyak_count += 1
-            polyak_avg = _polyak_update(polyak_avg, best_config, polyak_count)
-
-            marker = f">>> a={alpha:.2f}"
         elif (score == best_score and
-              result.avg_wall_time_ms < baseline.avg_wall_time_ms):
+              result.avg_wall_time_ms < best_result.avg_wall_time_ms):
+            alpha = ema_base_alpha * 0.5
+        else:
+            alpha = None
+
+        if alpha is not None:
+            blended = _ema_blend(best_config, candidate, alpha)
+            if blended != candidate:
+                result = evaluate(
+                    blended,
+                    cases,
+                    time_budget,
+                    benchmark_seed=AUTOTUNE_BENCHMARK_SEED,
+                )
+            candidate = blended
+            score = composite_score(result, candidate, defaults)
+            new_val = candidate.get(mutated_param)
+
+        if (score > best_score or
+                (score == best_score and
+                 result.avg_wall_time_ms < best_result.avg_wall_time_ms)):
             status = "keep"
-            best_config = _ema_blend(best_config, candidate, ema_base_alpha * 0.5)
+            if score > best_score:
+                improvements += 1
+                polyak_count += 1
+                polyak_avg = _polyak_update(polyak_avg, candidate, polyak_count)
+                marker = f">>> a={alpha:.2f}"
+            else:
+                marker = "  ="
+            best_score = score
+            best_result = result
+            best_config = candidate
             save_config(best_config, config_path)
-            marker = "  ="
         else:
             status = "discard"
             marker = "   "
@@ -571,6 +589,7 @@ def run_autotune(iterations: int = 100,
             _log("  -> Polyak average is at least as good -- using it")
             best_config = polyak_avg
             best_score = polyak_score
+            best_result = polyak_result
         else:
             _log("  -> Best single config is better -- keeping it")
 
