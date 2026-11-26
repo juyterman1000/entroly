@@ -12,6 +12,7 @@ from entroly.cache_aligner import CacheAligner
 from entroly.pac_kv import (
     PROVIDER_GRIDS,
     CachePage,
+    KVDemandBudgeter,
     PACKVEngine,
     PagedMerkleTree,
     get_provider_grid,
@@ -204,3 +205,44 @@ class TestCacheAlignerIntegration:
         aligner.invalidate("client_x")
         stats = aligner.stats()
         assert stats["active_clients"] == 0
+
+
+class TestKVDemandBudgeter:
+    def test_shared_prefix_pages_deduplicated_in_pool_union(self):
+        # Pool of 20 pages, ceiling 0.85 => safe_page_limit = 17 pages.
+        budgeter = KVDemandBudgeter(pool_pages=20, utilization_ceiling=0.85, ttl_seconds=60.0)
+        shared_anchor = [f"anchor_p{i}" for i in range(10)]
+
+        # Three swarm agents share 10 system-prompt pages + 2 private pages each.
+        # Naive sum = 36 pages (> 17), but true union = 10 + 2*3 = 16 <= 17!
+        r1 = budgeter.admit("agent_1", shared_anchor + ["a1_0", "a1_1"], page_size=128, now=10.0)
+        r2 = budgeter.admit("agent_2", shared_anchor + ["a2_0", "a2_1"], page_size=128, now=11.0)
+        r3 = budgeter.admit("agent_3", shared_anchor + ["a3_0", "a3_1"], page_size=128, now=12.0)
+
+        assert r1.admitted is True and r1.decision == "admitted_cold"
+        assert r2.admitted is True and r2.shared_prefix_pages == 10 and r2.marginal_new_pages == 2
+        assert r3.admitted is True and r3.projected_union_pages == 16
+
+        # Fourth agent needs 3 private pages => projected union = 19 > 17 => deferred
+        # with exact safe token budget = (10 shared + 1 slack) * 128 = 1408 tokens.
+        r4 = budgeter.admit("agent_4", shared_anchor + ["a4_0", "a4_1", "a4_2"], page_size=128, now=13.0)
+        assert r4.admitted is False
+        assert r4.decision == "defer_or_compress_tail"
+        assert r4.recommended_token_budget == (10 + 1) * 128
+        # Refused admission must not mutate resident union.
+        assert budgeter.resident_union_pages(now=13.0) == 16
+
+    def test_ttl_expiry_and_warm_growth_reclaim_pool_capacity(self):
+        budgeter = KVDemandBudgeter(pool_pages=10, utilization_ceiling=0.80, ttl_seconds=30.0)
+        # safe_page_limit = 8
+        assert budgeter.admit("s1", [f"p{i}" for i in range(6)], now=0.0).admitted is True
+        # Warm update replacing pages stays admitted_warm.
+        warm = budgeter.admit("s1", [f"p{i}" for i in range(7)], now=10.0)
+        assert warm.admitted is True and warm.decision == "admitted_warm"
+
+        # New session needing 3 pages blocked at t=20 (7 + 3 = 10 > 8),
+        # then admitted at t=45 after s1's 30s lease from t=10 expires at t=40.
+        assert budgeter.admit("s2", ["q0", "q1", "q2"], now=20.0).admitted is False
+        after_ttl = budgeter.admit("s2", ["q0", "q1", "q2"], now=45.0)
+        assert after_ttl.admitted is True
+        assert after_ttl.projected_union_pages == 3
