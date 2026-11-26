@@ -2,19 +2,22 @@
   <img src="docs/assets/entroly_wordmark.svg" width="820" alt="Entroly">
 </p>
 
-<h1 align="center">Entroly — Select AI context with auditable recovery.</h1>
+<h1 align="center">Entroly · The local-first AI efficiency layer</h1>
 
-<p align="center"><b>Receipt-backed selection records: what was kept, what was omitted, and the handle that recovers the exact original bytes.</b><br>
-Compression you can undo, on your own repository, in one command — without replacing your model or agent architecture.</p>
+<p align="center">Select context for coding agents and LLM apps, recover omitted evidence, check answers
+against source, and pick up work in another agent.</p>
 
 <p align="center">
-  <img src="docs/assets/entroly-demo.svg" alt="Entroly context selection and receipt workflow illustration" width="820">
+  <b><a href="docs/assets/proof_local.mp4">Watch the local demo</a> · <a href="#quickstart--by-how-you-work">Connect your agent</a> · <a href="docs/agent-continuity.md">Resume interrupted work</a> · <a href="#benchmarks">Review the benchmarks</a></b>
 </p>
 
-<p align="center"><code>pip install -U entroly</code> &nbsp;·&nbsp; <code>entroly verify-claims</code> &nbsp;·&nbsp; <code>entroly simulate</code></p>
 <p align="center">
-  <sub>Entroly is an open-source, local-first AI token-efficiency and Context Assurance layer: budgeted evidence selection, recoverable context compression, content-addressed evidence recovery, and auditable receipts. Works through VS Code, Claude Code, Cursor, Codex, OpenClaw, GitHub Copilot, Aider, and OpenAI/Anthropic-compatible apps.</sub>
+  <a href="docs/assets/proof_local.mp4"><img src="docs/assets/proof_local.gif" width="700" alt="Terminal demo of local indexing, token-budget selection, and exact source recovery"></a>
 </p>
+
+<p align="center"><code>pip install -U entroly</code> &nbsp;·&nbsp; <code>entroly verify-claims</code><br>
+<sub>Replays the local checks shown above. No model API key needed.</sub></p>
+
 <p align="center">
   <a href="https://marketplace.visualstudio.com/items?itemName=entroly.entroly-vscode"><img src="https://img.shields.io/visual-studio-marketplace/v/entroly.entroly-vscode?label=VS%20Code&color=007acc&logo=visualstudiocode" alt="VS Code Extension"></a>
   <a href="https://pypi.org/project/entroly/"><img src="https://img.shields.io/pypi/v/entroly?color=blue&label=PyPI" alt="Entroly on PyPI"></a>
@@ -42,15 +45,15 @@ Compression you can undo, on your own repository, in one command — without rep
 
 ## What is Entroly? (in plain English)
 
-Entroly is a local-first context control plane for AI coding tools. It selects
-evidence within a token budget, preserves recoverable omissions, and records
-selection decisions in receipts. Three properties to evaluate on your task:
-
-|  |  |
+| What you need | How Entroly helps |
 |---|---|
-| 💰 **Avoidable input cost** | Smaller requests can reduce input cost when they reach a provider through an Entroly-controlled route. The result depends on the workload and provider cache — see the [real numbers](#benchmarks) below. |
-| 🔍 **Recoverable originals** | Receipt-backed recovery retains source material locally. Exact recovery requires the referenced store and source bytes to remain available; it does not guarantee answer quality. |
-| 🧾 **You can check its work** | Every decision comes with a receipt: what was kept, what was left out, and why. |
+| **Fit the right code into your context budget** | Select evidence, inspect what was omitted in a receipt, and recover the original bytes when the referenced source is available. [Try context selection](#see-it-work-in-30-seconds). |
+| **Check an answer against the source** | Use WITNESS to flag claims that retained evidence does not support. [Read the verification results and limits](#benchmarks). |
+| **Pick up where another agent stopped** | Reconstruct unfinished work from repository evidence and review what the previous agent left behind. [Try agent continuity](docs/agent-continuity.md). |
+| **Manage model input costs** | Measure changes to provider requests routed through Entroly. Results depend on the workload and provider cache. [See the benchmarks](#benchmarks). |
+
+The [product guide](docs/product-surface.md) covers local memory, the provider
+gateway, privacy controls, and the available integrations.
 
 **Do I have to change my code?** No. On hosts with a verified prompt hook,
 Entroly runs before the model plans. MCP-only integrations remain callable
@@ -233,13 +236,12 @@ Entroly-controlled route.
 ---
 ## See it work in 30 seconds
 
-Not mocked recordings — each video is rendered from a checked-in command that
+Each recording is generated from a checked-in command that
 verifies its source artifact before printing a number.
 
-<p align="center">
-  <a href="docs/assets/proof_local.mp4"><img src="docs/assets/proof_local.gif" width="700" alt="Entroly local verification: every local check passes without an API key"></a>
-</p>
-<p align="center"><code>entroly verify-claims</code> — SDK import and compression, local indexing, budget-bounded selection, exact recovery, run offline. No API key.</p>
+The first recording above demonstrates local indexing, budgeted selection, and
+exact recovery. Run `entroly verify-claims` to replay those checks locally.
+
 <p align="center">
   <a href="docs/assets/proof_model_recovery.mp4"><img src="docs/assets/proof_model_recovery.gif" width="700" alt="Frozen model-recovery holdout: Entroly 24/24, published baseline 18/24"></a>
 </p>
