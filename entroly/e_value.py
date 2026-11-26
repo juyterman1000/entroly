@@ -388,3 +388,158 @@ def build_certificate(
         alpha=alpha,
         worst_case=worst_case,
     )
+
+
+# ── Anytime-valid ONS betting e-process (Ville's inequality) ──────────
+
+_ONS_STEP_SCALE = 2.0 / (2.0 - math.log(3.0))
+
+
+@dataclass(slots=True)
+class BettingStepRecord:
+    """Audit record for one sequential observation in ``BettingEProcess``."""
+
+    step: int
+    loss: float
+    bet_lambda: float
+    multiplier: float
+    wealth: float
+    max_wealth: float
+    anytime_p: float
+    rejected: bool
+
+
+class BettingEProcess:
+    """Online-Newton-Step predictable-betting test supermartingale (Ville's inequality).
+
+    Tests the sequential conditional-mean null hypothesis
+        ``H_0: E[loss_t | F_{t-1}] <= null_risk`` for all ``t >= 1``,
+    where each observed loss lies in ``[0, 1]``.
+
+    Construction (Waudby-Smith & Ramdas, https://arxiv.org/abs/2010.09686;
+    anytime-valid conformal risk control, https://arxiv.org/abs/2602.04364,
+    https://arxiv.org/abs/2606.29054):
+    - Start with ``M_0 = 1``, ``A_0 = 1``, and predictable bet ``lambda_1 = 0``.
+    - At step ``t``, observe ``loss_t in [0, 1]`` and update wealth using the
+      pre-observation bet ``lambda_t in [0, 1 / (2 * null_risk)]``:
+          ``m_t = 1 + lambda_t * (loss_t - null_risk) >= 0.5 > 0``
+          ``M_t = min(1e300, M_{t-1} * m_t)``
+    - Update the Online Newton Step (ONS) predictable bet for step ``t + 1``
+      using ``z_t = (loss_t - null_risk) / m_t`` and ``A_t = A_{t-1} + z_t^2``:
+          ``lambda_{t+1} = clip(lambda_t + (2 / (2 - ln 3)) * z_t / A_t, 0, 1 / (2 * null_risk))``
+
+    Why this holds under optional stopping:
+    - Because ``lambda_t >= 0`` is ``F_{t-1}``-measurable and ``m_t >= 0.5``,
+      ``E[m_t | F_{t-1}] <= 1`` under ``H_0``; upper-clipping at ``1e300`` is
+      concave and nondecreasing, so Jensen's inequality preserves the
+      nonnegative supermartingale property ``E[M_t | F_{t-1}] <= M_{t-1}``.
+    - By Ville's inequality, for any data-dependent stopping time ``tau``:
+          ``P_{H_0}(exists t >= 1 : M_t >= 1 / delta) <= delta``.
+    - On ``[-0.5, inf)``, ``x -> ln(1 + x)`` is exp-concave, giving ONS
+      ``O(ln T)`` log-wealth regret relative to the best fixed Kelly fraction in
+      ``[0, 1 / (2 * null_risk)]``.
+
+    Scope: valid for sequential optional stopping on bounded ``[0, 1]`` losses
+    under the stated conditional-mean null. Does not establish distribution
+    stationarity or model answer correctness on its own.
+    """
+
+    def __init__(
+        self,
+        *,
+        null_risk: float = 0.10,
+        delta: float = 0.05,
+        max_bet_fraction: float = 0.50,
+    ) -> None:
+        self.null_risk = _alpha(null_risk)
+        self.delta = _alpha(delta)
+        frac = _finite(max_bet_fraction, "max_bet_fraction")
+        if not 0.0 < frac < 1.0:
+            raise ValueError("max_bet_fraction must be within (0, 1)")
+        # Default 0.50 keeps lambda_t * (loss_t - null_risk) >= -0.5, inside the
+        # exp-concave domain of ln(1 + x) required by ONS.
+        self.max_bet = frac / self.null_risk
+        self.threshold = 1.0 / self.delta
+
+        self._wealth: float = 1.0
+        self._max_wealth: float = 1.0
+        self._bet: float = 0.0
+        self._grad_sq_sum: float = 1.0
+        self._steps: int = 0
+        self._loss_sum: float = 0.0
+        self._history: list[BettingStepRecord] = []
+
+    def next_bet(self) -> float:
+        """Predictable betting fraction ``lambda_{t+1}`` measurable w.r.t. history ``<= t``."""
+        return self._bet
+
+    def update(self, loss: float) -> BettingStepRecord:
+        """Ingest one bounded loss in ``[0, 1]`` and advance the ONS test supermartingale."""
+        val = _finite(loss, "loss")
+        if not 0.0 <= val <= 1.0:
+            raise ValueError("loss must be within [0, 1]")
+
+        lam = self._bet
+        excess = val - self.null_risk
+        multiplier = 1.0 + lam * excess
+        self._wealth = min(1e300, self._wealth * multiplier)
+        if self._wealth > self._max_wealth:
+            self._max_wealth = self._wealth
+
+        # ONS update for step t + 1 (strictly after evaluating wealth at step t).
+        z_t = excess / multiplier
+        self._grad_sq_sum += z_t * z_t
+        cand = lam + _ONS_STEP_SCALE * (z_t / self._grad_sq_sum)
+        self._bet = max(0.0, min(self.max_bet, cand))
+
+        self._steps += 1
+        self._loss_sum += val
+
+        rec = BettingStepRecord(
+            step=self._steps,
+            loss=val,
+            bet_lambda=lam,
+            multiplier=multiplier,
+            wealth=self._wealth,
+            max_wealth=self._max_wealth,
+            anytime_p=min(1.0, 1.0 / max(self._max_wealth, 1.0)),
+            rejected=self._max_wealth >= self.threshold,
+        )
+        self._history.append(rec)
+        return rec
+
+    @property
+    def wealth(self) -> float:
+        return self._wealth
+
+    @property
+    def max_wealth(self) -> float:
+        return self._max_wealth
+
+    @property
+    def anytime_p(self) -> float:
+        return min(1.0, 1.0 / max(self._max_wealth, 1.0))
+
+    @property
+    def rejected(self) -> bool:
+        return self._max_wealth >= self.threshold
+
+    @property
+    def steps(self) -> int:
+        return self._steps
+
+    def summary(self) -> dict[str, object]:
+        mean_loss = self._loss_sum / self._steps if self._steps else 0.0
+        return {
+            "steps": self._steps,
+            "null_risk": self.null_risk,
+            "delta": self.delta,
+            "threshold": self.threshold,
+            "wealth": self._wealth,
+            "max_wealth": self._max_wealth,
+            "anytime_p": self.anytime_p,
+            "rejected": self.rejected,
+            "empirical_loss_mean": round(mean_loss, 6),
+            "next_bet": round(self._bet, 6),
+            "method": "ons-predictable-betting-supermartingale-ville",
+        }

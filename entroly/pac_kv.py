@@ -532,6 +532,157 @@ class PACKVEngine:
         return compressed_prefix, compressed_tail
 
 
+# ── Multi-Session KV-Demand Anti-Metastability Budgeter ───────────────────
+
+
+@dataclass(frozen=True, slots=True)
+class KVAdmissionReceipt:
+    """Decision record from ``KVDemandBudgeter.admit``."""
+
+    session_id: str
+    admitted: bool
+    decision: str
+    pool_pages: int
+    safe_page_limit: int
+    active_sessions: int
+    resident_union_pages_before: int
+    shared_prefix_pages: int
+    marginal_new_pages: int
+    projected_union_pages: int
+    recommended_token_budget: int
+
+
+@dataclass(slots=True)
+class _SessionKVLease:
+    pages: set[str]
+    expires_at: float
+
+
+class KVDemandBudgeter:
+    """Bounds aggregate resident KV-page demand across concurrent agent sessions.
+
+    Closed-loop agent sessions with growing contexts make prefix-cached serving
+    metastable when aggregate resident KV working sets exceed pool capacity:
+    evictions trigger full context recomputation, slowing completions and
+    trapping sessions in a low-hit-rate regime long after a burst subsides
+    (Huang & Liu, https://arxiv.org/abs/2611.13412).
+
+    Model:
+    - Let ``P(s)`` be the set of content-addressed page digests (from
+      ``PagedMerkleTree``) held by active session ``s``.
+    - Identical prefix pages shared across sessions (system instructions, tool
+      schemas) occupy physical KV memory once, so resident pool demand is the
+      set union ``U = union_{s in A} P(s)``.
+    - A candidate turn for session ``s`` with page set ``P'(s)`` requires
+      marginal new pages ``Delta = |P'(s) \\ U_{-s}|`` where
+      ``U_{-s} = union_{r != s} P(r)``.
+    - Admission enforces ``|U_{-s}| + Delta <= floor(theta * pool_pages)``.
+      When exceeded, the budgeter refuses overcommit and returns the exact
+      token ceiling ``(|P'(s) & U_{-s}| + slack_pages) * page_size`` that fits
+      without evicting warm peer pages.
+    """
+
+    def __init__(
+        self,
+        *,
+        pool_pages: int = 4096,
+        utilization_ceiling: float = 0.85,
+        ttl_seconds: float = 300.0,
+    ) -> None:
+        if int(pool_pages) < 1:
+            raise ValueError("pool_pages must be >= 1")
+        if not 0.0 < float(utilization_ceiling) <= 1.0:
+            raise ValueError("utilization_ceiling must be in (0, 1]")
+        if float(ttl_seconds) <= 0.0:
+            raise ValueError("ttl_seconds must be > 0")
+        self.pool_pages = int(pool_pages)
+        self.utilization_ceiling = float(utilization_ceiling)
+        self.ttl_seconds = float(ttl_seconds)
+        self.safe_page_limit = max(1, math.floor(self.pool_pages * self.utilization_ceiling))
+        self._leases: dict[str, _SessionKVLease] = {}
+
+    def evict_expired(self, now: float) -> int:
+        expired = [sid for sid, lease in self._leases.items() if lease.expires_at <= now]
+        for sid in expired:
+            del self._leases[sid]
+        return len(expired)
+
+    def release(self, session_id: str) -> bool:
+        return self._leases.pop(session_id, None) is not None
+
+    def resident_union_pages(self, *, now: float | None = None) -> int:
+        if now is not None:
+            self.evict_expired(now)
+        union: set[str] = set()
+        for lease in self._leases.values():
+            union.update(lease.pages)
+        return len(union)
+
+    def admit(
+        self,
+        session_id: str,
+        page_hashes: Sequence[str],
+        *,
+        page_size: int = 128,
+        now: float = 0.0,
+    ) -> KVAdmissionReceipt:
+        """Evaluate and (if within ``safe_page_limit``) commit a session's KV working set."""
+        if int(page_size) < 1:
+            raise ValueError("page_size must be >= 1")
+        ts = float(now)
+        self.evict_expired(ts)
+
+        req_pages = {str(h) for h in page_hashes if str(h)}
+        is_warm = session_id in self._leases
+
+        other_pages: set[str] = set()
+        for sid, lease in self._leases.items():
+            if sid != session_id:
+                other_pages.update(lease.pages)
+
+        before_union = set(other_pages)
+        if is_warm:
+            before_union.update(self._leases[session_id].pages)
+
+        shared = len(req_pages & other_pages)
+        marginal_new = len(req_pages - other_pages)
+        projected = len(other_pages) + marginal_new
+        slack_pages = max(0, self.safe_page_limit - len(other_pages))
+        rec_budget = (shared + slack_pages) * int(page_size)
+
+        if projected <= self.safe_page_limit:
+            self._leases[session_id] = _SessionKVLease(
+                pages=req_pages,
+                expires_at=ts + self.ttl_seconds,
+            )
+            return KVAdmissionReceipt(
+                session_id=session_id,
+                admitted=True,
+                decision="admitted_warm" if is_warm else "admitted_cold",
+                pool_pages=self.pool_pages,
+                safe_page_limit=self.safe_page_limit,
+                active_sessions=len(self._leases),
+                resident_union_pages_before=len(before_union),
+                shared_prefix_pages=shared,
+                marginal_new_pages=marginal_new,
+                projected_union_pages=projected,
+                recommended_token_budget=max(rec_budget, len(req_pages) * int(page_size)),
+            )
+
+        return KVAdmissionReceipt(
+            session_id=session_id,
+            admitted=False,
+            decision="defer_or_compress_tail",
+            pool_pages=self.pool_pages,
+            safe_page_limit=self.safe_page_limit,
+            active_sessions=len(self._leases),
+            resident_union_pages_before=len(before_union),
+            shared_prefix_pages=shared,
+            marginal_new_pages=marginal_new,
+            projected_union_pages=projected,
+            recommended_token_budget=rec_budget,
+        )
+
 
 __all__ = [
     "PACKVEngine",
@@ -541,5 +692,7 @@ __all__ = [
     "PROVIDER_GRIDS",
     "PagedMerkleTree",
     "CachePage",
+    "KVAdmissionReceipt",
+    "KVDemandBudgeter",
     "get_provider_grid",
 ]

@@ -2553,3 +2553,453 @@ mod ordering_tests {
         }
     }
 }
+
+// ══════════════════════════════════════════════════════════════════════════
+// Monotone Submodular Facility-Location Atom Coverage + Greedy+Singleton
+// ══════════════════════════════════════════════════════════════════════════
+
+/// Exact worst-case approximation constant for monotone submodular maximization
+/// under a knapsack constraint via `Greedy+Singleton` (Byju, arXiv:2611.13575).
+pub const SUBMODULAR_KNAPSACK_GREEDY_SINGLETON_RATIO: f64 = 0.42944;
+
+/// Result of `select_submodular_atom_coverage`.
+#[derive(Debug, Clone)]
+pub struct AtomCoverageSelection {
+    pub selected_indices: Vec<usize>,
+    pub total_tokens: u32,
+    pub objective_value: f64,
+    pub greedy_value: f64,
+    pub best_singleton_value: f64,
+    pub won_by_singleton: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum StructuralTokKind {
+    Ident,
+    Number,
+    Op,
+}
+
+fn fnv1a_mix(mut h: u64, bytes: &[u8]) -> u64 {
+    for &b in bytes {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h
+}
+
+/// Extract normalized structural atoms `(atom_id, relative_weight)` from code or prose.
+///
+/// Unlike 256-bit trigram SimHash (which measures cosine angle over character/word
+/// trigrams and collapses `limit < 42` vs `limit > 42` at high similarity), this
+/// extractor emits explicit operator-bound relational atoms `(left, op, right)`,
+/// unary operator atoms `(op, right)`, numeric literal atoms, and adjacent
+/// identifier bigrams, normalized so `sum_u alpha_{i,u} = 1.0`.
+pub fn extract_structural_atoms(content: &str) -> Vec<(u64, f64)> {
+    let bytes = content.as_bytes();
+    let n = bytes.len();
+    let mut toks: Vec<(StructuralTokKind, &[u8])> = Vec::new();
+    let mut i = 0;
+
+    while i < n {
+        let b = bytes[i];
+        if b.is_ascii_whitespace() {
+            i += 1;
+            continue;
+        }
+        if b.is_ascii_alphabetic() || b == b'_' {
+            let start = i;
+            i += 1;
+            while i < n && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+                i += 1;
+            }
+            toks.push((StructuralTokKind::Ident, &bytes[start..i]));
+            continue;
+        }
+        if b.is_ascii_digit() {
+            let start = i;
+            i += 1;
+            while i < n && (bytes[i].is_ascii_digit() || bytes[i] == b'.') {
+                i += 1;
+            }
+            toks.push((StructuralTokKind::Number, &bytes[start..i]));
+            continue;
+        }
+        if matches!(b, b'=' | b'!' | b'<' | b'>' | b'&' | b'|' | b'+' | b'-' | b'*' | b'/') {
+            let start = i;
+            i += 1;
+            if i < n && matches!(bytes[i], b'=' | b'&' | b'|' | b'>') {
+                i += 1;
+            }
+            toks.push((StructuralTokKind::Op, &bytes[start..i]));
+            continue;
+        }
+        i += 1;
+    }
+
+    let mut raw: HashMap<u64, f64> = HashMap::new();
+    for idx in 0..toks.len() {
+        let (kind, slice) = toks[idx];
+        match kind {
+            StructuralTokKind::Ident => {
+                let mut h = fnv1a_mix(0xcbf29ce484222325, &[1]);
+                for &ch in slice {
+                    h = fnv1a_mix(h, &[ch.to_ascii_lowercase()]);
+                }
+                *raw.entry(h).or_insert(0.0) += 1.0;
+            }
+            StructuralTokKind::Number => {
+                let h = fnv1a_mix(fnv1a_mix(0xcbf29ce484222325, &[2]), slice);
+                *raw.entry(h).or_insert(0.0) += 1.5;
+            }
+            StructuralTokKind::Op => {
+                // Unary operator + right operand (e.g., `!valid` vs `valid`).
+                if idx + 1 < toks.len() {
+                    let mut h = fnv1a_mix(0xcbf29ce484222325, &[3]);
+                    h = fnv1a_mix(h, slice);
+                    h = fnv1a_mix(h, &[0xff]);
+                    h = fnv1a_mix(h, toks[idx + 1].1);
+                    *raw.entry(h).or_insert(0.0) += 2.0;
+                }
+                // Binary operator relational triple (e.g., `limit < 42` vs `limit > 42`).
+                if idx > 0 && idx + 1 < toks.len() {
+                    let mut h = fnv1a_mix(0xcbf29ce484222325, &[4]);
+                    h = fnv1a_mix(h, toks[idx - 1].1);
+                    h = fnv1a_mix(h, &[0xfe]);
+                    h = fnv1a_mix(h, slice);
+                    h = fnv1a_mix(h, &[0xff]);
+                    h = fnv1a_mix(h, toks[idx + 1].1);
+                    *raw.entry(h).or_insert(0.0) += 2.5;
+                }
+            }
+        }
+        // Adjacent non-operator bigram (e.g., `delete user` vs `delete group`).
+        if idx + 1 < toks.len() && kind != StructuralTokKind::Op && toks[idx + 1].0 != StructuralTokKind::Op {
+            let mut h = fnv1a_mix(0xcbf29ce484222325, &[5]);
+            for &ch in toks[idx].1 {
+                h = fnv1a_mix(h, &[ch.to_ascii_lowercase()]);
+            }
+            h = fnv1a_mix(h, &[0xfd]);
+            for &ch in toks[idx + 1].1 {
+                h = fnv1a_mix(h, &[ch.to_ascii_lowercase()]);
+            }
+            *raw.entry(h).or_insert(0.0) += 0.75;
+        }
+    }
+
+    if raw.is_empty() {
+        let fallback = fnv1a_mix(0xcbf29ce484222325, bytes);
+        return vec![(fallback, 1.0)];
+    }
+
+    let total: f64 = raw.values().sum();
+    let mut out: Vec<(u64, f64)> = raw
+        .into_iter()
+        .map(|(k, w)| (k, w / total))
+        .collect();
+    out.sort_unstable_by_key(|&(k, _)| k);
+    out
+}
+
+/// Evaluate the monotone submodular facility-location coverage objective
+/// `f(S) = sum_{u in U} max_{i in S} w_{i,u}` for a subset `indices`.
+pub fn evaluate_atom_coverage(
+    fragment_atoms: &[Vec<(u64, f64)>],
+    relevances: &[f64],
+    indices: &[usize],
+) -> f64 {
+    let mut covered: HashMap<u64, f64> = HashMap::new();
+    for &idx in indices {
+        let rel = relevances[idx].max(0.0);
+        if rel == 0.0 {
+            continue;
+        }
+        for &(atom, alpha) in &fragment_atoms[idx] {
+            let w = rel * alpha;
+            let entry = covered.entry(atom).or_insert(0.0);
+            if w > *entry {
+                *entry = w;
+            }
+        }
+    }
+    covered.values().sum()
+}
+
+/// Maximize monotone submodular atom coverage `f(S) = sum_u max_{i in S} w_{i,u}`
+/// subject to `sum_{i in S} costs[i] <= budget` using `Greedy+Singleton`.
+///
+/// Properties:
+/// - For each atom `u`, `g_u(S) = max_{i in S} w_{i,u}` is nonnegative, monotone,
+///   and submodular (`max(0, w_{x,u} - g_u(A)) >= max(0, w_{x,u} - g_u(B))` for
+///   `A <= B`), so `f(S) = sum_u g_u(S)` is monotone submodular.
+/// - Because `sum_u alpha_{i,u} = 1`, every singleton satisfies `f({i}) = relevances[i]`.
+/// - An exact duplicate `j` with `relevances[j] <= relevances[i]` has zero marginal
+///   gain `Delta(j | {i}) = 0`, whereas single-operator or single-subject edits
+///   (`limit < 42` vs `limit > 42`, `delete user` vs `delete group`) introduce
+///   uncovered relational atoms with strictly positive marginal gain.
+/// - Comparing the cost-density greedy pass against the best feasible singleton
+///   achieves the tight worst-case approximation factor `beta* >= 0.42944` on
+///   monotone submodular knapsack instances (Byju, https://arxiv.org/abs/2611.13575).
+pub fn select_submodular_atom_coverage(
+    contents: &[&str],
+    costs: &[u32],
+    relevances: &[f64],
+    budget: u32,
+) -> AtomCoverageSelection {
+    assert_eq!(contents.len(), costs.len(), "contents and costs length mismatch");
+    assert_eq!(contents.len(), relevances.len(), "contents and relevances length mismatch");
+    let n = contents.len();
+    if n == 0 || budget == 0 {
+        return AtomCoverageSelection {
+            selected_indices: Vec::new(),
+            total_tokens: 0,
+            objective_value: 0.0,
+            greedy_value: 0.0,
+            best_singleton_value: 0.0,
+            won_by_singleton: false,
+        };
+    }
+
+    let atoms: Vec<Vec<(u64, f64)>> = contents
+        .iter()
+        .map(|c| extract_structural_atoms(c))
+        .collect();
+
+    // 1. Best feasible singleton S_single = argmax_{i: c_i <= B} f({i}).
+    let mut best_single_idx: Option<usize> = None;
+    let mut best_single_val: f64 = 0.0;
+    for i in 0..n {
+        let c = costs[i];
+        let r = relevances[i].max(0.0);
+        if c <= budget && r > best_single_val {
+            best_single_val = r;
+            best_single_idx = Some(i);
+        }
+    }
+
+    // 2. Cost-density greedy pass maximizing Delta(i | S) / max(1, c_i).
+    let mut covered: HashMap<u64, f64> = HashMap::new();
+    let mut chosen = vec![false; n];
+    let mut greedy_indices: Vec<usize> = Vec::new();
+    let mut used_tokens: u32 = 0;
+    let mut greedy_val: f64 = 0.0;
+
+    loop {
+        let remaining = budget - used_tokens;
+        let mut best_cand: Option<(usize, f64, f64)> = None; // (idx, density, gain)
+        for i in 0..n {
+            if chosen[i] || costs[i] > remaining {
+                continue;
+            }
+            let rel = relevances[i].max(0.0);
+            if rel <= 0.0 {
+                continue;
+            }
+            let mut gain = 0.0;
+            for &(atom, alpha) in &atoms[i] {
+                let w = rel * alpha;
+                let cur = covered.get(&atom).copied().unwrap_or(0.0);
+                if w > cur {
+                    gain += w - cur;
+                }
+            }
+            if gain <= 1e-12 {
+                continue;
+            }
+            let denom = costs[i].max(1) as f64;
+            let density = gain / denom;
+            let better = match best_cand {
+                None => true,
+                Some((prev_i, prev_d, prev_g)) => {
+                    density > prev_d + 1e-15
+                        || ((density - prev_d).abs() <= 1e-15 && (gain > prev_g + 1e-15 || ((gain - prev_g).abs() <= 1e-15 && i < prev_i)))
+                }
+            };
+            if better {
+                best_cand = Some((i, density, gain));
+            }
+        }
+
+        let Some((win_i, _, win_gain)) = best_cand else {
+            break;
+        };
+        chosen[win_i] = true;
+        used_tokens += costs[win_i];
+        greedy_val += win_gain;
+        greedy_indices.push(win_i);
+        let rel = relevances[win_i].max(0.0);
+        for &(atom, alpha) in &atoms[win_i] {
+            let w = rel * alpha;
+            let entry = covered.entry(atom).or_insert(0.0);
+            if w > *entry {
+                *entry = w;
+            }
+        }
+        if used_tokens == budget {
+            break;
+        }
+    }
+
+    if best_single_val > greedy_val + 1e-12 {
+        let idx = best_single_idx.expect("positive singleton value implies index");
+        return AtomCoverageSelection {
+            selected_indices: vec![idx],
+            total_tokens: costs[idx],
+            objective_value: best_single_val,
+            greedy_value: greedy_val,
+            best_singleton_value: best_single_val,
+            won_by_singleton: true,
+        };
+    }
+
+    // Order selected fragments by descending relevance (preserving prompt-order contract).
+    greedy_indices.sort_by(|&a, &b| {
+        relevances[b]
+            .partial_cmp(&relevances[a])
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.cmp(&b))
+    });
+
+    AtomCoverageSelection {
+        selected_indices: greedy_indices,
+        total_tokens: used_tokens,
+        objective_value: greedy_val,
+        greedy_value: greedy_val,
+        best_singleton_value: best_single_val,
+        won_by_singleton: false,
+    }
+}
+
+#[cfg(test)]
+mod submodular_atom_coverage_tests {
+    use super::*;
+
+    #[test]
+    fn objective_is_monotone_and_submodular_on_all_subsets() {
+        let docs = [
+            "fn check(limit: i32) -> bool { limit < 42 }",
+            "fn check(limit: i32) -> bool { limit > 42 }",
+            "fn delete_user(id: u64) { db.remove_user(id); }",
+            "fn check(limit: i32) -> bool { limit < 42 && !admin }",
+        ];
+        let rels = [0.9, 0.85, 0.7, 0.95];
+        let atoms: Vec<Vec<(u64, f64)>> = docs.iter().map(|d| extract_structural_atoms(d)).collect();
+        let n = docs.len();
+
+        for mask_a in 0..(1usize << n) {
+            for mask_b in 0..(1usize << n) {
+                if (mask_a & mask_b) != mask_a {
+                    continue; // require A subseteq B
+                }
+                let set_a: Vec<usize> = (0..n).filter(|&i| (mask_a >> i) & 1 == 1).collect();
+                let set_b: Vec<usize> = (0..n).filter(|&i| (mask_b >> i) & 1 == 1).collect();
+                let f_a = evaluate_atom_coverage(&atoms, &rels, &set_a);
+                let f_b = evaluate_atom_coverage(&atoms, &rels, &set_b);
+                assert!(f_b + 1e-12 >= f_a, "monotonicity violated: f(A)={f_a} > f(B)={f_b}");
+
+                for x in 0..n {
+                    if (mask_b >> x) & 1 == 1 {
+                        continue;
+                    }
+                    let mut ax = set_a.clone();
+                    ax.push(x);
+                    let mut bx = set_b.clone();
+                    bx.push(x);
+                    let gain_a = evaluate_atom_coverage(&atoms, &rels, &ax) - f_a;
+                    let gain_b = evaluate_atom_coverage(&atoms, &rels, &bx) - f_b;
+                    assert!(
+                        gain_a + 1e-12 >= gain_b,
+                        "submodularity violated: gain(x|A)={gain_a} < gain(x|B)={gain_b}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn exact_duplicate_has_zero_marginal_gain_while_all_hard_negatives_stay_positive() {
+        let pairs = [
+            // Exact duplicate -> zero marginal gain when second has <= relevance
+            ("exact_dup", "if limit < 42 { allow(); }", "if limit < 42 { allow(); }", false),
+            // Four SimHash hard-negative classes that broke the 0.90 SimHash gate:
+            ("templated_subject", "delete this user from workspace", "delete this group from workspace", true),
+            ("changed_integer", "const TIMEOUT_SEC: u64 = 30;", "const TIMEOUT_SEC: u64 = 60;", true),
+            ("flipped_comparison", "if limit < 42 { allow(); }", "if limit > 42 { allow(); }", true),
+            ("inverted_boolean", "if !is_authenticated { return Err; }", "if is_authenticated { return Err; }", true),
+        ];
+
+        for (label, a, b, expect_positive) in pairs {
+            let atoms = vec![extract_structural_atoms(a), extract_structural_atoms(b)];
+            let rels = [1.0, 1.0];
+            let f_a = evaluate_atom_coverage(&atoms, &rels, &[0]);
+            let f_ab = evaluate_atom_coverage(&atoms, &rels, &[0, 1]);
+            let marginal = f_ab - f_a;
+            if expect_positive {
+                assert!(
+                    marginal > 0.05,
+                    "hard negative `{label}` lost distinct evidence (marginal={marginal})"
+                );
+            } else {
+                assert!(
+                    marginal.abs() < 1e-12,
+                    "exact duplicate `{label}` had nonzero marginal gain {marginal}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn greedy_singleton_meets_proven_ratio_against_brute_force_opt_including_trap() {
+        // Classic density-greedy trap: tiny fragment has higher density (0.10 / 1 = 0.10)
+        // than a budget-filling high-value singleton (0.95 / 10 = 0.095). Pure density
+        // greedy gets 0.10 (10.5% of OPT); Greedy+Singleton recovers 0.95 (100% of OPT).
+        let trap_docs = [
+            "tiny_note_alpha",
+            "comprehensive_auth_verification_pipeline_beta_gamma_delta",
+        ];
+        let trap_costs = [1u32, 10u32];
+        let trap_rels = [0.10, 0.95];
+        let trap_res = select_submodular_atom_coverage(&trap_docs, &trap_costs, &trap_rels, 10);
+        assert!(trap_res.won_by_singleton);
+        assert_eq!(trap_res.selected_indices, vec![1]);
+        assert!((trap_res.objective_value - 0.95).abs() < 1e-12);
+
+        // Brute-force check over diverse overlapping code fragments across all budgets.
+        let corpus = [
+            "fn verify_token(tok: &str) -> bool { tok.len() >= 32 && !expired }",
+            "fn verify_token(tok: &str) -> bool { tok.len() < 32 || expired }",
+            "fn rotate_key(epoch: u64) { store.save_epoch(epoch + 1); }",
+            "fn audit_log(entry: &str) { ledger.append_sha256(entry); }",
+            "fn verify_token(tok: &str) -> bool { tok.len() >= 32 && !expired }", // duplicate of 0
+            "fn revoke_session(id: u64) { cache.evict(id); ledger.append_sha256(\"revoke\"); }",
+            "const MAX_SKEW_MS: u64 = 60000;",
+        ];
+        let costs = [4u32, 4, 5, 3, 4, 6, 2];
+        let rels = [0.92, 0.88, 0.75, 0.65, 0.90, 0.84, 0.40];
+        let atoms: Vec<Vec<(u64, f64)>> = corpus.iter().map(|d| extract_structural_atoms(d)).collect();
+        let n = corpus.len();
+
+        for budget in 1..=20u32 {
+            let mut opt = 0.0f64;
+            for mask in 0..(1usize << n) {
+                let subset: Vec<usize> = (0..n).filter(|&i| (mask >> i) & 1 == 1).collect();
+                let cost: u32 = subset.iter().map(|&i| costs[i]).sum();
+                if cost <= budget {
+                    let val = evaluate_atom_coverage(&atoms, &rels, &subset);
+                    if val > opt {
+                        opt = val;
+                    }
+                }
+            }
+            let got = select_submodular_atom_coverage(&corpus, &costs, &rels, budget);
+            assert!(got.total_tokens <= budget);
+            if opt > 0.0 {
+                let ratio = got.objective_value / opt;
+                assert!(
+                    ratio + 1e-9 >= SUBMODULAR_KNAPSACK_GREEDY_SINGLETON_RATIO,
+                    "budget={budget}: ratio {ratio:.5} fell below proven beta*={SUBMODULAR_KNAPSACK_GREEDY_SINGLETON_RATIO}"
+                );
+            }
+        }
+    }
+}
