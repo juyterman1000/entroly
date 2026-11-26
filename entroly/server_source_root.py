@@ -20,6 +20,26 @@ _PROJECT_ROOT_MARKERS: tuple[str, ...] = (
 )
 
 
+def _enclosing_workspace_from_plugin_dir(cwd: Path) -> Path | None:
+    """If *cwd* is inside ``<repo>/.<host>/plugins/<plugin>[/...]``, return ``<repo>``.
+
+    Agent plugin hosts launch MCP servers with their working directory set to
+    the plugin bundle (for example ``<repo>/.agents/plugins/entroly``). When
+    ``ENTROLY_SOURCE`` is unset, indexing or bounding paths to that 4-file
+    plugin folder hides the enclosing repository and makes ``work_state``
+    reject the workspace root. Only walks out of an explicit ``.<host>/plugins/``
+    path when the enclosing directory carries a project marker.
+    """
+    parts = cwd.parts
+    for idx in range(1, len(parts) - 2):
+        seg = parts[idx]
+        if seg.startswith(".") and seg not in (".", "..") and parts[idx + 1].lower() == "plugins":
+            enclosing = Path(*parts[:idx])
+            if enclosing.is_dir() and _root_has_project_marker(str(enclosing)):
+                return enclosing.resolve()
+    return None
+
+
 def resolved_source_root() -> str:
     """The single root this server indexes, reports, and checks.
 
@@ -44,7 +64,11 @@ def resolved_source_root() -> str:
                 return str(candidate.resolve())
         except (OSError, ValueError):
             pass
-    return str(Path(os.getcwd()).resolve())
+    cwd = Path(os.getcwd()).resolve()
+    enclosing = _enclosing_workspace_from_plugin_dir(cwd)
+    if enclosing is not None:
+        return str(enclosing)
+    return str(cwd)
 
 
 def reported_source_root(engine: Any = None) -> str:

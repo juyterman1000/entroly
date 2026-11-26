@@ -4480,21 +4480,27 @@ def _launcher_package_dir(launcher: str) -> Path | None:
 
     try:
         with open(launcher, "rb") as handle:
-            lines = handle.read(4096).decode("utf-8", "replace").splitlines()
+            raw = handle.read(512 * 1024)
     except OSError:
         return None
-    if not lines or not lines[0].startswith("#!"):
-        return None
-    parts = lines[0][2:].split()
-    if not parts:
-        return None
-    interpreter = parts[0]
-    if Path(interpreter).name == "env" and len(parts) > 1:
-        interpreter = shutil.which(parts[1]) or ""
-    elif Path(interpreter).name == "sh" and len(lines) > 1:
-        # pip's /bin/sh trampoline for interpreter paths with spaces.
-        match = re.match(r"^'''exec' \"(.+)\" \"\$0\" \"\$@\"", lines[1])
-        interpreter = match.group(1) if match else ""
+    interpreter = ""
+    if raw.startswith(b"#!"):
+        lines = raw[:4096].decode("utf-8", "replace").splitlines()
+        parts = lines[0][2:].split() if lines else []
+        if parts:
+            interpreter = parts[0]
+            if Path(interpreter).name == "env" and len(parts) > 1:
+                interpreter = shutil.which(parts[1]) or ""
+            elif Path(interpreter).name == "sh" and len(lines) > 1:
+                # pip's /bin/sh trampoline for interpreter paths with spaces.
+                match = re.match(r"^'''exec' \"(.+)\" \"\$0\" \"\$@\"", lines[1])
+                interpreter = match.group(1) if match else ""
+    else:
+        # Windows pip/distlib console-script .exe shims embed `#!<python.exe>`
+        # immediately ahead of the appended zip payload near the end of the PE stub.
+        win_match = re.search(rb'#!"?([^\r\n"]+?python[0-9.]*w?\.exe)"?', raw, re.I)
+        if win_match:
+            interpreter = win_match.group(1).decode("utf-8", "replace").strip()
     if not interpreter:
         return None
     probe = (
