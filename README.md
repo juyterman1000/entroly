@@ -15,8 +15,12 @@ against source, and pick up work in another agent.</p>
   <a href="docs/assets/proof_local.mp4"><img src="docs/assets/proof_local.gif" width="700" alt="Terminal demo of local indexing, token-budget selection, and exact source recovery"></a>
 </p>
 
-<p align="center"><code>pip install -U entroly</code> &nbsp;·&nbsp; <code>entroly verify-claims</code><br>
-<sub>Replays the local checks shown above. No model API key needed.</sub></p>
+<p align="center"><code>pip install -U entroly</code> &nbsp;·&nbsp; <code>entroly verify-claims</code> &nbsp;·&nbsp; <code>entroly simulate</code><br>
+<sub>Replay the local checks with <code>verify-claims</code> or estimate token savings on your repo with <code>simulate</code>. No model API key needed.</sub></p>
+
+<p align="center">
+  <sub>Open source. Works through VS Code, Claude Code, Cursor, Codex, OpenClaw, GitHub Copilot, Aider, and OpenAI/Anthropic-compatible apps.</sub>
+</p>
 
 <p align="center">
   <a href="https://marketplace.visualstudio.com/items?itemName=entroly.entroly-vscode"><img src="https://img.shields.io/visual-studio-marketplace/v/entroly.entroly-vscode?label=VS%20Code&color=007acc&logo=visualstudiocode" alt="VS Code Extension"></a>
@@ -45,12 +49,22 @@ against source, and pick up work in another agent.</p>
 
 ## What is Entroly? (in plain English)
 
+Entroly provides context assurance for AI coding tools and LLM apps. It selects
+evidence within a token budget and records what was kept, what was omitted, and
+why. A receipt provides a handle to recover the exact original bytes while the
+referenced local store and source bytes remain available. You can try reversible
+compression on your own repository and keep your existing model and agent setup.
+
+<p align="center">
+  <img src="docs/assets/entroly-demo.svg" alt="Entroly context selection and receipt workflow illustration" width="820">
+</p>
+
 | What you need | How Entroly helps |
 |---|---|
-| **Fit the right code into your context budget** | Select evidence, inspect what was omitted in a receipt, and recover the original bytes when the referenced source is available. [Try context selection](#see-it-work-in-30-seconds). |
-| **Check an answer against the source** | Use WITNESS to flag claims that retained evidence does not support. [Read the verification results and limits](#benchmarks). |
-| **Pick up where another agent stopped** | Reconstruct unfinished work from repository evidence and review what the previous agent left behind. [Try agent continuity](docs/agent-continuity.md). |
-| **Manage model input costs** | Measure changes to provider requests routed through Entroly. Results depend on the workload and provider cache. [See the benchmarks](#benchmarks). |
+| **Fit the right code into your context budget** | Select evidence, inspect the receipt, and recover omitted source from the local store. [Try context selection](#see-it-work-in-30-seconds). |
+| **Check an answer against the source** | Use WITNESS to flag unsupported claims. Exact recovery verifies source fidelity. Answer quality needs its own evaluation. [Read the verification results and limits](#benchmarks). |
+| **Pick up where another agent stopped** | Reconstruct unfinished work from repository evidence and review the recovered state. [Try agent continuity](docs/agent-continuity.md). |
+| **Manage model input costs** | Smaller requests can reduce input cost when routed through Entroly. Results depend on the workload and provider cache. [See the benchmarks](#benchmarks). |
 
 The [product guide](docs/product-surface.md) covers local memory, the provider
 gateway, privacy controls, and the available integrations.
@@ -239,8 +253,9 @@ Entroly-controlled route.
 Each recording is generated from a checked-in command that
 verifies its source artifact before printing a number.
 
-The first recording above demonstrates local indexing, budgeted selection, and
-exact recovery. Run `entroly verify-claims` to replay those checks locally.
+The first recording above demonstrates SDK import and compression, local
+indexing, budgeted selection, and exact source recovery. Run
+`entroly verify-claims` to replay those checks offline.
 
 <p align="center">
   <a href="docs/assets/proof_model_recovery.mp4"><img src="docs/assets/proof_model_recovery.gif" width="700" alt="Frozen model-recovery holdout: Entroly 24/24, published baseline 18/24"></a>
