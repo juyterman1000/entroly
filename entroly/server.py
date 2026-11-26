@@ -34,6 +34,7 @@ from .server_source_root import (
     _empty_context_guidance,
     _ingested_fragment_count,
     reported_source_root,
+    resolved_source_root,
 )
 from .adaptive_pruner import EntrolyPruner, FragmentGuard
 from .autotune import ComponentFeedbackBus, DreamingLoop, FeedbackJournal, TaskProfileOptimizer
@@ -2229,9 +2230,7 @@ def create_mcp_server(
             # allowlist is not a path guard: it was never meant to be the
             # boundary, and it says nothing about directories the tool should
             # not have been pointed at in the first place.
-            project_root = Path(
-                os.environ.get("ENTROLY_SOURCE", os.getcwd())
-            ).resolve()
+            project_root = Path(resolved_source_root())
             candidate = Path(path).expanduser()
             if not candidate.is_absolute():
                 candidate = project_root / candidate
@@ -2338,9 +2337,7 @@ def create_mcp_server(
         try:
             from .context_receipts.ingest import read_documents_from_path
 
-            project_root = Path(
-                os.environ.get("ENTROLY_SOURCE", os.getcwd())
-            ).resolve()
+            project_root = Path(resolved_source_root())
             candidate = Path(path).expanduser()
             if not candidate.is_absolute():
                 candidate = project_root / candidate
@@ -2538,9 +2535,7 @@ def create_mcp_server(
         try:
             from .agent_activation import activation_status
 
-            activation = activation_status(
-                Path(os.environ.get("ENTROLY_SOURCE", os.getcwd())).resolve()
-            )
+            activation = activation_status(Path(resolved_source_root()))
         except Exception as exc:
             activation = {
                 "state": "status_unavailable",
@@ -3238,7 +3233,7 @@ def create_mcp_server(
     #   Evolution → create_skill, manage_skills, refresh_beliefs (skills, promotion)
     # ══════════════════════════════════════════════════════════════════
 
-    _source_dir = str(Path(os.environ.get("ENTROLY_SOURCE", os.getcwd())).resolve())
+    _source_dir = resolved_source_root()
     _project_root = Path(_source_dir)
 
     def _project_directory(raw_path: str = "") -> Path | None:

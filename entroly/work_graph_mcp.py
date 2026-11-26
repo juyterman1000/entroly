@@ -64,7 +64,9 @@ _CONTEXT_SELECTION_POLICY = "repository-intelligence/verified-context-v1"
 
 
 def _project_root() -> Path:
-    return Path(os.environ.get("ENTROLY_SOURCE", os.getcwd())).expanduser().resolve()
+    from .server_source_root import resolved_source_root
+
+    return Path(resolved_source_root())
 
 
 def _project_path(project: str = "") -> Path:

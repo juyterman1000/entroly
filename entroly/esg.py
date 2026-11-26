@@ -140,12 +140,16 @@ _STOPWORDS = frozenset(
     """.split()
 )
 
-_NEG_CUES = (
-    "is not", "are not", "was not", "were not", "does not", "do not",
-    "did not", "has not", "have not", "had not", "will not", "would not",
-    "cannot", "can not", "isn't", "aren't", "wasn't", "weren't", "doesn't",
-    "don't", "didn't", "hasn't", "haven't", "hadn't", "won't", "wouldn't",
-    "no ", "not ", "never ", "none ",
+_NEGATION_WINDOW_RE = re.compile(
+    r"(?:"
+    r"\b(?:not|never|no|none|neither|nor|without|cannot)\b"
+    r"|\b(?:is|are|was|were|do|does|did|has|have|had|wo|would|ca|could|sha|should|must)n['’]t\b"
+    r"|\b(?:block(?:s|ed|ing)?|prohibit(?:s|ed|ing)?|prevent(?:s|ed|ing)?|bar(?:s|red|ring)?"
+    r"|forbid(?:s|den|ding)?|disallow(?:s|ed|ing)?|exclud(?:es|ed|ing)?|stop(?:s|ped|ping)?"
+    r"|ban(?:s|ned|ning)?)\s+from\b"
+    r"|\b(?:unable|forbidden|refus(?:es|ed|ing)?|fail(?:s|ed|ing)?)\s+to\b"
+    r")",
+    re.I,
 )
 
 # Coordinators that often join independent atomic clauses
@@ -237,12 +241,21 @@ def _idf_weight(word: str, ref_text: str) -> float:
     return 1.0 / (1.0 + math.log(1.0 + count))
 
 
+_CLAUSE_RESET_RE = re.compile(
+    r"(?:[;:.!?]|,\s*(?:but|whereas|although|however|yet|while)\b)",
+    re.I,
+)
+
+
 def _has_negation_before(text: str, word: str) -> bool:
     idx = text.find(word)
     if idx <= 0:
         return False
-    preceding = text[max(0, idx - 40):idx]
-    return any(cue in preceding for cue in _NEG_CUES)
+    preceding = text[max(0, idx - 120):idx]
+    resets = list(_CLAUSE_RESET_RE.finditer(preceding))
+    if resets:
+        preceding = preceding[resets[-1].end():]
+    return bool(_NEGATION_WINDOW_RE.search(preceding))
 
 
 # ── Atom decomposition ────────────────────────────────────────────────
