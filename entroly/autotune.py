@@ -312,6 +312,15 @@ def _benchmark_rejection(
     proposed = {row.get("case_id"): row for row in candidate.per_case}
     expected_ids = {case["id"] for case in cases}
     for result, observations in ((incumbent, baseline), (candidate, proposed)):
+        measurements = (
+            result.recall_accuracy, result.context_efficiency,
+            result.avg_wall_time_ms, result.total_information,
+        )
+        if (any(type(value) not in (int, float) or not math.isfinite(value) or value < 0
+                for value in measurements)
+                or result.recall_accuracy > 1
+                or type(result.total_tokens_used) is not int or result.total_tokens_used < 0):
+            return "invalid_benchmark_measurement"
         if any(row.get("status") == "timeout" for row in result.per_case):
             return "benchmark_timeout"
         if (len(observations) != len(result.per_case)
@@ -510,7 +519,7 @@ class _BenchmarkHistory:
                                    else _history_metrics(candidate_result)),
                 decision=("evaluation_error" if candidate_result is None else
                           "improved" if improved else "rejected"),
-                reason=("benchmark_evaluation_error" if candidate_result is None else
+                reason=(rejection or "benchmark_evaluation_error" if candidate_result is None else
                         "benchmark_gate_passed" if improved else rejection or "benchmark_gate_rejected"),
                 prediction=None,
                 kind=kind,
@@ -676,7 +685,8 @@ def run_autotune(iterations: int = 100,
             improved = score > best_score or (
                 score == best_score and result.avg_wall_time_ms < best_result.avg_wall_time_ms
             )
-        history.record(best_config, candidate, best_result, result, improved,
+        observed = None if rejection == "invalid_benchmark_measurement" else result
+        history.record(best_config, candidate, best_result, observed, improved,
                        kind=kind, rejection=rejection)
         return result, score
 
@@ -1986,8 +1996,9 @@ class DreamingLoop:
 
                 rejection = _benchmark_rejection(result, current_result, cases)
                 improved = rejection is None and self._is_pareto_improvement(result, current_result)
+                observed = None if rejection == "invalid_benchmark_measurement" else result
                 self._history.record(
-                    current_config, mutated_config, current_result, result, improved,
+                    current_config, mutated_config, current_result, observed, improved,
                     rejection=rejection,
                 )
                 if rejection is None:

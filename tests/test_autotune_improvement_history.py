@@ -441,3 +441,35 @@ def test_joint_mutations_are_distinct_bounded_and_keep_integer_parameters(monkey
     assert candidate["_mutated_param"] == "exploration_rate,decay_half_life_turns"
     assert config["exploration_rate"] == 0.29
     assert sum(candidate[name] for name in config if name.startswith("weight_")) == pytest.approx(1)
+
+@pytest.mark.parametrize("field,value", [
+    ("context_efficiency", float("inf")),
+    ("context_efficiency", float("nan")),
+    ("recall_accuracy", float("nan")),
+    ("recall_accuracy", 1.1),
+    ("avg_wall_time_ms", -1.0),
+    ("total_information", float("inf")),
+    ("total_tokens_used", True),
+])
+def test_invalid_measurements_never_authorize_promotion(harness, field, value):
+    harness.proposals([0.2])
+    def landscape(config):
+        result = measured()
+        if config != harness.config:
+            setattr(result, field, value)
+        return result
+    harness.landscape = landscape
+
+    autotune.run_autotune(iterations=1)
+
+    assert autotune.load_config(harness.path) == harness.config
+    assert all(config == harness.config for config in harness.saved)
+    assert harness.records[-1]["decision"] == "evaluation_error"
+    assert harness.records[-1]["reason"] == "invalid_benchmark_measurement"
+
+
+def test_invalid_baseline_fails_before_any_promotion(harness):
+    harness.landscape = lambda _config: measured(float("inf"))
+    with pytest.raises(RuntimeError, match="invalid_benchmark_measurement"):
+        autotune.run_autotune(iterations=1)
+    assert harness.saved == []

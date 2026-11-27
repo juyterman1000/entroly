@@ -201,3 +201,24 @@ def test_symlinked_storage_is_rejected(tmp_path):
     with pytest.raises(history.ImprovementHistoryError):
         record(history.ImprovementHistory(directory))
     assert target.read_text() == "private"
+
+def test_identical_attempts_with_same_clock_tick_remain_distinct(tmp_path, monkeypatch):
+    monkeypatch.setattr(history.time, "time", lambda: 1000.0)
+    store = history.ImprovementHistory(tmp_path)
+    ids = [record(store) for _ in range(8)]
+    assert len(set(ids)) == 8
+    assert store.summary()["returned_records"] == 8
+
+
+def test_history_without_attempt_identifiers_remains_readable(tmp_path):
+    store = history.ImprovementHistory(tmp_path)
+    record(store)
+    state = json.loads(store.path.read_text())
+    row = state["records"][0]
+    row.pop("attempt_id")
+    row["record_id"] = history.digest({k: v for k, v in row.items() if k != "record_id"})
+    state["store_sha256"] = history.digest({k: v for k, v in state.items() if k != "store_sha256"})
+    store.path.write_text(json.dumps(state), encoding="utf-8")
+    assert store.summary()["returned_records"] == 1
+    record(store)
+    assert store.summary()["returned_records"] == 2

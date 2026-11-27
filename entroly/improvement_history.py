@@ -15,6 +15,7 @@ from pathlib import Path
 import re
 import tempfile
 import time
+import uuid
 from typing import Any
 
 from .local_file_lock import exclusive_file_lock
@@ -107,8 +108,13 @@ def _prediction(value: Any) -> dict | None:
 
 
 def _validate_row(row: Any) -> None:
-    if not isinstance(row, dict) or set(row) != _ROW_KEYS:
+    if not isinstance(row, dict) or set(row) not in (_ROW_KEYS, _ROW_KEYS | {"attempt_id"}):
         raise ImprovementHistoryError("invalid experiment record")
+    if "attempt_id" in row and (
+        not isinstance(row["attempt_id"], str)
+        or not re.fullmatch(r"[0-9a-f]{32}", row["attempt_id"])
+    ):
+        raise ImprovementHistoryError("invalid experiment attempt identifier")
     _number(row["timestamp"])
     scope = _scope(row["scope"])
     if row["scope_sha256"] != digest(scope):
@@ -208,7 +214,8 @@ class ImprovementHistory:
         decision: str, reason: str, prediction: dict | None = None, kind: str = "mutation",
     ) -> str:
         scope = _scope(scope)
-        row = {"timestamp": time.time(), "scope": scope, "scope_sha256": digest(scope),
+        row = {"attempt_id": uuid.uuid4().hex, "timestamp": time.time(),
+               "scope": scope, "scope_sha256": digest(scope),
                "incumbent_sha256": digest(incumbent), "candidate_sha256": digest(candidate),
                "incumbent_metrics": _metrics(incumbent_metrics),
                "candidate_metrics": _metrics(candidate_metrics) if candidate_metrics is not None else None,
