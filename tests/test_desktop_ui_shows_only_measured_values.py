@@ -93,6 +93,7 @@ def _run(mode: str, payload: dict | None = None, paste: str = "") -> dict:
         ["node", "-e", _HARNESS, mode, json.dumps(payload or {}), str(APP_JS), paste],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=30,
     )
     assert completed.returncode == 0, completed.stderr
