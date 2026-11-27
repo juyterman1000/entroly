@@ -4,8 +4,28 @@ from __future__ import annotations
 
 import argparse
 
+def _learning_history_limit(value: str) -> int:
+    try:
+        limit = int(value)
+    except ValueError:
+        limit = 0
+    if not 1 <= limit <= 128:
+        raise argparse.ArgumentTypeError("limit must be an integer from 1 to 128")
+    return limit
+
+
 def _add_tools_and_runtime_commands(subparsers) -> None:
     """Register diagnostic, verification, and daemon commands."""
+    history_parser = subparsers.add_parser(
+        "learning-history",
+        help="Inspect local learning experiments",
+        description="Inspect local learning experiments as read-only JSON.",
+    )
+    history_parser.add_argument(
+        "--limit", type=_learning_history_limit, default=20, metavar="N",
+        help="Maximum recent experiments to show (1-128; default: 20)",
+    )
+
     # entroly doctor (Gap #52)
     doctor_parser = subparsers.add_parser(
         "doctor",

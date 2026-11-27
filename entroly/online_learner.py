@@ -2,54 +2,35 @@
 Online Bayesian PRISM — Live Weight Adaptation
 ================================================
 
-Closes the learning loop so the running engine improves with every call,
-not just on restart.
+Adapts the running engine's selection weights after observed outcomes.
 
-Mathematical foundation:
+Weight update:
 
-  PRISM 5D weights live on the 4-simplex (must be non-negative, sum ~1).
-  The natural Bayesian prior over a simplex is the Dirichlet distribution:
+  The default learner adapts four base weights. Callers may supply a different
+  dimension list. Native resonance learning is handled separately by PRISM 5D.
 
-    w ~ Dir(α₁, α₂, α₃, α₄, α₅)
+  Positive pseudo-counts alpha_i define normalized weights:
 
-  where αᵢ = prior_strength × archetype_weight_i.
+    w_i = alpha_i / sum_j alpha_j
 
-  After each optimize_context() call, we observe an implicit reward r ∈ [0, 1]
-  computed from budget utilization and selection quality. We update:
+  After a selection, an implicit reward r in [0, 1] is compared with its
+  pre-update exponential moving average b. The update is:
 
-    αᵢ ← αᵢ + η · r · contribution_i
+    alpha_i = max(0.1, alpha_i + eta * (r - b) * contribution_i)
 
-  where contribution_i measures how much dimension i contributed to the
-  current optimization result (proxy for ∂reward/∂wᵢ — a REINFORCE-style
-  gradient estimate).
+  Contributions provide heuristic credit attribution. The prior anchors
+  startup behavior, and a lock serializes each update.
 
-  The posterior mean (used as the weight vector) is:
-
-    E[wᵢ] = αᵢ / Σαⱼ
-
-  This gives us:
-    1. Principled exploration (high variance when α is small)
-    2. Convergence to optimum (posterior concentrates as evidence grows)
-    3. Anchoring to archetype prior (prevents divergence with few observations)
-    4. Natural normalization (Dirichlet mean always sums to 1)
-    5. Thread-safe (single atomic update per call)
-
-  The learning rate η decays as 1/√n (Robbins-Monro condition):
-    η(n) = η₀ / √(n + 1)
-  ensuring Ση = ∞ (can reach any optimum) and Ση² < ∞ (converges).
-
-Why this matters:
-  Without this, Entroly's weights are frozen at startup. A user working on
-  a debugging task gets the same weights as someone doing a refactor.
-  With online learning, the engine adapts within minutes to the user's
-  actual work pattern — debugging sessions upweight recency+semantic,
-  refactoring sessions upweight frequency+entropy, automatically.
+  The implementation uses eta(n) = eta_0 / sqrt(n + 1). Its squared steps
+  have a divergent sum. Classical stochastic-approximation convergence
+  conditions therefore require additional analysis for this schedule.
+  Normalization and decaying steps alone do not establish optimality.
 
 Usage:
   learner = OnlinePrism(prior_weights={...})
   # After each optimize_context():
   new_weights = learner.observe(reward, contributions)
-  engine.set_weights(*new_weights)
+  engine.set_weights(*learner.weights_tuple())
 """
 
 from __future__ import annotations
@@ -73,7 +54,7 @@ WEIGHT_DIMS = ["w_recency", "w_frequency", "w_semantic", "w_entropy"]
 DEFAULT_PRIOR_STRENGTH = 20.0
 
 # Base learning rate for Dirichlet updates.
-# Decays as η₀/√(n+1) per Robbins-Monro.
+# Decays as η₀/√(n+1), retaining sensitivity to changing workloads.
 DEFAULT_ETA = 1.0
 
 # Minimum observations before applying learned weights.

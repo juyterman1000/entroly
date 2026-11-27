@@ -514,9 +514,10 @@ def test_dreaming_loop_uses_model_only_to_choose_real_benchmark_experiments(
             avg_wall_time_ms=1.0,
             total_tokens_used=100,
             total_information=80.0,
+            per_case=[{"case_id": "real", "selected": [], "tokens_used": 100}],
         )
 
-    monkeypatch.setattr("entroly.autotune.load_cases", lambda: [{"id": "real"}])
+    monkeypatch.setattr("entroly.autotune.load_cases", lambda: [{"id": "real", "fragments": [], "token_budget": 100}])
     monkeypatch.setattr("entroly.autotune.evaluate", evaluate)
 
     result = loop.run_dream_cycle()
@@ -654,6 +655,7 @@ def test_dreaming_loop_never_trades_recall_for_token_efficiency(
                 avg_wall_time_ms=1.0,
                 total_tokens_used=100,
                 total_information=80.0,
+                per_case=[{"case_id": "real", "selected": [], "tokens_used": 100}],
             ),
             BenchResult(
                 context_efficiency=0.05,
@@ -661,11 +663,12 @@ def test_dreaming_loop_never_trades_recall_for_token_efficiency(
                 avg_wall_time_ms=1.0,
                 total_tokens_used=60,
                 total_information=75.0,
+                per_case=[{"case_id": "real", "selected": [], "tokens_used": 60}],
             ),
         ]
     )
 
-    monkeypatch.setattr("entroly.autotune.load_cases", lambda: [{"id": "real"}])
+    monkeypatch.setattr("entroly.autotune.load_cases", lambda: [{"id": "real", "fragments": [], "token_budget": 100}])
     monkeypatch.setattr(
         "entroly.autotune.evaluate",
         lambda _config, _cases, time_budget=None, benchmark_seed=None: next(results),

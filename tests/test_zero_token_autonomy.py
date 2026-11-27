@@ -277,21 +277,23 @@ class TestDreamingLoop:
 
         import entroly.autotune as autotune
 
-        class DummyEval:
-            def __init__(self, eff: float):
-                self.context_efficiency = eff
-                self.recall_accuracy = 1.0
-
-        monkeypatch.setattr(autotune, "load_config", lambda _path=None: {"w_r": 0.2, "w_f": 0.2, "w_s": 0.3, "w_e": 0.3})
+        monkeypatch.setattr(
+            autotune, "load_config", lambda _path=None: autotune._default_runtime_config()
+        )
         monkeypatch.setattr(
             autotune, "save_config", lambda _cfg, _path=None: None
         )
-        monkeypatch.setattr(autotune, "load_cases", lambda: [{"q": "x", "a": "y"}])
+        monkeypatch.setattr(
+            autotune, "load_cases",
+            lambda: [{"id": "idle", "fragments": [], "token_budget": 100}],
+        )
         monkeypatch.setattr(
             autotune,
             "evaluate",
-            lambda _cfg, _cases, time_budget=None, benchmark_seed=None: DummyEval(
-                0.5
+            lambda _cfg, _cases, time_budget=None, benchmark_seed=None: autotune.BenchResult(
+                context_efficiency=0.5, recall_accuracy=1.0,
+                avg_wall_time_ms=1.0, total_tokens_used=100, total_information=0.0,
+                per_case=[{"case_id": "idle", "selected": [], "tokens_used": 100}],
             ),
         )
 

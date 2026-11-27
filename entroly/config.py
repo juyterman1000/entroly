@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
-def _project_checkpoint_dir() -> Path:
+def _project_checkpoint_dir(*, read_only: bool = False) -> Path:
     """Return a project-isolated checkpoint directory.
 
     Uses ENTROLY_DIR if set, otherwise hashes the cwd to create
@@ -29,6 +29,15 @@ def _project_checkpoint_dir() -> Path:
     cwd = os.getcwd()
     project_hash = hashlib.sha256(cwd.encode()).hexdigest()[:12]
     default_dir = Path(os.path.expanduser(f"~/.entroly/checkpoints/{project_hash}"))
+    if read_only:
+        from .private_temp import existing_account_temp_dir
+
+        if default_dir.exists():
+            return default_dir
+        fallback = existing_account_temp_dir()
+        if fallback is not None:
+            return fallback / "checkpoints" / project_hash
+        return default_dir
     try:
         default_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         probe = default_dir / ".entroly_write_probe"
@@ -104,9 +113,9 @@ def load_active_tuning_config() -> tuple[Path, dict] | None:
     return None
 
 
-def writable_tuning_config_path() -> Path:
-    """Return the project-scoped tuning config target for CLI writes."""
-    return _project_checkpoint_dir() / "tuning_config.json"
+def writable_tuning_config_path(*, read_only: bool = False) -> Path:
+    """Return the project-scoped tuning config path, optionally without probing writes."""
+    return _project_checkpoint_dir(read_only=read_only) / "tuning_config.json"
 
 
 @dataclass

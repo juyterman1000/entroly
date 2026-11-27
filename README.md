@@ -519,6 +519,7 @@ For evidence-led optimization rather than a synthetic savings estimate:
 
 ```bash
 entroly learn --history --json
+entroly learning-history --limit 20
 entroly shrink -- pytest -q
 entroly trial --experiment checkout-fix --arm baseline -- codex exec "fix the checkout test"
 entroly trial --experiment checkout-fix --arm optimized -- codex exec "fix the checkout test"
