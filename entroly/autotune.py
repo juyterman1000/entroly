@@ -334,22 +334,22 @@ def _benchmark_rejection(
     return None
 
 
-def mutate_config(config: dict[str, Any]) -> dict[str, Any]:
-    """Mutate one parameter at a time (single-change experiments for interpretability)."""
+def mutate_config(config: dict[str, Any], *, parameters: int = 1) -> dict[str, Any]:
+    """Perturb one or two parameters, then normalize the base weights."""
+    if parameters not in (1, 2):
+        raise ValueError("mutation must perturb one or two parameters")
+    names = list(TUNABLE_PARAMS)
+    selected = [random.choice(names)] if parameters == 1 else random.sample(names, 2)
     new_config = dict(config)
-    param = random.choice(list(TUNABLE_PARAMS.keys()))
-    lo, hi = TUNABLE_PARAMS[param]
-    current = new_config.get(param, (lo + hi) / 2)
-
-    if isinstance(lo, int):
-        delta = random.randint(-3, 3)
-        new_val = max(lo, min(hi, int(current) + delta))
-    else:
-        sigma = (hi - lo) * 0.10
-        new_val = current + random.gauss(0, sigma)
-        new_val = max(lo, min(hi, round(new_val, 4)))
-
-    new_config[param] = new_val
+    for param in selected:
+        lo, hi = TUNABLE_PARAMS[param]
+        current = new_config.get(param, (lo + hi) / 2)
+        if isinstance(lo, int):
+            new_val = max(lo, min(hi, int(current) + random.randint(-3, 3)))
+        else:
+            new_val = current + random.gauss(0, (hi - lo) * 0.10)
+            new_val = max(lo, min(hi, round(new_val, 4)))
+        new_config[param] = new_val
 
     weight_keys = ["weight_recency", "weight_frequency",
                    "weight_semantic_sim", "weight_entropy"]
@@ -358,7 +358,7 @@ def mutate_config(config: dict[str, Any]) -> dict[str, Any]:
         for k in weight_keys:
             new_config[k] = round(new_config.get(k, 0.25) / weight_sum, 4)
 
-    new_config["_mutated_param"] = param
+    new_config["_mutated_param"] = ",".join(selected)
     return new_config
 
 
@@ -592,7 +592,8 @@ def log_result(iteration: int, config: dict[str, Any], result: BenchResult,
 
 def run_autotune(iterations: int = 100,
                  time_budget: float = DEFAULT_TIME_BUDGET_SECS,
-                 bench_only: bool = False) -> None:
+                 bench_only: bool = False,
+                 coordinated: bool = False) -> None:
     """
     The experiment loop: mutate → evaluate → keep/discard → repeat.
 
@@ -682,23 +683,27 @@ def run_autotune(iterations: int = 100,
     _log(f"\n--- Starting {iterations} experiments (cautious updates) ---")
     _log("(EMA blending + Polyak averaging + drift penalty)\n")
 
+    discard_streak = 0
     for i in range(1, iterations + 1):
+        # After three discarded trials, spend the next trial on a coordinated
+        # proposal. It consumes the same iteration slot and uses the same gate.
+        joint = coordinated and discard_streak >= 3
         rejected = history.rejected(best_config)
-        candidate = mutate_config(best_config)
+        candidate = mutate_config(best_config, parameters=2) if joint else mutate_config(best_config)
         # History only changes proposal order. With no fresh proposal after
         # eight bounded retries, validate the original fallback again.
         fallback = candidate
         for _ in range(8):
             if history.fresh(candidate, rejected):
                 break
-            candidate = mutate_config(best_config)
+            candidate = mutate_config(best_config, parameters=2) if joint else mutate_config(best_config)
         if not history.fresh(candidate, rejected):
             candidate = fallback
         mutated_param = candidate.pop("_mutated_param", "unknown")
-        old_val = best_config.get(mutated_param)
-        new_val = candidate.get(mutated_param)
+        changed_params = mutated_param.split(",")
+        old_values = {name: best_config.get(name) for name in changed_params}
 
-        result, score = evaluate_proposal(candidate, "mutation")
+        result, score = evaluate_proposal(candidate, "joint_mutation" if joint else "mutation")
 
         if score > best_score:
             # ── Cautious update: EMA blend instead of full replacement ──
@@ -718,7 +723,6 @@ def run_autotune(iterations: int = 100,
             if blended != candidate:
                 result, score = evaluate_proposal(blended, "ema_blend")
             candidate = blended
-            new_val = candidate.get(mutated_param)
 
         if (score > best_score or
                 (score == best_score and
@@ -739,7 +743,12 @@ def run_autotune(iterations: int = 100,
             status = "discard"
             marker = "   "
 
-        description = f"{mutated_param}: {old_val} -> {new_val}"
+        discard_streak = 0 if status == "keep" or joint else discard_streak + 1
+        if len(changed_params) == 1:
+            description = f"{mutated_param}: {old_values[mutated_param]} -> {candidate.get(mutated_param)}"
+        else:
+            new_values = {name: candidate.get(name) for name in changed_params}
+            description = f"{mutated_param}: {old_values} -> {new_values}"
         log_result(i, candidate, result, status, description)
 
         _log(f"{marker} [{i:04d}] score={score:.4f} "
@@ -783,6 +792,10 @@ def main():
     parser.add_argument("--time-budget", type=float,
                         default=DEFAULT_TIME_BUDGET_SECS)
     parser.add_argument("--bench-only", action="store_true")
+    parser.add_argument(
+        "--coordinated", action="store_true",
+        help="Try a two-parameter proposal after three discarded trials (experimental)",
+    )
     parser.add_argument("--seed", type=int, default=None)
     args = parser.parse_args()
 
@@ -793,6 +806,7 @@ def main():
         iterations=args.iterations,
         time_budget=args.time_budget,
         bench_only=args.bench_only,
+        coordinated=args.coordinated,
     )
 
 

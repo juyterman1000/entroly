@@ -300,9 +300,11 @@ The project-local history holds configuration fingerprints, aggregate benchmark
 metrics, and decision reasons. On an exact match of workload, evaluator,
 native engine, and incumbent, prior rejections can change proposal order.
 Every candidate still receives a fresh evaluation before it can change
-runtime tuning. The fixed fixture benchmark measures retrieval of expected
-full fragments and local token estimates. It uses the source checkout's
-`bench/cases.json`.
+runtime tuning. In a source checkout, `python -m entroly.autotune --coordinated`
+enables an experimental two-parameter trial after three discarded trials.
+The normal evaluation and blending gates also apply to that proposal. The
+fixed fixture benchmark measures retrieval of expected full fragments and
+local token estimates using `bench/cases.json`.
 
 The intended loop:
 

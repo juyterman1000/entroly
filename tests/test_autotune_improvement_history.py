@@ -373,3 +373,71 @@ def test_evaluator_counts_compact_tokens_without_crediting_partial_evidence(monk
     assert result.recall_accuracy == 0.5
     assert result.per_case[0]["selected"] == ["caller.py"]
     assert autotune._benchmark_rejection(result, result, cases) is None
+
+@pytest.mark.parametrize("coordinated", [False, True])
+@pytest.mark.parametrize("loses_evidence", [False, True])
+def test_coordinated_trial_after_plateau_uses_normal_promotion_gate(
+    harness, monkeypatch, loses_evidence, coordinated,
+):
+    harness.config["decay_half_life_turns"] = 15
+    # Persist the starting config before installing the save spy.
+    harness.path.write_text(json.dumps(harness.config), encoding="utf-8")
+    proposals = []
+
+    def mutate(config, *, parameters=1):
+        proposals.append(parameters)
+        candidate = dict(config, exploration_rate=0.2)
+        candidate["_mutated_param"] = "exploration_rate"
+        if parameters == 2:
+            candidate["decay_half_life_turns"] = 18
+            candidate["_mutated_param"] = "exploration_rate,decay_half_life_turns"
+        return candidate
+
+    def landscape(config):
+        if config == harness.config:
+            return measured()
+        if config.get("decay_half_life_turns") != 18:
+            return measured(0.01)
+        result = measured(0.04)
+        if loses_evidence:
+            result.per_case[0]["selected"] = []
+        return result
+
+    monkeypatch.setattr(autotune, "mutate_config", mutate)
+    harness.landscape = landscape
+    autotune.run_autotune(iterations=4, coordinated=coordinated)
+
+    assert proposals[-1] == (2 if coordinated else 1)
+    assert all(count == 1 for count in proposals[:-1])
+    assert len(harness.evaluated) == 5  # Baseline plus the four requested trials.
+    assert len(harness.records) == 4
+    assert harness.records[-1]["kind"] == ("joint_mutation" if coordinated else "mutation")
+    accepted = coordinated and not loses_evidence
+    assert harness.records[-1]["decision"] == ("improved" if accepted else "rejected")
+    saved = autotune.load_config(harness.path)
+    if not accepted:
+        if coordinated:
+            assert harness.records[-1]["reason"] == "benchmark_evidence_lost"
+        assert saved == harness.config
+    else:
+        assert saved["decay_half_life_turns"] == 18
+        assert saved["exploration_rate"] == 0.2
+    assert "_mutated_param" not in saved
+
+
+def test_joint_mutations_are_distinct_bounded_and_keep_integer_parameters(monkeypatch):
+    monkeypatch.setattr(autotune.random, "sample", lambda population, count: [
+        "exploration_rate", "decay_half_life_turns",
+    ])
+    monkeypatch.setattr(autotune.random, "gauss", lambda *_args: 100)
+    monkeypatch.setattr(autotune.random, "randint", lambda *_args: 3)
+    config = dict(autotune._default_runtime_config(), exploration_rate=0.29,
+                  decay_half_life_turns=49)
+    candidate = autotune.mutate_config(config, parameters=2)
+
+    assert candidate["exploration_rate"] == 0.3
+    assert candidate["decay_half_life_turns"] == 50
+    assert type(candidate["decay_half_life_turns"]) is int
+    assert candidate["_mutated_param"] == "exploration_rate,decay_half_life_turns"
+    assert config["exploration_rate"] == 0.29
+    assert sum(candidate[name] for name in config if name.startswith("weight_")) == pytest.approx(1)
