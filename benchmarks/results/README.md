@@ -1,52 +1,42 @@
-# End-to-End Coding Benchmarks
+# Benchmark results
 
-This directory contains the results of the Entroly End-to-End Coding Agent Benchmark (`coding_tasks.py`).
+The [benchmark evidence guide](../../docs/BENCHMARKS.md) links the measured
+artifacts in this directory and documents their workloads, baselines, and
+limitations.
 
-## The North Star Metric
+## End-to-end coding agent evaluation
 
-We optimize for one thing:
-**minimize expected dollars + latency + recovery cost subject to P(verified task success) >= baseline - epsilon**
+The goal is to reduce expected API cost, latency, and recovery cost while
+keeping verified task success within a prespecified margin of the baseline.
+The planned headline metric is **verified coding tasks completed per dollar**
+(`verified_tasks_per_dollar`).
 
-The headline metric reported here is:
-**Verified Coding Tasks Completed per Dollar (`verified_tasks_per_dollar`)**
+The [agent task evaluation protocol](../AGENTIC_TASKS_PREREGISTRATION.md) defines
+a matched comparison on repository tasks such as bug fixes, test additions,
+and refactors. Each task runs in isolation and has a fixed test oracle.
 
-A 3x improvement in verified tasks per dollar is more valuable and defensible than a synthetic 100x context compression ratio. 
+| Planned mode | What the agent receives |
+|---|---|
+| `raw` | Full uncompressed task context. |
+| `entroly_compress_only` | Entroly compression with auto-recovery and verification disabled. |
+| `entroly` | Entroly compression with WITNESS verification, omitted-span recovery, and one retry. |
 
-## Methodology
+The planned measurements include pass rate from the task's test command, input
+and output tokens, API cost, elapsed time including recovery, and the number of
+repair attempts. Per-run traces and per-mode summaries would show how token
+savings affect task success and cost per successful task.
 
-The `coding_tasks.py` harness runs deterministic coding tasks (fixing bugs, adding tests, refactoring) in isolated local workspaces against local git repositories.
+## What runs today
 
-We evaluate three modes:
-1. **`raw` (Baseline)**: The agent runs with the full uncompressed context of the repository.
-2. **`entroly_compress_only`**: The agent runs with Entroly's context compression, but *without* the auto-recovery (CCR) and verification (WITNESS) loops.
-3. **`entroly`**: The full closed-loop control plane. Includes compression, PRISM learning, and the auto-recovery/verification cascade.
-
-### Metrics Collected
-
-For each run, we measure:
-- **Pass Rate (`passed`)**: Did the task's `test_command` exit with the expected code (usually 0)?
-- **Tokens In/Out**: Measured context cost.
-- **Dollars**: End-to-end API cost based on the model's pricing.
-- **Latency**: Total time to complete the task (including any recovery loops).
-- **Repair Count**: How many times the verification cascade rejected a hallucinated/incomplete answer and auto-recovered.
-
-## Reproducing the Benchmark
-
-To run the benchmark yourself:
+The [coding task harness](../coding_tasks.py) lists two fixture tasks in dry-run
+mode. Its live execution path still needs model calls, proxy routing, and
+execution of each task's test oracle. A live run stops with an error until
+those pieces are wired.
 
 ```bash
-# Dry run to validate tasks
 python benchmarks/coding_tasks.py --dry-run
-
-# Run full evaluation (e.g., 5 runs per task on gpt-4o)
-python benchmarks/coding_tasks.py --model gpt-4o --runs 5
 ```
 
-The output will be saved as a JSON trace file in this directory.
-
-## Interpreting the JSON Traces
-
-The resulting `coding_tasks_<timestamp>.json` files contain the full trace of every run.
-
-- `summary`: Aggregated statistics across all runs, broken down by mode.
-- `raw_traces`: Array containing the per-run metrics for each task. You can use this data to analyze token savings vs. pass rate trade-offs.
+For harness development, `--simulate` writes fabricated metrics to
+`benchmarks/simulated/`. The simulated JSON includes per-mode `summary` and
+per-run `raw_traces` so developers can exercise the report format.

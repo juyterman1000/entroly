@@ -55,9 +55,9 @@ def test_readme_first_folds_explain_their_supported_product_profiles() -> None:
     # fold explaining the product.
     readme_first_fold = _text("README.md")[:7_500].casefold()
     for phrase in (
-        "entroly — select ai context with auditable recovery.",
-        "receipt-backed selection records: what was kept, what was omitted, and "
-        "the handle that recovers the exact original bytes.",
+        "entroly · the local-first ai efficiency layer",
+        "select context for coding agents and llm apps, recover omitted evidence, check answers\n"
+        "against source, and pick up work in another agent.",
         "content-addressed evidence",
         "recoverable context compression",
         "token-efficiency",
