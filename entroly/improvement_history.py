@@ -7,6 +7,8 @@ guide proposals; it never supplies promotion authority.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+import errno
 import hashlib
 import json
 import math
@@ -138,6 +140,19 @@ def _validate_row(row: Any) -> None:
         raise ImprovementHistoryError("experiment fingerprint changed")
 
 
+def _retry_windows_sharing(operation: Callable[[], Any]) -> Any:
+    """Allow a concurrent reader or atomic replacement to release its handle."""
+    for attempt in range(8):
+        try:
+            return operation()
+        except OSError as exc:
+            sharing_conflict = getattr(exc, "winerror", None) in {5, 32, 33}
+            crt_access_denied = os.name == "nt" and exc.errno == errno.EACCES
+            if not (sharing_conflict or crt_access_denied) or attempt == 7:
+                raise
+            time.sleep(0.002 * 2**attempt)
+
+
 class ImprovementHistory:
     """Private, bounded snapshots coordinated across local processes."""
 
@@ -153,7 +168,7 @@ class ImprovementHistory:
     def _read(self) -> dict:
         self._guard()
         try:
-            with self.path.open("rb") as handle:
+            with _retry_windows_sharing(lambda: self.path.open("rb")) as handle:
                 data = handle.read(MAX_BYTES + 1)
         except FileNotFoundError:
             return {"schema": _SCHEMA, "pruned_records": 0, "records": []}
@@ -201,7 +216,7 @@ class ImprovementHistory:
                 os.fsync(handle.fileno())
             temporary.chmod(0o600)
             self._guard()
-            temporary.replace(self.path)
+            _retry_windows_sharing(lambda: temporary.replace(self.path))
         except OSError as exc:
             raise ImprovementHistoryError("unable to persist improvement history") from exc
         finally:
@@ -225,7 +240,7 @@ class ImprovementHistory:
         _validate_row(row)
         self._guard()
         try:
-            with exclusive_file_lock(self.lock_path, timeout=2):
+            with exclusive_file_lock(self.lock_path, timeout=5):
                 state = self._read()
                 kept = list(self._unexpired(state["records"]))
                 kept.append(row)
@@ -267,7 +282,7 @@ class ImprovementHistory:
         if not self.path.exists():
             return {"kept": 0, "removed": 0}
         try:
-            with exclusive_file_lock(self.lock_path, timeout=2):
+            with exclusive_file_lock(self.lock_path, timeout=5):
                 state = self._read()
                 kept = self._unexpired(state["records"])
                 removed = len(state["records"]) - len(kept)

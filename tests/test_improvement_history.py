@@ -222,3 +222,50 @@ def test_history_without_attempt_identifiers_remains_readable(tmp_path):
     assert store.summary()["returned_records"] == 1
     record(store)
     assert store.summary()["returned_records"] == 2
+
+@pytest.mark.parametrize("operation", ["read", "replace"])
+def test_transient_windows_sharing_conflict_is_retried(tmp_path, monkeypatch, operation):
+    store = history.ImprovementHistory(tmp_path)
+    record(store)
+    calls = []
+    original = Path.open if operation == "read" else Path.replace
+
+    def sometimes_busy(path, *args, **kwargs):
+        relevant = path == store.path if operation == "read" else path.name.startswith(".improvement-")
+        if relevant:
+            calls.append(path)
+            if len(calls) <= 2:
+                error = PermissionError("sharing violation")
+                error.winerror = 32
+                raise error
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open" if operation == "read" else "replace", sometimes_busy)
+    monkeypatch.setattr(history.time, "sleep", lambda _seconds: None)
+    if operation == "read":
+        assert store.summary()["returned_records"] == 1
+    else:
+        record(store)
+        assert store.summary()["returned_records"] == 2
+    assert len(calls) == 3
+
+
+def test_permanent_sharing_failure_is_bounded_and_preserves_store(tmp_path, monkeypatch):
+    store = history.ImprovementHistory(tmp_path)
+    record(store)
+    previous = store.path.read_bytes()
+    attempts = []
+
+    def always_busy(*_args, **_kwargs):
+        attempts.append(1)
+        error = PermissionError("sharing violation")
+        error.winerror = 32
+        raise error
+
+    monkeypatch.setattr(Path, "replace", always_busy)
+    monkeypatch.setattr(history.time, "sleep", lambda _seconds: None)
+    with pytest.raises(history.ImprovementHistoryError):
+        record(store)
+    assert len(attempts) == 8
+    assert store.path.read_bytes() == previous
+    assert list(tmp_path.glob(".improvement-*")) == []

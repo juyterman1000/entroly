@@ -316,7 +316,7 @@ def _benchmark_rejection(
             result.recall_accuracy, result.context_efficiency,
             result.avg_wall_time_ms, result.total_information,
         )
-        if (any(type(value) not in (int, float) or not math.isfinite(value) or value < 0
+        if (any(type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 1e12
                 for value in measurements)
                 or result.recall_accuracy > 1
                 or type(result.total_tokens_used) is not int or result.total_tokens_used < 0):

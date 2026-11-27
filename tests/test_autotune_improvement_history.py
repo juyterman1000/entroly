@@ -443,6 +443,7 @@ def test_joint_mutations_are_distinct_bounded_and_keep_integer_parameters(monkey
     assert sum(candidate[name] for name in config if name.startswith("weight_")) == pytest.approx(1)
 
 @pytest.mark.parametrize("field,value", [
+    ("context_efficiency", 1e308),
     ("context_efficiency", float("inf")),
     ("context_efficiency", float("nan")),
     ("recall_accuracy", float("nan")),
