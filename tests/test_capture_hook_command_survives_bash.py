@@ -31,7 +31,8 @@ BASH = shutil.which("bash")
 def _words(command: str) -> list[str]:
     """How bash splits a command line into words."""
     done = subprocess.run(
-        [BASH, "-c", f"for w in {command}; do printf '%s\\n' \"$w\"; done"],
+        [BASH],
+        input=f"for w in {command}; do printf '%s\\n' \"$w\"; done",
         capture_output=True, text=True, check=True,
     )
     return done.stdout.splitlines()
