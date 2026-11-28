@@ -8,6 +8,7 @@ const { spawn, execFileSync } = require('child_process');
 const {
   ACTIVE_FRESHNESS_SECONDS,
   activationStatus,
+  formatSelectedFragments,
   parseHookInput,
   runHook,
 } = require('./js/activation');
@@ -66,6 +67,19 @@ async function main() {
     /exceeds 1 MiB/,
   );
 
+  const delivery = formatSelectedFragments([
+    { source: 'huge.js', content: 'x'.repeat(32000), token_count: 8000 },
+    { source: 'empty.js', content: '', token_count: 99 },
+    { source: 'first.js', content: 'first', token_count: 4 },
+    { source: 'second.js', content: 'second', token_count: 5 },
+  ], project);
+  assert.deepStrictEqual(delivery.sources, ['first.js', 'second.js']);
+  assert.strictEqual(delivery.selectedTokens, 9);
+  assert.strictEqual(delivery.omitted, 2);
+  assert.match(delivery.context, />\nfirst\n<\/entroly-evidence>/);
+  assert.match(delivery.context, />\nsecond\n<\/entroly-evidence>/);
+  assert(delivery.context.length <= 32000);
+
   const prompt = `fix-auth-${crypto.randomBytes(12).toString('hex')}`;
   const session = `session-${crypto.randomBytes(12).toString('hex')}`;
   const payload = {
@@ -84,9 +98,10 @@ async function main() {
       context: '<entroly-evidence source="src/auth.js">safe</entroly-evidence>',
       selectedTokens: 4,
       nativeEngine: true,
-      detail: '',
+      detail: 'delivery omitted 1 of 2 selected fragments',
     }),
   });
+  assert.match(fake.hookSpecificOutput.additionalContext, /delivery omitted 1 of 2 selected fragments/);
   assert.match(fake.hookSpecificOutput.additionalContext, /status: activated/);
   assert.match(fake.hookSpecificOutput.additionalContext, /src\/auth\.js/);
 
