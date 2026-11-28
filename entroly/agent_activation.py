@@ -287,7 +287,7 @@ def _select_with_engine(
     )
     if not raw_context:
         return ActivationSelection(
-            status="no_match",
+            status="degraded",
             sources=(),
             context="",
             selected_tokens=0,
