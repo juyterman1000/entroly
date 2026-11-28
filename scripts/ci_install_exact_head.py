@@ -138,11 +138,21 @@ def _verify_core(python: str, expected: str) -> None:
     program = r'''
 import importlib.metadata
 import json
+from runpy import run_path
+
 import entroly_core
 
 expected = __import__("sys").argv[1]
 actual = importlib.metadata.version("entroly-core")
-missing = [name for name in ("WorkGraph",) if not hasattr(entroly_core, name)]
+# Check the runtime's capability contracts before the root package and its
+# dependencies are installed. Loading the module directly skips package init.
+native_contract = run_path("entroly/native_status.py")
+required = (
+    native_contract["CORE_SYMBOLS"]
+    + native_contract["QCCR_SYMBOLS"]
+    + native_contract["WORK_GRAPH_SYMBOLS"]
+)
+missing = [name for name in required if not hasattr(entroly_core, name)]
 if actual != expected or missing:
     raise SystemExit(json.dumps({"expected": expected, "actual": actual, "missing": missing}))
 print(json.dumps({"entroly_core": actual, "work_graph": True}, sort_keys=True))
