@@ -417,6 +417,46 @@ def test_net_cache_accounting_includes_write_premiums_and_reports_coverage(
     assert deltas == {"legacy": None, "cold": -2_500, "warm": 900, "unpriced": None}
 
 
+def test_readonly_legacy_ledger_can_report_before_and_after_first_signed_write(
+    tmp_path, monkeypatch,
+) -> None:
+    from contextlib import closing
+    from pathlib import Path
+    import sqlite3
+
+    path = tmp_path / "usage.sqlite3"
+    pricing = UsagePricing.from_values(
+        input_per_million=10, output_per_million=20, cache_read_per_million=1,
+    )
+    usage = TokenUsage(cache_read_tokens=100)
+    connect = sqlite3.connect
+
+    with UsageLedger(path) as writer:
+        writer.record_usage(
+            request_id="legacy", provider="openai", model="model",
+            usage=usage, pricing=pricing,
+        )
+        with closing(connect(path)) as legacy_schema:
+            legacy_schema.execute("DROP TABLE usage_cache_deltas")
+
+        with monkeypatch.context() as readonly:
+            readonly.setattr(
+                sqlite3, "connect",
+                lambda db, **options: connect(Path(db).as_uri() + "?mode=ro", uri=True, **options),
+            )
+            with UsageLedger(path) as reader:
+                assert reader.summary()["cache_delta_legacy_priced_requests"] == 1
+                assert reader.get("legacy").cache_delta_micro_usd is None
+                assert reader.query()[0].cache_delta_micro_usd is None
+
+                writer.record_usage(
+                    request_id="signed", provider="openai", model="model",
+                    usage=usage, pricing=pricing,
+                )
+                assert reader.summary()["cache_delta_micro_usd"] == 900
+                assert reader.get("signed").cache_delta_micro_usd == 900
+
+
 def test_explicit_zero_cache_write_rate_is_not_replaced() -> None:
     pricing = UsagePricing.from_values(
         input_per_million=10,
