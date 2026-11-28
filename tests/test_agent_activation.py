@@ -468,3 +468,32 @@ def test_degraded_detail_claims_no_cause_it_did_not_check(
     assert "present but not usable" in detail
     assert "not installed" not in detail
     assert "below the required" not in detail
+
+
+def test_activation_fingerprints_distinguish_case_sensitive_projects(tmp_path: Path) -> None:
+    first = tmp_path / "Project"
+    second = tmp_path / "project"
+    first.mkdir()
+    if second.exists():
+        pytest.skip("filesystem is case insensitive")
+    second.mkdir()
+    state = tmp_path / "state"
+    selection = lambda *_: ActivationSelection("activated", ("a.py",), "pass", 1, True)
+    run_hook(
+        {"hook_event_name": "UserPromptSubmit", "prompt": "review", "cwd": str(first)},
+        host="claude-code", state_dir=state, selector=selection,
+    )
+    first_report = activation_status(first, state_dir=state)
+    second_report = activation_status(second, state_dir=state)
+    assert first_report["project_fingerprint"] != second_report["project_fingerprint"]
+    assert first_report["state"] == "active"
+    assert second_report["activation_events"] == 0
+
+
+@pytest.mark.skipif(os.name == "nt", reason="backslash is a Windows path separator")
+def test_activation_fingerprints_preserve_literal_posix_backslash(tmp_path: Path) -> None:
+    literal = tmp_path / "a\\b"
+    nested = tmp_path / "a" / "b"
+    literal.mkdir()
+    nested.mkdir(parents=True)
+    assert activation_module._project_fingerprint(literal) != activation_module._project_fingerprint(nested)
