@@ -21,8 +21,8 @@ from .usage_ledger import (
     UsageEvent,
     UsageLedger,
     UsagePricing,
+    _price_usage_with_cache_delta,
     parse_provider_usage,
-    price_usage,
 )
 
 
@@ -356,14 +356,14 @@ class GatewayControlPlane:
         )
 
         if self.usage_ledger is None:
-            cost, savings = price_usage(usage, pricing)
+            cost, delta = _price_usage_with_cache_delta(usage, pricing)
             return UsageEvent(
                 request_id=request_id,
                 provider=provider,
                 model=model,
                 usage=usage,
                 cost_micro_usd=cost,
-                cache_savings_micro_usd=savings,
+                cache_savings_micro_usd=max(0, delta),
                 occurred_at=timestamp,
                 team=team,
                 tool=tool,
@@ -371,6 +371,7 @@ class GatewayControlPlane:
                 conversation_id=plan.conversation_id,
                 pricing_source=pricing.source,
                 metadata=dict(metadata or {}),
+                cache_delta_micro_usd=delta,
             )
 
         return self.usage_ledger.record_provider_payload(

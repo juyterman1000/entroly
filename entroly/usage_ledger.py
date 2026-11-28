@@ -14,10 +14,11 @@ import json
 import sqlite3
 import threading
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Iterator, Mapping
 
 
 @dataclass(frozen=True, slots=True)
@@ -220,6 +221,8 @@ class UsageEvent:
     conversation_id: str = ""
     pricing_source: str = "explicit"
     metadata: Mapping[str, Any] = field(default_factory=dict)
+    # Catalog-priced uncached baseline minus catalog-priced input cost.
+    cache_delta_micro_usd: int | None = None
 
 
 def _int(value: Any) -> int:
@@ -408,18 +411,23 @@ def _micro_cost(tokens: int, rate_per_million: Decimal) -> int:
     )
 
 
-def price_usage(usage: TokenUsage, pricing: UsagePricing) -> tuple[int, int]:
-    cost = (
+def _price_usage_with_cache_delta(
+    usage: TokenUsage, pricing: UsagePricing,
+) -> tuple[int, int]:
+    input_cost = (
         _micro_cost(usage.uncached_input_tokens, pricing.input_per_million)
         + _micro_cost(usage.cache_read_tokens, pricing.cache_read_per_million)
         + _micro_cost(usage.cache_write_tokens, pricing.cache_write_rate)
-        + _micro_cost(usage.output_tokens, pricing.output_per_million)
     )
-    no_cache_baseline = (
-        _micro_cost(usage.total_input_tokens, pricing.input_per_million)
-        + _micro_cost(usage.output_tokens, pricing.output_per_million)
-    )
-    return cost, max(0, no_cache_baseline - cost)
+    output_cost = _micro_cost(usage.output_tokens, pricing.output_per_million)
+    uncached_baseline = _micro_cost(usage.total_input_tokens, pricing.input_per_million)
+    return input_cost + output_cost, uncached_baseline - input_cost
+
+
+def price_usage(usage: TokenUsage, pricing: UsagePricing) -> tuple[int, int]:
+    """Return cost and the nonnegative per-request savings field."""
+    cost, delta = _price_usage_with_cache_delta(usage, pricing)
+    return cost, max(0, delta)
 
 
 class UsageLedger:
@@ -478,6 +486,22 @@ class UsageLedger:
         )
         self._conn.commit()
 
+    def _cache_delta_relation(self) -> str:
+        table = self._conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'usage_cache_deltas'"
+        ).fetchone()
+        if table is not None:
+            return "usage_cache_deltas"
+        return "(SELECT NULL AS request_id, NULL AS cache_delta_micro_usd WHERE 0)"
+
+    @contextmanager
+    def _read_cache_deltas(self) -> Iterator[str]:
+        # Use one snapshot for table discovery and data selection when another
+        # writer might create the signed-delta table during the read.
+        with self._lock, self._conn:
+            self._conn.execute("BEGIN")
+            yield self._cache_delta_relation()
+
     def record(self, event: UsageEvent) -> bool:
         """Insert once; return False when request_id was already recorded."""
         if not event.request_id:
@@ -516,9 +540,30 @@ class UsageLedger:
                 row,
             )
             if cursor.rowcount == 1:
+                if event.cache_delta_micro_usd is not None:
+                    # Defer the schema addition until a signed write so legacy
+                    # ledgers can still be inspected on a read-only volume.
+                    self._conn.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS usage_cache_deltas (
+                            request_id TEXT PRIMARY KEY
+                                REFERENCES usage_events(request_id) ON DELETE CASCADE,
+                            cache_delta_micro_usd INTEGER NOT NULL
+                        )
+                        """
+                    )
+                    self._conn.execute(
+                        "INSERT INTO usage_cache_deltas VALUES (?, ?)",
+                        (event.request_id, event.cache_delta_micro_usd),
+                    )
                 return True
             existing = self._conn.execute(
-                "SELECT * FROM usage_events WHERE request_id = ?",
+                f"""
+                SELECT e.*, d.cache_delta_micro_usd
+                FROM usage_events AS e
+                LEFT JOIN {self._cache_delta_relation()} AS d USING (request_id)
+                WHERE request_id = ?
+                """,
                 (event.request_id,),
             ).fetchone()
             if existing is None:
@@ -561,16 +606,26 @@ class UsageLedger:
                     default=str,
                 ),
             )
-            if identity != proposed:
+            old_delta = existing["cache_delta_micro_usd"]
+            new_delta = event.cache_delta_micro_usd
+            different_delta = (
+                old_delta is not None and new_delta is not None and old_delta != new_delta
+            )
+            if identity != proposed or different_delta:
                 raise ValueError(
                     "request_id already has different provider usage"
                 )
             return False
 
     def get(self, request_id: str) -> UsageEvent | None:
-        with self._lock:
+        with self._read_cache_deltas() as delta_relation:
             row = self._conn.execute(
-                "SELECT * FROM usage_events WHERE request_id = ?",
+                f"""
+                SELECT e.*, d.cache_delta_micro_usd
+                FROM usage_events AS e
+                LEFT JOIN {delta_relation} AS d USING (request_id)
+                WHERE request_id = ?
+                """,
                 (request_id,),
             ).fetchone()
         if row is None:
@@ -625,10 +680,10 @@ class UsageLedger:
         """Record normalized usage and report whether this call inserted it."""
         if pricing is None:
             cost = 0
-            savings = 0
+            delta = None
             pricing_source = f"unpriced:{provider.lower()}:{model}"
         else:
-            cost, savings = price_usage(usage, pricing)
+            cost, delta = _price_usage_with_cache_delta(usage, pricing)
             pricing_source = pricing.source
         event = UsageEvent(
             request_id=request_id,
@@ -636,7 +691,7 @@ class UsageLedger:
             model=model,
             usage=usage,
             cost_micro_usd=cost,
-            cache_savings_micro_usd=savings,
+            cache_savings_micro_usd=max(0, delta) if delta is not None else 0,
             occurred_at=time.time() if occurred_at is None else occurred_at,
             team=team,
             tool=tool,
@@ -644,6 +699,7 @@ class UsageLedger:
             conversation_id=conversation_id,
             pricing_source=pricing_source,
             metadata=dict(metadata or {}),
+            cache_delta_micro_usd=delta,
         )
         inserted = self.record(event)
         if inserted:
@@ -683,19 +739,32 @@ class UsageLedger:
             metadata=metadata,
         )
 
-    def summary(self, **filters: str) -> dict[str, int | float]:
+    def summary(
+        self,
+        *,
+        since: float | None = None,
+        until: float | None = None,
+        **filters: str,
+    ) -> dict[str, int | float | None]:
+        """Summarize usage and available catalog-priced cache deltas."""
         unknown = set(filters) - self._FILTER_COLUMNS
         if unknown:
             raise ValueError(f"unsupported filters: {sorted(unknown)}")
 
         clauses: list[str] = []
-        values: list[str] = []
+        values: list[object] = []
+        if since is not None:
+            clauses.append("occurred_at >= ?")
+            values.append(float(since))
+        if until is not None:
+            clauses.append("occurred_at <= ?")
+            values.append(float(until))
         for column, value in sorted(filters.items()):
             clauses.append(f"{column} = ?")
             values.append(value)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
 
-        with self._lock:
+        with self._read_cache_deltas() as delta_relation:
             row = self._conn.execute(
                 f"""
                 SELECT
@@ -707,19 +776,30 @@ class UsageLedger:
                     COALESCE(SUM(cost_micro_usd), 0) AS cost_micro_usd,
                     COALESCE(SUM(cache_savings_micro_usd), 0)
                         AS cache_savings_micro_usd,
+                    SUM(d.cache_delta_micro_usd) AS cache_delta_micro_usd,
+                    COUNT(d.cache_delta_micro_usd) AS cache_delta_priced_requests,
+                    COALESCE(SUM(
+                        CASE WHEN d.cache_delta_micro_usd IS NULL
+                             AND pricing_source NOT LIKE 'unpriced:%'
+                        THEN 1 ELSE 0 END
+                    ), 0) AS cache_delta_legacy_priced_requests,
                     COALESCE(SUM(
                         CASE WHEN pricing_source LIKE 'unpriced:%'
                         THEN 1 ELSE 0 END
                     ), 0) AS unpriced_requests
-                FROM usage_events
+                FROM usage_events AS e
+                LEFT JOIN {delta_relation} AS d USING (request_id)
                 {where}
                 """,
                 values,
             ).fetchone()
 
-        result = {key: int(row[key]) for key in row.keys()}
-        cached = result["cache_read_tokens"]
-        uncached = result["uncached_input_tokens"]
+        result: dict[str, int | float | None] = {
+            key: int(row[key]) if row[key] is not None else None
+            for key in row.keys()
+        }
+        cached = int(row["cache_read_tokens"])
+        uncached = int(row["uncached_input_tokens"])
         result["cache_hit_token_ratio"] = cached / max(1, cached + uncached)
         return result
 
@@ -751,10 +831,12 @@ class UsageLedger:
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         values.extend([max(1, min(limit, 10_000)), max(0, offset)])
 
-        with self._lock:
+        with self._read_cache_deltas() as delta_relation:
             rows = self._conn.execute(
                 f"""
-                SELECT * FROM usage_events
+                SELECT e.*, d.cache_delta_micro_usd
+                FROM usage_events AS e
+                LEFT JOIN {delta_relation} AS d USING (request_id)
                 {where}
                 ORDER BY occurred_at DESC
                 LIMIT ? OFFSET ?
@@ -845,6 +927,7 @@ class UsageLedger:
             conversation_id=row["conversation_id"],
             pricing_source=row["pricing_source"],
             metadata=json.loads(row["metadata_json"]),
+            cache_delta_micro_usd=row["cache_delta_micro_usd"],
         )
 
     def close(self) -> None:

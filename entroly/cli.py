@@ -4048,8 +4048,8 @@ def cmd_usage(args):
             print(ledger.export_csv(since=since, until=until, **filters), end="")
             return
 
+        summary = ledger.summary(since=since, until=until, **filters)
         if getattr(args, "json_output", False):
-            summary = ledger.summary(**filters)
             events = ledger.query(
                 since=since, until=until, limit=args.limit, **filters
             )
@@ -4064,6 +4064,7 @@ def cmd_usage(args):
                         "model": e.model,
                         "cost_micro_usd": e.cost_micro_usd,
                         "cache_savings_micro_usd": e.cache_savings_micro_usd,
+                        "cache_delta_micro_usd": e.cache_delta_micro_usd,
                         "tokens": asdict(e.usage),
                     }
                     for e in events
@@ -4073,7 +4074,6 @@ def cmd_usage(args):
             print(json.dumps(output, indent=2, sort_keys=True))
             return
 
-        summary = ledger.summary(**filters)
         total = ledger.count(since=since, until=until, **filters)
         events = ledger.query(
             since=since, until=until, limit=args.limit, **filters
@@ -4082,12 +4082,20 @@ def cmd_usage(args):
         print(f"\n{C.CYAN}{C.BOLD}  Provider Usage Ledger{C.RESET}\n")
         print(f"  {C.BOLD}Summary{C.RESET}")
         cost_usd = summary["cost_micro_usd"] / 1_000_000
-        savings_usd = summary["cache_savings_micro_usd"] / 1_000_000
+        delta = summary["cache_delta_micro_usd"]
         print(f"    Requests: {summary['requests']:,}")
+        print(f"    Catalog-priced cost: {C.GREEN}${cost_usd:.4f}{C.RESET}")
+        net = "Unavailable" if delta is None else f"{delta / 1_000_000:+.6f} USD"
         print(
-            f"    Cost: {C.GREEN}${cost_usd:.4f}{C.RESET}  |  "
-            f"Cache savings: {C.GREEN}${savings_usd:.4f}{C.RESET}"
+            f"    Net cache benefit vs uncached catalog rates: {net} "
+            f"({summary['cache_delta_priced_requests']:,} of "
+            f"{summary['requests']:,} requests covered)"
         )
+        if summary["cache_delta_legacy_priced_requests"]:
+            print(
+                "    Earlier priced records without signed cache accounting: "
+                f"{summary['cache_delta_legacy_priced_requests']:,}"
+            )
         print(
             f"    Cache hit ratio: "
             f"{summary['cache_hit_token_ratio']:.1%}"
