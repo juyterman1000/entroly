@@ -468,3 +468,45 @@ def test_degraded_detail_claims_no_cause_it_did_not_check(
     assert "present but not usable" in detail
     assert "not installed" not in detail
     assert "below the required" not in detail
+
+
+def test_hook_delivery_preserves_complete_fragments(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(activation_module, "MAX_CONTEXT_CHARS", 48)
+    monkeypatch.setattr(activation_module, "DEFAULT_MAX_SOURCES", 2)
+    fragments = [
+        {"source": "oversized.py", "content": "x" * 100, "token_count": 100},
+        {"source": "empty.py", "content": "", "token_count": 99},
+        {"source": "a.py", "content": "first", "token_count": 4},
+        {"source": "b.py", "content": "second", "token_count": 5},
+        {"source": "c.py", "content": "third", "token_count": 6},
+    ]
+    sources, context, tokens, omitted = activation_module._format_selected_fragments(fragments, tmp_path)
+    assert sources == ("a.py", "b.py")
+    assert context == "SOURCE: a.py\nfirst\n\nSOURCE: b.py\nsecond"
+    assert len(context) <= 48
+    assert tokens == 9
+    assert omitted == 3
+
+
+def test_hook_delivery_counts_formatted_headers_and_separators(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(activation_module, "MAX_CONTEXT_CHARS", len("SOURCE: a.py\nx\n\nSOURCE: b.py\ny") - 1)
+    fragments = [
+        {"source": "a.py", "content": "x", "token_count": 1},
+        {"source": "b.py", "content": "y", "token_count": 1},
+    ]
+    sources, context, tokens, omitted = activation_module._format_selected_fragments(fragments, tmp_path)
+    assert sources == ("a.py",)
+    assert context == "SOURCE: a.py\nx"
+    assert tokens == 1
+    assert omitted == 1
+
+
+def test_activated_hook_exposes_delivery_omissions(tmp_path: Path) -> None:
+    detail = "delivery omitted 1 of 2 selected fragments"
+    selection = ActivationSelection("activated", ("a.py",), "source", 1, True, detail)
+    out = run_hook(
+        {"hook_event_name": "UserPromptSubmit", "prompt": "review", "cwd": str(tmp_path)},
+        host="claude-code", state_dir=tmp_path / "state", selector=lambda *_: selection,
+    )
+    assert detail in out["hookSpecificOutput"]["additionalContext"]
+    assert activation_status(tmp_path, state_dir=tmp_path / "state")["latest"]["detail"] == detail
