@@ -32,13 +32,13 @@ function sha256(value) {
 }
 
 function projectFingerprint(projectDir) {
-  // POSIX paths are case-sensitive and may contain literal backslashes.
-  // Preserve Windows normalization for existing state compatibility.
   const resolved = path.resolve(projectDir);
-  const normalized = process.platform === 'win32'
+  // Legacy POSIX keys can contain state from distinct paths that folded
+  // to the same value. Use a new namespace even for lowercase paths.
+  const identity = process.platform === 'win32'
     ? resolved.replace(/\\/g, '/').toLowerCase()
-    : resolved;
-  return sha256(normalized).slice(0, 16);
+    : 'posix-v2\0' + resolved;
+  return sha256(identity).slice(0, 16);
 }
 
 function baseStateDir() {

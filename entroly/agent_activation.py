@@ -62,13 +62,14 @@ Selector = Callable[[str, Path, int, int], ActivationSelection]
 
 
 def _project_fingerprint(project_dir: Path) -> str:
-    resolved = project_dir.resolve()
-    # Preserve distinct POSIX paths, including literal backslashes and case.
-    # Retain the existing Windows normalization for state compatibility.
-    normalized = str(resolved)
+    resolved = str(project_dir.resolve())
     if os.name == "nt":
-        normalized = normalized.replace("\\", "/").casefold()
-    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
+        identity = resolved.replace("\\", "/").casefold()
+    else:
+        # Legacy keys can contain state from distinct POSIX paths that folded
+        # to the same value. Use a new namespace even for lowercase paths.
+        identity = f"posix-v2\0{resolved}"
+    return hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]
 
 
 def _default_state_dir() -> Path:

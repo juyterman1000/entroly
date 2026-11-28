@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import time
@@ -470,6 +471,7 @@ def test_degraded_detail_claims_no_cause_it_did_not_check(
     assert "below the required" not in detail
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows retains legacy path normalization")
 def test_activation_fingerprints_distinguish_case_sensitive_projects(tmp_path: Path) -> None:
     first = tmp_path / "Project"
     second = tmp_path / "project"
@@ -478,15 +480,30 @@ def test_activation_fingerprints_distinguish_case_sensitive_projects(tmp_path: P
         pytest.skip("filesystem is case insensitive")
     second.mkdir()
     state = tmp_path / "state"
-    selection = lambda *_: ActivationSelection("activated", ("a.py",), "pass", 1, True)
+
+    def selection(*_args):
+        return ActivationSelection("activated", ("a.py",), "pass", 1, True)
+
     run_hook(
         {"hook_event_name": "UserPromptSubmit", "prompt": "review", "cwd": str(first)},
         host="claude-code", state_dir=state, selector=selection,
     )
+    legacy_path = str(first.resolve()).replace("\\", "/").casefold()
+    legacy_key = hashlib.sha256(legacy_path.encode("utf-8")).hexdigest()[:16]
+    legacy_events = state / legacy_key / "events"
+    legacy_events.mkdir(parents=True, exist_ok=True)
+    (legacy_events / "legacy.json").write_text(
+        json.dumps({"source_root": str(first.resolve())}),
+        encoding="utf-8",
+    )
+
     first_report = activation_status(first, state_dir=state)
     second_report = activation_status(second, state_dir=state)
+    assert first_report["project_fingerprint"] != legacy_key
+    assert second_report["project_fingerprint"] != legacy_key
     assert first_report["project_fingerprint"] != second_report["project_fingerprint"]
     assert first_report["state"] == "active"
+    assert first_report["activation_events"] == 1
     assert second_report["activation_events"] == 0
 
 
