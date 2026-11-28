@@ -726,6 +726,9 @@ class MemoryOS:
     ) -> MemoryContext:
         """Recall memories for an agent under a token budget.
 
+        Recall considers query matches first. It orders matching and fallback
+        memories by score per token within each group.
+
         Temporal reasoning:
         - If *temporal_filter* is given, only memories of that class are returned.
         - Otherwise, the query text is analysed for temporal intent. Memories
@@ -810,7 +813,14 @@ class MemoryOS:
                 score = retention * frequency * lexical * tier_bonus * temporal_boost * (0.5 + entry.importance)
                 candidates.append((entry, score, retention, reason))
 
-            candidates.sort(key=lambda x: (x[1] / max(1, x[0].token_cost), x[1]), reverse=True)
+            candidates.sort(
+                key=lambda candidate: (
+                    candidate[3] == "query_overlap",
+                    candidate[1] / max(1, candidate[0].token_cost),
+                    candidate[1],
+                ),
+                reverse=True,
+            )
 
             selected: list[SelectedMemory] = []
             omitted: list[OmittedMemory] = []

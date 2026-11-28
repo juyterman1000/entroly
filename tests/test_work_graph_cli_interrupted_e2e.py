@@ -31,7 +31,18 @@ def _cli(repo: Path, env: dict[str, str], *args: str) -> tuple[int, dict]:
     return result.returncode, json.loads(result.stdout)
 
 
-def test_new_process_recovers_claim_and_requires_acknowledgement(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("predecessor", "successor_agent"),
+    [
+        ("claude", "codex"),
+        ("codex", "claude"),
+        ("gemini", "openclaw"),
+        ("cursor", "codex"),
+    ],
+)
+def test_new_process_recovers_claim_and_requires_acknowledgement(
+    tmp_path: Path, predecessor: str, successor_agent: str,
+) -> None:
     try:
         WorkGraph("native-probe")
     except WorkGraphUnavailableError as exc:
@@ -49,7 +60,7 @@ def test_new_process_recovers_claim_and_requires_acknowledgement(tmp_path: Path)
     env = dict(os.environ, ENTROLY_DIR=str(tmp_path / "state"))
 
     code, claimed = _cli(
-        repo, env, "claim", "--agent", "claude", "--task", "Fix auth", "--path", "app.py"
+        repo, env, "claim", "--agent", predecessor, "--task", "Fix auth", "--path", "app.py"
     )
     assert code == 0, claimed
     code, state = _cli(repo, env, "state")
@@ -58,7 +69,7 @@ def test_new_process_recovers_claim_and_requires_acknowledgement(tmp_path: Path)
 
     # The first agent stops without leaving a handoff or a remaining-work note.
     (repo / "app.py").write_text("VALUE = 2\n", encoding="utf-8")
-    code, recovered = _cli(repo, env, "resume", "--to-agent", "codex")
+    code, recovered = _cli(repo, env, "resume", "--to-agent", successor_agent)
     assert code == 0, recovered
     assert recovered["resume"]["selected_workstream"]["node_id"] == claimed_workstream
     assert "app.py" in recovered["resume"]["current_worktree_changed_paths"]
@@ -66,7 +77,7 @@ def test_new_process_recovers_claim_and_requires_acknowledgement(tmp_path: Path)
     assert recovered["acknowledgement"]["required"] is True
     token = recovered["acknowledgement"]["token"]
 
-    code, blocked = _cli(repo, env, "claim", "--agent", "codex", "--task", "Finish auth")
+    code, blocked = _cli(repo, env, "claim", "--agent", successor_agent, "--task", "Finish auth")
     assert code == 1
     assert blocked["error"] == "recovery_acknowledgement_required"
     (repo / "app.py").write_text("VALUE = 3\n", encoding="utf-8")
@@ -77,7 +88,7 @@ def test_new_process_recovers_claim_and_requires_acknowledgement(tmp_path: Path)
     code, acknowledged = _cli(repo, env, "acknowledge", "--token", token)
     assert code == 0, acknowledged
     assert acknowledged["acknowledged"] is True
-    code, successor = _cli(repo, env, "claim", "--agent", "codex", "--task", "Finish auth")
+    code, successor = _cli(repo, env, "claim", "--agent", successor_agent, "--task", "Finish auth")
     assert code == 0, successor
 
 

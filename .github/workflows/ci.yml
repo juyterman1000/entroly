@@ -394,6 +394,7 @@ jobs:
       - name: Verify imports
         run: |
           .venv/bin/python -c "from entroly_core import EntrolyEngine; print('rust engine ok')"
+          .venv/bin/python -c "from entroly.work_graph import WorkGraph; WorkGraph('ci-native-probe'); print('native work graph ok')"
           .venv/bin/python -c "from entroly.server import EntrolyEngine; print('server ok')"
           .venv/bin/python -c "from entroly.cli import _detect_project_type; print('cli ok')"
           .venv/bin/python -c "from entroly.auto_index import _should_index; print('auto_index ok')"
