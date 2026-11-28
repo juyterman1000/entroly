@@ -8,6 +8,7 @@ const { spawn, execFileSync } = require('child_process');
 const {
   ACTIVE_FRESHNESS_SECONDS,
   activationStatus,
+  formatSelectedFragments,
   parseHookInput,
   runHook,
 } = require('./js/activation');
@@ -66,6 +67,29 @@ async function main() {
     /exceeds 1 MiB/,
   );
 
+  const oversized = 'x'.repeat(32000);
+  fs.writeFileSync(path.join(project, 'huge.js'), oversized);
+  const delivery = formatSelectedFragments([
+    { source: 'file:huge.js', content: oversized, token_count: 8000 },
+    { source: 'empty.js', content: '', token_count: 99 },
+    { source: 'first.js', content: 'first', token_count: 4 },
+    { source: 'second.js', content: 'second', token_count: 5 },
+  ], project);
+  assert.deepStrictEqual(delivery.sources, ['first.js', 'second.js']);
+  assert.strictEqual(delivery.selectedTokens, 9);
+  assert.match(delivery.detail, /delivery omitted 2 of 4 selected fragments/);
+  assert.match(delivery.detail, /Inspect project file `huge\.js`/);
+  assert.match(delivery.context, />\nfirst\n<\/entroly-evidence>/);
+  assert.match(delivery.context, />\nsecond\n<\/entroly-evidence>/);
+  assert(delivery.context.length <= 32000);
+  fs.unlinkSync(path.join(project, 'huge.js'));
+
+  fs.writeFileSync(path.join(root, 'outside.js'), 'secret');
+  const unsafeDelivery = formatSelectedFragments([{ source: 'file:../outside.js' }], project);
+  assert.strictEqual(unsafeDelivery.context, '');
+  assert.match(unsafeDelivery.detail, /Search the project/);
+  assert.doesNotMatch(unsafeDelivery.detail, /outside\.js/);
+
   const prompt = `fix-auth-${crypto.randomBytes(12).toString('hex')}`;
   const session = `session-${crypto.randomBytes(12).toString('hex')}`;
   const payload = {
@@ -84,9 +108,10 @@ async function main() {
       context: '<entroly-evidence source="src/auth.js">safe</entroly-evidence>',
       selectedTokens: 4,
       nativeEngine: true,
-      detail: '',
+      detail: 'delivery omitted 1 of 2 selected fragments',
     }),
   });
+  assert.match(fake.hookSpecificOutput.additionalContext, /delivery omitted 1 of 2 selected fragments/);
   assert.match(fake.hookSpecificOutput.additionalContext, /status: activated/);
   assert.match(fake.hookSpecificOutput.additionalContext, /src\/auth\.js/);
 
