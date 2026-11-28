@@ -62,7 +62,12 @@ Selector = Callable[[str, Path, int, int], ActivationSelection]
 
 
 def _project_fingerprint(project_dir: Path) -> str:
-    normalized = str(project_dir.resolve()).replace("\\", "/").casefold()
+    resolved = project_dir.resolve()
+    # Preserve distinct POSIX paths, including literal backslashes and case.
+    # Retain the existing Windows normalization for state compatibility.
+    normalized = str(resolved)
+    if os.name == "nt":
+        normalized = normalized.replace("\\", "/").casefold()
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
 
 
