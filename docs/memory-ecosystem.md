@@ -83,7 +83,7 @@ The public facade combines:
 - recall frequency,
 - tier bonus,
 - importance,
-- score-per-token ordering,
+- query matches first, with score-per-token ordering within the matching and fallback groups,
 - explicit over-budget omission reasons.
 
 This matters because the model does not need every memory. It needs the few memories that fit the task and budget.

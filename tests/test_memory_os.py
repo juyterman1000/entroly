@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from entroly.memory import MemoryOS
+from entroly.memory import MemoryOS, _estimate_tokens
 
 
 def test_memory_os_recalls_relevant_memory_under_budget() -> None:
@@ -32,6 +32,35 @@ def test_memory_os_recalls_relevant_memory_under_budget() -> None:
     receipt = ctx.receipt()
     assert receipt["risk"]["selected_count"] >= 1
     assert "selected" in receipt and "omitted" in receipt
+
+
+def test_query_evidence_gets_budget_before_short_fallback() -> None:
+    evidence = "The session refresh timeout is controlled by an auth configuration value."
+    budget = _estimate_tokens(evidence)
+    memory = MemoryOS(default_budget=budget)
+    memory.remember("OK", source="acknowledgement")
+    evidence_id = memory.remember(evidence, source="auth-note")
+
+    context = memory.recall("session refresh timeout", budget=budget)
+
+    assert [entry.id for entry in context.selected] == [evidence_id]
+    assert context.used_tokens == budget
+
+
+def test_query_overlap_preserves_density_order_within_each_group() -> None:
+    memory = MemoryOS(default_budget=100)
+    detail_id = memory.remember("The session refresh timeout is controlled by an auth configuration value.")
+    match_id = memory.remember("refresh")
+    fallback_id = memory.remember("OK")
+    baseline = memory.snapshot()
+
+    matches = MemoryOS.from_snapshot(baseline).recall("session refresh timeout")
+    no_matches = MemoryOS.from_snapshot(baseline).recall("quantum spin")
+    no_query = MemoryOS.from_snapshot(baseline).recall()
+
+    assert [entry.id for entry in matches.selected] == [match_id, detail_id, fallback_id]
+    assert [entry.id for entry in no_matches.selected] == [fallback_id, match_id, detail_id]
+    assert [entry.id for entry in no_query.selected] == [fallback_id, match_id, detail_id]
 
 
 def test_memory_os_deduplicates_and_reinforces_exact_memory() -> None:
