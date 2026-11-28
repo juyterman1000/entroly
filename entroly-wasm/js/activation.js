@@ -32,7 +32,12 @@ function sha256(value) {
 }
 
 function projectFingerprint(projectDir) {
-  const normalized = path.resolve(projectDir).replace(/\\/g, '/').toLowerCase();
+  // POSIX paths are case-sensitive and may contain literal backslashes.
+  // Preserve Windows normalization for existing state compatibility.
+  const resolved = path.resolve(projectDir);
+  const normalized = process.platform === 'win32'
+    ? resolved.replace(/\\/g, '/').toLowerCase()
+    : resolved;
   return sha256(normalized).slice(0, 16);
 }
 
