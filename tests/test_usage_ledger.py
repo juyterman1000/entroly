@@ -325,6 +325,96 @@ def test_unpriced_usage_preserves_tokens_and_surfaces_reconciliation_gap() -> No
     assert summary["requests"] == 1
     assert summary["cache_read_tokens"] == 900
     assert summary["unpriced_requests"] == 1
+    assert summary["cache_delta_micro_usd"] is None
+    assert summary["cache_delta_priced_requests"] == 0
+    assert summary["cache_delta_legacy_priced_requests"] == 0
+
+
+def test_net_cache_accounting_includes_write_premiums_and_reports_coverage(
+    tmp_path, capsys,
+) -> None:
+    from dataclasses import replace
+    from types import SimpleNamespace
+    import json
+    import sqlite3
+
+    from entroly.cli import cmd_usage
+
+    path = tmp_path / "usage.sqlite3"
+    pricing = UsagePricing.from_values(
+        input_per_million=10,
+        output_per_million=20,
+        cache_read_per_million=1,
+        cache_write_per_million="12.50",
+    )
+    write = TokenUsage(cache_write_tokens=1_000)
+    read = TokenUsage(cache_read_tokens=100)
+
+    with UsageLedger(path) as ledger:
+        ledger.record_usage(
+            request_id="legacy", provider="anthropic", model="model",
+            usage=write, pricing=pricing, occurred_at=100,
+        )
+    # Restore the pre-upgrade schema while retaining the original usage row.
+    connection = sqlite3.connect(path)
+    with connection:
+        connection.execute("DROP TABLE usage_cache_deltas")
+    connection.close()
+
+    with UsageLedger(path) as ledger:
+        assert ledger.summary()["cache_delta_micro_usd"] is None
+        legacy, inserted = ledger.record_usage_with_status(
+            request_id="legacy", provider="anthropic", model="model",
+            usage=write, pricing=pricing,
+        )
+        assert not inserted
+        assert legacy.cache_delta_micro_usd is None
+
+        cold = ledger.record_usage(
+            request_id="cold", provider="anthropic", model="model",
+            usage=write, pricing=pricing, occurred_at=200,
+        )
+        warm = ledger.record_usage(
+            request_id="warm", provider="anthropic", model="model",
+            usage=read, pricing=pricing, occurred_at=300,
+        )
+        ledger.record_usage(
+            request_id="unpriced", provider="anthropic", model="future",
+            usage=read, pricing=None, occurred_at=400,
+        )
+        assert cold.cache_delta_micro_usd == -2_500
+        assert warm.cache_delta_micro_usd == 900
+        assert not ledger.record(cold)
+        with pytest.raises(ValueError, match="different provider usage"):
+            ledger.record(replace(cold, cache_delta_micro_usd=-2_400))
+
+    with UsageLedger(path) as reopened:
+        assert reopened.get("cold").cache_delta_micro_usd == -2_500
+        summary = reopened.summary()
+        assert summary["cache_delta_micro_usd"] == -1_600
+        assert summary["cache_savings_micro_usd"] == 900
+        assert summary["cache_delta_priced_requests"] == 2
+        assert summary["cache_delta_legacy_priced_requests"] == 1
+        warm_only = reopened.summary(since=250, until=350)
+        assert warm_only["requests"] == 1
+        assert warm_only["cache_delta_micro_usd"] == 900
+
+    args = SimpleNamespace(
+        db=str(path), model=None, provider=None, since=None, until=None, limit=10,
+        csv_output=False, json_output=False,
+    )
+    cmd_usage(args)
+    text = capsys.readouterr().out
+    assert "Net cache benefit vs uncached catalog rates: -0.001600 USD" in text
+    assert "(2 of 4 requests covered)" in text
+    assert "Earlier priced records without signed cache accounting: 1" in text
+
+    args.json_output = True
+    cmd_usage(args)
+    report = json.loads(capsys.readouterr().out)
+    assert report["summary"]["cache_delta_micro_usd"] == -1_600
+    deltas = {event["request_id"]: event["cache_delta_micro_usd"] for event in report["events"]}
+    assert deltas == {"legacy": None, "cold": -2_500, "warm": 900, "unpriced": None}
 
 
 def test_explicit_zero_cache_write_rate_is_not_replaced() -> None:
