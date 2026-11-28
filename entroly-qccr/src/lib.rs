@@ -65,6 +65,10 @@ const EXPANSION_TERM_WEIGHT: f64 = 0.35;
 const MMR_LAMBDA: f64 = 0.7;
 const MIN_SENTENCE_CHARS: usize = 20;
 const MAX_FILES_CONSIDERED: usize = 12;
+const MIN_FILE_ALLOCATION: i64 = 256;
+const BROAD_QUERY_MIN_BUDGET: i64 = 2_000;
+const BROAD_QUERY_MAX_FILES: usize = 32;
+const BROAD_QUERY_MIN_FILE_ALLOCATION: i64 = 64;
 const MAX_MMR_SENTENCE_CANDIDATES: usize = 512;
 const CHARS_PER_TOKEN: usize = 4;
 const ENTITY_BOOST: f64 = 1.5;
@@ -1101,10 +1105,25 @@ pub fn select(
     }
 
     let dependency_sources: HashSet<String> = dependency_order.iter().cloned().collect();
+    // When lexical ranking admits many candidates, a broad question can need
+    // evidence from lower-ranked files. Give them room by reducing the minimum
+    // allocation. Keep the existing allocation for named dependency evidence.
+    let (max_files, min_file_allocation) = if dependency_sources.is_empty()
+        && token_budget >= BROAD_QUERY_MIN_BUDGET
+        && file_scores
+            .iter()
+            .filter(|(score, _, _)| *score > 0.0)
+            .nth(MAX_FILES_CONSIDERED)
+            .is_some()
+    {
+        (BROAD_QUERY_MAX_FILES, BROAD_QUERY_MIN_FILE_ALLOCATION)
+    } else {
+        (MAX_FILES_CONSIDERED, MIN_FILE_ALLOCATION)
+    };
     let mut top_files: Vec<(f64, String, String)> = file_scores
         .iter()
         .filter(|(s, src, _)| *s > 0.0 || dependency_sources.contains(src))
-        .take(MAX_FILES_CONSIDERED)
+        .take(max_files)
         .cloned()
         .collect();
     if top_files.is_empty() {
@@ -1122,12 +1141,6 @@ pub fn select(
             s
         }
     };
-    let mut per_file_budget: HashMap<String, i64> = HashMap::new();
-    for (score, src, _) in &top_files {
-        let share = (token_budget as f64 * (score / total_score)) as i64;
-        per_file_budget.insert(src.clone(), share.max(256));
-    }
-
     let q_terms = expand_query(query);
     let q_ents = query_entities(query);
     let mut output: Vec<OutFragment> = Vec::new();
@@ -1158,11 +1171,8 @@ pub fn select(
                 }
             }
         }
-        let file_budget = per_file_budget
-            .get(src)
-            .copied()
-            .unwrap_or(256)
-            .min(budget_left);
+        let share = (token_budget as f64 * (score / total_score)) as i64;
+        let file_budget = share.max(min_file_allocation).min(budget_left);
         let anchors = dependency_by_source.get(src);
         let anchor_cost = anchors
             .map(|items| approx_tokens(&items.join("\n")) as i64)
@@ -1431,6 +1441,32 @@ mod tests {
         assert_eq!(out[0].source, "file:server/repositories/scores.ts");
         let total: usize = out.iter().map(|f| f.token_count).sum();
         assert!(total <= 360, "budget exceeded: {total}");
+    }
+
+    #[test]
+    fn broad_query_reaches_more_sources_only_with_sufficient_budget() {
+        let fragments: Vec<_> = (0..20)
+            .map(|index| InFragment {
+                source: format!("file:greenhouse/note-{index}.md"),
+                content: format!(
+                    "The orchid watering schedule for greenhouse {index} is recorded here."
+                ),
+                feedback_multiplier: 1.0,
+            })
+            .collect();
+        let query = "how often should greenhouse orchids be watered";
+        let narrow = select(&fragments, 1_999, query, &HashMap::new(), &[]);
+        let broad = select(&fragments, 2_000, query, &HashMap::new(), &[]);
+
+        assert_eq!(narrow.len(), MAX_FILES_CONSIDERED);
+        assert_eq!(broad.len(), fragments.len());
+        assert!(
+            broad
+                .iter()
+                .map(|fragment| fragment.token_count)
+                .sum::<usize>()
+                <= 2_000
+        );
     }
 
     #[test]
