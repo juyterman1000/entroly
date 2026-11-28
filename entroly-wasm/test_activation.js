@@ -106,6 +106,26 @@ async function main() {
   assert(!persisted.includes(session), 'raw session id must not be persisted');
   assert.match(persisted, /"prompt_persisted": false/);
 
+  // Distinct POSIX workspaces must not share activation receipts.
+  const caseVariant = path.join(root, 'Project');
+  if (!fs.existsSync(caseVariant)) {
+    fs.mkdirSync(caseVariant);
+    const first = activationStatus(project, state);
+    const second = activationStatus(caseVariant, state);
+    assert.notStrictEqual(first.project_fingerprint, second.project_fingerprint);
+    assert.strictEqual(second.activation_events, 0);
+  }
+  if (process.platform !== 'win32') {
+    const literal = path.join(root, 'a\\b');
+    const nested = path.join(root, 'a', 'b');
+    fs.mkdirSync(literal);
+    fs.mkdirSync(nested, { recursive: true });
+    assert.notStrictEqual(
+      activationStatus(literal, state).project_fingerprint,
+      activationStatus(nested, state).project_fingerprint,
+    );
+  }
+
   const stale = runHook(payload, {
     host: 'codex',
     stateDir: staleState,
