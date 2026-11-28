@@ -32,8 +32,13 @@ function sha256(value) {
 }
 
 function projectFingerprint(projectDir) {
-  const normalized = path.resolve(projectDir).replace(/\\/g, '/').toLowerCase();
-  return sha256(normalized).slice(0, 16);
+  const resolved = path.resolve(projectDir);
+  // Legacy POSIX keys can contain state from distinct paths that folded
+  // to the same value. Use a new namespace even for lowercase paths.
+  const identity = process.platform === 'win32'
+    ? resolved.replace(/\\/g, '/').toLowerCase()
+    : 'posix-v2\0' + resolved;
+  return sha256(identity).slice(0, 16);
 }
 
 function baseStateDir() {
