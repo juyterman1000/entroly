@@ -1448,7 +1448,9 @@ mod tests {
         let fragments: Vec<_> = (0..20)
             .map(|index| InFragment {
                 source: format!("file:greenhouse/note-{index}.md"),
-                content: format!("The orchid watering schedule for greenhouse {index} is recorded here."),
+                content: format!(
+                    "The orchid watering schedule for greenhouse {index} is recorded here."
+                ),
                 feedback_multiplier: 1.0,
             })
             .collect();
@@ -1458,7 +1460,13 @@ mod tests {
 
         assert_eq!(narrow.len(), MAX_FILES_CONSIDERED);
         assert_eq!(broad.len(), fragments.len());
-        assert!(broad.iter().map(|fragment| fragment.token_count).sum::<usize>() <= 2_000);
+        assert!(
+            broad
+                .iter()
+                .map(|fragment| fragment.token_count)
+                .sum::<usize>()
+                <= 2_000
+        );
     }
 
     #[test]
