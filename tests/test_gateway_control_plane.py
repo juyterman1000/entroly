@@ -94,6 +94,7 @@ def test_control_plane_composes_policy_routing_cache_and_ledger() -> None:
     )
 
     assert event.usage.cache_read_tokens == 1_000
+    assert event.cache_delta_micro_usd == 9_000
     assert control.cache_router.get_lease(plan.conversation_id) is not None
     assert ledger.summary(team="platform")["requests"] == 1
     ledger.close()
@@ -527,7 +528,7 @@ def test_cache_creation_observation_warms_next_turn() -> None:
         targets=[target],
     )
 
-    control.observe_response(
+    event = control.observe_response(
         plan,
         request_id="cache-create",
         provider="anthropic",
@@ -549,6 +550,8 @@ def test_cache_creation_observation_warms_next_turn() -> None:
         cache_ttl_seconds=300.0,
     )
 
+    assert event.cache_delta_micro_usd == -2_250
+    assert event.cache_savings_micro_usd == 0
     lease = control.cache_router.get_lease(plan.conversation_id)
     assert lease is not None
     assert lease.cached_prefix_tokens == 900
