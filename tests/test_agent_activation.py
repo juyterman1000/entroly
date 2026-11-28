@@ -473,19 +473,21 @@ def test_degraded_detail_claims_no_cause_it_did_not_check(
 def test_hook_delivery_preserves_complete_fragments(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(activation_module, "MAX_CONTEXT_CHARS", 48)
     monkeypatch.setattr(activation_module, "DEFAULT_MAX_SOURCES", 2)
+    (tmp_path / "oversized.py").write_text("x" * 100, encoding="utf-8")
     fragments = [
-        {"source": "oversized.py", "content": "x" * 100, "token_count": 100},
+        {"source": "file:oversized.py#2", "content": "x" * 100, "token_count": 100},
         {"source": "empty.py", "content": "", "token_count": 99},
         {"source": "a.py", "content": "first", "token_count": 4},
         {"source": "b.py", "content": "second", "token_count": 5},
         {"source": "c.py", "content": "third", "token_count": 6},
     ]
-    sources, context, tokens, omitted = activation_module._format_selected_fragments(fragments, tmp_path)
+    sources, context, tokens, detail = activation_module._format_selected_fragments(fragments, tmp_path)
     assert sources == ("a.py", "b.py")
     assert context == "SOURCE: a.py\nfirst\n\nSOURCE: b.py\nsecond"
     assert len(context) <= 48
     assert tokens == 9
-    assert omitted == 3
+    assert "delivery omitted 3 of 5 selected fragments" in detail
+    assert "Inspect project file `oversized.py`" in detail
 
 
 def test_hook_delivery_counts_formatted_headers_and_separators(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -494,11 +496,24 @@ def test_hook_delivery_counts_formatted_headers_and_separators(tmp_path: Path, m
         {"source": "a.py", "content": "x", "token_count": 1},
         {"source": "b.py", "content": "y", "token_count": 1},
     ]
-    sources, context, tokens, omitted = activation_module._format_selected_fragments(fragments, tmp_path)
+    sources, context, tokens, detail = activation_module._format_selected_fragments(fragments, tmp_path)
     assert sources == ("a.py",)
     assert context == "SOURCE: a.py\nx"
     assert tokens == 1
-    assert omitted == 1
+    assert "delivery omitted 1 of 2 selected fragments" in detail
+    assert "Search the project" in detail
+
+
+def test_omitted_source_hint_stays_inside_project(tmp_path: Path) -> None:
+    (tmp_path / "outside.py").write_text("secret", encoding="utf-8")
+    project = tmp_path / "project"
+    project.mkdir()
+    fragments = [{"source": "file:../outside.py", "content": ""}]
+    sources, context, tokens, detail = activation_module._format_selected_fragments(fragments, project)
+    assert (sources, context, tokens) == ((), "", 0)
+    assert "delivery omitted 1 of 1 selected fragments" in detail
+    assert "Search the project" in detail
+    assert "outside.py" not in detail
 
 
 def test_activated_hook_exposes_delivery_omissions(tmp_path: Path) -> None:

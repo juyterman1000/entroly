@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import stat
 import sys
@@ -140,7 +141,7 @@ def _activation_lock(checkpoint_dir: Path):
 
 def _format_selected_fragments(
     selected: list[Mapping[str, Any]], project_dir: Path
-) -> tuple[tuple[str, ...], str, int, int]:
+) -> tuple[tuple[str, ...], str, int, str]:
     """Deliver whole fragments and account only for fragments actually delivered.
 
     The character limit covers the formatted evidence (including source labels
@@ -150,21 +151,22 @@ def _format_selected_fragments(
     blocks: list[str] = []
     selected_tokens = 0
     context_chars = 0
+    first_omitted_source: object = None
     for item in selected:
+        source_value = item.get("source") or item.get("source_path") or item.get("path") or ""
         if len(blocks) >= DEFAULT_MAX_SOURCES:
+            if first_omitted_source is None:
+                first_omitted_source = source_value
             break
-        source = _relative_source(
-            item.get("source") or item.get("source_path") or item.get("path"),
-            project_dir,
-        )
+        source = _relative_source(source_value, project_dir)
         content = _fragment_content(item)
-        if not content:
-            continue
         block = f"SOURCE: {source or '<unknown>'}\n{content}"
         size = len(block) + (2 if blocks else 0)
-        if context_chars + size > MAX_CONTEXT_CHARS:
+        if not content or context_chars + size > MAX_CONTEXT_CHARS:
             # Do not deliver an arbitrary prefix of a selected evidence span.
             # A later complete fragment may still fit.
+            if first_omitted_source is None:
+                first_omitted_source = source_value
             continue
         blocks.append(block)
         context_chars += size
@@ -174,7 +176,33 @@ def _format_selected_fragments(
             selected_tokens += max(0, int(item.get("token_count", 0) or 0))
         except (TypeError, ValueError, OverflowError):
             pass
-    return tuple(sources), "\n\n".join(blocks), selected_tokens, len(selected) - len(blocks)
+    omitted = len(selected) - len(blocks)
+    detail = _omission_detail(omitted, len(selected), first_omitted_source, project_dir)
+    return tuple(sources), "\n\n".join(blocks), selected_tokens, detail
+
+
+def _omission_detail(omitted: int, total: int, source: object, project_dir: Path) -> str:
+    if not omitted:
+        return ""
+    detail = f"delivery omitted {omitted} of {total} selected fragments due to delivery bounds or missing content."
+    if isinstance(source, str):
+        from .auto_index import _logical_rel_path, _resolve_project_file
+
+        relative = _logical_rel_path(source.removeprefix("file:"))
+        # Keep the recovery hint bounded and single-line. Index labels can also
+        # refer to non-file fragments or to files no longer in the project.
+        if (
+            re.fullmatch(r"[A-Za-z0-9._/-]{1,256}", relative)
+            and not relative.startswith("/")
+            and ".." not in relative.split("/")
+        ):
+            try:
+                resolved = _resolve_project_file(str(project_dir), relative)
+                if resolved and Path(resolved).is_file():
+                    return f"{detail} Inspect project file `{relative}` for omitted evidence."
+            except OSError:
+                pass
+    return f"{detail} Search the project for relevant source evidence."
 
 
 def _select_with_engine(
@@ -276,14 +304,8 @@ def _select_with_engine(
             detail="no evidence-backed fragment matched this task",
         )
 
-    sources, raw_context, selected_tokens, omitted = _format_selected_fragments(
+    sources, raw_context, selected_tokens, omissions = _format_selected_fragments(
         selected, project_dir
-    )
-    omissions = (
-        f"delivery omitted {omitted} of {len(selected)} selected fragments "
-        "(whole-fragment delivery bounds or missing content); "
-        "read exact source for omitted evidence"
-        if omitted else ""
     )
     if not raw_context:
         return ActivationSelection(

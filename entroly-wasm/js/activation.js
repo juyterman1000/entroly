@@ -12,7 +12,7 @@ const path = require('path');
 const zlib = require('zlib');
 const { execFileSync } = require('child_process');
 const { WasmEntrolyEngine } = require('../pkg/entroly_wasm');
-const { autoIndex } = require('./auto_index');
+const { autoIndex, resolveProjectFile } = require('./auto_index');
 
 const SCHEMA_VERSION = 'entroly.agent-activation.v1';
 const DEFAULT_TOKEN_BUDGET = 1200;
@@ -249,25 +249,54 @@ function formatSelectedFragments(selected, projectDir) {
   const blocks = [];
   let selectedTokens = 0;
   let contextChars = 0;
+  let firstOmittedSource = null;
   for (const item of selected) {
-    if (blocks.length >= DEFAULT_MAX_SOURCES) break;
     if (!item || typeof item !== 'object') continue;
-    const source = cleanSource(item.source || item.source_path || item.path, projectDir);
+    const sourceValue = item.source || item.source_path || item.path || '';
+    if (blocks.length >= DEFAULT_MAX_SOURCES) {
+      firstOmittedSource ??= sourceValue;
+      break;
+    }
+    const source = cleanSource(sourceValue, projectDir);
     const content = sanitizeEvidence(fragmentContent(item));
-    if (!content) continue;
     const label = sanitizeEvidence(source || '<unknown>')
       .replace(/&/g, '&amp;').replace(/"/g, '&quot;')
       .replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const block = `<entroly-evidence source="${label}">\n${content}\n</entroly-evidence>`;
     const size = block.length + (blocks.length ? 2 : 0);
-    if (contextChars + size > MAX_CONTEXT_CHARS) continue;
+    if (!content || contextChars + size > MAX_CONTEXT_CHARS) {
+      firstOmittedSource ??= sourceValue;
+      continue;
+    }
     blocks.push(block);
     contextChars += size;
     if (source && !sources.includes(source)) sources.push(source);
     const tokens = Number(item.token_count || 0);
     if (Number.isFinite(tokens) && tokens > 0) selectedTokens += Math.floor(tokens);
   }
-  return { sources, context: blocks.join('\n\n'), selectedTokens, omitted: selected.length - blocks.length };
+  const omitted = selected.length - blocks.length;
+  const detail = omissionDetail(omitted, selected.length, firstOmittedSource, projectDir);
+  return { sources, context: blocks.join('\n\n'), selectedTokens, detail };
+}
+
+function omissionDetail(omitted, total, source, projectDir) {
+  if (!omitted) return '';
+  const detail = `delivery omitted ${omitted} of ${total} selected fragments due to delivery bounds or missing content.`;
+  if (typeof source === 'string') {
+    const relative = source.replace(/^file:/, '').replace(/#[0-9]+$/, '');
+    // Index labels may be stale or non-file fragments. Surface only a short,
+    // single-line path to a file that resolves inside this project.
+    if (relative && relative.length <= 256 && !/[^A-Za-z0-9._/-]/.test(relative)
+        && !relative.startsWith('/') && !relative.split('/').includes('..')) {
+      const resolved = resolveProjectFile(projectDir, relative);
+      try {
+        if (resolved && fs.statSync(resolved).isFile()) {
+          return `${detail} Inspect project file \`${relative}\` for omitted evidence.`;
+        }
+      } catch {} // The file may disappear after resolution.
+    }
+  }
+  return `${detail} Search the project for relevant source evidence.`;
 }
 
 function selectWithEngine(query, projectDir, tokenBudget, maxFiles) {
@@ -334,16 +363,14 @@ function selectWithEngine(query, projectDir, tokenBudget, maxFiles) {
     };
   }
 
-  const { sources, context, selectedTokens, omitted } = formatSelectedFragments(selected, projectDir);
+  const { sources, context, selectedTokens, detail } = formatSelectedFragments(selected, projectDir);
   return {
     status: context ? 'activated' : 'degraded',
     sources,
     context,
     selectedTokens,
     nativeEngine: true,
-    detail: omitted
-      ? `delivery omitted ${omitted} of ${selected.length} selected fragments (whole-fragment delivery bounds or missing content); read exact source for omitted evidence`
-      : '',
+    detail,
   };
 }
 
