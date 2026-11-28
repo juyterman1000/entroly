@@ -1,12 +1,8 @@
-"""Does compression retain answer-critical evidence — or just withhold context?
+"""Measure whether retrieval returns a gold source within the token budget.
 
-The standard this measures:
-
-    real token saving = fewer tokens AND the answer-critical evidence retained
-
-A compressor that drops the answer is not saving tokens, it is losing the task.
-So savings are only credited on tasks where the gold file survived selection;
-recall and cost are reported separately and never averaged into one headline.
+The credited reduction uses a full-corpus baseline for every query and credits
+zero for a query with no gold source in its selection. Gold-source presence is a
+retrieval diagnostic. Provider usage and answer quality require separate tests.
 
 Ground truth maps each query to the SET of files that legitimately answer it.
 A set, not one path: this repository carries parallel Rust and Python
@@ -103,8 +99,10 @@ def main() -> int:
         text = str(frag.get("content") or "")
         if any(query in text for query, _ in GOLD):
             contaminated.add(str(frag.get("source") or ""))
-    contaminated -= {
-        f"file:{g}" for _, gold in GOLD for g in gold
+    gold_paths = {path for _, gold in GOLD for path in gold}
+    contaminated = {
+        source for source in contaminated
+        if _logical(source.removeprefix("file:")) not in gold_paths
     }
     if contaminated:
         removed = engine.remove_sources(sorted(contaminated))
@@ -122,15 +120,8 @@ def main() -> int:
     # at index time, so recall sat at 0.62/0.75 no matter what the ranker did.
     # Four structurally different ranking changes produced bit-identical scores
     # before anyone checked the corpus. Fail loudly instead.
-    present = {
-        str(f.get("source") or "").removeprefix("file:") for f in fragments
-    }
-    def _indexed(path: str) -> bool:
-        return any(p == path or p.startswith(path + "#") for p in present)
-
-    missing = sorted({
-        g for _, gold in GOLD for g in gold if not _indexed(g)
-    } - {g for _, gold in GOLD for g in gold if any(_indexed(a) for a in gold)})
+    present = _sources(fragments)
+    missing = sorted({path for _, gold in GOLD if present.isdisjoint(gold) for path in gold})
     if missing:
         raise SystemExit(
             "gold files absent from the index, so retrieval cannot be scored: "
@@ -153,6 +144,8 @@ def main() -> int:
             "retained": retained,
             "tokens_used": used,
             "selected": len(selection),
+            "selected_sources": sorted(sources),
+            "selector": result.get("selector") or result.get("method"),
             "latency_s": round(latency, 3),
             "status": result.get("status", "ok"),
         })
@@ -165,19 +158,19 @@ def main() -> int:
     # contributes zero, never a "saving" — that is the accounting error this
     # benchmark exists to prevent.
     credited = sum(max(0, corpus_tokens - r["tokens_used"]) for r in hits)
-    naive = corpus_tokens * len(hits)
+    naive = corpus_tokens * len(rows)
     reduction = (credited / naive) if naive else 0.0
     mean_used = (sum(r["tokens_used"] for r in hits) / len(hits)) if hits else 0
 
     print(f"\n  corpus                : {corpus_tokens:,} tokens over {len(fragments)} fragments")
     print(f"  evidence retention    : {len(hits)}/{len(rows)}  (recall {recall:.2f})")
     print(f"  mean tokens on hits   : {mean_used:,.0f}")
-    print(f"  credited reduction    : {reduction:.4%}  (misses credited 0)")
+    print(f"  credited reduction    : {reduction:.4%}  (full corpus per query; misses credited 0)")
     print(f"  max latency           : {max(r['latency_s'] for r in rows):.2f}s")
     verdict = (
-        "USEFUL SAVING PROVEN" if recall == 1.0
-        else "PARTIAL — evidence lost on some tasks; not a clean saving"
-        if hits else "NOT PROVEN — no evidence retained"
+        "ALL QUERIES RETAINED A GOLD SOURCE" if recall == 1.0
+        else "PARTIAL — some queries missed every gold source"
+        if hits else "NO GOLD SOURCES RETAINED"
     )
     print(f"  verdict               : {verdict}")
 
